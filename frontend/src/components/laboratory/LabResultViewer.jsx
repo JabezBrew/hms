@@ -143,7 +143,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
   if (orderLoading || resultsLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="text-stone-500">Loading results...</div>
+        <div className="text-stone-500">Loading results…</div>
       </div>
     );
   }
@@ -198,7 +198,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
             {group.panel && (
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-stone-500" />
+                  <Package className="size-4 text-stone-500" />
                   <CardTitle className="text-base">{group.panel.name}</CardTitle>
                 </div>
               </CardHeader>
@@ -216,7 +216,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                       className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0"
                     >
                       <div className="flex items-center gap-2">
-                        <div className={cn("w-2 h-2 rounded-full", config.color)} />
+                        <div className={cn("size-2 rounded-full", config.color)} />
                         <span className="text-sm font-medium text-stone-900">
                           {result.order_test?.test?.short_name ||
                             result.order_test?.test?.name}
@@ -225,7 +225,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                       <div className="flex items-center gap-2">
                         {TrendIcon && (
                           <TrendIcon
-                            className={cn("h-4 w-4", getTrendIndicator(result).color)}
+                            className={cn("size-4", getTrendIndicator(result).color)}
                           />
                         )}
                         <span className="text-sm font-semibold text-stone-900">
@@ -256,11 +256,11 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
               </CardTitle>
               <CardDescription className="mt-2 flex items-center gap-4">
                 <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
+                  <Calendar className="size-3" />
                   {format(new Date(order.created_at), "MMM dd, yyyy")}
                 </span>
                 <span className="flex items-center gap-1">
-                  <User className="h-3 w-3" />
+                  <User className="size-3" />
                   {order.ordering_provider?.first_name}{" "}
                   {order.ordering_provider?.last_name}
                 </span>
@@ -293,7 +293,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
         <Card className="border-stone-200">
           <CardContent className="py-12">
             <div className="text-center text-stone-500">
-              <Clock className="h-12 w-12 mx-auto mb-3 text-stone-300" />
+              <Clock className="size-12 mx-auto mb-3 text-stone-300" />
               <p className="font-medium">No results available yet</p>
               <p className="text-sm mt-1">Results will appear here once processed</p>
             </div>
@@ -306,7 +306,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
               {group.panel && (
                 <CardHeader>
                   <div className="flex items-center gap-2">
-                    <Package className="h-5 w-5 text-stone-500" />
+                    <Package className="size-5 text-stone-500" />
                     <CardTitle className="text-lg font-heading">
                       {group.panel.name}
                     </CardTitle>
@@ -340,7 +340,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                                 config.color.replace("border-", "bg-")
                               )}
                             >
-                              <TestTube2 className="h-4 w-4" />
+                              <TestTube2 className="size-4" />
                             </div>
                             <div>
                               <h4 className="font-semibold text-stone-900">
@@ -354,7 +354,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                             </div>
                           </div>
                           <Badge variant="outline" className={cn("gap-1", config.color)}>
-                            <StatusIcon className="h-3 w-3" />
+                            <StatusIcon className="size-3" />
                             {config.label}
                           </Badge>
                         </div>
@@ -373,7 +373,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                               {trend && (
                                 <div className="flex items-center gap-1">
                                   <trend.icon
-                                    className={cn("h-5 w-5", trend.color)}
+                                    className={cn("size-5", trend.color)}
                                   />
                                   <span className={cn("text-xs font-medium", trend.color)}>
                                     {trend.label}
@@ -411,12 +411,12 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                         <div className="flex items-center justify-between pt-3 border-t border-stone-200">
                           <div className="flex items-center gap-4 text-xs text-stone-600">
                             <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
+                              <Clock className="size-3" />
                               {format(new Date(result.result_date), "MMM dd, yyyy HH:mm")}
                             </span>
                             {result.performed_by && (
                               <span className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
+                                <User className="size-3" />
                                 {result.performed_by.first_name}{" "}
                                 {result.performed_by.last_name}
                               </span>
@@ -427,7 +427,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                           <div className="flex items-center gap-2">
                             {result.verified ? (
                               <Badge variant="outline" className="gap-1 text-emerald-700">
-                                <Check className="h-3 w-3" />
+                                <Check className="size-3" />
                                 Verified
                                 {result.verified_by && (
                                   <span className="ml-1">
@@ -522,7 +522,7 @@ const LabResultViewer = ({ orderId, compact = false, allowVerification = false }
                 "Verifying..."
               ) : (
                 <>
-                  <Check className="h-4 w-4 mr-2" />
+                  <Check className="size-4 mr-2" />
                   Verify Result
                 </>
               )}

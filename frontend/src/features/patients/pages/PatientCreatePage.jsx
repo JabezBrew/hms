@@ -58,7 +58,7 @@ const PatientCreatePage = () => {
     <PageShell>
       {pageMeta}
       <div className="border-b border-border bg-card/50">
-        <div className="max-w-4xl mx-auto px-6 py-6">
+        <div className="max-w-4xl mx-auto p-6">
           {/* Back Navigation */}
           <Button
             variant="ghost"
@@ -66,13 +66,13 @@ const PatientCreatePage = () => {
             onClick={() => navigate('/patients')}
             className="mb-4 -ml-2 font-mono text-xs"
           >
-            <ChevronLeft className="h-4 w-4 mr-1" />
+            <ChevronLeft className="size-4 mr-1" />
             Back to Patient Registry
           </Button>
 
           <div className="flex items-start gap-4">
             <div className="p-3 rounded-xl bg-primary/10">
-              <UserPlus className="h-6 w-6 text-primary" />
+              <UserPlus className="size-6 text-primary" />
             </div>
             <PageHeader
               title="Register New Patient"

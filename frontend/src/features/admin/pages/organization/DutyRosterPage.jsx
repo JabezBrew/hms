@@ -216,9 +216,9 @@ function RosterCalendarView({ departmentId, flatUnits }) {
               variant="ghost"
               size="icon"
               onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
-              className="h-8 w-8"
+              className="size-8"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="size-4" />
             </Button>
             <span className="font-heading font-medium text-foreground">
               {format(currentMonth, 'MMMM yyyy')}
@@ -227,9 +227,9 @@ function RosterCalendarView({ departmentId, flatUnits }) {
               variant="ghost"
               size="icon"
               onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-              className="h-8 w-8"
+              className="size-8"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="size-4" />
             </Button>
           </div>
         </CardHeader>
@@ -255,8 +255,8 @@ function RosterCalendarView({ departmentId, flatUnits }) {
       <Card className="lg:col-span-2 border-border">
         <CardHeader className="border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <CalendarIcon className="h-5 w-5 text-primary" />
+            <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <CalendarIcon className="size-5 text-primary" />
             </div>
             <div>
               <CardTitle className="font-display text-lg">
@@ -410,13 +410,13 @@ export default function DutyRosterPage() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" asChild>
               <Link to="/admin/organization/roster-setup">
-                <Wrench className="h-4 w-4 mr-1" />
+                <Wrench className="size-4 mr-1" />
                 Setup
               </Link>
             </Button>
             <Button size="sm" asChild>
               <Link to="/admin/organization/roster-builder">
-                <CalendarIcon className="h-4 w-4 mr-1" />
+                <CalendarIcon className="size-4 mr-1" />
                 Build Roster
               </Link>
             </Button>
@@ -431,8 +431,8 @@ export default function DutyRosterPage() {
             <Card className="border-border bg-primary/5">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Clock className="h-5 w-5 text-primary" />
+                  <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Clock className="size-5 text-primary" />
                   </div>
                   <div>
                     <p className="text-2xl font-display font-semibold">
@@ -450,8 +450,8 @@ export default function DutyRosterPage() {
               <Card className="border-border hover:border-amber-500/30 transition-colors">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
-                      <Settings className="h-5 w-5 text-amber-500" />
+                    <div className="size-10 rounded-lg bg-amber-500/10 flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
+                      <Settings className="size-5 text-amber-500" />
                     </div>
                     <div>
                       <p className="font-heading font-medium group-hover:text-primary transition-colors">
@@ -470,8 +470,8 @@ export default function DutyRosterPage() {
               <Card className="border-border hover:border-emerald-500/30 transition-colors">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
-                      <CalendarIcon className="h-5 w-5 text-emerald-500" />
+                    <div className="size-10 rounded-lg bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+                      <CalendarIcon className="size-5 text-emerald-500" />
                     </div>
                     <div>
                       <p className="font-heading font-medium group-hover:text-primary transition-colors">
@@ -489,11 +489,11 @@ export default function DutyRosterPage() {
 
           {/* Unit Filter */}
           <div className="mb-6">
-            <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-2 block">
-              Filter by Department / Division
-            </label>
-            <Select value={selectedDepartment || 'all'} onValueChange={(v) => setSelectedDepartment(v === 'all' ? '' : v)}>
-              <SelectTrigger className="w-full max-w-xs">
+	            <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-2 block">
+	              Filter by Department / Division
+	            </span>
+	            <Select value={selectedDepartment || 'all'} onValueChange={(v) => setSelectedDepartment(v === 'all' ? '' : v)}>
+	              <SelectTrigger aria-label="Filter by department or division" className="w-full max-w-xs">
                 <SelectValue placeholder="All units" />
               </SelectTrigger>
               <SelectContent className="z-[200]">
@@ -540,7 +540,7 @@ export default function DutyRosterPage() {
                   )}
                 >
                   <span className="flex items-center gap-2">
-                    <Clock className="h-4 w-4" />
+                    <Clock className="size-4" />
                     On Duty Now
                   </span>
                 </TabsTrigger>
@@ -554,7 +554,7 @@ export default function DutyRosterPage() {
                   )}
                 >
                   <span className="flex items-center gap-2">
-                    <CalendarIcon className="h-4 w-4" />
+                    <CalendarIcon className="size-4" />
                     Calendar View
                   </span>
                 </TabsTrigger>
@@ -565,8 +565,8 @@ export default function DutyRosterPage() {
               <Card className="border-border">
                 <CardHeader className="border-b border-border">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Users className="h-5 w-5 text-primary" />
+                    <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Users className="size-5 text-primary" />
                     </div>
                     <div>
                       <CardTitle className="font-display text-lg">Currently On Duty</CardTitle>

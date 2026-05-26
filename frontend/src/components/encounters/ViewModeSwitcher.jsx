@@ -45,7 +45,7 @@ export function ViewModeSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
-          <CurrentIcon className="h-4 w-4" />
+          <CurrentIcon className="size-4" />
           <span className="hidden md:inline">{currentMode?.label}</span>
           <span className="md:hidden">View</span>
         </Button>
@@ -64,7 +64,7 @@ export function ViewModeSwitcher() {
               className={isActive ? 'bg-accent' : ''}
             >
               <div className="flex items-start gap-3 w-full">
-                <Icon className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                <Icon className="size-5 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium flex items-center gap-2">
                     {mode.label}

@@ -48,7 +48,7 @@ export default function ProblemCodePicker({
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
           ref={inputRef}
           value={q}
@@ -57,7 +57,7 @@ export default function ProblemCodePicker({
           className="pl-9"
         />
         {(isFetching || showLoading) && (
-          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground animate-spin" />
         )}
       </div>
 

@@ -50,13 +50,15 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    const keys = await caches.keys()
+    const [keys] = await Promise.all([
+      caches.keys(),
+      self.clients.claim(),
+    ])
     await Promise.all(
       keys
         .filter((key) => key.startsWith(HMS_STATIC_CACHE_PREFIX) && key !== HMS_STATIC_CACHE_NAME)
         .map((key) => caches.delete(key))
     )
-    await self.clients.claim()
   })())
 })
 

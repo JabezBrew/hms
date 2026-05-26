@@ -186,7 +186,7 @@ const ChartFieldRenderer = ({
             {field.is_required && <span className="text-rose-500 ml-0.5">*</span>}
           </Label>
           {field.field_type === 'calculated' && (
-            <Calculator className="h-3 w-3 text-muted-foreground" />
+            <Calculator className="size-3 text-muted-foreground" />
           )}
         </div>
       )}
@@ -196,7 +196,7 @@ const ChartFieldRenderer = ({
       {/* Help text */}
       {field.help_text && (
         <p className="flex items-start gap-1 text-[10px] text-muted-foreground">
-          <Info className="h-3 w-3 mt-0.5 shrink-0" />
+          <Info className="size-3 mt-0.5 shrink-0" />
           {field.help_text}
         </p>
       )}
@@ -204,7 +204,7 @@ const ChartFieldRenderer = ({
       {/* Error */}
       {error && (
         <p className="flex items-center gap-1 text-[10px] text-rose-500">
-          <AlertTriangle className="h-3 w-3" />
+          <AlertTriangle className="size-3" />
           {error}
         </p>
       )}
@@ -212,7 +212,7 @@ const ChartFieldRenderer = ({
       {/* Critical warning */}
       {isCritical && (
         <p className="flex items-center gap-1 text-[10px] text-rose-500 font-medium animate-pulse">
-          <AlertTriangle className="h-3 w-3" />
+          <AlertTriangle className="size-3" />
           Critical value
         </p>
       )}

@@ -56,23 +56,23 @@ export function ReviewOfSystems() {
                                 variant="ghost"
                                 size="icon"
                                 className={cn(
-                                    "h-6 w-6 rounded-full",
+                                    "size-6 rounded-full",
                                     status[system] === 'normal' && "bg-green-100 text-green-700 hover:bg-green-200 hover:text-green-800"
                                 )}
                                 onClick={() => toggleStatus(system, 'normal')}
                             >
-                                <Check className="h-3 w-3" />
+                                <Check className="size-3" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 className={cn(
-                                    "h-6 w-6 rounded-full",
+                                    "size-6 rounded-full",
                                     status[system] === 'abnormal' && "bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800"
                                 )}
                                 onClick={() => toggleStatus(system, 'abnormal')}
                             >
-                                <X className="h-3 w-3" />
+                                <X className="size-3" />
                             </Button>
                         </div>
                     </div>

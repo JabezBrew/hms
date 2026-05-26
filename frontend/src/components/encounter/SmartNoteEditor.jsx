@@ -36,27 +36,27 @@ export function SmartNoteEditor() {
     return (
         <Card className="border-none shadow-none">
             <div className="flex items-center gap-1 p-2 border-b sticky top-0 bg-background z-10">
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <Bold className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8">
+                    <Bold className="size-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <Italic className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8">
+                    <Italic className="size-4" />
                 </Button>
                 <div className="w-px h-4 bg-border mx-1" />
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <List className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8">
+                    <List className="size-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <ListOrdered className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8">
+                    <ListOrdered className="size-4" />
                 </Button>
                 <div className="flex-1" />
 
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-2 text-purple-600 border-purple-200 hover:bg-purple-50">
-                            <Sparkles className="h-3 w-3" />
+                            <Sparkles className="size-3" />
                             AI Templates
-                            <ChevronDown className="h-3 w-3" />
+                            <ChevronDown className="size-3" />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -69,8 +69,8 @@ export function SmartNoteEditor() {
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                    <Mic className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8 text-muted-foreground">
+                    <Mic className="size-4" />
                 </Button>
             </div>
 

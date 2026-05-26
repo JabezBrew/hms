@@ -103,7 +103,7 @@ export default function NewWardPage() {
     <PageShell>
       {pageMeta}
       <div className="border-b border-border bg-card/50">
-        <div className="max-w-3xl mx-auto px-6 py-6">
+        <div className="max-w-3xl mx-auto p-6">
           {/* Back Navigation */}
           <Button
             variant="ghost"
@@ -111,14 +111,14 @@ export default function NewWardPage() {
             onClick={() => navigate('/wards')}
             className="mb-4 -ml-2 font-mono text-xs"
           >
-            <ChevronLeft className="h-4 w-4 mr-1" />
+            <ChevronLeft className="size-4 mr-1" />
             Back to Wards
           </Button>
 
           {/* Title Section */}
           <div className="flex items-start gap-4">
             <div className="p-3 rounded-xl bg-primary/10">
-              <Building2 className="h-6 w-6 text-primary" />
+              <Building2 className="size-6 text-primary" />
             </div>
             <PageHeader
               title="Create New Ward"
@@ -138,7 +138,7 @@ export default function NewWardPage() {
       <div className="max-w-3xl mx-auto px-6 py-8">
         {error && (
           <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
@@ -252,7 +252,7 @@ export default function NewWardPage() {
               </div>
 
               {/* Active Status */}
-              <div className="flex items-center space-x-3 pt-2">
+              <div className="flex items-center gap-x-3 pt-2">
                 <Checkbox
                   id="is_active"
                   checked={formData.is_active}

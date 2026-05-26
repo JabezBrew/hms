@@ -100,10 +100,11 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
       <Tooltip>
         <TooltipTrigger asChild>
           <button
+            type="button"
             onClick={handleClick}
             disabled={!isClickable}
             className={cn(
-              "w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all",
+              "size-7 rounded-full border-2 flex items-center justify-center transition-all",
               status.bg,
               status.border,
               status.text,
@@ -112,9 +113,9 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
               !isClickable && "cursor-default"
             )}
           >
-            {dose.status === 'administered' && <Check className="w-4 h-4" />}
-            {dose.status === 'due' && <Clock className="w-3.5 h-3.5" />}
-            {dose.status === 'missed' && <XCircle className="w-3.5 h-3.5" />}
+            {dose.status === 'administered' && <Check className="size-4" />}
+            {dose.status === 'due' && <Clock className="size-3.5" />}
+            {dose.status === 'missed' && <XCircle className="size-3.5" />}
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs">
@@ -145,7 +146,7 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
 
 // Day cell showing dose indicators
 function DayDoses({ dayData, medication, date, isToday, onAdminister }) {
-  if (!dayData) return <span className="text-slate-300">—</span>;
+  if (!dayData) return <span className="text-slate-300">-</span>;
 
   const { doses, doses_given, doses_required } = dayData;
 
@@ -188,7 +189,7 @@ function MedicationRow({ medication, dateHeaders, onAdminister }) {
         {/* Medication info column */}
         <div className="w-64 min-w-64 p-3 border-r border-border">
           <div className="flex items-start gap-2">
-            <Pill className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+            <Pill className="size-4 text-primary mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="font-medium text-sm truncate">{medication.medication_name}</p>
               <p className="text-xs text-muted-foreground truncate">
@@ -214,7 +215,7 @@ function MedicationRow({ medication, dateHeaders, onAdminister }) {
                   <Progress value={progressPercent} className="h-1.5" />
                   {medication.course_complete && (
                     <Badge variant="outline" className="text-emerald-600 border-emerald-300 text-xs">
-                      <Check className="w-3 h-3 mr-1" />
+                      <Check className="size-3 mr-1" />
                       Complete
                     </Badge>
                   )}
@@ -384,24 +385,24 @@ export function TreatmentSheetContent({
       <div className="flex items-center gap-4 text-sm flex-wrap">
         <span className="text-muted-foreground font-medium">Legend:</span>
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-            <Check className="w-3 h-3 text-white" />
+          <div className="size-5 rounded-full bg-emerald-500 flex items-center justify-center">
+            <Check className="size-3 text-white" />
           </div>
           <span className="text-xs text-muted-foreground">Given</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center animate-pulse">
-            <Clock className="w-3 h-3 text-white" />
+          <div className="size-5 rounded-full bg-amber-500 flex items-center justify-center animate-pulse">
+            <Clock className="size-3 text-white" />
           </div>
           <span className="text-xs text-muted-foreground">Due</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-full border-2 border-slate-300" />
+          <div className="size-5 rounded-full border-2 border-slate-300" />
           <span className="text-xs text-muted-foreground">Scheduled</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-full bg-rose-500 flex items-center justify-center">
-            <XCircle className="w-3 h-3 text-white" />
+          <div className="size-5 rounded-full bg-rose-500 flex items-center justify-center">
+            <XCircle className="size-3 text-white" />
           </div>
           <span className="text-xs text-muted-foreground">Missed</span>
         </div>
@@ -472,7 +473,7 @@ export function TreatmentSheetContent({
                 ))
               ) : (
                 <div className="p-12 text-center text-muted-foreground">
-                  <CircleDot className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                  <CircleDot className="size-12 mx-auto mb-4 opacity-20" />
                   <p className="text-lg font-medium">No medications prescribed</p>
                   <p className="text-sm mt-2">
                     This patient has no active medications for the selected date range.
@@ -506,22 +507,22 @@ function TreatmentSheetActions({
     <div className="flex flex-wrap items-center gap-2">
       {onBack && (
         <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back
         </Button>
       )}
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onPreviousWeek}>
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="size-4" />
           <span className={compact ? 'sr-only' : 'hidden sm:inline ml-1'}>Prev Week</span>
         </Button>
         <Button variant="outline" size="sm" onClick={onToday}>
-          <Calendar className="h-4 w-4 sm:mr-2" />
+          <Calendar className="size-4 sm:mr-2" />
           <span className={compact ? 'sr-only' : 'hidden sm:inline'}>Today</span>
         </Button>
         <Button variant="outline" size="sm" onClick={onNextWeek}>
           <span className={compact ? 'sr-only' : 'hidden sm:inline mr-1'}>Next Week</span>
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="size-4" />
         </Button>
       </div>
     </div>

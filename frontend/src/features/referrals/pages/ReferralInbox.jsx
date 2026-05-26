@@ -277,7 +277,7 @@ const ReferralInbox = () => {
           description="Review and manage referrals sent to your department"
         />
         <div className="flex items-center justify-center py-12">
-          <div className="text-muted-foreground">Loading referrals...</div>
+          <div className="text-muted-foreground">Loading referrals…</div>
         </div>
       </PageShell>
     );
@@ -305,7 +305,7 @@ const ReferralInbox = () => {
 
       <div className="p-4 sm:p-6 space-y-6">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by patient name, MRN, referral number, or reason..."
             value={searchQuery}
@@ -318,7 +318,7 @@ const ReferralInbox = () => {
           <Card className="bg-card border-border">
             <CardContent className="py-12">
               <div className="text-center text-muted-foreground">
-                <Stethoscope className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <Stethoscope className="size-12 mx-auto mb-3 opacity-50" />
                 <p className="font-heading font-medium">No referrals found</p>
                 <p className="text-sm mt-1">
                   {hasActiveFilters
@@ -348,14 +348,14 @@ const ReferralInbox = () => {
                             {status.label}
                           </span>
                           <span className={cn('gap-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full', urgency.badgeClass)}>
-                            <UrgencyIcon className="h-3 w-3" />
+                            <UrgencyIcon className="size-3" />
                             {urgency.label}
                           </span>
                         </div>
                         <CardDescription className="space-y-1">
                           <div className="flex items-center gap-4 flex-wrap text-muted-foreground">
                             <span className="flex items-center gap-1">
-                              <User className="h-3 w-3" />
+                              <User className="size-3" />
                               {referral.patientName}
                             </span>
                             {referral.patientMrn && (
@@ -365,13 +365,13 @@ const ReferralInbox = () => {
                             )}
                             {referral.created_at && (
                               <span className="flex items-center gap-1 font-mono text-xs">
-                                <Calendar className="h-3 w-3" />
+                                <Calendar className="size-3" />
                                 {format(new Date(referral.created_at), 'MMM dd, yyyy')}
                               </span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 mt-1 text-muted-foreground">
-                            <Building2 className="h-3 w-3" />
+                            <Building2 className="size-3" />
                             <span className="capitalize">
                               {referral.referred_to_department?.replace(/_/g, ' ')}
                             </span>
@@ -399,7 +399,7 @@ const ReferralInbox = () => {
 
                     <div>
                       <p className="text-sm font-heading font-medium text-foreground mb-1 flex items-center gap-1">
-                        <FileText className="h-3 w-3" />
+                        <FileText className="size-3" />
                         Reason for Referral:
                       </p>
                       <p className="text-sm text-muted-foreground">{referral.reason}</p>
@@ -465,7 +465,7 @@ const ReferralInbox = () => {
                             onClick={() => handleActionClick(referral, 'accept')}
                             className="bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)] text-white font-mono text-xs"
                           >
-                            <CheckCircle className="h-4 w-4 mr-2" />
+                            <CheckCircle className="size-4 mr-2" />
                             Accept
                           </Button>
                           <Button
@@ -473,7 +473,7 @@ const ReferralInbox = () => {
                             onClick={() => handleActionClick(referral, 'decline')}
                             className="border-[oklch(0.65_0.22_15_/_0.5)] text-[oklch(0.65_0.22_15)] hover:bg-[oklch(0.65_0.22_15_/_0.1)] font-mono text-xs"
                           >
-                            <XCircle className="h-4 w-4 mr-2" />
+                            <XCircle className="size-4 mr-2" />
                             Decline
                           </Button>
                         </>
@@ -484,7 +484,7 @@ const ReferralInbox = () => {
                             onClick={() => handleStartConsultation(referral)}
                             className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
                           >
-                            <PlayCircle className="h-4 w-4 mr-2" />
+                            <PlayCircle className="size-4 mr-2" />
                             Start Consultation
                           </Button>
                           <Button
@@ -492,7 +492,7 @@ const ReferralInbox = () => {
                             onClick={() => handleActionClick(referral, 'complete')}
                             className="font-mono text-xs"
                           >
-                            <MessageSquare className="h-4 w-4 mr-2" />
+                            <MessageSquare className="size-4 mr-2" />
                             Quick Response
                           </Button>
                         </>
@@ -503,7 +503,7 @@ const ReferralInbox = () => {
                             onClick={() => handleStartConsultation(referral)}
                             className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
                           >
-                            <Stethoscope className="h-4 w-4 mr-2" />
+                            <Stethoscope className="size-4 mr-2" />
                             View Patient
                           </Button>
                           <Button
@@ -511,7 +511,7 @@ const ReferralInbox = () => {
                             onClick={() => handleActionClick(referral, 'complete')}
                             className="font-mono text-xs"
                           >
-                            <CheckCircle className="h-4 w-4 mr-2" />
+                            <CheckCircle className="size-4 mr-2" />
                             Complete Referral
                           </Button>
                         </>

@@ -112,6 +112,69 @@ const mockTasks = [
   }
 ];
 
+function getChronicleTaskIcon(type) {
+  switch (type) {
+    case 'Refill':
+      return <Pill className="size-4 text-[oklch(0.70_0.15_230)]" />;
+    case 'LabReview':
+      return <FlaskConical className="size-4 text-[oklch(0.70_0.17_155)]" />;
+    case 'SignNote':
+      return <FileText className="size-4 text-primary" />;
+    default:
+      return <FileText className="size-4" />;
+  }
+}
+
+function ChronicleTaskList({ tasks, filter, onSelectTask }) {
+  const filteredTasks = filter === 'All' ? tasks : tasks.filter(t => t.type === filter);
+
+  if (filteredTasks.length === 0) {
+    return (
+      <div className="p-8 text-center">
+        <p className="font-mono text-xs text-muted-foreground">No tasks found.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {filteredTasks.map((task, index) => (
+        <article
+          key={task.id}
+          className={cn(
+            "group relative bg-card/50 border border-border rounded-xl p-4",
+            "hover:border-primary/30 hover:bg-card transition-all cursor-pointer",
+            "animate-chronicle-enter"
+          )}
+          style={{ animationDelay: `${index * 50}ms` }}
+          onClick={() => onSelectTask(task)}
+        >
+          <div className="flex items-center gap-3">
+            <div className="size-10 rounded-full bg-background border shadow-sm flex items-center justify-center">
+              {getChronicleTaskIcon(task.type)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-display text-base truncate">{task.patientName}</span>
+                <span className={cn(
+                  "font-mono text-[10px] px-2 py-0.5 rounded",
+                  task.priority === 'Urgent'
+                    ? 'bg-[oklch(0.65_0.22_15_/_0.1)] text-[oklch(0.65_0.22_15)]'
+                    : 'bg-muted text-muted-foreground'
+                )}>
+                  {task.priority}
+                </span>
+              </div>
+              <p className="font-mono text-xs text-muted-foreground truncate">{task.details}</p>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export default function ProviderDashboard() {
   const navigate = useNavigate();
   const [selectedTask, setSelectedTask] = useState(null);
@@ -227,7 +290,7 @@ export default function ProviderDashboard() {
             onClick={() => navigate('/appointments/create')}
             className="font-mono text-xs"
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             New Appointment
           </Button>
         ) : null}
@@ -244,8 +307,8 @@ export default function ProviderDashboard() {
                 "animate-chronicle-enter"
               )}>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[oklch(0.65_0.22_15_/_0.2)] flex items-center justify-center">
-                    <AlertTriangle className="h-5 w-5 text-[oklch(0.65_0.22_15)]" />
+                  <div className="size-10 rounded-full bg-[oklch(0.65_0.22_15_/_0.2)] flex items-center justify-center">
+                    <AlertTriangle className="size-5 text-[oklch(0.65_0.22_15)]" />
                   </div>
                   <div className="flex-1">
                     <p className="font-mono text-xs uppercase tracking-widest text-[oklch(0.65_0.22_15)]">
@@ -271,7 +334,7 @@ export default function ProviderDashboard() {
             {moduleGate.appointmentsEnabled ? (
             <section>
               <header className="flex items-center gap-3 mb-4">
-                <Calendar className="h-5 w-5 text-muted-foreground" />
+                <Calendar className="size-5 text-muted-foreground" />
                 <h2 className="font-display text-2xl text-foreground">Up Next</h2>
                 <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                   {visibleAppointments.length}
@@ -318,7 +381,7 @@ export default function ProviderDashboard() {
         {selectedTask && (
           <div className="space-y-6">
             <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-xl border">
-              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center font-display text-lg text-primary">
+              <div className="size-12 rounded-full bg-primary/10 flex items-center justify-center font-display text-lg text-primary">
                 {selectedTask.patientName.split(' ').map(n => n[0]).join('')}
               </div>
               <div>
@@ -347,11 +410,11 @@ export default function ProviderDashboard() {
               </h4>
               <div className="grid grid-cols-2 gap-3">
                 <Button className="w-full font-mono text-xs" onClick={() => setSelectedTask(null)}>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  <CheckCircle2 className="mr-2 size-4" />
                   Approve
                 </Button>
                 <Button variant="outline" className="w-full font-mono text-xs" onClick={() => setSelectedTask(null)}>
-                  <Clock className="mr-2 h-4 w-4" />
+                  <Clock className="mr-2 size-4" />
                   Defer
                 </Button>
               </div>
@@ -411,7 +474,7 @@ function ChronicleAppointmentCard({ appointment, index, onClick }) {
         </div>
 
         {/* Avatar */}
-        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center font-display text-primary border-2 border-background">
+        <div className="size-12 rounded-full bg-primary/10 flex items-center justify-center font-display text-primary border-2 border-background">
           {patientName.split(' ').map(n => n[0]).join('')}
         </div>
 
@@ -422,7 +485,7 @@ function ChronicleAppointmentCard({ appointment, index, onClick }) {
               {patientName}
             </h3>
             <span className={cn(statusConfig.badge, statusConfig.pulse && 'animate-pulse')}>
-              {status === 'telehealth-active' && <Video className="w-3 h-3 mr-1 inline" />}
+              {status === 'telehealth-active' && <Video className="size-3 mr-1 inline" />}
               {statusConfig.label}
             </span>
           </div>
@@ -432,7 +495,7 @@ function ChronicleAppointmentCard({ appointment, index, onClick }) {
         </div>
 
         {/* Hover Action */}
-        <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </article>
   );
@@ -442,74 +505,11 @@ function ChronicleAppointmentCard({ appointment, index, onClick }) {
  * ChronicleInbox - Task inbox in Chronicle style
  */
 function ChronicleInbox({ tasks, selectedTask, onSelectTask }) {
-  const getTaskIcon = (type) => {
-    switch (type) {
-      case 'Refill':
-        return <Pill className="h-4 w-4 text-[oklch(0.70_0.15_230)]" />;
-      case 'LabReview':
-        return <FlaskConical className="h-4 w-4 text-[oklch(0.70_0.17_155)]" />;
-      case 'SignNote':
-        return <FileText className="h-4 w-4 text-primary" />;
-      default:
-        return <FileText className="h-4 w-4" />;
-    }
-  };
-
-  const TaskList = ({ filter }) => {
-    const filteredTasks = filter === 'All' ? tasks : tasks.filter(t => t.type === filter);
-
-    if (filteredTasks.length === 0) {
-      return (
-        <div className="p-8 text-center">
-          <p className="font-mono text-xs text-muted-foreground">No tasks found.</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-2">
-        {filteredTasks.map((task, index) => (
-          <article
-            key={task.id}
-            className={cn(
-              "group relative bg-card/50 border border-border rounded-xl p-4",
-              "hover:border-primary/30 hover:bg-card transition-all cursor-pointer",
-              "animate-chronicle-enter"
-            )}
-            style={{ animationDelay: `${index * 50}ms` }}
-            onClick={() => onSelectTask(task)}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-background border shadow-sm flex items-center justify-center">
-                {getTaskIcon(task.type)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-display text-base truncate">{task.patientName}</span>
-                  <span className={cn(
-                    "font-mono text-[10px] px-2 py-0.5 rounded",
-                    task.priority === 'Urgent'
-                      ? 'bg-[oklch(0.65_0.22_15_/_0.1)] text-[oklch(0.65_0.22_15)]'
-                      : 'bg-muted text-muted-foreground'
-                  )}>
-                    {task.priority}
-                  </span>
-                </div>
-                <p className="font-mono text-xs text-muted-foreground truncate">{task.details}</p>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-          </article>
-        ))}
-      </div>
-    );
-  };
-
   return (
     <div className="bg-card border border-border rounded-2xl h-full flex flex-col animate-chronicle-enter">
       <header className="px-6 py-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <Inbox className="h-5 w-5 text-muted-foreground" />
+          <Inbox className="size-5 text-muted-foreground" />
           <h2 className="font-display text-2xl text-foreground">Inbox</h2>
           <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
             {tasks.length}
@@ -548,10 +548,10 @@ function ChronicleInbox({ tasks, selectedTask, onSelectTask }) {
         </div>
 
         <ScrollArea className="flex-1 px-6 py-4">
-          <TabsContent value="All" className="mt-0"><TaskList filter="All" /></TabsContent>
-          <TabsContent value="Refill" className="mt-0"><TaskList filter="Refill" /></TabsContent>
-          <TabsContent value="LabReview" className="mt-0"><TaskList filter="LabReview" /></TabsContent>
-          <TabsContent value="SignNote" className="mt-0"><TaskList filter="SignNote" /></TabsContent>
+          <TabsContent value="All" className="mt-0"><ChronicleTaskList tasks={tasks} filter="All" onSelectTask={onSelectTask} /></TabsContent>
+          <TabsContent value="Refill" className="mt-0"><ChronicleTaskList tasks={tasks} filter="Refill" onSelectTask={onSelectTask} /></TabsContent>
+          <TabsContent value="LabReview" className="mt-0"><ChronicleTaskList tasks={tasks} filter="LabReview" onSelectTask={onSelectTask} /></TabsContent>
+          <TabsContent value="SignNote" className="mt-0"><ChronicleTaskList tasks={tasks} filter="SignNote" onSelectTask={onSelectTask} /></TabsContent>
         </ScrollArea>
       </Tabs>
     </div>

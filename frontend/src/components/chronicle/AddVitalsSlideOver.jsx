@@ -6,7 +6,7 @@ import Wind from 'lucide-react/dist/esm/icons/wind.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,16 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useCreateVitalSigns } from "@/features/nursing/hooks";
 import { toast } from "sonner";
+
+const EMPTY_VITALS_FORM = {
+  temperature: '',
+  heart_rate: '',
+  blood_pressure_systolic: '',
+  blood_pressure_diastolic: '',
+  respiratory_rate: '',
+  oxygen_saturation: '',
+  pain_level: ''
+};
 
 /**
  * AddVitalsSlideOver - Split-screen panel for recording vital signs
@@ -41,41 +51,24 @@ const AddVitalsSlideOver = ({
     || null;
 
   // Form state
-  const [formData, setFormData] = useState({
-    temperature: '',
-    heart_rate: '',
-    blood_pressure_systolic: '',
-    blood_pressure_diastolic: '',
-    respiratory_rate: '',
-    oxygen_saturation: '',
-    pain_level: ''
-  });
+  const [formData, setFormData] = useState(EMPTY_VITALS_FORM);
 
   const [errors, setErrors] = useState({});
-  const [criticalWarnings, setCriticalWarnings] = useState([]);
+  const [previousOpen, setPreviousOpen] = useState(open);
 
   // API mutation
   const createVitalsMutation = useCreateVitalSigns();
 
-  // Reset form when panel closes
-  useEffect(() => {
+  if (previousOpen !== open) {
+    setPreviousOpen(open);
     if (!open) {
-      setFormData({
-        temperature: '',
-        heart_rate: '',
-        blood_pressure_systolic: '',
-        blood_pressure_diastolic: '',
-        respiratory_rate: '',
-        oxygen_saturation: '',
-        pain_level: ''
-      });
+      setFormData(EMPTY_VITALS_FORM);
       setErrors({});
-      setCriticalWarnings([]);
     }
-  }, [open]);
+  }
 
   // Check for critical values
-  useEffect(() => {
+  const criticalWarnings = useMemo(() => {
     const warnings = [];
 
     if (formData.temperature) {
@@ -101,7 +94,7 @@ const AddVitalsSlideOver = ({
       if (spo2 < 92) warnings.push('SpO2 is LOW (< 92%)');
     }
 
-    setCriticalWarnings(warnings);
+    return warnings;
   }, [formData]);
 
   // Handle input change
@@ -187,17 +180,8 @@ const AddVitalsSlideOver = ({
 
   // Handle close
   const handleClose = () => {
-    setFormData({
-      temperature: '',
-      heart_rate: '',
-      blood_pressure_systolic: '',
-      blood_pressure_diastolic: '',
-      respiratory_rate: '',
-      oxygen_saturation: '',
-      pain_level: ''
-    });
+    setFormData(EMPTY_VITALS_FORM);
     setErrors({});
-    setCriticalWarnings([]);
     onClose();
   };
 
@@ -219,7 +203,7 @@ const AddVitalsSlideOver = ({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
-            <Activity className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            <Activity className="size-5 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">
@@ -237,7 +221,7 @@ const AddVitalsSlideOver = ({
           onClick={handleClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -246,7 +230,7 @@ const AddVitalsSlideOver = ({
       {criticalWarnings.length > 0 && (
         <div className="px-6 pt-4">
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertDescription>
               <span className="font-semibold">Critical Values Detected:</span>
               <ul className="list-disc list-inside mt-1">
@@ -263,7 +247,7 @@ const AddVitalsSlideOver = ({
       {errors.general && (
         <div className="px-6 pt-4">
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertDescription>{errors.general}</AlertDescription>
           </Alert>
         </div>
@@ -275,7 +259,7 @@ const AddVitalsSlideOver = ({
           {/* Temperature */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              <Thermometer className="h-4 w-4" />
+              <Thermometer className="size-4" />
               Temperature
             </Label>
             <div className="relative">
@@ -302,7 +286,7 @@ const AddVitalsSlideOver = ({
           {/* Heart Rate */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              <Heart className="h-4 w-4" />
+              <Heart className="size-4" />
               Heart Rate
             </Label>
             <div className="relative">
@@ -328,7 +312,7 @@ const AddVitalsSlideOver = ({
           {/* Blood Pressure */}
           <div className="space-y-2 md:col-span-2">
             <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              <Activity className="h-4 w-4" />
+              <Activity className="size-4" />
               Blood Pressure
             </Label>
             <div className="flex items-center gap-2">
@@ -375,7 +359,7 @@ const AddVitalsSlideOver = ({
           {/* Respiratory Rate */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              <Wind className="h-4 w-4" />
+              <Wind className="size-4" />
               Respiratory Rate
             </Label>
             <div className="relative">
@@ -395,7 +379,7 @@ const AddVitalsSlideOver = ({
           {/* SpO2 */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              <Droplets className="h-4 w-4" />
+              <Droplets className="size-4" />
               Oxygen Saturation (SpO2)
             </Label>
             <div className="relative">
@@ -430,7 +414,7 @@ const AddVitalsSlideOver = ({
                   type="button"
                   onClick={() => handleChange('pain_level', level.toString())}
                   className={cn(
-                    "w-9 h-9 rounded-lg font-mono text-sm transition-colors",
+                    "size-9 rounded-lg font-mono text-sm transition-colors",
                     formData.pain_level === level.toString()
                       ? level <= 3
                         ? "bg-emerald-500 text-white"
@@ -499,7 +483,7 @@ const AddVitalsSlideOver = ({
               'Recording...'
             ) : (
               <>
-                <Check className="h-3.5 w-3.5 mr-1.5" />
+                <Check className="size-3.5 mr-1.5" />
                 Record Vitals
               </>
             )}

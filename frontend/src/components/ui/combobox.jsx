@@ -2,6 +2,8 @@ import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
 import { useState, useRef, useEffect, useId } from "react";
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +22,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const Combobox = ({
-  options = [],
+  options = DEFAULT_EMPTY_ARRAY,
   value,
   onChange,
   onInputChange,
@@ -75,7 +77,7 @@ const Combobox = ({
           disabled={disabled}
         >
           <span className="truncate">{getDisplayValue()}</span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="p-0" align="start" sideOffset={5} style={{ width: 'var(--radix-popover-trigger-width)' }}>
@@ -107,7 +109,7 @@ const Combobox = ({
                           setSearchQuery("");
                         }}
                     >
-                      <Check className={cn("mr-2 h-4 w-4", value === opt.value ? "opacity-100" : "opacity-0")} />
+                      <Check className={cn("mr-2 size-4", value === opt.value ? "opacity-100" : "opacity-0")} />
                       {opt.label}
                     </CommandItem>
                 ))}

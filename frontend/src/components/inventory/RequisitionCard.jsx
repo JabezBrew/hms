@@ -22,99 +22,11 @@ import User from 'lucide-react/dist/esm/icons/user.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-
-/**
- * Status configuration
- */
-const STATUS_CONFIG = {
-  draft: {
-    label: 'Draft',
-    variant: 'secondary',
-    bgColor: 'bg-muted',
-    textColor: 'text-muted-foreground',
-  },
-  pending: {
-    label: 'Pending Approval',
-    variant: 'outline',
-    bgColor: 'bg-amber-500/10',
-    textColor: 'text-amber-500',
-    borderColor: 'border-amber-500/30',
-  },
-  approved: {
-    label: 'Approved',
-    variant: 'default',
-    bgColor: 'bg-emerald-500/10',
-    textColor: 'text-emerald-500',
-    borderColor: 'border-emerald-500/30',
-  },
-  rejected: {
-    label: 'Rejected',
-    variant: 'destructive',
-    bgColor: 'bg-rose-500/10',
-    textColor: 'text-rose-500',
-    borderColor: 'border-rose-500/30',
-  },
-  converted: {
-    label: 'Converted to PO',
-    variant: 'default',
-    bgColor: 'bg-sky-500/10',
-    textColor: 'text-sky-500',
-    borderColor: 'border-sky-500/30',
-  },
-  cancelled: {
-    label: 'Cancelled',
-    variant: 'secondary',
-    bgColor: 'bg-muted',
-    textColor: 'text-muted-foreground',
-  },
-};
-
-/**
- * Priority configuration
- */
-const PRIORITY_CONFIG = {
-  low: {
-    label: 'Low',
-    color: 'text-muted-foreground',
-  },
-  normal: {
-    label: 'Normal',
-    color: 'text-sky-500',
-  },
-  high: {
-    label: 'High',
-    color: 'text-amber-500',
-  },
-  urgent: {
-    label: 'Urgent',
-    color: 'text-rose-500',
-  },
-};
-
-/**
- * Get status config
- */
-export function getStatusConfig(status) {
-  return STATUS_CONFIG[status?.toLowerCase()] || STATUS_CONFIG.draft;
-}
-
-/**
- * Get priority config
- */
-export function getPriorityConfig(priority) {
-  return PRIORITY_CONFIG[priority?.toLowerCase()] || PRIORITY_CONFIG.normal;
-}
-
-/**
- * Format currency
- */
-export function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
-}
+import {
+  formatRequisitionCurrency,
+  getRequisitionPriorityConfig,
+  getRequisitionStatusConfig,
+} from './requisition-card-utils';
 
 /**
  * RequisitionCard - Card display for purchase requisitions
@@ -136,8 +48,8 @@ export function RequisitionCard({
   onConvert,
   className,
 }) {
-  const statusConfig = getStatusConfig(requisition.status);
-  const priorityConfig = getPriorityConfig(requisition.priority);
+  const statusConfig = getRequisitionStatusConfig(requisition.status);
+  const priorityConfig = getRequisitionPriorityConfig(requisition.priority);
 
   const canApprove = requisition.status === 'pending';
   const canReject = requisition.status === 'pending';
@@ -159,7 +71,7 @@ export function RequisitionCard({
         <div className="flex items-start justify-between mb-3">
           {/* Requisition number and status */}
           <div className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            <ClipboardList className="size-4 text-muted-foreground" />
             <span className="font-mono text-sm font-medium text-primary">
               {requisition.requisition_number || requisition.number}
             </span>
@@ -171,25 +83,25 @@ export function RequisitionCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canApprove && onApprove && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onApprove(); }}>
-                  <Check className="h-4 w-4 mr-2" />
+                  <Check className="size-4 mr-2" />
                   Approve
                 </DropdownMenuItem>
               )}
               {canReject && onReject && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReject(); }}>
-                  <X className="h-4 w-4 mr-2" />
+                  <X className="size-4 mr-2" />
                   Reject
                 </DropdownMenuItem>
               )}
@@ -197,7 +109,7 @@ export function RequisitionCard({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onConvert(); }}>
-                    <FileText className="h-4 w-4 mr-2" />
+                    <FileText className="size-4 mr-2" />
                     Convert to PO
                   </DropdownMenuItem>
                 </>
@@ -221,7 +133,7 @@ export function RequisitionCard({
           </Badge>
           {requisition.priority && requisition.priority !== 'normal' && (
             <span className={cn('text-xs font-medium', priorityConfig.color)}>
-              <AlertTriangle className="h-3 w-3 inline mr-1" />
+              <AlertTriangle className="size-3 inline mr-1" />
               {priorityConfig.label}
             </span>
           )}
@@ -231,13 +143,13 @@ export function RequisitionCard({
         <div className="space-y-2 mb-3">
           {requisition.requested_by_name && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <User className="h-3 w-3" />
+              <User className="size-3" />
               <span>Requested by {requisition.requested_by_name}</span>
             </div>
           )}
           {requisition.date_required && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               <span>
                 Required by{' '}
                 <span className="font-mono">
@@ -248,7 +160,7 @@ export function RequisitionCard({
           )}
           {requisition.created_at && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Clock className="h-3 w-3" />
+              <Clock className="size-3" />
               <span className="font-mono">
                 {format(parseISO(requisition.created_at), 'MMM d, yyyy')}
               </span>
@@ -262,7 +174,7 @@ export function RequisitionCard({
             {requisition.items_count || requisition.item_count || 0} item{(requisition.items_count || requisition.item_count || 0) !== 1 ? 's' : ''}
           </div>
           <div className="font-mono text-sm font-semibold">
-            {formatCurrency(requisition.total_amount || requisition.total)}
+            {formatRequisitionCurrency(requisition.total_amount || requisition.total)}
           </div>
         </div>
       </CardContent>
@@ -279,10 +191,10 @@ export function RequisitionCardSkeleton() {
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Skeleton className="h-4 w-4" />
+            <Skeleton className="size-4" />
             <Skeleton className="h-4 w-24" />
           </div>
-          <Skeleton className="h-8 w-8" />
+          <Skeleton className="size-8" />
         </div>
         <div className="flex items-center gap-2 mb-3">
           <Skeleton className="h-5 w-28" />
@@ -311,8 +223,8 @@ export function RequisitionRow({
   onReject,
   onConvert,
 }) {
-  const statusConfig = getStatusConfig(requisition.status);
-  const priorityConfig = getPriorityConfig(requisition.priority);
+  const statusConfig = getRequisitionStatusConfig(requisition.status);
+  const priorityConfig = getRequisitionPriorityConfig(requisition.priority);
 
   const canApprove = requisition.status === 'pending';
   const canReject = requisition.status === 'pending';
@@ -329,7 +241,7 @@ export function RequisitionRow({
     >
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          <ClipboardList className="size-4 text-muted-foreground" />
           <span className="font-mono text-sm font-medium text-primary">
             {requisition.requisition_number || requisition.number}
           </span>
@@ -369,7 +281,7 @@ export function RequisitionRow({
       </td>
       <td className="px-4 py-3 text-right">
         <span className="font-mono text-sm font-semibold">
-          {formatCurrency(requisition.total_amount || requisition.total)}
+          {formatRequisitionCurrency(requisition.total_amount || requisition.total)}
         </span>
       </td>
       <td className="px-4 py-3 hidden sm:table-cell">
@@ -382,24 +294,24 @@ export function RequisitionRow({
       <td className="px-4 py-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="size-8 p-0">
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-              <Eye className="h-4 w-4 mr-2" />
+              <Eye className="size-4 mr-2" />
               View Details
             </DropdownMenuItem>
             {canApprove && onApprove && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onApprove(); }}>
-                <Check className="h-4 w-4 mr-2" />
+                <Check className="size-4 mr-2" />
                 Approve
               </DropdownMenuItem>
             )}
             {canReject && onReject && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReject(); }}>
-                <X className="h-4 w-4 mr-2" />
+                <X className="size-4 mr-2" />
                 Reject
               </DropdownMenuItem>
             )}
@@ -407,7 +319,7 @@ export function RequisitionRow({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onConvert(); }}>
-                  <FileText className="h-4 w-4 mr-2" />
+                  <FileText className="size-4 mr-2" />
                   Convert to PO
                 </DropdownMenuItem>
               </>
@@ -427,7 +339,7 @@ export function RequisitionRowSkeleton() {
     <tr>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <Skeleton className="h-4 w-4" />
+          <Skeleton className="size-4" />
           <Skeleton className="h-4 w-24" />
         </div>
       </td>
@@ -450,7 +362,7 @@ export function RequisitionRowSkeleton() {
         <Skeleton className="h-4 w-12" />
       </td>
       <td className="px-4 py-3">
-        <Skeleton className="h-8 w-8" />
+        <Skeleton className="size-8" />
       </td>
     </tr>
   );

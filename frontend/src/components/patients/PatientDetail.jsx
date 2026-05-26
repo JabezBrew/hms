@@ -66,7 +66,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
         <CardContent className="pt-6 text-center">
           <p className="text-muted-foreground">No patient selected</p>
           <Button variant="outline" className="mt-4" onClick={onBack}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="mr-2 size-4" />
             Back to Patient List
           </Button>
         </CardContent>
@@ -294,17 +294,17 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
         <div>
           <div className="flex flex-col">
             <Button variant="outline" size="sm" className="mb-2 w-fit" onClick={onBack}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
+              <ArrowLeft className="mr-2 size-4" />
               Back
             </Button>
             <div className="flex items-center pl-0">
-              <Avatar className="h-12 w-12 mr-4">
+              <Avatar className="size-12 mr-4">
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
               <div>
                 <CardTitle className="text-2xl">{displayName}</CardTitle>
                 <CardDescription className="flex items-center mt-1">
-                  <FileText className="h-4 w-4 mr-1" />
+                  <FileText className="size-4 mr-1" />
                   MRN: {mrn}
                   {nhisId !== "Not provided" && (
                     <Badge variant="outline" className="ml-2">
@@ -316,16 +316,16 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             </div>
           </div>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex gap-x-2">
           <Button variant="outline" size="sm" onClick={onEdit}>
-            <Edit className="h-4 w-4 mr-2" />
+            <Edit className="size-4 mr-2" />
             Edit
           </Button>
           {patientDeletionAvailable ? (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm">
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="size-4 mr-2" />
                   Delete
                 </Button>
               </AlertDialogTrigger>
@@ -373,7 +373,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg flex items-center">
-                    <User className="h-5 w-5 mr-2" />
+                    <User className="size-5 mr-2" />
                     Personal Information
                   </CardTitle>
                 </CardHeader>
@@ -406,7 +406,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg flex items-center">
-                    <Phone className="h-5 w-5 mr-2" />
+                    <Phone className="size-5 mr-2" />
                     Contact Information
                   </CardTitle>
                 </CardHeader>
@@ -430,11 +430,11 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                     {emergencyContact.name !== "Not provided" ? (
                       <div className="space-y-2 mt-1">
                         <p className="flex items-center">
-                          <User className="h-4 w-4 mr-2 text-muted-foreground" />
+                          <User className="size-4 mr-2 text-muted-foreground" />
                           {emergencyContact.name} ({emergencyContact.relationship})
                         </p>
                         <p className="flex items-center">
-                          <Phone className="h-4 w-4 mr-2 text-muted-foreground" />
+                          <Phone className="size-4 mr-2 text-muted-foreground" />
                           {emergencyContact.phone}
                         </p>
                       </div>
@@ -449,13 +449,13 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center">
-                  <Activity className="h-5 w-5 mr-2" />
+                  <Activity className="size-5 mr-2" />
                   Medical Summary
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-start">
-                  <Droplet className="h-5 w-5 mr-2 text-primary" />
+                  <Droplet className="size-5 mr-2 text-primary" />
                   <div>
                     <span className="font-medium">Blood Group:</span>
                     <span className="ml-2">{bloodGroup}</span>
@@ -463,7 +463,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                 </div>
 
                 <div className="flex items-start">
-                  <AlertTriangle className="h-5 w-5 mr-2 text-warning" />
+                  <AlertTriangle className="size-5 mr-2 text-warning" />
                   <div>
                     <span className="font-medium">Allergies:</span>
                     {!isNegativeAllergy(allergies) ? (
@@ -484,7 +484,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  <Heart className="h-5 w-5 mr-2 text-primary" />
+                  <Heart className="size-5 mr-2 text-primary" />
                   Medical Information
                 </CardTitle>
               </CardHeader>
@@ -524,7 +524,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  <Stethoscope className="h-5 w-5 mr-2 text-primary" />
+                  <Stethoscope className="size-5 mr-2 text-primary" />
                   Vitals & Lab Summary
                 </CardTitle>
               </CardHeader>
@@ -585,7 +585,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                       </div>
                       <div className="flex items-center justify-center mt-2">
                         <Button variant="outline" size="sm" className="w-full">
-                          <BarChart className="h-4 w-4 mr-2" />
+                          <BarChart className="size-4 mr-2" />
                           View All Results
                         </Button>
                       </div>
@@ -600,7 +600,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  <Clock className="h-5 w-5 mr-2 text-primary" />
+                  <Clock className="size-5 mr-2 text-primary" />
                   Visit History
                 </CardTitle>
                 <CardDescription>
@@ -677,7 +677,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  <Building2 className="h-5 w-5 mr-2 text-primary" />
+                  <Building2 className="size-5 mr-2 text-primary" />
                   Inpatient Status
                 </CardTitle>
                 <CardDescription>
@@ -698,7 +698,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                     <div>
                       <h3 className="text-sm font-medium mb-1">Ward</h3>
                       <div className="flex items-center">
-                        <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                        <Building2 className="size-4 mr-2 text-muted-foreground" />
                         <span>Medical Ward - East Wing</span>
                       </div>
                     </div>
@@ -706,7 +706,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                     <div>
                       <h3 className="text-sm font-medium mb-1">Bed</h3>
                       <div className="flex items-center">
-                        <Bed className="h-4 w-4 mr-2 text-muted-foreground" />
+                        <Bed className="size-4 mr-2 text-muted-foreground" />
                         <span>Room 304, Bed B</span>
                       </div>
                     </div>
@@ -714,7 +714,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                     <div>
                       <h3 className="text-sm font-medium mb-1">Attending Physician</h3>
                       <div className="flex items-center">
-                        <User className="h-4 w-4 mr-2 text-muted-foreground" />
+                        <User className="size-4 mr-2 text-muted-foreground" />
                         <span>Dr. Michael Chen</span>
                       </div>
                     </div>
@@ -816,7 +816,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  <FileImage className="h-5 w-5 mr-2 text-primary" />
+                  <FileImage className="size-5 mr-2 text-primary" />
                   Imaging & Reports
                 </CardTitle>
                 <CardDescription>
@@ -828,7 +828,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                   <Card className="overflow-hidden">
                     <div className="relative aspect-square bg-muted">
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <Image className="h-12 w-12 text-muted-foreground" />
+                        <Image className="size-12 text-muted-foreground" />
                       </div>
                     </div>
                     <CardContent className="p-3">
@@ -838,7 +838,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                           <p className="text-xs text-muted-foreground">May 4, 2023</p>
                         </div>
                         <Button size="sm" variant="outline" className="h-8">
-                          <Image className="h-4 w-4 mr-2" />
+                          <Image className="size-4 mr-2" />
                           View
                         </Button>
                       </div>
@@ -848,7 +848,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                   <Card className="overflow-hidden">
                     <div className="relative aspect-square bg-muted">
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <Image className="h-12 w-12 text-muted-foreground" />
+                        <Image className="size-12 text-muted-foreground" />
                       </div>
                     </div>
                     <CardContent className="p-3">
@@ -858,7 +858,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                           <p className="text-xs text-muted-foreground">Apr 15, 2023</p>
                         </div>
                         <Button size="sm" variant="outline" className="h-8">
-                          <Image className="h-4 w-4 mr-2" />
+                          <Image className="size-4 mr-2" />
                           View
                         </Button>
                       </div>
@@ -868,7 +868,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                   <Card className="overflow-hidden">
                     <div className="relative aspect-square bg-muted">
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <Activity className="h-12 w-12 text-muted-foreground" />
+                        <Activity className="size-12 text-muted-foreground" />
                       </div>
                     </div>
                     <CardContent className="p-3">
@@ -878,7 +878,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                           <p className="text-xs text-muted-foreground">Mar 22, 2023</p>
                         </div>
                         <Button size="sm" variant="outline" className="h-8">
-                          <Activity className="h-4 w-4 mr-2" />
+                          <Activity className="size-4 mr-2" />
                           View
                         </Button>
                       </div>
@@ -910,7 +910,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
+                            <FileText className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -924,7 +924,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
+                            <FileText className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -938,7 +938,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
+                            <FileText className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -952,7 +952,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" disabled>
-                            <Clock className="h-4 w-4 mr-2" />
+                            <Clock className="size-4 mr-2" />
                             Awaiting
                           </Button>
                         </TableCell>
@@ -968,7 +968,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  <Receipt className="h-5 w-5 mr-2 text-primary" />
+                  <Receipt className="size-5 mr-2 text-primary" />
                   Billing & Payments
                 </CardTitle>
                 <CardDescription>
@@ -984,11 +984,11 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                   </div>
                   <div className="flex flex-col gap-2">
                     <Button className="w-full md:w-auto">
-                      <CreditCard className="h-4 w-4 mr-2" />
+                      <CreditCard className="size-4 mr-2" />
                       Pay Now
                     </Button>
                     <Button variant="outline" className="w-full md:w-auto">
-                      <FileText className="h-4 w-4 mr-2" />
+                      <FileText className="size-4 mr-2" />
                       Download Statement
                     </Button>
                   </div>
@@ -1018,7 +1018,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <Receipt className="h-4 w-4 mr-2" />
+                            <Receipt className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -1033,7 +1033,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <Receipt className="h-4 w-4 mr-2" />
+                            <Receipt className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -1048,7 +1048,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <Receipt className="h-4 w-4 mr-2" />
+                            <Receipt className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -1063,7 +1063,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <Receipt className="h-4 w-4 mr-2" />
+                            <Receipt className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -1078,7 +1078,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm">
-                            <Receipt className="h-4 w-4 mr-2" />
+                            <Receipt className="size-4 mr-2" />
                             View
                           </Button>
                         </TableCell>
@@ -1093,7 +1093,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                     <Card>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-md flex items-center">
-                          <CreditCard className="h-4 w-4 mr-2" />
+                          <CreditCard className="size-4 mr-2" />
                           Credit Card
                         </CardTitle>
                       </CardHeader>
@@ -1109,13 +1109,13 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                     <Card>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-md flex items-center">
-                          <CreditCard className="h-4 w-4 mr-2" />
+                          <CreditCard className="size-4 mr-2" />
                           Add Payment Method
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
                         <Button variant="outline" className="w-full">
-                          <CreditCard className="h-4 w-4 mr-2" />
+                          <CreditCard className="size-4 mr-2" />
                           Add New Card
                         </Button>
                       </CardContent>
@@ -1130,7 +1130,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  <History className="h-5 w-5 mr-2 text-primary" />
+                  <History className="size-5 mr-2 text-primary" />
                   Activity Timeline
                 </CardTitle>
                 <CardDescription>
@@ -1145,7 +1145,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
                     <div className="relative mb-6">
                       <div className="absolute -left-[29px] p-1 rounded-full bg-primary">
-                        <Stethoscope className="h-4 w-4 text-primary-foreground" />
+                        <Stethoscope className="size-4 text-primary-foreground" />
                       </div>
                       <div className="bg-muted/50 rounded-lg p-3">
                         <div className="flex justify-between items-start">
@@ -1157,7 +1157,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
+                            <FileText className="size-4 mr-2" />
                             View Details
                           </Button>
                         </div>
@@ -1166,7 +1166,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
                     <div className="relative mb-6">
                       <div className="absolute -left-[29px] p-1 rounded-full bg-primary">
-                        <User className="h-4 w-4 text-primary-foreground" />
+                        <User className="size-4 text-primary-foreground" />
                       </div>
                       <div className="bg-muted/50 rounded-lg p-3">
                         <div className="flex justify-between items-start">
@@ -1178,7 +1178,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
+                            <FileText className="size-4 mr-2" />
                             View Notes
                           </Button>
                         </div>
@@ -1192,7 +1192,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
                     <div className="relative mb-6">
                       <div className="absolute -left-[29px] p-1 rounded-full bg-warning">
-                        <Activity className="h-4 w-4 text-warning-foreground" />
+                        <Activity className="size-4 text-warning-foreground" />
                       </div>
                       <div className="bg-muted/50 rounded-lg p-3">
                         <div className="flex justify-between items-start">
@@ -1204,7 +1204,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button variant="ghost" size="sm" disabled>
-                            <Clock className="h-4 w-4 mr-2" />
+                            <Clock className="size-4 mr-2" />
                             Awaiting Results
                           </Button>
                         </div>
@@ -1213,7 +1213,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
                     <div className="relative mb-6">
                       <div className="absolute -left-[29px] p-1 rounded-full bg-destructive">
-                        <Receipt className="h-4 w-4 text-destructive-foreground" />
+                        <Receipt className="size-4 text-destructive-foreground" />
                       </div>
                       <div className="bg-muted/50 rounded-lg p-3">
                         <div className="flex justify-between items-start">
@@ -1225,11 +1225,11 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button variant="ghost" size="sm">
-                            <Receipt className="h-4 w-4 mr-2" />
+                            <Receipt className="size-4 mr-2" />
                             View Invoice
                           </Button>
                           <Button variant="ghost" size="sm">
-                            <CreditCard className="h-4 w-4 mr-2" />
+                            <CreditCard className="size-4 mr-2" />
                             Pay Now
                           </Button>
                         </div>
@@ -1243,7 +1243,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
                     <div className="relative mb-6">
                       <div className="absolute -left-[29px] p-1 rounded-full bg-primary">
-                        <FileImage className="h-4 w-4 text-primary-foreground" />
+                        <FileImage className="size-4 text-primary-foreground" />
                       </div>
                       <div className="bg-muted/50 rounded-lg p-3">
                         <div className="flex justify-between items-start">
@@ -1255,11 +1255,11 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button variant="ghost" size="sm">
-                            <Image className="h-4 w-4 mr-2" />
+                            <Image className="size-4 mr-2" />
                             View Image
                           </Button>
                           <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
+                            <FileText className="size-4 mr-2" />
                             View Report
                           </Button>
                         </div>
@@ -1268,7 +1268,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
                     <div className="relative mb-6">
                       <div className="absolute -left-[29px] p-1 rounded-full bg-secondary">
-                        <Building2 className="h-4 w-4 text-secondary-foreground" />
+                        <Building2 className="size-4 text-secondary-foreground" />
                       </div>
                       <div className="bg-muted/50 rounded-lg p-3">
                         <div className="flex justify-between items-start">
@@ -1280,7 +1280,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-2" />
+                            <FileText className="size-4 mr-2" />
                             View Admission Details
                           </Button>
                         </div>
@@ -1290,7 +1290,7 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
                   <div className="flex justify-center mt-6">
                     <Button variant="outline">
-                      <History className="h-4 w-4 mr-2" />
+                      <History className="size-4 mr-2" />
                       View Complete History
                     </Button>
                   </div>

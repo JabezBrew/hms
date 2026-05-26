@@ -4,7 +4,7 @@ import ChevronLeftIcon from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRightIcon from 'lucide-react/dist/esm/icons/chevron-right.js';
 import MoreHorizontalIcon from 'lucide-react/dist/esm/icons/ellipsis.js';
 import { cn } from "@/lib/utils"
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 
 function Pagination({
   className,
@@ -12,7 +12,6 @@ function Pagination({
 }) {
   return (
     <nav
-      role="navigation"
       aria-label="pagination"
       data-slot="pagination"
       className={cn("mx-auto flex w-full justify-center", className)}
@@ -40,12 +39,15 @@ function PaginationItem({
 
 function PaginationLink({
   className,
+  children,
   isActive,
   size = "icon",
+  "aria-label": ariaLabel,
   ...props
 }) {
   return (
     <a
+      aria-label={ariaLabel}
       aria-current={isActive ? "page" : undefined}
       data-slot="pagination-link"
       data-active={isActive}
@@ -53,7 +55,9 @@ function PaginationLink({
         variant: isActive ? "outline" : "ghost",
         size,
       }), className)}
-      {...props} />
+      {...props}>
+      {children ?? <span className="sr-only">{ariaLabel ?? "Page"}</span>}
+    </a>
   );
 }
 

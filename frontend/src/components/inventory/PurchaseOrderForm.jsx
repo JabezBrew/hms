@@ -212,7 +212,7 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
               size="sm"
               onClick={() => append({ item: '', quantity: 1, unit_price: 0 })}
             >
-              <Plus className="h-4 w-4 mr-1" />
+              <Plus className="size-4 mr-1" />
               Add Item
             </Button>
           </div>
@@ -297,7 +297,7 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
                   className="text-destructive"
                   onClick={() => remove(index)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="size-4" />
                 </Button>
               )}
             </div>
@@ -333,9 +333,9 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
           </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
             ) : (
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="size-4 mr-2" />
             )}
             Create PO
           </Button>

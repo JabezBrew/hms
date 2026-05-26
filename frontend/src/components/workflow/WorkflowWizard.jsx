@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { WorkflowProgress } from './WorkflowProgress';
 
+const DEFAULT_EMPTY_OBJECT = {};
+
 import { cn } from '@/lib/utils';
 
 /**
@@ -30,7 +32,7 @@ export function WorkflowWizard({
   definition,
   stepComponents,
   currentStep = 1,
-  contextData = {},
+  contextData = DEFAULT_EMPTY_OBJECT,
   onStepComplete,
   onComplete,
   onSaveDraft,
@@ -105,7 +107,7 @@ export function WorkflowWizard({
   // Navigate to previous step
   const handlePrevious = () => {
     if (activeStep > 1) {
-      setActiveStep(activeStep - 1);
+      setActiveStep((step) => step - 1);
       setErrors(null);
     }
   };
@@ -180,7 +182,7 @@ export function WorkflowWizard({
           {/* Error Alert */}
           {errors && (
             <Alert variant="destructive" className="mb-4">
-              <AlertTriangle className="h-4 w-4" />
+              <AlertTriangle className="size-4" />
               <AlertDescription>{errors}</AlertDescription>
             </Alert>
           )}
@@ -210,7 +212,7 @@ export function WorkflowWizard({
               onClick={handlePrevious}
               disabled={isProcessing}
             >
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="size-4 mr-2" />
               Previous
             </Button>
           )}
@@ -222,7 +224,7 @@ export function WorkflowWizard({
               onClick={() => onSaveDraft(stepData)}
               disabled={isProcessing}
             >
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="size-4 mr-2" />
               Save Draft
             </Button>
           )}
@@ -231,12 +233,12 @@ export function WorkflowWizard({
           {!isLastStep ? (
             <Button onClick={handleNext} disabled={isProcessing}>
               {isProcessing ? 'Saving...' : 'Continue'}
-              <ArrowRight className="h-4 w-4 ml-2" />
+              <ArrowRight className="size-4 ml-2" />
             </Button>
           ) : (
             <Button onClick={handleComplete} disabled={isProcessing}>
               {isProcessing ? 'Completing...' : 'Complete Consultation'}
-              <CheckCircle className="h-4 w-4 ml-2" />
+              <CheckCircle className="size-4 ml-2" />
             </Button>
           )}
         </div>

@@ -17,6 +17,11 @@ import Edit from 'lucide-react/dist/esm/icons/edit.js';
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
 /**
  * InventoryItemRow - Table row display for inventory items
  * @param {Object} props
@@ -72,10 +77,7 @@ export function InventoryItemRow({
   };
 
   const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(price);
+    return USD_CURRENCY_FORMATTER.format(price);
   };
 
   return (
@@ -142,24 +144,24 @@ export function InventoryItemRow({
       <TableCell className="w-12" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <MoreHorizontal className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="size-8">
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={handleClick}>
-              <Eye className="h-4 w-4 mr-2" />
+              <Eye className="size-4 mr-2" />
               View Details
             </DropdownMenuItem>
             {onEdit && (
               <DropdownMenuItem onClick={handleEditClick}>
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="size-4 mr-2" />
                 Edit
               </DropdownMenuItem>
             )}
             {onOrder && (
               <DropdownMenuItem onClick={handleOrderClick}>
-                <ShoppingCart className="h-4 w-4 mr-2" />
+                <ShoppingCart className="size-4 mr-2" />
                 Create Order
               </DropdownMenuItem>
             )}
@@ -178,7 +180,7 @@ export function InventoryItemRowSkeleton({ showCheckbox = false }) {
     <TableRow>
       {showCheckbox && (
         <TableCell className="w-12">
-          <div className="h-4 w-4 bg-muted rounded animate-pulse" />
+          <div className="size-4 bg-muted rounded animate-pulse" />
         </TableCell>
       )}
       <TableCell>
@@ -200,7 +202,7 @@ export function InventoryItemRowSkeleton({ showCheckbox = false }) {
         <div className="h-4 w-16 bg-muted rounded animate-pulse ml-auto" />
       </TableCell>
       <TableCell className="w-12">
-        <div className="h-8 w-8 bg-muted rounded animate-pulse" />
+        <div className="size-8 bg-muted rounded animate-pulse" />
       </TableCell>
     </TableRow>
   );

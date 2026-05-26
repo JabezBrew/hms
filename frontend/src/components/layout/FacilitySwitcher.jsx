@@ -102,7 +102,7 @@ function FacilitySwitcherMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="font-mono text-xs">
-          <Building2 className="h-3.5 w-3.5 mr-2" />
+          <Building2 className="size-3.5 mr-2" />
           {facilityCode || DEFAULT_FACILITY_CODE || "Facility"}
         </Button>
       </DropdownMenuTrigger>
@@ -134,7 +134,7 @@ function FacilitySwitcherMenu() {
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Manual Code</Label>
             <div className="relative">
-              <Building2 className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
               <Input
                 value={draft || ""}
                 onChange={(event) => setDraft(event.target.value.toUpperCase())}
@@ -146,7 +146,7 @@ function FacilitySwitcherMenu() {
 
           <div className="flex items-center gap-2">
             <Button size="sm" className="font-mono text-xs" onClick={handleApply}>
-              <Check className="h-3.5 w-3.5 mr-1.5" />
+              <Check className="size-3.5 mr-1.5" />
               Apply
             </Button>
             <Button
@@ -155,7 +155,7 @@ function FacilitySwitcherMenu() {
               className="font-mono text-xs"
               onClick={handleReset}
             >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+              <RotateCcw className="size-3.5 mr-1.5" />
               Default
             </Button>
           </div>

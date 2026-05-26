@@ -127,7 +127,7 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </CardContent>
       </Card>
     );
@@ -147,14 +147,14 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
                 className="flex items-center justify-between p-2 border rounded-lg"
               >
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-orange-600" />
+                  <AlertTriangle className="size-4 text-orange-600" />
                   <span className="font-medium">{allergy.allergen_name}</span>
                   <Badge className={severityConfig.color} variant="outline">
                     {severityConfig.label}
                   </Badge>
                 </div>
                 {allergy.verified_by && (
-                  <Shield className="h-4 w-4 text-green-600" title="Verified" />
+                  <Shield className="size-4 text-green-600" title="Verified" />
                 )}
               </div>
             );
@@ -177,7 +177,7 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
             </div>
             {editable && (
               <Button onClick={() => setIsAddingAllergy(true)} size="sm">
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Add Allergy
               </Button>
             )}
@@ -187,7 +187,7 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
         <CardContent>
           {activeAllergies.length === 0 ? (
             <Alert>
-              <CheckCircle2 className="h-4 w-4" />
+              <CheckCircle2 className="size-4" />
               <AlertDescription>No known allergies or intolerances on file.</AlertDescription>
             </Alert>
           ) : (
@@ -195,12 +195,12 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
               {activeAllergies.map((allergy) => {
                 const severityConfig = getSeverityConfig(allergy.severity);
                 return (
-                  <Card key={allergy.id} className="border-l-4 border-l-orange-500">
+                  <Card key={allergy.id} className="shadow-[inset_4px_0_0_rgb(249_115_22)]">
                     <CardContent className="pt-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
-                            <AlertTriangle className="h-5 w-5 text-orange-600" />
+                            <AlertTriangle className="size-5 text-orange-600" />
                             <h4 className="font-semibold text-lg">{allergy.allergen_name}</h4>
                             <Badge className={severityConfig.color} variant="outline">
                               {severityConfig.label}
@@ -208,7 +208,7 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
                             <Badge variant="outline">{allergy.allergy_type_display}</Badge>
                             {allergy.verified_by && (
                               <Badge variant="default" className="bg-green-600">
-                                <Shield className="h-3 w-3 mr-1" />
+                                <Shield className="size-3 mr-1" />
                                 Verified
                               </Badge>
                             )}
@@ -250,7 +250,7 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
                                 variant="outline"
                                 disabled={verifyAllergy.isPending}
                               >
-                                <Shield className="h-4 w-4 mr-1" />
+                                <Shield className="size-4 mr-1" />
                                 Verify
                               </Button>
                             )}
@@ -260,7 +260,7 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
                               variant="outline"
                               disabled={deactivateAllergy.isPending}
                             >
-                              <XCircle className="h-4 w-4 mr-1" />
+                              <XCircle className="size-4 mr-1" />
                               Deactivate
                             </Button>
                           </div>
@@ -373,7 +373,7 @@ export function AllergyManager({ patientId, editable = true, compact = false }) 
               Cancel
             </Button>
             <Button onClick={handleAddAllergy} disabled={createAllergy.isPending}>
-              {createAllergy.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {createAllergy.isPending && <Loader2 className="size-4 mr-2 animate-spin" />}
               Add Allergy
             </Button>
           </DialogFooter>

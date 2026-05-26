@@ -245,7 +245,7 @@ const AppointmentTypeManager = () => {
         <h2 className="text-xl font-semibold">Appointment Types</h2>
         {appointmentTypeMutationsAvailable ? (
           <Button onClick={handleAddNew} className="flex items-center gap-1">
-            <PlusCircle className="h-4 w-4" />
+            <PlusCircle className="size-4" />
             Add New
           </Button>
         ) : null}
@@ -259,7 +259,7 @@ const AppointmentTypeManager = () => {
       ) : null}
 
       {loading ? (
-        <div className="text-center py-4">Loading appointment types...</div>
+        <div className="text-center py-4">Loading appointment types…</div>
       ) : appointmentTypes.length === 0 ? (
         <div className="text-center py-4 border rounded-md bg-muted/20">
           <p className="text-muted-foreground">No appointment types found.</p>
@@ -294,7 +294,7 @@ const AppointmentTypeManager = () => {
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <Avatar className="h-5 w-5">
+                    <Avatar className="size-5">
                       <AvatarFallback style={{ backgroundColor: type.color }}></AvatarFallback>
                     </Avatar>
                     {colorOptions.find(c => c.value === type.color)?.name || type.color}
@@ -313,14 +313,14 @@ const AppointmentTypeManager = () => {
                 <TableCell>{type.description}</TableCell>
                 {appointmentTypeMutationsAvailable ? (
                   <TableCell>
-                    <div className="flex space-x-2">
+                    <div className="flex gap-x-2">
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => handleEdit(type)}
                         title="Edit"
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Pencil className="size-4" />
                       </Button>
                       <Button
                         variant="ghost"
@@ -328,7 +328,7 @@ const AppointmentTypeManager = () => {
                         onClick={() => handleDelete(type.id)}
                         title="Delete"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="size-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -421,7 +421,7 @@ const AppointmentTypeManager = () => {
                 <SelectTrigger>
                   <SelectValue>
                     <div className="flex items-center gap-2">
-                      <Avatar className="h-5 w-5">
+                      <Avatar className="size-5">
                         <AvatarFallback style={{ backgroundColor: currentAppointmentType.color }}></AvatarFallback>
                       </Avatar>
                       {colorOptions.find(c => c.value === currentAppointmentType.color)?.name || 'Select a color'}
@@ -432,7 +432,7 @@ const AppointmentTypeManager = () => {
                   {colorOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       <div className="flex items-center gap-2">
-                        <Avatar className="h-5 w-5">
+                        <Avatar className="size-5">
                           <AvatarFallback style={{ backgroundColor: option.value }}></AvatarFallback>
                         </Avatar>
                         {option.name}
@@ -443,7 +443,7 @@ const AppointmentTypeManager = () => {
               </Select>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-x-2">
               <Switch
                 id="is_active"
                 checked={currentAppointmentType.is_active}

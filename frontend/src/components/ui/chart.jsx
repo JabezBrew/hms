@@ -32,9 +32,10 @@ function ChartContainer({
 }) {
   const uniqueId = React.useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
+  const contextValue = React.useMemo(() => ({ config }), [config])
 
   return (
-    <ChartContext.Provider value={{ config }}>
+    <ChartContext.Provider value={contextValue}>
       <div
         data-slot="chart"
         data-chart={chartId}
@@ -56,17 +57,13 @@ const ChartStyle = ({
   id,
   config
 }) => {
-  const colorConfig = Object.entries(config).filter(([, config]) => config.theme || config.color)
-
-  if (!colorConfig.length) {
-    return null
-  }
-
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(([theme, prefix]) => `
+  const colorConfig = React.useMemo(
+    () => Object.entries(config).filter(([, config]) => config.theme || config.color),
+    [config]
+  )
+  const cssText = React.useMemo(
+    () => Object.entries(THEMES)
+      .map(([theme, prefix]) => `
 ${prefix} [data-chart=${id}] {
 ${colorConfig
 .map(([key, itemConfig]) => {
@@ -78,8 +75,16 @@ return color ? `  --color-${key}: ${color};` : null
 .join("\n")}
 }
 `)
-          .join("\n"),
-      }} />
+      .join("\n"),
+    [colorConfig, id]
+  )
+
+  if (!colorConfig.length) {
+    return null
+  }
+
+  return (
+    <style>{cssText}</style>
   );
 }
 
@@ -102,45 +107,23 @@ function ChartTooltipContent({
 }) {
   const { config } = useChart()
 
-  const tooltipLabel = React.useMemo(() => {
-    if (hideLabel || !payload?.length) {
-      return null
-    }
-
-    const [item] = payload
-    const key = `${labelKey || item?.dataKey || item?.name || "value"}`
-    const itemConfig = getPayloadConfigFromPayload(config, item, key)
-    const value =
-      !labelKey && typeof label === "string"
-        ? config[label]?.label || label
-        : itemConfig?.label
-
-    if (labelFormatter) {
-      return (
-        <div className={cn("font-medium", labelClassName)}>
-          {labelFormatter(value, payload)}
-        </div>
-      );
-    }
-
-    if (!value) {
-      return null
-    }
-
-    return <div className={cn("font-medium", labelClassName)}>{value}</div>;
-  }, [
-    label,
-    labelFormatter,
-    payload,
-    hideLabel,
-    labelClassName,
-    config,
-    labelKey,
-  ])
-
   if (!active || !payload?.length) {
     return null
   }
+
+  const [labelItem] = payload
+  const labelConfigKey = `${labelKey || labelItem?.dataKey || labelItem?.name || "value"}`
+  const labelItemConfig = getPayloadConfigFromPayload(config, labelItem, labelConfigKey)
+  const labelValue =
+    !labelKey && typeof label === "string"
+      ? config[label]?.label || label
+      : labelItemConfig?.label
+  const tooltipLabel =
+    hideLabel || !labelValue ? null : (
+      <div className={cn("font-medium", labelClassName)}>
+        {labelFormatter ? labelFormatter(labelValue, payload) : labelValue}
+      </div>
+    )
 
   const nestLabel = payload.length === 1 && indicator !== "dot"
 
@@ -174,7 +157,7 @@ function ChartTooltipContent({
                     !hideIndicator && (
                       <div
                         className={cn("shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)", {
-                          "h-2.5 w-2.5": indicator === "dot",
+                          "size-2.5": indicator === "dot",
                           "w-1": indicator === "line",
                           "w-0 border-[1.5px] border-dashed bg-transparent":
                             indicator === "dashed",
@@ -251,7 +234,7 @@ function ChartLegendContent({
               <itemConfig.icon />
             ) : (
               <div
-                className="h-2 w-2 shrink-0 rounded-[2px]"
+                className="size-2 shrink-0 rounded-[2px]"
                 style={{
                   backgroundColor: item.color,
                 }} />

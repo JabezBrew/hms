@@ -1,3 +1,10 @@
+const SHORT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 import Activity from 'lucide-react/dist/esm/icons/activity.js'
 import CircleAlert from 'lucide-react/dist/esm/icons/circle-alert.js'
 import CircleCheck from 'lucide-react/dist/esm/icons/circle-check.js'
@@ -279,12 +286,7 @@ function formatIso(value) {
   if (Number.isNaN(date.getTime())) {
     return 'N/A'
   }
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+  return SHORT_DATE_TIME_FORMATTER.format(date)
 }
 
 function safeText(value, fallback = 'N/A', maxLength = 64) {
@@ -366,7 +368,7 @@ function safeFingerprint(value, index) {
 }
 
 function sortRoutes(rows) {
-  return [...asArray(rows)].sort((a, b) => {
+  return asArray(rows).toSorted((a, b) => {
     const statusDelta = STATUS_PRIORITY[routeStatus(a)] - STATUS_PRIORITY[routeStatus(b)]
     if (statusDelta !== 0) {
       return statusDelta
@@ -617,7 +619,7 @@ function StatusPill({ status }) {
         STATUS_STYLES[normalized].badge,
       )}
     >
-      <Icon className="h-3 w-3" aria-hidden="true" />
+      <Icon className="size-3" aria-hidden="true" />
       {normalized.toUpperCase()}
     </span>
   )
@@ -662,7 +664,7 @@ function TabNav({ activeTab, onChange }) {
                 selected ? 'border-foreground text-foreground' : 'border-transparent hover:text-foreground',
               )}
             >
-              <Icon className="h-4 w-4" aria-hidden="true" />
+              <Icon className="size-4" aria-hidden="true" />
               {tab.label}
             </button>
           )
@@ -709,7 +711,7 @@ function MetricBox({ icon: Icon, label, value, detail, status = 'unknown' }) {
           <p className="mt-2 font-display text-2xl text-foreground">{value}</p>
           {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
         </div>
-        <Icon className={cn('h-5 w-5 shrink-0', STATUS_STYLES[normalized].icon)} aria-hidden="true" />
+        <Icon className={cn('size-5 shrink-0', STATUS_STYLES[normalized].icon)} aria-hidden="true" />
       </div>
     </div>
   )
@@ -758,7 +760,7 @@ function SectionHeading({ icon: Icon, title, children }) {
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
       <div className="flex items-center gap-2">
         <div className="rounded-md border border-border bg-muted/40 p-2">
-          <Icon className="h-4 w-4 text-foreground" aria-hidden="true" />
+          <Icon className="size-4 text-foreground" aria-hidden="true" />
         </div>
         <h2 className="font-heading text-lg text-foreground">{title}</h2>
       </div>
@@ -806,7 +808,7 @@ function RouteLatencyTable({ rows, compact = false }) {
               <TableRow key={`${route}-${index}`}>
                 <TableCell className="max-w-[320px]">
                   <div className="flex items-center gap-2">
-                    <RouteIcon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                    <RouteIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
                     <span className="truncate font-mono text-xs">{route}</span>
                   </div>
                 </TableCell>
@@ -1171,7 +1173,7 @@ export default function OpsDashboardPage() {
               disabled={activeQuery.isFetching}
               className="font-mono text-xs"
             >
-              <RefreshCw className={cn('mr-2 h-4 w-4', activeQuery.isFetching && 'animate-spin')} aria-hidden="true" />
+              <RefreshCw className={cn('mr-2 size-4', activeQuery.isFetching && 'animate-spin')} aria-hidden="true" />
               Refresh
             </Button>
           </div>

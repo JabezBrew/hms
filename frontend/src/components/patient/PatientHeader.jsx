@@ -30,15 +30,15 @@ export function PatientHeader({ patient, onAction }) {
             {/* Safety Banner */}
             <div className="flex items-center gap-4 px-6 py-1 text-xs font-semibold text-white">
                 <div className="flex items-center gap-2 bg-red-600 px-3 py-1 rounded-full">
-                    <AlertTriangle className="h-3 w-3" />
+                    <AlertTriangle className="size-3" />
                     <span>Allergies: Penicillin, Latex</span>
                 </div>
                 <div className="flex items-center gap-2 bg-purple-600 px-3 py-1 rounded-full">
-                    <ShieldAlert className="h-3 w-3" />
+                    <ShieldAlert className="size-3" />
                     <span>Code Status: DNR</span>
                 </div>
                 <div className="flex items-center gap-2 bg-yellow-600 px-3 py-1 rounded-full">
-                    <Activity className="h-3 w-3" />
+                    <Activity className="size-3" />
                     <span>Fall Risk</span>
                 </div>
             </div>
@@ -46,7 +46,7 @@ export function PatientHeader({ patient, onAction }) {
             {/* Identity & Actions */}
             <div className="flex items-center justify-between px-6 py-4">
                 <div className="flex items-center gap-4">
-                    <Avatar className="h-16 w-16 border-2 border-muted">
+                    <Avatar className="size-16 border-2 border-muted">
                         <AvatarImage src={patient.image} alt={firstName} />
                         <AvatarFallback className="text-lg">
                             {firstName?.[0]}{lastName?.[0]}
@@ -72,15 +72,15 @@ export function PatientHeader({ patient, onAction }) {
 
                 <div className="flex items-center gap-3">
                     <Button onClick={() => onAction('note')}>
-                        <FileText className="mr-2 h-4 w-4" />
+                        <FileText className="mr-2 size-4" />
                         New Note
                     </Button>
                     <Button variant="outline" onClick={() => onAction('prescribe')}>
-                        <Pill className="mr-2 h-4 w-4" />
+                        <Pill className="mr-2 size-4" />
                         ePrescribe
                     </Button>
                     <Button variant="outline" onClick={() => onAction('message')}>
-                        <MessageSquare className="mr-2 h-4 w-4" />
+                        <MessageSquare className="mr-2 size-4" />
                         Message
                     </Button>
                 </div>

@@ -82,13 +82,13 @@ function ControlledRegisterCard({
     >
       {/* Discrepancy indicator */}
       {hasDiscrepancy && (
-        <div className="absolute top-0 right-0 w-3 h-3 bg-rose-500 rounded-bl-lg rounded-tr-lg" />
+        <div className="absolute top-0 right-0 size-3 bg-rose-500 rounded-bl-lg rounded-tr-lg" />
       )}
 
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-rose-500" />
+            <Shield className="size-4 text-rose-500" />
             <Badge variant="outline" className="text-[10px] bg-rose-500/10 text-rose-500 border-rose-500/30">
               Controlled
             </Badge>
@@ -99,25 +99,25 @@ function ControlledRegisterCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Register
               </DropdownMenuItem>
               {onDispense && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDispense(); }}>
-                  <Pill className="h-4 w-4 mr-2" />
+                  <Pill className="size-4 mr-2" />
                   Dispense
                 </DropdownMenuItem>
               )}
-              {onCount && (
+              {Boolean(onCount) && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onCount(); }}>
-                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                  <ClipboardCheck className="size-4 mr-2" />
                   Physical Count
                 </DropdownMenuItem>
               )}
@@ -125,7 +125,7 @@ function ControlledRegisterCard({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onWastage(); }}>
-                    <Trash2 className="h-4 w-4 mr-2" />
+                    <Trash2 className="size-4 mr-2" />
                     Record Wastage
                   </DropdownMenuItem>
                 </>
@@ -142,7 +142,7 @@ function ControlledRegisterCard({
         {/* Location */}
         {register.location_name && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-            <MapPin className="h-3 w-3" />
+            <MapPin className="size-3" />
             <span>{register.location_name}</span>
           </div>
         )}
@@ -151,13 +151,13 @@ function ControlledRegisterCard({
         <div className="space-y-1 mb-3">
           {hasDiscrepancy && (
             <div className="flex items-center gap-2 text-xs text-rose-500">
-              <AlertOctagon className="h-3 w-3" />
+              <AlertOctagon className="size-3" />
               <span>Unresolved discrepancy</span>
             </div>
           )}
           {auditDue && (
             <div className="flex items-center gap-2 text-xs text-amber-500">
-              <AlertTriangle className="h-3 w-3" />
+              <AlertTriangle className="size-3" />
               <span>Audit overdue ({lastAuditDays} days)</span>
             </div>
           )}
@@ -401,7 +401,7 @@ export default function ControlledSubstancesPage() {
         description={`${totalCount} register${totalCount !== 1 ? 's' : ''}`}
         actions={(
           <Button variant="outline" onClick={() => refetch()}>
-            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+            <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
             Refresh
           </Button>
         )}
@@ -421,7 +421,7 @@ export default function ControlledSubstancesPage() {
 
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by substance name..."
             value={search}
@@ -432,7 +432,7 @@ export default function ControlledSubstancesPage() {
 
         <Select value={location || 'all'} onValueChange={handleLocationChange}>
           <SelectTrigger className="w-full lg:w-[200px] font-mono text-sm">
-            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+            <Filter className="size-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="Location" />
           </SelectTrigger>
           <SelectContent>
@@ -445,7 +445,7 @@ export default function ControlledSubstancesPage() {
 
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -466,7 +466,7 @@ export default function ControlledSubstancesPage() {
         </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
-          <Shield className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+          <Shield className="size-10 text-muted-foreground/50 mx-auto mb-3" />
           <h3 className="font-display text-xl mb-2">No Registers Found</h3>
           <p className="text-muted-foreground text-sm">
             {hasActiveFilters
@@ -483,12 +483,12 @@ export default function ControlledSubstancesPage() {
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages}>
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

@@ -236,7 +236,7 @@ function isNoteEntry(entry) {
 }
 
 function sortNoteSections(entries) {
-  return [...entries].sort(([keyA], [keyB]) => {
+  return entries.toSorted(([keyA], [keyB]) => {
     const indexA = NOTE_SECTION_ORDER.indexOf(keyA);
     const indexB = NOTE_SECTION_ORDER.indexOf(keyB);
     if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -382,7 +382,7 @@ function groupEntriesByEncounter(entries, encounters) {
     const encounter = encounterMap.get(encounterId) || groupEntries[0]?.encounter || { id: encounterId };
     grouped.push({
       encounter,
-      entries: [...groupEntries].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+      entries: groupEntries.toSorted((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
     });
   });
 
@@ -558,11 +558,11 @@ function SummaryList({ title, items, getLabel }) {
 
 export default function PatientChroniclePrintPage() {
   const { id } = useParams();
-  const location = useLocation();
+  const { search } = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
   const hasPrintedRef = useRef(false);
-  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const params = useMemo(() => new URLSearchParams(search), [search]);
   const requestedVisit = params.get(CHRONICLE_VISIT_PARAM);
   const requestedType = params.get('type') || 'all';
   const requestedSearch = params.get('search') || '';
@@ -674,11 +674,11 @@ export default function PatientChroniclePrintPage() {
       <div className="min-h-screen bg-neutral-100 py-6 text-neutral-950 print:bg-white print:py-0">
         <div className="no-print mx-auto mb-4 flex max-w-5xl items-center justify-between px-4">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="font-mono text-xs">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="mr-2 size-4" />
             Back
           </Button>
           <Button size="sm" onClick={() => window.print()} disabled={isLoading || !!error} className="font-mono text-xs">
-            <Printer className="mr-2 h-4 w-4" />
+            <Printer className="mr-2 size-4" />
             Print
           </Button>
         </div>
@@ -693,12 +693,12 @@ export default function PatientChroniclePrintPage() {
           ) : error ? (
             <section className="rounded border border-rose-300 bg-rose-50 p-6 text-rose-900">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-5 w-5" />
+                <AlertTriangle className="mt-0.5 size-5" />
                 <div>
                   <h1 className="text-lg font-semibold">Unable to prepare Chronicle printout</h1>
                   <p className="mt-2 text-sm">{error.message || 'Please refresh and try again.'}</p>
                   <Button variant="outline" size="sm" className="mt-4 font-mono text-xs" onClick={() => timelineQuery.refetch()}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                    <RefreshCw className="mr-2 size-4" />
                     Retry
                   </Button>
                 </div>

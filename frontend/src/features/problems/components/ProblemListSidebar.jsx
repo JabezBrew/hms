@@ -30,7 +30,7 @@ function ProblemRow({ problem, onResolve }) {
     <li className="group flex items-start gap-3 p-3 rounded-lg bg-card/50 border border-border hover:border-border/80 transition-colors">
       <div
         className={cn(
-          'w-2 h-2 rounded-full mt-1.5 shrink-0',
+          'size-2 rounded-full mt-1.5 shrink-0',
           PRIORITY_DOT[problem.priority] || PRIORITY_DOT.medium,
         )}
       />
@@ -61,11 +61,11 @@ function ProblemRow({ problem, onResolve }) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="size-6 opacity-0 group-hover:opacity-100 transition-opacity"
           title="Mark resolved"
           onClick={() => onResolve(problem)}
         >
-          <CheckCircle2 className="h-4 w-4" />
+          <CheckCircle2 className="size-4" />
         </Button>
       )}
     </li>
@@ -120,11 +120,11 @@ export default function ProblemListSidebar({ patientId, canEdit = true, classNam
           <Button
             size="icon"
             variant="ghost"
-            className="h-6 w-6"
+            className="size-6"
             title="Add problem"
             onClick={() => setDialogOpen(true)}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="size-4" />
           </Button>
         )}
       </header>
@@ -152,7 +152,7 @@ export default function ProblemListSidebar({ patientId, canEdit = true, classNam
           className="px-0 h-auto text-xs text-muted-foreground"
           onClick={() => setShowResolved((v) => !v)}
         >
-          <RotateCcw className="h-3 w-3 mr-1" />
+          <RotateCcw className="size-3 mr-1" />
           {showResolved ? 'Hide resolved' : `Show resolved${resolved.length ? ` (${resolved.length})` : ''}`}
         </Button>
       </div>

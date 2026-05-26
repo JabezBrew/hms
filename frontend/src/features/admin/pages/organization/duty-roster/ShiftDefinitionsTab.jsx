@@ -91,7 +91,7 @@ export function ShiftDefinitionsTab() {
         subtitle="Define the shifts used across your facility."
         actions={
           <Button onClick={() => setShowCreate(true)}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             <span className="font-mono text-xs uppercase tracking-wide">Add Shift</span>
           </Button>
         }
@@ -104,7 +104,7 @@ export function ShiftDefinitionsTab() {
           description="Create shifts to define working hours for your facility."
           action={
             <Button onClick={() => setShowCreate(true)} variant="outline">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Create First Shift
             </Button>
           }
@@ -147,9 +147,9 @@ export function ShiftDefinitionsTab() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(shift.id)}
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      className="size-8 text-muted-foreground hover:text-destructive"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </TableCell>
                 </TableRow>

@@ -146,8 +146,8 @@ export function RosterImportsTab() {
       <Card className="border-border">
         <CardHeader className="border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FileText className="h-5 w-5 text-primary" />
+            <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <FileText className="size-5 text-primary" />
             </div>
             <div>
               <CardTitle className="font-heading text-base">Department Roster Import</CardTitle>
@@ -171,11 +171,11 @@ export function RosterImportsTab() {
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" onClick={departmentCopy.copy} disabled={!departmentCsv}>
-                <Clipboard className="h-4 w-4 mr-2" />
+                <Clipboard className="size-4 mr-2" />
                 <span className="font-mono text-xs">{departmentCopy.hasCopied ? 'Copied' : 'Copy CSV'}</span>
               </Button>
               <Button onClick={handleDepartmentPreview} disabled={!departmentCsv || previewDepartmentImport.isPending}>
-                <UploadCloud className="h-4 w-4 mr-2" />
+                <UploadCloud className="size-4 mr-2" />
                 <span className="font-mono text-xs uppercase tracking-wide">
                   {previewDepartmentImport.isPending ? 'Validating...' : 'Preview'}
                 </span>
@@ -209,7 +209,7 @@ export function RosterImportsTab() {
               {departmentErrors.length > 0 && (
                 <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4">
                   <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-heading font-medium text-sm">
-                    <XCircle className="h-4 w-4" />
+                    <XCircle className="size-4" />
                     Validation Errors
                   </div>
                   <ul className="mt-2 space-y-1 text-xs text-rose-600 dark:text-rose-400 font-mono">
@@ -224,7 +224,7 @@ export function RosterImportsTab() {
               {departmentConflicts.length > 0 && (
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
                   <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-heading font-medium text-sm">
-                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTriangle className="size-4" />
                     Conflicts Detected
                   </div>
                   <ul className="mt-2 space-y-1 text-xs text-amber-600 dark:text-amber-400 font-mono">
@@ -268,8 +268,8 @@ export function RosterImportsTab() {
       <Card className="border-border">
         <CardHeader className="border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-sky-500/10 flex items-center justify-center">
-              <FileText className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+            <div className="size-10 rounded-lg bg-sky-500/10 flex items-center justify-center">
+              <FileText className="size-5 text-sky-600 dark:text-sky-400" />
             </div>
             <div>
               <CardTitle className="font-heading text-base">Team Roster Import</CardTitle>
@@ -293,11 +293,11 @@ export function RosterImportsTab() {
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" onClick={teamCopy.copy} disabled={!teamCsv}>
-                <Clipboard className="h-4 w-4 mr-2" />
+                <Clipboard className="size-4 mr-2" />
                 <span className="font-mono text-xs">{teamCopy.hasCopied ? 'Copied' : 'Copy CSV'}</span>
               </Button>
               <Button onClick={handleTeamPreview} disabled={!teamCsv || previewTeamImport.isPending}>
-                <UploadCloud className="h-4 w-4 mr-2" />
+                <UploadCloud className="size-4 mr-2" />
                 <span className="font-mono text-xs uppercase tracking-wide">
                   {previewTeamImport.isPending ? 'Validating...' : 'Preview'}
                 </span>
@@ -331,7 +331,7 @@ export function RosterImportsTab() {
               {teamErrors.length > 0 && (
                 <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4">
                   <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-heading font-medium text-sm">
-                    <XCircle className="h-4 w-4" />
+                    <XCircle className="size-4" />
                     Validation Errors
                   </div>
                   <ul className="mt-2 space-y-1 text-xs text-rose-600 dark:text-rose-400 font-mono">
@@ -346,7 +346,7 @@ export function RosterImportsTab() {
               {teamConflicts.length > 0 && (
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
                   <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-heading font-medium text-sm">
-                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTriangle className="size-4" />
                     Conflicts Detected
                   </div>
                   <ul className="mt-2 space-y-1 text-xs text-amber-600 dark:text-amber-400 font-mono">

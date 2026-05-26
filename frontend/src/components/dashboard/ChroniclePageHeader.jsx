@@ -61,7 +61,7 @@ export default function ChroniclePageHeader({
           <div className="flex flex-col sm:items-end gap-2">
             {showDate && (
               <div className="flex items-center gap-2 text-muted-foreground">
-                <Calendar className="h-4 w-4" />
+                <Calendar className="size-4" />
                 <span className="font-mono text-xs sm:text-sm">
                   {format(new Date(), 'EEE, MMM d, yyyy')}
                 </span>

@@ -45,6 +45,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 // Field type options with icons
 const FIELD_TYPES = [
   { value: 'numeric', label: 'Numeric', icon: Hash, description: 'Numbers with units and ranges' },
@@ -64,7 +66,7 @@ const ChartFieldEditor = ({
   open,
   onOpenChange,
   field,
-  existingFieldKeys = [],
+  existingFieldKeys = DEFAULT_EMPTY_ARRAY,
   onSave,
   isSaving = false,
 }) => {
@@ -229,7 +231,7 @@ const ChartFieldEditor = ({
                         )}
                       >
                         <Icon className={cn(
-                          "h-4 w-4",
+                          "size-4",
                           formData.field_type === type.value ? "text-primary" : "text-muted-foreground"
                         )} />
                         <div className="min-w-0">
@@ -345,7 +347,7 @@ const ChartFieldEditor = ({
         <DialogFooter className="pt-4 border-t">
           {error && (
             <p className="flex items-center gap-1 text-xs text-rose-500 mr-auto">
-              <AlertTriangle className="h-3 w-3" />
+              <AlertTriangle className="size-3" />
               {error}
             </p>
           )}
@@ -359,12 +361,12 @@ const ChartFieldEditor = ({
           >
             {isSaving ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Saving...
+                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                Saving…
               </>
             ) : (
               <>
-                <Check className="h-3.5 w-3.5 mr-1.5" />
+                <Check className="size-3.5 mr-1.5" />
                 {isEditing ? 'Update Field' : 'Add Field'}
               </>
             )}
@@ -464,7 +466,7 @@ const SelectConfig = ({ config, updateConfig, multiple = false }) => {
           Options
         </Label>
         <Button variant="outline" size="sm" onClick={addOption} className="font-mono text-xs">
-          <Plus className="h-3 w-3 mr-1" />
+          <Plus className="size-3 mr-1" />
           Add Option
         </Button>
       </div>
@@ -487,9 +489,9 @@ const SelectConfig = ({ config, updateConfig, multiple = false }) => {
               variant="ghost"
               size="icon"
               onClick={() => removeOption(index)}
-              className="h-9 w-9 text-muted-foreground hover:text-destructive"
+              className="size-9 text-muted-foreground hover:text-destructive"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="size-4" />
             </Button>
           </div>
         ))}

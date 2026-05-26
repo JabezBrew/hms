@@ -43,11 +43,11 @@ const AppointmentNotifications = () => {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+          <Bell className="size-5" />
           {notificationCount > 0 && (
             <Badge
               variant="destructive"
-              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
+              className="absolute -top-1 -right-1 size-5 flex items-center justify-center p-0 text-xs"
             >
               {notificationCount}
             </Badge>
@@ -62,7 +62,7 @@ const AppointmentNotifications = () => {
         <div className="max-h-80 overflow-auto">
           {loading ? (
             <div className="p-4 text-center text-muted-foreground">
-              Loading appointments...
+              Loading appointments…
             </div>
           ) : appointments.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground">

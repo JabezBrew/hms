@@ -19,6 +19,8 @@ import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { VisitStatusBadge } from "@/components/visits/VisitStatusBadge";
 import {
   DropdownMenu,
@@ -56,10 +58,10 @@ const PatientIdentityHero = ({
   onStartDischarge,
   onManageInsurance,
   onPrintSummary,
-  insurance = [],
+  insurance = DEFAULT_EMPTY_ARRAY,
   activeAdmission,
   activeVisit,
-  allergies: clinicalAllergies = [],
+  allergies: clinicalAllergies = DEFAULT_EMPTY_ARRAY,
   className
 }) => {
   // ============================================
@@ -271,7 +273,7 @@ const PatientIdentityHero = ({
           <div className="flex min-w-0 flex-wrap items-center gap-4">
             {status === 'critical' && (
               <span className="badge-chronicle-rose flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3" />
+                <AlertTriangle className="size-3" />
                 CRITICAL
               </span>
             )}
@@ -294,31 +296,32 @@ const PatientIdentityHero = ({
 
             {dob && (
               <span className="flex items-center gap-1.5 font-mono text-sm">
-                <Calendar className="h-3.5 w-3.5" />
+                <Calendar className="size-3.5" />
                 DOB: {dob}
               </span>
             )}
 
             {phone && (
               <span className="flex items-center gap-1.5 font-mono text-sm">
-                <Phone className="h-3.5 w-3.5" />
+                <Phone className="size-3.5" />
                 {phone}
               </span>
             )}
 
             {location && (
               <span className="flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere] font-mono text-sm">
-                <MapPin className="h-3.5 w-3.5" />
+                <MapPin className="size-3.5" />
                 {location}
               </span>
             )}
 
             {activeAdmission && onStartDischarge && (
               <button
+                type="button"
                 onClick={onStartDischarge}
                 className="flex items-center gap-1.5 font-mono text-sm px-2 py-0.5 rounded-md transition-colors hover:bg-muted cursor-pointer border text-rose-600 border-rose-300 bg-rose-50 dark:text-rose-400 dark:border-rose-700 dark:bg-rose-950"
               >
-                <LogOut className="h-3.5 w-3.5" />
+                <LogOut className="size-3.5" />
                 Discharge
               </button>
             )}
@@ -327,7 +330,7 @@ const PatientIdentityHero = ({
             {activeVisit && (
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1.5 font-mono text-sm text-muted-foreground">
-                  <Users className="h-3.5 w-3.5" />
+                  <Users className="size-3.5" />
                   #{activeVisit.queue_number}
                 </span>
                 <VisitStatusBadge status={activeVisit.visit_status} size="sm" />
@@ -337,6 +340,7 @@ const PatientIdentityHero = ({
             {/* Insurance Badge */}
             {onManageInsurance && (
               <button
+                type="button"
                 onClick={onManageInsurance}
                 className={cn(
                   "flex items-center gap-1.5 font-mono text-sm px-2 py-0.5 rounded-md transition-colors",
@@ -346,7 +350,7 @@ const PatientIdentityHero = ({
                     : "text-amber-600 border-amber-300 bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:bg-amber-950"
                 )}
               >
-                <Shield className="h-3.5 w-3.5" />
+                <Shield className="size-3.5" />
                 {insurance.length > 0 ? (
                   <span>
                     {insurance[0]?.plan_name || 'Insured'}
@@ -362,7 +366,7 @@ const PatientIdentityHero = ({
           {/* Allergies - High visibility */}
           {allergies.length > 0 && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 w-fit">
-              <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+              <AlertTriangle className="size-4 text-destructive shrink-0" />
               <span className="font-mono text-xs uppercase tracking-wider text-destructive mr-2">
                 Allergies:
               </span>
@@ -393,7 +397,7 @@ const PatientIdentityHero = ({
             onPointerEnter={() => prefetchAction('note')}
             onFocus={() => prefetchAction('note')}
           >
-            <FileText className="h-3.5 w-3.5 mr-1.5" />
+            <FileText className="size-3.5 mr-1.5" />
             Add Note
           </Button>
 
@@ -405,7 +409,7 @@ const PatientIdentityHero = ({
             onPointerEnter={() => prefetchAction('vitals')}
             onFocus={() => prefetchAction('vitals')}
           >
-            <Activity className="h-3.5 w-3.5 mr-1.5" />
+            <Activity className="size-3.5 mr-1.5" />
             Vitals
           </Button>
 
@@ -418,7 +422,7 @@ const PatientIdentityHero = ({
             onPointerEnter={() => prefetchAction('prescription')}
             onFocus={() => prefetchAction('prescription')}
           >
-            <Pill className="h-3.5 w-3.5 mr-1.5" />
+            <Pill className="size-3.5 mr-1.5" />
             Prescribe
           </Button>
 
@@ -431,7 +435,7 @@ const PatientIdentityHero = ({
               onPointerEnter={() => prefetchAction('labs')}
               onFocus={() => prefetchAction('labs')}
             >
-              <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
+              <FlaskConical className="size-3.5 mr-1.5" />
               Order Labs
             </Button>
           )}
@@ -444,7 +448,7 @@ const PatientIdentityHero = ({
                 className="font-mono text-xs"
                 onClick={onViewTreatmentSheet}
               >
-                <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+                <ClipboardList className="size-3.5 mr-1.5" />
                 Treatment Sheet
               </Button>
             )}
@@ -454,7 +458,7 @@ const PatientIdentityHero = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="size-8"
                 aria-label="More actions"
                 data-onboarding="chronicle-more-actions"
                 onPointerEnter={() => {
@@ -468,7 +472,7 @@ const PatientIdentityHero = ({
                   prefetchAction('medicationHistory');
                 }}
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -479,7 +483,7 @@ const PatientIdentityHero = ({
                   onFocus={() => prefetchAction('copilot')}
                   className="text-amber-900 dark:text-amber-100 focus:bg-amber-50 dark:focus:bg-amber-950/40"
                 >
-                  <Sparkles className="h-4 w-4 mr-2 text-amber-600 dark:text-amber-300" />
+                  <Sparkles className="size-4 mr-2 text-amber-600 dark:text-amber-300" />
                   Ask Chronicle
                 </DropdownMenuItem>
               )}
@@ -503,7 +507,7 @@ const PatientIdentityHero = ({
                   onPointerEnter={() => prefetchAction('medicationHistory')}
                   onFocus={() => prefetchAction('medicationHistory')}
                 >
-                  <Pill className="h-4 w-4 mr-2" />
+                  <Pill className="size-4 mr-2" />
                   Medication History
                 </DropdownMenuItem>
               )}
@@ -514,7 +518,7 @@ const PatientIdentityHero = ({
                   onPointerEnter={() => prefetchAction('fluids')}
                   onFocus={() => prefetchAction('fluids')}
                 >
-                  <Droplets className="h-4 w-4 mr-2" />
+                  <Droplets className="size-4 mr-2" />
                   Fluid Balance
                 </DropdownMenuItem>
               )}
@@ -526,7 +530,7 @@ const PatientIdentityHero = ({
                     onPointerEnter={() => prefetchAction('wardRound')}
                     onFocus={() => prefetchAction('wardRound')}
                   >
-                    <Stethoscope className="h-4 w-4 mr-2" />
+                    <Stethoscope className="size-4 mr-2" />
                     Ward Round
                   </DropdownMenuItem>
                 </>
@@ -539,7 +543,7 @@ const PatientIdentityHero = ({
                   onPointerEnter={() => prefetchAction('crossFacility')}
                   onFocus={() => prefetchAction('crossFacility')}
                 >
-                  <Shield className="h-4 w-4 mr-2" />
+                  <Shield className="size-4 mr-2" />
                   Share Record
                 </DropdownMenuItem>
               )}
@@ -549,7 +553,7 @@ const PatientIdentityHero = ({
                   onPointerEnter={() => prefetchAction('receiveRecord')}
                   onFocus={() => prefetchAction('receiveRecord')}
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download className="size-4 mr-2" />
                   Receive Record
                 </DropdownMenuItem>
               )}

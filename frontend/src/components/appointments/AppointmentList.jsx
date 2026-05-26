@@ -19,7 +19,8 @@ import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth';
-import PatientContextPanel, { getAppointmentPatientId } from '@/components/patients/PatientContextPanel';
+import PatientContextPanel from '@/components/patients/PatientContextPanel';
+import { getAppointmentPatientId } from '@/components/patients/patient-context-utils';
 import {
   Select,
   SelectContent,
@@ -393,7 +394,7 @@ const AppointmentList = () => {
       {/* Search and Quick Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search appointments..."
             className="pl-10 font-mono text-sm"
@@ -407,13 +408,13 @@ const AppointmentList = () => {
           onClick={() => setShowFilters(!showFilters)}
           className={cn("font-mono text-xs", hasActiveFilters && "border-primary text-primary")}
         >
-          <Filter className="h-4 w-4 mr-2" />
+          <Filter className="size-4 mr-2" />
           Filters
-          {hasActiveFilters && <span className="ml-2 w-2 h-2 rounded-full bg-primary" />}
+          {hasActiveFilters && <span className="ml-2 size-2 rounded-full bg-primary" />}
         </Button>
 
         <Button onClick={createAppointment} className="font-mono text-xs">
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="mr-2 size-4" />
           New Appointment
         </Button>
       </div>
@@ -433,18 +434,18 @@ const AppointmentList = () => {
                 onClick={clearFilters}
                 className="font-mono text-xs text-muted-foreground"
               >
-                <X className="h-3 w-3 mr-1" />
+                <X className="size-3 mr-1" />
                 Clear All
               </Button>
             )}
           </div>
           <div className="flex flex-wrap gap-4">
             <div className="space-y-2">
-              <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Status
-              </label>
-              <Select value={status} onValueChange={handleStatusFilterChange}>
-                <SelectTrigger className="w-[180px] font-mono text-sm">
+	              <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">
+	                Status
+	              </span>
+	              <Select value={status} onValueChange={handleStatusFilterChange}>
+	                <SelectTrigger aria-label="Filter appointments by status" className="w-[180px] font-mono text-sm">
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
@@ -461,13 +462,13 @@ const AppointmentList = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Date
-              </label>
+	              <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">
+	                Date
+	              </span>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-[180px] font-mono text-sm justify-start">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
+	                  <Button variant="outline" className="w-[180px] font-mono text-sm justify-start" aria-label="Filter appointments by date">
+                    <CalendarIcon className="mr-2 size-4" />
                     {date ? format(parseISO(date), 'MMM d, yyyy') : 'Select date'}
                   </Button>
                 </PopoverTrigger>
@@ -491,15 +492,15 @@ const AppointmentList = () => {
           "bg-card/50 border border-border rounded-2xl p-12 text-center",
           "animate-chronicle-enter"
         )}>
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <CalendarIcon className="h-8 w-8 text-muted-foreground" />
+          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <CalendarIcon className="size-8 text-muted-foreground" />
           </div>
           <h3 className="font-display text-xl text-foreground mb-2">No Appointments Found</h3>
           <p className="text-muted-foreground text-sm mb-6">
             No appointments match your current filters.
           </p>
           <Button onClick={createAppointment} className="font-mono text-xs">
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             Create New Appointment
           </Button>
         </div>
@@ -532,7 +533,7 @@ const AppointmentList = () => {
               disabled={page === 1}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button
@@ -543,7 +544,7 @@ const AppointmentList = () => {
               className="font-mono text-xs"
             >
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

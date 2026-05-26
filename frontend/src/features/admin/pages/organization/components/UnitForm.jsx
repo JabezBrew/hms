@@ -444,7 +444,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
               control={form.control}
               name="is_active"
               render={({ field }) => (
-                <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+                <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
                   <FormControl>
                     <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
@@ -461,7 +461,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
                 control={form.control}
                 name="accepts_admissions"
                 render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+                  <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
                     <FormControl>
                       <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
@@ -479,7 +479,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
                 control={form.control}
                 name="accepts_referrals"
                 render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+                  <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
                     <FormControl>
                       <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
@@ -496,7 +496,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
               control={form.control}
               name="has_own_budget"
               render={({ field }) => (
-                <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+                <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
                   <FormControl>
                     <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
@@ -512,7 +512,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
               control={form.control}
               name="operates_24_hours"
               render={({ field }) => (
-                <FormItem className="flex items-center gap-3 space-y-0 rounded-lg border p-3 col-span-2">
+                <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3 col-span-2">
                   <FormControl>
                     <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
@@ -536,7 +536,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
             disabled={isLoading}
             className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs"
           >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
             {unit ? 'Update Unit' : 'Create Unit'}
           </Button>
         </div>

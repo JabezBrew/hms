@@ -3,6 +3,8 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { cn } from '@/lib/utils';
 
 /**
@@ -24,9 +26,9 @@ export default function ActionCard({
   title,
   subtitle,
   description,
-  badges = [],
-  metadata = [],
-  actions = [],
+  badges = DEFAULT_EMPTY_ARRAY,
+  metadata = DEFAULT_EMPTY_ARRAY,
+  actions = DEFAULT_EMPTY_ARRAY,
   status,
   onClick,
   icon: Icon,
@@ -61,7 +63,7 @@ export default function ActionCard({
   };
 
   return (
-    <article
+    <div
       className={cn(
         'group relative rounded-xl sm:rounded-2xl p-4 sm:p-6',
         'bg-card border',
@@ -88,7 +90,7 @@ export default function ActionCard({
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {Icon && (
             <div className="shrink-0 mt-1">
-              <Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+              <Icon className="size-5 text-muted-foreground" aria-hidden="true" />
             </div>
           )}
           <div className="flex-1 min-w-0">
@@ -134,7 +136,7 @@ export default function ActionCard({
           {metadata.map((item, index) => (
             <div key={index} className="space-y-1">
               <div className="flex items-center gap-1.5">
-                {item.icon && <item.icon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />}
+                {item.icon && <item.icon className="size-3 text-muted-foreground" aria-hidden="true" />}
                 <span className="font-mono text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-wide">
                   {item.label}
                 </span>
@@ -169,8 +171,8 @@ export default function ActionCard({
 
       {/* Click indicator */}
       {onClick && (
-        <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" aria-hidden="true" />
+        <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" aria-hidden="true" />
       )}
-    </article>
+    </div>
   );
 }

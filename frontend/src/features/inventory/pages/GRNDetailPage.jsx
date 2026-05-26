@@ -60,6 +60,8 @@ import User from 'lucide-react/dist/esm/icons/user.js';
 import AlertOctagon from 'lucide-react/dist/esm/icons/alert-octagon.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 
+const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'text-slate-500', bgColor: 'bg-slate-500/10' },
   pending_inspection: { label: 'Pending Inspection', color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
@@ -74,7 +76,7 @@ function getStatusConfig(status) {
 }
 
 function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value || 0);
+  return US_NUMBER_FORMATTER.format(value || 0);
 }
 
 /**
@@ -180,23 +182,23 @@ function GRNItemRow({
             <Button
               size="sm"
               variant="ghost"
-              className="h-8 w-8 p-0"
+              className="size-8 p-0"
               onClick={handleSave}
               disabled={updateMutation.isPending}
             >
               {updateMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
               ) : (
-                <Check className="h-4 w-4 text-emerald-500" />
+                <Check className="size-4 text-emerald-500" />
               )}
             </Button>
             <Button
               size="sm"
               variant="ghost"
-              className="h-8 w-8 p-0"
+              className="size-8 p-0"
               onClick={() => setIsEditing(false)}
             >
-              <X className="h-4 w-4 text-muted-foreground" />
+              <X className="size-4 text-muted-foreground" />
             </Button>
           </div>
         </td>
@@ -270,10 +272,10 @@ function GRNItemRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 w-8 p-0"
+            className="size-8 p-0"
             onClick={() => setIsEditing(true)}
           >
-            <Pencil className="h-4 w-4 text-muted-foreground" />
+            <Pencil className="size-4 text-muted-foreground" />
           </Button>
         )}
       </td>
@@ -324,7 +326,7 @@ export default function GRNDetailPage() {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10" />
+          <Skeleton className="size-10" />
           <div>
             <Skeleton className="h-8 w-64" />
             <Skeleton className="h-5 w-48 mt-2" />
@@ -350,11 +352,11 @@ export default function GRNDetailPage() {
         action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="size-4 mr-2" />
               Back to GRNs
             </Button>
             <Button onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Retry
             </Button>
           </div>
@@ -372,7 +374,7 @@ export default function GRNDetailPage() {
         description="The requested GRN does not exist or has been deleted."
         action={(
           <Button variant="outline" onClick={handleBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to GRNs
           </Button>
         )}
@@ -406,7 +408,7 @@ export default function GRNDetailPage() {
             </Badge>
             {hasQualityIssues && (
               <Badge variant="destructive" className="text-xs">
-                <AlertOctagon className="h-3 w-3 mr-1" />
+                <AlertOctagon className="size-3 mr-1" />
                 Quality Issues
               </Badge>
             )}
@@ -415,11 +417,11 @@ export default function GRNDetailPage() {
         description={(
           <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Building2 className="h-4 w-4" />
+              <Building2 className="size-4" />
               <span className="text-sm">{grn.supplier_name || 'Unknown Supplier'}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="size-4" />
               <span className="text-sm">
                 {grn.received_date
                   ? format(parseISO(grn.received_date), 'MMM d, yyyy')
@@ -433,33 +435,33 @@ export default function GRNDetailPage() {
             {canInspect && (
               <Button onClick={handleStartInspection} disabled={inspectMutation.isPending}>
                 {inspectMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 mr-2 animate-spin" />
                 ) : (
-                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                  <ClipboardCheck className="size-4 mr-2" />
                 )}
                 Start Inspection
               </Button>
             )}
             {canAccept && (
               <Button onClick={() => setAcceptDialogOpen(true)}>
-                <Check className="h-4 w-4 mr-2" />
+                <Check className="size-4 mr-2" />
                 Accept & Update Stock
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem>
-                  <Printer className="h-4 w-4 mr-2" />
+                  <Printer className="size-4 mr-2" />
                   Print
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => refetch()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="size-4 mr-2" />
                   Refresh
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -473,7 +475,7 @@ export default function GRNDetailPage() {
           className="w-fit -ml-2"
           onClick={handleBack}
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to GRNs
         </Button>
       </PageHeader>
@@ -534,7 +536,7 @@ export default function GRNDetailPage() {
                       <th className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider w-16">
+                      <th aria-label="Item actions" className="text-center px-4 py-3 text-xs font-mono text-muted-foreground uppercase tracking-wider w-16">
 
                       </th>
                     </tr>
@@ -561,7 +563,7 @@ export default function GRNDetailPage() {
             <Card className="bg-rose-500/5 border-rose-500/30">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base text-rose-500 flex items-center gap-2">
-                  <AlertOctagon className="h-4 w-4" />
+                  <AlertOctagon className="size-4" />
                   Quality Issues
                 </CardTitle>
               </CardHeader>
@@ -605,7 +607,7 @@ export default function GRNDetailPage() {
             <CardContent className="space-y-4">
               {grn.po_number && (
                 <div className="flex items-start gap-3">
-                  <FileText className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <FileText className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Purchase Order</p>
                     <Button
@@ -620,7 +622,7 @@ export default function GRNDetailPage() {
               )}
 
               <div className="flex items-start gap-3">
-                <Building2 className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                <Building2 className="size-4 mt-0.5 text-muted-foreground" />
                 <div>
                   <p className="text-xs text-muted-foreground">Supplier</p>
                   <p className="text-sm">{grn.supplier_name || 'N/A'}</p>
@@ -628,7 +630,7 @@ export default function GRNDetailPage() {
               </div>
 
               <div className="flex items-start gap-3">
-                <User className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                <User className="size-4 mt-0.5 text-muted-foreground" />
                 <div>
                   <p className="text-xs text-muted-foreground">Received By</p>
                   <p className="text-sm">{grn.received_by_name || grn.created_by_name || 'N/A'}</p>
@@ -637,7 +639,7 @@ export default function GRNDetailPage() {
 
               {grn.inspected_by_name && (
                 <div className="flex items-start gap-3">
-                  <ClipboardCheck className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <ClipboardCheck className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Inspected By</p>
                     <p className="text-sm">{grn.inspected_by_name}</p>
@@ -652,7 +654,7 @@ export default function GRNDetailPage() {
 
               {grn.delivery_note_number && (
                 <div className="flex items-start gap-3">
-                  <FileText className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <FileText className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Delivery Note</p>
                     <p className="text-sm font-mono">{grn.delivery_note_number}</p>
@@ -662,7 +664,7 @@ export default function GRNDetailPage() {
 
               {grn.invoice_number && (
                 <div className="flex items-start gap-3">
-                  <FileText className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <FileText className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Invoice</p>
                     <p className="text-sm font-mono">{grn.invoice_number}</p>
@@ -714,7 +716,7 @@ export default function GRNDetailPage() {
               <div className="space-y-4">
                 {grn.created_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-sky-500 mt-2" />
+                    <div className="size-2 rounded-full bg-sky-500 mt-2" />
                     <div>
                       <p className="text-sm">Created</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -725,7 +727,7 @@ export default function GRNDetailPage() {
                 )}
                 {grn.inspection_started_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-amber-500 mt-2" />
+                    <div className="size-2 rounded-full bg-amber-500 mt-2" />
                     <div>
                       <p className="text-sm">Inspection Started</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -736,7 +738,7 @@ export default function GRNDetailPage() {
                 )}
                 {grn.accepted_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 mt-2" />
+                    <div className="size-2 rounded-full bg-emerald-500 mt-2" />
                     <div>
                       <p className="text-sm">Accepted</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -780,7 +782,7 @@ export default function GRNDetailPage() {
             </div>
             {hasQualityIssues && (
               <div className="mt-4 p-3 bg-amber-500/10 rounded-lg flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5" />
+                <AlertTriangle className="size-4 text-amber-500 mt-0.5" />
                 <p className="text-sm text-amber-500">
                   This GRN has quality issues. Only accepted items will be added to stock.
                 </p>
@@ -793,9 +795,9 @@ export default function GRNDetailPage() {
             </Button>
             <Button onClick={handleAccept} disabled={acceptMutation.isPending}>
               {acceptMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="size-4 mr-2 animate-spin" />
               ) : (
-                <Check className="h-4 w-4 mr-2" />
+                <Check className="size-4 mr-2" />
               )}
               Accept & Update Stock
             </Button>

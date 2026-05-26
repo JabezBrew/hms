@@ -274,7 +274,7 @@ const StaffForm = ({ onSuccess }) => {
               return (
                 <TabsTrigger key={step.key} value={step.key} className="font-mono text-xs">
                   <span className="inline-flex items-center gap-2">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
+                    <span className="inline-flex size-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
                       {idx + 1}
                     </span>
                     <span>{step.label}</span>
@@ -380,7 +380,7 @@ const StaffForm = ({ onSuccess }) => {
                                 )}
                               >
                                 {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                <CalendarIcon className="ml-auto size-4 opacity-50" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
@@ -538,7 +538,7 @@ const StaffForm = ({ onSuccess }) => {
                                 )}
                               >
                                 {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                <CalendarIcon className="ml-auto size-4 opacity-50" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
@@ -652,7 +652,7 @@ const StaffForm = ({ onSuccess }) => {
                 ) : (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-900/10">
                     <div className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
                       <p className="text-sm text-emerald-800 dark:text-emerald-200 font-medium">
                         No practitioner credentials needed for this role.
                       </p>

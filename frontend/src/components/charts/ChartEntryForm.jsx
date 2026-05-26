@@ -241,7 +241,7 @@ const ChartEntryForm = ({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-            <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <ClipboardList className="size-5 text-amber-600 dark:text-amber-400" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">
@@ -259,7 +259,7 @@ const ChartEntryForm = ({
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -269,17 +269,17 @@ const ChartEntryForm = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5 font-mono">
-              <Calendar className="h-3.5 w-3.5" />
+              <Calendar className="size-3.5" />
               {format(new Date(), 'MMM d, yyyy')}
             </span>
             <span className="flex items-center gap-1.5 font-mono">
-              <Clock className="h-3.5 w-3.5" />
+              <Clock className="size-3.5" />
               {format(new Date(), 'h:mm a')}
             </span>
           </div>
           {criticalFields.length > 0 && (
             <span className="flex items-center gap-1.5 text-xs font-mono text-rose-500">
-              <AlertTriangle className="h-3.5 w-3.5" />
+              <AlertTriangle className="size-3.5" />
               {criticalFields.length} critical value(s)
             </span>
           )}
@@ -287,14 +287,14 @@ const ChartEntryForm = ({
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1 px-6 py-6">
+      <ScrollArea className="flex-1 p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : !template ? (
           <div className="text-center py-12 text-muted-foreground">
-            <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <ClipboardList className="size-12 mx-auto mb-3 opacity-50" />
             <p>Chart template not found</p>
           </div>
         ) : (
@@ -344,7 +344,7 @@ const ChartEntryForm = ({
         <div className="flex items-center justify-between">
           {criticalFields.length > 0 && (
             <p className="flex items-center gap-1.5 text-xs text-rose-500 font-mono">
-              <AlertTriangle className="h-3.5 w-3.5" />
+              <AlertTriangle className="size-3.5" />
               Critical values will trigger an alert
             </p>
           )}
@@ -365,12 +365,12 @@ const ChartEntryForm = ({
             >
               {createMutation.isPending ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  Saving...
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  Saving…
                 </>
               ) : (
                 <>
-                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  <Check className="size-3.5 mr-1.5" />
                   Record Entry
                 </>
               )}
@@ -387,26 +387,124 @@ const ChartEntryForm = ({
  */
 function evaluateFormula(formula, data) {
   // Replace field references with values
-  let expression = formula.replace(/\{([a-z_][a-z0-9_]*)\}/g, (match, key) => {
+  const expression = formula.replace(/\{([a-z_][a-z0-9_]*)\}/g, (match, key) => {
     const value = data[key];
     if (value === null || value === undefined) {
       throw new Error(`Missing value for ${key}`);
     }
-    return String(value);
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      throw new Error(`Invalid value for ${key}`);
+    }
+    return String(numericValue);
   });
 
-  // Only allow safe characters
-  if (!/^[\d\s+\-*/().]+$/.test(expression)) {
-    throw new Error('Invalid formula');
-  }
+  const result = evaluateArithmeticExpression(expression);
+  return Number.isFinite(result) ? Math.round(result * 100) / 100 : null;
+}
 
-  // Evaluate
-  try {
-    const result = new Function(`return ${expression}`)();
-    return typeof result === 'number' ? Math.round(result * 100) / 100 : null;
-  } catch {
-    return null;
+function evaluateArithmeticExpression(expression) {
+  let index = 0;
+
+  const skipWhitespace = () => {
+    while (/\s/.test(expression[index] || '')) {
+      index += 1;
+    }
+  };
+
+  const parseNumber = () => {
+    skipWhitespace();
+    const start = index;
+    let hasDigit = false;
+
+    while (/\d/.test(expression[index] || '')) {
+      hasDigit = true;
+      index += 1;
+    }
+
+    if (expression[index] === '.') {
+      index += 1;
+      while (/\d/.test(expression[index] || '')) {
+        hasDigit = true;
+        index += 1;
+      }
+    }
+
+    if (!hasDigit) {
+      throw new Error('Expected number');
+    }
+
+    const value = Number(expression.slice(start, index));
+    if (!Number.isFinite(value)) {
+      throw new Error('Invalid number');
+    }
+    return value;
+  };
+
+  const parseFactor = () => {
+    skipWhitespace();
+    const char = expression[index];
+
+    if (char === '+') {
+      index += 1;
+      return parseFactor();
+    }
+
+    if (char === '-') {
+      index += 1;
+      return -parseFactor();
+    }
+
+    if (char === '(') {
+      index += 1;
+      const value = parseExpression();
+      skipWhitespace();
+      if (expression[index] !== ')') {
+        throw new Error('Expected closing parenthesis');
+      }
+      index += 1;
+      return value;
+    }
+
+    return parseNumber();
+  };
+
+  const parseTerm = () => {
+    let value = parseFactor();
+
+    while (true) {
+      skipWhitespace();
+      const operator = expression[index];
+      if (operator !== '*' && operator !== '/') {
+        return value;
+      }
+      index += 1;
+      const nextValue = parseFactor();
+      value = operator === '*' ? value * nextValue : value / nextValue;
+    }
+  };
+
+  const parseExpression = () => {
+    let value = parseTerm();
+
+    while (true) {
+      skipWhitespace();
+      const operator = expression[index];
+      if (operator !== '+' && operator !== '-') {
+        return value;
+      }
+      index += 1;
+      const nextValue = parseTerm();
+      value = operator === '+' ? value + nextValue : value - nextValue;
+    }
+  };
+
+  const result = parseExpression();
+  skipWhitespace();
+  if (index !== expression.length) {
+    throw new Error('Unexpected formula token');
   }
+  return result;
 }
 
 export { ChartEntryForm };

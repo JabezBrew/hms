@@ -254,7 +254,7 @@ export default function NhisServiceMappingsPage() {
               setDialog({ open: true, mode: 'edit', row });
             }}
           >
-            <Pencil className="h-3 w-3 mr-2" />
+            <Pencil className="size-3 mr-2" />
             Edit
           </Button>
         ) : null
@@ -283,7 +283,7 @@ export default function NhisServiceMappingsPage() {
         title={(
           <span className="flex items-center gap-3">
             <span className="p-3 rounded-xl bg-primary/10">
-              <Link2 className="h-6 w-6 text-primary" />
+              <Link2 className="size-6 text-primary" />
             </span>
             NHIS Service Mappings
           </span>
@@ -297,7 +297,7 @@ export default function NhisServiceMappingsPage() {
               className="font-mono text-xs"
               onClick={downloadTemplate}
             >
-              <Download className="h-4 w-4 mr-2" />
+              <Download className="size-4 mr-2" />
               CSV Template
             </Button>
             <Button
@@ -306,7 +306,7 @@ export default function NhisServiceMappingsPage() {
               className="font-mono text-xs"
               onClick={handleRefresh}
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Refresh
             </Button>
             {mappingMutationsAvailable && (
@@ -325,7 +325,7 @@ export default function NhisServiceMappingsPage() {
                   setDialog({ open: true, mode: 'create', row: null });
                 }}
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 New Mapping
               </Button>
             )}
@@ -366,7 +366,7 @@ export default function NhisServiceMappingsPage() {
                   }}
                   disabled={!activeImportJobId}
                 >
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="size-4 mr-2" />
                   Refresh Job
                 </Button>
               </div>
@@ -388,7 +388,7 @@ export default function NhisServiceMappingsPage() {
                     onClick={startImportPreview}
                     disabled={createImportJobMutation.isPending}
                   >
-                    <Upload className="h-4 w-4 mr-2" />
+                    <Upload className="size-4 mr-2" />
                     Preview Import
                   </Button>
                   <Button
@@ -491,7 +491,7 @@ export default function NhisServiceMappingsPage() {
 
           <div className="lg:col-span-2">
             <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}

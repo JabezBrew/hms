@@ -35,7 +35,7 @@ const TreatmentSheetSlideOver = ({
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>

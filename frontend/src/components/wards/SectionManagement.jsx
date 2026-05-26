@@ -113,7 +113,7 @@ export function SectionManagement({ wardId }) {
   };
 
   if (isLoading) {
-    return <div>Loading sections...</div>;
+    return <div>Loading sections…</div>;
   }
 
   return (
@@ -129,7 +129,7 @@ export function SectionManagement({ wardId }) {
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Create Section
             </Button>
           </DialogTrigger>
@@ -146,13 +146,13 @@ export function SectionManagement({ wardId }) {
       {/* Sections List */}
       {sections.length === 0 ? (
         <div className="text-center py-12 border rounded-lg bg-muted/20">
-          <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <Users className="size-12 text-muted-foreground mx-auto mb-4" />
           <h4 className="text-lg font-medium text-foreground mb-2">No sections configured</h4>
           <p className="text-sm text-muted-foreground mb-4">
             Create your first section to organize beds by gender, accommodation tier, or isolation capability
           </p>
           <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             Create First Section
           </Button>
         </div>
@@ -196,11 +196,11 @@ function SectionCard({ section, onEdit, onDelete }) {
   const getTierIcon = (tier) => {
     switch (tier) {
       case 'vip':
-        return <Sparkles className="h-4 w-4" />;
+        return <Sparkles className="size-4" />;
       case 'private':
-        return <Home className="h-4 w-4" />;
+        return <Home className="size-4" />;
       case 'semi_private':
-        return <Users className="h-4 w-4" />;
+        return <Users className="size-4" />;
       default:
         return null;
     }
@@ -297,7 +297,7 @@ function SectionCard({ section, onEdit, onDelete }) {
         )}
         {section.is_isolation_capable && (
           <Badge variant="outline" className="text-xs">
-            <Shield className="h-3 w-3 mr-1" />
+            <Shield className="size-3 mr-1" />
             Isolation
           </Badge>
         )}
@@ -311,13 +311,13 @@ function SectionCard({ section, onEdit, onDelete }) {
       {/* Actions */}
       <div className="flex items-center gap-2 pt-2 border-t">
         <Button variant="outline" size="sm" onClick={onEdit} className="flex-1">
-          <Edit className="h-3.5 w-3.5 mr-1" />
+          <Edit className="size-3.5 mr-1" />
           Edit
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="outline" size="sm" className="text-destructive">
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="size-3.5" />
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -327,7 +327,7 @@ function SectionCard({ section, onEdit, onDelete }) {
                 Are you sure you want to delete "{section.name}"? This action cannot be undone.
                 {section.bed_count > 0 && (
                   <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <AlertCircle className="size-4 text-amber-600 mt-0.5 shrink-0" />
                     <span className="text-amber-900 text-sm">
                       This section has {section.bed_count} beds assigned to it.
                     </span>
@@ -483,7 +483,7 @@ function SectionForm({ wardId, section = null, onSubmit, isSubmitting }) {
         </div>
 
         {/* Isolation Capable */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-x-2">
           <Checkbox
             id="is_isolation_capable"
             checked={formData.is_isolation_capable}
@@ -496,7 +496,7 @@ function SectionForm({ wardId, section = null, onSubmit, isSubmitting }) {
 
         {/* Negative Pressure (conditional) */}
         {formData.is_isolation_capable && (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-x-2">
             <Checkbox
               id="has_negative_pressure"
               checked={formData.has_negative_pressure}
@@ -545,7 +545,7 @@ function SectionForm({ wardId, section = null, onSubmit, isSubmitting }) {
           </div>
 
           {/* Active */}
-          <div className="flex items-center space-x-2 pt-8">
+          <div className="flex items-center gap-x-2 pt-8">
             <Checkbox
               id="is_active"
               checked={formData.is_active}

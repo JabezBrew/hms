@@ -48,8 +48,8 @@ function AppContent() {
         <header className="border-b">
           <div className="flex h-16 items-center px-4">
             <Skeleton className="h-8 w-40" />
-            <div className="ml-auto flex items-center space-x-4">
-              <Skeleton className="h-8 w-8 rounded-full" />
+            <div className="ml-auto flex items-center gap-x-4">
+              <Skeleton className="size-8 rounded-full" />
             </div>
           </div>
         </header>

@@ -37,11 +37,11 @@ export function SectionSelector({
   const getTierIcon = (tier) => {
     switch (tier) {
       case 'vip':
-        return <Sparkles className="h-3 w-3" />;
+        return <Sparkles className="size-3" />;
       case 'private':
-        return <Home className="h-3 w-3" />;
+        return <Home className="size-3" />;
       case 'semi_private':
-        return <Users className="h-3 w-3" />;
+        return <Users className="size-3" />;
       default:
         return null;
     }
@@ -133,7 +133,7 @@ export function SectionSelector({
               {/* Isolation indicator */}
               {section.is_isolation_capable && (
                 <Badge variant="outline" className="text-xs">
-                  <Shield className="h-3 w-3 mr-1" />
+                  <Shield className="size-3 mr-1" />
                   Isolation
                 </Badge>
               )}

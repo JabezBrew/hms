@@ -49,6 +49,14 @@ import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+});
+
+const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'text-slate-500', bgColor: 'bg-slate-500/10' },
   pending: { label: 'Pending Approval', color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
@@ -67,15 +75,11 @@ function getStatusConfig(status) {
 }
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return USD_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value || 0);
+  return US_NUMBER_FORMATTER.format(value || 0);
 }
 
 /**
@@ -124,7 +128,7 @@ export default function PurchaseOrderDetailPage() {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10" />
+          <Skeleton className="size-10" />
           <div>
             <Skeleton className="h-8 w-64" />
             <Skeleton className="h-5 w-48 mt-2" />
@@ -151,11 +155,11 @@ export default function PurchaseOrderDetailPage() {
         action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="size-4 mr-2" />
               Back to Purchase Orders
             </Button>
             <Button onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Retry
             </Button>
           </div>
@@ -173,7 +177,7 @@ export default function PurchaseOrderDetailPage() {
         description="The requested purchase order does not exist or has been deleted."
         action={(
           <Button variant="outline" onClick={handleBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Purchase Orders
           </Button>
         )}
@@ -208,11 +212,11 @@ export default function PurchaseOrderDetailPage() {
         description={(
           <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Building2 className="h-4 w-4" />
+              <Building2 className="size-4" />
               <span className="text-sm">{po.supplier_name || 'No Supplier'}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="size-4" />
               <span className="text-sm">
                 {po.created_at
                   ? format(parseISO(po.created_at), 'MMM d, yyyy')
@@ -226,43 +230,43 @@ export default function PurchaseOrderDetailPage() {
             {canApprove && (
               <Button onClick={handleApprove} disabled={approveMutation.isPending}>
                 {approveMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 mr-2 animate-spin" />
                 ) : (
-                  <Check className="h-4 w-4 mr-2" />
+                  <Check className="size-4 mr-2" />
                 )}
                 Approve
               </Button>
             )}
             {canSend && (
               <Button onClick={() => setSendDialogOpen(true)}>
-                <Send className="h-4 w-4 mr-2" />
+                <Send className="size-4 mr-2" />
                 Send to Supplier
               </Button>
             )}
             {canReceive && (
               <Button onClick={handleCreateGRN}>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Create GRN
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem>
-                  <Printer className="h-4 w-4 mr-2" />
+                  <Printer className="size-4 mr-2" />
                   Print
                 </DropdownMenuItem>
                 <DropdownMenuItem>
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download className="size-4 mr-2" />
                   Export PDF
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => refetch()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="size-4 mr-2" />
                   Refresh
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -276,7 +280,7 @@ export default function PurchaseOrderDetailPage() {
           className="w-fit -ml-2"
           onClick={handleBack}
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to Purchase Orders
         </Button>
       </PageHeader>
@@ -411,7 +415,7 @@ export default function PurchaseOrderDetailPage() {
                     onClick={() => navigate(`/inventory/grns/${grn.id}`)}
                   >
                     <div className="flex items-center gap-3">
-                      <Package className="h-4 w-4 text-muted-foreground" />
+                      <Package className="size-4 text-muted-foreground" />
                       <div>
                         <p className="text-sm font-mono">{grn.grn_number || `GRN-${grn.id}`}</p>
                         <p className="text-xs text-muted-foreground">
@@ -454,7 +458,7 @@ export default function PurchaseOrderDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <Building2 className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                <Building2 className="size-4 mt-0.5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">{po.supplier_name || 'N/A'}</p>
                   {po.supplier_code && (
@@ -465,14 +469,14 @@ export default function PurchaseOrderDetailPage() {
 
               {po.supplier_contact && (
                 <div className="flex items-start gap-3">
-                  <Phone className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <Phone className="size-4 mt-0.5 text-muted-foreground" />
                   <p className="text-sm">{po.supplier_contact}</p>
                 </div>
               )}
 
               {po.supplier_email && (
                 <div className="flex items-start gap-3">
-                  <Mail className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <Mail className="size-4 mt-0.5 text-muted-foreground" />
                   <p className="text-sm">{po.supplier_email}</p>
                 </div>
               )}
@@ -487,7 +491,7 @@ export default function PurchaseOrderDetailPage() {
             <CardContent className="space-y-4">
               {po.expected_delivery_date && (
                 <div className="flex items-start gap-3">
-                  <Calendar className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <Calendar className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Expected Delivery</p>
                     <p className="text-sm font-mono">
@@ -499,7 +503,7 @@ export default function PurchaseOrderDetailPage() {
 
               {po.requisition_number && (
                 <div className="flex items-start gap-3">
-                  <FileText className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <FileText className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">From Requisition</p>
                     <Button
@@ -515,7 +519,7 @@ export default function PurchaseOrderDetailPage() {
 
               {po.approved_by_name && (
                 <div className="flex items-start gap-3">
-                  <Check className="h-4 w-4 mt-0.5 text-emerald-500" />
+                  <Check className="size-4 mt-0.5 text-emerald-500" />
                   <div>
                     <p className="text-xs text-muted-foreground">Approved By</p>
                     <p className="text-sm">{po.approved_by_name}</p>
@@ -539,7 +543,7 @@ export default function PurchaseOrderDetailPage() {
               <div className="space-y-4">
                 {po.created_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-sky-500 mt-2" />
+                    <div className="size-2 rounded-full bg-sky-500 mt-2" />
                     <div>
                       <p className="text-sm">Created</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -550,7 +554,7 @@ export default function PurchaseOrderDetailPage() {
                 )}
                 {po.approved_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 mt-2" />
+                    <div className="size-2 rounded-full bg-emerald-500 mt-2" />
                     <div>
                       <p className="text-sm">Approved</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -561,7 +565,7 @@ export default function PurchaseOrderDetailPage() {
                 )}
                 {po.sent_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-sky-500 mt-2" />
+                    <div className="size-2 rounded-full bg-sky-500 mt-2" />
                     <div>
                       <p className="text-sm">Sent to Supplier</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -609,9 +613,9 @@ export default function PurchaseOrderDetailPage() {
             </Button>
             <Button onClick={handleSend} disabled={sendMutation.isPending}>
               {sendMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="size-4 mr-2 animate-spin" />
               ) : (
-                <Send className="h-4 w-4 mr-2" />
+                <Send className="size-4 mr-2" />
               )}
               Send to Supplier
             </Button>

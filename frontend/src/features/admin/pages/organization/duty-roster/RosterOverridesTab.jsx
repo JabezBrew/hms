@@ -200,7 +200,7 @@ export function RosterOverridesTab() {
         subtitle="Record date-specific changes to the authoritative roster plan."
         actions={
           <Button onClick={() => openForm(null)}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             <span className="font-mono text-xs uppercase tracking-wide">Add Override</span>
           </Button>
         }

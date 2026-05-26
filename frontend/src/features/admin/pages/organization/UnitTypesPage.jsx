@@ -34,6 +34,24 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { Link } from 'react-router-dom';
 
+function CapabilityBadge({ enabled, label }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {enabled ? (
+        <Check className="size-3.5 text-emerald-600" />
+      ) : (
+        <X className="size-3.5 text-muted-foreground/50" />
+      )}
+      <span className={cn(
+        'text-xs',
+        enabled ? 'text-foreground' : 'text-muted-foreground/50'
+      )}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 /**
  * UnitTypesPage - Configuration page for unit types
  */
@@ -59,30 +77,14 @@ export default function UnitTypesPage() {
     ],
   });
 
-  const CapabilityBadge = ({ enabled, label }) => (
-    <div className="flex items-center gap-1.5">
-      {enabled ? (
-        <Check className="h-3.5 w-3.5 text-emerald-600" />
-      ) : (
-        <X className="h-3.5 w-3.5 text-muted-foreground/50" />
-      )}
-      <span className={cn(
-        'text-xs',
-        enabled ? 'text-foreground' : 'text-muted-foreground/50'
-      )}>
-        {label}
-      </span>
-    </div>
-  );
-
   return (
     <PageShell>
       {pageMeta}
       <PageHeader
         title={(
           <span className="inline-flex items-center gap-3">
-            <span className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
-              <Settings2 className="h-5 w-5 text-amber-700" />
+            <span className="size-10 rounded-lg bg-amber-100 flex items-center justify-center">
+              <Settings2 className="size-5 text-amber-700" />
             </span>
             <span>Unit Types</span>
           </span>
@@ -91,7 +93,7 @@ export default function UnitTypesPage() {
         actions={(
           <Button variant="ghost" size="icon" asChild>
             <Link to="/admin/organization" aria-label="Back to organization">
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="size-5" />
             </Link>
           </Button>
         )}
@@ -101,7 +103,7 @@ export default function UnitTypesPage() {
 
         {/* Search */}
         <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search unit types..."
             value={searchQuery}
@@ -148,7 +150,7 @@ export default function UnitTypesPage() {
                   >
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <Building2 className="size-4 text-muted-foreground" />
                         <span className="font-medium">{type.name}</span>
                       </div>
                     </TableCell>
@@ -198,7 +200,7 @@ export default function UnitTypesPage() {
         <SheetContent className="sm:max-w-lg">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
+              <Building2 className="size-5" />
               {selectedType?.name}
             </SheetTitle>
           </SheetHeader>

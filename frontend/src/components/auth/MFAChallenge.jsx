@@ -203,8 +203,8 @@ export function MFAChallenge() {
     <div className="mx-auto flex w-full flex-col gap-8 sm:w-[420px]">
       {/* Header */}
       <div className="text-center space-y-3">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
-          <Shield className="h-7 w-7" aria-hidden="true" />
+        <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
+          <Shield className="size-7" aria-hidden="true" />
         </div>
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
@@ -222,10 +222,10 @@ export function MFAChallenge() {
       {shouldShowTotp && (
         <div className="rounded-lg border border-border/60 bg-card/50 p-5 space-y-4">
           <div className="flex items-start gap-3">
-            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+            <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
               totpConfirmed ? 'bg-emerald-500/10 text-emerald-600' : 'bg-sky-500/10 text-sky-600'
             }`}>
-              {totpConfirmed ? <CheckCircle2 className="h-5 w-5" /> : <Smartphone className="h-5 w-5" />}
+              {totpConfirmed ? <CheckCircle2 className="size-5" /> : <Smartphone className="size-5" />}
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-heading font-medium text-foreground">Authenticator App</h3>
@@ -237,7 +237,7 @@ export function MFAChallenge() {
             </div>
             {totpConfirmed && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
-                <CheckCircle2 className="h-3 w-3" />
+                <CheckCircle2 className="size-3" />
                 Done
               </span>
             )}
@@ -269,12 +269,12 @@ export function MFAChallenge() {
                 >
                   {copiedSecret ? (
                     <>
-                      <Check className="h-3 w-3" aria-hidden="true" />
+                      <Check className="size-3" aria-hidden="true" />
                       Copied
                     </>
                   ) : (
                     <>
-                      <Copy className="h-3 w-3" aria-hidden="true" />
+                      <Copy className="size-3" aria-hidden="true" />
                       Copy
                     </>
                   )}
@@ -319,10 +319,10 @@ export function MFAChallenge() {
       {shouldShowWebauthn && (
         <div className="rounded-lg border border-border/60 bg-card/50 p-5 space-y-4">
           <div className="flex items-start gap-3">
-            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+            <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
               webauthnConfirmed ? 'bg-emerald-500/10 text-emerald-600' : 'bg-violet-500/10 text-violet-600'
             }`}>
-              {webauthnConfirmed ? <CheckCircle2 className="h-5 w-5" /> : <Key className="h-5 w-5" />}
+              {webauthnConfirmed ? <CheckCircle2 className="size-5" /> : <Key className="size-5" />}
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-heading font-medium text-foreground">Security Key / Passkey</h3>
@@ -332,7 +332,7 @@ export function MFAChallenge() {
             </div>
             {webauthnConfirmed && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
-                <CheckCircle2 className="h-3 w-3" />
+                <CheckCircle2 className="size-3" />
                 Done
               </span>
             )}
@@ -340,7 +340,7 @@ export function MFAChallenge() {
 
           {!webauthnAvailable ? (
             <div className="flex items-center gap-2 rounded-md bg-rose-500/5 border border-rose-500/20 px-3 py-2 text-xs text-rose-600">
-              <AlertCircle className="h-4 w-4 shrink-0" />
+              <AlertCircle className="size-4 shrink-0" />
               <span>WebAuthn is not supported on this device or browser</span>
             </div>
           ) : (
@@ -361,8 +361,8 @@ export function MFAChallenge() {
       {shouldShowRecovery && (
         <div className="rounded-lg border border-border/40 bg-muted/30 p-5 space-y-4">
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Key className="h-5 w-5" />
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Key className="size-5" />
             </div>
             <div>
               <h3 className="font-heading font-medium text-foreground">Recovery Code</h3>

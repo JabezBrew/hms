@@ -58,8 +58,8 @@ export function LoginForm() {
     <div className="mx-auto flex w-full max-w-[420px] flex-col justify-center gap-8 px-5 sm:w-[380px] sm:px-0">
       {/* Header */}
       <div className="flex flex-col items-center gap-4 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
-          <LogIn className="h-7 w-7" aria-hidden="true" />
+        <div className="flex size-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
+          <LogIn className="size-7" aria-hidden="true" />
         </div>
         <div className="space-y-1">
           <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
@@ -145,9 +145,9 @@ export function LoginForm() {
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {showPassword ? (
-                  <EyeOff className="h-4 w-4" aria-hidden="true" />
+                  <EyeOff className="size-4" aria-hidden="true" />
                 ) : (
-                  <Eye className="h-4 w-4" aria-hidden="true" />
+                  <Eye className="size-4" aria-hidden="true" />
                 )}
               </button>
             </div>

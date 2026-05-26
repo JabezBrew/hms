@@ -25,6 +25,8 @@ import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 /**
  * PendingActionsWidget - Shows pending actions requiring attention
  */
@@ -81,14 +83,14 @@ function PendingActionsWidget({ isLoading, metrics, className }) {
     <Card className={cn('bg-card/30 border-border/50', className)}>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <ClipboardList className="h-5 w-5 text-amber-500" />
+          <ClipboardList className="size-5 text-amber-500" />
           Pending Actions
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         {actions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Package className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <Package className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
               No pending actions
             </p>
@@ -102,7 +104,7 @@ function PendingActionsWidget({ isLoading, metrics, className }) {
             >
               <div className="flex items-center gap-3">
                 <action.icon className={cn(
-                  'h-5 w-5',
+                  'size-5',
                   action.variant === 'warning' && 'text-amber-500',
                   action.variant === 'danger' && 'text-rose-500',
                   action.variant === 'default' && 'text-muted-foreground'
@@ -117,7 +119,7 @@ function PendingActionsWidget({ isLoading, metrics, className }) {
                 )}>
                   {action.count}
                 </span>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="size-4 text-muted-foreground" />
               </div>
             </div>
           ))
@@ -130,7 +132,7 @@ function PendingActionsWidget({ isLoading, metrics, className }) {
 /**
  * RecentActivityWidget - Shows recent inventory activity
  */
-function RecentActivityWidget({ isLoading, activities = [], className }) {
+function RecentActivityWidget({ isLoading, activities = DEFAULT_EMPTY_ARRAY, className }) {
   // Use real activity data passed from parent
   const recentActivity = activities;
 
@@ -143,7 +145,7 @@ function RecentActivityWidget({ isLoading, activities = [], className }) {
         <CardContent className="space-y-3">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="flex items-start gap-3">
-              <Skeleton className="h-2 w-2 rounded-full mt-2" />
+              <Skeleton className="size-2 rounded-full mt-2" />
               <div className="space-y-1 flex-1">
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-3 w-20" />
@@ -159,14 +161,14 @@ function RecentActivityWidget({ isLoading, activities = [], className }) {
     <Card className={cn('bg-card/30 border-border/50', className)}>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="h-5 w-5 text-sky-500" />
+          <Activity className="size-5 text-sky-500" />
           Recent Activity
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {recentActivity.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Activity className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <Activity className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
               No recent activity
             </p>
@@ -175,7 +177,7 @@ function RecentActivityWidget({ isLoading, activities = [], className }) {
           recentActivity.map((activity) => (
             <div key={activity.id} className="flex items-start gap-3">
               <div className="mt-1.5">
-                <div className="h-2 w-2 rounded-full bg-sky-500" />
+                <div className="size-2 rounded-full bg-sky-500" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm truncate">{activity.description}</p>
@@ -231,7 +233,7 @@ function QuickActionsWidget({ className }) {
             className="w-full justify-start"
             onClick={() => navigate(action.href)}
           >
-            <action.icon className="h-4 w-4 mr-2" />
+            <action.icon className="size-4 mr-2" />
             {action.label}
           </Button>
         ))}
@@ -283,11 +285,11 @@ export default function InventoryDashboardPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handleRefresh}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             <Button onClick={() => navigate('/inventory/items?action=create')}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Add Item
             </Button>
           </div>

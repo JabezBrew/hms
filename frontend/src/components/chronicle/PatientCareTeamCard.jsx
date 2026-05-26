@@ -78,7 +78,7 @@ export function PatientCareTeamCard({ encounter, className }) {
       <Card className={cn('border-border', className)}>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base font-heading">
-            <Users className="h-4 w-4" />
+            <Users className="size-4" />
             Care Team
           </CardTitle>
         </CardHeader>
@@ -93,7 +93,7 @@ export function PatientCareTeamCard({ encounter, className }) {
     <Card className={cn('border-border', className)}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base font-heading">
-          <Users className="h-4 w-4" />
+          <Users className="size-4" />
           Care Team
         </CardTitle>
       </CardHeader>
@@ -102,7 +102,7 @@ export function PatientCareTeamCard({ encounter, className }) {
         {primary_team && (
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <UserCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
               <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                 Primary Team
               </span>
@@ -119,10 +119,10 @@ export function PatientCareTeamCard({ encounter, className }) {
         {/* Transfer History */}
         {wasTransferred && (
           <div className="flex items-center gap-2 text-sm pl-6 py-2 bg-muted/30 rounded-lg">
-            <History className="h-4 w-4 text-muted-foreground" />
+            <History className="size-4 text-muted-foreground" />
             <span className="text-muted-foreground">Originally admitted by:</span>
             <span className="font-medium">{admitted_by_team.name}</span>
-            <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />
+            <ArrowRight className="size-3 text-muted-foreground mx-1" />
             <span className="text-xs text-muted-foreground">Transferred</span>
           </div>
         )}
@@ -210,7 +210,7 @@ export function PatientCareTeamCompact({ encounter, className }) {
               'border border-emerald-200 dark:border-emerald-800'
             )}
           >
-            <UserCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <UserCheck className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100 truncate">
                 {primary_team.name}

@@ -61,7 +61,7 @@ export default function MFAStatus() {
       <div className="text-center py-6 bg-muted/30 border border-border rounded-xl">
         <p className="text-muted-foreground mb-3 text-sm">Failed to load MFA status</p>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="font-mono text-xs">
-          <RefreshCw className="h-4 w-4 mr-2" />
+          <RefreshCw className="size-4 mr-2" />
           Retry
         </Button>
       </div>
@@ -72,7 +72,7 @@ export default function MFAStatus() {
     return (
       <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-muted/30">
         <div className="p-2.5 rounded-lg shrink-0 bg-muted border border-border">
-          <ShieldOff className="h-5 w-5 text-muted-foreground" />
+          <ShieldOff className="size-5 text-muted-foreground" />
         </div>
         <div>
           <p className="font-display text-sm font-medium text-foreground">
@@ -229,9 +229,9 @@ export default function MFAStatus() {
             : 'bg-amber-500/10 border border-amber-500/20'
         )}>
           {hasMfa ? (
-            <ShieldCheck className="h-5 w-5 text-emerald-400" />
+            <ShieldCheck className="size-5 text-emerald-400" />
           ) : (
-            <ShieldOff className="h-5 w-5 text-amber-400" />
+            <ShieldOff className="size-5 text-amber-400" />
           )}
         </div>
         <div>
@@ -285,7 +285,7 @@ export default function MFAStatus() {
                 className="font-mono text-xs"
                 onClick={handleCopySecret}
               >
-                {copiedSecret ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                {copiedSecret ? <Check className="size-3 mr-1" /> : <Copy className="size-3 mr-1" />}
                 {copiedSecret ? 'Copied' : 'Copy'}
               </Button>
             </div>
@@ -343,7 +343,7 @@ export default function MFAStatus() {
               </Button>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-mono uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                <AlertCircle className="h-3 w-3" />
+                <AlertCircle className="size-3" />
                 Unsupported Device
               </span>
             )
@@ -405,7 +405,7 @@ export default function MFAStatus() {
                   className="font-mono text-xs"
                   onClick={handleCopyRecoveryCodes}
                 >
-                  {copiedRecoveryCodes ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                  {copiedRecoveryCodes ? <Check className="size-3 mr-1" /> : <Copy className="size-3 mr-1" />}
                   {copiedRecoveryCodes ? 'Copied' : 'Copy'}
                 </Button>
                 <Button
@@ -448,7 +448,7 @@ function MethodRow({ icon: Icon, title, description, active, action }) {
     <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border gap-3">
       <div className="flex items-center gap-3 min-w-0">
         <div className={cn('p-2 rounded-lg', active ? 'bg-emerald-500/10' : 'bg-muted')}>
-          <Icon className={cn('h-4 w-4', active ? 'text-emerald-400' : 'text-muted-foreground')} />
+          <Icon className={cn('size-4', active ? 'text-emerald-400' : 'text-muted-foreground')} />
         </div>
         <div className="min-w-0">
           <p className="font-mono text-xs font-medium text-foreground truncate">{title}</p>
@@ -475,7 +475,7 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-card">
-        <Skeleton className="h-10 w-10 rounded-lg" />
+        <Skeleton className="size-10 rounded-lg" />
         <div className="space-y-2 flex-1">
           <Skeleton className="h-4 w-36" />
           <Skeleton className="h-3 w-56" />

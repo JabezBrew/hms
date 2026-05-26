@@ -131,8 +131,8 @@ const ScheduleSlotsPage = () => {
             <PageState variant="loading">
                 {pageMeta}
                 <div className="container mx-auto py-6 space-y-6">
-                    <div className="flex items-center space-x-4">
-                        <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="flex items-center gap-x-4">
+                        <Skeleton className="size-10 rounded-full" />
                         <div className="space-y-2">
                             <Skeleton className="h-4 w-[250px]" />
                             <Skeleton className="h-4 w-[200px]" />
@@ -154,7 +154,7 @@ const ScheduleSlotsPage = () => {
                     description="We could not find a schedule for the selected slot set."
                     action={
                         <Button variant="outline" onClick={() => navigate('/practitioner-availability')}>
-                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            <ArrowLeft className="mr-2 size-4" />
                             Back to Availability
                         </Button>
                     }
@@ -171,7 +171,7 @@ const ScheduleSlotsPage = () => {
                 description={`${schedule.template_name} (${schedule.start_date} to ${schedule.end_date})`}
                 actions={(
                     <Button variant="outline" onClick={() => navigate('/practitioner-availability')}>
-                        <ArrowLeft className="mr-2 h-4 w-4" />
+                        <ArrowLeft className="mr-2 size-4" />
                         Back
                     </Button>
                 )}
@@ -229,7 +229,7 @@ const ScheduleSlotsPage = () => {
                 <CardContent>
                     {slots.length === 0 ? (
                         <div className="text-center py-6">
-                            <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
+                            <Calendar className="mx-auto size-12 text-muted-foreground" />
                             <h3 className="mt-4 text-lg font-medium">No Slots Found</h3>
                             <p className="mt-2 text-sm text-muted-foreground">
                                 There are no slots available for this schedule.
@@ -246,7 +246,7 @@ const ScheduleSlotsPage = () => {
                                     header: 'Start Time',
                                     render: (slot) => (
                                         <div className="flex items-center">
-                                            <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
+                                            <Clock className="mr-2 size-4 text-muted-foreground" />
                                             {formatDate(slot.start)}
                                         </div>
                                     ),

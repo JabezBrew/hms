@@ -350,8 +350,8 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
   if (!appointment) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-6">
-          <AlertCircle className="h-8 w-8 text-muted-foreground" />
+        <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-6">
+          <AlertCircle className="size-8 text-muted-foreground" />
         </div>
         <h2 className="font-display text-2xl text-foreground mb-2">
           Appointment Not Found
@@ -360,7 +360,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
           The appointment you're looking for doesn't exist or has been deleted.
         </p>
         <Button onClick={handleBack} variant="outline" className="font-mono text-xs">
-          <ArrowLeft className="mr-2 h-4 w-4" />
+          <ArrowLeft className="mr-2 size-4" />
           Back to Appointments
         </Button>
       </div>
@@ -387,7 +387,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
         onClick={handleBack}
         className="font-mono text-xs text-muted-foreground hover:text-foreground -ml-2"
       >
-        <ArrowLeft className="mr-2 h-4 w-4" />
+        <ArrowLeft className="mr-2 size-4" />
         Back to Appointments
       </Button>
 
@@ -406,7 +406,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono uppercase tracking-wider border",
                   status.badge
                 )}>
-                  <span className={cn("w-1.5 h-1.5 rounded-full", status.dot)} />
+                  <span className={cn("size-1.5 rounded-full", status.dot)} />
                   {status.label}
                 </span>
                 <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
@@ -422,11 +422,11 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
               {/* Appointment metadata line */}
 	              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground">
 	                <span className="flex items-center gap-1.5 font-mono text-sm">
-	                  <Calendar className="h-3.5 w-3.5" />
+	                  <Calendar className="size-3.5" />
 	                  {startDate ? format(startDate, 'EEEE, MMMM d, yyyy') : 'N/A'}
 	                </span>
 	                <span className="flex items-center gap-1.5 font-mono text-sm">
-	                  <Clock className="h-3.5 w-3.5" />
+	                  <Clock className="size-3.5" />
 	                  {startDate ? format(startDate, 'h:mm a') : 'N/A'} - {endDate ? format(endDate, 'h:mm a') : 'N/A'}
 	                </span>
 	                <span className="font-mono text-sm">
@@ -436,7 +436,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
               {/* Practitioner */}
               <div className="flex items-center gap-2 text-muted-foreground">
-                <Stethoscope className="h-4 w-4" />
+                <Stethoscope className="size-4" />
                 <span className="font-mono text-sm">
                   with <span className="text-foreground">{practitioner.name}</span>
                 </span>
@@ -476,7 +476,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                           onClick={() => handleStatusUpdate(key)}
                           disabled={appointment.status === key || updateStatusMutation.isPending}
                         >
-                          <span className={cn("w-2 h-2 rounded-full mr-2", config.dot)} />
+                          <span className={cn("size-2 rounded-full mr-2", config.dot)} />
                           {config.label}
                         </Button>
                       ))}
@@ -493,7 +493,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   onClick={() => handleStatusUpdate('arrived')}
                   disabled={updateStatusMutation.isPending}
                 >
-                  <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                  <CheckCircle className="size-3.5 mr-1.5" />
                   Check In
                 </Button>
               ) : null}
@@ -507,7 +507,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                       className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                       disabled={updateStatusMutation.isPending || cancelAppointmentMutation.isPending}
                     >
-                      <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                      <XCircle className="size-3.5 mr-1.5" />
                       Cancel Appointment
                     </Button>
                   </AlertDialogTrigger>
@@ -551,7 +551,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                   className="font-mono text-xs"
                   onClick={handleEdit}
                 >
-                  <Edit className="h-3.5 w-3.5 mr-1.5" />
+                  <Edit className="size-3.5 mr-1.5" />
                   Edit
                 </Button>
               ) : null}
@@ -565,7 +565,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                       className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                       disabled={deleteMutation.isPending}
                     >
-                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      <Trash2 className="size-3.5 mr-1.5" />
                       Delete
                     </Button>
                   </AlertDialogTrigger>
@@ -601,16 +601,16 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
           {/* Schedule Card */}
           <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-1">
             <h2 className="font-heading text-lg font-semibold text-foreground mb-6 flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-[oklch(0.75_0.18_55)]" />
+              <Calendar className="size-5 text-[oklch(0.75_0.18_55)]" />
               Schedule Details
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Start Time */}
 	              <div className="space-y-2">
-	                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-	                  Start Time
-	                </label>
+		                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+		                  Start Time
+		                </p>
 	                <div className="font-mono text-sm text-foreground">
 		                  {formatDateTime(startAt)}
 		                </div>
@@ -618,9 +618,9 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
               {/* End Time */}
 	              <div className="space-y-2">
-	                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-	                  End Time
-	                </label>
+		                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+		                  End Time
+		                </p>
 	                <div className="font-mono text-sm text-foreground">
 		                  {formatDateTime(endAt)}
 		                </div>
@@ -628,22 +628,22 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
               {/* Duration */}
               <div className="space-y-2">
-                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Duration
-                </label>
+	                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+	                  Duration
+	                </p>
                 <div className="font-mono text-sm text-foreground flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <Clock className="size-4 text-muted-foreground" />
                   {getAppointmentDuration()}
                 </div>
               </div>
 
               {/* Type */}
               <div className="space-y-2">
-                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Appointment Type
-                </label>
+	                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+	                  Appointment Type
+	                </p>
                 <div className="font-mono text-sm text-foreground flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <FileText className="size-4 text-muted-foreground" />
                   {getAppointmentType()}
                 </div>
               </div>
@@ -656,9 +656,9 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
 	                {(appointment.description || appointment.reason) && (
 	                  <div className="space-y-2 mb-4">
-	                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-	                      Description
-	                    </label>
+		                    <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+		                      Description
+		                    </p>
 	                    <p className="text-sm text-foreground leading-relaxed">
 	                      {appointment.description || appointment.reason}
 	                    </p>
@@ -667,10 +667,10 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
 	                {(appointment.comment || appointment.notes) && (
 	                  <div className="space-y-2">
-	                    <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-	                      <MessageSquare className="h-3 w-3" />
-	                      Comments
-	                    </label>
+		                    <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+		                      <MessageSquare className="size-3" />
+		                      Comments
+		                    </p>
 	                    <p className="text-sm text-muted-foreground italic leading-relaxed">
 	                      "{appointment.comment || appointment.notes}"
 	                    </p>
@@ -686,7 +686,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 	          {/* Patient Card */}
 	          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-2">
             <h3 className="font-heading text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-              <User className="h-4 w-4 text-[oklch(0.70_0.15_230)]" />
+              <User className="size-4 text-[oklch(0.70_0.15_230)]" />
               Patient
             </h3>
 
@@ -715,7 +715,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 	          {/* Practitioner Card */}
 	          <article className="bg-card border border-border rounded-xl p-6 animate-chronicle-enter stagger-3">
             <h3 className="font-heading text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Stethoscope className="h-4 w-4 text-[oklch(0.70_0.17_155)]" />
+              <Stethoscope className="size-4 text-[oklch(0.70_0.17_155)]" />
               Practitioner
             </h3>
 
@@ -756,7 +756,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                 return (
                   <div key={statusKey} className="flex items-center gap-3">
                     <div className={cn(
-                      "w-2.5 h-2.5 rounded-full transition-all",
+                      "size-2.5 rounded-full transition-all",
                       isActive ? config.dot : isPast ? "bg-muted-foreground/50" : "bg-muted"
                     )} />
                     <span className={cn(

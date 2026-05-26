@@ -575,17 +575,17 @@ const PatientChronicleListPage = () => {
         variant="ghost"
         size="icon"
         onClick={handleRefresh}
-        className="shrink-0 h-9 w-9"
+        className="shrink-0 size-9"
         aria-label="Refresh patient list"
       >
-        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+        <RefreshCw className="size-4" aria-hidden="true" />
       </Button>
     </div>
   );
 
   const headerActions = ['admin', 'receptionist'].includes(user?.role) ? (
     <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs">
-      <Plus className="h-4 w-4 mr-2" />
+      <Plus className="size-4 mr-2" />
       Register Patient
     </Button>
   ) : null;
@@ -619,7 +619,7 @@ const PatientChronicleListPage = () => {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Users className="h-4 w-4" />
+              <Users className="size-4" />
               All Patients
             </NavLink>
             <NavLink
@@ -633,7 +633,7 @@ const PatientChronicleListPage = () => {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Star className="h-4 w-4" />
+              <Star className="size-4" />
               My Patients
             </NavLink>
           </div>
@@ -663,7 +663,7 @@ const PatientChronicleListPage = () => {
         <div className="flex flex-col gap-3 mt-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative w-full sm:max-w-3xl lg:max-w-4xl">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
               <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
               <Input
                 id="patient-search"
@@ -679,7 +679,7 @@ const PatientChronicleListPage = () => {
                   aria-label="Clear search"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
                 >
-                  <X className="h-4 w-4" aria-hidden="true" />
+                  <X className="size-4" aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -690,7 +690,7 @@ const PatientChronicleListPage = () => {
                 onClick={() => setFiltersOpen((open) => !open)}
                 className="font-mono text-xs"
               >
-                <Filter className="h-4 w-4 mr-2" />
+                <Filter className="size-4 mr-2" />
                 Filters
                 {activeFilterCount > 0 && (
                   <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
@@ -990,7 +990,7 @@ const PatientChronicleListPage = () => {
       <main className="p-4 sm:p-6 space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Search className="h-4 w-4" aria-hidden="true" />
+            <Search className="size-4" aria-hidden="true" />
             <h2 className="font-heading text-sm font-medium text-foreground">
               {listHeaderLabel}
             </h2>
@@ -1024,7 +1024,7 @@ const FilterChip = ({ label, onRemove }) => (
       className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       aria-label={`Remove ${label}`}
     >
-      <X className="h-3 w-3" aria-hidden="true" />
+      <X className="size-3" aria-hidden="true" />
     </button>
   </Badge>
 );
@@ -1090,12 +1090,12 @@ const SortableTableHead = ({ column, ordering, onOrderingChange }) => {
         <span>{column.label}</span>
         {isActive ? (
           isDescending ? (
-            <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+            <ArrowDown className="size-3.5" aria-hidden="true" />
           ) : (
-            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+            <ArrowUp className="size-3.5" aria-hidden="true" />
           )
         ) : (
-          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden="true" />
+          <ArrowUpDown className="size-3.5 text-muted-foreground/70" aria-hidden="true" />
         )}
       </button>
     </TableHead>
@@ -1173,7 +1173,7 @@ const SearchResultsTable = ({
             <TableRow>
               <TableCell colSpan={TABLE_COLUMNS.length} className="py-12 text-center">
                 <div className="flex flex-col items-center gap-2">
-                  <Search className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                  <Search className="size-5 text-muted-foreground" aria-hidden="true" />
                   <p className="text-sm text-muted-foreground">{emptyDescription}</p>
                 </div>
               </TableCell>
@@ -1267,7 +1267,7 @@ const SearchResultsTable = ({
             disabled={!hasPreviousPage}
             className="font-mono text-xs"
           >
-            <ChevronLeft className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            <ChevronLeft className="mr-1 size-3.5" aria-hidden="true" />
             Previous
           </Button>
           <Button
@@ -1279,7 +1279,7 @@ const SearchResultsTable = ({
             className="font-mono text-xs"
           >
             Next
-            <ChevronRight className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
+            <ChevronRight className="ml-1 size-3.5" aria-hidden="true" />
           </Button>
         </div>
       </div>

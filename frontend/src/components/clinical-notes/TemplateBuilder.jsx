@@ -361,7 +361,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
 
   return (
     <div className="border border-border rounded-2xl bg-card overflow-hidden">
-      <div className="px-4 sm:px-6 py-4 border-b border-border bg-muted/30">
+      <div className="p-4 sm:px-6 border-b border-border bg-muted/30">
         <div className="flex items-center justify-center gap-1 sm:gap-2">
           {STEPS.map((step, index) => {
             const StepIcon = step.icon;
@@ -391,13 +391,13 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                 >
                   <span
                     className={cn(
-                      'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-mono',
+                      'size-6 rounded-full flex items-center justify-center text-[10px] font-mono',
                       isCompleted || isActive
                         ? 'bg-amber-500 text-white'
                         : 'bg-muted text-muted-foreground',
                     )}
                   >
-                    {isCompleted ? <Check className="h-3.5 w-3.5" /> : step.id}
+                    {isCompleted ? <Check className="size-3.5" /> : step.id}
                   </span>
                   <span
                     className={cn(
@@ -407,7 +407,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                   >
                     {step.name}
                   </span>
-                  <StepIcon className="sm:hidden h-3.5 w-3.5 text-muted-foreground" />
+                  <StepIcon className="sm:hidden size-3.5 text-muted-foreground" />
                 </button>
               </div>
             );
@@ -470,7 +470,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                         return (
                           <SelectItem key={option.value} value={option.value} className="font-mono">
                             <div className="flex items-center gap-2">
-                              <Icon className="h-4 w-4" />
+                              <Icon className="size-4" />
                               <span>{option.label}</span>
                             </div>
                           </SelectItem>
@@ -580,7 +580,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                             isSelected ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground',
                           )}
                         >
-                          <Icon className="h-3.5 w-3.5" />
+                          <Icon className="size-3.5" />
                         </span>
                         <div>
                           <p className="font-mono text-sm text-foreground">{option.label}</p>
@@ -647,14 +647,14 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                   className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
                   onClick={addSection}
                 >
-                  <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                  <PlusCircle className="size-3.5 mr-1.5" />
                   Add Section
                 </Button>
               </div>
 
               <div className="rounded-xl border border-border p-4 bg-muted/20">
                 <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="h-4 w-4 text-amber-600" />
+                  <Sparkles className="size-4 text-amber-600" />
                   <p className="font-mono text-xs text-foreground">Quick Start</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -675,7 +675,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
 
               {fields.length === 0 ? (
                 <div className="text-center py-12 rounded-xl border border-dashed border-border">
-                  <ListOrdered className="h-10 w-10 mx-auto text-muted-foreground opacity-60" />
+                  <ListOrdered className="size-10 mx-auto text-muted-foreground opacity-60" />
                   <p className="font-mono text-sm text-muted-foreground mt-3">No sections added yet.</p>
                   <p className="font-mono text-[11px] text-muted-foreground mt-1">
                     Add a section or apply a quick start template.
@@ -694,30 +694,30 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7"
+                            className="size-7"
                             onClick={() => move(index, Math.max(index - 1, 0))}
                             disabled={index === 0}
                           >
-                            <MoveUp className="h-3.5 w-3.5" />
+                            <MoveUp className="size-3.5" />
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7"
+                            className="size-7"
                             onClick={() => move(index, Math.min(index + 1, fields.length - 1))}
                             disabled={index === fields.length - 1}
                           >
-                            <MoveDown className="h-3.5 w-3.5" />
+                            <MoveDown className="size-3.5" />
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-rose-500 hover:text-rose-600"
+                            className="size-7 text-rose-500 hover:text-rose-600"
                             onClick={() => remove(index)}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="size-3.5" />
                           </Button>
                         </div>
 
@@ -871,7 +871,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                     </p>
                   </div>
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-[10px] font-mono">
-                    <CircleDot className="h-3 w-3" />
+                    <CircleDot className="size-3" />
                     {watch('estimated_steps') || 0} steps
                   </span>
                 </div>
@@ -917,7 +917,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
           ) : null}
         </div>
 
-        <div className="px-4 sm:px-6 py-4 border-t border-border bg-card">
+        <div className="p-4 sm:px-6 border-t border-border bg-card">
           <div className="flex items-center justify-between">
             <Button
               type="button"
@@ -927,7 +927,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
               disabled={currentStep === 1}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+              <ChevronLeft className="size-3.5 mr-1" />
               Previous
             </Button>
 
@@ -941,7 +941,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                   onClick={nextStep}
                 >
                   Next
-                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  <ChevronRight className="size-3.5 ml-1" />
                 </Button>
               ) : (
                 <Button
@@ -952,12 +952,12 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                 >
                   {isSaving ? (
                     <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                      Saving...
+                      <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                      Saving…
                     </>
                   ) : (
                     <>
-                      <Check className="h-3.5 w-3.5 mr-1.5" />
+                      <Check className="size-3.5 mr-1.5" />
                       {initialTemplate ? 'Update Template' : 'Create Template'}
                     </>
                   )}

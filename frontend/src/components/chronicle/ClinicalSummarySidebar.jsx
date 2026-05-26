@@ -245,7 +245,7 @@ const ProblemsSection = ({ problems }) => {
               )}
             >
               <div className={cn(
-                "w-2 h-2 rounded-full mt-1.5 shrink-0",
+                "size-2 rounded-full mt-1.5 shrink-0",
                 getSeverityColor(problem.severity)
               )} />
               <div className="min-w-0 flex-1">
@@ -307,7 +307,7 @@ const MedicationsSection = ({ medications, maxVisible = 5 }) => {
                   "flex items-center gap-2"
                 )}
               >
-                <Pill className="h-3 w-3 text-muted-foreground shrink-0" />
+                <Pill className="size-3 text-muted-foreground shrink-0" />
                 <span className="truncate">
                   {medicationName}
                   {dose && ` ${dose}`}
@@ -323,7 +323,7 @@ const MedicationsSection = ({ medications, maxVisible = 5 }) => {
               "flex items-center gap-1"
             )}>
               +{remainingCount} more
-              <ChevronRight className="h-3 w-3" />
+              <ChevronRight className="size-3" />
             </li>
           )}
         </ul>
@@ -340,8 +340,8 @@ const AllergiesSection = ({ allergies }) => {
     return (
       <section className="p-4 rounded-xl bg-muted/30 border border-border">
         <header className="flex items-center gap-2 mb-2">
-          <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
-            <FileWarning className="h-3 w-3 text-muted-foreground" />
+          <div className="size-5 rounded-full bg-muted flex items-center justify-center">
+            <FileWarning className="size-3 text-muted-foreground" />
           </div>
           <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             Allergies
@@ -355,8 +355,8 @@ const AllergiesSection = ({ allergies }) => {
   return (
     <section className="p-4 rounded-xl bg-destructive/5 border border-destructive/20">
       <header className="flex items-center gap-2 mb-3">
-        <div className="w-5 h-5 rounded-full bg-destructive/20 flex items-center justify-center">
-          <AlertTriangle className="h-3 w-3 text-destructive" />
+        <div className="size-5 rounded-full bg-destructive/20 flex items-center justify-center">
+          <AlertTriangle className="size-3 text-destructive" />
         </div>
         <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">
           Allergies
@@ -436,7 +436,7 @@ const VitalsSection = ({ vitals = EMPTY_ARRAY, maxVisible = 6, onViewTrends }) =
               onClick={onViewTrends}
               className="h-6 px-2 font-mono text-[10px]"
             >
-              <BarChart3 className="mr-1 h-3 w-3" />
+              <BarChart3 className="mr-1 size-3" />
               Trends
             </Button>
           ) : null}
@@ -561,7 +561,7 @@ const FluidBalanceSection = ({ patientId, onViewTrends }) => {
                 onClick={onViewTrends}
                 className="h-6 px-2 font-mono text-[10px]"
               >
-                <BarChart3 className="mr-1 h-3 w-3" />
+                <BarChart3 className="mr-1 size-3" />
                 Trends
               </Button>
             ) : null}
@@ -592,19 +592,19 @@ const FluidBalanceSection = ({ patientId, onViewTrends }) => {
               onClick={onViewTrends}
               className="h-6 px-2 font-mono text-[10px]"
             >
-              <BarChart3 className="mr-1 h-3 w-3" />
+              <BarChart3 className="mr-1 size-3" />
               Trends
             </Button>
           ) : null}
         </div>
-        <Droplet className="h-3.5 w-3.5 text-sky-500" />
+        <Droplet className="size-3.5 text-sky-500" />
       </header>
 
       <div className="grid grid-cols-3 gap-2">
         {/* Intake */}
         <div className="p-3 rounded-lg bg-sky-500/10 border border-sky-500/20">
           <div className="flex items-center gap-1 mb-1">
-            <ArrowDownCircle className="h-3 w-3 text-sky-500" />
+            <ArrowDownCircle className="size-3 text-sky-500" />
             <span className="font-mono text-[10px] text-sky-600">IN</span>
           </div>
           <div className="font-mono text-sm font-medium text-sky-600">
@@ -616,7 +616,7 @@ const FluidBalanceSection = ({ patientId, onViewTrends }) => {
         {/* Output */}
         <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
           <div className="flex items-center gap-1 mb-1">
-            <ArrowUpCircle className="h-3 w-3 text-amber-500" />
+            <ArrowUpCircle className="size-3 text-amber-500" />
             <span className="font-mono text-[10px] text-amber-600">OUT</span>
           </div>
           <div className="font-mono text-sm font-medium text-amber-600">
@@ -634,7 +634,7 @@ const FluidBalanceSection = ({ patientId, onViewTrends }) => {
         )}>
           <div className="flex items-center gap-1 mb-1">
             <Droplet className={cn(
-              "h-3 w-3",
+              "size-3",
               balance > 0 && "text-emerald-500",
               balance < 0 && "text-rose-500",
               balance === 0 && "text-muted-foreground"

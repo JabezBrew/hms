@@ -144,7 +144,7 @@ export function DateTimePicker({ date, setDate, disabled = false }) {
                     )}
                     disabled={disabled}
                 >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    <CalendarIcon className="mr-2 size-4" />
                     {currentDate ? format(currentDate, "PPP p") : <span>Pick date and time</span>}
                 </Button>
             </PopoverTrigger>
@@ -157,7 +157,7 @@ export function DateTimePicker({ date, setDate, disabled = false }) {
                     disabled={disabled}
                 />
                 <div className="border-t p-3 flex items-center gap-2">
-                    <ClockIcon className="h-4 w-4 text-muted-foreground" />
+                    <ClockIcon className="size-4 text-muted-foreground" />
                     <div className="flex items-center gap-1">
                         <Select
                             value={hours}

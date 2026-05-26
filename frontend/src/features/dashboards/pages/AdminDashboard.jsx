@@ -107,7 +107,7 @@ function MetricCard({ icon: Icon, label, value, subvalue, status = 'normal' }) {
               status === 'normal' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="size-4" />
           </div>
         </div>
       </CardContent>
@@ -127,7 +127,7 @@ function SectionPanel({
 }) {
   return (
     <Card className="gap-0 py-0">
-      <CardHeader className="px-4 py-4">
+      <CardHeader className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <CardTitle className="font-heading text-base">{title}</CardTitle>
@@ -138,16 +138,16 @@ function SectionPanel({
           </div>
           <Button variant="outline" size="sm" onClick={onToggle}>
             {open ? (
-              <ChevronDown className="mr-1 h-4 w-4" />
+              <ChevronDown className="mr-1 size-4" />
             ) : (
-              <ChevronRight className="mr-1 h-4 w-4" />
+              <ChevronRight className="mr-1 size-4" />
             )}
             {open ? 'Collapse' : 'Expand'}
           </Button>
         </div>
       </CardHeader>
       {open ? (
-        <CardContent className="space-y-4 border-t px-4 py-4">
+        <CardContent className="space-y-4 border-t p-4">
           {loading ? (
             <div className="space-y-2">
               <Skeleton className="h-12" />
@@ -416,7 +416,7 @@ export default function AdminDashboard() {
                 </SelectContent>
               </Select>
               <Button variant="outline" size="sm" onClick={() => navigate('/admin/settings')}>
-                <Settings className="mr-2 h-4 w-4" />
+                <Settings className="mr-2 size-4" />
                 Settings
               </Button>
               <Button
@@ -426,7 +426,7 @@ export default function AdminDashboard() {
                 disabled={anyFetching}
                 aria-label="Refresh dashboard"
               >
-                <RefreshCw className={cn('h-4 w-4', anyFetching && 'animate-spin')} />
+                <RefreshCw className={cn('size-4', anyFetching && 'animate-spin')} />
               </Button>
             </div>
           )}
@@ -503,7 +503,7 @@ export default function AdminDashboard() {
                           <div className="flex items-center gap-2">
                             <AlertTriangle
                               className={cn(
-                                'h-4 w-4',
+                                'size-4',
                                 alert.severity === 'critical' ? 'text-rose-500' : 'text-amber-500',
                               )}
                             />
@@ -545,7 +545,7 @@ export default function AdminDashboard() {
                         <p className="text-sm font-medium text-foreground">{action.title}</p>
                         {statusBadge(action.severity)}
                       </div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <ArrowRight className="size-4 text-muted-foreground" />
                     </button>
                   ))
                 )}
@@ -635,7 +635,7 @@ export default function AdminDashboard() {
                       {statusBadge(shift.priority === 'high' ? 'warning' : 'normal')}
                     </div>
                     <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
+                      <Clock className="size-3" />
                       {shift.starts_at ? formatTime(shift.starts_at) : 'No start time'}
                     </p>
                   </div>

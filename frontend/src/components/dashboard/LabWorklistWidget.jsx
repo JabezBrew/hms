@@ -89,7 +89,7 @@ export default function LabWorklistWidget({ className }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-200">
-              <Beaker className="h-5 w-5 text-indigo-600" />
+              <Beaker className="size-5 text-indigo-600" />
             </div>
             <div>
               <CardTitle className="text-lg font-heading">Lab Worklist</CardTitle>
@@ -104,7 +104,7 @@ export default function LabWorklistWidget({ className }) {
       <CardContent>
         {totalOrders === 0 ? (
           <div className="text-center py-8 text-stone-500">
-            <Beaker className="h-12 w-12 mx-auto mb-3 text-stone-300" />
+            <Beaker className="size-12 mx-auto mb-3 text-stone-300" />
             <p className="text-sm">No orders in worklist</p>
           </div>
         ) : (
@@ -125,7 +125,7 @@ export default function LabWorklistWidget({ className }) {
                     onClick={stat.count > 0 ? handleViewWorklist : undefined}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <Icon className={cn('h-4 w-4', stat.iconColor)} />
+                      <Icon className={cn('size-4', stat.iconColor)} />
                       <span className={cn('text-2xl font-bold', stat.textColor)}>
                         {stat.count}
                       </span>
@@ -146,7 +146,7 @@ export default function LabWorklistWidget({ className }) {
               onClick={handleViewWorklist}
               className="w-full bg-indigo-600 hover:bg-indigo-700"
             >
-              <Beaker className="h-4 w-4 mr-2" />
+              <Beaker className="size-4 mr-2" />
               View Full Worklist
             </Button>
           </div>

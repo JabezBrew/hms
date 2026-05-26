@@ -17,7 +17,7 @@ function RailSection({ icon: Icon, title, children }) {
   return (
     <section className="rounded-lg border border-border/70 bg-card/70 p-3">
       <div className="mb-2 flex items-center gap-2">
-        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <Icon className="size-3.5 text-muted-foreground" />
         <h4 className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{title}</h4>
       </div>
       {children}

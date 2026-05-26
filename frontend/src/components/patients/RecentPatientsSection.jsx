@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 /**
  * RecentPatientsSection - Horizontal scrollable row of recently accessed patients
  *
@@ -13,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  * - Click navigates to patient chronicle
  */
 const RecentPatientsSection = ({
-  patients = [],
+  patients = DEFAULT_EMPTY_ARRAY,
   isLoading = false,
   className,
   showHeader = true,
@@ -26,7 +28,7 @@ const RecentPatientsSection = ({
       <section className={cn("space-y-3", className)}>
         {showHeader && (
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Clock className="h-4 w-4" />
+            <Clock className="size-4" />
             <h2 className="font-heading text-sm font-medium">Recent</h2>
           </div>
         )}
@@ -54,7 +56,7 @@ const RecentPatientsSection = ({
     <section className={cn("space-y-3", className)}>
       {showHeader && (
         <div className="flex items-center gap-2 text-muted-foreground">
-          <Clock className="h-4 w-4" />
+          <Clock className="size-4" />
           <h2 className="font-heading text-sm font-medium">Recent</h2>
           <span className="text-xs">({patients.length})</span>
         </div>
@@ -91,6 +93,7 @@ const RecentPatientCard = ({ patient, onClick, onIntent }) => {
 
   return (
     <button
+      type="button"
       onClick={onClick}
       onPointerEnter={onIntent}
       onFocus={onIntent}
@@ -112,7 +115,7 @@ const RecentPatientCard = ({ patient, onClick, onIntent }) => {
             {mrn}
           </p>
         </div>
-        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+        <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
       </div>
 
       <div className="flex items-center gap-2 mt-2">

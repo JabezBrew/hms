@@ -1283,25 +1283,122 @@ export function useChartEntryForm(template) {
  */
 function evaluateSimpleFormula(formula, data) {
   // Replace field references with values
-  let expression = formula.replace(/\{([a-z_][a-z0-9_]*)\}/g, (match, key) => {
+  const expression = formula.replace(/\{([a-z_][a-z0-9_]*)\}/g, (match, key) => {
     const value = data[key];
     if (value === null || value === undefined) {
       throw new Error(`Missing value for ${key}`);
     }
-    return String(value);
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      throw new Error(`Invalid value for ${key}`);
+    }
+    return String(numericValue);
   });
 
-  // Only allow safe characters
-  if (!/^[\d\s+\-*/().]+$/.test(expression)) {
-    throw new Error('Invalid formula');
-  }
+  const result = evaluateArithmeticExpression(expression);
+  return Number.isFinite(result) ? Math.round(result * 100) / 100 : null;
+}
 
-  // Evaluate (safe since we validated the expression)
-  try {
-    // Using Function constructor is safe here because we've validated the input
-    const result = new Function(`return ${expression}`)();
-    return typeof result === 'number' ? Math.round(result * 100) / 100 : null;
-  } catch {
-    return null;
+function evaluateArithmeticExpression(expression) {
+  let index = 0;
+
+  const skipWhitespace = () => {
+    while (/\s/.test(expression[index] || '')) {
+      index += 1;
+    }
+  };
+
+  const parseNumber = () => {
+    skipWhitespace();
+    const start = index;
+    let hasDigit = false;
+
+    while (/\d/.test(expression[index] || '')) {
+      hasDigit = true;
+      index += 1;
+    }
+
+    if (expression[index] === '.') {
+      index += 1;
+      while (/\d/.test(expression[index] || '')) {
+        hasDigit = true;
+        index += 1;
+      }
+    }
+
+    if (!hasDigit) {
+      throw new Error('Expected number');
+    }
+
+    const value = Number(expression.slice(start, index));
+    if (!Number.isFinite(value)) {
+      throw new Error('Invalid number');
+    }
+    return value;
+  };
+
+  const parseFactor = () => {
+    skipWhitespace();
+    const char = expression[index];
+
+    if (char === '+') {
+      index += 1;
+      return parseFactor();
+    }
+
+    if (char === '-') {
+      index += 1;
+      return -parseFactor();
+    }
+
+    if (char === '(') {
+      index += 1;
+      const value = parseExpression();
+      skipWhitespace();
+      if (expression[index] !== ')') {
+        throw new Error('Expected closing parenthesis');
+      }
+      index += 1;
+      return value;
+    }
+
+    return parseNumber();
+  };
+
+  const parseTerm = () => {
+    let value = parseFactor();
+
+    while (true) {
+      skipWhitespace();
+      const operator = expression[index];
+      if (operator !== '*' && operator !== '/') {
+        return value;
+      }
+      index += 1;
+      const nextValue = parseFactor();
+      value = operator === '*' ? value * nextValue : value / nextValue;
+    }
+  };
+
+  const parseExpression = () => {
+    let value = parseTerm();
+
+    while (true) {
+      skipWhitespace();
+      const operator = expression[index];
+      if (operator !== '+' && operator !== '-') {
+        return value;
+      }
+      index += 1;
+      const nextValue = parseTerm();
+      value = operator === '+' ? value + nextValue : value - nextValue;
+    }
+  };
+
+  const result = parseExpression();
+  skipWhitespace();
+  if (index !== expression.length) {
+    throw new Error('Unexpected formula token');
   }
+  return result;
 }

@@ -50,13 +50,13 @@ export default function WardReportsPage() {
 
       {/* Page Header */}
       <div className="border-b border-border bg-card/50">
-        <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="max-w-7xl mx-auto p-6">
           <PageHeader
             wrap={false}
             title={(
               <span className="flex items-center gap-4">
                 <span className="p-3 rounded-xl bg-primary/10">
-                  <BarChart3 className="h-6 w-6 text-primary" />
+                  <BarChart3 className="size-6 text-primary" />
                 </span>
                 <span>Ward Occupancy Reports</span>
               </span>
@@ -69,7 +69,7 @@ export default function WardReportsPage() {
                 onClick={() => navigate('/wards')}
                 className="font-mono text-xs"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
+                <ChevronLeft className="size-4 mr-1" />
                 Back to Wards
               </Button>
             )}

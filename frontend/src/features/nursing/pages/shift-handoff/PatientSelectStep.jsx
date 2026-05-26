@@ -10,13 +10,15 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { cn } from '@/lib/utils';
 
 /**
  * PatientSelectStep - Select patient for handoff
  */
 export function PatientSelectStep({
-  patients = [],
+  patients = DEFAULT_EMPTY_ARRAY,
   isLoading,
   selectedPatient,
   onSelectPatient,
@@ -39,7 +41,7 @@ export function PatientSelectStep({
           Search Patients
         </Label>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             id="search"
             placeholder="Search by name or MRN..."
@@ -79,7 +81,7 @@ export function PatientSelectStep({
                       patient.is_critical ? "bg-rose-500/10" : "bg-muted"
                     )}>
                       <User className={cn(
-                        "h-5 w-5",
+                        "size-5",
                         patient.is_critical ? "text-rose-500" : "text-muted-foreground"
                       )} />
                     </div>
@@ -92,7 +94,7 @@ export function PatientSelectStep({
                       </p>
                       {patient.ward_name && (
                         <div className="flex items-center gap-1 mt-1">
-                          <Bed className="h-3 w-3 text-muted-foreground" />
+                          <Bed className="size-3 text-muted-foreground" />
                           <span className="font-mono text-xs text-muted-foreground">
                             {patient.ward_name} - Bed {patient.bed_number}
                           </span>
@@ -104,7 +106,7 @@ export function PatientSelectStep({
                   <div className="flex flex-col gap-1 items-end">
                     {patient.is_critical && (
                       <Badge variant="destructive" className="font-mono text-[10px]">
-                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        <AlertTriangle className="size-3 mr-1" />
                         Critical
                       </Badge>
                     )}
@@ -120,7 +122,7 @@ export function PatientSelectStep({
 
             {filteredPatients.length === 0 && (
               <div className="text-center py-12">
-                <User className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <User className="size-12 text-muted-foreground/30 mx-auto mb-3" />
                 <p className="text-muted-foreground font-mono text-sm">
                   {searchTerm ? 'No patients match your search' : 'No patients available'}
                 </p>

@@ -153,13 +153,13 @@ function InternalRequisitionCard({
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            <ClipboardList className="size-4 text-muted-foreground" />
             <span className="font-mono text-sm font-medium text-primary">
               {requisition.requisition_number || requisition.number}
             </span>
             {requisition.is_standing_order && (
               <Badge variant="outline" className="text-[10px]">
-                <Repeat className="h-3 w-3 mr-1" />
+                <Repeat className="size-3 mr-1" />
                 Standing
               </Badge>
             )}
@@ -170,25 +170,25 @@ function InternalRequisitionCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canApprove && onApprove && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onApprove(); }}>
-                  <Check className="h-4 w-4 mr-2" />
+                  <Check className="size-4 mr-2" />
                   Approve
                 </DropdownMenuItem>
               )}
               {canFulfill && onFulfill && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onFulfill(); }}>
-                  <Package className="h-4 w-4 mr-2" />
+                  <Package className="size-4 mr-2" />
                   Fulfill
                 </DropdownMenuItem>
               )}
@@ -218,19 +218,19 @@ function InternalRequisitionCard({
         <div className="space-y-2 mb-3">
           {requisition.requesting_location_name && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <MapPin className="h-3 w-3" />
+              <MapPin className="size-3" />
               <span>{requisition.requesting_location_name}</span>
             </div>
           )}
           {requisition.requested_by_name && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <User className="h-3 w-3" />
+              <User className="size-3" />
               <span>{requisition.requested_by_name}</span>
             </div>
           )}
           {requisition.date_required && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               <span className="font-mono">
                 {format(parseISO(requisition.date_required), 'MMM d, yyyy')}
               </span>
@@ -455,7 +455,7 @@ export default function InternalRequisitionsPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
           </div>
@@ -476,7 +476,7 @@ export default function InternalRequisitionsPage() {
 
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by number..."
             value={search}
@@ -487,7 +487,7 @@ export default function InternalRequisitionsPage() {
 
         <Select value={location || 'all'} onValueChange={handleLocationChange}>
           <SelectTrigger className="w-full lg:w-[200px] font-mono text-sm">
-            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+            <Filter className="size-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="Location" />
           </SelectTrigger>
           <SelectContent>
@@ -500,7 +500,7 @@ export default function InternalRequisitionsPage() {
 
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -521,7 +521,7 @@ export default function InternalRequisitionsPage() {
         </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
-          <ClipboardList className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+          <ClipboardList className="size-10 text-muted-foreground/50 mx-auto mb-3" />
           <h3 className="font-display text-xl mb-2">No Requisitions Found</h3>
           <p className="text-muted-foreground text-sm mb-4">
             {hasActiveFilters ? 'Try adjusting your filters' : 'Ward stock requests will appear here after submission'}
@@ -536,12 +536,12 @@ export default function InternalRequisitionsPage() {
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages}>
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

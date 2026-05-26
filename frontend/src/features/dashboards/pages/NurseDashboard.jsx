@@ -231,7 +231,7 @@ export default function NurseDashboard() {
                   size="sm"
                   onClick={() => navigate(wardBoardHref)}
                 >
-                  <ClipboardList className="h-4 w-4 mr-2" />
+                  <ClipboardList className="size-4 mr-2" />
                   Open Ward Board
                 </Button>
               ) : null}
@@ -242,7 +242,7 @@ export default function NurseDashboard() {
                 disabled={isFetching}
                 aria-label="Refresh dashboard"
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
               </Button>
             </div>
           )}
@@ -318,7 +318,7 @@ export default function NurseDashboard() {
             </div>
           ) : shiftPatients.length === 0 ? (
             <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <Users className="size-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No patients assigned to this shift</p>
             </div>
           ) : (
@@ -396,7 +396,7 @@ export default function NurseDashboard() {
             </div>
           ) : medicationsSchedule.length === 0 ? (
             <div className="text-center py-8 rounded-xl border border-border bg-card/50">
-              <Pill className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <Pill className="size-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No medications due in the next 2 hours</p>
             </div>
           ) : (
@@ -454,7 +454,7 @@ export default function NurseDashboard() {
             </div>
           ) : tasks.length === 0 ? (
             <div className="text-center py-8 rounded-xl border border-border bg-card/50">
-              <ClipboardList className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <ClipboardList className="size-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No pending tasks for today</p>
             </div>
           ) : (

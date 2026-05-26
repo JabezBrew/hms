@@ -1,14 +1,18 @@
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { pathToFileURL } from 'node:url'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   registerStaticAssetServiceWorker,
   canRegisterStaticAssetServiceWorker,
 } from '../service-worker-registration'
 
-function loadStaticServiceWorker() {
-  const source = readFileSync(path.resolve(process.cwd(), 'public/hms-static-sw.js'), 'utf8')
+afterEach(() => {
+  vi.resetModules()
+  vi.unstubAllGlobals()
+})
+
+async function loadStaticServiceWorker() {
   const listeners = {}
   const cache = {
     match: vi.fn().mockResolvedValue(null),
@@ -29,31 +33,26 @@ function loadStaticServiceWorker() {
     }),
   }
 
-  const policy = new Function(
-    'self',
-    'caches',
-    'fetch',
-    'URL',
-    `${source}\nreturn { isApiPath, isCacheableStaticPath, isCacheableStaticRequest }`
-  )(selfObject, cachesApi, fetchApi, URL)
+  vi.stubGlobal('self', selfObject)
+  vi.stubGlobal('caches', cachesApi)
+  vi.stubGlobal('fetch', fetchApi)
+
+  const workerUrl = pathToFileURL(path.resolve(process.cwd(), 'public/hms-static-sw.js'))
+  await import(`${workerUrl.href}?test=${crypto.randomUUID()}`)
 
   return {
     cache,
     cachesApi,
     fetchApi,
     listeners,
-    policy,
   }
 }
 
 describe('static asset service worker', () => {
-  it('never handles or caches API requests', () => {
-    const { listeners, policy } = loadStaticServiceWorker()
+  it('never handles or caches API requests', async () => {
+    const { listeners } = await loadStaticServiceWorker()
     const request = new Request('https://hms.test/api/v2/patients?search=Ama')
     const respondWith = vi.fn()
-
-    expect(policy.isApiPath('/api/v2/patients')).toBe(true)
-    expect(policy.isCacheableStaticRequest(request)).toBe(false)
 
     listeners.fetch({ request, respondWith })
 
@@ -61,11 +60,9 @@ describe('static asset service worker', () => {
   })
 
   it('caches only same-origin hashed static assets and icons', async () => {
-    const { cache, cachesApi, fetchApi, listeners, policy } = loadStaticServiceWorker()
+    const { cache, cachesApi, fetchApi, listeners } = await loadStaticServiceWorker()
     const request = new Request('https://hms.test/assets/AuthenticatedApp-iv8zwIyq.js')
     const respondWith = vi.fn()
-
-    expect(policy.isCacheableStaticRequest(request)).toBe(true)
 
     listeners.fetch({ request, respondWith })
     expect(respondWith).toHaveBeenCalledTimes(1)
@@ -77,15 +74,16 @@ describe('static asset service worker', () => {
     expect(cache.put).toHaveBeenCalledWith(request, expect.any(Response))
   })
 
-  it('rejects un-hashed same-origin files from the runtime cache', () => {
-    const { policy } = loadStaticServiceWorker()
+  it('rejects un-hashed same-origin files from the runtime cache', async () => {
+    const { listeners } = await loadStaticServiceWorker()
+    const sourceRequest = new Request('https://hms.test/src/main.jsx')
+    const runtimeConfigRequest = new Request('https://hms.test/runtime-config.js')
+    const respondWith = vi.fn()
 
-    expect(
-      policy.isCacheableStaticRequest(new Request('https://hms.test/src/main.jsx'))
-    ).toBe(false)
-    expect(
-      policy.isCacheableStaticRequest(new Request('https://hms.test/runtime-config.js'))
-    ).toBe(false)
+    listeners.fetch({ request: sourceRequest, respondWith })
+    listeners.fetch({ request: runtimeConfigRequest, respondWith })
+
+    expect(respondWith).not.toHaveBeenCalled()
   })
 })
 

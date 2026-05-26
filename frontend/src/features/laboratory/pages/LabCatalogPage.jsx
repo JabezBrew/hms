@@ -54,6 +54,11 @@ import { useSlideOver } from "@/hooks/useSlideOver";
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
 const CATALOG_PAGE_SIZE = 24;
 
 const CATALOG_CATEGORY_OPTIONS = [
@@ -316,10 +321,7 @@ const LabCatalogPage = () => {
 
   const formatPrice = (price) => {
     if (!price) return "Not set";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(price);
+    return USD_CURRENCY_FORMATTER.format(price);
   };
 
   const getStatusBadge = (item) => {
@@ -593,7 +595,7 @@ const LabCatalogPage = () => {
               disabled={isActiveFetching}
               className="font-mono text-xs"
             >
-              <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", isActiveFetching && "animate-spin")} />
+              <RefreshCw className={cn("size-3.5 mr-1.5", isActiveFetching && "animate-spin")} />
               Refresh
             </Button>
             {catalogMutationsAvailable && (
@@ -605,7 +607,7 @@ const LabCatalogPage = () => {
                   openAddSlideOver();
                 }}
               >
-                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                <Plus className="size-3.5 mr-1.5" />
                 Add {activeTab === "tests" ? "Test" : "Panel"}
               </Button>
             )}
@@ -618,7 +620,7 @@ const LabCatalogPage = () => {
       {!catalogMutationsAvailable && (
         <div className="px-4 pt-4 sm:px-6">
           <Alert>
-            <TestTube2 className="h-4 w-4" />
+            <TestTube2 className="size-4" />
             <AlertDescription>
               Lab catalog editing is not available in Rust V2 mode yet. Existing tests and panels remain available for ordering.
             </AlertDescription>
@@ -630,11 +632,11 @@ const LabCatalogPage = () => {
         <LabToolbar className="py-3">
           <TabsList className="h-auto bg-muted/50 p-1">
             <TabsTrigger value="tests" className="font-mono text-xs">
-              <TestTube2 className="h-3.5 w-3.5 mr-1.5" />
+              <TestTube2 className="size-3.5 mr-1.5" />
               Tests
             </TabsTrigger>
             <TabsTrigger value="panels" className="font-mono text-xs">
-              <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
+              <FlaskConical className="size-3.5 mr-1.5" />
               Panels
             </TabsTrigger>
           </TabsList>
@@ -684,7 +686,7 @@ const LabCatalogPage = () => {
                 onClick={clearFilters}
                 className="font-mono text-xs"
               >
-                <X className="h-3.5 w-3.5 mr-1" />
+                <X className="size-3.5 mr-1" />
                 Clear
               </Button>
             )}
@@ -717,7 +719,7 @@ const LabCatalogPage = () => {
                     }}
                     className="font-mono text-xs"
                   >
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    <Plus className="mr-1.5 size-3.5" />
                     Add Test
                   </Button>
                 ) : null}
@@ -763,7 +765,7 @@ const LabCatalogPage = () => {
                     }}
                     className="font-mono text-xs"
                   >
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    <Plus className="mr-1.5 size-3.5" />
                     Add Panel
                   </Button>
                 ) : null}
@@ -855,8 +857,8 @@ const LabCatalogPage = () => {
             >
               {deleteTestMutation.isPending || deletePanelMutation.isPending ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  Deleting...
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  Deleting…
                 </>
               ) : (
                 "Delete"

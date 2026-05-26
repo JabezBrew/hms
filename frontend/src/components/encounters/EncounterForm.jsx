@@ -561,7 +561,7 @@ export function EncounterForm({ isEditing = false }) {
               {/* Selected Time Display */}
               {!rustV2Mode && slotSelected && form.watch("start_time") && (
                 <div className="rounded-md border p-4 bg-muted/50">
-                  <div className="flex flex-col space-y-1">
+                  <div className="flex flex-col gap-y-1">
                     <span className="text-sm font-medium text-muted-foreground">Selected Time</span>
                     <span className="text-lg font-semibold">
                       {format(form.watch("start_time"), "MMMM d, yyyy hh:mm a")}

@@ -198,7 +198,7 @@ export default function PatientInsuranceFormSlideOver({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
-            <Shield className="h-5 w-5 text-[oklch(0.70_0.15_230)]" />
+            <Shield className="size-5 text-[oklch(0.70_0.15_230)]" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">
@@ -215,12 +215,12 @@ export default function PatientInsuranceFormSlideOver({
           onClick={onClose}
           className="font-mono text-xs"
         >
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </Button>
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto p-6">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Patient Selection */}
           <div className="space-y-2">
@@ -229,7 +229,7 @@ export default function PatientInsuranceFormSlideOver({
             </Label>
             {(isEditing || defaultPatient) ? (
               <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg border border-border">
-                <Shield className="h-4 w-4 text-muted-foreground" />
+                <Shield className="size-4 text-muted-foreground" />
                 <span className="text-foreground font-medium">
                   {selectedPatient?.name ||
                    (selectedPatient?.local_data?.user_details
@@ -402,12 +402,12 @@ export default function PatientInsuranceFormSlideOver({
         >
           {isPending ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
               {isEditing ? 'Updating...' : 'Creating...'}
             </>
           ) : (
             <>
-              <Shield className="h-4 w-4 mr-2" />
+              <Shield className="size-4 mr-2" />
               {isEditing ? 'Update Insurance' : 'Add Insurance'}
             </>
           )}

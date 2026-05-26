@@ -15,15 +15,17 @@ import {
   Cell,
 } from 'recharts';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
 const getChartColors = () => {
   return ['#1976D2', '#00ACC1', '#43A047', '#FFA000', '#E53935', '#5E35B1', '#8E24AA', '#00897B'];
 };
 
 const formatCurrency = (value) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  }).format(value);
+  return USD_CURRENCY_FORMATTER.format(value);
 };
 
 export function OccupancyTrendsPanel({ occupancyData, utilizationData, wards, selectedWard }) {

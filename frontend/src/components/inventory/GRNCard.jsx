@@ -22,71 +22,7 @@ import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
-
-/**
- * Status configuration
- */
-const STATUS_CONFIG = {
-  draft: {
-    label: 'Draft',
-    variant: 'secondary',
-    bgColor: 'bg-muted',
-    textColor: 'text-muted-foreground',
-  },
-  pending_inspection: {
-    label: 'Pending Inspection',
-    variant: 'outline',
-    bgColor: 'bg-amber-500/10',
-    textColor: 'text-amber-500',
-    borderColor: 'border-amber-500/30',
-  },
-  inspecting: {
-    label: 'Inspecting',
-    variant: 'default',
-    bgColor: 'bg-sky-500/10',
-    textColor: 'text-sky-500',
-    borderColor: 'border-sky-500/30',
-  },
-  accepted: {
-    label: 'Accepted',
-    variant: 'default',
-    bgColor: 'bg-emerald-500/10',
-    textColor: 'text-emerald-500',
-    borderColor: 'border-emerald-500/30',
-  },
-  partially_accepted: {
-    label: 'Partially Accepted',
-    variant: 'default',
-    bgColor: 'bg-amber-500/10',
-    textColor: 'text-amber-500',
-    borderColor: 'border-amber-500/30',
-  },
-  rejected: {
-    label: 'Rejected',
-    variant: 'destructive',
-    bgColor: 'bg-rose-500/10',
-    textColor: 'text-rose-500',
-    borderColor: 'border-rose-500/30',
-  },
-};
-
-/**
- * Get status config
- */
-export function getStatusConfig(status) {
-  return STATUS_CONFIG[status?.toLowerCase()] || STATUS_CONFIG.draft;
-}
-
-/**
- * Format currency
- */
-export function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
-}
+import { getGRNStatusConfig } from './grn-card-utils';
 
 /**
  * GRNCard - Card display for goods received notes
@@ -108,7 +44,7 @@ export function GRNCard({
   onReject,
   className,
 }) {
-  const statusConfig = getStatusConfig(grn.status);
+  const statusConfig = getGRNStatusConfig(grn.status);
 
   const canInspect = grn.status === 'pending_inspection';
   const canAccept = grn.status === 'inspecting' || grn.status === 'pending_inspection';
@@ -132,7 +68,7 @@ export function GRNCard({
         <div className="flex items-start justify-between mb-3">
           {/* GRN number */}
           <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-muted-foreground" />
+            <Package className="size-4 text-muted-foreground" />
             <span className="font-mono text-sm font-medium text-primary">
               {grn.grn_number || grn.number}
             </span>
@@ -144,31 +80,31 @@ export function GRNCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canInspect && onInspect && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onInspect(); }}>
-                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                  <ClipboardCheck className="size-4 mr-2" />
                   Start Inspection
                 </DropdownMenuItem>
               )}
               {canAccept && onAccept && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAccept(); }}>
-                  <Check className="h-4 w-4 mr-2" />
+                  <Check className="size-4 mr-2" />
                   Accept
                 </DropdownMenuItem>
               )}
               {canReject && onReject && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReject(); }}>
-                  <X className="h-4 w-4 mr-2" />
+                  <X className="size-4 mr-2" />
                   Reject
                 </DropdownMenuItem>
               )}
@@ -191,7 +127,7 @@ export function GRNCard({
           </Badge>
           {hasQualityIssues && (
             <Badge variant="outline" className="text-xs bg-rose-500/10 text-rose-500 border-rose-500/30">
-              <AlertTriangle className="h-3 w-3 mr-1" />
+              <AlertTriangle className="size-3 mr-1" />
               Issues
             </Badge>
           )}
@@ -200,7 +136,7 @@ export function GRNCard({
         {/* PO Reference */}
         {grn.po_number && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-            <FileText className="h-3 w-3" />
+            <FileText className="size-3" />
             <span>PO: <span className="font-mono">{grn.po_number}</span></span>
           </div>
         )}
@@ -216,7 +152,7 @@ export function GRNCard({
         <div className="space-y-1 mb-3">
           {grn.received_date && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               <span>
                 Received{' '}
                 <span className="font-mono">
@@ -227,7 +163,7 @@ export function GRNCard({
           )}
           {grn.inspected_by_name && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <User className="h-3 w-3" />
+              <User className="size-3" />
               <span>Inspector: {grn.inspected_by_name}</span>
             </div>
           )}
@@ -278,10 +214,10 @@ export function GRNCardSkeleton() {
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Skeleton className="h-4 w-4" />
+            <Skeleton className="size-4" />
             <Skeleton className="h-4 w-24" />
           </div>
-          <Skeleton className="h-8 w-8" />
+          <Skeleton className="size-8" />
         </div>
         <div className="flex items-center gap-2 mb-3">
           <Skeleton className="h-5 w-32" />
@@ -311,7 +247,7 @@ export function GRNRow({
   onAccept,
   onReject,
 }) {
-  const statusConfig = getStatusConfig(grn.status);
+  const statusConfig = getGRNStatusConfig(grn.status);
 
   const canInspect = grn.status === 'pending_inspection';
   const canAccept = grn.status === 'inspecting' || grn.status === 'pending_inspection';
@@ -330,12 +266,12 @@ export function GRNRow({
     >
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <Package className="h-4 w-4 text-muted-foreground" />
+          <Package className="size-4 text-muted-foreground" />
           <span className="font-mono text-sm font-medium text-primary">
             {grn.grn_number || grn.number}
           </span>
           {hasQualityIssues && (
-            <AlertTriangle className="h-4 w-4 text-rose-500" />
+            <AlertTriangle className="size-4 text-rose-500" />
           )}
         </div>
       </td>
@@ -393,30 +329,30 @@ export function GRNRow({
       <td className="px-4 py-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="size-8 p-0">
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-              <Eye className="h-4 w-4 mr-2" />
+              <Eye className="size-4 mr-2" />
               View Details
             </DropdownMenuItem>
             {canInspect && onInspect && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onInspect(); }}>
-                <ClipboardCheck className="h-4 w-4 mr-2" />
+                <ClipboardCheck className="size-4 mr-2" />
                 Start Inspection
               </DropdownMenuItem>
             )}
             {canAccept && onAccept && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAccept(); }}>
-                <Check className="h-4 w-4 mr-2" />
+                <Check className="size-4 mr-2" />
                 Accept
               </DropdownMenuItem>
             )}
             {canReject && onReject && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReject(); }}>
-                <X className="h-4 w-4 mr-2" />
+                <X className="size-4 mr-2" />
                 Reject
               </DropdownMenuItem>
             )}
@@ -435,7 +371,7 @@ export function GRNRowSkeleton() {
     <tr>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <Skeleton className="h-4 w-4" />
+          <Skeleton className="size-4" />
           <Skeleton className="h-4 w-24" />
         </div>
       </td>
@@ -458,7 +394,7 @@ export function GRNRowSkeleton() {
         <Skeleton className="h-4 w-12 mx-auto" />
       </td>
       <td className="px-4 py-3">
-        <Skeleton className="h-8 w-8" />
+        <Skeleton className="size-8" />
       </td>
     </tr>
   );

@@ -28,6 +28,12 @@ import { patientsApi } from '@/lib/api/patients';
 import { toast } from 'sonner';
 import PatientSelector from '@/components/patients/PatientSelector';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 export default function InvoiceCreatePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -204,7 +210,7 @@ export default function InvoiceCreatePage() {
         title={(
           <span className="flex items-center gap-3">
             <span className="p-3 rounded-xl bg-primary/10">
-              <FileText className="h-6 w-6 text-primary" />
+              <FileText className="size-6 text-primary" />
             </span>
             Create Invoice
           </span>
@@ -218,7 +224,7 @@ export default function InvoiceCreatePage() {
           onClick={() => navigate('/billing/invoices')}
           className="font-mono text-xs -ml-2 mb-4"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to Invoices
         </Button>
       </PageHeader>
@@ -230,7 +236,7 @@ export default function InvoiceCreatePage() {
             {/* Patient Selection Card */}
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
-                <User className="h-5 w-5 text-muted-foreground" />
+                <User className="size-5 text-muted-foreground" />
                 Patient Information
               </h2>
 
@@ -267,7 +273,7 @@ export default function InvoiceCreatePage() {
             {/* Invoice Details Card */}
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-muted-foreground" />
+                <Calendar className="size-5 text-muted-foreground" />
                 Invoice Details
               </h2>
 
@@ -291,7 +297,7 @@ export default function InvoiceCreatePage() {
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-display text-lg text-foreground flex items-center gap-2">
-                  <DollarSign className="h-5 w-5 text-muted-foreground" />
+                  <DollarSign className="size-5 text-muted-foreground" />
                   Invoice Items
                 </h2>
                 <Button
@@ -301,7 +307,7 @@ export default function InvoiceCreatePage() {
                   onClick={addItem}
                   className="font-mono text-xs"
                 >
-                  <Plus className="h-3 w-3 mr-1" />
+                  <Plus className="size-3 mr-1" />
                   Add Item
                 </Button>
               </div>
@@ -326,9 +332,9 @@ export default function InvoiceCreatePage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => removeItem(index)}
-                          className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          className="size-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="size-4" />
                         </Button>
                       )}
                     </div>
@@ -454,12 +460,12 @@ export default function InvoiceCreatePage() {
               >
                 {createInvoiceMutation.isPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Creating...
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Creating…
                   </>
                 ) : (
                   <>
-                    <FileText className="h-4 w-4 mr-2" />
+                    <FileText className="size-4 mr-2" />
                     Create Invoice
                   </>
                 )}
@@ -473,11 +479,7 @@ export default function InvoiceCreatePage() {
 }
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function getEstimatedUnitPrice(serviceId, services = []) {

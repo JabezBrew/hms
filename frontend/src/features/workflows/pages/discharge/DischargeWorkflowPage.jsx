@@ -107,7 +107,7 @@ export default function DischargeWorkflowPage() {
       });
 
       if (currentStep < workflowDef.total_steps) {
-        setCurrentStep(currentStep + 1);
+        setCurrentStep((step) => step + 1);
         toast.success('Progress saved');
       }
     } catch (error) {
@@ -118,7 +118,7 @@ export default function DischargeWorkflowPage() {
 
   const handlePrevious = () => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      setCurrentStep((step) => step - 1);
     }
   };
 
@@ -315,7 +315,7 @@ export default function DischargeWorkflowPage() {
                 onClick={handlePrevious}
                 disabled={startDischarge.isPending || updateDischargeStep.isPending || completeDischarge.isPending}
               >
-                <ArrowLeft className="h-4 w-4 mr-2" />
+                <ArrowLeft className="size-4 mr-2" />
                 Previous
               </Button>
             )}
@@ -326,7 +326,7 @@ export default function DischargeWorkflowPage() {
                 disabled={startDischarge.isPending || updateDischargeStep.isPending}
               >
                 {updateDischargeStep.isPending ? 'Saving...' : 'Continue'}
-                <ArrowRight className="h-4 w-4 ml-2" />
+                <ArrowRight className="size-4 ml-2" />
               </Button>
             ) : (
               <Button
@@ -334,7 +334,7 @@ export default function DischargeWorkflowPage() {
                 disabled={completeDischarge.isPending}
               >
                 {completeDischarge.isPending ? 'Submitting...' : 'Submit for Clearance'}
-                <CheckCircle className="h-4 w-4 ml-2" />
+                <CheckCircle className="size-4 ml-2" />
               </Button>
             )}
           </div>

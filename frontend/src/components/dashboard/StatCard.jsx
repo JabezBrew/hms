@@ -69,7 +69,7 @@ export default function StatCard({
   };
 
   return (
-    <article
+    <div
       className={cn(
         'group relative rounded-xl sm:rounded-2xl p-4 sm:p-6',
         'bg-card border border-border',
@@ -93,12 +93,12 @@ export default function StatCard({
             config.border,
             'border'
           )}>
-            <Icon className={cn('h-4 w-4 sm:h-5 sm:w-5', config.accent)} aria-hidden="true" />
+            <Icon className={cn('size-4 sm:h-5 sm:w-5', config.accent)} aria-hidden="true" />
           </div>
         )}
         {trend && (
           <div className="flex items-center gap-1 text-xs font-mono">
-            <TrendIcon className={cn('h-3 w-3', trendColor)} aria-hidden="true" />
+            <TrendIcon className={cn('size-3', trendColor)} aria-hidden="true" />
             <span className={trendColor}>{trend.value}</span>
           </div>
         )}
@@ -127,6 +127,6 @@ export default function StatCard({
       {onClick && (
         <div className="absolute inset-0 rounded-xl sm:rounded-2xl border-2 border-primary/0 group-hover:border-primary/50 transition-colors pointer-events-none" />
       )}
-    </article>
+    </div>
   );
 }

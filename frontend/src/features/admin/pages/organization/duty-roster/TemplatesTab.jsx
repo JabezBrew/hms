@@ -45,7 +45,7 @@ export function TemplatesTab() {
         subtitle="Recurring patterns for automatic roster generation."
         actions={
           <Button>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             <span className="font-mono text-xs uppercase tracking-wide">Add Template</span>
           </Button>
         }
@@ -58,7 +58,7 @@ export function TemplatesTab() {
           description="Create templates to auto-generate rosters based on recurring patterns."
           action={
             <Button variant="outline">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Create First Template
             </Button>
           }

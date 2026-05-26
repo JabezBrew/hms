@@ -10,6 +10,8 @@ import {
   ReferenceLine,
 } from 'recharts';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 function VitalsChart({
   data,
   dataKey,
@@ -17,7 +19,7 @@ function VitalsChart({
   color,
   domain,
   unit,
-  referenceLines = [],
+  referenceLines = DEFAULT_EMPTY_ARRAY,
   secondaryKey = null,
   secondaryColor = null,
 }) {

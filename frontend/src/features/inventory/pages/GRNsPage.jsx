@@ -28,7 +28,7 @@ import {
   GRNCardSkeleton,
   GRNForm,
 } from '@/components/inventory';
-import { getStatusConfig } from '@/components/inventory/GRNCard';
+import { getGRNStatusConfig } from '@/components/inventory/grn-card-utils';
 import { useGRNs } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
@@ -178,12 +178,12 @@ export default function GRNsPage() {
         const hasQualityIssues = grn.quality_issues_count > 0 || grn.has_issues;
         return (
           <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-muted-foreground" />
+            <Package className="size-4 text-muted-foreground" />
             <span className="font-mono text-sm font-medium text-primary">
               {grn.grn_number || grn.number}
             </span>
             {hasQualityIssues && (
-              <AlertTriangle className="h-4 w-4 text-rose-500" />
+              <AlertTriangle className="size-4 text-rose-500" />
             )}
           </div>
         );
@@ -194,7 +194,7 @@ export default function GRNsPage() {
       header: 'Status',
       width: '140px',
       render: (grn) => {
-        const statusConfig = getStatusConfig(grn.status);
+        const statusConfig = getGRNStatusConfig(grn.status);
         return (
           <Badge
             variant="outline"
@@ -289,30 +289,30 @@ export default function GRNsPage() {
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button variant="ghost" size="sm" className="size-8 p-0">
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleGRNClick(grn.id); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canInspect && (
                 <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleInspect(grn.id); }}>
-                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                  <ClipboardCheck className="size-4 mr-2" />
                   Start Inspection
                 </DropdownMenuItem>
               )}
               {canAccept && (
                 <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleAccept(grn.id); }}>
-                  <Check className="h-4 w-4 mr-2" />
+                  <Check className="size-4 mr-2" />
                   Accept
                 </DropdownMenuItem>
               )}
               {canReject && (
                 <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleReject(grn.id); }}>
-                  <X className="h-4 w-4 mr-2" />
+                  <X className="size-4 mr-2" />
                   Reject
                 </DropdownMenuItem>
               )}
@@ -387,11 +387,11 @@ export default function GRNsPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             <Button onClick={handleCreateGRN}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New GRN
             </Button>
           </div>
@@ -421,7 +421,7 @@ export default function GRNsPage() {
       <div className="flex flex-col lg:flex-row gap-3">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by GRN or PO number..."
             value={search}
@@ -438,7 +438,7 @@ export default function GRNsPage() {
             onClick={clearFilters}
             className="font-mono text-xs text-muted-foreground hover:text-foreground"
           >
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -460,8 +460,8 @@ export default function GRNsPage() {
         </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <Package className="h-8 w-8 text-muted-foreground" />
+          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <Package className="size-8 text-muted-foreground" />
           </div>
           <h3 className="font-display text-xl text-foreground mb-2">
             No GRNs Found
@@ -473,7 +473,7 @@ export default function GRNsPage() {
           </p>
           {!hasActiveFilters && (
             <Button onClick={handleCreateGRN} className="font-mono text-xs">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New GRN
             </Button>
           )}
@@ -494,7 +494,7 @@ export default function GRNsPage() {
               disabled={page <= 1}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button
@@ -505,7 +505,7 @@ export default function GRNsPage() {
               className="font-mono text-xs"
             >
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

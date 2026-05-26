@@ -1,3 +1,12 @@
+const SHORT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+
 export const BOARD_VIEWS = [
   { value: 'by-patient', label: 'By Patient' },
   { value: 'by-urgency', label: 'By Urgency' },
@@ -278,19 +287,14 @@ export function formatTimestamp(value) {
   if (Number.isNaN(date.getTime())) {
     return String(value);
   }
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return SHORT_DATE_TIME_FORMATTER.format(date);
 }
 
 export function formatTime(value) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date);
+  return TIME_FORMATTER.format(date);
 }
 
 export function patientChronicleHref(patient) {

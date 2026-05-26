@@ -34,7 +34,7 @@ export function OfflineIndicator() {
           "animate-in slide-in-from-bottom-5 fade-in duration-300"
         )}
       >
-        <Wifi className="h-4 w-4 text-green-600 dark:text-green-400" />
+        <Wifi className="size-4 text-green-600 dark:text-green-400" />
         <AlertTitle className="text-green-800 dark:text-green-200">
           Back Online
         </AlertTitle>
@@ -55,7 +55,7 @@ export function OfflineIndicator() {
           "animate-in slide-in-from-bottom-5 fade-in duration-300"
         )}
       >
-        <WifiOff className="h-4 w-4" />
+        <WifiOff className="size-4" />
         <AlertTitle>You're Offline</AlertTitle>
         <AlertDescription>
           Check your internet connection. Some features may not work properly.

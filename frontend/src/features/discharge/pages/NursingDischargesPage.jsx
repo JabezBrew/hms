@@ -170,7 +170,7 @@ export default function NursingDischargesPage() {
 
                   <div className="rounded-lg border p-3">
                     <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                      <ClipboardList className="h-4 w-4" />
+                      <ClipboardList className="size-4" />
                       Blocking lanes
                     </div>
                     <div className="space-y-2">
@@ -203,7 +203,7 @@ export default function NursingDischargesPage() {
 
                   <div className="rounded-lg border p-3">
                     <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTriangle className="size-4" />
                       Advisory checklist
                     </div>
                     {advisoryTasks.length === 0 ? (
@@ -263,7 +263,7 @@ export default function NursingDischargesPage() {
                       },
                     })}
                   >
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    <CheckCircle2 className="mr-2 size-4" />
                     Finalize Discharge
                   </Button>
                   {!billingCleared && (

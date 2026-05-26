@@ -42,7 +42,7 @@ export function AuditEventTimeline({ events, emptyLabel = 'No recent board event
             return (
               <li key={event?.id ?? event?.timestamp ?? index} className="relative">
                 <span
-                  className={cn('absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-background', TONE_CLASS[tone])}
+                  className={cn('absolute -left-[21px] top-1.5 size-2.5 rounded-full ring-4 ring-background', TONE_CLASS[tone])}
                   aria-hidden="true"
                 />
                 <div className="flex flex-wrap items-center gap-2">
@@ -54,7 +54,7 @@ export function AuditEventTimeline({ events, emptyLabel = 'No recent board event
                   ) : null}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                  <Clock className="size-3.5" aria-hidden="true" />
                   <span>{formatTimestamp(event?.timestamp ?? event?.created_at ?? event?.occurred_at)}</span>
                   {getEventMeta(event) ? <span>{getEventMeta(event)}</span> : null}
                 </div>

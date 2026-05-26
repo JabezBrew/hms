@@ -80,7 +80,7 @@ export default function CriticalAlertsMonitor() {
     newAlerts.forEach((alert) => {
       toast.error(
         <div className="flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-rose-400 mt-0.5" />
+          <AlertTriangle className="size-5 text-rose-400 mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="font-heading font-semibold text-sm mb-1">
               {alert.severity === 'critical' ? 'CRITICAL ALERT' : 'HIGH PRIORITY'}
@@ -125,7 +125,7 @@ export default function CriticalAlertsMonitor() {
     newOverdueMeds.forEach((med) => {
       toast.warning(
         <div className="flex items-start gap-3">
-          <Bell className="h-5 w-5 text-amber-400 mt-0.5" />
+          <Bell className="size-5 text-amber-400 mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="font-heading font-semibold text-sm mb-1">
               MEDICATION OVERDUE

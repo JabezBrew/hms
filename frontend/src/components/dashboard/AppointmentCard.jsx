@@ -36,7 +36,7 @@ export function AppointmentCard({ appointment, onClick }) {
             case 'telehealth-active':
                 return (
                     <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 animate-pulse">
-                        <Video className="w-3 h-3 mr-1" /> Active Call
+                        <Video className="size-3 mr-1" /> Active Call
                     </Badge>
                 )
             default:
@@ -58,7 +58,7 @@ export function AppointmentCard({ appointment, onClick }) {
                     <span className="text-xs text-muted-foreground uppercase">{type}</span>
                 </div>
 
-                <Avatar className="h-12 w-12 border-2 border-background">
+                <Avatar className="size-12 border-2 border-background">
                     <AvatarImage src={patientImage} alt={patientName} />
                     <AvatarFallback>{patientName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                 </Avatar>

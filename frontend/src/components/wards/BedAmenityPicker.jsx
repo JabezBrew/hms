@@ -11,6 +11,8 @@ import Accessibility from 'lucide-react/dist/esm/icons/accessibility.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import React, { useId, useState } from 'react';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { useAmenities } from '@/features/wards/hooks/useWardQueries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,7 +43,7 @@ const AMENITY_ICONS = {
  * Can be used for filtering available beds or configuring a bed
  */
 export function BedAmenityPicker({
-  selectedAmenities = [],
+  selectedAmenities = DEFAULT_EMPTY_ARRAY,
   onSelectionChange,
   mode = 'filter', // 'filter' or 'configure'
   className
@@ -124,7 +126,7 @@ export function BedAmenityPicker({
             </span>
             {selectedCount > 0 && (
               <X
-                className="ml-2 h-4 w-4 shrink-0 opacity-50 hover:opacity-100"
+                className="ml-2 size-4 shrink-0 opacity-50 hover:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleClear();
@@ -165,7 +167,7 @@ export function BedAmenityPicker({
                             onCheckedChange={() => handleToggle(amenity.id)}
                           />
                           <Icon className={cn(
-                            'h-4 w-4 flex-shrink-0',
+                            'size-4 flex-shrink-0',
                             isSelected ? 'text-amber-600' : 'text-stone-400'
                           )} />
                           <div className="flex-1 min-w-0">
@@ -213,13 +215,14 @@ export function BedAmenityPicker({
                 variant="outline"
                 className="bg-amber-50 text-amber-700 border-amber-200 pl-2 pr-1"
               >
-                <Icon className="h-3 w-3 mr-1" />
+                <Icon className="size-3 mr-1" />
                 {amenity.name}
                 <button
+                  type="button"
                   onClick={() => handleToggle(amenity.id)}
                   className="ml-1 rounded-full p-0.5 hover:bg-amber-200 transition-colors"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="size-3" />
                 </button>
               </Badge>
             );
@@ -233,7 +236,7 @@ export function BedAmenityPicker({
 /**
  * AmenityBadges - Display amenities as read-only badges
  */
-export function AmenityBadges({ amenityCodes = [], className }) {
+export function AmenityBadges({ amenityCodes = DEFAULT_EMPTY_ARRAY, className }) {
   const { data: amenities = [] } = useAmenities({ is_active: true });
 
   const amenityDetails = amenityCodes
@@ -259,7 +262,7 @@ export function AmenityBadges({ amenityCodes = [], className }) {
             variant="outline"
             className="bg-stone-50 text-stone-700 border-stone-200"
           >
-            <Icon className="h-3 w-3 mr-1" />
+            <Icon className="size-3 mr-1" />
             {amenity.name}
           </Badge>
         );

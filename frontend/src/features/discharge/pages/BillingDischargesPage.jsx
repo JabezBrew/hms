@@ -133,21 +133,21 @@ export default function BillingDischargesPage() {
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="rounded-lg border p-3">
                         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                          <Clock3 className="h-3.5 w-3.5" />
+                          <Clock3 className="size-3.5" />
                           Medical Ready
                         </div>
                         <p className="mt-2 text-sm font-medium">{formatDateTime(item.medical_ready_at)}</p>
                       </div>
                       <div className="rounded-lg border p-3">
                         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                          <Receipt className="h-3.5 w-3.5" />
+                          <Receipt className="size-3.5" />
                           Invoices
                         </div>
                         <p className="mt-2 text-sm font-medium">{item.invoice_summary?.invoice_count ?? 0}</p>
                       </div>
                       <div className="rounded-lg border p-3">
                         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                          <Wallet className="h-3.5 w-3.5" />
+                          <Wallet className="size-3.5" />
                           Patient Due
                         </div>
                         <p className="mt-2 text-sm font-medium">{item.invoice_summary?.patient_balance_due ?? '0.00'}</p>

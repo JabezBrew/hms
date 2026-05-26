@@ -36,7 +36,7 @@ const ChartBodyMapReview = ({
   if ((shouldFetchAssignment && assignmentLoading) || entriesLoadingProp || (shouldFetchEntries && entriesLoading)) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -64,7 +64,7 @@ const ChartBodyMapReview = ({
   return (
     <section className="rounded-xl border border-border bg-card p-4">
       <div className="mb-4 flex items-center gap-2">
-        <MapPinned className="h-4 w-4 text-amber-600" />
+        <MapPinned className="size-4 text-amber-600" />
         <h3 className="font-display text-base text-foreground">Body Map Review</h3>
       </div>
 

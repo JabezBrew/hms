@@ -23,8 +23,8 @@ export function ReadOnlyBanner({ className }) {
         className
       )}
     >
-      <Lock className="h-3 w-3" />
-      <span>Read-Only Mode — Off-site access</span>
+      <Lock className="size-3" />
+      <span>Read-Only Mode: Off-site access</span>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export function ReadOnlyIndicator({ className, showLabel = true }) {
       )}
       title="Read-only mode: Write operations are disabled"
     >
-      <EyeOff className="h-3 w-3" />
+      <EyeOff className="size-3" />
       {showLabel && <span>Read-Only</span>}
     </div>
   );
@@ -85,7 +85,7 @@ export function ReadOnlyWrapper({ children, className, showOverlay = true }) {
         >
           <div className="flex flex-col items-center gap-2 text-center p-4">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-              <Lock className="h-5 w-5" />
+              <Lock className="size-5" />
               <span className="font-medium">Read-Only Mode</span>
             </div>
             <p className="text-sm text-muted-foreground max-w-xs">
@@ -108,6 +108,7 @@ export function ReadOnlyButton({ children, onClick, disabled, ...props }) {
 
   return (
     <button
+      type="button"
       {...props}
       disabled={isDisabled}
       onClick={isDisabled ? undefined : onClick}

@@ -212,7 +212,7 @@ export function WardOccupancyReports() {
       {/* Export Button */}
       <div className="flex justify-end">
         <Button onClick={exportReport} variant="outline" className="font-mono text-xs">
-          <Download className="h-4 w-4 mr-2" />
+          <Download className="size-4 mr-2" />
           Export Report
         </Button>
       </div>
@@ -270,19 +270,19 @@ export function WardOccupancyReports() {
       <Tabs defaultValue="occupancy">
         <TabsList className="bg-muted/50">
           <TabsTrigger value="occupancy" className="font-mono text-xs">
-            <TrendingUp className="h-4 w-4 mr-2" />
+            <TrendingUp className="size-4 mr-2" />
             Occupancy Trends
           </TabsTrigger>
           <TabsTrigger value="los" className="font-mono text-xs">
-            <Clock className="h-4 w-4 mr-2" />
+            <Clock className="size-4 mr-2" />
             Length of Stay
           </TabsTrigger>
           <TabsTrigger value="utilization" className="font-mono text-xs">
-            <Bed className="h-4 w-4 mr-2" />
+            <Bed className="size-4 mr-2" />
             Ward Utilization
           </TabsTrigger>
           <TabsTrigger value="admissions" className="font-mono text-xs">
-            <Users className="h-4 w-4 mr-2" />
+            <Users className="size-4 mr-2" />
             Admissions
           </TabsTrigger>
         </TabsList>

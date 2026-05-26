@@ -173,7 +173,7 @@ const NotificationCenter = () => {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+          <Bell className="size-5" />
           {totalCount > 0 && (
             <span className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-[10px] font-mono bg-primary text-primary-foreground rounded-full">
               {totalCount > 99 ? '99+' : totalCount}
@@ -199,7 +199,7 @@ const NotificationCenter = () => {
             <div className="p-6 space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex gap-3 animate-pulse">
-                  <div className="h-8 w-8 bg-muted rounded-full" />
+                  <div className="size-8 bg-muted rounded-full" />
                   <div className="flex-1 space-y-2">
                     <div className="h-3 bg-muted rounded w-2/3" />
                     <div className="h-2 bg-muted rounded w-1/2" />
@@ -209,8 +209,8 @@ const NotificationCenter = () => {
             </div>
           ) : allNotifications.length === 0 ? (
             <div className="py-12 px-4 text-center">
-              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
-                <Bell className="h-6 w-6 text-muted-foreground" />
+              <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+                <Bell className="size-6 text-muted-foreground" />
               </div>
               <p className="font-heading text-sm text-foreground mb-1">No notifications</p>
               <p className="text-xs text-muted-foreground">You're all caught up!</p>
@@ -234,8 +234,8 @@ const NotificationCenter = () => {
                   >
                     <div className="flex gap-3">
                       {/* Icon with Chronicle styling */}
-                      <div className="h-8 w-8 rounded-full bg-muted/50 flex items-center justify-center flex-shrink-0">
-                        <Icon className={cn('h-4 w-4', config.iconClass)} />
+                      <div className="size-8 rounded-full bg-muted/50 flex items-center justify-center flex-shrink-0">
+                        <Icon className={cn('size-4', config.iconClass)} />
                       </div>
 
                       <div className="flex-1 min-w-0">
@@ -244,7 +244,7 @@ const NotificationCenter = () => {
                             {item.title}
                           </span>
                           {!item.isRead && (
-                            <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0 animate-node-pulse" />
+                            <span className="size-2 rounded-full bg-primary flex-shrink-0 animate-node-pulse" />
                           )}
                         </div>
                         <p className="font-mono text-[11px] text-muted-foreground truncate mt-0.5">
@@ -285,7 +285,7 @@ const NotificationCenter = () => {
             }}
           >
             View All
-            <ArrowRight className="h-3 w-3" />
+            <ArrowRight className="size-3" />
           </Button>
         </div>
       </PopoverContent>

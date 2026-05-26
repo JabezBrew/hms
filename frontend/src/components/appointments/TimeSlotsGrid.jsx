@@ -3,6 +3,8 @@ import { useRef } from 'react';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -21,7 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
  * @param {string} props.emptyMessage - Message to display when no slots are available
  */
 const TimeSlotsGrid = ({
-  slots = [],
+  slots = DEFAULT_EMPTY_ARRAY,
   selectedSlotId = null,
   onSlotSelect,
   isLoading = false,
@@ -77,7 +79,7 @@ const TimeSlotsGrid = ({
   if (!isLoading && (!slots || slots.length === 0)) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-center">
-        <Clock className="h-12 w-12 text-muted-foreground mb-4" />
+        <Clock className="size-12 text-muted-foreground mb-4" />
         <p className="text-muted-foreground">{emptyMessage}</p>
       </div>
     );
@@ -111,7 +113,7 @@ const TimeSlotsGrid = ({
               onFocus={() => handleSlotInView(slot.id)}
               aria-label={`${startTime} to ${endTime}, ${duration} minutes, ${isAvailable ? 'available' : 'unavailable'}`}
             >
-              <div className="flex flex-col space-y-1 w-full">
+              <div className="flex flex-col gap-y-1 w-full">
                 <div className="flex justify-between items-center">
                   <span className="font-medium">{startTime}</span>
                   <Badge 
@@ -125,7 +127,7 @@ const TimeSlotsGrid = ({
                   </Badge>
                 </div>
                 <div className="flex items-center text-sm text-muted-foreground">
-                  <Clock className="h-3 w-3 mr-1" />
+                  <Clock className="size-3 mr-1" />
                   <span>{duration} min</span>
                   <span className="mx-1">•</span>
                   <span>Until {endTime}</span>

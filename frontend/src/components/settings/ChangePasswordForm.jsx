@@ -98,9 +98,9 @@ export default function ChangePasswordForm() {
             aria-label={showOldPassword ? 'Hide password' : 'Show password'}
           >
             {showOldPassword ? (
-              <EyeOff className="h-4 w-4 text-muted-foreground" />
+              <EyeOff className="size-4 text-muted-foreground" />
             ) : (
-              <Eye className="h-4 w-4 text-muted-foreground" />
+              <Eye className="size-4 text-muted-foreground" />
             )}
           </Button>
         </div>
@@ -134,9 +134,9 @@ export default function ChangePasswordForm() {
             aria-label={showNewPassword ? 'Hide password' : 'Show password'}
           >
             {showNewPassword ? (
-              <EyeOff className="h-4 w-4 text-muted-foreground" />
+              <EyeOff className="size-4 text-muted-foreground" />
             ) : (
-              <Eye className="h-4 w-4 text-muted-foreground" />
+              <Eye className="size-4 text-muted-foreground" />
             )}
           </Button>
         </div>
@@ -153,12 +153,12 @@ export default function ChangePasswordForm() {
             {passwordChecks.map((check, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className={cn(
-                  'w-4 h-4 rounded-full flex items-center justify-center',
+                  'size-4 rounded-full flex items-center justify-center',
                   check.met ? 'bg-emerald-500/20' : 'bg-muted'
                 )}>
                   <Check
                     className={cn(
-                      'h-2.5 w-2.5',
+                      'size-2.5',
                       check.met ? 'text-emerald-400' : 'text-muted-foreground/30'
                     )}
                   />
@@ -200,9 +200,9 @@ export default function ChangePasswordForm() {
             aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
           >
             {showConfirmPassword ? (
-              <EyeOff className="h-4 w-4 text-muted-foreground" />
+              <EyeOff className="size-4 text-muted-foreground" />
             ) : (
-              <Eye className="h-4 w-4 text-muted-foreground" />
+              <Eye className="size-4 text-muted-foreground" />
             )}
           </Button>
         </div>

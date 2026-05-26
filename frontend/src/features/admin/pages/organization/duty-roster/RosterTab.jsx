@@ -79,7 +79,7 @@ export function RosterTab() {
           className="bg-primary hover:bg-primary/90"
         >
           <RefreshCw
-            className={cn('h-4 w-4 mr-2', generateRoster.isPending && 'animate-spin')}
+            className={cn('size-4 mr-2', generateRoster.isPending && 'animate-spin')}
           />
           <span className="font-mono text-xs uppercase tracking-wide">Generate Roster</span>
         </Button>
@@ -94,9 +94,9 @@ export function RosterTab() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
-                className="h-8 w-8"
+                className="size-8"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="size-4" />
               </Button>
               <span className="font-heading font-medium text-foreground">
                 {format(currentMonth, 'MMMM yyyy')}
@@ -105,9 +105,9 @@ export function RosterTab() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-                className="h-8 w-8"
+                className="size-8"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="size-4" />
               </Button>
             </div>
           </CardHeader>
@@ -133,8 +133,8 @@ export function RosterTab() {
         <Card className="lg:col-span-2 border-border">
           <CardHeader className="border-b border-border">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <CalendarIcon className="h-5 w-5 text-primary" />
+              <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <CalendarIcon className="size-5 text-primary" />
               </div>
               <div>
                 <CardTitle className="font-display text-lg">

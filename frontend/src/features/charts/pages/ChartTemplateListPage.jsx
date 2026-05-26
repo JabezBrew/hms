@@ -240,28 +240,28 @@ const ChartTemplateListPage = () => {
       render: (template) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-card">
-              <MoreVertical className="h-3.5 w-3.5" />
+            <Button variant="outline" size="sm" className="size-8 p-0 bg-card">
+              <MoreVertical className="size-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[200]">
             <DropdownMenuItem onClick={() => handleEdit(template)}>
-              <Pencil className="h-3.5 w-3.5 mr-2" />
+              <Pencil className="size-3.5 mr-2" />
               Edit
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleClone(template)}>
-              <Copy className="h-3.5 w-3.5 mr-2" />
+              <Copy className="size-3.5 mr-2" />
               Clone
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleToggleActive(template)}>
               {template.is_active ? (
                 <>
-                  <EyeOff className="h-3.5 w-3.5 mr-2" />
+                  <EyeOff className="size-3.5 mr-2" />
                   Deactivate
                 </>
               ) : (
                 <>
-                  <Eye className="h-3.5 w-3.5 mr-2" />
+                  <Eye className="size-3.5 mr-2" />
                   Activate
                 </>
               )}
@@ -271,7 +271,7 @@ const ChartTemplateListPage = () => {
               onClick={() => setDeleteTarget(template)}
               className="text-rose-500 focus:text-rose-500"
             >
-              <Trash2 className="h-3.5 w-3.5 mr-2" />
+              <Trash2 className="size-3.5 mr-2" />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -287,7 +287,7 @@ const ChartTemplateListPage = () => {
           title={(
             <span className="flex items-center gap-3">
               <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                <ClipboardList className="size-6 text-amber-600 dark:text-amber-400" />
               </span>
               Chart Templates
             </span>
@@ -299,7 +299,7 @@ const ChartTemplateListPage = () => {
 
         <div className="max-w-7xl mx-auto px-6 py-8">
           <Alert>
-            <ClipboardList className="h-4 w-4" />
+            <ClipboardList className="size-4" />
             <AlertDescription>
               Chart template management is not available in Rust V2 mode yet because no generated /api/v2 chart-builder contract exists.
             </AlertDescription>
@@ -315,7 +315,7 @@ const ChartTemplateListPage = () => {
         title={(
           <span className="flex items-center gap-3">
             <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
-              <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              <ClipboardList className="size-6 text-amber-600 dark:text-amber-400" />
             </span>
             Chart Templates
           </span>
@@ -328,7 +328,7 @@ const ChartTemplateListPage = () => {
             className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
             data-onboarding="chart-template-create"
           >
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="size-4 mr-1.5" />
             New Template
           </Button>
         )}
@@ -340,7 +340,7 @@ const ChartTemplateListPage = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 placeholder="Search templates..."
                 value={searchQuery}
@@ -351,7 +351,7 @@ const ChartTemplateListPage = () => {
 
             <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
               <SelectTrigger className="w-[160px] font-mono">
-                <Filter className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                <Filter className="size-3.5 mr-2 text-muted-foreground" />
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent className="z-[200]">
@@ -429,11 +429,11 @@ const ChartTemplateListPage = () => {
       <div className="max-w-7xl mx-auto px-6 py-8">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
           </div>
         ) : filteredTemplates.length === 0 ? (
           <div className="text-center py-16">
-            <ClipboardList className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <ClipboardList className="size-16 mx-auto mb-4 text-muted-foreground opacity-50" />
             <h2 className="font-display text-xl text-foreground mb-2">
               {searchQuery || categoryFilter || visibilityFilter || activeFilter
                 ? "No templates found"
@@ -450,7 +450,7 @@ const ChartTemplateListPage = () => {
                 className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
                 data-onboarding="chart-template-create"
               >
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="size-4 mr-1.5" />
                 Create Template
               </Button>
             )}
@@ -501,7 +501,7 @@ const ChartTemplateListPage = () => {
               className="font-mono text-xs bg-rose-500 hover:bg-rose-600"
             >
               {deleteMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 "Delete"
               )}

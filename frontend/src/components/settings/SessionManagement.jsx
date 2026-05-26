@@ -78,7 +78,7 @@ export default function SessionManagement() {
       <div className="text-center py-8 bg-muted/30 border border-border rounded-xl">
         <p className="text-muted-foreground mb-4 text-sm">Failed to load sessions</p>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="font-mono text-xs">
-          <RefreshCw className="h-4 w-4 mr-2" />
+          <RefreshCw className="size-4 mr-2" />
           Retry
         </Button>
       </div>
@@ -88,7 +88,7 @@ export default function SessionManagement() {
   if (sessions.length === 0) {
     return (
       <div className="text-center py-8 bg-muted/30 border border-border rounded-xl">
-        <Globe className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+        <Globe className="size-12 mx-auto text-muted-foreground/50 mb-4" />
         <p className="text-muted-foreground text-sm">No active sessions found</p>
       </div>
     );
@@ -110,7 +110,7 @@ export default function SessionManagement() {
                 className="text-rose-400 border-rose-400/30 hover:text-rose-300 hover:bg-rose-500/10 font-mono text-xs"
                 disabled={revokeAllSessions.isPending}
               >
-                <LogOut className="h-4 w-4 mr-2" />
+                <LogOut className="size-4 mr-2" />
                 Sign Out All Other Sessions
               </Button>
             </AlertDialogTrigger>
@@ -178,7 +178,7 @@ function SessionCard({ session, index, onRevoke, isRevoking }) {
       )}>
         <DeviceIcon
           className={cn(
-            'h-5 w-5',
+            'size-5',
             session.is_current ? 'text-emerald-400' : 'text-muted-foreground'
           )}
           aria-hidden="true"
@@ -193,7 +193,7 @@ function SessionCard({ session, index, onRevoke, isRevoking }) {
           </span>
           {session.is_current && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <Shield className="h-2.5 w-2.5" />
+              <Shield className="size-2.5" />
               Current
             </span>
           )}
@@ -203,7 +203,7 @@ function SessionCard({ session, index, onRevoke, isRevoking }) {
         <div className="space-y-1">
           {(session.location || session.ip_address) && (
             <div className="flex items-center gap-1.5 text-muted-foreground">
-              <MapPin className="h-3 w-3 shrink-0" />
+              <MapPin className="size-3 shrink-0" />
               <span className="font-mono text-[11px]">
                 {session.location || 'Unknown location'}
                 {session.ip_address && (
@@ -217,7 +217,7 @@ function SessionCard({ session, index, onRevoke, isRevoking }) {
 
           {/* Created At */}
           <div className="flex items-center gap-1.5 text-muted-foreground">
-            <Clock className="h-3 w-3 shrink-0" />
+            <Clock className="size-3 shrink-0" />
             <span className="font-mono text-[11px]">
               Signed in{' '}
               {session.created_at
@@ -252,7 +252,7 @@ function SessionCard({ session, index, onRevoke, isRevoking }) {
             )}
             disabled={isRevoking}
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="size-4" />
             <span className="sr-only">Sign out this session</span>
           </Button>
         </AlertDialogTrigger>
@@ -260,7 +260,7 @@ function SessionCard({ session, index, onRevoke, isRevoking }) {
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display flex items-center gap-2">
               {session.is_current && (
-                <AlertTriangle className="h-5 w-5 text-amber-400" />
+                <AlertTriangle className="size-5 text-amber-400" />
               )}
               {session.is_current ? 'End current session?' : 'Sign out this session?'}
             </AlertDialogTitle>
@@ -346,7 +346,7 @@ function LoadingSkeleton() {
     <div className="space-y-3">
       {[1, 2, 3].map((i) => (
         <div key={i} className="flex items-start gap-4 p-4 rounded-xl border border-border bg-card">
-          <Skeleton className="h-10 w-10 rounded-lg" />
+          <Skeleton className="size-10 rounded-lg" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-40" />
             <Skeleton className="h-3 w-24" />

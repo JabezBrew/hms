@@ -257,15 +257,15 @@ export function OrderEntry({ patient }) {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="medications">
-            <Pill className="h-4 w-4 mr-2" />
+            <Pill className="size-4 mr-2" />
             Medications
           </TabsTrigger>
           <TabsTrigger value="labs">
-            <FlaskConical className="h-4 w-4 mr-2" />
+            <FlaskConical className="size-4 mr-2" />
             Lab Tests
           </TabsTrigger>
           <TabsTrigger value="imaging">
-            <ImageIcon className="h-4 w-4 mr-2" />
+            <ImageIcon className="size-4 mr-2" />
             Imaging
           </TabsTrigger>
         </TabsList>
@@ -372,7 +372,7 @@ export function OrderEntry({ patient }) {
                     />
                   </div>
                   
-                  <div className="flex items-center space-x-2 pt-2">
+                  <div className="flex items-center gap-x-2 pt-2">
                     <Checkbox
                       id="urgent"
                       checked={medicationForm.urgent}
@@ -404,7 +404,7 @@ export function OrderEntry({ patient }) {
                         className="justify-start"
                         onClick={() => handleQuickMedication(med)}
                       >
-                        <Pill className="h-4 w-4 mr-2" />
+                        <Pill className="size-4 mr-2" />
                         {med.name} - {med.dose}
                       </Button>
                     ))}
@@ -508,7 +508,7 @@ export function OrderEntry({ patient }) {
                     />
                   </div>
                   
-                  <div className="flex items-center space-x-2 pt-2">
+                  <div className="flex items-center gap-x-2 pt-2">
                     <Checkbox
                       id="lab-urgent"
                       checked={labForm.urgent}
@@ -540,7 +540,7 @@ export function OrderEntry({ patient }) {
                         className="justify-start"
                         onClick={() => handleQuickLabTest(test)}
                       >
-                        <FlaskConical className="h-4 w-4 mr-2" />
+                        <FlaskConical className="size-4 mr-2" />
                         {test.name}
                       </Button>
                     ))}
@@ -644,7 +644,7 @@ export function OrderEntry({ patient }) {
                     />
                   </div>
                   
-                  <div className="flex items-center space-x-2 pt-2">
+                  <div className="flex items-center gap-x-2 pt-2">
                     <Checkbox
                       id="contrast"
                       checked={imagingForm.contrast}
@@ -653,7 +653,7 @@ export function OrderEntry({ patient }) {
                     <Label htmlFor="contrast" className="cursor-pointer">With contrast</Label>
                   </div>
                   
-                  <div className="flex items-center space-x-2 pt-2">
+                  <div className="flex items-center gap-x-2 pt-2">
                     <Checkbox
                       id="imaging-urgent"
                       checked={imagingForm.urgent}
@@ -685,7 +685,7 @@ export function OrderEntry({ patient }) {
                         className="justify-start"
                         onClick={() => handleQuickImagingStudy(study)}
                       >
-                        <ImageIcon className="h-4 w-4 mr-2" />
+                        <ImageIcon className="size-4 mr-2" />
                         {study.name} - {study.bodyPart}
                       </Button>
                     ))}

@@ -282,9 +282,9 @@ const AddLabTestSlideOver = ({
             )}
           >
             {isPanel ? (
-              <FlaskConical className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <FlaskConical className="size-5 text-amber-600 dark:text-amber-400" />
             ) : (
-              <TestTube2 className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+              <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" />
             )}
           </div>
           <div>
@@ -303,7 +303,7 @@ const AddLabTestSlideOver = ({
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -358,7 +358,7 @@ const AddLabTestSlideOver = ({
             {/* Price */}
             <div className="space-y-2">
               <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <DollarSign className="h-3.5 w-3.5 text-sky-600" />
+                <DollarSign className="size-3.5 text-sky-600" />
                 Price
               </Label>
               <Input
@@ -535,7 +535,7 @@ const AddLabTestSlideOver = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <DollarSign className="h-3.5 w-3.5 text-sky-600" />
+                  <DollarSign className="size-3.5 text-sky-600" />
                   Price
                 </Label>
                 <Input
@@ -554,7 +554,7 @@ const AddLabTestSlideOver = ({
 
               <div className="space-y-2">
                 <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Clock className="h-3.5 w-3.5 text-sky-600" />
+                  <Clock className="size-3.5 text-sky-600" />
                   TAT (hours)
                 </Label>
                 <Input
@@ -609,12 +609,12 @@ const AddLabTestSlideOver = ({
           >
             {isPending ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Creating...
+                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                Creating…
               </>
             ) : (
               <>
-                <Check className="h-3.5 w-3.5 mr-1.5" />
+                <Check className="size-3.5 mr-1.5" />
                 Create {isPanel ? "Panel" : "Test"}
               </>
             )}

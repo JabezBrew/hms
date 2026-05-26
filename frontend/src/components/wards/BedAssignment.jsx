@@ -189,7 +189,7 @@ export function BedAssignment({
         {/* Gender compatibility alert */}
         {patientGender && (
           <Alert>
-            <Info className="h-4 w-4" aria-hidden="true" />
+            <Info className="size-4" aria-hidden="true" />
             <AlertDescription>
               Showing beds compatible with {getGenderDisplay()} patients. Gender-restricted sections are automatically filtered.
             </AlertDescription>
@@ -218,9 +218,9 @@ export function BedAssignment({
             <h4 className="text-sm font-semibold">Advanced Filters</h4>
 
             {/* Section filter */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Section</label>
-              <SectionSelector
+	            <div className="space-y-2">
+	              <span className="block text-sm font-medium">Section</span>
+	              <SectionSelector
                 wardId={selectedWard}
                 value={selectedSection}
                 onValueChange={setSelectedSection}
@@ -229,8 +229,8 @@ export function BedAssignment({
             </div>
 
             {/* Amenities filter */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Required Amenities</label>
+	            <div className="space-y-2">
+	              <span className="block text-sm font-medium">Required Amenities</span>
               <BedAmenityPicker
                 selectedAmenities={selectedAmenities}
                 onSelectionChange={setSelectedAmenities}
@@ -258,7 +258,7 @@ export function BedAssignment({
         {/* Bed selection */}
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <label className="text-sm font-medium">Select Bed</label>
+	            <span className="text-sm font-medium">Select Bed</span>
             <Badge variant="outline">
               {availableBeds.length} available beds
             </Badge>
@@ -267,7 +267,7 @@ export function BedAssignment({
           {/* No compatible beds warning */}
           {patientGender && availableBeds.length === 0 && selectedWard && (
             <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+              <AlertTriangle className="size-4" aria-hidden="true" />
               <AlertDescription>
                 No beds available that are compatible with {getGenderDisplay()} patients in this ward.
                 {selectedSection || selectedAmenities.length > 0

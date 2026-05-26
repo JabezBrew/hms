@@ -55,7 +55,7 @@ export default function AdmissionCreatePage() {
     <PageShell>
       {pageMeta}
       <div className="border-b border-border bg-card/50">
-        <div className="max-w-4xl mx-auto px-6 py-6">
+        <div className="max-w-4xl mx-auto p-6">
           {/* Back Navigation */}
           <Button
             variant="ghost"
@@ -63,20 +63,20 @@ export default function AdmissionCreatePage() {
             onClick={handleBack}
             className="mb-4 -ml-2 font-mono text-xs"
           >
-            <ChevronLeft className="h-4 w-4 mr-1" />
+            <ChevronLeft className="size-4 mr-1" />
             {wardId ? 'Back to Ward' : 'All Wards'}
           </Button>
 
           {/* Title Section */}
           <div className="flex items-start gap-4">
             <div className="p-3 rounded-xl bg-primary/10">
-              <UserPlus className="h-6 w-6 text-primary" />
+              <UserPlus className="size-6 text-primary" />
             </div>
             <PageHeader
               title="Start Admission"
               description={ward ? (
                 <span className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
+                  <Building2 className="size-4" />
                   Admission request for <span className="text-foreground font-medium">{ward.name}</span>
                   <span className="text-muted-foreground">
                     ({ward.available_beds_count} beds available)

@@ -94,7 +94,7 @@ export function SentenceBuilder() {
                 </CardContent>
                 <CardFooter>
                     <Button onClick={addOrder} disabled={!currentOrder.drug || !currentOrder.dose} className="w-full sm:w-auto">
-                        <Plus className="mr-2 h-4 w-4" />
+                        <Plus className="mr-2 size-4" />
                         Add to List
                     </Button>
                 </CardFooter>
@@ -110,7 +110,7 @@ export function SentenceBuilder() {
                                 <span className="text-muted-foreground">{order.route} {order.frequency} for {order.duration}</span>
                             </div>
                             <Button variant="ghost" size="icon" onClick={() => removeOrder(order.id)} className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                                <X className="h-4 w-4" />
+                                <X className="size-4" />
                             </Button>
                         </div>
                     ))}

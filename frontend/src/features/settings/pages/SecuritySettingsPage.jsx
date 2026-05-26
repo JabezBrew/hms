@@ -35,7 +35,7 @@ const SecuritySettingsPage = () => {
           title={(
             <span className="flex items-center gap-3 sm:gap-4">
               <span className="p-2.5 sm:p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                <Shield className="h-6 w-6 sm:h-7 sm:w-7 text-rose-400" aria-hidden="true" />
+                <Shield className="size-6 sm:h-7 sm:w-7 text-rose-400" aria-hidden="true" />
               </span>
               Security
             </span>
@@ -49,7 +49,7 @@ const SecuritySettingsPage = () => {
             onClick={() => navigate('/settings')}
             className="-ml-2 font-mono text-xs"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Settings
           </Button>
         </PageHeader>
@@ -61,7 +61,7 @@ const SecuritySettingsPage = () => {
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 animate-chronicle-enter">
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20">
-                  <Key className="h-4 w-4 text-rose-400" aria-hidden="true" />
+                  <Key className="size-4 text-rose-400" aria-hidden="true" />
                 </div>
                 <h2 className="font-display text-lg text-foreground">
                   Change Password
@@ -79,7 +79,7 @@ const SecuritySettingsPage = () => {
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 animate-chronicle-enter" style={{ animationDelay: '75ms' }}>
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20">
-                  <Monitor className="h-4 w-4 text-sky-400" aria-hidden="true" />
+                  <Monitor className="size-4 text-sky-400" aria-hidden="true" />
                 </div>
                 <h2 className="font-display text-lg text-foreground">
                   Active Sessions
@@ -97,7 +97,7 @@ const SecuritySettingsPage = () => {
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 animate-chronicle-enter" style={{ animationDelay: '150ms' }}>
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                  <Smartphone className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+                  <Smartphone className="size-4 text-emerald-400" aria-hidden="true" />
                 </div>
                 <h2 className="font-display text-lg text-foreground">
                   Multi-Factor Authentication

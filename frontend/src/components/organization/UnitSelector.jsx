@@ -114,14 +114,15 @@ export function UnitSelector({
           className={cn('w-full justify-between', className)}
         >
           <span className="truncate">{displayValue()}</span>
-          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[400px] p-0" align="start">
         <Command shouldFilter={false}>
           <div className="flex items-center border-b px-3">
-            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+            <Search className="mr-2 size-4 shrink-0 opacity-50" />
             <input
+              aria-label="Search units"
               placeholder="Search units..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -131,7 +132,7 @@ export function UnitSelector({
           <CommandList id={listboxId}>
             {isLoading ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                Loading units...
+                Loading units…
               </div>
             ) : filteredUnits.length === 0 ? (
               <CommandEmpty>No units found.</CommandEmpty>
@@ -151,17 +152,17 @@ export function UnitSelector({
                     >
                       <div
                         className={cn(
-                          'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border mt-0.5',
+                          'flex size-4 shrink-0 items-center justify-center rounded-sm border mt-0.5',
                           isSelected
                             ? 'bg-primary border-primary text-primary-foreground'
                             : 'border-muted-foreground/50'
                         )}
                       >
-                        {isSelected && <Check className="h-3 w-3" />}
+                        {isSelected && <Check className="size-3" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <Building2 className="size-4 text-muted-foreground shrink-0" />
                           <span className="font-medium">{unit.name}</span>
                           <Badge variant="outline" className="text-xs">
                             {unit.unit_type_code || unit.unit_type_name}

@@ -147,11 +147,12 @@ const SortableFieldItem = ({ field, index, onEdit, onDelete }) => {
       )}
     >
       <button
+        type="button"
         {...attributes}
         {...listeners}
         className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
       >
-        <GripVertical className="h-4 w-4" />
+        <GripVertical className="size-4" />
       </button>
 
       <div className="flex-1 min-w-0">
@@ -185,17 +186,17 @@ const SortableFieldItem = ({ field, index, onEdit, onDelete }) => {
           variant="ghost"
           size="sm"
           onClick={() => onEdit(field)}
-          className="h-7 w-7 p-0"
+          className="size-7 p-0"
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <Pencil className="size-3.5" />
         </Button>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => onDelete(field)}
-          className="h-7 w-7 p-0 text-rose-500 hover:text-rose-600"
+          className="size-7 p-0 text-rose-500 hover:text-rose-600"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="size-3.5" />
         </Button>
       </div>
     </div>
@@ -479,7 +480,7 @@ const ChartTemplateBuilder = ({
             title={(
               <span className="flex items-center gap-3">
                 <span className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                  <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  <ClipboardList className="size-5 text-amber-600 dark:text-amber-400" />
                 </span>
                 {templateId ? "Edit Chart Template" : "New Chart Template"}
               </span>
@@ -494,7 +495,7 @@ const ChartTemplateBuilder = ({
                 onClick={onClose}
                 className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
               >
-                <X className="h-4 w-4 mr-1.5" />
+                <X className="size-4 mr-1.5" />
                 Close
               </Button>
             )}
@@ -521,6 +522,7 @@ const ChartTemplateBuilder = ({
                   />
                 )}
                 <button
+                  type="button"
                   onClick={() => goToStep(step.id)}
                   className={cn(
                     "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all",
@@ -530,7 +532,7 @@ const ChartTemplateBuilder = ({
                 >
                   <span
                     className={cn(
-                      "w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono",
+                      "size-6 rounded-full flex items-center justify-center text-xs font-mono",
                       isCompleted
                         ? "bg-amber-500 text-white"
                         : isActive
@@ -538,7 +540,7 @@ const ChartTemplateBuilder = ({
                         : "bg-muted text-muted-foreground"
                     )}
                   >
-                    {isCompleted ? <Check className="h-3.5 w-3.5" /> : step.id}
+                    {isCompleted ? <Check className="size-3.5" /> : step.id}
                   </span>
                   <span
                     className={cn(
@@ -560,7 +562,7 @@ const ChartTemplateBuilder = ({
         <div className="max-w-3xl mx-auto px-6 py-8">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
             <>
@@ -622,7 +624,7 @@ const ChartTemplateBuilder = ({
                             return (
                               <SelectItem key={cat.value} value={cat.value} className="font-mono">
                                 <div className="flex items-center gap-2">
-                                  <Icon className="h-4 w-4" />
+                                  <Icon className="size-4" />
                                   {cat.label}
                                 </div>
                               </SelectItem>
@@ -640,6 +642,7 @@ const ChartTemplateBuilder = ({
                       <div className="grid grid-cols-2 gap-2">
                         {VISIBILITY_OPTIONS.map((opt) => (
                           <button
+                            type="button"
                             key={opt.value}
                             onClick={() => updateFormField("visibility", opt.value)}
                             className={cn(
@@ -665,6 +668,7 @@ const ChartTemplateBuilder = ({
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         {SCOPE_OPTIONS.map((opt) => (
                           <button
+                            type="button"
                             key={opt.value}
                             onClick={() => updateFormField("scope_type", opt.value)}
                             className={cn(
@@ -725,14 +729,14 @@ const ChartTemplateBuilder = ({
                       size="sm"
                       className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
                     >
-                      <Plus className="h-3.5 w-3.5 mr-1.5" />
+                      <Plus className="size-3.5 mr-1.5" />
                       Add Field
                     </Button>
                   </div>
 
                   {fields.length === 0 ? (
                     <div className="text-center py-12 border border-dashed border-border rounded-xl">
-                      <ListOrdered className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                      <ListOrdered className="size-12 mx-auto mb-3 text-muted-foreground opacity-50" />
                       <p className="font-mono text-sm text-muted-foreground">
                         No fields yet
                       </p>
@@ -788,6 +792,7 @@ const ChartTemplateBuilder = ({
                       <div className="grid grid-cols-3 gap-3">
                         {DISPLAY_MODES.map((mode) => (
                           <button
+                            type="button"
                             key={mode.value}
                             onClick={() => updateFormField("display_mode", mode.value)}
                             className={cn(
@@ -840,7 +845,7 @@ const ChartTemplateBuilder = ({
                     <div className="px-4 py-3 bg-muted/30 border-b border-border">
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                          <ClipboardList className="h-4 w-4 text-amber-600" />
+                          <ClipboardList className="size-4 text-amber-600" />
                         </div>
                         <div>
                           <h3 className="font-display text-base">
@@ -889,7 +894,7 @@ const ChartTemplateBuilder = ({
             disabled={currentStep === 1}
             className="font-mono text-xs"
           >
-            <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+            <ChevronLeft className="size-3.5 mr-1" />
             Previous
           </Button>
 
@@ -906,7 +911,7 @@ const ChartTemplateBuilder = ({
                 className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
               >
                 Next
-                <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                <ChevronRight className="size-3.5 ml-1" />
               </Button>
             ) : (
               <Button
@@ -917,12 +922,12 @@ const ChartTemplateBuilder = ({
               >
                 {isSaving ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    Saving...
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                    Saving…
                   </>
                 ) : (
                   <>
-                    <Check className="h-3.5 w-3.5 mr-1.5" />
+                    <Check className="size-3.5 mr-1.5" />
                     {templateId ? "Update Template" : "Create Template"}
                   </>
                 )}

@@ -11,6 +11,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { cn } from '@/lib/utils';
 import { getShiftLabel } from '@/config/shiftConfig';
 
@@ -20,7 +22,7 @@ import { getShiftLabel } from '@/config/shiftConfig';
 export function ReviewStep({
   formData,
   selectedPatient,
-  nurses = []
+  nurses = DEFAULT_EMPTY_ARRAY
 }) {
   const selectedNurse = nurses.find(n => String(n.id) === formData.to_nurse);
   const shiftLabel = getShiftLabel(formData.shift_type);
@@ -71,7 +73,7 @@ export function ReviewStep({
       <div className="p-5 rounded-xl bg-amber-500/5 border border-amber-500/20">
         <div className="flex items-start gap-4">
           <div className="p-3 rounded-lg bg-amber-500/10">
-            <User className="h-6 w-6 text-amber-600" />
+            <User className="size-6 text-amber-600" />
           </div>
           <div className="flex-1">
             <p className="font-mono text-[10px] uppercase tracking-wider text-amber-600 mb-1">
@@ -92,7 +94,7 @@ export function ReviewStep({
       <div className="grid grid-cols-2 gap-4">
         <div className="p-4 rounded-lg border border-border bg-card">
           <div className="flex items-center gap-2 mb-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <Clock className="size-4 text-muted-foreground" />
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               Shift Type
             </p>
@@ -101,7 +103,7 @@ export function ReviewStep({
         </div>
         <div className="p-4 rounded-lg border border-border bg-card">
           <div className="flex items-center gap-2 mb-2">
-            <User className="h-4 w-4 text-muted-foreground" />
+            <User className="size-4 text-muted-foreground" />
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               Receiving Nurse
             </p>
@@ -123,7 +125,7 @@ export function ReviewStep({
           return (
             <div key={section.label} className="space-y-2">
               <div className="flex items-center gap-2">
-                <Icon className="h-4 w-4 text-muted-foreground" />
+                <Icon className="size-4 text-muted-foreground" />
                 <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                   {section.label}
                   {section.required && <span className="text-rose-500 ml-1">*</span>}
@@ -148,7 +150,7 @@ export function ReviewStep({
       {/* Validation Warning */}
       {!formData.to_nurse && (
         <Alert className="border-rose-500/30 bg-rose-500/5">
-          <AlertCircle className="h-4 w-4 text-rose-500" />
+          <AlertCircle className="size-4 text-rose-500" />
           <AlertDescription className="text-rose-600 font-mono text-sm">
             Please select a receiving nurse before submitting
           </AlertDescription>

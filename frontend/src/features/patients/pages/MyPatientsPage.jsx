@@ -153,13 +153,13 @@ const MyPatientsPage = () => {
         render: (patient) => (
           <button
             type="button"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
             onClick={(event) => {
               event.stopPropagation();
               handleTogglePin(patient._listEntryId);
             }}
           >
-            <Pin className={cn("h-4 w-4", patient._isPinned && "fill-current text-primary")} />
+            <Pin className={cn("size-4", patient._isPinned && "fill-current text-primary")} />
           </button>
         ),
       });
@@ -279,7 +279,7 @@ const MyPatientsPage = () => {
             size="sm"
             className="font-mono text-xs w-full sm:w-auto"
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             {rustV2Mode ? 'Open Registry' : 'Add from Registry'}
           </Button>
         )}
@@ -298,7 +298,7 @@ const MyPatientsPage = () => {
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Users className="h-4 w-4" />
+            <Users className="size-4" />
             All Patients
           </NavLink>
           <NavLink
@@ -312,7 +312,7 @@ const MyPatientsPage = () => {
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Star className="h-4 w-4" />
+            <Star className="size-4" />
             My Patients
           </NavLink>
         </div>
@@ -320,7 +320,7 @@ const MyPatientsPage = () => {
         {/* Search and Controls */}
         <div className="flex flex-col gap-3 mt-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder="Filter your patients..."
               value={searchQuery}
@@ -329,10 +329,11 @@ const MyPatientsPage = () => {
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={handleClearSearch}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                <X className="h-4 w-4" />
+                <X className="size-4" />
               </button>
             )}
           </div>
@@ -342,9 +343,9 @@ const MyPatientsPage = () => {
               variant="ghost"
               size="icon"
               onClick={() => refetch()}
-              className="shrink-0 h-9 w-9"
+              className="shrink-0 size-9"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="size-4" />
             </Button>
           </div>
         </div>
@@ -403,8 +404,8 @@ const EmptyState = ({ hasSearch, onClear }) => {
   if (hasSearch) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <Search className="h-8 w-8 text-muted-foreground" />
+        <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+          <Search className="size-8 text-muted-foreground" />
         </div>
         <h3 className="font-display text-xl text-foreground mb-2">
           No matching patients
@@ -413,7 +414,7 @@ const EmptyState = ({ hasSearch, onClear }) => {
           No patients in your list match your search.
         </p>
         <Button variant="outline" size="sm" onClick={onClear}>
-          <X className="h-4 w-4 mr-2" />
+          <X className="size-4 mr-2" />
           Clear Filter
         </Button>
       </div>
@@ -422,8 +423,8 @@ const EmptyState = ({ hasSearch, onClear }) => {
 
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-        <Star className="h-8 w-8 text-muted-foreground" />
+      <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+        <Star className="size-8 text-muted-foreground" />
       </div>
       <h3 className="font-display text-xl text-foreground mb-2">
         No patients in your list
@@ -432,7 +433,7 @@ const EmptyState = ({ hasSearch, onClear }) => {
         Add patients to your personal list for quick access during ward rounds.
       </p>
       <Button onClick={() => navigate('/patients')}>
-        <Plus className="h-4 w-4 mr-2" />
+        <Plus className="size-4 mr-2" />
         Browse Patient Registry
       </Button>
     </div>

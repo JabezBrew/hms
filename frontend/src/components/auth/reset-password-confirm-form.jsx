@@ -85,20 +85,20 @@ export function ResetPasswordConfirmForm() {
 
   if (isValidating) {
     return (
-      <div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
-        <p className="text-sm text-muted-foreground">Validating reset link...</p>
+      <div className="mx-auto flex w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
+        <Loader2 className="size-8 animate-spin text-primary" aria-hidden="true" />
+        <p className="text-sm text-muted-foreground">Validating reset link…</p>
       </div>
     )
   }
 
   if (isSuccess) {
     return (
-      <div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[400px]">
-        <CheckCircle className="h-16 w-16 text-green-500" aria-hidden="true" />
+      <div className="mx-auto flex w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
+        <CheckCircle className="size-16 text-green-500" aria-hidden="true" />
         <div className="text-center">
           <h1 className="text-2xl font-semibold">Password Reset Complete</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Redirecting to login...</p>
+          <p className="mt-2 text-sm text-muted-foreground">Redirecting to login…</p>
         </div>
         <Button asChild><a href="/login">Go to Login</a></Button>
       </div>
@@ -107,8 +107,8 @@ export function ResetPasswordConfirmForm() {
 
   if (!isTokenValid) {
     return (
-      <div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[400px]">
-        <XCircle className="h-16 w-16 text-red-500" aria-hidden="true" />
+      <div className="mx-auto flex w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
+        <XCircle className="size-16 text-red-500" aria-hidden="true" />
         <div className="text-center">
           <h1 className="text-2xl font-semibold">Invalid Reset Link</h1>
           <p className="mt-2 text-sm text-muted-foreground">{error}</p>
@@ -119,8 +119,8 @@ export function ResetPasswordConfirmForm() {
   }
 
   return (
-    <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[400px]">
-      <div className="flex flex-col space-y-2 text-center">
+    <div className="mx-auto flex w-full flex-col justify-center gap-y-6 sm:w-[400px]">
+      <div className="flex flex-col gap-y-2 text-center">
         <h1 className="text-2xl font-semibold">Create New Password</h1>
         <p className="text-sm text-muted-foreground">
           {userEmail ? `Enter a new password for ${userEmail}` : 'Enter a new password to complete the reset.'}
@@ -149,7 +149,7 @@ export function ResetPasswordConfirmForm() {
               aria-label={showPassword ? "Hide password" : "Show password"}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+              {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -168,7 +168,7 @@ export function ResetPasswordConfirmForm() {
         </div>
 
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Resetting...</> : 'Reset Password'}
+          {isSubmitting ? <><Loader2 className="mr-2 size-4 animate-spin" />Resetting…</> : 'Reset Password'}
         </Button>
       </form>
 

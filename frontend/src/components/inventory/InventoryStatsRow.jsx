@@ -9,6 +9,15 @@ import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
 
+const USD_COMPACT_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
 /**
  * StatCard - Individual stat card component
  */
@@ -53,9 +62,9 @@ function StatCard({
             {trend !== undefined && trendValue && (
               <div className="flex items-center gap-1 text-xs">
                 {trend === 'up' ? (
-                  <TrendingUp className="h-3 w-3 text-emerald-500" />
+                  <TrendingUp className="size-3 text-emerald-500" />
                 ) : (
-                  <TrendingDown className="h-3 w-3 text-rose-500" />
+                  <TrendingDown className="size-3 text-rose-500" />
                 )}
                 <span className={cn(
                   trend === 'up' ? 'text-emerald-500' : 'text-rose-500'
@@ -67,7 +76,7 @@ function StatCard({
           </div>
           {Icon && (
             <div className={cn('p-2 rounded-lg bg-muted/50', iconStyles[variant])}>
-              <Icon className="h-5 w-5" />
+              <Icon className="size-5" />
             </div>
           )}
         </div>
@@ -91,16 +100,11 @@ export function InventoryStatsRow({ stats, isLoading, className }) {
   const navigate = useNavigate();
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(value);
+    return USD_COMPACT_CURRENCY_FORMATTER.format(value);
   };
 
   const formatNumber = (value) => {
-    return new Intl.NumberFormat('en-US').format(value);
+    return US_NUMBER_FORMATTER.format(value);
   };
 
   if (isLoading) {
@@ -114,7 +118,7 @@ export function InventoryStatsRow({ stats, isLoading, className }) {
                   <Skeleton className="h-4 w-24" />
                   <Skeleton className="h-8 w-16" />
                 </div>
-                <Skeleton className="h-9 w-9 rounded-lg" />
+                <Skeleton className="size-9 rounded-lg" />
               </div>
             </CardContent>
           </Card>

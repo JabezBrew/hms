@@ -9,6 +9,8 @@ import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import { format, parseISO, differenceInDays } from 'date-fns';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 /**
  * ExpiringItemsWidget - Widget showing items expiring soon
  * @param {Object} props
@@ -19,7 +21,7 @@ import { format, parseISO, differenceInDays } from 'date-fns';
  * @param {string} [props.className] - Additional CSS classes
  */
 export function ExpiringItemsWidget({
-  items = [],
+  items = DEFAULT_EMPTY_ARRAY,
   daysThreshold = 30,
   limit = 10,
   isLoading,
@@ -29,7 +31,7 @@ export function ExpiringItemsWidget({
   const displayItems = items.slice(0, limit);
 
   // Sort by expiry date (soonest first)
-  const sortedItems = [...displayItems].sort((a, b) => {
+  const sortedItems = displayItems.toSorted((a, b) => {
     const dateA = parseISO(a.expiry_date);
     const dateB = parseISO(b.expiry_date);
     return dateA - dateB;
@@ -56,7 +58,7 @@ export function ExpiringItemsWidget({
       <Card className={cn('bg-card/30 border-border/50', className)}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <Skeleton className="h-5 w-5 rounded" />
+            <Skeleton className="size-5 rounded" />
             <Skeleton className="h-5 w-40" />
           </div>
         </CardHeader>
@@ -80,13 +82,13 @@ export function ExpiringItemsWidget({
       <Card className={cn('bg-card/30 border-border/50', className)}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Clock className="h-5 w-5 text-rose-500" />
+            <Clock className="size-5 text-rose-500" />
             Expiring Soon ({daysThreshold} days)
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Package className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <Package className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
               No items expiring soon
             </p>
@@ -101,7 +103,7 @@ export function ExpiringItemsWidget({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Clock className="h-5 w-5 text-rose-500" />
+            <Clock className="size-5 text-rose-500" />
             Expiring Soon
             <span className="text-sm font-normal text-muted-foreground">
               ({items.length})
@@ -155,7 +157,7 @@ export function ExpiringItemsWidget({
             onClick={handleViewAll}
           >
             View all {items.length} items
-            <ArrowRight className="h-4 w-4 ml-1" />
+            <ArrowRight className="size-4 ml-1" />
           </Button>
         )}
       </CardContent>

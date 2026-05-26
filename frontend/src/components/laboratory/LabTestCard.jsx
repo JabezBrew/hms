@@ -24,6 +24,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
 /**
  * LabTestCard - Chronicle-styled card for displaying lab tests in catalog
  *
@@ -44,10 +49,7 @@ const LabTestCard = ({
   // Format price
   const formatPrice = (price) => {
     if (!price) return "Not set";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(price);
+    return USD_CURRENCY_FORMATTER.format(price);
   };
 
   // Get status badge config
@@ -120,7 +122,7 @@ const LabTestCard = ({
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <TestTube2 className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+            <TestTube2 className="size-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
           </div>
           <span
             className={cn(
@@ -138,20 +140,20 @@ const LabTestCard = ({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="size-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="size-4" />
               <span className="sr-only">Actions</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={() => onCustomize?.(test)}>
-              <Settings2 className="h-4 w-4 mr-2" aria-hidden="true" />
+              <Settings2 className="size-4 mr-2" aria-hidden="true" />
               Customize
             </DropdownMenuItem>
             {test.is_system_default && test.is_facility_modified && (
               <DropdownMenuItem onClick={() => onReset?.(test)}>
-                <RotateCcw className="h-4 w-4 mr-2" aria-hidden="true" />
+                <RotateCcw className="size-4 mr-2" aria-hidden="true" />
                 Reset to Defaults
               </DropdownMenuItem>
             )}
@@ -162,7 +164,7 @@ const LabTestCard = ({
                   onClick={() => onDelete?.(test)}
                   className="text-destructive focus:text-destructive"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  <Trash2 className="size-4 mr-2" aria-hidden="true" />
                   Delete Test
                 </DropdownMenuItem>
               </>
@@ -208,7 +210,7 @@ const LabTestCard = ({
       <div className="grid grid-cols-2 gap-2 mt-auto pt-3 border-t border-border/50">
         {/* Price */}
         <div className="flex items-center gap-1.5">
-          <DollarSign className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          <DollarSign className="size-3.5 text-muted-foreground" aria-hidden="true" />
           <span className="font-mono text-sm text-foreground">
             {formatPrice(test.price)}
           </span>
@@ -216,7 +218,7 @@ const LabTestCard = ({
 
         {/* TAT */}
         <div className="flex items-center gap-1.5">
-          <Clock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          <Clock className="size-3.5 text-muted-foreground" aria-hidden="true" />
           <span className="font-mono text-sm text-foreground">
             {test.tat_hours ? `${test.tat_hours}h TAT` : "—"}
           </span>
@@ -226,7 +228,7 @@ const LabTestCard = ({
       {/* Specimen type */}
       {test.specimen_type && (
         <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border/30">
-          <Tag className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+          <Tag className="size-3 text-muted-foreground" aria-hidden="true" />
           <span className="font-mono text-xs text-muted-foreground uppercase">
             {test.specimen_type}
           </span>
@@ -259,10 +261,7 @@ const LabPanelCard = ({
   // Format price
   const formatPrice = (price) => {
     if (!price) return "Not set";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(price);
+    return USD_CURRENCY_FORMATTER.format(price);
   };
 
   // Get status badge config
@@ -302,7 +301,7 @@ const LabPanelCard = ({
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-            <TestTube2 className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <TestTube2 className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
           </div>
           <span
             className={cn(
@@ -320,20 +319,20 @@ const LabPanelCard = ({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="size-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="size-4" />
               <span className="sr-only">Actions</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={() => onCustomize?.(panel)}>
-              <Settings2 className="h-4 w-4 mr-2" aria-hidden="true" />
+              <Settings2 className="size-4 mr-2" aria-hidden="true" />
               Customize
             </DropdownMenuItem>
             {panel.is_system_default && panel.is_facility_modified && (
               <DropdownMenuItem onClick={() => onReset?.(panel)}>
-                <RotateCcw className="h-4 w-4 mr-2" aria-hidden="true" />
+                <RotateCcw className="size-4 mr-2" aria-hidden="true" />
                 Reset to Defaults
               </DropdownMenuItem>
             )}
@@ -344,7 +343,7 @@ const LabPanelCard = ({
                   onClick={() => onDelete?.(panel)}
                   className="text-destructive focus:text-destructive"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  <Trash2 className="size-4 mr-2" aria-hidden="true" />
                   Delete Panel
                 </DropdownMenuItem>
               </>
@@ -379,7 +378,7 @@ const LabPanelCard = ({
 
       {/* Price */}
       <div className="flex items-center gap-1.5 mt-auto pt-3 border-t border-border/50">
-        <DollarSign className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+        <DollarSign className="size-3.5 text-muted-foreground" aria-hidden="true" />
         <span className="font-mono text-sm text-foreground">
           {formatPrice(panel.price)}
         </span>

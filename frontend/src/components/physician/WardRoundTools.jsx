@@ -287,27 +287,27 @@ export function WardRoundTools({ patient }) {
       <Tabs defaultValue="summary">
         <TabsList>
           <TabsTrigger value="summary">
-            <FileText className="h-4 w-4 mr-2" />
+            <FileText className="size-4 mr-2" />
             Summary
           </TabsTrigger>
           <TabsTrigger value="vitals">
-            <Activity className="h-4 w-4 mr-2" />
+            <Activity className="size-4 mr-2" />
             Vitals
           </TabsTrigger>
           <TabsTrigger value="notes">
-            <FileText className="h-4 w-4 mr-2" />
+            <FileText className="size-4 mr-2" />
             Notes
           </TabsTrigger>
           <TabsTrigger value="medications">
-            <Pill className="h-4 w-4 mr-2" />
+            <Pill className="size-4 mr-2" />
             Medications
           </TabsTrigger>
           <TabsTrigger value="labs">
-            <FlaskConical className="h-4 w-4 mr-2" />
+            <FlaskConical className="size-4 mr-2" />
             Labs
           </TabsTrigger>
           <TabsTrigger value="tasks">
-            <CheckCircle2 className="h-4 w-4 mr-2" />
+            <CheckCircle2 className="size-4 mr-2" />
             Tasks
           </TabsTrigger>
         </TabsList>

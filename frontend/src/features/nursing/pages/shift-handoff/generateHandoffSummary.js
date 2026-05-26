@@ -123,7 +123,7 @@ export function generateOngoingIssues(alerts = []) {
 
   // Sort by severity (critical first)
   const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-  const sorted = [...activeAlerts].sort((a, b) =>
+  const sorted = activeAlerts.toSorted((a, b) =>
     (severityOrder[a.severity] || 3) - (severityOrder[b.severity] || 3)
   );
 

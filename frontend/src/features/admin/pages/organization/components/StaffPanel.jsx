@@ -59,10 +59,10 @@ function SortableHeader({ label, field, sortField, sortDirection, onSort, classN
       )}
     >
       {label}
-      <span className="flex flex-col -space-y-1">
-        <ChevronUp className={cn("h-2.5 w-2.5", isActive && sortDirection === 'asc' ? "text-amber-500" : "text-muted-foreground/40")} />
-        <ChevronDown className={cn("h-2.5 w-2.5", isActive && sortDirection === 'desc' ? "text-amber-500" : "text-muted-foreground/40")} />
-      </span>
+	      <span className="flex flex-col">
+	        <ChevronUp className={cn("size-2.5", isActive && sortDirection === 'asc' ? "text-amber-500" : "text-muted-foreground/40")} />
+	        <ChevronDown className={cn("-mt-1 size-2.5", isActive && sortDirection === 'desc' ? "text-amber-500" : "text-muted-foreground/40")} />
+	      </span>
     </button>
   );
 }
@@ -131,7 +131,7 @@ export function StaffPanel({ unitId }) {
   const sortedStaff = useMemo(() => {
     if (!staff.length) return staff;
 
-    return [...staff].sort((a, b) => {
+    return staff.toSorted((a, b) => {
       let aVal = a[sortField];
       let bVal = b[sortField];
 
@@ -355,7 +355,7 @@ export function StaffPanel({ unitId }) {
               onClick={handleBulkDelete}
               className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20 font-mono text-xs"
             >
-              <Trash2 className="h-4 w-4 mr-1.5" />
+              <Trash2 className="size-4 mr-1.5" />
               Remove ({selectedRows.size})
             </Button>
           )}
@@ -364,7 +364,7 @@ export function StaffPanel({ unitId }) {
             onClick={() => setShowAddDialog(true)}
             className="bg-sky-600 hover:bg-sky-700 text-white font-mono text-xs"
           >
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="size-4 mr-1.5" />
             Add Staff
           </Button>
         </div>
@@ -395,8 +395,8 @@ export function StaffPanel({ unitId }) {
         </div>
       ) : staff.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-3">
-            <Users className="h-7 w-7 text-muted-foreground/50" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted/50 mb-3">
+            <Users className="size-7 text-muted-foreground/50" />
           </div>
           <p className="text-sm text-muted-foreground">{emptyTitle}</p>
           <p className="text-xs text-muted-foreground/60 mt-1">{emptyDetail}</p>
@@ -469,7 +469,7 @@ export function StaffPanel({ unitId }) {
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-medium text-sm truncate">{member.practitioner_name}</span>
                   {member.is_primary && (
-                    <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                    <Star className="size-3.5 text-amber-500 fill-amber-500 shrink-0" />
                   )}
                 </div>
                 <div className="truncate">
@@ -503,25 +503,25 @@ export function StaffPanel({ unitId }) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                    className="size-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
                     onClick={(event) => handleEdit(member, event)}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="size-3.5" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                    className="size-7 opacity-0 group-hover:opacity-100 transition-opacity text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20"
                     onClick={(event) => handleDelete(member.id, event)}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="size-3.5" />
                   </Button>
                 </div>
               </div>
             )}
           />
           {isFetchingNextPage && (
-            <div className="text-xs text-muted-foreground text-center py-2 border-t">Loading more...</div>
+            <div className="text-xs text-muted-foreground text-center py-2 border-t">Loading more…</div>
           )}
         </div>
       )}
@@ -531,8 +531,8 @@ export function StaffPanel({ unitId }) {
         <DialogContent>
           <DialogHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/30">
-                <Users className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+              <div className="flex size-10 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/30">
+                <Users className="size-5 text-sky-600 dark:text-sky-400" />
               </div>
               <DialogTitle className="font-display text-xl">Add Staff Assignment</DialogTitle>
             </div>
@@ -588,7 +588,7 @@ export function StaffPanel({ unitId }) {
               <p className="text-[10px] text-muted-foreground">Search by name or employee ID</p>
             </div>
 
-            <div className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+            <div className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
               <Checkbox
                 id="is_primary"
                 checked={newAssignment.is_primary}
@@ -644,8 +644,8 @@ export function StaffPanel({ unitId }) {
         <DialogContent>
           <DialogHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                <Pencil className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
+                <Pencil className="size-5 text-amber-600 dark:text-amber-400" />
               </div>
               <div>
                 <DialogTitle className="font-display text-xl">Edit Assignment</DialogTitle>
@@ -679,7 +679,7 @@ export function StaffPanel({ unitId }) {
                 </Select>
               </div>
 
-              <div className="flex items-center gap-3 space-y-0 rounded-lg border p-3">
+              <div className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
                 <Checkbox
                   id="edit_is_primary"
                   checked={editingAssignment.is_primary}

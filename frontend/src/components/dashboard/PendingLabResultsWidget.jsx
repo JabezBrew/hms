@@ -66,7 +66,7 @@ export default function PendingLabResultsWidget({ className, limit = 5 }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-sky-50 border border-sky-200">
-              <TestTube2 className="h-5 w-5 text-sky-600" />
+              <TestTube2 className="size-5 text-sky-600" />
             </div>
             <div>
               <CardTitle className="text-lg font-heading">Pending Lab Results</CardTitle>
@@ -81,7 +81,7 @@ export default function PendingLabResultsWidget({ className, limit = 5 }) {
       <CardContent>
         {allOrders.length === 0 ? (
           <div className="text-center py-8 text-stone-500">
-            <TestTube2 className="h-12 w-12 mx-auto mb-3 text-stone-300" />
+            <TestTube2 className="size-12 mx-auto mb-3 text-stone-300" />
             <p className="text-sm">No pending lab results</p>
           </div>
         ) : (
@@ -112,7 +112,7 @@ export default function PendingLabResultsWidget({ className, limit = 5 }) {
                     )}
                   </p>
                   <div className="flex items-center gap-2 mt-1 text-xs text-stone-500">
-                    <Clock className="h-3 w-3" />
+                    <Clock className="size-3" />
                     {format(new Date(order.created_at), 'MMM dd, yyyy')}
                     {order.indication && (
                       <span className="ml-2 truncate">• {order.indication}</span>
@@ -125,7 +125,7 @@ export default function PendingLabResultsWidget({ className, limit = 5 }) {
                   onClick={() => handleViewOrder(order.id)}
                   className="ml-3"
                 >
-                  <Eye className="h-4 w-4 mr-1" />
+                  <Eye className="size-4 mr-1" />
                   View
                 </Button>
               </div>

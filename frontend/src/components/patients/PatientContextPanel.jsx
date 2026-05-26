@@ -25,6 +25,12 @@ import { useAppointments } from "@/features/appointments/hooks/useAppointmentQue
 
 import format from "date-fns/format";
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 const formatDate = (value) => {
   if (!value) return "-";
   try {
@@ -44,18 +50,7 @@ const formatDateTime = (value) => {
 };
 
 const formatCurrency = (amount) => {
-  return new Intl.NumberFormat("en-GH", {
-    style: "currency",
-    currency: "GHS",
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
-};
-
-const getAppointmentPatientId = (appointment) => {
-  const participant = appointment?.participant?.find((p) =>
-    p.actor?.reference?.startsWith("Patient/")
-  );
-  return participant?.actor?.reference?.split("/")[1] || null;
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 };
 
 export default function PatientContextPanel({
@@ -175,7 +170,7 @@ export default function PatientContextPanel({
         <DialogHeader className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10 text-primary">
-              <User className="h-5 w-5" />
+              <User className="size-5" />
             </div>
             <div>
               <DialogTitle className="font-display text-xl text-foreground">
@@ -188,10 +183,10 @@ export default function PatientContextPanel({
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         </DialogHeader>
-        <div className="px-6 py-6 space-y-6">
+        <div className="p-6 space-y-6">
         <section className="rounded-xl border border-border/70 bg-card/70 p-4">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
             Demographics
@@ -231,7 +226,7 @@ export default function PatientContextPanel({
           <>
             <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-rose-600" />
+                <AlertTriangle className="size-4 text-rose-600" />
                 <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Allergies
                 </p>
@@ -256,14 +251,14 @@ export default function PatientContextPanel({
               <Collapsible open={clinicalOpen} onOpenChange={setClinicalOpen}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                    <ClipboardList className="size-4 text-muted-foreground" />
                     <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
                       Clinical Context
                     </p>
                   </div>
                   <CollapsibleTrigger asChild>
                     <Button variant="ghost" size="sm" className="font-mono text-xs">
-                      <ChevronDown className={cn("h-3 w-3 mr-1 transition-transform", clinicalOpen && "rotate-180")} />
+                      <ChevronDown className={cn("size-3 mr-1 transition-transform", clinicalOpen && "rotate-180")} />
                       {clinicalOpen ? "Hide" : "Expand"}
                     </Button>
                   </CollapsibleTrigger>
@@ -307,7 +302,7 @@ export default function PatientContextPanel({
           <>
             <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <Shield className="h-4 w-4 text-emerald-600" />
+                <Shield className="size-4 text-emerald-600" />
                 <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Insurance
                 </p>
@@ -334,7 +329,7 @@ export default function PatientContextPanel({
 
             <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-primary" />
+                <FileText className="size-4 text-primary" />
                 <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Billing Summary
                 </p>
@@ -378,7 +373,7 @@ export default function PatientContextPanel({
           <>
             <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary" />
+                <Calendar className="size-4 text-primary" />
                 <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Upcoming / Active
                 </p>
@@ -405,7 +400,7 @@ export default function PatientContextPanel({
 
             <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
+                <FileText className="size-4 text-muted-foreground" />
                 <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Appointment History
                 </p>
@@ -436,5 +431,3 @@ export default function PatientContextPanel({
     </Dialog>
   );
 }
-
-export { getAppointmentPatientId };

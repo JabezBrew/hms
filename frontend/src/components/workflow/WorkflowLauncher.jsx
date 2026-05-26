@@ -137,7 +137,7 @@ export default function WorkflowLauncher({
           startDischarge.isPending
         }
       >
-        <Icon className="h-4 w-4 mr-2" />
+        <Icon className="size-4 mr-2" />
         Start {config.name}
       </Button>
     );
@@ -149,7 +149,7 @@ export default function WorkflowLauncher({
       <DialogTrigger asChild>
         {trigger || (
           <Button variant={variant} size={size} className={className}>
-            <Stethoscope className="h-4 w-4 mr-2" />
+            <Stethoscope className="size-4 mr-2" />
             Start Workflow
           </Button>
         )}
@@ -180,6 +180,7 @@ export default function WorkflowLauncher({
 
               return (
                 <button
+                  type="button"
                   key={workflow.type}
                   className={cn(
                     'w-full text-left p-4 rounded-xl border transition-all',
@@ -198,7 +199,7 @@ export default function WorkflowLauncher({
                         `bg-${workflow.color}-500/10 border border-${workflow.color}-500/20`
                       )}
                     >
-                      <Icon className={cn('h-5 w-5', `text-${workflow.color}-400`)} />
+                      <Icon className={cn('size-5', `text-${workflow.color}-400`)} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -235,7 +236,7 @@ export default function WorkflowLauncher({
               }
             >
               {selectedWorkflowConfig && (
-                <selectedWorkflowConfig.icon className="h-4 w-4 mr-2" />
+                <selectedWorkflowConfig.icon className="size-4 mr-2" />
               )}
               {startWardRound.isPending ||
               startDischarge.isPending

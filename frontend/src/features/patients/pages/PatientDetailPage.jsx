@@ -123,23 +123,23 @@ const PatientDetailPage = () => {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between py-3">
                 <CardTitle className="text-base font-semibold">Active Problems</CardTitle>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <Plus className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8">
+                  <Plus className="size-4" />
                 </Button>
               </CardHeader>
               <CardContent className="py-2">
                 <ul className="space-y-2 text-sm">
                   <li className="flex items-center justify-between group">
                     <span>Hypertension (I10)</span>
-                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
+                    <Edit2 className="size-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
                   </li>
                   <li className="flex items-center justify-between group">
                     <span>Type 2 Diabetes (E11.9)</span>
-                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
+                    <Edit2 className="size-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
                   </li>
                   <li className="flex items-center justify-between group">
                     <span>Osteoarthritis (M19.9)</span>
-                    <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
+                    <Edit2 className="size-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground" />
                   </li>
                 </ul>
               </CardContent>
@@ -148,8 +148,8 @@ const PatientDetailPage = () => {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between py-3">
                 <CardTitle className="text-base font-semibold">Current Meds</CardTitle>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <Plus className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8">
+                  <Plus className="size-4" />
                 </Button>
               </CardHeader>
               <CardContent className="py-2">

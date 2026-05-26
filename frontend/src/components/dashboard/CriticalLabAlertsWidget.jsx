@@ -71,7 +71,7 @@ export default function CriticalLabAlertsWidget({ className, limit = 5 }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-rose-100 border border-rose-300">
-              <AlertTriangle className="h-5 w-5 text-rose-600" />
+              <AlertTriangle className="size-5 text-rose-600" />
             </div>
             <div>
               <CardTitle className="text-lg font-heading text-rose-900">
@@ -90,7 +90,7 @@ export default function CriticalLabAlertsWidget({ className, limit = 5 }) {
       <CardContent>
         {criticalResults.length === 0 ? (
           <div className="text-center py-8 text-stone-500">
-            <AlertTriangle className="h-12 w-12 mx-auto mb-3 text-stone-300" />
+            <AlertTriangle className="size-12 mx-auto mb-3 text-stone-300" />
             <p className="text-sm">No critical lab alerts</p>
           </div>
         ) : (
@@ -116,7 +116,7 @@ export default function CriticalLabAlertsWidget({ className, limit = 5 }) {
 
                     {/* Patient Info */}
                     <div className="flex items-center gap-2 mb-2 text-sm text-stone-700">
-                      <User className="h-4 w-4" />
+                      <User className="size-4" />
                       <span className="font-semibold">
                         {result.order_test?.order?.patient_details?.first_name}{' '}
                         {result.order_test?.order?.patient_details?.last_name}
@@ -130,7 +130,7 @@ export default function CriticalLabAlertsWidget({ className, limit = 5 }) {
 
                     {/* Test and Result */}
                     <div className="flex items-center gap-2 mb-1">
-                      <TestTube2 className="h-4 w-4 text-stone-500" />
+                      <TestTube2 className="size-4 text-stone-500" />
                       <span className="font-semibold text-stone-900">
                         {result.order_test?.test?.name}
                       </span>
@@ -147,7 +147,7 @@ export default function CriticalLabAlertsWidget({ className, limit = 5 }) {
                         )}
                         {TrendIcon && (
                           <div className="flex items-center gap-1 ml-2">
-                            <TrendIcon className={cn('h-4 w-4', trend.color)} />
+                            <TrendIcon className={cn('size-4', trend.color)} />
                             <span className={cn('text-xs font-medium', trend.color)}>
                               {trend.label}
                             </span>
@@ -185,7 +185,7 @@ export default function CriticalLabAlertsWidget({ className, limit = 5 }) {
                     }
                     className="ml-3 border-rose-300 text-rose-700 hover:bg-rose-50"
                   >
-                    <Eye className="h-4 w-4 mr-1" />
+                    <Eye className="size-4 mr-1" />
                     View
                   </Button>
                 </div>

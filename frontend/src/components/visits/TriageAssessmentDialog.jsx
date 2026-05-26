@@ -126,7 +126,7 @@ export function TriageAssessmentDialog({ open, onClose, entry, onSuccess }) {
                   htmlFor="emergency"
                   className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-data-[state=checked]:border-rose-500 peer-data-[state=checked]:bg-rose-500/10"
                 >
-                  <AlertTriangle className="h-6 w-6 text-rose-400 mb-2" />
+                  <AlertTriangle className="size-6 text-rose-400 mb-2" />
                   <span className="text-sm font-medium text-rose-400">
                     Emergency
                   </span>
@@ -142,7 +142,7 @@ export function TriageAssessmentDialog({ open, onClose, entry, onSuccess }) {
                   htmlFor="urgent"
                   className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-data-[state=checked]:border-amber-500 peer-data-[state=checked]:bg-amber-500/10"
                 >
-                  <AlertCircle className="h-6 w-6 text-amber-400 mb-2" />
+                  <AlertCircle className="size-6 text-amber-400 mb-2" />
                   <span className="text-sm font-medium text-amber-400">
                     Urgent
                   </span>
@@ -158,7 +158,7 @@ export function TriageAssessmentDialog({ open, onClose, entry, onSuccess }) {
                   htmlFor="routine"
                   className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-data-[state=checked]:border-sky-500 peer-data-[state=checked]:bg-sky-500/10"
                 >
-                  <Clock className="h-6 w-6 text-sky-400 mb-2" />
+                  <Clock className="size-6 text-sky-400 mb-2" />
                   <span className="text-sm font-medium text-sky-400">
                     Routine
                   </span>

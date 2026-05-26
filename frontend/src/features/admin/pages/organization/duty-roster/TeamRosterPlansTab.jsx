@@ -164,7 +164,7 @@ export function TeamRosterPlansTab() {
         subtitle="Optional team-level plans linked to department coverage."
         actions={
           <Button onClick={() => openForm(null)}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             <span className="font-mono text-xs uppercase tracking-wide">Add Team Plan</span>
           </Button>
         }

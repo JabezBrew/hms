@@ -42,6 +42,12 @@ import {
   useUpdateService,
 } from '@/features/billing/hooks';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 function normalizeResults(data) {
   if (!data) return { results: [], count: 0 };
   if (Array.isArray(data)) return { results: data, count: data.length };
@@ -153,7 +159,7 @@ export default function ServiceCatalogPage() {
               setCategoryDialog({ open: true, mode: 'edit', row });
             }}
           >
-            <Pencil className="h-3 w-3 mr-2" />
+            <Pencil className="size-3 mr-2" />
             Edit
           </Button>
         ) : null
@@ -235,7 +241,7 @@ export default function ServiceCatalogPage() {
               setServiceDialog({ open: true, mode: 'edit', row });
             }}
           >
-            <Pencil className="h-3 w-3 mr-2" />
+            <Pencil className="size-3 mr-2" />
             Edit
           </Button>
         ) : null
@@ -266,7 +272,7 @@ export default function ServiceCatalogPage() {
         title={(
           <span className="flex items-center gap-3">
             <span className="p-3 rounded-xl bg-primary/10">
-              <Layers className="h-6 w-6 text-primary" />
+              <Layers className="size-6 text-primary" />
             </span>
             Service Catalog
           </span>
@@ -280,7 +286,7 @@ export default function ServiceCatalogPage() {
               className="font-mono text-xs"
               onClick={handleRefresh}
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Refresh
             </Button>
             {catalogMutationsAvailable && tab === 'categories' ? (
@@ -292,7 +298,7 @@ export default function ServiceCatalogPage() {
                   setCategoryDialog({ open: true, mode: 'create', row: null });
                 }}
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 New Category
               </Button>
             ) : null}
@@ -313,7 +319,7 @@ export default function ServiceCatalogPage() {
                   setServiceDialog({ open: true, mode: 'create', row: null });
                 }}
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 New Service
               </Button>
             ) : null}
@@ -338,7 +344,7 @@ export default function ServiceCatalogPage() {
           <TabsContent value="services" className="mt-4 space-y-3">
             <div className="flex flex-col sm:flex-row gap-2">
               <div className="relative flex-1 max-w-xl">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   value={serviceSearch}
                   onChange={(e) => setServiceSearch(e.target.value)}
@@ -367,7 +373,7 @@ export default function ServiceCatalogPage() {
 
           <TabsContent value="categories" className="mt-4 space-y-3">
             <div className="relative flex-1 max-w-xl">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 value={categorySearch}
                 onChange={(e) => setCategorySearch(e.target.value)}
@@ -649,9 +655,5 @@ export default function ServiceCatalogPage() {
 
 function formatCurrency(amount) {
   const n = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(Number.isFinite(n) ? n : 0);
+  return GHS_CURRENCY_FORMATTER.format(Number.isFinite(n) ? n : 0);
 }

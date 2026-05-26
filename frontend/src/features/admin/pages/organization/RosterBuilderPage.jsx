@@ -637,13 +637,13 @@ export default function RosterBuilderPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/admin/organization/duty-roster">
-                <ArrowLeft className="h-4 w-4 mr-1" />
+                <ArrowLeft className="size-4 mr-1" />
                 Back to Roster
               </Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
               <Link to={`/admin/organization/roster-setup${selectedDepartment ? `?department=${selectedDepartment}` : ''}`}>
-                <Settings className="h-4 w-4 mr-1" />
+                <Settings className="size-4 mr-1" />
                 Setup
               </Link>
             </Button>
@@ -659,11 +659,11 @@ export default function RosterBuilderPage() {
               <div className="flex flex-col md:flex-row md:items-end gap-4">
                 {/* Unit Selector (Departments & Divisions) */}
                 <div className="min-w-0 md:min-w-[200px]">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 block">
-                    Department / Division
-                  </label>
-                  <Select value={selectedDepartment} onValueChange={handleDepartmentChange}>
-                    <SelectTrigger>
+	                  <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 block">
+	                    Department / Division
+	                  </span>
+	                  <Select value={selectedDepartment} onValueChange={handleDepartmentChange}>
+	                    <SelectTrigger aria-label="Department or division">
                       <SelectValue placeholder="Select unit" />
                     </SelectTrigger>
                     <SelectContent className="z-[200]">
@@ -698,13 +698,13 @@ export default function RosterBuilderPage() {
                 {/* Period Navigator */}
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="icon" onClick={goToPreviousPeriod}>
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="size-4" />
                   </Button>
                   <span className="font-heading font-medium w-36 text-center">
                     {format(periodDate, 'MMMM yyyy')}
                   </span>
                   <Button variant="ghost" size="icon" onClick={goToNextPeriod}>
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="size-4" />
                   </Button>
                 </div>
 
@@ -716,7 +716,7 @@ export default function RosterBuilderPage() {
                     disabled={!selectedDepartment || generateMutation.isPending}
                   >
                     <RefreshCw
-                      className={cn('h-4 w-4 mr-1', generateMutation.isPending && 'animate-spin')}
+                      className={cn('size-4 mr-1', generateMutation.isPending && 'animate-spin')}
                     />
                     Generate
                   </Button>
@@ -726,7 +726,7 @@ export default function RosterBuilderPage() {
                     disabled={!selectedDepartment || stats.draft === 0 || clearMutation.isPending}
                     className="text-destructive hover:text-destructive"
                   >
-                    <Trash2 className="h-4 w-4 mr-1" />
+                    <Trash2 className="size-4 mr-1" />
                     Clear
                   </Button>
                   <Button
@@ -734,14 +734,14 @@ export default function RosterBuilderPage() {
                     onClick={handleDownload}
                     disabled={!selectedDepartment || stats.total === 0}
                   >
-                    <Download className="h-4 w-4 mr-1" />
+                    <Download className="size-4 mr-1" />
                     PDF
                   </Button>
                   <Button
                     onClick={handlePublish}
                     disabled={!selectedDepartment || stats.draft === 0 || publishMutation.isPending}
                   >
-                    <Send className="h-4 w-4 mr-1" />
+                    <Send className="size-4 mr-1" />
                     Publish
                   </Button>
                 </div>
@@ -780,7 +780,7 @@ export default function RosterBuilderPage() {
               )}
               {stats.errorCount > 0 && (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20">
-                  <AlertCircle className="h-4 w-4 text-rose-500" />
+                  <AlertCircle className="size-4 text-rose-500" />
                   <span className="text-xs font-mono text-rose-600 dark:text-rose-400">Errors</span>
                   <Badge variant="outline" className="font-mono bg-rose-500/10 text-rose-600">
                     {stats.errorCount}
@@ -789,7 +789,7 @@ export default function RosterBuilderPage() {
               )}
               {stats.warningCount > 0 && (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <AlertTriangle className="size-4 text-amber-500" />
                   <span className="text-xs font-mono text-amber-600 dark:text-amber-400">Warnings</span>
                   <Badge variant="outline" className="font-mono bg-amber-500/10 text-amber-600">
                     {stats.warningCount}
@@ -897,7 +897,7 @@ export default function RosterBuilderPage() {
                                   key={dt.id}
                                   className="border-b border-border px-2 py-1 text-center bg-muted/10"
                                 >
-                                  <span className="text-xs text-muted-foreground">—</span>
+                                  <span className="text-xs text-muted-foreground">-</span>
                                 </td>
                               );
                             }
@@ -937,7 +937,7 @@ export default function RosterBuilderPage() {
                                           <span className="absolute -top-1 -right-1">
                                             <AlertCircle
                                               className={cn(
-                                                'h-3.5 w-3.5',
+                                                'size-3.5',
                                                 hasErrors ? 'text-rose-500' : 'text-amber-500'
                                               )}
                                             />
@@ -1136,7 +1136,7 @@ export default function RosterBuilderPage() {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle className="font-display flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  <AlertTriangle className="size-5 text-amber-500" />
                   Validation Warnings
                 </AlertDialogTitle>
                 <AlertDialogDescription>

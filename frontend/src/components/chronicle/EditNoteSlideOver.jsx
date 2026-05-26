@@ -105,7 +105,7 @@ const EditNoteSlideOver = ({ open, onOpenChange, entry, onSuccess }) => {
           </p>
         </div>
         <Button variant="ghost" size="icon" onClick={handleClose}>
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </Button>
       </div>
 
@@ -154,12 +154,12 @@ const EditNoteSlideOver = ({ open, onOpenChange, entry, onSuccess }) => {
           >
             {updateNote.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                Saving…
               </>
             ) : (
               <>
-                <Save className="h-4 w-4 mr-2" />
+                <Save className="size-4 mr-2" />
                 Save Changes
               </>
             )}
@@ -282,9 +282,10 @@ const FormFields = ({ data, onChange, path }) => {
               <input
                 type="checkbox"
                 id={fieldPath}
+                aria-label={label}
                 checked={value}
                 onChange={(e) => onChange(fieldPath, e.target.checked)}
-                className="h-4 w-4"
+                className="size-4"
               />
               <Label htmlFor={fieldPath} className="text-sm">
                 {label}

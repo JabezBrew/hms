@@ -15,8 +15,8 @@ function Metric({ icon: Icon, label, value, accent }) {
   };
   return (
     <div className="flex items-center gap-2.5">
-      <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/60', accents[accent])}>
-        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60', accents[accent])}>
+        <Icon className="size-3.5" aria-hidden="true" />
       </span>
       <div>
         <p className={cn('font-mono text-xl font-semibold leading-none tabular-nums', accents[accent])}>

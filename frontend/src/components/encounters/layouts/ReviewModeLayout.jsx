@@ -129,7 +129,7 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
         <Card>
           <CardHeader className="pb-4">
             <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16 bg-primary text-primary-foreground">
+              <Avatar className="size-16 bg-primary text-primary-foreground">
                 <AvatarFallback className="text-lg font-semibold">
                   {getInitials(patientInfo.name)}
                 </AvatarFallback>
@@ -187,15 +187,15 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
               <h4 className="text-sm font-medium">Quick actions</h4>
               <div className="space-y-2">
                 <Button variant="outline" className="w-full justify-start" size="sm">
-                  <FileText className="mr-2 h-4 w-4" />
+                  <FileText className="mr-2 size-4" />
                   Place Order
                 </Button>
                 <Button variant="outline" className="w-full justify-start" size="sm">
-                  <Pill className="mr-2 h-4 w-4" />
+                  <Pill className="mr-2 size-4" />
                   Med Admin
                 </Button>
                 <Button variant="outline" className="w-full justify-start" size="sm">
-                  <ClipboardList className="mr-2 h-4 w-4" />
+                  <ClipboardList className="mr-2 size-4" />
                   Lab Worklist
                 </Button>
               </div>
@@ -210,7 +210,7 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-2xl">Encounter — Today</CardTitle>
+                <CardTitle className="text-2xl">Encounter: Today</CardTitle>
                 <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
                   <span>Visit type: {encounter.encounter_type}</span>
                   <Separator orientation="vertical" className="h-4" />
@@ -328,7 +328,7 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
             {/* Encounter Timeline */}
             <div>
               <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <Clock className="h-5 w-5" />
+                <Clock className="size-5" />
                 Encounter Timeline
               </h3>
               {isTimelineLoading ? (
@@ -362,7 +362,7 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-5 w-5" />
+              <Activity className="size-5" />
               Vitals
             </CardTitle>
             <p className="text-xs text-muted-foreground">Updated: {vitals.updatedAt}</p>
@@ -389,7 +389,7 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="h-5 w-5" />
+              <AlertTriangle className="size-5" />
               Decision Support
             </CardTitle>
           </CardHeader>
@@ -408,7 +408,7 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="h-5 w-5" />
+              <ClipboardList className="size-5" />
               Tasks
             </CardTitle>
           </CardHeader>
@@ -418,6 +418,7 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
                 <li key={task.id} className="flex items-start gap-2">
                   <input
                     type="checkbox"
+                    aria-label={`Task completed: ${task.title || task.name || 'review task'}`}
                     className="mt-0.5"
                     checked={task.completed}
                     readOnly

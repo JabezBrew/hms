@@ -122,7 +122,7 @@ export default function WardRoundWorkflowPage() {
       });
 
       if (currentStep < workflowDef.total_steps) {
-        setCurrentStep(currentStep + 1);
+        setCurrentStep((step) => step + 1);
         toast.success('Progress saved');
       }
     } catch (error) {
@@ -133,7 +133,7 @@ export default function WardRoundWorkflowPage() {
 
   const handlePrevious = () => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      setCurrentStep((step) => step - 1);
     }
   };
 
@@ -343,7 +343,7 @@ export default function WardRoundWorkflowPage() {
                 onClick={handlePrevious}
                 disabled={startWardRound.isPending || updateWardRoundStep.isPending || completeWardRound.isPending}
               >
-                <ArrowLeft className="h-4 w-4 mr-2" />
+                <ArrowLeft className="size-4 mr-2" />
                 Previous
               </Button>
             )}
@@ -355,7 +355,7 @@ export default function WardRoundWorkflowPage() {
                 disabled={startWardRound.isPending || updateWardRoundStep.isPending}
               >
                 {updateWardRoundStep.isPending ? 'Saving...' : 'Continue'}
-                <ArrowRight className="h-4 w-4 ml-2" />
+                <ArrowRight className="size-4 ml-2" />
               </Button>
             ) : (
               <Button
@@ -363,7 +363,7 @@ export default function WardRoundWorkflowPage() {
                 disabled={completeWardRound.isPending}
               >
                 {completeWardRound.isPending ? 'Completing...' : 'Complete Ward Round'}
-                <CheckCircle className="h-4 w-4 ml-2" />
+                <CheckCircle className="size-4 ml-2" />
               </Button>
             )}
           </div>

@@ -88,7 +88,7 @@ export default function TriagePage() {
             actions={(
               <div className="flex items-center gap-2">
                 <Button variant="default" size="sm" onClick={handleAddWalkIn}>
-                  <UserPlus className="h-4 w-4 mr-2" />
+                  <UserPlus className="size-4 mr-2" />
                   Add Walk-In
                 </Button>
                 <Button
@@ -97,7 +97,7 @@ export default function TriagePage() {
                   onClick={() => refetch()}
                   disabled={isFetching}
                 >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
             )}
@@ -120,7 +120,7 @@ export default function TriagePage() {
             actions={(
               <div className="flex items-center gap-2">
                 <Button variant="default" size="sm" onClick={handleAddWalkIn}>
-                  <UserPlus className="h-4 w-4 mr-2" />
+                  <UserPlus className="size-4 mr-2" />
                   Add Walk-In
                 </Button>
                 <Button
@@ -129,7 +129,7 @@ export default function TriagePage() {
                   onClick={() => refetch()}
                   disabled={isFetching}
                 >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
             )}
@@ -156,7 +156,7 @@ export default function TriagePage() {
           actions={(
             <div className="flex items-center gap-2">
               <Button variant="default" size="sm" onClick={handleAddWalkIn}>
-                <UserPlus className="h-4 w-4 mr-2" />
+                <UserPlus className="size-4 mr-2" />
                 Add Walk-In
               </Button>
               <Button
@@ -165,7 +165,7 @@ export default function TriagePage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           )}

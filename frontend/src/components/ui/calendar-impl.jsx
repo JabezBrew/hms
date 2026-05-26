@@ -3,7 +3,7 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { DayPicker, useNavigation } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
-import { buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button-variants"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Custom caption component with month and year dropdowns
@@ -46,6 +46,7 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
   return (
     <div className="flex justify-center items-center gap-1">
       <button
+        type="button"
         onClick={() => previousMonth && goToMonth(previousMonth)}
         disabled={!previousMonth}
         className={cn(
@@ -85,6 +86,7 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
       </div>
 
       <button
+        type="button"
         onClick={() => nextMonth && goToMonth(nextMonth)}
         disabled={!nextMonth}
         className={cn(

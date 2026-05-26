@@ -246,15 +246,15 @@ export default function WardsPage() {
                   onClick={() => refetch()}
                   title="Refresh wards"
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw className="size-4" />
                 </Button>
                 <Button variant="outline" onClick={() => navigate('/wards/reports')}>
-                  <BarChart3 className="h-4 w-4 mr-2" />
+                  <BarChart3 className="size-4 mr-2" />
                   Reports
                 </Button>
                 {isAdmin && (
                   <Button onClick={() => navigate('/wards/new')}>
-                    <Plus className="h-4 w-4 mr-2" />
+                    <Plus className="size-4 mr-2" />
                     New Ward
                   </Button>
                 )}
@@ -266,7 +266,7 @@ export default function WardsPage() {
             <div className="bg-background/50 rounded-xl p-4 border border-border/50">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">
-                  <Building2 className="h-5 w-5 text-primary" />
+                  <Building2 className="size-5 text-primary" />
                 </div>
                 <div>
                   <p className="font-mono text-2xl font-bold text-foreground">{stats.total}</p>
@@ -278,7 +278,7 @@ export default function WardsPage() {
             <div className="bg-background/50 rounded-xl p-4 border border-border/50">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-sky-500/10">
-                  <Bed className="h-5 w-5 text-sky-600" />
+                  <Bed className="size-5 text-sky-600" />
                 </div>
                 <div>
                   <p className="font-mono text-2xl font-bold text-foreground">{stats.totalBeds}</p>
@@ -290,7 +290,7 @@ export default function WardsPage() {
             <div className="bg-background/50 rounded-xl p-4 border border-border/50">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-emerald-500/10">
-                  <Activity className="h-5 w-5 text-emerald-600" />
+                  <Activity className="size-5 text-emerald-600" />
                 </div>
                 <div>
                   <p className="font-mono text-2xl font-bold text-emerald-600">{stats.available}</p>
@@ -302,7 +302,7 @@ export default function WardsPage() {
             <div className="bg-background/50 rounded-xl p-4 border border-border/50">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-rose-500/10">
-                  <Users className="h-5 w-5 text-rose-600" />
+                  <Users className="size-5 text-rose-600" />
                 </div>
                 <div>
                   <p className="font-mono text-2xl font-bold text-foreground">{stats.avgOccupancy}%</p>
@@ -319,7 +319,7 @@ export default function WardsPage() {
         {/* Search */}
         <div className="mb-6">
           <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder="Search wards..."
               className="pl-10 font-mono text-sm"
@@ -332,7 +332,7 @@ export default function WardsPage() {
         {/* Wards Table */}
         {filteredWards.length === 0 ? (
           <div className="text-center py-16">
-            <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <Building2 className="size-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground">
               {wards.length > 0 ? 'No wards match your search' : 'No wards yet'}
             </h3>
@@ -341,7 +341,7 @@ export default function WardsPage() {
             </p>
             {wards.length === 0 && isAdmin && (
               <Button className="mt-4" onClick={() => navigate('/wards/new')}>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Create Ward
               </Button>
             )}

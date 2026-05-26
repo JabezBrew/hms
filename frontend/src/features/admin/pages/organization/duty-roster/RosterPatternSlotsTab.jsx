@@ -270,7 +270,7 @@ export function RosterPatternSlotsTab() {
               {showInactive ? 'Hide Inactive' : 'Show Inactive'}
             </Button>
             <Button onClick={() => openForm(null)}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               <span className="font-mono text-xs uppercase tracking-wide">Add Slot</span>
             </Button>
           </>

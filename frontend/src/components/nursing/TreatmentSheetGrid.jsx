@@ -107,7 +107,7 @@ export function TreatmentSheetGrid({ entries, onUpdate, readOnly = false }) {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm">
-                          <MoreVertical className="h-4 w-4" />
+                          <MoreVertical className="size-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -115,7 +115,7 @@ export function TreatmentSheetGrid({ entries, onUpdate, readOnly = false }) {
                           onClick={() => setDiscontinueDialog({ open: true, entry })}
                           className="text-rose-600"
                         >
-                          <XCircle className="h-4 w-4 mr-2" />
+                          <XCircle className="size-4 mr-2" />
                           Discontinue
                         </DropdownMenuItem>
                       </DropdownMenuContent>

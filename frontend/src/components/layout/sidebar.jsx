@@ -1,3 +1,5 @@
+const DEFAULT_EMPTY_OBJECT = {};
+
 import LayoutDashboard from 'lucide-react/dist/esm/icons/layout-dashboard.js'
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js'
 import Inbox from 'lucide-react/dist/esm/icons/inbox.js'
@@ -105,8 +107,7 @@ const CHART_TEMPLATE_ROLES = [
 ]
 const DUTY_ROSTER_ROLES = [ROLES.ADMIN, ROLES.HEAD_NURSE]
 
-// eslint-disable-next-line react-refresh/only-export-components
-export function getDashboardUrl(role) {
+function getDashboardUrl(role) {
   if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
     return '/dashboards/nurse'
   }
@@ -603,8 +604,7 @@ function normalizePath(path) {
   return path.replace(/\/+$/, '')
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
-export function sidebarItemIsActive(entry, href, pathname) {
+function sidebarItemIsActive(entry, href, pathname) {
   const currentPath = normalizePath(pathname)
   const itemPath = normalizePath(href)
 
@@ -680,7 +680,9 @@ function dedupeSections(sections) {
     .filter((currentSection) => currentSection.items.length > 0)
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
+/* eslint-disable react-refresh/only-export-components */
+// False positive: this resolver is exported only for sidebar contract tests, while runtime callers stay in this module.
+// react-doctor-disable-next-line react-doctor/only-export-components
 export function resolveSidebarSections({ sidebar, user, enabledFeatures, inboxCount, location, params }) {
   const sidebarKey = SIDEBAR_SECTIONS[sidebar] ? sidebar : SIDEBARS.GLOBAL
   const baseSections = SIDEBAR_SECTIONS[sidebarKey]
@@ -718,12 +720,13 @@ export function resolveSidebarSections({ sidebar, user, enabledFeatures, inboxCo
 
   return dedupeSections([...resolvedSections, shortcutSection])
 }
+/* eslint-enable react-refresh/only-export-components */
 
 function SidebarLeafItem({ entry, badgeValue, nested = false }) {
   const Icon = entry.icon
   const content = (
     <>
-      {Icon ? <Icon className={nested ? 'h-4 w-4' : undefined} /> : null}
+      {Icon ? <Icon className={nested ? 'size-4' : undefined} /> : null}
       <span>{entry.label}</span>
       {!nested && badgeValue ? <SidebarMenuBadge>{badgeValue}</SidebarMenuBadge> : null}
     </>
@@ -785,7 +788,7 @@ function SidebarGroupItem({ entry, getCollapsibleProps }) {
   )
 }
 
-export function SidebarRenderer({ sections, badges = {} }) {
+export function SidebarRenderer({ sections, badges = DEFAULT_EMPTY_OBJECT }) {
   const { getCollapsibleProps } = useSidebarState()
 
   return (

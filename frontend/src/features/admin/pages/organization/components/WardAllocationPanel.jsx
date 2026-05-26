@@ -124,7 +124,7 @@ export function WardAllocationPanel({ unitId, unitType }) {
 
         {wards.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            <BedDouble className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <BedDouble className="size-8 mx-auto mb-2 opacity-50" />
             <p>No wards in this facility</p>
             <p className="text-xs mt-1">Wards are created via the Wards module</p>
           </div>
@@ -137,8 +137,8 @@ export function WardAllocationPanel({ unitId, unitType }) {
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-md bg-emerald-100 flex items-center justify-center">
-                      <BedDouble className="h-5 w-5 text-emerald-700" />
+                    <div className="size-10 rounded-md bg-emerald-100 flex items-center justify-center">
+                      <BedDouble className="size-5 text-emerald-700" />
                     </div>
                     <div>
                       <div className="font-medium">{ward.name}</div>
@@ -158,21 +158,21 @@ export function WardAllocationPanel({ unitId, unitType }) {
                 <div className="grid grid-cols-3 gap-4 pt-3 border-t border-border/50">
                   <div>
                     <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                      <BedDouble className="h-3 w-3" />
+                      <BedDouble className="size-3" />
                       Total Beds
                     </div>
                     <div className="text-sm font-mono">{ward.total_beds}</div>
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                      <BedDouble className="h-3 w-3" />
+                      <BedDouble className="size-3" />
                       Available
                     </div>
                     <div className="text-sm font-mono">{ward.available_beds_count}</div>
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                      <Percent className="h-3 w-3" />
+                      <Percent className="size-3" />
                       Occupancy
                     </div>
                     <div className="flex items-center gap-2">
@@ -185,7 +185,7 @@ export function WardAllocationPanel({ unitId, unitType }) {
                 {ward.head_nurse_name && (
                   <div className="mt-3 pt-3 border-t border-border/50">
                     <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                      <Users className="h-3 w-3" />
+                      <Users className="size-3" />
                       Head Nurse
                     </div>
                     <div className="text-sm">{ward.head_nurse_name}</div>
@@ -205,14 +205,14 @@ export function WardAllocationPanel({ unitId, unitType }) {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-muted-foreground">Ward Allocations</h3>
         <Button size="sm" onClick={() => setShowAddDialog(true)}>
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="size-4 mr-2" />
           Add Ward
         </Button>
       </div>
 
       {wards.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          <BedDouble className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          <BedDouble className="size-8 mx-auto mb-2 opacity-50" />
           <p>No ward allocations</p>
         </div>
       ) : (
@@ -224,8 +224,8 @@ export function WardAllocationPanel({ unitId, unitType }) {
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-md bg-emerald-100 flex items-center justify-center">
-                    <BedDouble className="h-5 w-5 text-emerald-700" />
+                  <div className="size-10 rounded-md bg-emerald-100 flex items-center justify-center">
+                    <BedDouble className="size-5 text-emerald-700" />
                   </div>
                   <div>
                     <div className="font-medium">{allocation.ward_name}</div>
@@ -249,7 +249,7 @@ export function WardAllocationPanel({ unitId, unitType }) {
                     className="text-destructive hover:text-destructive"
                     onClick={() => handleDelete(allocation.id)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
               </div>

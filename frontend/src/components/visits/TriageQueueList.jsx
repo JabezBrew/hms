@@ -8,6 +8,8 @@ import { ActionCard } from '@/components/dashboard';
 import { useTriageQueue } from '@/hooks/useVisitQueries';
 import { Skeleton } from '@/components/ui/skeleton';
 
+const DEFAULT_EMPTY_OBJECT = {};
+
 /**
  * Priority to color mapping
  */
@@ -43,7 +45,7 @@ const PRIORITY_CONFIG = {
  * @param {Function} props.onPatientClick - Callback when patient name clicked
  */
 export function TriageQueueList({
-  filters = {},
+  filters = DEFAULT_EMPTY_OBJECT,
   onTriage,
   onAssign,
   onCancel,
@@ -114,7 +116,7 @@ export function TriageQueueList({
         title={
           <div className="flex items-center gap-2">
             <span
-              className={`w-2 h-2 rounded-full ${priorityConfig.indicator}`}
+              className={`size-2 rounded-full ${priorityConfig.indicator}`}
             />
             <span
               className="cursor-pointer hover:underline"
@@ -176,7 +178,7 @@ export function TriageQueueList({
   if (total === 0) {
     return (
       <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-        <User className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+        <User className="size-12 text-muted-foreground mx-auto mb-3" />
         <p className="text-muted-foreground">No patients in triage queue</p>
       </div>
     );

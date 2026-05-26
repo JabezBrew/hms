@@ -239,13 +239,13 @@ export function PharmacyQueue() {
   if (error) {
     return (
       <div className="bg-card/50 backdrop-blur border border-destructive/30 rounded-xl p-8 text-center">
-        <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+        <AlertCircle className="size-12 text-destructive mx-auto mb-4" />
         <h3 className="font-display text-xl text-foreground mb-2">Error Loading Queue</h3>
         <p className="text-muted-foreground mb-4">
           {error.message || 'Failed to load dispensing queue'}
         </p>
         <Button variant="outline" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
+          <RefreshCw className="size-4 mr-2" />
           Try Again
         </Button>
       </div>
@@ -283,7 +283,7 @@ export function PharmacyQueue() {
       {/* Search and Actions */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by patient name or medication..."
             value={searchTerm}
@@ -295,6 +295,7 @@ export function PharmacyQueue() {
           {/* View Toggle */}
           <div className="flex bg-muted rounded-lg p-0.5">
             <button
+              type="button"
               onClick={() => setViewMode('by-patient')}
               className={cn(
                 "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
@@ -303,10 +304,11 @@ export function PharmacyQueue() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <User className="h-3.5 w-3.5" />
+              <User className="size-3.5" />
               By Patient
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('all')}
               className={cn(
                 "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
@@ -315,12 +317,12 @@ export function PharmacyQueue() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Pill className="h-3.5 w-3.5" />
+              <Pill className="size-3.5" />
               All Medications
             </button>
           </div>
           <Button variant="ghost" size="icon" onClick={() => refetch()} className="shrink-0">
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="size-4" />
           </Button>
         </div>
       </div>
@@ -342,7 +344,7 @@ export function PharmacyQueue() {
             disabled={bulkDispenseMutation.isPending}
             size="sm"
           >
-            <Package className="h-4 w-4 mr-2" />
+            <Package className="size-4 mr-2" />
             Dispense Selected
           </Button>
         </div>
@@ -396,7 +398,7 @@ export function PharmacyQueue() {
             <div className="space-y-4 py-4">
               {confirmMedication.is_overdue && (
                 <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive">
-                  <AlertTriangle className="h-5 w-5 shrink-0" />
+                  <AlertTriangle className="size-5 shrink-0" />
                   <span className="font-medium text-sm">This medication is overdue</span>
                 </div>
               )}
@@ -471,7 +473,7 @@ const StatCard = ({ icon: Icon, value, label, color = 'amber' }) => {
     <div className="bg-card/50 backdrop-blur border border-border rounded-xl p-4">
       <div className="flex items-center gap-4">
         <div className={cn("p-3 rounded-lg", colorStyles[color])}>
-          <Icon className="h-5 w-5" />
+          <Icon className="size-5" />
         </div>
         <div>
           <p className="font-display text-2xl text-foreground">{value}</p>
@@ -596,7 +598,7 @@ const ByPatientView = ({
                         </span>
                         {med.is_overdue && (
                           <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                            <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+                            <AlertTriangle className="size-2.5 mr-0.5" />
                             Overdue
                           </Badge>
                         )}
@@ -614,7 +616,7 @@ const ByPatientView = ({
                           "font-mono text-xs flex items-center gap-1",
                           med.is_overdue ? "text-destructive" : "text-muted-foreground"
                         )}>
-                          <Clock className="h-3 w-3" />
+                          <Clock className="size-3" />
                           {med.dose_count > 1 ? 'Next due ' : ''}{formatTime(med.scheduled_time)}
                         </span>
                       </div>
@@ -627,7 +629,7 @@ const ByPatientView = ({
                         disabled={dispenseMutation.isPending}
                         className="font-mono text-xs shrink-0"
                       >
-                        <Package className="h-3.5 w-3.5 mr-1.5" />
+                        <Package className="size-3.5 mr-1.5" />
                         Dispense
                       </Button>
                     ) : null}
@@ -777,8 +779,8 @@ const AllMedicationsView = ({
 const EmptyState = () => (
   <div className="bg-card/50 backdrop-blur border border-border rounded-xl p-12">
     <div className="flex flex-col items-center justify-center text-center">
-      <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
-        <CheckCircle className="h-8 w-8 text-emerald-500" />
+      <div className="size-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
+        <CheckCircle className="size-8 text-emerald-500" />
       </div>
       <h3 className="font-display text-xl text-foreground mb-2">
         Queue Empty

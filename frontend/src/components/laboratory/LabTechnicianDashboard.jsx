@@ -313,7 +313,7 @@ const LabTechnicianDashboard = () => {
         <div className="relative flex items-start justify-between">
           <div className="flex items-center gap-4">
             <div className="p-3 rounded-xl bg-[oklch(0.70_0.15_230)]/10 border border-[oklch(0.70_0.15_230)]/20">
-              <FlaskConical className="h-8 w-8 text-[oklch(0.70_0.15_230)]" aria-hidden="true" />
+              <FlaskConical className="size-8 text-[oklch(0.70_0.15_230)]" aria-hidden="true" />
             </div>
             <div>
               <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl text-foreground tracking-tight">
@@ -351,7 +351,7 @@ const LabTechnicianDashboard = () => {
 
       {/* Search with Chronicle styling */}
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
         <Label htmlFor="lab-search" className="sr-only">Search by patient name, MRN, or order number</Label>
         <Input
           id="lab-search"
@@ -365,6 +365,7 @@ const LabTechnicianDashboard = () => {
       {/* Chronicle-styled Tabs */}
       <div role="tablist" aria-label="Lab order status" className="flex max-w-full gap-2 overflow-x-auto border-b border-border pb-0 [-webkit-overflow-scrolling:touch]">
         <button
+          type="button"
           role="tab"
           id="tab-ordered"
           aria-selected={activeTab === "ordered"}
@@ -390,6 +391,7 @@ const LabTechnicianDashboard = () => {
           )}
         </button>
         <button
+          type="button"
           role="tab"
           id="tab-collected"
           aria-selected={activeTab === "collected"}
@@ -415,6 +417,7 @@ const LabTechnicianDashboard = () => {
           )}
         </button>
         <button
+          type="button"
           role="tab"
           id="tab-processing"
           aria-selected={activeTab === "processing"}
@@ -440,6 +443,7 @@ const LabTechnicianDashboard = () => {
           )}
         </button>
         <button
+          type="button"
           role="tab"
           id="tab-verify"
           aria-selected={activeTab === "verify"}
@@ -476,15 +480,15 @@ const LabTechnicianDashboard = () => {
         {isActiveLoading ? (
           <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
             <div className="text-center">
-              <p className="font-mono text-xs text-muted-foreground">Loading worklist...</p>
+              <p className="font-mono text-xs text-muted-foreground">Loading worklist…</p>
             </div>
           </div>
         ) : activeTab === "verify" ? (
           verificationGroups.length === 0 ? (
             <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
               <div className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                  <ShieldCheck className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                <div className="mx-auto size-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                  <ShieldCheck className="size-8 text-muted-foreground" aria-hidden="true" />
                 </div>
                 <p className="font-display text-xl text-foreground mb-2">No results pending verification</p>
                 <p className="font-mono text-xs text-muted-foreground">
@@ -523,7 +527,7 @@ const LabTechnicianDashboard = () => {
                         <>
                           <span className="hidden sm:inline text-border">·</span>
                           <span className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
+                            <User className="size-3" />
                             {group.ordering_provider_name}
                           </span>
                         </>
@@ -574,7 +578,7 @@ const LabTechnicianDashboard = () => {
                         disabled={bulkVerify.isPending && verifyingOrderId === group.id}
                         className="font-mono text-xs bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)]"
                       >
-                        <ShieldCheck className="h-3 w-3 mr-1.5" />
+                        <ShieldCheck className="size-3 mr-1.5" />
                         {bulkVerify.isPending && verifyingOrderId === group.id ? "Verifying…" : "Verify All"}
                       </Button>
                     </>
@@ -590,8 +594,8 @@ const LabTechnicianDashboard = () => {
         ) : filteredOrders.length === 0 ? (
           <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
             <div className="text-center">
-              <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                <TestTube2 className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+              <div className="mx-auto size-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                <TestTube2 className="size-8 text-muted-foreground" aria-hidden="true" />
               </div>
               <p className="font-display text-xl text-foreground mb-2">No orders in this category</p>
               <p className="font-mono text-xs text-muted-foreground">
@@ -637,7 +641,7 @@ const LabTechnicianDashboard = () => {
                         order.priority === 'urgent' && "bg-primary/10 text-primary",
                         order.priority === 'routine' && "bg-muted text-muted-foreground"
                       )}>
-                        <PriorityIcon className="h-3 w-3" />
+                        <PriorityIcon className="size-3" />
                         {priority?.label || 'Routine'}
                       </span>
                     </div>
@@ -653,7 +657,7 @@ const LabTechnicianDashboard = () => {
                       </span>
                       <span className="hidden sm:inline text-border">·</span>
                       <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
+                        <Calendar className="size-3" />
                         {format(new Date(order.created_at), "MMM dd, HH:mm")}
                       </span>
                     </p>
@@ -683,17 +687,17 @@ const LabTechnicianDashboard = () => {
                       >
                         {orderTest.panel ? (
                           <>
-                            <Package className="h-3 w-3 text-muted-foreground" />
+                            <Package className="size-3 text-muted-foreground" />
                             {orderTest.panel.name}
                           </>
                         ) : (
                           <>
-                            <TestTube2 className="h-3 w-3 text-muted-foreground" />
+                            <TestTube2 className="size-3 text-muted-foreground" />
                             {orderTest.test?.name}
                           </>
                         )}
                         {orderTest.result && (
-                          <CheckCircle2 className="h-3 w-3 text-[oklch(0.70_0.17_155)] ml-1" />
+                          <CheckCircle2 className="size-3 text-[oklch(0.70_0.17_155)] ml-1" />
                         )}
                       </span>
                     ))}
@@ -722,7 +726,7 @@ const LabTechnicianDashboard = () => {
                 {/* Actions Footer */}
                 <footer className="flex items-center justify-between pt-4 border-t border-border">
                   <span className="font-mono text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
+                    <Clock className="size-3" />
                     {activeTab === "ordered" && "Awaiting specimen collection"}
                     {activeTab === "collected" && "Ready for processing"}
                     {activeTab === "processing" && "In progress"}
@@ -734,7 +738,7 @@ const LabTechnicianDashboard = () => {
                         size="sm"
                         className="font-mono text-xs bg-[oklch(0.65_0.22_15)] hover:bg-[oklch(0.60_0.22_15)]"
                       >
-                        <Droplet className="h-3 w-3 mr-1.5" />
+                        <Droplet className="size-3 mr-1.5" />
                         Collect Specimen
                       </Button>
                     )}
@@ -744,7 +748,7 @@ const LabTechnicianDashboard = () => {
                         size="sm"
                         className="font-mono text-xs bg-[oklch(0.70_0.15_230)] hover:bg-[oklch(0.65_0.15_230)]"
                       >
-                        <Play className="h-3 w-3 mr-1.5" />
+                        <Play className="size-3 mr-1.5" />
                         Start Processing
                       </Button>
                     )}
@@ -754,7 +758,7 @@ const LabTechnicianDashboard = () => {
                         size="sm"
                         className="font-mono text-xs bg-primary hover:bg-primary/90"
                       >
-                        <Beaker className="h-3 w-3 mr-1.5" />
+                        <Beaker className="size-3 mr-1.5" />
                         Enter Results
                       </Button>
                     )}

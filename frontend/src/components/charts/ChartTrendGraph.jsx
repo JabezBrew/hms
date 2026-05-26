@@ -34,6 +34,42 @@ import format from "date-fns/format";
 import parseISO from "date-fns/parseISO";
 import { useChartEntryTrends, useChartAssignment } from "@/features/charts/hooks";
 
+function ChartTrendTooltip({ active, payload, currentField }) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const isCritical = data.isCritical;
+
+    return (
+      <div className={cn(
+        "bg-card border border-border rounded-lg shadow-lg p-3",
+        isCritical && "border-rose-500"
+      )}>
+        <p className="font-mono text-[10px] text-muted-foreground mb-1">
+          {data.formattedDate} at {data.formattedTime}
+        </p>
+        <p className={cn(
+          "font-mono text-lg font-medium",
+          isCritical ? "text-rose-500" : "text-foreground"
+        )}>
+          {data.value}
+          {currentField?.config?.unit && (
+            <span className="text-sm text-muted-foreground ml-1">
+              {currentField.config.unit}
+            </span>
+          )}
+        </p>
+        {isCritical && (
+          <p className="flex items-center gap-1 text-[10px] text-rose-500 mt-1">
+            <AlertTriangle className="size-3" />
+            Critical value
+          </p>
+        )}
+      </div>
+    );
+  }
+  return null;
+}
+
 const ChartTrendGraph = ({
   assignmentId,
   fieldKey,
@@ -110,47 +146,10 @@ const ChartTrendGraph = ({
 
   const isLoading = assignmentLoading || trendLoading;
 
-  // Custom tooltip
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      const isCritical = data.isCritical;
-
-      return (
-        <div className={cn(
-          "bg-card border border-border rounded-lg shadow-lg p-3",
-          isCritical && "border-rose-500"
-        )}>
-          <p className="font-mono text-[10px] text-muted-foreground mb-1">
-            {data.formattedDate} at {data.formattedTime}
-          </p>
-          <p className={cn(
-            "font-mono text-lg font-medium",
-            isCritical ? "text-rose-500" : "text-foreground"
-          )}>
-            {data.value}
-            {currentField?.config?.unit && (
-              <span className="text-sm text-muted-foreground ml-1">
-                {currentField.config.unit}
-              </span>
-            )}
-          </p>
-          {isCritical && (
-            <p className="flex items-center gap-1 text-[10px] text-rose-500 mt-1">
-              <AlertTriangle className="h-3 w-3" />
-              Critical value
-            </p>
-          )}
-        </div>
-      );
-    }
-    return null;
-  };
-
   if (isLoading) {
     return (
       <div className={cn("flex items-center justify-center py-12", className)}>
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -158,7 +157,7 @@ const ChartTrendGraph = ({
   if (graphableFields.length === 0) {
     return (
       <div className={cn("text-center py-12 text-muted-foreground", className)}>
-        <TrendingUp className="h-12 w-12 mx-auto mb-3 opacity-50" />
+        <TrendingUp className="size-12 mx-auto mb-3 opacity-50" />
         <p>No numeric fields to graph</p>
       </div>
     );
@@ -170,7 +169,7 @@ const ChartTrendGraph = ({
       <div className="px-4 py-3 bg-muted/30 border-b border-border">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-amber-600" />
+            <TrendingUp className="size-4 text-amber-600" />
             <h3 className="font-display text-base text-foreground">
               Trend
             </h3>
@@ -198,7 +197,7 @@ const ChartTrendGraph = ({
           </div>
         ) : chartData.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            <TrendingUp className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <TrendingUp className="size-12 mx-auto mb-3 opacity-50" />
             <p>No data available for this field</p>
           </div>
         ) : (
@@ -225,7 +224,7 @@ const ChartTrendGraph = ({
                 width={50}
                 domain={['dataMin - 5', 'dataMax + 5']}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<ChartTrendTooltip currentField={currentField} />} />
 
               {/* Critical range reference lines */}
               {criticalRange?.low !== undefined && (

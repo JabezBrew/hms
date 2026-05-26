@@ -36,7 +36,7 @@ import {
   POCardSkeleton,
   PurchaseOrderForm,
 } from '@/components/inventory';
-import { getStatusConfig, formatCurrency } from '@/components/inventory/POCard';
+import { formatPOCurrency, getPOStatusConfig } from '@/components/inventory/po-card-utils';
 import { usePurchaseOrders, useSuppliers } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
@@ -207,7 +207,7 @@ export default function PurchaseOrdersPage() {
       width: '180px',
       render: (po) => (
         <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
+          <FileText className="size-4 text-muted-foreground" />
           <span className="font-mono text-sm font-medium text-primary">
             {po.po_number || po.number}
           </span>
@@ -219,7 +219,7 @@ export default function PurchaseOrdersPage() {
       header: 'Status',
       width: '140px',
       render: (po) => {
-        const statusConfig = getStatusConfig(po.status);
+        const statusConfig = getPOStatusConfig(po.status);
         return (
           <Badge
             variant="outline"
@@ -241,7 +241,7 @@ export default function PurchaseOrdersPage() {
       width: '220px',
       render: (po) => (
         <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-muted-foreground" />
+          <Building2 className="size-4 text-muted-foreground" />
           <span className="text-sm truncate max-w-[200px]">
             {po.supplier_name || po.supplier}
           </span>
@@ -296,7 +296,7 @@ export default function PurchaseOrdersPage() {
       cellClassName: 'text-right',
       render: (po) => (
         <span className="font-mono text-sm font-semibold text-emerald-500">
-          {formatCurrency(po.total_amount || po.total)}
+          {formatPOCurrency(po.total_amount || po.total)}
         </span>
       ),
     },
@@ -311,30 +311,30 @@ export default function PurchaseOrdersPage() {
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button variant="ghost" size="sm" className="size-8 p-0">
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handlePOClick(po.id); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canSend && (
                 <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleSend(po.id); }}>
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="size-4 mr-2" />
                   Send to Supplier
                 </DropdownMenuItem>
               )}
               {canCreateGRN && (
                 <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleCreateGRN(po.id); }}>
-                  <Package className="h-4 w-4 mr-2" />
+                  <Package className="size-4 mr-2" />
                   Create GRN
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handlePrint(po.id); }}>
-                <Printer className="h-4 w-4 mr-2" />
+                <Printer className="size-4 mr-2" />
                 Print
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -408,11 +408,11 @@ export default function PurchaseOrdersPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             <Button onClick={handleCreatePO}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New PO
             </Button>
           </div>
@@ -436,7 +436,7 @@ export default function PurchaseOrdersPage() {
       <div className="flex flex-col lg:flex-row gap-3">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by PO number..."
             value={search}
@@ -448,7 +448,7 @@ export default function PurchaseOrdersPage() {
         {/* Supplier Filter */}
         <Select value={supplier || 'all'} onValueChange={handleSupplierChange}>
           <SelectTrigger className="w-full lg:w-[200px] font-mono text-sm">
-            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+            <Filter className="size-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="Supplier" />
           </SelectTrigger>
           <SelectContent>
@@ -471,7 +471,7 @@ export default function PurchaseOrdersPage() {
             onClick={clearFilters}
             className="font-mono text-xs text-muted-foreground hover:text-foreground"
           >
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -493,8 +493,8 @@ export default function PurchaseOrdersPage() {
         </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <FileText className="h-8 w-8 text-muted-foreground" />
+          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <FileText className="size-8 text-muted-foreground" />
           </div>
           <h3 className="font-display text-xl text-foreground mb-2">
             No Purchase Orders Found
@@ -506,7 +506,7 @@ export default function PurchaseOrdersPage() {
           </p>
           {!hasActiveFilters && (
             <Button onClick={handleCreatePO} className="font-mono text-xs">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New PO
             </Button>
           )}
@@ -527,7 +527,7 @@ export default function PurchaseOrdersPage() {
               disabled={page <= 1}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button
@@ -538,7 +538,7 @@ export default function PurchaseOrdersPage() {
               className="font-mono text-xs"
             >
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

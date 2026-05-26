@@ -171,7 +171,7 @@ export default function AdmissionCaseDetailPage() {
         actions={(
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => navigate('/admissions/requests')}>
-              <ChevronLeft className="mr-2 h-4 w-4" />
+              <ChevronLeft className="mr-2 size-4" />
               Admissions
             </Button>
             {admissionCase.admission_id && (
@@ -229,7 +229,7 @@ export default function AdmissionCaseDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <BedDouble className="h-5 w-5" />
+                <BedDouble className="size-5" />
                 Placement
               </CardTitle>
               <CardDescription>Reserve a bed before activating the ward admission.</CardDescription>
@@ -296,7 +296,7 @@ export default function AdmissionCaseDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ClipboardList className="h-5 w-5" />
+              <ClipboardList className="size-5" />
               Tasks
             </CardTitle>
             <CardDescription>Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.</CardDescription>
@@ -342,7 +342,7 @@ export default function AdmissionCaseDetailPage() {
                     <div className="flex flex-wrap gap-2">
                       {canComplete && (
                         <Button size="sm" onClick={() => handleTaskComplete(task)} disabled={completeTask.isPending || clearRegistration.isPending || clearFinancial.isPending}>
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          <CheckCircle2 className="mr-2 size-4" />
                           {task.task_type === 'registration_completion'
                             ? 'Clear Registration'
                             : task.task_type === 'financial_clearance'
@@ -352,7 +352,7 @@ export default function AdmissionCaseDetailPage() {
                       )}
                       {canAcknowledge && (
                         <Button size="sm" variant="outline" onClick={() => acknowledgeTask.mutateAsync({ taskId: task.id, notes: '' })} disabled={acknowledgeTask.isPending}>
-                          <XCircle className="mr-2 h-4 w-4" />
+                          <XCircle className="mr-2 size-4" />
                           Acknowledge
                         </Button>
                       )}

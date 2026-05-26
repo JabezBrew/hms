@@ -89,7 +89,7 @@ export default function LinkProblemsControl({
   return (
     <div className={cn('space-y-2', className)}>
       <div className="flex items-center gap-2 flex-wrap">
-        <Link2 className="h-4 w-4 text-muted-foreground" />
+        <Link2 className="size-4 text-muted-foreground" />
         <span className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
           Linked problems
         </span>
@@ -110,7 +110,7 @@ export default function LinkProblemsControl({
                 className="hover:text-destructive"
                 title="Unlink"
               >
-                <X className="h-3 w-3" />
+                <X className="size-3" />
               </button>
             </Badge>
           );
@@ -119,7 +119,7 @@ export default function LinkProblemsControl({
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs">
-              <Plus className="h-3 w-3" /> Link problem
+              <Plus className="size-3" /> Link problem
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-80 p-0" align="start">

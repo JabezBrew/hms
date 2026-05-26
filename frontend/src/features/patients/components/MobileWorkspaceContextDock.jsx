@@ -49,7 +49,7 @@ function ContextSection({ icon: Icon, title, children, className }) {
   return (
     <section className={cn('space-y-2', className)}>
       <div className="flex items-center gap-2">
-        <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+        <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
         <h3 className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           {title}
         </h3>
@@ -208,7 +208,7 @@ const MobileWorkspaceContextDock = ({ activeWorkspace, context }) => {
           onClick={() => setIsOpen(true)}
           className="h-10 gap-2 rounded-full border-border/80 bg-background/95 px-3 font-mono text-xs shadow-lg backdrop-blur"
         >
-          <PanelBottomOpen className="h-4 w-4" aria-hidden="true" />
+          <PanelBottomOpen className="size-4" aria-hidden="true" />
           Context
         </Button>
       </div>
@@ -245,16 +245,16 @@ const MobileWorkspaceContextDock = ({ activeWorkspace, context }) => {
                   size="icon"
                   onClick={() => setIsOpen(false)}
                   aria-label="Close clinical context"
-                  className="h-10 w-10 shrink-0"
+                  className="size-10 shrink-0"
                 >
-                  <X className="h-4 w-4" aria-hidden="true" />
+                  <X className="size-4" aria-hidden="true" />
                 </Button>
               </div>
             </header>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] chronicle-scrollbar">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] chronicle-scrollbar">
               <ContextSection icon={User} title="Patient">
-                <div className="rounded-lg border border-border bg-card/60 px-3 py-3">
+                <div className="rounded-lg border border-border bg-card/60 p-3">
                   <p className="min-w-0 [overflow-wrap:anywhere] text-sm font-medium text-foreground">
                     {context.patientName || 'Patient'}
                   </p>
@@ -266,7 +266,7 @@ const MobileWorkspaceContextDock = ({ activeWorkspace, context }) => {
 
               <ContextSection icon={Calendar} title="Current visit">
                 {context.encounter ? (
-                  <div className="rounded-lg border border-border bg-card/60 px-3 py-3">
+                  <div className="rounded-lg border border-border bg-card/60 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="min-w-0 [overflow-wrap:anywhere] text-sm font-medium text-foreground">
                         {context.encounter.title}
@@ -304,7 +304,7 @@ const MobileWorkspaceContextDock = ({ activeWorkspace, context }) => {
 
               {context.lastUpdated && (
                 <div className="flex items-center gap-2 border-t border-border pt-4 font-mono text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                  <Clock className="size-3.5" aria-hidden="true" />
                   Context updated {formatTimestamp(context.lastUpdated)}
                 </div>
               )}

@@ -381,8 +381,8 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
           <FormItem>
             <FormLabel className="font-heading text-sm font-medium">Practitioner</FormLabel>
             <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-                <User className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <div className="flex size-8 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <User className="size-4 text-amber-600 dark:text-amber-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-display text-sm font-medium truncate">{currentUserName}</p>
@@ -497,7 +497,7 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
                           onClick={() => removeSharedPractitioner(practitionerId)}
                           aria-label="Remove practitioner"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="size-3" />
                         </button>
                       </span>
                     );
@@ -564,6 +564,7 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
                       >
                         <input
                           type="checkbox"
+                          aria-label={`Repeat on ${day.label}`}
                           className="sr-only"
                           checked={isChecked}
                           onChange={(e) => {
@@ -648,7 +649,7 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
               className="font-mono text-xs h-7"
               onClick={() => append({ start: "12:00", end: "13:00" })}
             >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              <Plus className="mr-1.5 size-3.5" />
               Add Break
             </Button>
           </div>
@@ -699,10 +700,10 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                  className="size-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
                   onClick={() => remove(index)}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="size-3.5" />
                 </Button>
               </div>
             ))}
@@ -763,7 +764,7 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
                         ) : (
                           <span>Pick a date</span>
                         )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        <CalendarIcon className="ml-auto size-4 opacity-50" />
                       </Button>
                     </FormControl>
                   </PopoverTrigger>
@@ -807,7 +808,7 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
                         ) : (
                           <span>No end date</span>
                         )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        <CalendarIcon className="ml-auto size-4 opacity-50" />
                       </Button>
                     </FormControl>
                   </PopoverTrigger>
@@ -865,10 +866,10 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
                 disabled={isPreviewLoading}
               >
                 {isPreviewLoading ? (
-                  <>Generating...</>
+                  <>Generating…</>
                 ) : (
                   <>
-                    <Eye className="mr-1.5 h-3.5 w-3.5" />
+                    <Eye className="mr-1.5 size-3.5" />
                     Preview Slots
                   </>
                 )}

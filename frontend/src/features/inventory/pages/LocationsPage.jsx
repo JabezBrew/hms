@@ -33,11 +33,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LocationCardSkeleton,
+} from '@/components/inventory/LocationCard';
+import {
+  formatLocationCurrency,
+  formatLocationNumber,
   getLocationConfig,
   getTempZoneConfig,
-  formatCurrency,
-  formatNumber,
-} from '@/components/inventory/LocationCard';
+} from '@/components/inventory/location-card-utils';
 import { LocationForm } from '@/components/inventory';
 import { useStorageLocations } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -218,8 +220,8 @@ export default function LocationsPage() {
 
         return (
           <div className="flex items-center gap-3">
-            <div className={cn('flex items-center justify-center w-8 h-8 rounded-lg', config.bgColor)}>
-              <Icon className={cn('h-4 w-4', config.color)} />
+            <div className={cn('flex items-center justify-center size-8 rounded-lg', config.bgColor)}>
+              <Icon className={cn('size-4', config.color)} />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium truncate">{location.name}</p>
@@ -260,7 +262,7 @@ export default function LocationsPage() {
       width: '120px',
       headerClassName: 'text-right',
       cellClassName: 'text-right font-mono text-sm',
-      render: (location) => formatNumber(location.item_count || location.items_count || 0),
+      render: (location) => formatLocationNumber(location.item_count || location.items_count || 0),
     },
     {
       key: 'value',
@@ -268,7 +270,7 @@ export default function LocationsPage() {
       width: '140px',
       headerClassName: 'text-right',
       cellClassName: 'text-right font-mono text-sm text-emerald-500',
-      render: (location) => formatCurrency(location.stock_value || location.total_value || 0),
+      render: (location) => formatLocationCurrency(location.stock_value || location.total_value || 0),
     },
     {
       key: 'temp',
@@ -279,7 +281,7 @@ export default function LocationsPage() {
         const TempIcon = tempZone?.icon;
         return tempZone ? (
           <div className={cn('flex items-center gap-1 text-xs', tempZone.color)}>
-            <TempIcon className="h-3 w-3" />
+            <TempIcon className="size-3" />
             <span>{tempZone.label}</span>
           </div>
         ) : (
@@ -297,25 +299,25 @@ export default function LocationsPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0"
+              className="size-8 p-0"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleViewStock(location.id); }}>
-              <Eye className="h-4 w-4 mr-2" />
+              <Eye className="size-4 mr-2" />
               View Stock
             </DropdownMenuItem>
             <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleTransferTo(location.id); }}>
-              <ArrowRightLeft className="h-4 w-4 mr-2" />
+              <ArrowRightLeft className="size-4 mr-2" />
               Transfer To
             </DropdownMenuItem>
             {locationMutationsAvailable && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditLocation(location.id); }}>
-                  <Edit className="h-4 w-4 mr-2" />
+                  <Edit className="size-4 mr-2" />
                   Edit
                 </DropdownMenuItem>
               </>
@@ -394,12 +396,12 @@ export default function LocationsPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             {locationMutationsAvailable && (
               <Button onClick={handleCreateLocation}>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Add Location
               </Button>
             )}
@@ -419,7 +421,7 @@ export default function LocationsPage() {
       <div className="flex flex-col lg:flex-row gap-3">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by name or code..."
             value={search}
@@ -431,7 +433,7 @@ export default function LocationsPage() {
         {/* Type Filter */}
         <Select value={locationType || 'all'} onValueChange={handleTypeChange}>
           <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+            <Filter className="size-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
@@ -465,7 +467,7 @@ export default function LocationsPage() {
             onClick={clearFilters}
             className="font-mono text-xs text-muted-foreground hover:text-foreground"
           >
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -487,8 +489,8 @@ export default function LocationsPage() {
         </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <MapPin className="h-8 w-8 text-muted-foreground" />
+          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <MapPin className="size-8 text-muted-foreground" />
           </div>
           <h3 className="font-display text-xl text-foreground mb-2">
             No Locations Found
@@ -500,7 +502,7 @@ export default function LocationsPage() {
           </p>
           {!hasActiveFilters && locationMutationsAvailable && (
             <Button onClick={handleCreateLocation} className="font-mono text-xs">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Add Location
             </Button>
           )}
@@ -521,7 +523,7 @@ export default function LocationsPage() {
               disabled={page <= 1}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button
@@ -532,7 +534,7 @@ export default function LocationsPage() {
               className="font-mono text-xs"
             >
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

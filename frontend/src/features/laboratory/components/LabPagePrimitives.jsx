@@ -53,8 +53,8 @@ function LabMetricCard({ metric, index }) {
     >
       <div className="flex items-center gap-3">
         {Icon ? (
-          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border', styles.iconWrap)}>
-            <Icon className="h-4 w-4" aria-hidden="true" />
+          <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg border', styles.iconWrap)}>
+            <Icon className="size-4" aria-hidden="true" />
           </div>
         ) : null}
         <div className="min-w-0">
@@ -75,7 +75,7 @@ function LabMetricCard({ metric, index }) {
 
 export function LabToolbar({ children, className }) {
   return (
-    <section className={cn('border-b border-border bg-card/50 px-4 py-4 sm:px-6', className)}>
+    <section className={cn('border-b border-border bg-card/50 p-4 sm:px-6', className)}>
       {children}
     </section>
   );
@@ -90,7 +90,7 @@ export function LabSearchField({
 }) {
   return (
     <div className={cn('relative min-w-0 flex-1', className)}>
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+      <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
       <Input
         id={id}
         type="search"

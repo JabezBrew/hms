@@ -169,12 +169,12 @@ export function TeamSelectionField({
     return (
       <div className="space-y-2">
         <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-          <Users className="h-4 w-4" />
+          <Users className="size-4" />
           Admitting Team
         </Label>
         <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
           <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <AlertCircle className="size-4 text-amber-600 dark:text-amber-400" />
             <p className="text-sm text-amber-700 dark:text-amber-300">
               No teams configured for this department
             </p>
@@ -187,14 +187,14 @@ export function TeamSelectionField({
   return (
     <div className="space-y-2">
       <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        <Users className="h-4 w-4" />
+        <Users className="size-4" />
         Admitting Team
         {onDutyTeam && (
           <Badge
             variant="outline"
             className="ml-2 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800"
           >
-            <Clock className="h-3 w-3 mr-1" />
+            <Clock className="size-3 mr-1" />
             On Duty: {onDutyTeam.name}
           </Badge>
         )}
@@ -206,7 +206,7 @@ export function TeamSelectionField({
           <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
                 <p className="text-sm text-emerald-700 dark:text-emerald-300">
                   Auto-selected: <span className="font-mono font-medium">{onDutyTeam.name}</span>
                 </p>

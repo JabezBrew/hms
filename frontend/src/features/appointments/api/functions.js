@@ -1,4 +1,4 @@
-import { appointmentsApi } from './index'
+import { appointmentsApi } from '@/lib/api/appointments'
 
 export const fetchAppointment = (id) => appointmentsApi.getAppointment(id)
 export const fetchAppointments = (params) => appointmentsApi.getAppointments(params)

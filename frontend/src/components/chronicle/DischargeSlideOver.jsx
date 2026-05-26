@@ -15,12 +15,10 @@ import {
   useWorkflowKeyboard,
 } from '@/components/ui/workflow-steps';
 import { useDischargeWorkflow } from '@/hooks/useDischargeWorkflow';
-import {
-  DischargePlanningStep,
-  DischargeMedicationsStep,
-  DischargeInstructionsStep,
-  DischargeSummaryStep,
-} from './discharge-steps';
+import { DischargePlanningStep } from './discharge-steps/DischargePlanningStep';
+import { DischargeMedicationsStep } from './discharge-steps/DischargeMedicationsStep';
+import { DischargeInstructionsStep } from './discharge-steps/DischargeInstructionsStep';
+import { DischargeSummaryStep } from './discharge-steps/DischargeSummaryStep';
 import { toast } from 'sonner';
 
 const STEP_COMPONENTS = {
@@ -143,13 +141,13 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
             onClick={onClose}
             className="font-mono text-xs"
           >
-            <X className="h-4 w-4 mr-1.5" />
+            <X className="size-4 mr-1.5" />
             Close
           </Button>
         </header>
         <div className="flex-1 flex items-center justify-center p-6">
           <Alert variant="destructive" className="max-w-md">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertDescription>
               <strong>Active admission required</strong>
               <p className="mt-1 text-sm">
@@ -205,7 +203,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
             onClick={handleClose}
             className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
           >
-            <X className="h-4 w-4 mr-1.5" />
+            <X className="size-4 mr-1.5" />
             Close
           </Button>
         </div>
@@ -213,7 +211,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
 
       {error && (
         <Alert variant="destructive" className="mx-6 mt-4">
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="size-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
@@ -222,7 +220,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
         <div className="px-6 py-3 bg-muted/30 border-b border-border">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <LogOut className="h-4 w-4 text-muted-foreground" />
+              <LogOut className="size-4 text-muted-foreground" />
               <span className="font-mono text-xs text-muted-foreground">
                 Step {currentStep} of {totalSteps}
               </span>
@@ -240,8 +238,8 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
         {isLoading && !workflowId ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
-              <p className="text-sm text-muted-foreground">Starting medical discharge workflow...</p>
+              <div className="animate-spin rounded-full size-8 border-b-2 border-primary mx-auto mb-4" />
+              <p className="text-sm text-muted-foreground">Starting medical discharge workflow…</p>
             </div>
           </div>
         ) : CurrentStepComponent ? (
@@ -272,7 +270,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
               disabled={isSaving || isLoading}
               className="font-mono text-xs"
             >
-              <Save className="h-3.5 w-3.5 mr-1.5" />
+              <Save className="size-3.5 mr-1.5" />
               Save Draft
             </Button>
 
@@ -285,7 +283,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
                   disabled={isLoading}
                   className="font-mono text-xs"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                  <ChevronLeft className="size-3.5 mr-1" />
                   Previous
                 </Button>
               )}
@@ -297,7 +295,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
                   disabled={isSaving || isLoading || isCompleting}
                   className="font-mono text-xs"
                 >
-                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  <Check className="size-3.5 mr-1.5" />
                   {isCompleting ? 'Submitting...' : 'Submit for Clearance'}
                 </Button>
               ) : (
@@ -308,7 +306,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
                   className="font-mono text-xs"
                 >
                   Next
-                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  <ChevronRight className="size-3.5 ml-1" />
                 </Button>
               )}
             </div>

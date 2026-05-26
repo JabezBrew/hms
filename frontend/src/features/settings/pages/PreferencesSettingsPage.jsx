@@ -53,7 +53,7 @@ const PreferencesSettingsPage = () => {
           title={(
             <span className="flex items-center gap-3 sm:gap-4">
               <span className="p-2.5 sm:p-3 rounded-xl bg-sky-500/10 border border-sky-500/20">
-                <Palette className="h-6 w-6 sm:h-7 sm:w-7 text-sky-400" aria-hidden="true" />
+                <Palette className="size-6 sm:h-7 sm:w-7 text-sky-400" aria-hidden="true" />
               </span>
               Preferences
             </span>
@@ -68,7 +68,7 @@ const PreferencesSettingsPage = () => {
             onClick={() => navigate('/settings')}
             className="-ml-2 font-mono text-xs"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Settings
           </Button>
         </PageHeader>
@@ -80,7 +80,7 @@ const PreferencesSettingsPage = () => {
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 animate-chronicle-enter">
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20">
-                  <Sun className="h-4 w-4 text-sky-400" aria-hidden="true" />
+                  <Sun className="size-4 text-sky-400" aria-hidden="true" />
                 </div>
                 <h2 className="font-display text-lg text-foreground">
                   Appearance
@@ -97,6 +97,7 @@ const PreferencesSettingsPage = () => {
 
                   return (
                     <button
+                      type="button"
                       key={option.id}
                       onClick={() => setTheme(option.id)}
                       className={cn(
@@ -134,7 +135,7 @@ const PreferencesSettingsPage = () => {
                         <div className="flex items-center gap-2">
                           <Icon
                             className={cn(
-                              'h-4 w-4',
+                              'size-4',
                               isSelected ? 'text-sky-400' : 'text-muted-foreground'
                             )}
                             aria-hidden="true"
@@ -147,8 +148,8 @@ const PreferencesSettingsPage = () => {
                           </span>
                         </div>
                         {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-sky-400 flex items-center justify-center">
-                            <Check className="h-3 w-3 text-white" aria-hidden="true" />
+                          <div className="size-5 rounded-full bg-sky-400 flex items-center justify-center">
+                            <Check className="size-3 text-white" aria-hidden="true" />
                           </div>
                         )}
                       </div>
@@ -165,7 +166,7 @@ const PreferencesSettingsPage = () => {
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 animate-chronicle-enter" style={{ animationDelay: '75ms' }}>
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                  <Bell className="h-4 w-4 text-primary" aria-hidden="true" />
+                  <Bell className="size-4 text-primary" aria-hidden="true" />
                 </div>
                 <h2 className="font-display text-lg text-foreground">
                   Notifications
@@ -177,7 +178,7 @@ const PreferencesSettingsPage = () => {
 
               <div className="ml-11 bg-muted/30 border border-border rounded-xl p-5">
                 <div className="flex items-center gap-3">
-                  <Bell className="h-8 w-8 text-primary" />
+                  <Bell className="size-8 text-primary" />
                   <div>
                     <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-1">
                       Coming Soon

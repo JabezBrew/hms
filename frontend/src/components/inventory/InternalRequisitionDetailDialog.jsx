@@ -233,7 +233,7 @@ export function InternalRequisitionDetailDialog({
                   'Request cancelled'
                 )}
               >
-                <X className="mr-2 h-4 w-4" />
+                <X className="mr-2 size-4" />
                 Cancel Request
               </Button>
             ) : null}
@@ -245,7 +245,7 @@ export function InternalRequisitionDetailDialog({
                   'Request submitted'
                 )}
               >
-                <Send className="mr-2 h-4 w-4" />
+                <Send className="mr-2 size-4" />
                 Submit
               </Button>
             ) : null}
@@ -268,7 +268,7 @@ export function InternalRequisitionDetailDialog({
                   'Request approved'
                 )}
               >
-                <Check className="mr-2 h-4 w-4" />
+                <Check className="mr-2 size-4" />
                 Approve
               </Button>
             ) : null}
@@ -280,7 +280,7 @@ export function InternalRequisitionDetailDialog({
                   'Stock issued'
                 )}
               >
-                <PackageCheck className="mr-2 h-4 w-4" />
+                <PackageCheck className="mr-2 size-4" />
                 Fulfill
               </Button>
             ) : null}

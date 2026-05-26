@@ -163,7 +163,7 @@ const SpecimenCollectionDialog = ({
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-              <Droplet className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <Droplet className="size-5 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
               <DialogTitle className="font-display text-xl">
@@ -193,7 +193,7 @@ const SpecimenCollectionDialog = ({
           </div>
           {order?.fasting_required && (
             <div className="flex items-center gap-1.5 text-amber-600 text-xs">
-              <AlertCircle className="h-3 w-3" />
+              <AlertCircle className="size-3" />
               <span>Fasting required - verify with patient</span>
             </div>
           )}
@@ -324,12 +324,12 @@ const SpecimenCollectionDialog = ({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Collecting...
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                Collecting…
               </>
             ) : (
               <>
-                <Droplet className="h-4 w-4 mr-2" />
+                <Droplet className="size-4 mr-2" />
                 Collect Specimen
               </>
             )}

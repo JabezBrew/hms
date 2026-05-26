@@ -58,8 +58,8 @@ export function PageState({
       )}
     >
       <div className="text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-muted/60 flex items-center justify-center mx-auto">
-          {ResolvedIcon ? <ResolvedIcon className="h-8 w-8 text-muted-foreground" /> : null}
+        <div className="size-16 rounded-full bg-muted/60 flex items-center justify-center mx-auto">
+          {ResolvedIcon ? <ResolvedIcon className="size-8 text-muted-foreground" /> : null}
         </div>
         <div>
           <h2 className="font-display text-2xl text-foreground">{resolvedTitle}</h2>

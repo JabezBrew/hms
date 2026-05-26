@@ -129,7 +129,7 @@ function WitnessVerificationSection({
     <Card className="bg-amber-500/5 border-amber-500/30">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
-          <User className="h-4 w-4 text-amber-500" />
+          <User className="size-4 text-amber-500" />
           Witness Verification
         </CardTitle>
         <CardDescription className="text-xs">
@@ -295,7 +295,7 @@ export function ControlledDispenseForm({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Pill className="h-5 w-5 text-rose-500" />
+            <Pill className="size-5 text-rose-500" />
             Dispense Controlled Substance
           </DialogTitle>
           <DialogDescription>
@@ -329,7 +329,7 @@ export function ControlledDispenseForm({
 
             {newBalance < 0 && (
               <div className="flex items-center gap-2 p-3 bg-rose-500/10 text-rose-500 rounded-lg text-sm">
-                <AlertTriangle className="h-4 w-4" />
+                <AlertTriangle className="size-4" />
                 Quantity exceeds available balance
               </div>
             )}
@@ -443,9 +443,9 @@ export function ControlledDispenseForm({
                 className="bg-rose-600 hover:bg-rose-700"
               >
                 {dispenseMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 mr-2 animate-spin" />
                 ) : (
-                  <Pill className="h-4 w-4 mr-2" />
+                  <Pill className="size-4 mr-2" />
                 )}
                 Dispense
               </Button>
@@ -549,7 +549,7 @@ export function ControlledCountForm({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ClipboardCheck className="h-5 w-5 text-sky-500" />
+            <ClipboardCheck className="size-5 text-sky-500" />
             Physical Count
           </DialogTitle>
           <DialogDescription>
@@ -586,7 +586,7 @@ export function ControlledCountForm({
                 'flex items-center gap-2 p-3 rounded-lg text-sm',
                 discrepancy > 0 ? 'bg-sky-500/10 text-sky-500' : 'bg-rose-500/10 text-rose-500'
               )}>
-                <AlertTriangle className="h-4 w-4" />
+                <AlertTriangle className="size-4" />
                 {discrepancy > 0
                   ? 'Overage detected - additional investigation may be required'
                   : 'Shortage detected - this will create a discrepancy record'
@@ -651,9 +651,9 @@ export function ControlledCountForm({
               </Button>
               <Button type="submit" disabled={countMutation.isPending}>
                 {countMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 mr-2 animate-spin" />
                 ) : (
-                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                  <ClipboardCheck className="size-4 mr-2" />
                 )}
                 Record Count
               </Button>
@@ -750,7 +750,7 @@ export function WastageForm({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-amber-500" />
+            <Trash2 className="size-5 text-amber-500" />
             Record Wastage
           </DialogTitle>
           <DialogDescription>
@@ -784,7 +784,7 @@ export function WastageForm({
 
             {newBalance < 0 && (
               <div className="flex items-center gap-2 p-3 bg-rose-500/10 text-rose-500 rounded-lg text-sm">
-                <AlertTriangle className="h-4 w-4" />
+                <AlertTriangle className="size-4" />
                 Quantity exceeds available balance
               </div>
             )}
@@ -879,9 +879,9 @@ export function WastageForm({
                 className="bg-amber-600 hover:bg-amber-700"
               >
                 {wastageMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 mr-2 animate-spin" />
                 ) : (
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="size-4 mr-2" />
                 )}
                 Record Wastage
               </Button>
@@ -892,9 +892,3 @@ export function WastageForm({
     </Dialog>
   );
 }
-
-export default {
-  ControlledDispenseForm,
-  ControlledCountForm,
-  WastageForm,
-};

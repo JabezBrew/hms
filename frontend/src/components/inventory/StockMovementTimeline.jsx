@@ -16,6 +16,8 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 /**
  * Movement type configuration
  */
@@ -167,12 +169,12 @@ function StockMovementTimelineItem({
       <div className="flex flex-col items-center">
         <div
           className={cn(
-            'flex items-center justify-center w-8 h-8 rounded-full border-2 shrink-0',
+            'flex items-center justify-center size-8 rounded-full border-2 shrink-0',
             config.bgColor,
             config.borderColor
           )}
         >
-          <Icon className={cn('h-4 w-4', config.color)} />
+          <Icon className={cn('size-4', config.color)} />
         </div>
         {!isLast && (
           <div className="w-0.5 flex-1 bg-border mt-1" />
@@ -264,7 +266,7 @@ function StockMovementTimelineSkeleton({ count = 5 }) {
       {[...Array(count)].map((_, i) => (
         <div key={i} className="flex gap-4">
           <div className="flex flex-col items-center">
-            <Skeleton className="w-8 h-8 rounded-full" />
+            <Skeleton className="size-8 rounded-full" />
             {i < count - 1 && <Skeleton className="w-0.5 flex-1 mt-1" />}
           </div>
           <div className="flex-1 pb-6">
@@ -298,7 +300,7 @@ function StockMovementTimelineSkeleton({ count = 5 }) {
  * @param {string} [props.className] - Additional CSS classes
  */
 export function StockMovementTimeline({
-  movements = [],
+  movements = DEFAULT_EMPTY_ARRAY,
   isLoading,
   showLocation = true,
   limit,
@@ -311,7 +313,7 @@ export function StockMovementTimeline({
       <Card className={cn('bg-card/30 border-border/50', className)}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-5 w-5 text-sky-500" />
+            <Activity className="size-5 text-sky-500" />
             Stock Movements
           </CardTitle>
         </CardHeader>
@@ -330,13 +332,13 @@ export function StockMovementTimeline({
       <Card className={cn('bg-card/30 border-border/50', className)}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-5 w-5 text-sky-500" />
+            <Activity className="size-5 text-sky-500" />
             Stock Movements
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Package className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <Package className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
               No movements recorded
             </p>
@@ -351,7 +353,7 @@ export function StockMovementTimeline({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-5 w-5 text-sky-500" />
+            <Activity className="size-5 text-sky-500" />
             Stock Movements
             <span className="text-sm font-normal text-muted-foreground">
               ({movements.length})
@@ -379,7 +381,7 @@ export function StockMovementTimeline({
             onClick={onViewAll}
           >
             View all {movements.length} movements
-            <ArrowRight className="h-4 w-4 ml-1" />
+            <ArrowRight className="size-4 ml-1" />
           </Button>
         )}
       </CardContent>
@@ -399,7 +401,7 @@ export function StockMovementTimeline({
  * @param {string} [props.className] - Additional CSS classes
  */
 export function InlineStockMovementTimeline({
-  movements = [],
+  movements = DEFAULT_EMPTY_ARRAY,
   isLoading,
   showLocation = true,
   limit,
@@ -421,7 +423,7 @@ export function InlineStockMovementTimeline({
   if (!movements || movements.length === 0) {
     return (
       <div className={cn('flex flex-col items-center justify-center py-8 text-center', className)}>
-        <Package className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <Package className="size-10 text-muted-foreground/50 mb-3" />
         <p className="text-sm text-muted-foreground">
           No movements recorded
         </p>
@@ -450,7 +452,7 @@ export function InlineStockMovementTimeline({
           onClick={onViewAll}
         >
           View all {movements.length} movements
-          <ArrowRight className="h-4 w-4 ml-1" />
+          <ArrowRight className="size-4 ml-1" />
         </Button>
       )}
     </div>

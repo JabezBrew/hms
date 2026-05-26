@@ -39,7 +39,7 @@ function OrdersSummary({ orders }) {
       {medications.length > 0 && (
         <div>
           <div className="flex items-center gap-2 text-sm font-medium mb-1">
-            <Pill className="h-4 w-4 text-blue-500" />
+            <Pill className="size-4 text-blue-500" />
             Medications ({medications.length})
           </div>
           <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
@@ -55,7 +55,7 @@ function OrdersSummary({ orders }) {
       {labs.length > 0 && (
         <div>
           <div className="flex items-center gap-2 text-sm font-medium mb-1">
-            <FlaskConical className="h-4 w-4 text-purple-500" />
+            <FlaskConical className="size-4 text-purple-500" />
             Labs ({labs.length})
           </div>
           <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
@@ -74,7 +74,7 @@ function OrdersSummary({ orders }) {
       {nursing.length > 0 && (
         <div>
           <div className="flex items-center gap-2 text-sm font-medium mb-1">
-            <Stethoscope className="h-4 w-4 text-green-500" />
+            <Stethoscope className="size-4 text-green-500" />
             Nursing Orders ({nursing.length})
           </div>
           <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
@@ -139,7 +139,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
       <Card>
         <CardHeader>
           <CardTitle className="text-base font-medium flex items-center gap-2">
-            <FileText className="h-4 w-4" />
+            <FileText className="size-4" />
             Progress Note *
           </CardTitle>
           <CardDescription>
@@ -165,7 +165,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
       <Card>
         <CardHeader>
           <CardTitle className="text-base font-medium flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
+            <Calendar className="size-4" />
             Discharge Planning
           </CardTitle>
           <CardDescription>
@@ -187,7 +187,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
               />
             </div>
 
-            <div className="flex items-center space-x-3 sm:pt-7">
+            <div className="flex items-center gap-x-3 sm:pt-7">
               <Checkbox
                 id="discharge_planning_needed"
                 checked={localData.discharge_planning_needed}
@@ -204,7 +204,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
 
           {localData.discharge_planning_needed && (
             <Alert>
-              <Info className="h-4 w-4" />
+              <Info className="size-4" />
               <AlertDescription>
                 The care coordination team will be notified that this patient requires discharge planning.
               </AlertDescription>
@@ -218,7 +218,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base font-medium flex items-center gap-2">
-              <ClipboardCheck className="h-4 w-4" />
+              <ClipboardCheck className="size-4" />
               Orders Summary
             </CardTitle>
             {totalOrders > 0 && (
@@ -236,7 +236,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
 
       {/* Completion Note */}
       <Alert className="bg-primary/5 border-primary/20">
-        <ClipboardCheck className="h-4 w-4 text-primary" />
+        <ClipboardCheck className="size-4 text-primary" />
         <AlertDescription>
           <strong>Ready to complete?</strong> Clicking "Complete Ward Round" will:
           <ul className="mt-2 ml-4 list-disc text-sm space-y-1">

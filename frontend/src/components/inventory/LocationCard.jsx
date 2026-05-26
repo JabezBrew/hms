@@ -10,128 +10,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
-import Warehouse from 'lucide-react/dist/esm/icons/warehouse.js';
-import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
-import Pill from 'lucide-react/dist/esm/icons/pill.js';
-import Bed from 'lucide-react/dist/esm/icons/bed-double.js';
-import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
-import Package from 'lucide-react/dist/esm/icons/package.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import Edit from 'lucide-react/dist/esm/icons/pencil.js';
 import ArrowRightLeft from 'lucide-react/dist/esm/icons/arrow-right-left.js';
-import Snowflake from 'lucide-react/dist/esm/icons/snowflake.js';
-
-/**
- * Location type configuration
- */
-const LOCATION_TYPES = {
-  warehouse: {
-    label: 'Warehouse',
-    icon: Warehouse,
-    color: 'text-amber-500',
-    bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-500/30',
-  },
-  pharmacy: {
-    label: 'Pharmacy',
-    icon: Pill,
-    color: 'text-emerald-500',
-    bgColor: 'bg-emerald-500/10',
-    borderColor: 'border-emerald-500/30',
-  },
-  ward: {
-    label: 'Ward',
-    icon: Bed,
-    color: 'text-sky-500',
-    bgColor: 'bg-sky-500/10',
-    borderColor: 'border-sky-500/30',
-  },
-  department: {
-    label: 'Department',
-    icon: Building2,
-    color: 'text-violet-500',
-    bgColor: 'bg-violet-500/10',
-    borderColor: 'border-violet-500/30',
-  },
-  store: {
-    label: 'Store',
-    icon: Package,
-    color: 'text-rose-500',
-    bgColor: 'bg-rose-500/10',
-    borderColor: 'border-rose-500/30',
-  },
-};
-
-/**
- * Temperature zone configuration
- */
-const TEMP_ZONES = {
-  ambient: {
-    label: 'Ambient',
-    icon: Thermometer,
-    color: 'text-muted-foreground',
-    range: '15-25°C',
-  },
-  cold: {
-    label: 'Cold Storage',
-    icon: Snowflake,
-    color: 'text-sky-500',
-    range: '2-8°C',
-  },
-  frozen: {
-    label: 'Frozen',
-    icon: Snowflake,
-    color: 'text-cyan-500',
-    range: '-20°C',
-  },
-  controlled: {
-    label: 'Controlled',
-    icon: Thermometer,
-    color: 'text-amber-500',
-    range: 'Variable',
-  },
-};
-
-/**
- * Get location type config
- */
-export function getLocationConfig(type) {
-  return LOCATION_TYPES[type?.toLowerCase()] || {
-    label: type || 'Location',
-    icon: MapPin,
-    color: 'text-muted-foreground',
-    bgColor: 'bg-muted/50',
-    borderColor: 'border-border',
-  };
-}
-
-/**
- * Get temperature zone config
- */
-export function getTempZoneConfig(zone) {
-  return TEMP_ZONES[zone?.toLowerCase()] || null;
-}
-
-/**
- * Format currency
- */
-export function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(amount || 0);
-}
-
-/**
- * Format number
- */
-export function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value || 0);
-}
+import {
+  formatLocationCurrency,
+  formatLocationNumber,
+  getLocationConfig,
+  getTempZoneConfig,
+} from './location-card-utils';
 
 /**
  * LocationCard - Card display for storage locations
@@ -177,7 +65,7 @@ export function LocationCard({
             config.bgColor,
             config.color
           )}>
-            <Icon className="h-3 w-3" />
+            <Icon className="size-3" />
             <span className="font-medium">{config.label}</span>
           </div>
 
@@ -187,28 +75,28 @@ export function LocationCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {onViewStock && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onViewStock(); }}>
-                  <Eye className="h-4 w-4 mr-2" />
+                  <Eye className="size-4 mr-2" />
                   View Stock
                 </DropdownMenuItem>
               )}
               {onTransfer && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onTransfer(); }}>
-                  <ArrowRightLeft className="h-4 w-4 mr-2" />
+                  <ArrowRightLeft className="size-4 mr-2" />
                   Transfer To
                 </DropdownMenuItem>
               )}
               {(onViewStock || onTransfer) && onEdit && <DropdownMenuSeparator />}
               {onEdit && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }}>
-                  <Edit className="h-4 w-4 mr-2" />
+                  <Edit className="size-4 mr-2" />
                   Edit
                 </DropdownMenuItem>
               )}
@@ -239,13 +127,13 @@ export function LocationCard({
           <div>
             <p className="text-xs text-muted-foreground">Items</p>
             <p className="font-mono text-lg font-semibold">
-              {formatNumber(location.item_count || location.items_count || 0)}
+              {formatLocationNumber(location.item_count || location.items_count || 0)}
             </p>
           </div>
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Stock Value</p>
             <p className="font-mono text-lg font-semibold text-emerald-500">
-              {formatCurrency(location.stock_value || location.total_value || 0)}
+              {formatLocationCurrency(location.stock_value || location.total_value || 0)}
             </p>
           </div>
         </div>
@@ -256,7 +144,7 @@ export function LocationCard({
             'flex items-center gap-1.5 mt-3 pt-3 border-t border-border text-xs',
             tempZone.color
           )}>
-            <tempZone.icon className="h-3 w-3" />
+            <tempZone.icon className="size-3" />
             <span>{tempZone.label}</span>
             <span className="font-mono">({tempZone.range})</span>
           </div>
@@ -282,7 +170,7 @@ export function LocationCardSkeleton() {
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <Skeleton className="h-6 w-24 rounded-full" />
-          <Skeleton className="h-8 w-8" />
+          <Skeleton className="size-8" />
         </div>
         <Skeleton className="h-6 w-3/4 mb-1" />
         <Skeleton className="h-4 w-1/2 mb-3" />
@@ -335,10 +223,10 @@ export function LocationRow({
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
           <div className={cn(
-            'flex items-center justify-center w-8 h-8 rounded-lg',
+            'flex items-center justify-center size-8 rounded-lg',
             config.bgColor
           )}>
-            <Icon className={cn('h-4 w-4', config.color)} />
+            <Icon className={cn('size-4', config.color)} />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium truncate">{location.name}</p>
@@ -359,15 +247,15 @@ export function LocationRow({
         </span>
       </td>
       <td className="px-4 py-3 text-right font-mono text-sm">
-        {formatNumber(location.item_count || location.items_count || 0)}
+        {formatLocationNumber(location.item_count || location.items_count || 0)}
       </td>
       <td className="px-4 py-3 text-right font-mono text-sm text-emerald-500 hidden lg:table-cell">
-        {formatCurrency(location.stock_value || location.total_value || 0)}
+        {formatLocationCurrency(location.stock_value || location.total_value || 0)}
       </td>
       <td className="px-4 py-3 hidden sm:table-cell">
         {tempZone && (
           <div className={cn('flex items-center gap-1 text-xs', tempZone.color)}>
-            <tempZone.icon className="h-3 w-3" />
+            <tempZone.icon className="size-3" />
             <span>{tempZone.label}</span>
           </div>
         )}
@@ -378,28 +266,28 @@ export function LocationRow({
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0"
+              className="size-8 p-0"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {onViewStock && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onViewStock(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Stock
               </DropdownMenuItem>
             )}
             {onTransfer && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onTransfer(); }}>
-                <ArrowRightLeft className="h-4 w-4 mr-2" />
+                <ArrowRightLeft className="size-4 mr-2" />
                 Transfer To
               </DropdownMenuItem>
             )}
             {(onViewStock || onTransfer) && onEdit && <DropdownMenuSeparator />}
             {onEdit && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }}>
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="size-4 mr-2" />
                 Edit
               </DropdownMenuItem>
             )}
@@ -418,7 +306,7 @@ export function LocationRowSkeleton() {
     <tr>
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <Skeleton className="w-8 h-8 rounded-lg" />
+          <Skeleton className="size-8 rounded-lg" />
           <div>
             <Skeleton className="h-4 w-32 mb-1" />
             <Skeleton className="h-3 w-20" />
@@ -441,7 +329,7 @@ export function LocationRowSkeleton() {
         <Skeleton className="h-4 w-20" />
       </td>
       <td className="px-4 py-3">
-        <Skeleton className="h-8 w-8" />
+        <Skeleton className="size-8" />
       </td>
     </tr>
   );

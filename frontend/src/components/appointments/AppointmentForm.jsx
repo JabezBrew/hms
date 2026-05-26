@@ -8,6 +8,8 @@ import format from 'date-fns/format';
 import addMinutes from 'date-fns/addMinutes';
 import parseISO from 'date-fns/parseISO';
 
+const DEFAULT_EMPTY_OBJECT = {};
+
 import { useNavigate } from 'react-router-dom';
 import {toast} from 'sonner';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -70,7 +72,7 @@ const formSchema = z.object({
   comment: z.string().optional(),
 });
 
-const AppointmentForm = ({ initialData = {}, onSuccess }) => {
+const AppointmentForm = ({ initialData = DEFAULT_EMPTY_OBJECT, onSuccess }) => {
   const [appointmentTypes, setAppointmentTypes] = useState([]);
   const [patientSearchQuery, setPatientSearchQuery] = useState("");
   const [patients, setPatients] = useState([]);
@@ -519,7 +521,7 @@ const AppointmentForm = ({ initialData = {}, onSuccess }) => {
           )}
         />
 
-        <div className="flex justify-end space-x-2">
+        <div className="flex justify-end gap-x-2">
           <Button
             type="button"
             variant="outline"

@@ -16,6 +16,11 @@ import Edit from 'lucide-react/dist/esm/icons/edit.js';
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
 import MoreVertical from 'lucide-react/dist/esm/icons/more-vertical.js';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
 /**
  * InventoryItemCard - Card display for inventory items in grid view
  * @param {Object} props
@@ -62,10 +67,7 @@ export function InventoryItemCard({
   };
 
   const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(price);
+    return USD_CURRENCY_FORMATTER.format(price);
   };
 
   return (
@@ -93,25 +95,25 @@ export function InventoryItemCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreVertical className="h-4 w-4" />
+                <MoreVertical className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={handleClick}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {onEdit && (
                 <DropdownMenuItem onClick={handleEditClick}>
-                  <Edit className="h-4 w-4 mr-2" />
+                  <Edit className="size-4 mr-2" />
                   Edit
                 </DropdownMenuItem>
               )}
               {onOrder && (
                 <DropdownMenuItem onClick={handleOrderClick}>
-                  <ShoppingCart className="h-4 w-4 mr-2" />
+                  <ShoppingCart className="size-4 mr-2" />
                   Create Order
                 </DropdownMenuItem>
               )}

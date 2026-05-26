@@ -252,7 +252,7 @@ const PrescriptionActionsDialog = ({
             {/* Current medication info */}
             <div className="p-3 bg-muted/50 rounded-lg border border-border">
               <div className="flex items-center gap-2 mb-1">
-                <Pill className="h-4 w-4 text-sky-500" />
+                <Pill className="size-4 text-sky-500" />
                 <span className="font-medium">{prescription?.medication_name}</span>
               </div>
               <span className="text-xs text-muted-foreground font-mono">
@@ -327,7 +327,7 @@ const PrescriptionActionsDialog = ({
           <div className="space-y-4">
             {/* Warning */}
             <div className="flex items-start gap-3 p-3 bg-destructive/10 rounded-lg border border-destructive/30">
-              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
               <div className="text-sm">
                 <p className="font-medium text-destructive">This will stop the medication</p>
                 <p className="text-muted-foreground mt-1">
@@ -394,7 +394,7 @@ const PrescriptionActionsDialog = ({
             {/* Current prescription info */}
             <div className="p-3 bg-muted/50 rounded-lg border border-border">
               <div className="flex items-center gap-2 mb-2">
-                <Pill className="h-4 w-4 text-sky-500" />
+                <Pill className="size-4 text-sky-500" />
                 <span className="font-medium">{prescription?.medication_name}</span>
               </div>
               <div className="text-xs text-muted-foreground space-y-1">
@@ -441,7 +441,7 @@ const PrescriptionActionsDialog = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ActionIcon className={cn(
-              "h-5 w-5",
+              "size-5",
               action === 'discontinue' ? "text-destructive" :
               action === 'hold' ? "text-amber-500" :
               action === 'resume' ? "text-emerald-500" :
@@ -471,8 +471,8 @@ const PrescriptionActionsDialog = ({
           >
             {isLoading ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Processing...
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                Processing…
               </>
             ) : (
               config.confirmLabel

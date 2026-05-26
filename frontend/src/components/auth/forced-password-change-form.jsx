@@ -65,8 +65,8 @@ export function ForcedPasswordChangeForm() {
   return (
     <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-sm">
       <div className="mb-5 space-y-2 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
-          <ShieldAlert className="h-6 w-6" aria-hidden="true" />
+        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
+          <ShieldAlert className="size-6" aria-hidden="true" />
         </div>
         <h1 className="font-display text-2xl font-semibold tracking-tight">Update Your Password</h1>
         <p className="text-sm text-muted-foreground">
@@ -98,7 +98,7 @@ export function ForcedPasswordChangeForm() {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label={showOldPassword ? 'Hide password' : 'Show password'}
             >
-              {showOldPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showOldPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
           {errors.oldPassword && <p className="text-xs text-destructive">{errors.oldPassword.message}</p>}
@@ -121,7 +121,7 @@ export function ForcedPasswordChangeForm() {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label={showNewPassword ? 'Hide password' : 'Show password'}
             >
-              {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showNewPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
           {errors.newPassword && <p className="text-xs text-destructive">{errors.newPassword.message}</p>}
@@ -144,7 +144,7 @@ export function ForcedPasswordChangeForm() {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
             >
-              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
           {errors.confirmPassword && <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>}

@@ -16,8 +16,8 @@ function ActionShell({ icon: Icon, title, children }) {
   return (
     <section className="rounded-lg border border-border/70 bg-background/70 p-4">
       <div className="mb-3 flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-          <Icon className="h-4 w-4 text-muted-foreground" />
+        <span className="flex size-8 items-center justify-center rounded-md bg-muted">
+          <Icon className="size-4 text-muted-foreground" />
         </span>
         <h4 className="font-heading text-sm font-semibold text-foreground">{title}</h4>
       </div>
@@ -126,11 +126,11 @@ export function MedicationActionBlock({ medications, activeMedications, onChange
               type="button"
               variant="ghost"
               size="icon"
-              className="mt-5 h-9 w-9"
+              className="mt-5 size-9"
               aria-label="Remove medication action"
               onClick={() => removeMedication(medication.id)}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="size-4" />
             </Button>
           </div>
         ))}
@@ -200,7 +200,7 @@ export function LabOrderActionBlock({ labOrders, onChange }) {
             catalogItems.length === 0 && 'text-sm text-muted-foreground',
           )}>
             {testQuery.isFetching || panelQuery.isFetching ? (
-              <p className="font-mono text-xs text-muted-foreground">Searching catalog...</p>
+              <p className="font-mono text-xs text-muted-foreground">Searching catalog…</p>
             ) : catalogItems.length === 0 ? (
               <p className="font-mono text-xs">No matching tests or panels.</p>
             ) : (
@@ -233,7 +233,7 @@ export function LabOrderActionBlock({ labOrders, onChange }) {
                   className="text-muted-foreground hover:text-foreground"
                   onClick={() => onChange(labOrders.filter((item) => item.id !== order.id))}
                 >
-                  <Trash2 className="h-3 w-3" />
+                  <Trash2 className="size-3" />
                 </button>
               </span>
             ))}
@@ -277,11 +277,11 @@ export function NursingTaskActionBlock({ nursingTasks, onChange }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="mt-5 h-9 w-9"
+              className="mt-5 size-9"
               aria-label="Remove nursing task"
               onClick={() => onChange(nursingTasks.filter((item) => item.id !== task.id))}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="size-4" />
             </Button>
           </div>
         ))}

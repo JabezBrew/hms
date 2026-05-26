@@ -463,7 +463,7 @@ const AddNoteSlideOver = ({
             onClick={handleClose}
             className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
           >
-            <X className="h-4 w-4 mr-1.5" />
+            <X className="size-4 mr-1.5" />
             Close
           </Button>
         </div>
@@ -472,7 +472,7 @@ const AddNoteSlideOver = ({
       {/* Error Alert with back option */}
       {error && (
         <Alert variant="destructive" className="mx-6 mt-4">
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="size-4" />
           <AlertDescription className="flex items-center justify-between">
             <span>{error}</span>
             {template && (
@@ -482,7 +482,7 @@ const AddNoteSlideOver = ({
                 onClick={resetWorkflow}
                 className="ml-4 font-mono text-xs"
               >
-                <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                <ChevronLeft className="size-3.5 mr-1" />
                 Back
               </Button>
             )}
@@ -496,10 +496,11 @@ const AddNoteSlideOver = ({
           {/* Change Note Type Link */}
           <div className="flex items-center justify-between mb-3">
             <button
+              type="button"
               onClick={resetWorkflow}
               className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors font-mono text-xs"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ChevronLeft className="size-3.5" />
               Change Note Type
             </button>
             <span className="font-mono text-xs text-muted-foreground">
@@ -525,7 +526,7 @@ const AddNoteSlideOver = ({
             <div className="rounded-xl border border-border bg-card p-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-amber-600" />
+                  <Sparkles className="size-4 text-amber-600" />
                   <p className="font-heading text-sm text-foreground">AI Note Assistant</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -566,7 +567,7 @@ const AddNoteSlideOver = ({
                   disabled={isAiBusy}
                   className="font-mono text-xs"
                 >
-                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                  <Sparkles className="size-3.5 mr-1.5" />
                   Generate Draft
                 </Button>
                 <Button
@@ -577,7 +578,7 @@ const AddNoteSlideOver = ({
                   disabled={isAiBusy}
                   className="font-mono text-xs"
                 >
-                  <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                  <ShieldCheck className="size-3.5 mr-1.5" />
                   Run Quality Check
                 </Button>
               </div>
@@ -596,7 +597,7 @@ const AddNoteSlideOver = ({
               <div className="rounded-xl border border-border bg-card p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-amber-600" />
+                    <Sparkles className="size-4 text-amber-600" />
                     <p className="font-heading text-sm text-foreground">Section Diff</p>
                   </div>
                   <Badge variant="outline" className="font-mono text-[10px]">
@@ -659,9 +660,9 @@ const AddNoteSlideOver = ({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {lintResult.can_finalize === false ? (
-                      <ShieldAlert className="h-4 w-4 text-rose-600" />
+                      <ShieldAlert className="size-4 text-rose-600" />
                     ) : (
-                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                      <ShieldCheck className="size-4 text-emerald-600" />
                     )}
                     <p className="font-heading text-sm text-foreground">Quality Check Results</p>
                   </div>
@@ -726,7 +727,7 @@ const AddNoteSlideOver = ({
               onClick={resetWorkflow}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+              <ChevronLeft className="size-3.5 mr-1" />
               Back to Templates
             </Button>
           </div>
@@ -748,7 +749,7 @@ const AddNoteSlideOver = ({
                 disabled={isSaving || isLoading || isAiBusy}
                 className="font-mono text-xs"
               >
-                <Save className="h-3.5 w-3.5 mr-1.5" />
+                <Save className="size-3.5 mr-1.5" />
                 Save Draft
               </Button>
               {aiAssistantAvailable && (
@@ -759,7 +760,7 @@ const AddNoteSlideOver = ({
                   disabled={isSaving || isLoading || isAiBusy}
                   className="font-mono text-xs"
                 >
-                  <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                  <ShieldCheck className="size-3.5 mr-1.5" />
                   Run Quality Check
                 </Button>
               )}
@@ -774,15 +775,16 @@ const AddNoteSlideOver = ({
                   disabled={isLoading || isAiBusy}
                   className="font-mono text-xs"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                  <ChevronLeft className="size-3.5 mr-1" />
                   Previous
                 </Button>
               )}
 
               {isLastStep && hasLintForCurrentData && lintResult?.requires_major_acknowledgement && (
-                <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
-                  <Checkbox
-                    checked={majorAcknowledged}
+	                <label htmlFor="add-note-major-acknowledgement" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
+	                  <Checkbox
+	                    id="add-note-major-acknowledgement"
+	                    checked={majorAcknowledged}
                     onCheckedChange={(value) => setMajorAcknowledged(Boolean(value))}
                   />
                   <span className="font-mono text-[10px] leading-tight text-amber-800">
@@ -798,7 +800,7 @@ const AddNoteSlideOver = ({
                   disabled={isSaving || isLoading || isAiBusy || (!lintGate.canComplete && !lintGate.requiresLintRun)}
                   className="font-mono text-xs"
                 >
-                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  <Check className="size-3.5 mr-1.5" />
                   {isEditMode ? 'Save Changes' : 'Complete Note'}
                 </Button>
               ) : (
@@ -809,7 +811,7 @@ const AddNoteSlideOver = ({
                   className="font-mono text-xs"
                 >
                   Next
-                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  <ChevronRight className="size-3.5 ml-1" />
                 </Button>
               )}
             </div>

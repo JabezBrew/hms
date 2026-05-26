@@ -24,7 +24,7 @@ const AssessmentPlanStep = ({ formData, onChange, contextData, validationErrors,
       {/* Summary of what was documented */}
       {historyData.chief_complaint && (
         <Alert className="bg-muted/50">
-          <Lightbulb className="h-4 w-4" />
+          <Lightbulb className="size-4" />
           <AlertDescription>
             <div className="space-y-1 text-sm">
               <p>

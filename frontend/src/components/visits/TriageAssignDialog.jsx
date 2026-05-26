@@ -171,7 +171,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-1">
               <span
-                className={`w-2 h-2 rounded-full ${
+                className={`size-2 rounded-full ${
                   entry.priority === 'emergency'
                     ? 'bg-rose-500'
                     : entry.priority === 'urgent'
@@ -196,7 +196,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
           {/* Clinic Selection */}
           <div className="space-y-2">
             <Label htmlFor="clinic_id" className="flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
+              <Building2 className="size-4" />
               Clinic
             </Label>
             <Select
@@ -212,7 +212,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
               <SelectContent>
                 {clinicsLoading ? (
                   <SelectItem value="__loading_clinics" disabled>
-                    Loading...
+                    Loading…
                   </SelectItem>
                 ) : clinicsList.length === 0 ? (
                   <SelectItem value="__no_clinics" disabled>
@@ -235,7 +235,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
           {/* Appointment Type */}
           <div className="space-y-2">
             <Label htmlFor="appointment_type_id" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="size-4" />
               Appointment Type
             </Label>
             <Select
@@ -248,7 +248,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
               <SelectContent>
                 {typesLoading ? (
                   <SelectItem value="__loading_appointment_types" disabled>
-                    Loading...
+                    Loading…
                   </SelectItem>
                 ) : typesList.length === 0 ? (
                   <SelectItem value="__no_appointment_types" disabled>
@@ -271,7 +271,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
           {/* Start Time */}
           <div className="space-y-2">
             <Label htmlFor="start_time" className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
+              <Clock className="size-4" />
               Start Time
             </Label>
             <Input
@@ -287,7 +287,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
           {/* Practitioner */}
           <div className="space-y-2">
             <Label htmlFor="practitioner_id" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
+              <User className="size-4" />
               {isRustV2 ? 'Practitioner *' : 'Practitioner (Optional)'}
             </Label>
             <Select
@@ -308,7 +308,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
                 )}
                 {practitionersLoading ? (
                   <SelectItem value="__loading_practitioners" disabled>
-                    Loading...
+                    Loading…
                   </SelectItem>
                 ) : practitionersList.length === 0 ? (
                   <SelectItem value="__no_practitioners" disabled>

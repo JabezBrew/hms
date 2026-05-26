@@ -57,6 +57,7 @@ const WorkflowSteps = ({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
+                    type="button"
                     onClick={() => onStepClick?.(stepNumber)}
                     className={cn(
                       "flex items-center gap-2 group transition-all",
@@ -67,7 +68,7 @@ const WorkflowSteps = ({
                   >
                     <div
                       className={cn(
-                        "w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono transition-all",
+                        "size-6 rounded-full flex items-center justify-center text-xs font-mono transition-all",
                         isCompleted &&
                           "bg-primary text-primary-foreground group-hover:ring-2 group-hover:ring-primary/50",
                         isCurrent &&
@@ -77,7 +78,7 @@ const WorkflowSteps = ({
                       )}
                     >
                       {isCompleted ? (
-                        <Check className="h-3 w-3" />
+                        <Check className="size-3" />
                       ) : (
                         stepNumber
                       )}

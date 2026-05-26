@@ -76,7 +76,7 @@ const DiffRenderer = ({ oldData, newData }) => {
     <div className="space-y-1">
       {/* Summary */}
       <div className="text-xs text-muted-foreground mb-3 flex items-center gap-2">
-        <RefreshCw className="h-3 w-3" />
+        <RefreshCw className="size-3" />
         <span>
           {changedCount} field{changedCount !== 1 ? "s" : ""} changed
         </span>
@@ -152,13 +152,14 @@ const FieldDiff = ({ fieldName, oldValue, newValue, status }) => {
     >
       {/* Field Header */}
       <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-2 w-full text-left group"
       >
         {isExpanded ? (
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+          <ChevronDown className="size-3 text-muted-foreground" />
         ) : (
-          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          <ChevronRight className="size-3 text-muted-foreground" />
         )}
         <span className="font-mono text-xs uppercase text-muted-foreground group-hover:text-foreground transition-colors">
           {formatLabel(fieldName)}
@@ -312,7 +313,7 @@ const ArrayDiff = ({ oldArray, newArray }) => {
           key={`removed-${idx}`}
           className="flex items-start gap-2 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 px-2 py-1 rounded line-through"
         >
-          <Minus className="h-3 w-3 mt-1 flex-shrink-0" />
+          <Minus className="size-3 mt-1 flex-shrink-0" />
           <span>{i.display}</span>
         </li>
       ))}
@@ -321,7 +322,7 @@ const ArrayDiff = ({ oldArray, newArray }) => {
           key={`added-${idx}`}
           className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 px-2 py-1 rounded"
         >
-          <Plus className="h-3 w-3 mt-1 flex-shrink-0" />
+          <Plus className="size-3 mt-1 flex-shrink-0" />
           <span>{i.display}</span>
         </li>
       ))}
@@ -368,7 +369,7 @@ const AddedValue = ({ value }) => {
             key={i}
             className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 px-2 py-1 rounded"
           >
-            <Plus className="h-3 w-3 mt-1 flex-shrink-0" />
+            <Plus className="size-3 mt-1 flex-shrink-0" />
             <span>{typeof item === "object" ? JSON.stringify(item) : String(item)}</span>
           </li>
         ))}
@@ -415,7 +416,7 @@ const RemovedValue = ({ value }) => {
             key={i}
             className="flex items-start gap-2 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 line-through px-2 py-1 rounded"
           >
-            <Minus className="h-3 w-3 mt-1 flex-shrink-0" />
+            <Minus className="size-3 mt-1 flex-shrink-0" />
             <span>{typeof item === "object" ? JSON.stringify(item) : String(item)}</span>
           </li>
         ))}

@@ -322,7 +322,7 @@ export function FluidBalanceTracker({ patient, admission }) {
         </CardHeader>
         <CardContent>
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertDescription>
               Failed to load fluid balance records. Please try again.
             </AlertDescription>
@@ -354,7 +354,7 @@ export function FluidBalanceTracker({ patient, admission }) {
             onClick={goToPreviousDay}
             title="Previous day"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="size-4" />
           </Button>
 
           <Popover>
@@ -366,7 +366,7 @@ export function FluidBalanceTracker({ patient, admission }) {
                   !selectedDate && "text-muted-foreground"
                 )}
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
+                <CalendarIcon className="mr-2 size-4" />
                 {format(selectedDate, 'EEEE, MMMM d, yyyy')}
               </Button>
             </PopoverTrigger>
@@ -388,7 +388,7 @@ export function FluidBalanceTracker({ patient, admission }) {
             disabled={isToday}
             title="Next day"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="size-4" />
           </Button>
 
           {!isToday && (
@@ -528,8 +528,8 @@ export function FluidBalanceTracker({ patient, admission }) {
                 >
                   {createMutation.isPending ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Recording...
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      Recording…
                     </>
                   ) : (
                     'Record Fluid'
@@ -559,7 +559,7 @@ export function FluidBalanceTracker({ patient, admission }) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div className="p-4 border rounded-md bg-blue-50">
                     <div className="flex items-center mb-2">
-                      <ArrowDownCircle className="h-5 w-5 text-blue-500 mr-2" />
+                      <ArrowDownCircle className="size-5 text-blue-500 mr-2" />
                       <h3 className="text-lg font-medium">Total Intake</h3>
                     </div>
                     <p className="text-3xl font-bold text-blue-600">{displaySummary.total_intake} ml</p>
@@ -567,7 +567,7 @@ export function FluidBalanceTracker({ patient, admission }) {
 
                   <div className="p-4 border rounded-md bg-amber-50">
                     <div className="flex items-center mb-2">
-                      <ArrowUpCircle className="h-5 w-5 text-amber-500 mr-2" />
+                      <ArrowUpCircle className="size-5 text-amber-500 mr-2" />
                       <h3 className="text-lg font-medium">Total Output</h3>
                     </div>
                     <p className="text-3xl font-bold text-amber-600">{displaySummary.total_output} ml</p>
@@ -578,7 +578,7 @@ export function FluidBalanceTracker({ patient, admission }) {
                     displaySummary.balance < 0 ? 'bg-red-50' : 'bg-gray-50'
                   }`}>
                     <div className="flex items-center mb-2">
-                      <Droplet className={`h-5 w-5 mr-2 ${
+                      <Droplet className={`size-5 mr-2 ${
                         displaySummary.balance > 0 ? 'text-green-500' :
                         displaySummary.balance < 0 ? 'text-red-500' : 'text-gray-500'
                       }`} />

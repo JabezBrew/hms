@@ -32,6 +32,8 @@ import Save from 'lucide-react/dist/esm/icons/save.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 const PRIORITY_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'normal', label: 'Normal' },
@@ -55,7 +57,7 @@ const formSchema = z.object({
 /**
  * RequisitionForm - Create purchase requisition
  */
-export function RequisitionForm({ onSuccess, onCancel, initialItems = [] }) {
+export function RequisitionForm({ onSuccess, onCancel, initialItems = DEFAULT_EMPTY_ARRAY }) {
   const { data: itemsData } = useInventoryItems({ page_size: 200 });
   const { data: suppliersData } = useSuppliers({ page_size: 100 });
 
@@ -200,7 +202,7 @@ export function RequisitionForm({ onSuccess, onCancel, initialItems = [] }) {
               size="sm"
               onClick={() => append({ item: '', quantity: 1, notes: '' })}
             >
-              <Plus className="h-4 w-4 mr-1" />
+              <Plus className="size-4 mr-1" />
               Add Item
             </Button>
           </div>
@@ -268,7 +270,7 @@ export function RequisitionForm({ onSuccess, onCancel, initialItems = [] }) {
                   className="text-destructive"
                   onClick={() => remove(index)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="size-4" />
                 </Button>
               )}
             </div>
@@ -296,9 +298,9 @@ export function RequisitionForm({ onSuccess, onCancel, initialItems = [] }) {
           </Button>
           <Button type="submit" disabled={isSubmitting} className="min-w-[140px]">
             {isSubmitting ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
             ) : (
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="size-4 mr-2" />
             )}
             Create
           </Button>

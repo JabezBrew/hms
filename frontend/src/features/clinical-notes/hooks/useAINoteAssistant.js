@@ -170,7 +170,7 @@ export function buildStepDiff(baseValue, currentValue) {
 }
 
 export function sortLintIssues(issues = []) {
-  return [...issues].sort((left, right) => {
+  return issues.toSorted((left, right) => {
     const leftRank = SEVERITY_WEIGHT[String(left?.severity || '').toLowerCase()] ?? 99
     const rightRank = SEVERITY_WEIGHT[String(right?.severity || '').toLowerCase()] ?? 99
     if (leftRank !== rightRank) return leftRank - rightRank

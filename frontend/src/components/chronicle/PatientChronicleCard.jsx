@@ -286,7 +286,7 @@ const PatientChronicleCard = ({
   };
 
   return (
-    <article
+    <div
       onClick={handleViewRecord}
       onKeyDown={handleKeyDown}
       onPointerEnter={handleIntentPrefetch}
@@ -328,7 +328,7 @@ const PatientChronicleCard = ({
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-2 shrink-0">
           {status === 'critical' && (
             <span className="badge-chronicle-rose flex items-center gap-1 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
-              <AlertTriangle className="h-2.5 w-2.5 sm:h-3 sm:w-3" aria-hidden="true" />
+              <AlertTriangle className="size-2.5 sm:h-3 sm:w-3" aria-hidden="true" />
               <span className="hidden sm:inline">CRITICAL</span>
             </span>
           )}
@@ -348,7 +348,7 @@ const PatientChronicleCard = ({
             Primary Dx
           </dt>
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm truncate">
-            {primaryDx || <span className="text-muted-foreground">—</span>}
+            {primaryDx || <span className="text-muted-foreground">Not recorded</span>}
           </dd>
         </div>
         <div className="min-w-0">
@@ -372,7 +372,7 @@ const PatientChronicleCard = ({
             Attending
           </dt>
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm truncate">
-            {attending || <span className="text-muted-foreground">—</span>}
+            {attending || <span className="text-muted-foreground">Not assigned</span>}
           </dd>
         </div>
       </div>
@@ -419,19 +419,19 @@ const PatientChronicleCard = ({
           {/* Pinned indicator for My Patients */}
           {isPinned && (
             <span className="flex items-center gap-1 text-primary">
-              <Star className="h-3 w-3 fill-current" aria-hidden="true" />
+              <Star className="size-3 fill-current" aria-hidden="true" />
               <span className="font-mono text-[10px] sm:text-xs">Pinned</span>
             </span>
           )}
           {!isPinned && pendingOrders > 0 && (
             <>
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+              <span className="size-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
               <span className="font-mono text-[10px] sm:text-xs">{pendingOrders} pending</span>
             </>
           )}
           {!isPinned && pendingOrders === 0 && (
             <span className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
-              <Clock className="h-3 w-3" aria-hidden="true" />
+              <Clock className="size-3" aria-hidden="true" />
               No pending items
             </span>
           )}
@@ -447,7 +447,7 @@ const PatientChronicleCard = ({
               className="font-mono text-[10px] sm:text-xs h-8"
               onClick={handleAddToMyPatients}
             >
-              <UserPlus className="h-3 w-3 mr-1" />
+              <UserPlus className="size-3 mr-1" />
               Add to List
             </Button>
           )}
@@ -464,9 +464,9 @@ const PatientChronicleCard = ({
                   onClick={handleTogglePin}
                 >
                   {isPinned ? (
-                    <StarOff className="h-3 w-3" />
+                    <StarOff className="size-3" />
                   ) : (
-                    <Star className="h-3 w-3" />
+                    <Star className="size-3" />
                   )}
                 </Button>
               )}
@@ -477,7 +477,7 @@ const PatientChronicleCard = ({
                   className="font-mono text-[10px] sm:text-xs h-8 text-destructive hover:text-destructive"
                   onClick={handleRemoveFromMyPatients}
                 >
-                  <UserMinus className="h-3 w-3" />
+                  <UserMinus className="size-3" />
                 </Button>
               )}
             </>
@@ -497,7 +497,7 @@ const PatientChronicleCard = ({
               onClick={handleStartRound}
             >
               Start Round
-              <ChevronRight className="h-3 w-3 ml-1" />
+              <ChevronRight className="size-3 ml-1" />
             </Button>
           )}
           {onStartConsultation && !isAdmitted && (
@@ -507,12 +507,12 @@ const PatientChronicleCard = ({
               onClick={handleStartConsultation}
             >
               Consult
-              <ChevronRight className="h-3 w-3 ml-1" />
+              <ChevronRight className="size-3 ml-1" />
             </Button>
           )}
         </div>
       </footer>
-    </article>
+    </div>
   );
 };
 

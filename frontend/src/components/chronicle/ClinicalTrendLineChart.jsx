@@ -13,6 +13,8 @@ import {
   YAxis,
 } from 'recharts';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 function deriveXDomain(data) {
   if (!data?.length) {
     return ['auto', 'auto'];
@@ -65,11 +67,11 @@ function deriveYDomain(data, series, normalRange) {
 const DENSE_THRESHOLD = 15;
 
 export default function ClinicalTrendLineChart({
-  data = [],
-  series = [],
+  data = DEFAULT_EMPTY_ARRAY,
+  series = DEFAULT_EMPTY_ARRAY,
   unit = '',
   normalRange = null,
-  referenceLines = [],
+  referenceLines = DEFAULT_EMPTY_ARRAY,
   height = 220,
   xAxisLabel = 'Recorded time',
   yAxisLabel = null,

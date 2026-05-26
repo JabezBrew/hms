@@ -113,7 +113,7 @@ export function WardFilterBar({ filters, onFilterChange }) {
                 variant="secondary"
                 className="rounded-l-none"
               >
-                <Search className="h-4 w-4" />
+                <Search className="size-4" />
               </Button>
             </div>
           </div>
@@ -125,7 +125,7 @@ export function WardFilterBar({ filters, onFilterChange }) {
               className="w-full"
               onClick={clearFilters}
             >
-              <X className="h-4 w-4 mr-2" />
+              <X className="size-4 mr-2" />
               Clear Filters
             </Button>
           </div>

@@ -3,6 +3,8 @@ import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Info from 'lucide-react/dist/esm/icons/info.js';
 import React from 'react';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { cn } from '@/lib/utils';
 
 /**
@@ -16,7 +18,7 @@ import { cn } from '@/lib/utils';
  * @param {ReactNode} props.actions - Optional action buttons
  */
 export default function UrgentBanner({
-  items = [],
+  items = DEFAULT_EMPTY_ARRAY,
   severity = 'critical',
   onItemClick,
   title = 'Urgent Items',
@@ -65,7 +67,7 @@ export default function UrgentBanner({
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Icon className={cn('h-5 w-5 sm:h-6 sm:w-6', config.textClass)} />
+          <Icon className={cn('size-5 sm:h-6 sm:w-6', config.textClass)} />
           <div>
             <h2 className={cn('font-heading text-base sm:text-lg font-semibold', config.textClass)}>
               {title}

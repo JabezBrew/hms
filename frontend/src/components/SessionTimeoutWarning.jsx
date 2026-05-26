@@ -30,8 +30,9 @@ export function SessionTimeoutWarning() {
   const ABSOLUTE_SESSION_TIMEOUT = 8 * 60 * 60 * 1000; // 8 hours
 
   // Activity tracking
-  const [lastActivity, setLastActivity] = useState(Date.now());
+  const lastActivityRef = useRef(Date.now());
   const lastActivityUpdateRef = useRef(Date.now());
+  const updateActivityRef = useRef(null);
   const timeoutHandledRef = useRef(false);
 
   // Get session start time from local storage
@@ -48,9 +49,10 @@ export function SessionTimeoutWarning() {
       return;
     }
     lastActivityUpdateRef.current = now;
-    setLastActivity(now);
+    lastActivityRef.current = now;
     setShowWarning(false);
   }, [showWarning]);
+  updateActivityRef.current = updateActivity;
 
   // Handle user extending session
   const handleExtendSession = useCallback(() => {
@@ -77,19 +79,20 @@ export function SessionTimeoutWarning() {
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     // Events that benefit from passive listeners for better scroll performance
     const passiveEvents = ['scroll', 'touchstart', 'wheel'];
+    const handleActivity = () => updateActivityRef.current?.();
 
     events.forEach((event) => {
       const options = passiveEvents.includes(event) ? { passive: true } : undefined;
-      window.addEventListener(event, updateActivity, options);
+      window.addEventListener(event, handleActivity, options);
     });
 
     return () => {
       events.forEach((event) => {
         const options = passiveEvents.includes(event) ? { passive: true } : undefined;
-        window.removeEventListener(event, updateActivity, options);
+        window.removeEventListener(event, handleActivity, options);
       });
     };
-  }, [isAuthenticated, updateActivity]);
+  }, [isAuthenticated]);
 
   // Check for timeout
   useEffect(() => {
@@ -97,7 +100,7 @@ export function SessionTimeoutWarning() {
 
     const evaluateTimeout = () => {
       const now = Date.now();
-      const timeSinceActivity = now - lastActivity;
+      const timeSinceActivity = now - lastActivityRef.current;
       const sessionStartTime = getSessionStartTime();
       const totalSessionTime = now - sessionStartTime;
 
@@ -146,7 +149,7 @@ export function SessionTimeoutWarning() {
     const checkTimeout = setInterval(evaluateTimeout, showWarning ? 1000 : 30000);
 
     return () => clearInterval(checkTimeout);
-  }, [isAuthenticated, lastActivity, handleTimeout, showWarning, timeoutType, isSessionValid, INACTIVITY_TIMEOUT, ABSOLUTE_SESSION_TIMEOUT, WARNING_TIME]);
+  }, [isAuthenticated, handleTimeout, showWarning, timeoutType, isSessionValid, INACTIVITY_TIMEOUT, ABSOLUTE_SESSION_TIMEOUT, WARNING_TIME]);
 
   // Update countdown timer
   useEffect(() => {
@@ -156,7 +159,7 @@ export function SessionTimeoutWarning() {
       const now = Date.now();
       const sessionStartTime = getSessionStartTime();
       const totalSessionTime = now - sessionStartTime;
-      const timeSinceActivity = now - lastActivity;
+      const timeSinceActivity = now - lastActivityRef.current;
 
       let remaining;
       if (timeoutType === 'absolute') {
@@ -173,7 +176,7 @@ export function SessionTimeoutWarning() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [showWarning, lastActivity, timeoutType, handleTimeout, INACTIVITY_TIMEOUT, ABSOLUTE_SESSION_TIMEOUT]);
+  }, [showWarning, timeoutType, handleTimeout, INACTIVITY_TIMEOUT, ABSOLUTE_SESSION_TIMEOUT]);
 
   if (!isAuthenticated) return null;
 
@@ -201,8 +204,8 @@ export function SessionTimeoutWarning() {
     <AlertDialog open={showWarning} onOpenChange={setShowWarning}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900">
-            <Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900">
+            <Clock className="size-6 text-amber-600 dark:text-amber-400" />
           </div>
           <AlertDialogTitle className="text-center">
             {warningMessage.title}

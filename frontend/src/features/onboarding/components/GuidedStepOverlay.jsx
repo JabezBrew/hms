@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
@@ -8,6 +8,10 @@ const VIEWPORT_PADDING_PX = 12
 const HIGHLIGHT_PADDING_PX = 6
 
 const PLACEMENTS = ['top', 'right', 'bottom', 'left']
+
+const subscribeToClientReady = () => () => {}
+const getClientReadySnapshot = () => typeof window !== 'undefined' && typeof document !== 'undefined'
+const getServerClientReadySnapshot = () => false
 
 function normalizePlacement(value) {
   if (typeof value === 'string') {
@@ -122,7 +126,11 @@ export default function GuidedStepOverlay({
   currentStepNumber,
   totalSteps,
 }) {
-  const [isClient, setIsClient] = useState(false)
+  const isClient = useSyncExternalStore(
+    subscribeToClientReady,
+    getClientReadySnapshot,
+    getServerClientReadySnapshot
+  )
   const [targetRect, setTargetRect] = useState(null)
   const [tooltipSize, setTooltipSize] = useState(DEFAULT_TOOLTIP_SIZE)
 
@@ -134,10 +142,6 @@ export default function GuidedStepOverlay({
   const stepUi = currentStep?.ui
   const selector = typeof stepUi?.target === 'string' ? stepUi.target : null
   const preferredPlacement = normalizePlacement(stepUi?.placement)
-
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
 
   useLayoutEffect(() => {
     if (!isClient || !tooltipRef.current) {
@@ -389,7 +393,7 @@ export default function GuidedStepOverlay({
         {showArrow && (
           <span
             className={cn(
-              'absolute h-3.5 w-3.5 rotate-45 border border-amber-500/40 bg-card/95',
+              'absolute size-3.5 rotate-45 border border-amber-500/40 bg-card/95',
               arrowClassForPlacement(layout.resolvedPlacement)
             )}
           />

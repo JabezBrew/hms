@@ -21,6 +21,12 @@ import { useCreateInvoice, useServices } from '@/features/billing/hooks';
 import { toast } from 'sonner';
 import PatientSelector from '@/components/patients/PatientSelector';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 /**
  * InvoiceFormSlideOver - Slide-over panel for creating invoices
  */
@@ -200,7 +206,7 @@ export default function InvoiceFormSlideOver({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-primary/10">
-            <FileText className="h-5 w-5 text-primary" />
+            <FileText className="size-5 text-primary" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">Create Invoice</h2>
@@ -210,12 +216,12 @@ export default function InvoiceFormSlideOver({
           </div>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </Button>
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto p-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Patient Selection */}
           <div className="space-y-2">
@@ -277,7 +283,7 @@ export default function InvoiceFormSlideOver({
                 onClick={addItem}
                 className="font-mono text-xs"
               >
-                <Plus className="h-3 w-3 mr-1" />
+                <Plus className="size-3 mr-1" />
                 Add Item
               </Button>
             </div>
@@ -295,9 +301,9 @@ export default function InvoiceFormSlideOver({
                         variant="ghost"
                         size="sm"
                         onClick={() => removeItem(index)}
-                        className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                        className="size-6 p-0 text-destructive hover:text-destructive"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="size-3" />
                       </Button>
                     )}
                   </div>
@@ -404,12 +410,12 @@ export default function InvoiceFormSlideOver({
         >
           {createInvoiceMutation.isPending ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Creating...
+              <Loader2 className="size-4 mr-2 animate-spin" />
+              Creating…
             </>
           ) : (
             <>
-              <FileText className="h-4 w-4 mr-2" />
+              <FileText className="size-4 mr-2" />
               Create Invoice
             </>
           )}
@@ -420,9 +426,5 @@ export default function InvoiceFormSlideOver({
 }
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }

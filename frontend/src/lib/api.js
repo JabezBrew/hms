@@ -2,7 +2,9 @@
  * API wrapper for the frontend
  * Provides simplified access to the API services
  */
-import { appointmentsApi, patientsApi, wardsApi } from './api/index';
+import { appointmentsApi } from './api/appointments';
+import { patientsApi } from './api/patients';
+import { wardsApi } from './api/wards';
 import { staffApi } from './api/staff';
 import { admissionsApi } from './api/admissions';
 import { encountersApi } from './api/encounters';

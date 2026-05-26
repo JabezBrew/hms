@@ -31,6 +31,11 @@ import {
   useResetLabPanelToDefaults,
 } from "@/features/laboratory/hooks";
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
 /**
  * LabTestCustomizeSlideOver - Chronicle-styled slide-over for customizing lab tests
  *
@@ -312,10 +317,7 @@ const LabTestCustomizeSlideOver = ({
   // Format price for display
   const formatPrice = (price) => {
     if (!price && price !== 0) return "Not set";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(price);
+    return USD_CURRENCY_FORMATTER.format(price);
   };
 
   if (!item) return null;
@@ -342,7 +344,7 @@ const LabTestCustomizeSlideOver = ({
           >
             <TestTube2
               className={cn(
-                "h-5 w-5",
+                "size-5",
                 isPanel
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-sky-600 dark:text-sky-400"
@@ -365,7 +367,7 @@ const LabTestCustomizeSlideOver = ({
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -376,7 +378,7 @@ const LabTestCustomizeSlideOver = ({
           {/* System vs Modified indicator */}
           {item.is_system_default && (
             <Alert className="bg-muted/50 border-border">
-              <Info className="h-4 w-4" />
+              <Info className="size-4" />
               <AlertDescription className="text-sm">
                 This is a system {isPanel ? "panel" : "test"}.{" "}
                 {item.is_facility_modified
@@ -389,7 +391,7 @@ const LabTestCustomizeSlideOver = ({
           {/* Price */}
           <div className="space-y-2">
             <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-3.5 w-3.5 text-sky-600" />
+              <DollarSign className="size-3.5 text-sky-600" />
               Price
             </Label>
             <Input
@@ -415,7 +417,7 @@ const LabTestCustomizeSlideOver = ({
           {!isPanel && (
             <div className="space-y-2">
               <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Clock className="h-3.5 w-3.5 text-sky-600" />
+                <Clock className="size-3.5 text-sky-600" />
                 Turnaround Time (hours)
               </Label>
               <Input
@@ -487,14 +489,14 @@ pediatric: 3.8-5.2 M/uL`}
                   <div className="flex items-center gap-2 mb-2">
                     {parsedPreview.valid ? (
                       <>
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
+                        <Check className="size-3.5 text-emerald-600" />
                         <span className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
                           Parsed successfully
                         </span>
                       </>
                     ) : (
                       <>
-                        <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                        <AlertCircle className="size-3.5 text-amber-600" />
                         <span className="font-mono text-xs text-amber-700 dark:text-amber-400">
                           {parsedPreview.errors.length} error(s)
                         </span>
@@ -619,9 +621,9 @@ pediatric: 3.8-5.2 M/uL`}
                 className="font-mono text-xs"
               >
                 {resetMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
                 ) : (
-                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                  <RotateCcw className="size-3.5 mr-1.5" />
                 )}
                 Reset to Defaults
               </Button>
@@ -645,12 +647,12 @@ pediatric: 3.8-5.2 M/uL`}
             >
               {customizeMutation.isPending ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  Saving...
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  Saving…
                 </>
               ) : (
                 <>
-                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  <Check className="size-3.5 mr-1.5" />
                   Save Changes
                 </>
               )}

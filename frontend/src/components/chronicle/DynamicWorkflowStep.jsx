@@ -14,10 +14,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+const DEFAULT_EMPTY_OBJECT = {};
+
 /**
  * VitalsInput - Grid of vital signs inputs
  */
-const VitalsInput = ({ value = {}, onChange }) => {
+const VitalsInput = ({ value = DEFAULT_EMPTY_OBJECT, onChange }) => {
   const handleChange = (field, val) => {
     onChange({ ...value, [field]: val });
   };
@@ -38,7 +40,7 @@ const VitalsInput = ({ value = {}, onChange }) => {
         return (
           <div key={vital.key} className="space-y-1.5">
             <Label className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="size-3.5" />
               {vital.label}
             </Label>
             <div className="relative">
@@ -64,7 +66,7 @@ const VitalsInput = ({ value = {}, onChange }) => {
 /**
  * SubsectionInput - Renders subsections as individual text areas
  */
-const SubsectionInput = ({ subsections, value = {}, onChange }) => {
+const SubsectionInput = ({ subsections, value = DEFAULT_EMPTY_OBJECT, onChange }) => {
   const handleChange = (key, val) => {
     onChange({ ...value, [key]: val });
   };
@@ -129,13 +131,13 @@ const DynamicWorkflowStep = ({
   const getSectionIcon = () => {
     switch (stepConfig.type) {
       case 'observation':
-        return <Activity className="h-5 w-5" />;
+        return <Activity className="size-5" />;
       case 'condition':
-        return <Stethoscope className="h-5 w-5" />;
+        return <Stethoscope className="size-5" />;
       case 'medication_administration':
-        return <Pill className="h-5 w-5" />;
+        return <Pill className="size-5" />;
       default:
-        return <FileText className="h-5 w-5" />;
+        return <FileText className="size-5" />;
     }
   };
 
@@ -284,7 +286,7 @@ const DynamicWorkflowStep = ({
     <div className="space-y-6">
       {/* Step Header */}
       <div className="flex items-start gap-4">
-        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+        <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
           {getSectionIcon()}
         </div>
         <div className="flex-1">
@@ -298,7 +300,7 @@ const DynamicWorkflowStep = ({
           )}
           {stepConfig.required && (
             <span className="inline-flex items-center gap-1 font-mono text-[10px] text-amber-600 dark:text-amber-400 mt-2">
-              <AlertCircle className="h-3 w-3" />
+              <AlertCircle className="size-3" />
               Required
             </span>
           )}

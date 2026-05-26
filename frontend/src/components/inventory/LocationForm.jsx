@@ -320,9 +320,9 @@ export function LocationForm({ location, onSuccess, onCancel }) {
           </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
             ) : (
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="size-4 mr-2" />
             )}
             {isEditing ? 'Update Location' : 'Create Location'}
           </Button>

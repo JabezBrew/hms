@@ -235,7 +235,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-amber-100 text-amber-700">
-            <Shield className="h-5 w-5" />
+            <Shield className="size-5" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">Cross-Facility Share</h2>
@@ -245,7 +245,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </Button>
       </header>
 
@@ -289,7 +289,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
                   !isActive && !isDone && "border-border text-muted-foreground"
                 )}
               >
-                <StepIcon className="h-3.5 w-3.5" />
+                <StepIcon className="size-3.5" />
                 {step.title}
               </div>
             );
@@ -302,7 +302,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
               Target Facility Code
             </Label>
             <div className="relative">
-              <Building2 className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
               <Input
                 value={targetFacilityCode}
                 onChange={(event) => setTargetFacilityCode(event.target.value.toUpperCase())}
@@ -364,7 +364,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
               {issuedToken && (
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={handleCopyToken} className="font-mono text-xs">
-                    <ClipboardCopy className="h-3.5 w-3.5 mr-2" />
+                    <ClipboardCopy className="size-3.5 mr-2" />
                     Copy Token
                   </Button>
                   <Button
@@ -409,7 +409,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
                       onClick={handleCopyExportId}
                       className="font-mono text-xs"
                     >
-                      <ClipboardCopy className="h-3.5 w-3.5 mr-2" />
+                      <ClipboardCopy className="size-3.5 mr-2" />
                       Copy Export ID
                     </Button>
                   </div>

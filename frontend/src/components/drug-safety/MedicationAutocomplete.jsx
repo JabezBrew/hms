@@ -72,7 +72,7 @@ export function MedicationAutocomplete({
           disabled={disabled}
         >
           {value || placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[500px] p-0 z-[200]" align="start">
@@ -86,9 +86,9 @@ export function MedicationAutocomplete({
           <CommandList id={listboxId} className="max-h-[300px]">
             {showLoading && (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
+                <Loader2 className="size-5 animate-spin text-sky-600" />
                 <span className="ml-3 font-mono text-sm text-muted-foreground">
-                  Searching RxNorm database...
+                  Searching RxNorm database…
                 </span>
               </div>
             )}
@@ -119,11 +119,11 @@ export function MedicationAutocomplete({
                     key={drug.rxcui}
                     value={drug.name}
                     onSelect={() => handleSelect(drug)}
-                    className="cursor-pointer px-3 py-3 rounded-md hover:bg-sky-50 dark:hover:bg-sky-900/20 mb-1"
+                    className="cursor-pointer p-3 rounded-md hover:bg-sky-50 dark:hover:bg-sky-900/20 mb-1"
                   >
                     <div className="flex items-start gap-3 w-full">
                       <div className="p-1.5 rounded-md bg-sky-100 dark:bg-sky-900/30 mt-0.5">
-                        <Pill className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+                        <Pill className="size-3.5 text-sky-600 dark:text-sky-400" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-mono text-sm font-medium text-foreground">
@@ -137,7 +137,7 @@ export function MedicationAutocomplete({
                       </div>
                       <Check
                         className={cn(
-                          'h-4 w-4 text-sky-600 flex-shrink-0 mt-1',
+                          'size-4 text-sky-600 flex-shrink-0 mt-1',
                           value === drug.name ? 'opacity-100' : 'opacity-0'
                         )}
                       />

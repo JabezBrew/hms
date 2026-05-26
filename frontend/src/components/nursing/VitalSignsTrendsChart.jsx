@@ -9,7 +9,9 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-export default function VitalSignsTrendsChart({ data = [] }) {
+const DEFAULT_EMPTY_ARRAY = [];
+
+export default function VitalSignsTrendsChart({ data = DEFAULT_EMPTY_ARRAY }) {
   return (
     <div className="space-y-8">
       <div>

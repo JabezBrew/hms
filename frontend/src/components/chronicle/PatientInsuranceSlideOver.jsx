@@ -134,7 +134,7 @@ export default function PatientInsuranceSlideOver({
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
-              <Shield className="h-5 w-5 text-[oklch(0.70_0.15_230)]" />
+              <Shield className="size-5 text-[oklch(0.70_0.15_230)]" />
             </div>
             <div>
               <h2 className="font-display text-xl text-foreground">Insurance</h2>
@@ -149,12 +149,12 @@ export default function PatientInsuranceSlideOver({
             onClick={onClose}
             className="font-mono text-xs"
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         </header>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="flex-1 overflow-y-auto p-6">
           {isLoading ? (
             <div className="space-y-4">
               {[...Array(2)].map((_, i) => (
@@ -163,19 +163,19 @@ export default function PatientInsuranceSlideOver({
             </div>
           ) : error ? (
             <div className="text-center py-8">
-              <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
+              <AlertTriangle className="size-10 text-destructive mx-auto mb-3" />
               <p className="text-muted-foreground">Failed to load insurance</p>
             </div>
           ) : insurances.length === 0 ? (
             <div className="text-center py-12">
-              <Shield className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+              <Shield className="size-12 text-muted-foreground/30 mx-auto mb-4" />
               <h3 className="font-display text-lg text-foreground mb-2">No Insurance</h3>
               <p className="text-muted-foreground text-sm mb-6">
                 This patient has no insurance on file
               </p>
               {canManageInsurance ? (
                 <Button onClick={handleAddInsurance} className="font-mono text-xs">
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className="size-4 mr-2" />
                   Add Insurance
                 </Button>
               ) : (
@@ -201,9 +201,9 @@ export default function PatientInsuranceSlideOver({
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2">
                         {isValid ? (
-                          <CheckCircle className="h-4 w-4 text-[oklch(0.70_0.17_155)]" />
+                          <CheckCircle className="size-4 text-[oklch(0.70_0.17_155)]" />
                         ) : (
-                          <XCircle className="h-4 w-4 text-muted-foreground" />
+                          <XCircle className="size-4 text-muted-foreground" />
                         )}
                         <span
                           className={cn(
@@ -222,17 +222,17 @@ export default function PatientInsuranceSlideOver({
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEditInsurance(insurance)}
-                            className="h-8 w-8 p-0"
+                            className="size-8 p-0"
                           >
-                            <Edit className="h-3.5 w-3.5" />
+                            <Edit className="size-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleDeleteClick(insurance)}
-                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                            className="size-8 p-0 text-destructive hover:text-destructive"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="size-3.5" />
                           </Button>
                         </div>
                       )}
@@ -245,7 +245,7 @@ export default function PatientInsuranceSlideOver({
 
                     {/* Provider */}
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
-                      <Building className="h-3.5 w-3.5" />
+                      <Building className="size-3.5" />
                       {insurance.provider_name || 'Unknown Provider'}
                     </div>
 
@@ -269,7 +269,7 @@ export default function PatientInsuranceSlideOver({
 
                     {/* Validity Period */}
                     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
-                      <Calendar className="h-3 w-3" />
+                      <Calendar className="size-3" />
                       <span>
                         {formatDate(insurance.valid_from)}
                         {insurance.valid_until
@@ -292,7 +292,7 @@ export default function PatientInsuranceSlideOver({
               variant="outline"
               className="w-full font-mono text-xs"
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Add Another Insurance
             </Button>
           </footer>

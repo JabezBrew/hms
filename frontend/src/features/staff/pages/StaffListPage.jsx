@@ -291,7 +291,7 @@ const StaffListPage = () => {
         description={headerDescription}
         actions={(
           <Button onClick={handleAddStaff} size="sm" className="font-mono text-xs w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             Add Staff Member
           </Button>
         )}
@@ -302,7 +302,7 @@ const StaffListPage = () => {
         <div className="flex flex-col gap-3">
           {/* Search - Full Width */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder="Search by name, email, department, or employee ID..."
               value={searchQuery}
@@ -316,7 +316,7 @@ const StaffListPage = () => {
             {/* Role Filter */}
             <Select value={selectedRole} onValueChange={setSelectedRole}>
               <SelectTrigger className="w-full sm:w-[160px] font-mono text-xs h-9">
-                <Filter className="h-3.5 w-3.5 mr-2" />
+                <Filter className="size-3.5 mr-2" />
                 <SelectValue placeholder="All Roles" />
               </SelectTrigger>
               <SelectContent>
@@ -349,14 +349,15 @@ const StaffListPage = () => {
               variant="ghost"
               size="icon"
               onClick={() => refetch()}
-              className="shrink-0 h-9 w-9"
+              className="shrink-0 size-9"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="size-4" />
             </Button>
 
-            <label className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 font-mono text-xs text-muted-foreground">
-              <Switch
-                checked={includeInactive}
+	            <label htmlFor="staff-list-include-inactive" className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 font-mono text-xs text-muted-foreground">
+	              <Switch
+	                id="staff-list-include-inactive"
+	                checked={includeInactive}
                 onCheckedChange={setIncludeInactive}
                 aria-label="Show inactive staff"
               />
@@ -371,7 +372,7 @@ const StaffListPage = () => {
                 onClick={handleClearFilters}
                 className="font-mono text-xs h-9"
               >
-                <X className="h-4 w-4 mr-1" />
+                <X className="size-4 mr-1" />
                 Clear
               </Button>
             )}
@@ -426,8 +427,8 @@ const LoadingSkeleton = () => {
 const EmptyState = ({ hasFilters, onClear }) => {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-        <Users className="h-8 w-8 text-muted-foreground" />
+      <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+        <Users className="size-8 text-muted-foreground" />
       </div>
       <h3 className="font-display text-xl text-foreground mb-2">
         {hasFilters ? 'No matching staff' : 'No staff members'}
@@ -439,7 +440,7 @@ const EmptyState = ({ hasFilters, onClear }) => {
       </p>
       {hasFilters && (
         <Button variant="outline" size="sm" onClick={onClear}>
-          <X className="h-4 w-4 mr-2" />
+          <X className="size-4 mr-2" />
           Clear Filters
         </Button>
       )}

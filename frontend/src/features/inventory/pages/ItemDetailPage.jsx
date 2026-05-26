@@ -46,22 +46,26 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+});
+
+const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
 /**
  * Format currency
  */
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return USD_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 /**
  * Format number
  */
 function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value || 0);
+  return US_NUMBER_FORMATTER.format(value || 0);
 }
 
 /**
@@ -107,7 +111,7 @@ function OverviewTab({ item, isLoading }) {
       <Card className="bg-card/30 border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Package className="h-5 w-5 text-sky-500" />
+            <Package className="size-5 text-sky-500" />
             Basic Information
           </CardTitle>
         </CardHeader>
@@ -143,7 +147,7 @@ function OverviewTab({ item, isLoading }) {
       <Card className="bg-card/30 border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <DollarSign className="h-5 w-5 text-emerald-500" />
+            <DollarSign className="size-5 text-emerald-500" />
             Pricing & Reorder
           </CardTitle>
         </CardHeader>
@@ -180,7 +184,7 @@ function OverviewTab({ item, isLoading }) {
         <Card className="bg-card/30 border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-5 w-5 text-amber-500" />
+              <Building2 className="size-5 text-amber-500" />
               Supplier
             </CardTitle>
           </CardHeader>
@@ -209,7 +213,7 @@ function OverviewTab({ item, isLoading }) {
       <Card className="bg-card/30 border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Clock className="h-5 w-5 text-muted-foreground" />
+            <Clock className="size-5 text-muted-foreground" />
             Activity
           </CardTitle>
         </CardHeader>
@@ -263,7 +267,7 @@ function StockByLocationTab({ itemId }) {
   if (!locations.length) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <MapPin className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <MapPin className="size-10 text-muted-foreground/50 mb-3" />
         <p className="text-sm text-muted-foreground">
           No stock at any location
         </p>
@@ -295,7 +299,7 @@ function StockByLocationTab({ itemId }) {
             <tr key={loc.id || loc.location_id} className="hover:bg-muted/30 transition-colors">
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <MapPin className="size-4 text-muted-foreground" />
                   <span className="text-sm">{loc.location_name || loc.name}</span>
                   {loc.location_type && (
                     <Badge variant="outline" className="text-xs">
@@ -330,7 +334,7 @@ function BatchesTab({ itemId }) {
   const batches = batchesData?.results || batchesData || [];
 
   // Sort by expiry date (FEFO)
-  const sortedBatches = [...batches].sort((a, b) => {
+  const sortedBatches = batches.toSorted((a, b) => {
     const dateA = a.expiry_date ? parseISO(a.expiry_date) : new Date('9999-12-31');
     const dateB = b.expiry_date ? parseISO(b.expiry_date) : new Date('9999-12-31');
     return dateA - dateB;
@@ -349,7 +353,7 @@ function BatchesTab({ itemId }) {
   if (!batches.length) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <Boxes className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <Boxes className="size-10 text-muted-foreground/50 mb-3" />
         <p className="text-sm text-muted-foreground">
           No batches tracked
         </p>
@@ -454,13 +458,13 @@ function OrdersTab({ itemId, navigate }) {
       <Card className="bg-card/30 border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <FileText className="h-5 w-5 text-amber-500" />
+            <FileText className="size-5 text-amber-500" />
             Purchase Orders
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <FileText className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <FileText className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground mb-3">
               No recent purchase orders for this item
             </p>
@@ -469,7 +473,7 @@ function OrdersTab({ itemId, navigate }) {
               size="sm"
               onClick={() => navigate(`/inventory/requisitions?action=create&items=${itemId}`)}
             >
-              <ShoppingCart className="h-4 w-4 mr-2" />
+              <ShoppingCart className="size-4 mr-2" />
               Create Requisition
             </Button>
           </div>
@@ -517,7 +521,7 @@ export default function ItemDetailPage() {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10" />
+          <Skeleton className="size-10" />
           <div>
             <Skeleton className="h-8 w-64" />
             <Skeleton className="h-5 w-48 mt-2" />
@@ -542,11 +546,11 @@ export default function ItemDetailPage() {
         action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="size-4 mr-2" />
               Back to Items
             </Button>
             <Button onClick={() => refetch()} className="font-mono text-xs">
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Retry
             </Button>
           </div>
@@ -564,7 +568,7 @@ export default function ItemDetailPage() {
         description="The requested item does not exist or has been deleted."
         action={(
           <Button variant="outline" onClick={handleBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Items
           </Button>
         )}
@@ -586,12 +590,12 @@ export default function ItemDetailPage() {
         description={(
           <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Tag className="h-4 w-4" />
+              <Tag className="size-4" />
               <span className="font-mono text-sm">{item.sku || 'No SKU'}</span>
             </span>
             {item.category_name && (
               <span className="flex items-center gap-1.5">
-                <Package className="h-4 w-4" />
+                <Package className="size-4" />
                 <span className="text-sm">{item.category_name}</span>
               </span>
             )}
@@ -610,24 +614,24 @@ export default function ItemDetailPage() {
             />
             {itemMutationAvailable && (
               <Button variant="outline" onClick={handleEdit}>
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="size-4 mr-2" />
                 Edit
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleCreateRequisition}>
-                  <ShoppingCart className="h-4 w-4 mr-2" />
+                  <ShoppingCart className="size-4 mr-2" />
                   Create Requisition
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => refetch()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="size-4 mr-2" />
                   Refresh
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -641,7 +645,7 @@ export default function ItemDetailPage() {
           className="w-fit -ml-2"
           onClick={handleBack}
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to Items
         </Button>
       </PageHeader>
@@ -696,23 +700,23 @@ export default function ItemDetailPage() {
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="overview" className="font-mono text-xs">
-            <Package className="h-4 w-4 mr-2" />
+            <Package className="size-4 mr-2" />
             Overview
           </TabsTrigger>
           <TabsTrigger value="locations" className="font-mono text-xs">
-            <MapPin className="h-4 w-4 mr-2" />
+            <MapPin className="size-4 mr-2" />
             Stock by Location
           </TabsTrigger>
           <TabsTrigger value="batches" className="font-mono text-xs">
-            <Boxes className="h-4 w-4 mr-2" />
+            <Boxes className="size-4 mr-2" />
             Batches
           </TabsTrigger>
           <TabsTrigger value="movements" className="font-mono text-xs">
-            <Activity className="h-4 w-4 mr-2" />
+            <Activity className="size-4 mr-2" />
             Movements
           </TabsTrigger>
           <TabsTrigger value="orders" className="font-mono text-xs">
-            <ShoppingCart className="h-4 w-4 mr-2" />
+            <ShoppingCart className="size-4 mr-2" />
             Orders
           </TabsTrigger>
         </TabsList>

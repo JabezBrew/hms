@@ -592,7 +592,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <Users className="size-4 text-muted-foreground" />
                   <span className="font-heading font-medium">Team Clinic</span>
                   <Badge variant="outline" className="ml-auto text-[10px] font-mono">Pool</Badge>
                 </div>
@@ -610,7 +610,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                 )}
               >
 	                <div className="flex items-center gap-2">
-	                  <UserRound className="h-4 w-4 text-muted-foreground" />
+	                  <UserRound className="size-4 text-muted-foreground" />
 	                  <span className="font-heading font-medium">Practitioner Clinic</span>
 	                  <Badge variant="outline" className="ml-auto text-[10px] font-mono">Direct</Badge>
 	                </div>
@@ -852,7 +852,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
 
                   <div className="rounded-lg border border-border bg-card/50 p-3">
                     <div className="flex items-center gap-2 text-sm">
-                      <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                      <CalendarClock className="size-4 text-muted-foreground" />
                       <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Result</span>
                       <span className="ml-auto font-mono text-xs text-muted-foreground">
                         {DAYS.find((d) => d.value === Number(template.day_of_week))?.label} {template.start_time}-{template.end_time}
@@ -903,7 +903,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                         return (
                           <div key={id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
                             <div className="flex items-center gap-2">
-                              <Users className="h-4 w-4 text-muted-foreground" />
+                              <Users className="size-4 text-muted-foreground" />
                               <span className="text-sm">{team?.name || id}</span>
                               <Badge variant="outline" className="text-[10px] font-mono">#{idx + 1}</Badge>
                             </div>
@@ -970,7 +970,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                       {practitionerSequence.map((p, idx) => (
                         <div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
                           <div className="flex items-center gap-2">
-                            <UserRound className="h-4 w-4 text-muted-foreground" />
+                            <UserRound className="size-4 text-muted-foreground" />
                             <span className="text-sm">{p.name}</span>
                             <Badge variant="outline" className="text-[10px] font-mono">#{idx + 1}</Badge>
                           </div>

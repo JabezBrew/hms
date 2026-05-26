@@ -84,7 +84,7 @@ const LabOrderCard = ({
         {/* Header row: Order number + Status */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
-            <TestTube2 className="h-4 w-4 text-sky-500" />
+            <TestTube2 className="size-4 text-sky-500" />
             <span className="font-mono text-xs text-muted-foreground">
               {order.order_number}
             </span>
@@ -122,7 +122,7 @@ const LabOrderCard = ({
         {/* Tests count and critical indicator */}
         <div className="flex items-center gap-3 mb-3 text-sm text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <TestTube2 className="h-3.5 w-3.5" />
+            <TestTube2 className="size-3.5" />
             <span className="font-mono text-xs">
               {order.test_count || 0} test{order.test_count !== 1 ? "s" : ""}
             </span>
@@ -130,7 +130,7 @@ const LabOrderCard = ({
 
           {order.has_critical_results && (
             <div className="flex items-center gap-1 text-rose-600">
-              <AlertTriangle className="h-3.5 w-3.5" />
+              <AlertTriangle className="size-3.5" />
               <span className="text-xs font-medium">Critical</span>
             </div>
           )}
@@ -145,14 +145,14 @@ const LabOrderCard = ({
         {/* Footer: Provider and date */}
         <div className="flex items-center justify-between pt-2 border-t border-border/30">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <User className="h-3 w-3" />
+            <User className="size-3" />
             <span className="truncate max-w-[120px]">
               {order.ordering_provider_name || "Unknown"}
             </span>
           </div>
 
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Calendar className="h-3 w-3" />
+            <Calendar className="size-3" />
             <span className="font-mono text-[10px]">
               {formatDate(order.ordered_at || order.created_at)}
             </span>
@@ -162,7 +162,7 @@ const LabOrderCard = ({
 
       {/* Hover chevron */}
       <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+        <ChevronRight className="size-5 text-muted-foreground" />
       </div>
     </div>
   );

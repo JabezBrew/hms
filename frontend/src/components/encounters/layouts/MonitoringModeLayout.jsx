@@ -100,11 +100,11 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
   const getTrendIcon = (trend) => {
     switch (trend) {
       case 'up':
-        return <TrendingUp className="h-4 w-4 text-green-500" />;
+        return <TrendingUp className="size-4 text-green-500" />;
       case 'down':
-        return <TrendingDown className="h-4 w-4 text-red-500" />;
+        return <TrendingDown className="size-4 text-red-500" />;
       default:
-        return <Minus className="h-4 w-4 text-muted-foreground" />;
+        return <Minus className="size-4 text-muted-foreground" />;
     }
   };
 
@@ -150,7 +150,7 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
         <CardContent className="py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <User className="h-8 w-8 text-primary" />
+              <User className="size-8 text-primary" />
               <div>
                 <h2 className="text-xl font-semibold">{encounter.patient_name || 'Unknown Patient'}</h2>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -180,7 +180,7 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className={`h-2 w-2 rounded-full ${getStatusColor(vital.status)}`} />
+                        <div className={`size-2 rounded-full ${getStatusColor(vital.status)}`} />
                         <CardTitle className="text-sm font-medium">{vital.name}</CardTitle>
                       </div>
                       {getTrendIcon(vital.trend)}
@@ -189,12 +189,12 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
                   <CardContent>
                     <div className="space-y-2">
                       <div className="flex items-baseline gap-2">
-                        <Icon className="h-6 w-6 text-muted-foreground" />
+                        <Icon className="size-6 text-muted-foreground" />
                         <span className="text-3xl font-bold">{vital.value}</span>
                         <span className="text-lg text-muted-foreground">{vital.unit}</span>
                       </div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
+                        <Clock className="size-3" />
                         <span>{vital.lastUpdated}</span>
                       </div>
                       {/* Mini trend */}
@@ -219,7 +219,7 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Pill className="h-5 w-5" />
+                <Pill className="size-5" />
                 Medication Schedule
               </CardTitle>
             </CardHeader>
@@ -244,7 +244,7 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
                     <div className="font-medium">Aspirin 75mg</div>
                     <div className="text-sm text-muted-foreground">Administered: 09:00</div>
                   </div>
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  <CheckCircle2 className="size-5 text-green-500" />
                 </div>
               </div>
             </CardContent>
@@ -257,7 +257,7 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
           <Card className="border-red-200 dark:border-red-900">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <Bell className="h-5 w-5 text-red-500" />
+                <Bell className="size-5 text-red-500" />
                 Active Alerts
                 <Badge variant="destructive" className="ml-auto">
                   {alerts.length}
@@ -288,7 +288,7 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <ClipboardList className="h-5 w-5" />
+                <ClipboardList className="size-5" />
                 Pending Tasks
               </CardTitle>
             </CardHeader>
@@ -321,15 +321,15 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
             </CardHeader>
             <CardContent className="space-y-2">
               <Button variant="outline" className="w-full justify-start" size="sm">
-                <Activity className="mr-2 h-4 w-4" />
+                <Activity className="mr-2 size-4" />
                 Record Vitals
               </Button>
               <Button variant="outline" className="w-full justify-start" size="sm">
-                <Pill className="mr-2 h-4 w-4" />
+                <Pill className="mr-2 size-4" />
                 Administer Medication
               </Button>
               <Button variant="outline" className="w-full justify-start" size="sm">
-                <AlertTriangle className="mr-2 h-4 w-4" />
+                <AlertTriangle className="mr-2 size-4" />
                 Report Issue
               </Button>
             </CardContent>

@@ -47,6 +47,12 @@ import {
   useReviewCashSession,
 } from '@/features/billing/hooks';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 export default function CashSessionsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -189,11 +195,11 @@ export default function CashSessionsPage() {
       render: (row) => (
         row.is_flagged ? (
           <span className="inline-flex items-center gap-1 font-mono text-xs px-2 py-1 rounded badge-chronicle-rose">
-            <Flag className="h-3 w-3" />
+            <Flag className="size-3" />
             Flagged
           </span>
         ) : (
-          <span className="font-mono text-xs text-muted-foreground/50">—</span>
+          <span className="font-mono text-xs text-muted-foreground/50">-</span>
         )
       ),
     },
@@ -247,7 +253,7 @@ export default function CashSessionsPage() {
         title={(
           <span className="flex items-center gap-3">
             <span className="p-3 rounded-xl bg-primary/10">
-              <Wallet className="h-6 w-6 text-primary" />
+              <Wallet className="size-6 text-primary" />
             </span>
             Cash Sessions
           </span>
@@ -272,7 +278,7 @@ export default function CashSessionsPage() {
               }}
               className="font-mono text-xs"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Refresh
             </Button>
           </div>
@@ -303,12 +309,12 @@ export default function CashSessionsPage() {
             </div>
             {currentSession ? (
               <span className="inline-flex items-center gap-2 font-mono text-xs px-2.5 py-1 rounded badge-chronicle-amber">
-                <AlertTriangle className="h-3.5 w-3.5" />
+                <AlertTriangle className="size-3.5" />
                 Open
               </span>
             ) : (
               <span className="inline-flex items-center gap-2 font-mono text-xs px-2.5 py-1 rounded bg-muted text-muted-foreground">
-                <CheckCircle className="h-3.5 w-3.5" />
+                <CheckCircle className="size-3.5" />
                 None
               </span>
             )}
@@ -379,8 +385,8 @@ export default function CashSessionsPage() {
               >
                 {openCashSessionMutation.isPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Opening...
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Opening…
                   </>
                 ) : (
                   'Open Session'
@@ -396,7 +402,7 @@ export default function CashSessionsPage() {
             <div className="space-y-2">
               <Label className="font-mono text-xs uppercase tracking-wider">Search</Label>
               <div className="relative">
-                <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -533,8 +539,8 @@ export default function CashSessionsPage() {
             >
               {closeCashSessionMutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Closing...
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  Closing…
                 </>
               ) : (
                 'Close'
@@ -596,8 +602,8 @@ export default function CashSessionsPage() {
               >
                 {reviewCashSessionMutation.isPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Saving...
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Saving…
                   </>
                 ) : (
                   'Save'
@@ -612,11 +618,7 @@ export default function CashSessionsPage() {
 }
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatDateTime(value) {

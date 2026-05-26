@@ -120,7 +120,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
   const selectedPatientName = selectedPatient ? getDisplayName(selectedPatient) : "";
 
   return (
-    <div className="flex flex-col space-y-2">
+    <div className="flex flex-col gap-y-2">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -133,7 +133,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
           >
             {selectedPatient ? (
               <div className="flex items-center">
-                <Avatar className="h-6 w-6 mr-2">
+                <Avatar className="size-6 mr-2">
                   <AvatarFallback>{getInitials(selectedPatient)}</AvatarFallback>
                 </Avatar>
                 <span>{selectedPatientName}</span>
@@ -141,7 +141,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
             ) : (
               <span className="text-muted-foreground">{placeholder}</span>
             )}
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent
@@ -161,7 +161,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
                 <CommandGroup>
                   {Array.from({ length: 3 }).map((_, index) => (
                     <div key={`skeleton-item-${index}`} className="flex items-center p-2">
-                      <Skeleton className="h-6 w-6 rounded-full mr-2" />
+                      <Skeleton className="size-6 rounded-full mr-2" />
                       <div className="flex flex-col flex-1">
                         <Skeleton className="h-4 w-32 mb-1" />
                         <Skeleton className="h-3 w-20" />
@@ -194,7 +194,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
                         onSelect={() => handleSelectPatient(patient)}
                         className="flex items-center cursor-pointer"
                       >
-                        <Avatar className="h-6 w-6 mr-2">
+                        <Avatar className="size-6 mr-2">
                           <AvatarFallback>{initials}</AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
@@ -202,7 +202,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
                           <span className="text-xs text-muted-foreground">MRN: {mrn}</span>
                         </div>
                         {selectedPatient && getPatientId(selectedPatient) === patientId && (
-                          <Check className="ml-auto h-4 w-4" />
+                          <Check className="ml-auto size-4" />
                         )}
                       </CommandItem>
                     );

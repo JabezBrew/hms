@@ -22,10 +22,10 @@ export function WorkflowProgress({ steps, currentStep, className }) {
             )}
           >
             {step.id < currentStep ? (
-              <CheckCircle className="h-4 w-4" />
+              <CheckCircle className="size-4" />
             ) : (
               <Circle className={cn(
-                "h-4 w-4",
+                "size-4",
                 step.id > currentStep && "opacity-30"
               )} />
             )}
@@ -33,7 +33,7 @@ export function WorkflowProgress({ steps, currentStep, className }) {
           </div>
 
           {index < steps.length - 1 && (
-            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            <ArrowRight className="size-4 text-muted-foreground" />
           )}
         </div>
       ))}

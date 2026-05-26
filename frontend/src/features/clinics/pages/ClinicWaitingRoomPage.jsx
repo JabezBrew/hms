@@ -78,7 +78,7 @@ export default function ClinicWaitingRoomPage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
               </Button>
             )}
           />
@@ -104,7 +104,7 @@ export default function ClinicWaitingRoomPage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
               </Button>
             )}
           />
@@ -138,7 +138,7 @@ export default function ClinicWaitingRoomPage() {
               onClick={() => refetch()}
               disabled={isFetching}
             >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
             </Button>
           )}
         />

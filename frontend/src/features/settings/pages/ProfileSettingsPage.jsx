@@ -88,7 +88,7 @@ const ProfileSettingsPage = () => {
           title={(
             <span className="flex items-center gap-3 sm:gap-4">
               <span className="p-2.5 sm:p-3 rounded-xl bg-primary/10 border border-primary/20">
-                <User className="h-6 w-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
+                <User className="size-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
               </span>
               Profile
             </span>
@@ -102,7 +102,7 @@ const ProfileSettingsPage = () => {
             onClick={() => navigate('/settings')}
             className="-ml-2 font-mono text-xs"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Settings
           </Button>
         </PageHeader>
@@ -119,7 +119,7 @@ const ProfileSettingsPage = () => {
                 {/* User Info Card */}
                 <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 animate-chronicle-enter">
                   <div className="flex items-center gap-4 mb-6 pb-6 border-b border-border">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
+                    <div className="size-16 sm:w-20 sm:h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
                       <span className="font-display text-2xl sm:text-3xl text-primary">
                         {(profile?.first_name?.[0] || user?.firstName?.[0] || 'U').toUpperCase()}
                       </span>
@@ -129,7 +129,7 @@ const ProfileSettingsPage = () => {
                         {profile?.first_name || user?.firstName} {profile?.last_name || user?.lastName}
                       </h2>
                       <div className="flex items-center gap-2 mt-1">
-                        <BadgeCheck className="h-4 w-4 text-emerald-400" />
+                        <BadgeCheck className="size-4 text-emerald-400" />
                         <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
                           {formatRole(user?.role)}
                         </span>
@@ -186,7 +186,7 @@ const ProfileSettingsPage = () => {
                     {/* Email - Read only */}
                     <div className="space-y-2">
                       <Label htmlFor="email" className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5" />
+                        <Mail className="size-3.5" />
                         Email Address
                       </Label>
                       <Input
@@ -204,7 +204,7 @@ const ProfileSettingsPage = () => {
                     {/* Phone Number */}
                     <div className="space-y-2">
                       <Label htmlFor="phone_number" className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5" />
+                        <Phone className="size-3.5" />
                         Phone Number
                       </Label>
                       <Input
@@ -235,7 +235,7 @@ const ProfileSettingsPage = () => {
                       'Saving...'
                     ) : (
                       <>
-                        <Save className="h-4 w-4 mr-2" />
+                        <Save className="size-4 mr-2" />
                         Save Changes
                       </>
                     )}
@@ -256,7 +256,7 @@ const LoadingSkeleton = () => (
   <div className="space-y-6">
     <div className="bg-card border border-border rounded-2xl p-6">
       <div className="flex items-center gap-4 mb-6 pb-6 border-b border-border">
-        <Skeleton className="w-20 h-20 rounded-full" />
+        <Skeleton className="size-20 rounded-full" />
         <div className="space-y-2">
           <Skeleton className="h-7 w-48" />
           <Skeleton className="h-4 w-24" />
@@ -294,8 +294,8 @@ const LoadingSkeleton = () => (
  */
 const ErrorState = ({ onRetry }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center animate-chronicle-enter">
-    <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-      <User className="h-8 w-8 text-destructive" />
+    <div className="size-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+      <User className="size-8 text-destructive" />
     </div>
     <h3 className="font-display text-xl text-foreground mb-2">
       Failed to load profile

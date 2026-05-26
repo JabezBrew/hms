@@ -82,7 +82,7 @@ export function Header() {
         {!isMobile && <SidebarTrigger className="mr-2" />}
 
         <div className="mr-2 flex">
-          <Link to="/" className="flex items-center space-x-2">
+          <Link to="/" className="flex items-center gap-x-2">
             <span className="font-bold">HMS</span>
           </Link>
         </div>
@@ -98,7 +98,7 @@ export function Header() {
                       <li className="row-span-3">
                         <NavigationMenuLink asChild>
                           <Link
-                            className="flex h-full w-full select-none flex-col justify-end rounded-md bg-gradient-to-b from-muted/50 to-muted p-6 no-underline outline-none focus:shadow-md"
+                            className="flex size-full select-none flex-col justify-end rounded-md bg-gradient-to-b from-muted/50 to-muted p-6 no-underline outline-none focus:shadow-md"
                             to="/"
                           >
                             <div className="mb-2 mt-4 text-lg font-medium">
@@ -271,20 +271,20 @@ export function Header() {
           </NavigationMenu>
         </div>
 
-        <div className="flex items-center ml-auto space-x-2">
+        <div className="flex items-center ml-auto gap-x-2">
           {isAuthenticated && <AppointmentNotifications />}
           <ThemeToggle />
 
           {isAuthenticated && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full" aria-label="User menu">
-                  <UserIcon className="h-4 w-4" aria-hidden="true" />
+                <Button variant="ghost" className="relative size-8 rounded-full" aria-label="User menu">
+                  <UserIcon className="size-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
+                  <div className="flex flex-col gap-y-1">
                     <p className="text-sm font-medium leading-none">{user?.name || "User"}</p>
                     <p className="text-xs leading-none text-muted-foreground">
                       {user?.email || ""}
@@ -296,7 +296,7 @@ export function Header() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
-                  <LogOutIcon className="mr-2 h-4 w-4" />
+                  <LogOutIcon className="mr-2 size-4" />
                   <span>Log out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>

@@ -31,7 +31,7 @@ const DoctorAvailability = ({
   selectedSlotId = null,
 }) => {
   // State
-  const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date())); // Track displayed month
+  const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date())); // Track displayed month
   const [selectedDate, setSelectedDate] = useState(null); // Default to null, select on click
   const [availabilityData, setAvailabilityData] = useState({}); // Availability summary for calendar
 

@@ -80,7 +80,7 @@ const CancelOrderDialog = ({
         <AlertDialogHeader>
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-full bg-rose-100 dark:bg-rose-900/30">
-              <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+              <AlertTriangle className="size-5 text-rose-600 dark:text-rose-400" />
             </div>
             <AlertDialogTitle className="font-display text-xl">
               Cancel Lab Order
@@ -145,8 +145,8 @@ const CancelOrderDialog = ({
           >
             {cancelMutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Cancelling...
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                Cancelling…
               </>
             ) : (
               "Cancel Order"

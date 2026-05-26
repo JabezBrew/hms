@@ -30,7 +30,7 @@ const ContextPatientsSection = ({
     return (
       <section className={cn("space-y-4", className)}>
         <div className="flex items-center gap-2">
-          <Skeleton className="h-5 w-5 rounded" />
+          <Skeleton className="size-5 rounded" />
           <Skeleton className="h-5 w-40" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -60,7 +60,7 @@ const ContextPatientsSection = ({
     <section className={cn("space-y-4", className)}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-foreground">
-          <ContextIcon className="h-5 w-5 text-primary" />
+          <ContextIcon className="size-5 text-primary" />
           <h2 className="font-heading text-base font-medium">{context_label}</h2>
           <span className="text-sm text-muted-foreground">({total})</span>
         </div>
@@ -69,13 +69,13 @@ const ContextPatientsSection = ({
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             {data.breakdown.inpatients > 0 && (
               <span className="flex items-center gap-1">
-                <Building2 className="h-3 w-3" />
+                <Building2 className="size-3" />
                 {data.breakdown.inpatients} inpatients
               </span>
             )}
             {data.breakdown.appointments > 0 && (
               <span className="flex items-center gap-1">
-                <ClipboardList className="h-3 w-3" />
+                <ClipboardList className="size-3" />
                 {data.breakdown.appointments} appointments
               </span>
             )}
@@ -134,8 +134,8 @@ const EmptyContextState = ({ context }) => {
 
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-4">
-        <Search className="h-6 w-6 text-muted-foreground" />
+      <div className="size-14 rounded-full bg-muted flex items-center justify-center mb-4">
+        <Search className="size-6 text-muted-foreground" />
       </div>
       <h3 className="font-display text-lg text-foreground mb-1">{title}</h3>
       <p className="text-sm text-muted-foreground max-w-sm">{description}</p>

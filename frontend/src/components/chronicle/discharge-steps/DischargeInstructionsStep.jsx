@@ -5,7 +5,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-const DischargeInstructionsStep = ({ formData = {}, onChange, validationErrors = {} }) => {
+const DEFAULT_EMPTY_OBJECT = {};
+
+const DischargeInstructionsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, validationErrors = DEFAULT_EMPTY_OBJECT }) => {
   const setField = (field, value) => {
     onChange({
       ...formData,
@@ -59,7 +61,7 @@ const DischargeInstructionsStep = ({ formData = {}, onChange, validationErrors =
       <Card className={cn(validationErrors.warning_signs && 'border-destructive')}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
+            <AlertTriangle className="size-4" />
             Warning Signs <span className="text-destructive">*</span>
           </CardTitle>
           <CardDescription>
@@ -83,7 +85,7 @@ const DischargeInstructionsStep = ({ formData = {}, onChange, validationErrors =
       <Card className={cn(validationErrors.follow_up_appointments && 'border-destructive')}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <ClipboardList className="h-4 w-4" />
+            <ClipboardList className="size-4" />
             Follow-Up Plan <span className="text-destructive">*</span>
           </CardTitle>
           <CardDescription>

@@ -36,7 +36,7 @@ import {
 
 export function MedicationAdministration({ patient }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [selectedMedication, setSelectedMedication] = useState(null);
   const [showAdminDialog, setShowAdminDialog] = useState(false);
   const [adminForm, setAdminForm] = useState({
@@ -207,7 +207,7 @@ export function MedicationAdministration({ patient }) {
       <Card>
         <CardContent className="py-8">
           <div className="text-center text-muted-foreground">
-            <Pill className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <Pill className="size-12 mx-auto mb-2 opacity-50" />
             <p>Select a patient to view medications</p>
           </div>
         </CardContent>
@@ -229,7 +229,7 @@ export function MedicationAdministration({ patient }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-red-500 flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" />
+            <AlertCircle className="size-5" />
             Error Loading Medications
           </CardTitle>
         </CardHeader>
@@ -238,7 +238,7 @@ export function MedicationAdministration({ patient }) {
             {marError.message || 'Failed to load medication data'}
           </p>
           <Button variant="outline" onClick={() => refetchMAR()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="size-4 mr-2" />
             Try Again
           </Button>
         </CardContent>
@@ -255,7 +255,7 @@ export function MedicationAdministration({ patient }) {
       {/* Header with search and date filter */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground size-4" />
           <Input
             placeholder="Search medications..."
             className="pl-10"
@@ -273,7 +273,7 @@ export function MedicationAdministration({ patient }) {
             className="w-40"
           />
           <Button variant="outline" size="icon" onClick={() => refetchMAR()}>
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="size-4" />
           </Button>
         </div>
       </div>
@@ -283,7 +283,7 @@ export function MedicationAdministration({ patient }) {
         <Card className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-amber-700 dark:text-amber-400 flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
+              <AlertTriangle className="size-5" />
               {dueMeds.length} Medication{dueMeds.length !== 1 ? 's' : ''} Due Now
             </CardTitle>
           </CardHeader>
@@ -322,15 +322,15 @@ export function MedicationAdministration({ patient }) {
       <Tabs defaultValue="due">
         <TabsList>
           <TabsTrigger value="due" className="flex items-center gap-1">
-            <Clock className="h-4 w-4" />
+            <Clock className="size-4" />
             Due ({dueMeds.length})
           </TabsTrigger>
           <TabsTrigger value="scheduled" className="flex items-center gap-1">
-            <Pill className="h-4 w-4" />
+            <Pill className="size-4" />
             Scheduled ({scheduledMeds.length})
           </TabsTrigger>
           <TabsTrigger value="completed" className="flex items-center gap-1">
-            <CheckCircle className="h-4 w-4" />
+            <CheckCircle className="size-4" />
             Completed ({completedMeds.length})
           </TabsTrigger>
         </TabsList>
@@ -347,7 +347,7 @@ export function MedicationAdministration({ patient }) {
             <CardContent>
               {dueMeds.length === 0 ? (
                 <div className="text-center py-8">
-                  <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto mb-2" />
+                  <CheckCircle className="size-12 text-emerald-500 mx-auto mb-2" />
                   <p className="text-lg font-medium">No medications due</p>
                   <p className="text-muted-foreground">
                     All scheduled medications have been administered or are not yet due.
@@ -386,7 +386,7 @@ export function MedicationAdministration({ patient }) {
             <CardContent>
               {scheduledMeds.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <Pill className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <Pill className="size-12 mx-auto mb-2 opacity-50" />
                   <p>No scheduled medications for this date</p>
                 </div>
               ) : (
@@ -425,7 +425,7 @@ export function MedicationAdministration({ patient }) {
                               </Button>
                             ) : (
                               <span className="text-sm text-muted-foreground">
-                                <Package className="h-4 w-4 inline mr-1" />
+                                <Package className="size-4 inline mr-1" />
                                 Awaiting pharmacy
                               </span>
                             )}
@@ -452,7 +452,7 @@ export function MedicationAdministration({ patient }) {
             <CardContent>
               {completedMeds.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <CheckCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <CheckCircle className="size-12 mx-auto mb-2 opacity-50" />
                   <p>No completed administrations for this date</p>
                 </div>
               ) : (
@@ -546,25 +546,25 @@ export function MedicationAdministration({ patient }) {
                 <SelectContent>
                   <SelectItem value="administered">
                     <span className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-emerald-500" />
+                      <CheckCircle className="size-4 text-emerald-500" />
                       Administered
                     </span>
                   </SelectItem>
                   <SelectItem value="missed">
                     <span className="flex items-center gap-2">
-                      <XCircle className="h-4 w-4 text-red-500" />
+                      <XCircle className="size-4 text-red-500" />
                       Missed
                     </span>
                   </SelectItem>
                   <SelectItem value="refused">
                     <span className="flex items-center gap-2">
-                      <XCircle className="h-4 w-4 text-amber-500" />
+                      <XCircle className="size-4 text-amber-500" />
                       Patient Refused
                     </span>
                   </SelectItem>
                   <SelectItem value="held">
                     <span className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-slate-500" />
+                      <AlertTriangle className="size-4 text-slate-500" />
                       Held
                     </span>
                   </SelectItem>
@@ -642,7 +642,7 @@ function MedicationCard({ medication, onAdminister, getStatusBadge, formatTime, 
         <div className="flex flex-col items-end gap-1">
           {getStatusBadge(medication)}
           <div className="flex items-center text-sm text-muted-foreground">
-            <Clock className="h-3 w-3 mr-1" />
+            <Clock className="size-3 mr-1" />
             {formatTime(medication.scheduled_time)}
           </div>
         </div>

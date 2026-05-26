@@ -49,6 +49,14 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
 import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import ArrowRightCircle from 'lucide-react/dist/esm/icons/arrow-right-circle.js';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+});
+
+const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'text-slate-500', bgColor: 'bg-slate-500/10' },
   pending: { label: 'Pending Approval', color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
@@ -74,15 +82,11 @@ function getPriorityConfig(priority) {
 }
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return USD_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value || 0);
+  return US_NUMBER_FORMATTER.format(value || 0);
 }
 
 /**
@@ -144,7 +148,7 @@ export default function RequisitionDetailPage() {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10" />
+          <Skeleton className="size-10" />
           <div>
             <Skeleton className="h-8 w-64" />
             <Skeleton className="h-5 w-48 mt-2" />
@@ -171,11 +175,11 @@ export default function RequisitionDetailPage() {
         action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="size-4 mr-2" />
               Back to Requisitions
             </Button>
             <Button onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Retry
             </Button>
           </div>
@@ -193,7 +197,7 @@ export default function RequisitionDetailPage() {
         description="The requested requisition does not exist or has been deleted."
         action={(
           <Button variant="outline" onClick={handleBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Requisitions
           </Button>
         )}
@@ -224,7 +228,7 @@ export default function RequisitionDetailPage() {
         description={(
           <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="size-4" />
               <span className="text-sm">
                 {requisition.created_at
                   ? format(parseISO(requisition.created_at), 'MMM d, yyyy')
@@ -241,14 +245,14 @@ export default function RequisitionDetailPage() {
             {canApprove && (
               <>
                 <Button variant="outline" onClick={() => setRejectDialogOpen(true)}>
-                  <X className="h-4 w-4 mr-2" />
+                  <X className="size-4 mr-2" />
                   Reject
                 </Button>
                 <Button onClick={handleApprove} disabled={approveMutation.isPending}>
                   {approveMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="size-4 mr-2 animate-spin" />
                   ) : (
-                    <Check className="h-4 w-4 mr-2" />
+                    <Check className="size-4 mr-2" />
                   )}
                   Approve
                 </Button>
@@ -256,24 +260,24 @@ export default function RequisitionDetailPage() {
             )}
             {canConvert && (
               <Button onClick={() => setConvertDialogOpen(true)}>
-                <ShoppingCart className="h-4 w-4 mr-2" />
+                <ShoppingCart className="size-4 mr-2" />
                 Convert to PO
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem>
-                  <Printer className="h-4 w-4 mr-2" />
+                  <Printer className="size-4 mr-2" />
                   Print
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => refetch()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="size-4 mr-2" />
                   Refresh
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -287,7 +291,7 @@ export default function RequisitionDetailPage() {
           className="w-fit -ml-2"
           onClick={handleBack}
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to Requisitions
         </Button>
       </PageHeader>
@@ -406,7 +410,7 @@ export default function RequisitionDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <User className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                <User className="size-4 mt-0.5 text-muted-foreground" />
                 <div>
                   <p className="text-xs text-muted-foreground">Requested By</p>
                   <p className="text-sm">{requisition.requested_by_name || requisition.created_by_name || 'N/A'}</p>
@@ -415,7 +419,7 @@ export default function RequisitionDetailPage() {
 
               {requisition.department_name && (
                 <div className="flex items-start gap-3">
-                  <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <MapPin className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Department</p>
                     <p className="text-sm">{requisition.department_name}</p>
@@ -425,7 +429,7 @@ export default function RequisitionDetailPage() {
 
               {requisition.required_date && (
                 <div className="flex items-start gap-3">
-                  <Calendar className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <Calendar className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Required By</p>
                     <p className="text-sm font-mono">
@@ -437,7 +441,7 @@ export default function RequisitionDetailPage() {
 
               {requisition.approved_by_name && (
                 <div className="flex items-start gap-3">
-                  <Check className="h-4 w-4 mt-0.5 text-emerald-500" />
+                  <Check className="size-4 mt-0.5 text-emerald-500" />
                   <div>
                     <p className="text-xs text-muted-foreground">Approved By</p>
                     <p className="text-sm">{requisition.approved_by_name}</p>
@@ -452,7 +456,7 @@ export default function RequisitionDetailPage() {
 
               {requisition.purchase_order && (
                 <div className="flex items-start gap-3">
-                  <ArrowRightCircle className="h-4 w-4 mt-0.5 text-sky-500" />
+                  <ArrowRightCircle className="size-4 mt-0.5 text-sky-500" />
                   <div>
                     <p className="text-xs text-muted-foreground">Purchase Order</p>
                     <Button
@@ -477,7 +481,7 @@ export default function RequisitionDetailPage() {
               <div className="space-y-4">
                 {requisition.created_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-sky-500 mt-2" />
+                    <div className="size-2 rounded-full bg-sky-500 mt-2" />
                     <div>
                       <p className="text-sm">Created</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -488,7 +492,7 @@ export default function RequisitionDetailPage() {
                 )}
                 {requisition.submitted_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-amber-500 mt-2" />
+                    <div className="size-2 rounded-full bg-amber-500 mt-2" />
                     <div>
                       <p className="text-sm">Submitted for Approval</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -499,7 +503,7 @@ export default function RequisitionDetailPage() {
                 )}
                 {requisition.approved_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 mt-2" />
+                    <div className="size-2 rounded-full bg-emerald-500 mt-2" />
                     <div>
                       <p className="text-sm">Approved</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -510,7 +514,7 @@ export default function RequisitionDetailPage() {
                 )}
                 {requisition.rejected_at && (
                   <div className="flex items-start gap-3">
-                    <div className="h-2 w-2 rounded-full bg-rose-500 mt-2" />
+                    <div className="size-2 rounded-full bg-rose-500 mt-2" />
                     <div>
                       <p className="text-sm">Rejected</p>
                       <p className="text-xs font-mono text-muted-foreground">
@@ -550,9 +554,9 @@ export default function RequisitionDetailPage() {
               disabled={!rejectReason.trim() || rejectMutation.isPending}
             >
               {rejectMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="size-4 mr-2 animate-spin" />
               ) : (
-                <X className="h-4 w-4 mr-2" />
+                <X className="size-4 mr-2" />
               )}
               Reject
             </Button>
@@ -589,9 +593,9 @@ export default function RequisitionDetailPage() {
             </Button>
             <Button onClick={handleConvert} disabled={convertMutation.isPending}>
               {convertMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="size-4 mr-2 animate-spin" />
               ) : (
-                <ShoppingCart className="h-4 w-4 mr-2" />
+                <ShoppingCart className="size-4 mr-2" />
               )}
               Create Purchase Order
             </Button>

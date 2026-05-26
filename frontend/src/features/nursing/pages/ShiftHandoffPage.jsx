@@ -357,7 +357,7 @@ export default function ShiftHandoffPage() {
           description="Document and transfer patient care to the next shift"
           actions={(
             <Badge variant="outline" className="font-mono text-sm px-4 py-2">
-              <Calendar className="mr-2 h-4 w-4" />
+              <Calendar className="mr-2 size-4" />
               {format(new Date(), 'MMMM d, yyyy')}
             </Badge>
           )}
@@ -375,6 +375,7 @@ export default function ShiftHandoffPage() {
               return (
                 <div key={step.id} className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={() => goToStep(step.id)}
                     className={cn(
                       "flex items-center gap-2 px-4 py-2 rounded-lg transition-all cursor-pointer",
@@ -384,9 +385,9 @@ export default function ShiftHandoffPage() {
                     )}
                   >
                     {isCompleted && !isActive ? (
-                      <CheckCircle className="h-4 w-4" />
+                      <CheckCircle className="size-4" />
                     ) : (
-                      <Icon className="h-4 w-4" />
+                      <Icon className="size-4" />
                     )}
                     <span className="font-mono text-xs uppercase tracking-wide hidden sm:inline">
                       {step.title}
@@ -395,7 +396,7 @@ export default function ShiftHandoffPage() {
 
                   {index < STEPS.length - 1 && (
                     <ArrowRight className={cn(
-                      "h-4 w-4",
+                      "size-4",
                       isCompleted ? "text-emerald-500" : "text-muted-foreground/30"
                     )} />
                   )}
@@ -412,7 +413,7 @@ export default function ShiftHandoffPage() {
                 <div className="flex items-center gap-3">
                   {currentStepDef && (
                     <div className="p-2 rounded-lg bg-amber-500/10">
-                      <currentStepDef.icon className="h-5 w-5 text-amber-600" />
+                      <currentStepDef.icon className="size-5 text-amber-600" />
                     </div>
                   )}
                   <div>
@@ -440,7 +441,7 @@ export default function ShiftHandoffPage() {
               onClick={currentStep === 1 ? () => navigate('/dashboards/nurse') : handleBack}
               className="font-mono"
             >
-              <ArrowLeft className="mr-2 h-4 w-4" />
+              <ArrowLeft className="mr-2 size-4" />
               {currentStep === 1 ? 'Cancel' : 'Back'}
             </Button>
 
@@ -450,7 +451,7 @@ export default function ShiftHandoffPage() {
                 className="font-mono bg-amber-500 hover:bg-amber-600 text-white"
               >
                 Continue
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <ArrowRight className="ml-2 size-4" />
               </Button>
             ) : (
               <Button
@@ -460,12 +461,12 @@ export default function ShiftHandoffPage() {
               >
                 {createMutation.isPending ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Submitting...
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Submitting…
                   </>
                 ) : (
                   <>
-                    <CheckCircle className="mr-2 h-4 w-4" />
+                    <CheckCircle className="mr-2 size-4" />
                     Complete Handoff
                   </>
                 )}

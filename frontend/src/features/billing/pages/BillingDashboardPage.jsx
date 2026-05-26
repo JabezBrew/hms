@@ -43,6 +43,12 @@ import {
   useCloseCashSession,
 } from '@/features/billing/hooks';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 export default function BillingDashboardPage() {
   const navigate = useNavigate();
 
@@ -133,7 +139,7 @@ export default function BillingDashboardPage() {
               onClick={() => navigate('/billing/invoices/new')}
               className="font-mono text-xs"
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New Invoice
             </Button>
             <Button
@@ -142,7 +148,7 @@ export default function BillingDashboardPage() {
               onClick={() => refetchMetrics()}
               className="font-mono text-xs"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Refresh
             </Button>
           </div>
@@ -213,7 +219,7 @@ export default function BillingDashboardPage() {
           <header className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-muted">
-                <CashIcon className={cn("h-5 w-5", cashControlEnabled ? "text-muted-foreground" : "text-destructive")} />
+                <CashIcon className={cn("size-5", cashControlEnabled ? "text-muted-foreground" : "text-destructive")} />
               </div>
               <div>
                 <h2 className="font-display text-xl text-foreground">Cash Session</h2>
@@ -229,7 +235,7 @@ export default function BillingDashboardPage() {
               className="font-mono text-xs text-muted-foreground hover:text-foreground"
             >
               View Sessions
-              <ChevronRight className="h-3 w-3 ml-1" />
+              <ChevronRight className="size-3 ml-1" />
             </Button>
           </header>
 
@@ -315,7 +321,7 @@ export default function BillingDashboardPage() {
           <section className="bg-card border border-border rounded-2xl overflow-hidden">
             <header className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div className="flex items-center gap-3">
-                <FileText className="h-5 w-5 text-primary" />
+                <FileText className="size-5 text-primary" />
                 <h2 className="font-display text-xl text-foreground">Recent Invoices</h2>
               </div>
               <Button
@@ -325,7 +331,7 @@ export default function BillingDashboardPage() {
                 className="font-mono text-xs text-muted-foreground hover:text-foreground"
               >
                 View All
-                <ChevronRight className="h-3 w-3 ml-1" />
+                <ChevronRight className="size-3 ml-1" />
               </Button>
             </header>
             <div className="divide-y divide-border">
@@ -348,7 +354,7 @@ export default function BillingDashboardPage() {
           <section className="bg-card border border-border rounded-2xl overflow-hidden">
             <header className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div className="flex items-center gap-3">
-                <CreditCard className="h-5 w-5 text-[oklch(0.70_0.17_155)]" />
+                <CreditCard className="size-5 text-[oklch(0.70_0.17_155)]" />
                 <h2 className="font-display text-xl text-foreground">Recent Payments</h2>
               </div>
               <Button
@@ -358,7 +364,7 @@ export default function BillingDashboardPage() {
                 className="font-mono text-xs text-muted-foreground hover:text-foreground"
               >
                 View All
-                <ChevronRight className="h-3 w-3 ml-1" />
+                <ChevronRight className="size-3 ml-1" />
               </Button>
             </header>
             <div className="divide-y divide-border">
@@ -503,7 +509,7 @@ function MetricCard({ title, value, subtitle, icon: Icon, color, index }) {
     >
       <div className="flex items-start justify-between mb-4">
         <div className={cn("p-2.5 rounded-xl", colorClasses[color])}>
-          <Icon className="h-5 w-5" />
+          <Icon className="size-5" />
         </div>
       </div>
       <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mb-1">
@@ -523,7 +529,7 @@ function QuickStat({ label, value, icon: Icon }) {
   return (
     <div className="bg-card/50 border border-border rounded-xl p-4 flex items-center gap-3">
       <div className="p-2 rounded-lg bg-muted">
-        <Icon className="h-4 w-4 text-muted-foreground" />
+        <Icon className="size-4 text-muted-foreground" />
       </div>
       <div>
         <p className="font-mono text-xs text-muted-foreground">{label}</p>
@@ -620,8 +626,8 @@ function PaymentRow({ payment, index }) {
 function EmptyState({ icon: Icon, message }) {
   return (
     <div className="px-6 py-12 text-center">
-      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
-        <Icon className="h-6 w-6 text-muted-foreground" />
+      <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+        <Icon className="size-6 text-muted-foreground" />
       </div>
       <p className="text-sm text-muted-foreground">{message}</p>
     </div>
@@ -635,7 +641,7 @@ function QuickActionButton({ icon: Icon, label, onClick }) {
       className="h-auto py-4 flex flex-col items-center gap-2 font-mono text-xs hover:border-primary/30"
       onClick={onClick}
     >
-      <Icon className="h-5 w-5" />
+      <Icon className="size-5" />
       {label}
     </Button>
   );
@@ -643,11 +649,7 @@ function QuickActionButton({ icon: Icon, label, onClick }) {
 
 // Utility functions
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatDate(dateString) {

@@ -38,7 +38,7 @@ export function BoardToolbar({
     <div className={cn('sticky top-0 z-20 border-b border-border bg-card/95 backdrop-blur-sm', className)}>
       <div className="flex h-12 items-center gap-3 px-4 sm:px-6">
         <div className="relative min-w-0 flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
             id="ward-board-search"
             type="search"
@@ -55,7 +55,7 @@ export function BoardToolbar({
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label="Clear search"
             >
-              <X className="h-3 w-3" />
+              <X className="size-3" />
             </button>
           ) : null}
         </div>
@@ -72,14 +72,14 @@ export function BoardToolbar({
               <option value="">All Wards</option>
               <option value={wardValue || ''}>{wardValue || 'Select ward…'}</option>
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           </div>
         ) : null}
 
         <div className="ml-auto flex items-center gap-1.5">
           {hasFilters ? (
             <Button variant="ghost" size="sm" onClick={onClearFilters} className="h-8 px-2 font-mono text-xs text-muted-foreground">
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
+              <X className="size-3.5" aria-hidden="true" />
               Clear
             </Button>
           ) : null}
@@ -103,9 +103,9 @@ export function BoardToolbar({
             onClick={onRefresh}
             disabled={isFetching}
             aria-label="Refresh ward board"
-            className="h-8 w-8"
+            className="size-8"
           >
-            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} aria-hidden="true" />
+            <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} aria-hidden="true" />
           </Button>
 
           <Button
@@ -114,9 +114,9 @@ export function BoardToolbar({
             size="icon"
             onClick={onOpenSummary}
             aria-label="Board summary"
-            className="h-8 w-8"
+            className="size-8"
           >
-            <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+            <Settings2 className="size-3.5" aria-hidden="true" />
           </Button>
         </div>
       </div>

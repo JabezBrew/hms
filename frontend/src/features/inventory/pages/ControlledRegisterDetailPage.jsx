@@ -47,6 +47,8 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Minus from 'lucide-react/dist/esm/icons/minus.js';
 
+const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
 const ENTRY_TYPE_CONFIG = {
   receipt: { label: 'Receipt', color: 'text-emerald-500', bgColor: 'bg-emerald-500/10', icon: Plus },
   dispense: { label: 'Dispense', color: 'text-rose-500', bgColor: 'bg-rose-500/10', icon: Minus },
@@ -62,7 +64,7 @@ function getEntryTypeConfig(type) {
 }
 
 function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value || 0);
+  return US_NUMBER_FORMATTER.format(value || 0);
 }
 
 /**
@@ -88,7 +90,7 @@ function EntriesTable({ registerId, page, onPageChange }) {
   if (!entries.length) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <FileText className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <FileText className="size-10 text-muted-foreground/50 mb-3" />
         <p className="text-sm text-muted-foreground">
           No entries recorded
         </p>
@@ -156,7 +158,7 @@ function EntriesTable({ registerId, page, onPageChange }) {
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant="outline" className={cn('text-xs', typeConfig.bgColor, typeConfig.color)}>
-                      <TypeIcon className="h-3 w-3 mr-1" />
+                      <TypeIcon className="size-3 mr-1" />
                       {typeConfig.label}
                     </Badge>
                   </td>
@@ -194,12 +196,12 @@ function EntriesTable({ registerId, page, onPageChange }) {
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>
@@ -229,7 +231,7 @@ function DiscrepanciesTab({ registerId }) {
   if (!discrepancies.length) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <AlertOctagon className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <AlertOctagon className="size-10 text-muted-foreground/50 mb-3" />
         <p className="text-sm text-muted-foreground">
           No discrepancies recorded
         </p>
@@ -374,7 +376,7 @@ export default function ControlledRegisterDetailPage() {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10" />
+          <Skeleton className="size-10" />
           <div>
             <Skeleton className="h-8 w-64" />
             <Skeleton className="h-5 w-48 mt-2" />
@@ -400,11 +402,11 @@ export default function ControlledRegisterDetailPage() {
         action={(
           <div className="flex items-center justify-center gap-2">
             <Button variant="outline" onClick={handleBack}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="size-4 mr-2" />
               Back to Registers
             </Button>
             <Button onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Retry
             </Button>
           </div>
@@ -422,7 +424,7 @@ export default function ControlledRegisterDetailPage() {
         description="The requested controlled substance register does not exist."
         action={(
           <Button variant="outline" onClick={handleBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Registers
           </Button>
         )}
@@ -443,7 +445,7 @@ export default function ControlledRegisterDetailPage() {
           <span className="flex items-center gap-3">
             <span>{register.item_name || register.name}</span>
             <Badge variant="outline" className="text-[10px] bg-rose-500/10 text-rose-500 border-rose-500/30">
-              <Shield className="h-3 w-3 mr-1" />
+              <Shield className="size-3 mr-1" />
               Controlled
             </Badge>
           </span>
@@ -452,7 +454,7 @@ export default function ControlledRegisterDetailPage() {
           <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
             {register.location_name && (
               <span className="flex items-center gap-1.5">
-                <MapPin className="h-4 w-4" />
+                <MapPin className="size-4" />
                 <span className="text-sm">{register.location_name}</span>
               </span>
             )}
@@ -466,32 +468,32 @@ export default function ControlledRegisterDetailPage() {
         actions={(
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" onClick={() => setCountOpen(true)}>
-              <ClipboardCheck className="h-4 w-4 mr-2" />
+              <ClipboardCheck className="size-4 mr-2" />
               Count
             </Button>
             <Button onClick={() => setDispenseOpen(true)} className="bg-rose-600 hover:bg-rose-700">
-              <Pill className="h-4 w-4 mr-2" />
+              <Pill className="size-4 mr-2" />
               Dispense
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => setWastageOpen(true)}>
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="size-4 mr-2" />
                   Record Wastage
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
-                  <Printer className="h-4 w-4 mr-2" />
+                  <Printer className="size-4 mr-2" />
                   Print Register
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => refetch()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="size-4 mr-2" />
                   Refresh
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -505,7 +507,7 @@ export default function ControlledRegisterDetailPage() {
           className="w-fit -ml-2"
           onClick={handleBack}
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to Controlled Substances
         </Button>
       </PageHeader>
@@ -518,7 +520,7 @@ export default function ControlledRegisterDetailPage() {
           {hasDiscrepancy && (
             <Card className="bg-rose-500/5 border-rose-500/30">
               <CardContent className="py-3 px-4 flex items-center gap-3">
-                <AlertOctagon className="h-5 w-5 text-rose-500" />
+                <AlertOctagon className="size-5 text-rose-500" />
                 <div>
                   <p className="text-sm font-medium text-rose-500">Unresolved Discrepancy</p>
                   <p className="text-xs text-muted-foreground">
@@ -531,7 +533,7 @@ export default function ControlledRegisterDetailPage() {
           {auditDue && (
             <Card className="bg-amber-500/5 border-amber-500/30">
               <CardContent className="py-3 px-4 flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                <AlertTriangle className="size-5 text-amber-500" />
                 <div>
                   <p className="text-sm font-medium text-amber-500">Audit Overdue</p>
                   <p className="text-xs text-muted-foreground">
@@ -568,11 +570,11 @@ export default function ControlledRegisterDetailPage() {
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="w-full sm:w-auto">
               <TabsTrigger value="entries" className="font-mono text-xs">
-                <FileText className="h-4 w-4 mr-2" />
+                <FileText className="size-4 mr-2" />
                 Entries
               </TabsTrigger>
               <TabsTrigger value="discrepancies" className="font-mono text-xs">
-                <AlertOctagon className="h-4 w-4 mr-2" />
+                <AlertOctagon className="size-4 mr-2" />
                 Discrepancies
                 {hasDiscrepancy && (
                   <Badge variant="destructive" className="ml-2 h-5 px-1.5">
@@ -605,7 +607,7 @@ export default function ControlledRegisterDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                <MapPin className="size-4 mt-0.5 text-muted-foreground" />
                 <div>
                   <p className="text-xs text-muted-foreground">Location</p>
                   <p className="text-sm">{register.location_name || 'N/A'}</p>
@@ -614,7 +616,7 @@ export default function ControlledRegisterDetailPage() {
 
               {register.item_sku && (
                 <div className="flex items-start gap-3">
-                  <Shield className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <Shield className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">SKU</p>
                     <p className="text-sm font-mono">{register.item_sku}</p>
@@ -623,7 +625,7 @@ export default function ControlledRegisterDetailPage() {
               )}
 
               <div className="flex items-start gap-3">
-                <Calendar className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                <Calendar className="size-4 mt-0.5 text-muted-foreground" />
                 <div>
                   <p className="text-xs text-muted-foreground">Last Audit</p>
                   {register.last_audit_date ? (
@@ -642,7 +644,7 @@ export default function ControlledRegisterDetailPage() {
 
               {register.created_at && (
                 <div className="flex items-start gap-3">
-                  <Clock className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <Clock className="size-4 mt-0.5 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Register Created</p>
                     <p className="text-sm font-mono">

@@ -12,6 +12,12 @@ import { useNavigate } from 'react-router-dom';
 import { usePatientInvoices } from '@/features/billing/hooks';
 import { useAuth } from '@/lib/auth';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 /**
  * InvoiceChronicleCard - Billing summary card for patient chronicle
  *
@@ -67,7 +73,7 @@ export default function InvoiceChronicleCard({ patientId, className }) {
         className
       )}>
         <div className="flex items-center gap-2 mb-2">
-          <CreditCard className="h-4 w-4 text-muted-foreground" />
+          <CreditCard className="size-4 text-muted-foreground" />
           <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
             Billing
           </span>
@@ -90,7 +96,7 @@ export default function InvoiceChronicleCard({ patientId, className }) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <CreditCard className={cn(
-            "h-4 w-4",
+            "size-4",
             hasOverdue ? "text-destructive" : hasOutstanding ? "text-primary" : "text-muted-foreground"
           )} />
           <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
@@ -99,19 +105,19 @@ export default function InvoiceChronicleCard({ patientId, className }) {
         </div>
         {hasOverdue && (
           <span className="badge-chronicle-rose text-[10px] flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
+            <AlertTriangle className="size-3" />
             Overdue
           </span>
         )}
         {!hasOverdue && hasOutstanding && (
           <span className="badge-chronicle-amber text-[10px] flex items-center gap-1">
-            <Clock className="h-3 w-3" />
+            <Clock className="size-3" />
             Pending
           </span>
         )}
         {!hasOutstanding && (
           <span className="badge-chronicle-emerald text-[10px] flex items-center gap-1">
-            <CheckCircle className="h-3 w-3" />
+            <CheckCircle className="size-3" />
             Settled
           </span>
         )}
@@ -184,7 +190,7 @@ export default function InvoiceChronicleCard({ patientId, className }) {
                 }}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  <FileText className="size-3.5 text-muted-foreground flex-shrink-0" />
                   <span className="font-mono text-xs text-primary truncate">
                     {invoice.invoice_number}
                   </span>
@@ -209,7 +215,7 @@ export default function InvoiceChronicleCard({ patientId, className }) {
             className="flex-1 font-mono text-xs"
           >
             View All
-            <ChevronRight className="h-3 w-3 ml-1" />
+            <ChevronRight className="size-3 ml-1" />
           </Button>
           {hasOutstanding && (
             <Button
@@ -217,7 +223,7 @@ export default function InvoiceChronicleCard({ patientId, className }) {
               onClick={() => navigate(`/billing/invoices/${invoices.find(i => i.balance_due > 0)?.id}`)}
               className="font-mono text-xs"
             >
-              <DollarSign className="h-3 w-3 mr-1" />
+              <DollarSign className="size-3 mr-1" />
               Pay
             </Button>
           )}
@@ -247,9 +253,5 @@ function StatusBadge({ status }) {
 }
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }

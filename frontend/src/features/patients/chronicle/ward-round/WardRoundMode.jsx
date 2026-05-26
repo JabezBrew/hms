@@ -71,8 +71,8 @@ export default function WardRoundMode({
   if (!activeAdmissionId) {
     return (
       <div className="mx-auto max-w-4xl rounded-lg border border-dashed border-border bg-card/70 p-8 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-muted">
-          <Stethoscope className="h-5 w-5 text-muted-foreground" />
+        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-md bg-muted">
+          <Stethoscope className="size-5 text-muted-foreground" />
         </div>
         <h2 className="font-display text-2xl text-foreground">Active admission required</h2>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
@@ -106,7 +106,7 @@ export default function WardRoundMode({
             disabled={mode.isSavingDraft || mode.isSigning}
             onClick={() => mode.saveDraft()}
           >
-            {mode.isSavingDraft && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+            {mode.isSavingDraft && <Loader2 className="mr-2 size-3.5 animate-spin" />}
             Save draft
           </Button>
           <Button
@@ -116,9 +116,9 @@ export default function WardRoundMode({
             onClick={() => mode.signRound()}
           >
             {mode.isSigning ? (
-              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="mr-2 size-3.5 animate-spin" />
             ) : (
-              <FileCheck2 className="mr-2 h-3.5 w-3.5" />
+              <FileCheck2 className="mr-2 size-3.5" />
             )}
             Sign round
           </Button>

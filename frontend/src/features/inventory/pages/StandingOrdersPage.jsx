@@ -78,7 +78,7 @@ function StandingOrderCard({
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Repeat className="h-4 w-4 text-muted-foreground" />
+            <Repeat className="size-4 text-muted-foreground" />
             <span className="font-mono text-sm font-medium text-primary">
               {order.name || order.order_number}
             </span>
@@ -89,19 +89,19 @@ function StandingOrderCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {onEdit && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }}>
-                  <Edit className="h-4 w-4 mr-2" />
+                  <Edit className="size-4 mr-2" />
                   Edit Template
                 </DropdownMenuItem>
               )}
@@ -109,7 +109,7 @@ function StandingOrderCard({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onGenerate(); }}>
-                    <Play className="h-4 w-4 mr-2" />
+                    <Play className="size-4 mr-2" />
                     Generate Now
                   </DropdownMenuItem>
                 </>
@@ -120,12 +120,12 @@ function StandingOrderCard({
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onToggleActive(); }}>
                     {order.is_active ? (
                       <>
-                        <Pause className="h-4 w-4 mr-2" />
+                        <Pause className="size-4 mr-2" />
                         Deactivate
                       </>
                     ) : (
                       <>
-                        <Play className="h-4 w-4 mr-2" />
+                        <Play className="size-4 mr-2" />
                         Activate
                       </>
                     )}
@@ -159,13 +159,13 @@ function StandingOrderCard({
         <div className="space-y-2 mb-3">
           {order.requesting_location_name && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <MapPin className="h-3 w-3" />
+              <MapPin className="size-3" />
               <span>{order.requesting_location_name}</span>
             </div>
           )}
           {order.next_due_date && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               <span>
                 Next: <span className="font-mono">{format(parseISO(order.next_due_date), 'MMM d, yyyy')}</span>
               </span>
@@ -173,7 +173,7 @@ function StandingOrderCard({
           )}
           {order.last_generated_at && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Clock className="h-3 w-3" />
+              <Clock className="size-3" />
               <span>
                 Last: <span className="font-mono">{format(parseISO(order.last_generated_at), 'MMM d, yyyy')}</span>
               </span>
@@ -397,12 +397,12 @@ export default function StandingOrdersPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             {standingOrderManagementAvailable && (
               <Button onClick={handleCreate}>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 New Template
               </Button>
             )}
@@ -421,7 +421,7 @@ export default function StandingOrdersPage() {
 
       <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-center">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search templates..."
             value={search}
@@ -443,7 +443,7 @@ export default function StandingOrdersPage() {
 
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -464,7 +464,7 @@ export default function StandingOrdersPage() {
         </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
-          <Repeat className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+          <Repeat className="size-10 text-muted-foreground/50 mx-auto mb-3" />
           <h3 className="font-display text-xl mb-2">No Standing Orders Found</h3>
           <p className="text-muted-foreground text-sm mb-4">
             {hasActiveFilters
@@ -473,7 +473,7 @@ export default function StandingOrdersPage() {
           </p>
           {!hasActiveFilters && standingOrderManagementAvailable && (
             <Button onClick={handleCreate}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New Template
             </Button>
           )}
@@ -487,12 +487,12 @@ export default function StandingOrdersPage() {
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages}>
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

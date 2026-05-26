@@ -61,6 +61,11 @@ import Edit from 'lucide-react/dist/esm/icons/edit.js';
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 
+const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
 const TAB_OPTIONS = [
   { value: 'all', label: 'All Items' },
   { value: 'low_stock', label: 'Low Stock' },
@@ -377,10 +382,7 @@ export default function ItemsPage() {
       cellClassName: 'text-right',
       render: (item) => (
         <span className="font-mono">
-          {new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-          }).format(item.unit_price || 0)}
+          {USD_CURRENCY_FORMATTER.format(item.unit_price || 0)}
           <span className="text-muted-foreground text-xs ml-1">
             /{item.unit_of_measure || 'ea'}
           </span>
@@ -394,18 +396,18 @@ export default function ItemsPage() {
       render: (item) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <MoreHorizontal className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="size-8">
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleItemClick(item.id); }}>
-              <Eye className="h-4 w-4 mr-2" />
+              <Eye className="size-4 mr-2" />
               View Details
             </DropdownMenuItem>
             {itemMutationsAvailable && (
               <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditItem(item.id); }}>
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="size-4 mr-2" />
                 Edit
               </DropdownMenuItem>
             )}
@@ -415,7 +417,7 @@ export default function ItemsPage() {
                 navigate(`/inventory/requisitions?action=create&items=${item.id}`);
               }}
             >
-              <ShoppingCart className="h-4 w-4 mr-2" />
+              <ShoppingCart className="size-4 mr-2" />
               Create Order
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -499,12 +501,12 @@ export default function ItemsPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             {itemMutationsAvailable && (
               <Button onClick={handleCreateItem}>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Add Item
               </Button>
             )}
@@ -536,7 +538,7 @@ export default function ItemsPage() {
       <div className="flex flex-col lg:flex-row gap-3">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by name, SKU, or description..."
             value={search}
@@ -548,7 +550,7 @@ export default function ItemsPage() {
         {/* Category Filter */}
         <Select value={category || 'all'} onValueChange={handleCategoryChange}>
           <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+            <Filter className="size-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -583,7 +585,7 @@ export default function ItemsPage() {
         {/* Sort */}
         <Select value={sortBy} onValueChange={handleSortChange}>
           <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
+            <ArrowUpDown className="size-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>
           <SelectContent>
@@ -603,7 +605,7 @@ export default function ItemsPage() {
             onClick={clearFilters}
             className="font-mono text-xs text-muted-foreground hover:text-foreground"
           >
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -632,7 +634,7 @@ export default function ItemsPage() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="font-mono text-xs">
                   {selectedItems.size} selected
-                  <ChevronDown className="h-4 w-4 ml-2" />
+                  <ChevronDown className="size-4 ml-2" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
@@ -689,8 +691,8 @@ export default function ItemsPage() {
         </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <Package className="h-8 w-8 text-muted-foreground" />
+          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <Package className="size-8 text-muted-foreground" />
           </div>
           <h3 className="font-display text-xl text-foreground mb-2">
             No Items Found
@@ -702,7 +704,7 @@ export default function ItemsPage() {
           </p>
           {!hasActiveFilters && itemMutationsAvailable && (
             <Button onClick={handleCreateItem} className="font-mono text-xs">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Add Item
             </Button>
           )}
@@ -723,7 +725,7 @@ export default function ItemsPage() {
               disabled={page <= 1}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button
@@ -734,7 +736,7 @@ export default function ItemsPage() {
               className="font-mono text-xs"
             >
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

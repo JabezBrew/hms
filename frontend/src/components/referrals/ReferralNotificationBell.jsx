@@ -122,7 +122,7 @@ const ReferralNotificationBell = () => {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+          <Bell className="size-5" />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"
@@ -146,11 +146,11 @@ const ReferralNotificationBell = () => {
         <ScrollArea className="max-h-96">
           {isLoading ? (
             <div className="p-4 text-center text-muted-foreground">
-              Loading notifications...
+              Loading notifications…
             </div>
           ) : notifications.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
-              <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <Bell className="size-8 mx-auto mb-2 opacity-50" />
               <p className="text-sm">No notifications yet</p>
               <p className="text-xs mt-1">
                 Referral updates will appear here
@@ -175,11 +175,11 @@ const ReferralNotificationBell = () => {
                     <div className="flex gap-3">
                       <div
                         className={cn(
-                          'h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0',
+                          'size-9 rounded-full flex items-center justify-center flex-shrink-0',
                           config.bgClass
                         )}
                       >
-                        <Icon className={cn('h-4 w-4', config.iconClass)} />
+                        <Icon className={cn('size-4', config.iconClass)} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -187,7 +187,7 @@ const ReferralNotificationBell = () => {
                             {config.label}
                           </span>
                           {!notification.is_read && (
-                            <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                            <span className="size-2 rounded-full bg-primary flex-shrink-0" />
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground truncate">
@@ -204,7 +204,7 @@ const ReferralNotificationBell = () => {
                             {urgency.label}
                           </span>
                           <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
+                            <Clock className="size-3" />
                             {formatDistanceToNow(new Date(notification.created_at), {
                               addSuffix: true,
                             })}

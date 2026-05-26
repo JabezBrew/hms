@@ -10,18 +10,18 @@ import { Badge } from "@/components/ui/badge"
 export function TimelineFeed({ items }) {
     const getIcon = (type) => {
         switch (type) {
-            case 'Encounter': return <Calendar className="h-4 w-4 text-blue-500" />
-            case 'LabResult': return <FlaskConical className="h-4 w-4 text-purple-500" />
-            case 'Document': return <FileText className="h-4 w-4 text-orange-500" />
-            case 'Medication': return <Pill className="h-4 w-4 text-green-500" />
-            default: return <FileText className="h-4 w-4" />
+            case 'Encounter': return <Calendar className="size-4 text-blue-500" />
+            case 'LabResult': return <FlaskConical className="size-4 text-purple-500" />
+            case 'Document': return <FileText className="size-4 text-orange-500" />
+            case 'Medication': return <Pill className="size-4 text-green-500" />
+            default: return <FileText className="size-4" />
         }
     }
 
     return (
         <div className="space-y-4">
             <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
                 <Input placeholder="Search this chart..." className="pl-8" />
             </div>
 

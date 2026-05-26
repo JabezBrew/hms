@@ -245,13 +245,13 @@ export function EncounterList() {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
+          <div className="size-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <AlertTriangle className="size-8 text-destructive" />
           </div>
           <h2 className="font-display text-2xl text-foreground">Error Loading Encounters</h2>
           <p className="text-muted-foreground">{error?.message || 'Failed to load encounters.'}</p>
           <Button onClick={() => refetch()} className="font-mono text-xs">
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="size-4 mr-2" />
             Retry
           </Button>
         </div>
@@ -287,14 +287,14 @@ export function EncounterList() {
               onClick={() => setShowFilters(!showFilters)}
               className={cn("font-mono text-xs", hasActiveFilters && "border-primary text-primary")}
             >
-              <Filter className="h-4 w-4 mr-2" />
+              <Filter className="size-4 mr-2" />
               Filters
               {hasActiveFilters && (
-                <span className="ml-2 w-2 h-2 rounded-full bg-primary" />
+                <span className="ml-2 size-2 rounded-full bg-primary" />
               )}
             </Button>
             <Button onClick={() => navigate('/encounters/new')} className="font-mono text-xs">
-              <PlusCircle className="h-4 w-4 mr-2" />
+              <PlusCircle className="size-4 mr-2" />
               New Encounter
             </Button>
           </div>
@@ -317,7 +317,7 @@ export function EncounterList() {
                   onClick={resetFilters}
                   className="font-mono text-xs text-muted-foreground"
                 >
-                  <X className="h-3 w-3 mr-1" />
+                  <X className="size-3 mr-1" />
                   Clear All
                 </Button>
               )}
@@ -448,15 +448,15 @@ export function EncounterList() {
                   "bg-card/50 border border-border rounded-2xl p-12 text-center",
                   "animate-chronicle-enter"
                 )}>
-                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                    <FileText className="h-8 w-8 text-muted-foreground" />
+                  <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                    <FileText className="size-8 text-muted-foreground" />
                   </div>
                   <h3 className="font-display text-xl text-foreground mb-2">No Encounters Found</h3>
                   <p className="text-muted-foreground text-sm mb-6">
                     No encounters match your current filters.
                   </p>
                   <Button onClick={() => navigate('/encounters/new')} className="font-mono text-xs">
-                    <PlusCircle className="h-4 w-4 mr-2" />
+                    <PlusCircle className="size-4 mr-2" />
                     Create New Encounter
                   </Button>
                 </div>
@@ -492,7 +492,7 @@ export function EncounterList() {
                 disabled={!hasPrevPage}
                 className="font-mono text-xs"
               >
-                <ChevronsLeft className="h-4 w-4" />
+                <ChevronsLeft className="size-4" />
               </Button>
               <Button
                 variant="outline"
@@ -501,7 +501,7 @@ export function EncounterList() {
                 disabled={!hasPrevPage}
                 className="font-mono text-xs"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="size-4" />
                 Previous
               </Button>
               <div className="flex items-center gap-1 mx-2">
@@ -524,7 +524,7 @@ export function EncounterList() {
                       size="sm"
                       onClick={() => goToPage(pageNum)}
                       className={cn(
-                        "font-mono text-xs w-8 h-8 p-0",
+                        "font-mono text-xs size-8 p-0",
                         currentPage === pageNum && "pointer-events-none"
                       )}
                     >
@@ -541,7 +541,7 @@ export function EncounterList() {
                 className="font-mono text-xs"
               >
                 Next
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="size-4" />
               </Button>
               <Button
                 variant="outline"
@@ -550,7 +550,7 @@ export function EncounterList() {
                 disabled={!hasNextPage}
                 className="font-mono text-xs"
               >
-                <ChevronsRight className="h-4 w-4" />
+                <ChevronsRight className="size-4" />
               </Button>
             </div>
           </div>
@@ -580,15 +580,15 @@ function EncounterGrid({ encounters, loading, formatDate, navigate }) {
         "bg-card/50 border border-border rounded-2xl p-12 text-center",
         "animate-chronicle-enter"
       )}>
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-          <FileText className="h-8 w-8 text-muted-foreground" />
+        <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+          <FileText className="size-8 text-muted-foreground" />
         </div>
         <h3 className="font-display text-xl text-foreground mb-2">No Encounters Found</h3>
         <p className="text-muted-foreground text-sm mb-6">
           No encounters match your current filters.
         </p>
         <Button onClick={() => navigate('/encounters/new')} className="font-mono text-xs">
-          <PlusCircle className="h-4 w-4 mr-2" />
+          <PlusCircle className="size-4 mr-2" />
           Create New Encounter
         </Button>
       </div>
@@ -662,10 +662,10 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
       <div className="flex items-center gap-4">
         {/* Type Icon */}
         <div className={cn(
-          "w-12 h-12 rounded-full flex items-center justify-center",
+          "size-12 rounded-full flex items-center justify-center",
           "bg-card border border-border"
         )}>
-          <TypeIcon className={cn("h-5 w-5", typeConfig.color)} />
+          <TypeIcon className={cn("size-5", typeConfig.color)} />
         </div>
 
         {/* Main Content */}
@@ -681,18 +681,18 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5 font-mono text-xs">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               {formatDate(encounter.start_time)}
             </span>
             {encounter.practitioner_name && (
               <span className="flex items-center gap-1.5">
-                <User className="h-3 w-3" />
+                <User className="size-3" />
                 {encounter.practitioner_name}
               </span>
             )}
             {encounter.location && (
               <span className="flex items-center gap-1.5">
-                <Building2 className="h-3 w-3" />
+                <Building2 className="size-3" />
                 {encounter.location}
               </span>
             )}
@@ -706,7 +706,7 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
           className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
         >
           View
-          <ChevronRight className="h-3 w-3 ml-1" />
+          <ChevronRight className="size-3 ml-1" />
         </Button>
       </div>
     </article>

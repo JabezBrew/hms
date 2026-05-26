@@ -815,7 +815,7 @@ export function OmniSearchDialog() {
                   <div className="flex min-w-0 items-start gap-3">
                     <LeadingIcon Icon={Sparkles} tone="amber" />
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      Parsing intent...
+                      Parsing intent…
                     </span>
                   </div>
                 </CommandItem>
@@ -1265,7 +1265,7 @@ export function OmniSearchDialog() {
           <CommandItem disabled value="Loading" className={COMMAND_ITEM_CLASSNAME}>
             <div className="flex min-w-0 items-start gap-3">
               <LeadingIcon Icon={Sparkles} tone="amber" />
-              <span className="font-mono text-[10px] text-muted-foreground">Searching...</span>
+              <span className="font-mono text-[10px] text-muted-foreground">Searching…</span>
             </div>
           </CommandItem>
         )}

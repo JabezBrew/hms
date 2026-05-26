@@ -127,8 +127,8 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-3 font-mono text-sm text-muted-foreground">Loading templates...</span>
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        <span className="ml-3 font-mono text-sm text-muted-foreground">Loading templates…</span>
       </div>
     );
   }
@@ -136,7 +136,7 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
   if (!templates?.length) {
     return (
       <div className="text-center py-12">
-        <FileText className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+        <FileText className="size-12 mx-auto text-muted-foreground/50 mb-4" />
         <h3 className="font-display text-lg text-foreground mb-2">No Templates Available</h3>
         <p className="font-mono text-sm text-muted-foreground">
           No note templates are available. Please contact your administrator.
@@ -187,6 +187,7 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
 
                 return (
                   <button
+                    type="button"
                     key={template.id}
                     onClick={() => onSelect(template)}
                     className={cn(
@@ -206,7 +207,7 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
                     {/* Top row: Icon and visibility */}
                     <div className="flex items-start justify-between w-full mb-3">
                       <div className={cn(
-                        "w-10 h-10 rounded-lg flex items-center justify-center",
+                        "size-10 rounded-lg flex items-center justify-center",
                         "transition-colors duration-200",
                         color === 'amber' && "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400",
                         color === 'rose' && "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400",
@@ -214,7 +215,7 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
                         color === 'emerald' && "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
                         color === 'violet' && "bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
                       )}>
-                        <Icon className="h-5 w-5" />
+                        <Icon className="size-5" />
                       </div>
 
                       {/* Visibility indicator */}
@@ -224,7 +225,7 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
                             System
                           </span>
                         )}
-                        <VisibilityIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <VisibilityIcon className="size-3.5 text-muted-foreground" />
                       </div>
                     </div>
 
@@ -278,7 +279,7 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
                       color === 'emerald' && "text-emerald-500",
                       color === 'violet' && "text-violet-500"
                     )}>
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </div>

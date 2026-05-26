@@ -61,12 +61,12 @@ const SortableHeader = ({ field, label, currentSort, onSort, className }) => {
         {label}
         {isActive ? (
           isDesc ? (
-            <ArrowDown className="h-3 w-3" aria-hidden="true" />
+            <ArrowDown className="size-3" aria-hidden="true" />
           ) : (
-            <ArrowUp className="h-3 w-3" aria-hidden="true" />
+            <ArrowUp className="size-3" aria-hidden="true" />
           )
         ) : (
-          <ArrowUpDown className="h-3 w-3 text-muted-foreground/50" aria-hidden="true" />
+          <ArrowUpDown className="size-3 text-muted-foreground/50" aria-hidden="true" />
         )}
       </button>
     </div>
@@ -98,7 +98,7 @@ const AuditLogTable = ({ logs, className, sortBy, onSortChange }) => {
         role="row"
         className={cn(gridClassName, "bg-muted/50 text-xs font-mono sticky top-0 z-10")}
       >
-        <div role="columnheader" className="px-2 py-2 text-muted-foreground" />
+        <div role="columnheader" aria-label="Expand audit log row" className="p-2 text-muted-foreground" />
         <SortableHeader
           field="timestamp"
           label="Timestamp"
@@ -187,20 +187,20 @@ const AuditLogRow = ({ log, isExpanded, onToggle, gridClassName }) => {
         <div role="cell" className="px-2 py-3">
           <ChevronRight
             className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform",
+              "size-4 text-muted-foreground transition-transform",
               isExpanded && "rotate-90"
             )}
             aria-hidden="true"
           />
         </div>
 
-        <div role="cell" className="px-3 py-3 font-mono text-xs text-muted-foreground">
+        <div role="cell" className="p-3 font-mono text-xs text-muted-foreground">
           {format(new Date(log.timestamp), 'MMM d, yyyy')}
           <br />
           <span className="text-[10px]">{format(new Date(log.timestamp), 'h:mm:ss a')}</span>
         </div>
 
-        <div role="cell" className="px-3 py-3">
+        <div role="cell" className="p-3">
           <div className="flex flex-col">
             <span className="text-sm font-medium text-foreground truncate max-w-[180px]">
               {log.user_display || log.user_email || '—'}
@@ -213,16 +213,16 @@ const AuditLogRow = ({ log, isExpanded, onToggle, gridClassName }) => {
           </div>
         </div>
 
-        <div role="cell" className="px-3 py-3">
+        <div role="cell" className="p-3">
           <div className="flex items-center gap-1.5">
-            <ActionIcon className={cn("h-3.5 w-3.5", actionColorClass)} aria-hidden="true" />
+            <ActionIcon className={cn("size-3.5", actionColorClass)} aria-hidden="true" />
             <span className={cn("text-xs font-medium", actionColorClass)}>
               {log.action_display || formatAction(log.action)}
             </span>
           </div>
         </div>
 
-        <div role="cell" className="px-3 py-3">
+        <div role="cell" className="p-3">
           <Badge
             variant="outline"
             className={cn(
@@ -234,7 +234,7 @@ const AuditLogRow = ({ log, isExpanded, onToggle, gridClassName }) => {
           </Badge>
         </div>
 
-        <div role="cell" className="px-3 py-3">
+        <div role="cell" className="p-3">
           <div className="flex items-center gap-2">
             {log.resource_type && (
               <span className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
@@ -249,7 +249,7 @@ const AuditLogRow = ({ log, isExpanded, onToggle, gridClassName }) => {
           </div>
         </div>
 
-        <div role="cell" className="px-3 py-3 font-mono text-xs text-muted-foreground">
+        <div role="cell" className="p-3 font-mono text-xs text-muted-foreground">
           {log.ip_address || '—'}
         </div>
       </div>

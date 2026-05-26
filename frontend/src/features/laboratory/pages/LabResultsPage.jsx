@@ -478,7 +478,7 @@ export default function LabResultsPage() {
                   openOrderInterpretation(group);
                 }}
               >
-                <Sparkles className="mr-1 h-3 w-3" />
+                <Sparkles className="mr-1 size-3" />
                 Interpret
               </Button>
             )}
@@ -640,7 +640,7 @@ export default function LabResultsPage() {
             className="flex items-center gap-2"
             disabled={isFetching}
           >
-            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
             Refresh
           </Button>
         )}
@@ -661,7 +661,7 @@ export default function LabResultsPage() {
               value="critical"
               className="font-mono text-xs"
             >
-              <AlertTriangle className="h-4 w-4 mr-2" />
+              <AlertTriangle className="size-4 mr-2" />
               Critical / Needs Review
               {stats.critical > 0 && (
                 <Badge variant="destructive" className="ml-2 h-5 px-1.5">
@@ -706,7 +706,7 @@ export default function LabResultsPage() {
                 onClick={handleClearFilters}
                 className="ml-auto font-mono text-xs text-muted-foreground"
               >
-                <X className="h-4 w-4 mr-1" />
+                <X className="size-4 mr-1" />
                 Clear
               </Button>
             )}
@@ -780,26 +780,26 @@ export default function LabResultsPage() {
                           </Link>
                           {group.hasCritical && (
                             <Badge variant="outline" className="border-rose-300 bg-rose-100 text-rose-700">
-                              <AlertTriangle className="mr-1 h-3 w-3" />
+                              <AlertTriangle className="mr-1 size-3" />
                               Critical
                             </Badge>
                           )}
                           {unverifiedCount === 0 && group.results.length > 0 && (
                             <Badge variant="outline" className="border-emerald-300 bg-emerald-100 text-emerald-700">
-                              <CheckCircle2 className="mr-1 h-3 w-3" />
+                              <CheckCircle2 className="mr-1 size-3" />
                               Verified
                             </Badge>
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1 font-mono">
-                            <User className="h-3 w-3" />
+                            <User className="size-3" />
                             {group.patient_mrn || "No MRN"}
                           </span>
                           <span className="font-mono text-xs">Order: {group.order_number}</span>
                           {group.ordering_provider && (
                             <span className="flex items-center gap-1">
-                              <Stethoscope className="h-3 w-3" />
+                              <Stethoscope className="size-3" />
                               {group.ordering_provider}
                             </span>
                           )}
@@ -812,7 +812,7 @@ export default function LabResultsPage() {
                                 variant="outline"
                                 className="border-sky-200 bg-sky-50 text-sky-700 text-xs"
                               >
-                                <Package className="mr-1 h-3 w-3" />
+                                <Package className="mr-1 size-3" />
                                 {panel}
                               </Badge>
                             ))}
@@ -829,7 +829,7 @@ export default function LabResultsPage() {
                             disabled={!group.order_id}
                             className="text-xs"
                           >
-                            <Sparkles className="mr-1 h-3 w-3" />
+                            <Sparkles className="mr-1 size-3" />
                             Interpret Order
                           </Button>
                         )}
@@ -839,7 +839,7 @@ export default function LabResultsPage() {
                             onClick={() => handleBatchVerifyClick(group)}
                             className="bg-emerald-600 text-xs text-white hover:bg-emerald-700"
                           >
-                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            <CheckCircle2 className="mr-1 size-3" />
                             Verify All ({unverifiedCount})
                           </Button>
                         )}
@@ -849,7 +849,7 @@ export default function LabResultsPage() {
                           onClick={() => toggleOrderExpansion(group._key)}
                           className="text-muted-foreground"
                         >
-                          <ChevronUp className="h-4 w-4" />
+                          <ChevronUp className="size-4" />
                           <span className="ml-1 text-xs">Hide</span>
                         </Button>
                       </div>
@@ -893,7 +893,7 @@ export default function LabResultsPage() {
                                 </td>
                                 <td className="px-4 py-2.5">
                                   <div className="flex items-center gap-1.5">
-                                    {FlagIcon && <FlagIcon className={cn("h-4 w-4", flagConfig.className)} />}
+                                    {FlagIcon && <FlagIcon className={cn("size-4", flagConfig.className)} />}
                                     <span className={cn("font-mono", flagConfig.className)}>
                                       {result.value} {result.unit}
                                     </span>
@@ -910,12 +910,12 @@ export default function LabResultsPage() {
                                 <td className="px-4 py-2.5">
                                   {result.is_verified ? (
                                     <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
-                                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                                      <CheckCircle2 className="mr-1 size-3" />
                                       Verified
                                     </Badge>
                                   ) : (
                                     <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
-                                      <Clock className="mr-1 h-3 w-3" />
+                                      <Clock className="mr-1 size-3" />
                                       Pending
                                     </Badge>
                                   )}
@@ -929,7 +929,7 @@ export default function LabResultsPage() {
                                         onClick={() => openResultInterpretation(result, group)}
                                         className="h-7 text-xs"
                                       >
-                                        <Sparkles className="mr-1 h-3 w-3" />
+                                        <Sparkles className="mr-1 size-3" />
                                         Interpret
                                       </Button>
                                     )}
@@ -940,7 +940,7 @@ export default function LabResultsPage() {
                                         onClick={() => handleVerifyClick(result)}
                                         className="h-7 text-xs"
                                       >
-                                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                                        <CheckCircle2 className="mr-1 size-3" />
                                         Verify
                                       </Button>
                                     )}
@@ -988,7 +988,7 @@ export default function LabResultsPage() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="font-display text-xl flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-amber-600" />
+              <Sparkles className="size-5 text-amber-600" />
               AI Lab Interpretation
             </DialogTitle>
             <DialogDescription>
@@ -1221,12 +1221,12 @@ export default function LabResultsPage() {
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Verifying...
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  Verifying…
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  <CheckCircle2 className="size-4 mr-2" />
                   {verifyMode === "order" ? "Verify All" : "Verify Result"}
                 </>
               )}

@@ -51,13 +51,15 @@ import {
   useRemittanceQueue,
 } from '@/features/billing/hooks';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 function formatCurrency(amount) {
   const n = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(Number.isFinite(n) ? n : 0);
+  return GHS_CURRENCY_FORMATTER.format(Number.isFinite(n) ? n : 0);
 }
 
 function formatDate(dateString) {
@@ -175,7 +177,7 @@ export default function NhisClaimsArPage() {
         const Icon = meta.icon;
         return (
           <span className={cn('inline-flex items-center gap-1 font-mono text-xs px-2 py-1 rounded', meta.cls)}>
-            <Icon className="h-3 w-3" />
+            <Icon className="size-3" />
             {meta.label}
           </span>
         );
@@ -302,7 +304,7 @@ export default function NhisClaimsArPage() {
         const Icon = meta.icon;
         return (
           <span className={cn('inline-flex items-center gap-1 font-mono text-xs px-2 py-1 rounded', meta.cls)}>
-            <Icon className="h-3 w-3" />
+            <Icon className="size-3" />
             {meta.label}
           </span>
         );
@@ -338,7 +340,7 @@ export default function NhisClaimsArPage() {
               }
             }}
           >
-            <Download className="h-4 w-4 mr-2" />
+            <Download className="size-4 mr-2" />
             Download ZIP
           </Button>
         ) : null
@@ -384,7 +386,7 @@ export default function NhisClaimsArPage() {
         const Icon = meta.icon;
         return (
           <span className={cn('inline-flex items-center gap-1 font-mono text-xs px-2 py-1 rounded', meta.cls)}>
-            <Icon className="h-3 w-3" />
+            <Icon className="size-3" />
             {meta.label}
           </span>
         );
@@ -446,7 +448,7 @@ export default function NhisClaimsArPage() {
       <PageHeader
         title={(
           <span className="flex items-center gap-3">
-            <FileSpreadsheet className="h-7 w-7 text-[oklch(0.70_0.15_230)]" />
+            <FileSpreadsheet className="size-7 text-[oklch(0.70_0.15_230)]" />
             NHIS Claims + AR
           </span>
         )}
@@ -457,7 +459,7 @@ export default function NhisClaimsArPage() {
             className="font-mono text-xs"
             onClick={() => handleRefresh()}
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="size-4 mr-2" />
             Refresh
           </Button>
         )}
@@ -705,7 +707,7 @@ export default function NhisClaimsArPage() {
                       }
                     }}
                   >
-                    <Upload className="h-4 w-4 mr-2" />
+                    <Upload className="size-4 mr-2" />
                     Import
                   </Button>
                 </div>
@@ -843,7 +845,7 @@ export default function NhisClaimsArPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
+              <AlertTriangle className="size-5 text-destructive" />
               Export With Lint Errors?
             </DialogTitle>
             <DialogDescription>
@@ -961,9 +963,9 @@ export default function NhisClaimsArPage() {
                           row.match_status === 'matched' ? 'badge-chronicle-emerald' : 'badge-chronicle-rose'
                         )}>
                           {row.match_status === 'matched' ? (
-                            <CheckCircle className="h-3 w-3" />
+                            <CheckCircle className="size-3" />
                           ) : (
-                            <AlertTriangle className="h-3 w-3" />
+                            <AlertTriangle className="size-3" />
                           )}
                           {row.match_status}
                         </span>

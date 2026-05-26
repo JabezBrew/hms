@@ -140,7 +140,7 @@ export default function NursingDashboardPage() {
                 onClick={handleRefresh}
                 disabled={isFetching}
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           )}
@@ -151,7 +151,7 @@ export default function NursingDashboardPage() {
         {/* Error Alerts */}
         {(monitoringError || alertsError) && (
           <Alert variant="destructive">
-            <ShieldAlert className="h-4 w-4" />
+            <ShieldAlert className="size-4" />
             <AlertTitle>Error Loading Nursing Data</AlertTitle>
             <AlertDescription>
               {monitoringError && (
@@ -181,9 +181,9 @@ export default function NursingDashboardPage() {
         {/* Statistics Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <Users className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalPatients}</div>
@@ -192,9 +192,9 @@ export default function NursingDashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Critical Patients</CardTitle>
-              <Activity className="h-4 w-4 text-red-600" />
+              <Activity className="size-4 text-red-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">{stats.criticalPatients}</div>
@@ -203,9 +203,9 @@ export default function NursingDashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Alerts</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              <AlertTriangle className="size-4 text-orange-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">{stats.activeAlerts}</div>
@@ -214,9 +214,9 @@ export default function NursingDashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Pending Tasks</CardTitle>
-              <Activity className="h-4 w-4 text-blue-600" />
+              <Activity className="size-4 text-blue-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">{stats.pendingTasks}</div>
@@ -246,7 +246,7 @@ export default function NursingDashboardPage() {
                       <TabsTrigger value="critical">
                         Critical
                         {stats.criticalPatients > 0 && (
-                          <Badge variant="destructive" className="ml-2 h-5 w-5 p-0 flex items-center justify-center">
+                          <Badge variant="destructive" className="ml-2 size-5 p-0 flex items-center justify-center">
                             {stats.criticalPatients}
                           </Badge>
                         )}
@@ -273,7 +273,7 @@ export default function NursingDashboardPage() {
                   </div>
                 ) : totalCount === 0 ? (
                   <div className="text-center py-12">
-                    <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <Users className="size-12 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">No patients found</p>
                     <p className="text-xs text-muted-foreground mt-2">
                       {selectedWard ? 'Try selecting a different ward' : 'No admitted patients at this time'}
@@ -281,7 +281,7 @@ export default function NursingDashboardPage() {
                   </div>
                 ) : filteredPatients.length === 0 ? (
                   <div className="text-center py-12">
-                    <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <Users className="size-12 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">No patients match the selected filter</p>
                     <p className="text-xs text-muted-foreground mt-2">
                       Try selecting the "All" tab to see all patients

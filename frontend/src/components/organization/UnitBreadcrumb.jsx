@@ -30,13 +30,13 @@ export function UnitBreadcrumb({
     return (
       <nav className={cn('flex items-center text-sm', className)}>
         {showIcon && (
-          <Building2 className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+          <Building2 className="size-4 text-muted-foreground mr-2 shrink-0" />
         )}
         <ol className="flex items-center flex-wrap gap-1">
           {pathParts.map((part, index) => (
             <li key={index} className="flex items-center">
               {index > 0 && (
-                <ChevronRight className="h-4 w-4 text-muted-foreground mx-1 shrink-0" />
+                <ChevronRight className="size-4 text-muted-foreground mx-1 shrink-0" />
               )}
               <span
                 className={cn(
@@ -61,9 +61,9 @@ export function UnitBreadcrumb({
     return (
       <nav className={cn('flex items-center text-sm', className)}>
         {showIcon && (
-          <Building2 className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+          <Building2 className="size-4 text-muted-foreground mr-2 shrink-0" />
         )}
-        <span className="text-muted-foreground">Loading...</span>
+        <span className="text-muted-foreground">Loading…</span>
       </nav>
     );
   }
@@ -73,16 +73,17 @@ export function UnitBreadcrumb({
   return (
     <nav className={cn('flex items-center text-sm', className)}>
       {showIcon && (
-        <Building2 className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+        <Building2 className="size-4 text-muted-foreground mr-2 shrink-0" />
       )}
       <ol className="flex items-center flex-wrap gap-1">
         {allUnits.map((item, index) => (
           <li key={item.id} className="flex items-center">
             {index > 0 && (
-              <ChevronRight className="h-4 w-4 text-muted-foreground mx-1 shrink-0" />
+              <ChevronRight className="size-4 text-muted-foreground mx-1 shrink-0" />
             )}
             {onUnitClick && index < allUnits.length - 1 ? (
               <button
+                type="button"
                 onClick={() => onUnitClick(item.id)}
                 className="text-muted-foreground hover:text-foreground hover:underline transition-colors"
               >

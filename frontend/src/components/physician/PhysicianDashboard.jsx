@@ -188,15 +188,15 @@ export function PhysicianDashboard() {
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="grid grid-cols-3">
               <TabsTrigger value="wardRound">
-                <Stethoscope className="h-4 w-4 mr-2" />
+                <Stethoscope className="size-4 mr-2" />
                 Ward Round
               </TabsTrigger>
               <TabsTrigger value="orders">
-                <ClipboardList className="h-4 w-4 mr-2" />
+                <ClipboardList className="size-4 mr-2" />
                 Orders
               </TabsTrigger>
               <TabsTrigger value="consultations">
-                <MessageSquare className="h-4 w-4 mr-2" />
+                <MessageSquare className="size-4 mr-2" />
                 Consultations
               </TabsTrigger>
             </TabsList>
@@ -218,7 +218,7 @@ export function PhysicianDashboard() {
         <div className="space-y-4">
           {/* Search bar */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground size-4" />
             <Input
               placeholder="Search patients by name or bed number..."
               className="pl-10"

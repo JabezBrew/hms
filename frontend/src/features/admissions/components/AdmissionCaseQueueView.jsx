@@ -114,7 +114,7 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
         )}
       >
         <div className="mt-3 flex items-center gap-2 text-muted-foreground">
-          <Icon className="h-4 w-4" />
+          <Icon className="size-4" />
           <span className="font-mono text-xs">{visibleCases.length} open cases</span>
         </div>
       </PageHeader>
@@ -157,7 +157,7 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
                         )}
                         <Button size="sm" onClick={() => navigate(`/admissions/cases/${admissionCase.id}`)}>
                           Open Case
-                          <ChevronRight className="ml-2 h-4 w-4" />
+                          <ChevronRight className="ml-2 size-4" />
                         </Button>
                       </div>
                     </div>

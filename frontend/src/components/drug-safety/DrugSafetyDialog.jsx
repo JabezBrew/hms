@@ -19,6 +19,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 const SEVERITY_CONFIG = {
   critical: {
     icon: XCircle,
@@ -67,7 +69,7 @@ const SEVERITY_CONFIG = {
 export function DrugSafetyDialog({
   open,
   onOpenChange,
-  alerts = [],
+  alerts = DEFAULT_EMPTY_ARRAY,
   hasCriticalAlerts,
   medicationName,
   onProceed,
@@ -114,12 +116,12 @@ export function DrugSafetyDialog({
           <AlertDialogTitle className="flex items-center gap-2">
             {hasCriticalAlerts ? (
               <>
-                <XCircle className="h-6 w-6 text-red-600" />
+                <XCircle className="size-6 text-red-600" />
                 <span className="text-red-600">Critical Drug Safety Alert</span>
               </>
             ) : (
               <>
-                <AlertTriangle className="h-6 w-6 text-orange-600" />
+                <AlertTriangle className="size-6 text-orange-600" />
                 <span>Drug Safety Warnings</span>
               </>
             )}
@@ -149,7 +151,7 @@ export function DrugSafetyDialog({
 
                 {severityAlerts.map((alert, index) => (
                   <Alert key={index} className={config.className}>
-                    <Icon className={`h-4 w-4 ${config.color}`} />
+                    <Icon className={`size-4 ${config.color}`} />
                     <AlertTitle className="font-semibold">
                       {alert.alert_type_display || alert.alert_type}
                     </AlertTitle>
@@ -172,7 +174,7 @@ export function DrugSafetyDialog({
         {hasCriticalAlerts && allowOverride && (
           <div className="space-y-2 p-4 border border-amber-200 bg-amber-50 rounded-lg">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+              <AlertTriangle className="size-5 text-amber-600 mt-0.5" />
               <div className="flex-1">
                 <p className="text-sm font-semibold text-amber-900">
                   Override Required

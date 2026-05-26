@@ -97,7 +97,7 @@ export function AlertsPanel({ alerts, isLoading }) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
+            <Bell className="size-5" />
             Active Alerts
           </CardTitle>
           <CardDescription>
@@ -113,7 +113,7 @@ export function AlertsPanel({ alerts, isLoading }) {
             </div>
           ) : !alerts || alerts.length === 0 ? (
             <div className="text-center py-8">
-              <Check className="h-12 w-12 text-green-500 mx-auto mb-2" />
+              <Check className="size-12 text-green-500 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No active alerts</p>
             </div>
           ) : (
@@ -146,7 +146,7 @@ export function AlertsPanel({ alerts, isLoading }) {
                         </p>
                       </div>
                     </div>
-                    <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                    <AlertTriangle className="size-4 text-orange-500 flex-shrink-0" />
                   </div>
                 </div>
               ))}

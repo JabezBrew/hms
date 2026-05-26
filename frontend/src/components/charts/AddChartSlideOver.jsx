@@ -162,7 +162,7 @@ const AddChartSlideOver = ({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-            <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <ClipboardList className="size-5 text-amber-600 dark:text-amber-400" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">
@@ -180,7 +180,7 @@ const AddChartSlideOver = ({
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -189,6 +189,7 @@ const AddChartSlideOver = ({
       <div className="px-6 py-3 bg-muted/30 border-b border-border">
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => step > 1 && setStep(1)}
             className={cn(
               "flex items-center gap-1.5 font-mono text-xs",
@@ -196,7 +197,7 @@ const AddChartSlideOver = ({
             )}
           >
             <span className={cn(
-              "w-5 h-5 rounded-full flex items-center justify-center text-[10px]",
+              "size-5 rounded-full flex items-center justify-center text-[10px]",
               step >= 1 ? "bg-amber-500 text-white" : "bg-muted text-muted-foreground"
             )}>
               1
@@ -205,6 +206,7 @@ const AddChartSlideOver = ({
           </button>
           <div className="h-px w-8 bg-border" />
           <button
+            type="button"
             onClick={() => selectedTemplate && setStep(2)}
             disabled={!selectedTemplate}
             className={cn(
@@ -214,7 +216,7 @@ const AddChartSlideOver = ({
             )}
           >
             <span className={cn(
-              "w-5 h-5 rounded-full flex items-center justify-center text-[10px]",
+              "size-5 rounded-full flex items-center justify-center text-[10px]",
               step >= 2 ? "bg-amber-500 text-white" : "bg-muted text-muted-foreground"
             )}>
               2
@@ -225,14 +227,14 @@ const AddChartSlideOver = ({
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1 px-6 py-6">
+      <ScrollArea className="flex-1 p-6">
         {step === 1 ? (
           /* Step 1: Select Template */
           <div className="space-y-4">
             {/* Search and Filter */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   placeholder="Search charts..."
                   value={searchQuery}
@@ -262,11 +264,11 @@ const AddChartSlideOver = ({
             {/* Template list */}
             {templatesLoading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
               </div>
             ) : filteredTemplates.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
-                <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <ClipboardList className="size-12 mx-auto mb-3 opacity-50" />
                 <p>No chart templates found</p>
                 {searchQuery && (
                   <p className="text-xs mt-1">Try adjusting your search</p>
@@ -293,7 +295,7 @@ const AddChartSlideOver = ({
             {/* Selected template info */}
             <div className="p-4 rounded-xl border border-border bg-muted/30">
               <div className="flex items-center gap-3 mb-2">
-                <ClipboardList className="h-5 w-5 text-amber-600" />
+                <ClipboardList className="size-5 text-amber-600" />
                 <div>
                   <p className="font-display text-base">{selectedTemplate?.name}</p>
                   <p className="font-mono text-xs text-muted-foreground">
@@ -330,7 +332,7 @@ const AddChartSlideOver = ({
                 </SelectContent>
               </Select>
               <p className="flex items-start gap-1 text-[10px] text-muted-foreground">
-                <Info className="h-3 w-3 mt-0.5" />
+                <Info className="size-3 mt-0.5" />
                 How often observations should be recorded
               </p>
             </div>
@@ -396,12 +398,12 @@ const AddChartSlideOver = ({
               >
                 {createMutation.isPending ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    Assigning...
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                    Assigning…
                   </>
                 ) : (
                   <>
-                    <Check className="h-3.5 w-3.5 mr-1.5" />
+                    <Check className="size-3.5 mr-1.5" />
                     Assign Chart
                   </>
                 )}

@@ -154,7 +154,7 @@ export default function WardDetailPage() {
         icon={Building2}
         action={
           <Button variant="outline" onClick={() => navigate('/wards')}>
-            <ChevronLeft className="h-4 w-4 mr-2" />
+            <ChevronLeft className="size-4 mr-2" />
             Back to Wards
           </Button>
         }
@@ -174,7 +174,7 @@ export default function WardDetailPage() {
               onClick={() => navigate('/wards')}
               className="self-start -ml-2"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               All Wards
             </Button>
             {(canOpenWardBoard || isAdmin) && (
@@ -185,7 +185,7 @@ export default function WardDetailPage() {
                     size="sm"
                     onClick={() => navigate(`/wards/${wardId}/board`)}
                   >
-                    <ClipboardList className="h-4 w-4 mr-2" />
+                    <ClipboardList className="size-4 mr-2" />
                     Ward Board
                   </Button>
                 ) : null}
@@ -196,7 +196,7 @@ export default function WardDetailPage() {
                       size="sm"
                       onClick={() => navigate(`/wards/${wardId}/edit`)}
                     >
-                      <Edit className="h-4 w-4 mr-2" />
+                      <Edit className="size-4 mr-2" />
                       Edit Ward
                     </Button>
                     <Button
@@ -205,7 +205,7 @@ export default function WardDetailPage() {
                       onClick={() => setShowDeleteDialog(true)}
                       className="text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
-                      <Trash2 className="h-4 w-4 mr-2" />
+                      <Trash2 className="size-4 mr-2" />
                       Delete
                     </Button>
                   </>
@@ -221,18 +221,18 @@ export default function WardDetailPage() {
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList>
             <TabsTrigger value="overview" className="flex items-center gap-2">
-              <LayoutGrid className="h-4 w-4" />
+              <LayoutGrid className="size-4" />
               Ward Overview
             </TabsTrigger>
             {isAdmin && (
               <TabsTrigger value="staff" className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
+                <Users className="size-4" />
                 Ward Staff
               </TabsTrigger>
             )}
             {isAdmin && (
               <TabsTrigger value="sections" className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
+                <Settings className="size-4" />
                 Manage Sections
               </TabsTrigger>
             )}

@@ -91,6 +91,7 @@ const PatientEditPage = () => {
     <div className="space-y-4">
       <div className="flex items-center">
         <button 
+          type="button"
           className="text-sm text-muted-foreground hover:text-foreground flex items-center"
           onClick={() => navigate(`/patients/${id}`)}
         >

@@ -8,7 +8,7 @@ import {
   BreadcrumbSeparator,
   BreadcrumbPage
 } from '@/components/ui/breadcrumb';
-import { useEffect, createContext, useContext, useState, useCallback, useRef } from 'react';
+import { useEffect, createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 
 // Create a context for breadcrumb state
 const BreadcrumbContext = createContext();
@@ -18,9 +18,9 @@ export function BreadcrumbProvider({ children }) {
   const [breadcrumbs, setBreadcrumbs] = useState([
     { label: 'Home', path: '/' }
   ]);
-  const location = useLocation();
-  const lastPathRef = useRef(location.pathname);
-  const lastAppliedPathRef = useRef(location.pathname);
+  const { pathname } = useLocation();
+  const lastPathRef = useRef(pathname);
+  const lastAppliedPathRef = useRef(pathname);
 
   const updateBreadcrumbs = useCallback((newBreadcrumbs, appliedPath) => {
     const safeBreadcrumbs = Array.isArray(newBreadcrumbs) ? newBreadcrumbs : [];
@@ -42,19 +42,21 @@ export function BreadcrumbProvider({ children }) {
 
   // Reset breadcrumbs when navigating to a new route
   useEffect(() => {
-    if (location.pathname !== lastPathRef.current) {
-      lastPathRef.current = location.pathname;
+    if (pathname !== lastPathRef.current) {
+      lastPathRef.current = pathname;
       // Skip reset if breadcrumbs were already applied for this path.
-      if (lastAppliedPathRef.current === location.pathname) {
+      if (lastAppliedPathRef.current === pathname) {
         return;
       }
       // Reset to just Home when route changes
       setBreadcrumbs([{ label: 'Home', path: '/' }]);
     }
-  }, [location.pathname]);
+  }, [pathname]);
+
+  const contextValue = useMemo(() => ({ breadcrumbs, updateBreadcrumbs }), [breadcrumbs, updateBreadcrumbs]);
 
   return (
-    <BreadcrumbContext.Provider value={{ breadcrumbs, updateBreadcrumbs }}>
+    <BreadcrumbContext.Provider value={contextValue}>
       {children}
     </BreadcrumbContext.Provider>
   );
@@ -71,12 +73,12 @@ export function useBreadcrumb() {
 
 // Component to set breadcrumbs for a page
 export function BreadcrumbSetter({ breadcrumbs }) {
-  const location = useLocation();
+  const { pathname } = useLocation();
   const { updateBreadcrumbs } = useBreadcrumb();
 
   useEffect(() => {
-    updateBreadcrumbs(breadcrumbs, location.pathname);
-  }, [breadcrumbs, location.pathname, updateBreadcrumbs]);
+    updateBreadcrumbs(breadcrumbs, pathname);
+  }, [breadcrumbs, pathname, updateBreadcrumbs]);
 
   return null;
 }

@@ -82,27 +82,27 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
       </CardHeader>
       <CardContent className="space-y-4">
         {isLoading && !caseItem ? (
-          <p className="text-sm text-muted-foreground">Loading discharge status...</p>
+          <p className="text-sm text-muted-foreground">Loading discharge status…</p>
         ) : (
           <>
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border p-3">
                 <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                  <Clock3 className="h-3.5 w-3.5" />
+                  <Clock3 className="size-3.5" />
                   Medical Ready
                 </div>
                 <p className="mt-2 text-sm font-medium">{formatDateTime(caseItem.medical_ready_at)}</p>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                  <Receipt className="h-3.5 w-3.5" />
+                  <Receipt className="size-3.5" />
                   Billing Cutoff
                 </div>
                 <p className="mt-2 text-sm font-medium">{formatDateTime(caseItem.billing_cutoff_at)}</p>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                  <ClipboardCheck className="h-3.5 w-3.5" />
+                  <ClipboardCheck className="size-3.5" />
                   Finalized
                 </div>
                 <p className="mt-2 text-sm font-medium">{formatDateTime(caseItem.finalized_at)}</p>
@@ -124,7 +124,7 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
             {openBlockers.length > 0 && (
               <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm">
                 <div className="mb-2 flex items-center gap-2 font-medium text-amber-900">
-                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTriangle className="size-4" />
                   Current blockers
                 </div>
                 <div className="flex flex-wrap gap-2">

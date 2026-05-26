@@ -4,7 +4,7 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import format from 'date-fns/format';
 
 import { Button } from '@/components/ui/button';
@@ -50,17 +50,24 @@ const MedicationHistorySlideOver = ({
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [previousOpen, setPreviousOpen] = useState(open);
+  const pageScope = `${patientId || ''}:${statusFilter}`;
+  const [previousPageScope, setPreviousPageScope] = useState(pageScope);
 
-  useEffect(() => {
+  if (previousOpen !== open) {
+    setPreviousOpen(open);
     if (!open) {
       setStatusFilter('all');
       setPage(1);
     }
-  }, [open]);
+  }
 
-  useEffect(() => {
-    setPage(1);
-  }, [statusFilter, patientId]);
+  if (previousPageScope !== pageScope) {
+    setPreviousPageScope(pageScope);
+    if (page !== 1) {
+      setPage(1);
+    }
+  }
 
   const { data, isLoading } = useMedicationAdministrationHistory(
     {
@@ -89,7 +96,7 @@ const MedicationHistorySlideOver = ({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <Pill className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+            <Pill className="size-5 text-sky-600 dark:text-sky-400" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">Medication History</h2>
@@ -103,7 +110,7 @@ const MedicationHistorySlideOver = ({
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -136,14 +143,14 @@ const MedicationHistorySlideOver = ({
         </div>
       </div>
 
-      <ScrollArea className="flex-1 px-6 py-6">
+      <ScrollArea className="flex-1 p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : records.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
-            <Pill className="h-12 w-12 mx-auto mb-3 opacity-40" />
+            <Pill className="size-12 mx-auto mb-3 opacity-40" />
             <p className="font-medium text-foreground">No medication history found</p>
             <p className="text-sm mt-1">
               No records matched the current filter for this patient.
@@ -154,7 +161,7 @@ const MedicationHistorySlideOver = ({
             {records.map((record) => (
               <article
                 key={record.id}
-                className="rounded-xl border border-border bg-card px-4 py-4"
+                className="rounded-xl border border-border bg-card p-4"
               >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
@@ -182,7 +189,7 @@ const MedicationHistorySlideOver = ({
                   <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[280px]">
                     <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
                       <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                        <Clock className="h-3 w-3" />
+                        <Clock className="size-3" />
                         Scheduled
                       </div>
                       <p className="font-mono text-xs text-foreground mt-1">
@@ -191,7 +198,7 @@ const MedicationHistorySlideOver = ({
                     </div>
                     <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
                       <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                        <Clock className="h-3 w-3" />
+                        <Clock className="size-3" />
                         Administered
                       </div>
                       <p className="font-mono text-xs text-foreground mt-1">
@@ -219,7 +226,7 @@ const MedicationHistorySlideOver = ({
               disabled={!data?.has_previous}
               className="font-mono text-xs"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Prev
             </Button>
             <span className="font-mono text-xs text-muted-foreground">
@@ -233,7 +240,7 @@ const MedicationHistorySlideOver = ({
               className="font-mono text-xs"
             >
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

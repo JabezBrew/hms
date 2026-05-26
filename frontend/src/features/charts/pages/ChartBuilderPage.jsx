@@ -35,7 +35,7 @@ const ChartBuilderPage = () => {
           title={(
             <span className="flex items-center gap-3">
               <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                <ClipboardList className="size-6 text-amber-600 dark:text-amber-400" />
               </span>
               Chart Builder
             </span>
@@ -56,7 +56,7 @@ const ChartBuilderPage = () => {
 
         <div className="max-w-7xl mx-auto px-6 py-8">
           <Alert>
-            <ClipboardList className="h-4 w-4" />
+            <ClipboardList className="size-4" />
             <AlertDescription>
               Chart builder is not available in Rust V2 mode yet because no generated /api/v2 chart-builder contract exists.
             </AlertDescription>

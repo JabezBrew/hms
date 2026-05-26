@@ -243,7 +243,7 @@ export function ConsultationRequests({ patient }) {
                     className="justify-start"
                     onClick={() => handleQuickSpecialty(specialty)}
                   >
-                    <MessageSquare className="h-4 w-4 mr-2" />
+                    <MessageSquare className="size-4 mr-2" />
                     {specialty.name}
                   </Button>
                 ))}
@@ -291,7 +291,7 @@ export function ConsultationRequests({ patient }) {
             </ScrollArea>
           ) : (
             <div className="text-center py-8">
-              <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <MessageSquare className="size-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-lg font-medium">No consultation history</p>
               <p className="text-muted-foreground">
                 No consultations have been requested for this patient yet.

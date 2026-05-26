@@ -85,6 +85,7 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
       >
         {/* Expand/Collapse Toggle */}
         <button
+          type="button"
           onClick={handleToggle}
           className={cn(
             'p-0.5 rounded hover:bg-muted transition-colors',
@@ -92,23 +93,23 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
           )}
         >
           {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            <ChevronDown className="size-4 text-muted-foreground" />
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <ChevronRight className="size-4 text-muted-foreground" />
           )}
         </button>
 
         {/* Icon */}
         <div
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-lg',
+            'flex size-8 items-center justify-center rounded-lg',
             isSelected
               ? 'bg-amber-100 dark:bg-amber-900/40'
               : 'bg-muted/80'
           )}
         >
           <Building2 className={cn(
-            'h-4 w-4',
+            'size-4',
             isSelected ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'
           )} />
         </div>
@@ -144,19 +145,19 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="size-7 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={(e) => e.stopPropagation()}
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => onAction('add-child', node)}>
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-2 size-4" />
               Add Child Unit
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onAction('edit', node)}>
-              <Pencil className="mr-2 h-4 w-4" />
+              <Pencil className="mr-2 size-4" />
               Edit
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -164,7 +165,7 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
               onClick={() => onAction('delete', node)}
               className="text-destructive focus:text-destructive"
             >
-              <Trash2 className="mr-2 h-4 w-4" />
+              <Trash2 className="mr-2 size-4" />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -243,7 +244,7 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
             <UnitBreadcrumb unit={unit} showIcon={false} className="mt-1 font-mono text-xs text-muted-foreground" />
           </div>
           <Button variant="outline" size="sm" className="font-mono text-xs" onClick={() => onEdit(unit)}>
-            <Pencil className="h-4 w-4 mr-2" />
+            <Pencil className="size-4 mr-2" />
             Edit
           </Button>
         </div>
@@ -252,6 +253,7 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
         <div className="-mb-px flex max-w-full gap-1 overflow-x-auto border-b [-webkit-overflow-scrolling:touch]">
           {tabs.map((tab) => (
             <button
+              type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
@@ -261,7 +263,7 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              <tab.icon className="h-4 w-4" />
+              <tab.icon className="size-4" />
               {tab.label}
             </button>
           ))}
@@ -646,20 +648,20 @@ export default function OrganizationPage() {
           <div className="p-5 border-b bg-background">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                  <FolderTree className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
+                  <FolderTree className="size-5 text-amber-600 dark:text-amber-400" />
                 </div>
                 <h1 className="font-display text-xl font-semibold tracking-tight">Organization</h1>
               </div>
               <Button onClick={handleCreateUnit} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs">
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="size-4 mr-1.5" />
                 Add Unit
               </Button>
             </div>
 
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 placeholder="Search units..."
                 value={searchQuery}
@@ -676,8 +678,8 @@ export default function OrganizationPage() {
               <Button variant="ghost" size="sm" className="font-mono text-xs text-muted-foreground hover:text-foreground" onClick={handleCollapseAll}>
                 Collapse All
               </Button>
-              <Button variant="ghost" size="icon" className="ml-auto h-8 w-8" onClick={() => refetch()}>
-                <RefreshCw className="h-4 w-4 text-muted-foreground" />
+              <Button variant="ghost" size="icon" className="ml-auto size-8" onClick={() => refetch()}>
+                <RefreshCw className="size-4 text-muted-foreground" />
               </Button>
             </div>
           </div>
@@ -692,8 +694,8 @@ export default function OrganizationPage() {
               </div>
             ) : filteredTree.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 mb-4">
-                  <Building2 className="h-8 w-8 text-muted-foreground/50" />
+                <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/50 mb-4">
+                  <Building2 className="size-8 text-muted-foreground/50" />
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {searchQuery ? 'No units match your search' : 'No units yet'}
@@ -736,8 +738,8 @@ export default function OrganizationPage() {
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full">
-              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-muted/50 mb-4">
-                <Building2 className="h-10 w-10 text-muted-foreground/30" />
+              <div className="flex size-20 items-center justify-center rounded-2xl bg-muted/50 mb-4">
+                <Building2 className="size-10 text-muted-foreground/30" />
               </div>
               <p className="text-muted-foreground">Select a unit to view details</p>
               <p className="text-xs text-muted-foreground/60 mt-1">or create a new organizational unit</p>
@@ -758,8 +760,8 @@ export default function OrganizationPage() {
         {/* Header */}
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-              <Building2 className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
+              <Building2 className="size-5 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
               <h2 className="font-display text-xl font-semibold">
@@ -776,14 +778,14 @@ export default function OrganizationPage() {
             variant="ghost"
             size="icon"
             onClick={closeUnitForm}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="size-8 text-muted-foreground hover:text-foreground"
           >
-            <X className="h-5 w-5" />
+            <X className="size-5" />
           </Button>
         </header>
 
         {/* Content - scrollable */}
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="flex-1 overflow-y-auto p-6">
           {editingUnitId && isLoadingEditUnit ? (
             <div className="space-y-4">
               <Skeleton className="h-10 w-full" />
@@ -817,8 +819,8 @@ export default function OrganizationPage() {
         <DialogContent>
           <DialogHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-900/30">
-                <Trash2 className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+              <div className="flex size-10 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-900/30">
+                <Trash2 className="size-5 text-rose-600 dark:text-rose-400" />
               </div>
               <DialogTitle className="font-display text-xl">Delete Unit</DialogTitle>
             </div>

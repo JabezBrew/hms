@@ -201,7 +201,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
-            <Send className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            <Send className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
           </div>
           <div>
             <h2 id="referral-form-title" className="font-display text-xl text-foreground">
@@ -219,18 +219,18 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" aria-hidden="true" />
+          <X className="size-4 mr-1.5" aria-hidden="true" />
           Close
         </Button>
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto p-6">
         <div className="space-y-6">
           {/* Urgency Alert */}
           {formData.urgency === "emergency" && (
             <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
+              <AlertCircle className="size-4" />
               <AlertDescription>
                 Emergency referrals require immediate attention. Please ensure all
                 critical information is included and consider direct communication
@@ -245,7 +245,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
               <div className="space-y-2">
                 <Label htmlFor="department">
                   Department *
-                  <Building2 className="inline h-3 w-3 ml-1 text-muted-foreground" />
+                  <Building2 className="inline size-3 ml-1 text-muted-foreground" />
                 </Label>
                 <Select
                   value={formData.department}
@@ -293,7 +293,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
             <CardContent className="pt-6 space-y-3">
               <Label>
                 Urgency Level *
-                <Clock className="inline h-3 w-3 ml-1 text-muted-foreground" />
+                <Clock className="inline size-3 ml-1 text-muted-foreground" />
               </Label>
               <div className="space-y-2">
                 {Object.entries(urgencyConfig).map(([key, config]) => (
@@ -350,7 +350,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
               <div className="space-y-2">
                 <Label htmlFor="reason">
                   Reason for Referral *
-                  <FileText className="inline h-3 w-3 ml-1 text-muted-foreground" />
+                  <FileText className="inline size-3 ml-1 text-muted-foreground" />
                 </Label>
                 <Textarea
                   id="reason"
@@ -376,7 +376,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
 
           {/* Information Notice */}
           <Alert>
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertDescription>
               This referral will be sent to the {formData.department || "selected"}{" "}
               department for review. You will be notified when the specialist
@@ -400,7 +400,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
             "Submitting..."
           ) : (
             <>
-              <Send className="h-4 w-4 mr-2" />
+              <Send className="size-4 mr-2" />
               Submit Referral
             </>
           )}

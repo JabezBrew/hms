@@ -42,6 +42,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import {
   useStaffAssignments,
   useStaffRoles,
@@ -129,7 +131,7 @@ export function WardStaffManagement({ wardId }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -153,7 +155,7 @@ export function WardStaffManagement({ wardId }) {
           <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
             <DialogTrigger asChild>
               <Button>
-                <UserPlus className="h-4 w-4 mr-2" />
+                <UserPlus className="size-4 mr-2" />
                 Assign Staff
               </Button>
             </DialogTrigger>
@@ -179,7 +181,7 @@ export function WardStaffManagement({ wardId }) {
       {/* Staff List */}
       {assignments.length === 0 ? (
         <div className="text-center py-12 border rounded-lg bg-muted/20">
-          <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <Users className="size-12 text-muted-foreground mx-auto mb-4" />
           <h4 className="text-lg font-medium text-foreground mb-2">No staff assigned</h4>
           <p className="text-sm text-muted-foreground mb-4">
             {staffAssignmentMutationsAvailable
@@ -188,7 +190,7 @@ export function WardStaffManagement({ wardId }) {
           </p>
           {staffAssignmentMutationsAvailable && (
             <Button onClick={() => setAssignDialogOpen(true)}>
-              <UserPlus className="h-4 w-4 mr-2" />
+              <UserPlus className="size-4 mr-2" />
               Assign First Staff Member
             </Button>
           )}
@@ -199,7 +201,7 @@ export function WardStaffManagement({ wardId }) {
           {nursingStaff.length > 0 && (
             <StaffSection
               title="Nursing Staff"
-              icon={<HeartPulse className="h-5 w-5 text-rose-500" />}
+              icon={<HeartPulse className="size-5 text-rose-500" />}
               assignments={nursingStaff}
               onEdit={openEditDialog}
               onDelete={handleDelete}
@@ -211,7 +213,7 @@ export function WardStaffManagement({ wardId }) {
           {medicalStaff.length > 0 && (
             <StaffSection
               title="Medical Staff"
-              icon={<Stethoscope className="h-5 w-5 text-sky-500" />}
+              icon={<Stethoscope className="size-5 text-sky-500" />}
               assignments={medicalStaff}
               onEdit={openEditDialog}
               onDelete={handleDelete}
@@ -223,7 +225,7 @@ export function WardStaffManagement({ wardId }) {
           {alliedStaff.length > 0 && (
             <StaffSection
               title="Allied Health"
-              icon={<Users className="h-5 w-5 text-emerald-500" />}
+              icon={<Users className="size-5 text-emerald-500" />}
               assignments={alliedStaff}
               onEdit={openEditDialog}
               onDelete={handleDelete}
@@ -311,7 +313,7 @@ function StaffCard({ assignment, onEdit, onDelete, readOnly = false }) {
               {assignment.practitioner_name}
             </h4>
             {assignment.is_primary && (
-              <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+              <Star className="size-3.5 text-amber-500 fill-amber-500 shrink-0" />
             )}
           </div>
           <p className="text-xs text-muted-foreground">
@@ -338,13 +340,13 @@ function StaffCard({ assignment, onEdit, onDelete, readOnly = false }) {
       {!readOnly && (
         <div className="flex items-center gap-2 pt-2 border-t">
           <Button variant="outline" size="sm" onClick={onEdit} className="flex-1">
-            <Edit className="h-3.5 w-3.5 mr-1" />
+            <Edit className="size-3.5 mr-1" />
             Edit
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm" className="text-destructive">
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="size-3.5" />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -376,7 +378,7 @@ function StaffCard({ assignment, onEdit, onDelete, readOnly = false }) {
 function StaffAssignmentForm({
   wardId,
   assignment = null,
-  existingAssignments = [],
+  existingAssignments = DEFAULT_EMPTY_ARRAY,
   onSubmit,
   isSubmitting
 }) {
@@ -549,7 +551,7 @@ function StaffAssignmentForm({
         </div>
 
         {/* Primary Ward */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-x-2">
           <Checkbox
             id="is_primary"
             checked={formData.is_primary}
@@ -561,7 +563,7 @@ function StaffAssignmentForm({
         </div>
 
         {/* Active */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-x-2">
           <Checkbox
             id="is_active"
             checked={formData.is_active}

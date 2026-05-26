@@ -34,6 +34,12 @@ import parseISO from 'date-fns/parseISO';
 import { patientsApi } from '@/features/patients/api';
 import PatientContextPanel from '@/components/patients/PatientContextPanel';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'draft', label: 'Draft' },
@@ -306,14 +312,15 @@ export default function InvoicesPage() {
             </p>
             {patientId && patientName && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-mono">
-                <User className="h-3 w-3" />
+                <User className="size-3" />
                 {patientName}
                 <button
+                  type="button"
                   onClick={clearPatientFilter}
                   className="ml-0.5 hover:bg-primary/20 rounded-full p-0.5 transition-colors"
                   title="Clear patient filter"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="size-3" />
                 </button>
               </span>
             )}
@@ -324,19 +331,19 @@ export default function InvoicesPage() {
             onClick={() => navigate('/billing/invoices/new')}
             className="font-mono text-xs w-full sm:w-auto"
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             New Invoice
           </Button>
         )}
       />
 
       {/* Filters */}
-      <div className="px-4 sm:px-6 py-4 bg-card/50 border-b border-border">
+      <div className="p-4 sm:px-6 bg-card/50 border-b border-border">
         <div className="flex flex-col gap-3">
           {/* First row: Search and Status */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 placeholder="Search by invoice number or patient..."
                 value={search}
@@ -346,7 +353,7 @@ export default function InvoicesPage() {
             </div>
             <Select value={status} onValueChange={handleStatusChange}>
               <SelectTrigger className="w-full sm:w-[180px] font-mono text-sm">
-                <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+                <Filter className="size-4 mr-2 text-muted-foreground" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -401,8 +408,8 @@ export default function InvoicesPage() {
           </div>
         ) : (
           <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-              <FileText className="h-8 w-8 text-muted-foreground" />
+            <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <FileText className="size-8 text-muted-foreground" />
             </div>
             <h3 className="font-display text-xl text-foreground mb-2">No Invoices Found</h3>
             <p className="text-muted-foreground text-sm mb-4">
@@ -412,7 +419,7 @@ export default function InvoicesPage() {
             </p>
             {!search && status === 'all' && (
               <Button onClick={() => navigate('/billing/invoices/new')} className="font-mono text-xs">
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Create Invoice
               </Button>
             )}
@@ -433,7 +440,7 @@ export default function InvoicesPage() {
                 disabled={page <= 1}
                 className="font-mono text-xs"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
+                <ChevronLeft className="size-4 mr-1" />
                 Previous
               </Button>
               <Button
@@ -444,7 +451,7 @@ export default function InvoicesPage() {
                 className="font-mono text-xs"
               >
                 Next
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <ChevronRight className="size-4 ml-1" />
               </Button>
             </div>
           </div>
@@ -493,7 +500,7 @@ function InvoiceCard({ invoice, index, onClick, onPatientContext }) {
         <div className="min-w-0 flex-1">
           {/* Invoice Header */}
           <div className="flex items-center gap-2 mb-2">
-            <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <FileText className="size-4 text-muted-foreground flex-shrink-0" />
             <span className="font-mono text-sm text-primary font-medium">
               {invoice.invoice_number}
             </span>
@@ -510,7 +517,7 @@ function InvoiceCard({ invoice, index, onClick, onPatientContext }) {
           {/* Meta Info */}
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5 font-mono text-xs">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               {formatDate(invoice.created_at)}
             </span>
             {invoice.due_date && (
@@ -547,7 +554,7 @@ function InvoiceCard({ invoice, index, onClick, onPatientContext }) {
               </p>
             )}
           </div>
-          <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
+          <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
         </div>
       </div>
     </article>
@@ -556,11 +563,7 @@ function InvoiceCard({ invoice, index, onClick, onPatientContext }) {
 
 // Utility functions
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatDate(dateString) {

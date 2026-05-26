@@ -58,7 +58,7 @@ export function PatientList({ patients, onPatientSelect }) {
         <div className="min-w-0">
           <p className="truncate text-sm text-foreground">{patient?.bed?.ward?.name || 'Unassigned ward'}</p>
           <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Bed className="h-3 w-3" />
+            <Bed className="size-3" />
             Bed {patient?.bed?.bed_number || 'Unassigned'}
           </p>
         </div>
@@ -96,7 +96,7 @@ export function PatientList({ patients, onPatientSelect }) {
       width: '160px',
       render: (patient) => (
         <div className="flex items-center gap-1 text-sm text-foreground">
-          <Clock className="h-3 w-3 text-muted-foreground" />
+          <Clock className="size-3 text-muted-foreground" />
           {getTimeSinceAdmission(patient?.admission?.admission_date)}
         </div>
       ),
@@ -108,7 +108,7 @@ export function PatientList({ patients, onPatientSelect }) {
       render: (patient) => (
         <div className="space-y-1">
           <p className="flex items-center gap-1 text-sm text-foreground">
-            <Calendar className="h-3 w-3 text-muted-foreground" />
+            <Calendar className="size-3 text-muted-foreground" />
             {patient?.admission?.expected_discharge_date
               ? new Date(patient.admission.expected_discharge_date).toLocaleDateString()
               : 'Not scheduled'}
@@ -125,7 +125,7 @@ export function PatientList({ patients, onPatientSelect }) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center p-6">
-          <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+          <AlertCircle className="size-12 text-muted-foreground mb-4" />
           <p className="text-lg font-medium">No patients found</p>
           <p className="text-muted-foreground">
             There are no admitted patients in this ward or your search returned no results.

@@ -35,6 +35,25 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { Link } from 'react-router-dom';
 
+function CapabilityBadge({ enabled, label, icon: Icon }) {
+  return (
+    <div className="flex items-center gap-2">
+      {enabled ? (
+        <Check className="size-3.5 text-emerald-600" />
+      ) : (
+        <X className="size-3.5 text-muted-foreground/50" />
+      )}
+      {Icon && <Icon className={cn('size-4', enabled ? 'text-foreground' : 'text-muted-foreground/50')} />}
+      <span className={cn(
+        'text-sm',
+        enabled ? 'text-foreground' : 'text-muted-foreground/50'
+      )}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 /**
  * LeadershipRolesPage - Configuration page for leadership roles
  */
@@ -60,31 +79,14 @@ export default function LeadershipRolesPage() {
     ],
   });
 
-  const CapabilityBadge = ({ enabled, label, icon: Icon }) => (
-    <div className="flex items-center gap-2">
-      {enabled ? (
-        <Check className="h-3.5 w-3.5 text-emerald-600" />
-      ) : (
-        <X className="h-3.5 w-3.5 text-muted-foreground/50" />
-      )}
-      {Icon && <Icon className={cn('h-4 w-4', enabled ? 'text-foreground' : 'text-muted-foreground/50')} />}
-      <span className={cn(
-        'text-sm',
-        enabled ? 'text-foreground' : 'text-muted-foreground/50'
-      )}>
-        {label}
-      </span>
-    </div>
-  );
-
   return (
     <PageShell>
       {pageMeta}
       <PageHeader
         title={(
           <span className="inline-flex items-center gap-3">
-            <span className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
-              <Crown className="h-5 w-5 text-amber-700" />
+            <span className="size-10 rounded-lg bg-amber-100 flex items-center justify-center">
+              <Crown className="size-5 text-amber-700" />
             </span>
             <span>Leadership Roles</span>
           </span>
@@ -93,7 +95,7 @@ export default function LeadershipRolesPage() {
         actions={(
           <Button variant="ghost" size="icon" asChild>
             <Link to="/admin/organization" aria-label="Back to organization">
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="size-5" />
             </Link>
           </Button>
         )}
@@ -103,7 +105,7 @@ export default function LeadershipRolesPage() {
 
         {/* Search */}
         <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search leadership roles..."
             value={searchQuery}
@@ -148,10 +150,10 @@ export default function LeadershipRolesPage() {
                   >
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <UserCog className="h-4 w-4 text-muted-foreground" />
+                        <UserCog className="size-4 text-muted-foreground" />
                         <span className="font-medium">{role.name}</span>
                         {role.is_primary_leader && (
-                          <Crown className="h-3.5 w-3.5 text-amber-500" />
+                          <Crown className="size-3.5 text-amber-500" />
                         )}
                       </div>
                     </TableCell>
@@ -167,13 +169,13 @@ export default function LeadershipRolesPage() {
                       <div className="flex flex-wrap gap-2">
                         {role.can_approve && (
                           <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
-                            <ClipboardCheck className="h-3 w-3 mr-1" />
+                            <ClipboardCheck className="size-3 mr-1" />
                             Approve
                           </Badge>
                         )}
                         {role.can_manage_staff && (
                           <Badge variant="outline" className="text-xs bg-sky-50 text-sky-700 border-sky-200">
-                            <Users className="h-3 w-3 mr-1" />
+                            <Users className="size-3 mr-1" />
                             Staff
                           </Badge>
                         )}
@@ -203,10 +205,10 @@ export default function LeadershipRolesPage() {
         <SheetContent className="sm:max-w-lg">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
-              <UserCog className="h-5 w-5" />
+              <UserCog className="size-5" />
               {selectedRole?.name}
               {selectedRole?.is_primary_leader && (
-                <Crown className="h-4 w-4 text-amber-500" />
+                <Crown className="size-4 text-amber-500" />
               )}
             </SheetTitle>
           </SheetHeader>
@@ -233,12 +235,12 @@ export default function LeadershipRolesPage() {
                 <div className="bg-muted/50 rounded-lg p-4">
                   {selectedRole.is_primary_leader ? (
                     <div className="flex items-center gap-2 text-amber-700">
-                      <Crown className="h-5 w-5" />
+                      <Crown className="size-5" />
                       <span className="font-medium">Primary Leader</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 text-muted-foreground">
-                      <UserCog className="h-5 w-5" />
+                      <UserCog className="size-5" />
                       <span>Supporting Role</span>
                     </div>
                   )}

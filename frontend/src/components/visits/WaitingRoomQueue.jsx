@@ -114,7 +114,7 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
   if (queue?.length === 0) {
     return (
       <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-        <User className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+        <User className="size-12 text-muted-foreground mx-auto mb-3" />
         <p className="text-muted-foreground">No patients in waiting room</p>
       </div>
     );

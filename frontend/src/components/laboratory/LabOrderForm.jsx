@@ -348,7 +348,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <TestTube2 className="h-5 w-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+            <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
           </div>
           <div>
             <h2 id="lab-order-title" className="font-display text-xl text-foreground">
@@ -366,7 +366,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
           onClick={onClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" aria-hidden="true" />
+          <X className="size-4 mr-1.5" aria-hidden="true" />
           Close
         </Button>
       </header>
@@ -386,13 +386,13 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
       </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="flex-1 overflow-y-auto p-6">
           {/* Step 1: Test Selection */}
           {currentStep === 1 && (
             <div className="space-y-4">
               {/* Search */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
                 <Label htmlFor="lab-test-search" className="sr-only">Search tests and panels</Label>
                 <Input
                   id="lab-test-search"
@@ -406,7 +406,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
               {errors.tests && (
                 <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
+                  <AlertCircle className="size-4" />
                   <AlertDescription>{errors.tests}</AlertDescription>
                 </Alert>
               )}
@@ -414,7 +414,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
               {/* Selection summary */}
               {(formData.selected_tests.length > 0 || formData.selected_panels.length > 0) && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
-                  <Check className="h-4 w-4 text-emerald-600" />
+                  <Check className="size-4 text-emerald-600" />
                   <span>
                     {formData.selected_panels.length > 0 && (
                       <span className="font-medium">{formData.selected_panels.length} panel{formData.selected_panels.length !== 1 ? 's' : ''}</span>
@@ -438,11 +438,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
                   {testsLoading || panelsLoading ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      Searching...
+                      Searching…
                     </div>
                   ) : totalResults === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <Search className="size-8 mx-auto mb-2 opacity-50" />
                       <p>No tests or panels found</p>
                       <p className="text-xs mt-1">Try different keywords or abbreviations (e.g., TSH, CBC, LFTs)</p>
                     </div>
@@ -452,7 +452,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                       {filteredPanels.length > 0 && (
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-xs font-mono uppercase text-muted-foreground">
-                            <Package className="h-3 w-3" />
+                            <Package className="size-3" />
                             Panels ({filteredPanels.length})
                           </div>
                           {filteredPanels.map((panel) => (
@@ -505,7 +505,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                       {filteredTests.length > 0 && (
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-xs font-mono uppercase text-muted-foreground">
-                            <TestTube2 className="h-3 w-3" />
+                            <TestTube2 className="size-3" />
                             Individual Tests ({filteredTests.length})
                           </div>
                           {filteredTests.slice(0, 20).map((test) => (
@@ -592,11 +592,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                   <Tabs defaultValue="panels" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="panels">
-                        <Package className="h-4 w-4 mr-2" />
+                        <Package className="size-4 mr-2" />
                         Panels ({filteredPanels.length})
                       </TabsTrigger>
                       <TabsTrigger value="tests">
-                        <TestTube2 className="h-4 w-4 mr-2" />
+                        <TestTube2 className="size-4 mr-2" />
                         Tests ({filteredTests.length})
                       </TabsTrigger>
                     </TabsList>
@@ -605,7 +605,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                     <TabsContent value="panels" className="space-y-3 mt-4">
                       {panelsLoading ? (
                         <div className="text-center py-8 text-muted-foreground">
-                          Loading panels...
+                          Loading panels…
                         </div>
                       ) : filteredPanels.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
@@ -668,7 +668,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                     <TabsContent value="tests" className="space-y-3 mt-4">
                       {testsLoading ? (
                         <div className="text-center py-8 text-muted-foreground">
-                          Loading tests...
+                          Loading tests…
                         </div>
                       ) : filteredTests.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
@@ -830,7 +830,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                             key={panel.id}
                             className="text-sm text-muted-foreground flex items-center gap-2"
                           >
-                            <Package className="h-3 w-3" />
+                            <Package className="size-3" />
                             {panel.name}
                           </div>
                         ))}
@@ -848,7 +848,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                             key={test.id}
                             className="text-sm text-muted-foreground flex items-center gap-2"
                           >
-                            <TestTube2 className="h-3 w-3" />
+                            <TestTube2 className="size-3" />
                             {test.name}
                           </div>
                         ))}
@@ -864,7 +864,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
           {currentStep === 3 && (
             <div className="space-y-6">
               <Alert>
-                <AlertCircle className="h-4 w-4" />
+                <AlertCircle className="size-4" />
                 <AlertDescription>
                   Please review the order details before submitting. The order will
                   be immediately submitted to the laboratory.
@@ -899,7 +899,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                             className="flex items-center justify-between text-sm"
                           >
                             <div className="flex items-center gap-2">
-                              <Package className="h-4 w-4 text-muted-foreground" />
+                              <Package className="size-4 text-muted-foreground" />
                               <span className="text-foreground">{panel.name}</span>
                             </div>
                             <span className="font-semibold text-foreground">
@@ -922,7 +922,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                             className="flex items-center justify-between text-sm"
                           >
                             <div className="flex items-center gap-2">
-                              <TestTube2 className="h-4 w-4 text-muted-foreground" />
+                              <TestTube2 className="size-4 text-muted-foreground" />
                               <span className="text-foreground">{test.name}</span>
                             </div>
                             <span className="font-semibold text-foreground">
@@ -993,7 +993,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
             <div className="flex items-center gap-2">
               {currentStep > 1 && (
                 <Button variant="outline" size="sm" onClick={handleBack} className="font-mono text-xs">
-                  <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                  <ChevronLeft className="size-3.5 mr-1" />
                   Back
                 </Button>
               )}
@@ -1005,7 +1005,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
               {currentStep < totalSteps ? (
                 <Button size="sm" onClick={handleNext} className="font-mono text-xs">
                   Next
-                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  <ChevronRight className="size-3.5 ml-1" />
                 </Button>
               ) : (
                 <Button
@@ -1018,7 +1018,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                     "Submitting..."
                   ) : (
                     <>
-                      <Check className="h-3.5 w-3.5 mr-1.5" />
+                      <Check className="size-3.5 mr-1.5" />
                       Submit Order
                     </>
                   )}

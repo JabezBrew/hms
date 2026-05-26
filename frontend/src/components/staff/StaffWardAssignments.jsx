@@ -40,6 +40,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import {
   usePractitionerAssignments,
   useWards,
@@ -94,7 +96,7 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -111,7 +113,7 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
         <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               Add Ward
             </Button>
           </DialogTrigger>
@@ -135,19 +137,20 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
               className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors group"
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <Building2 className="h-4 w-4 text-primary" />
+                <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <Building2 className="size-4 text-primary" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <button
+                      type="button"
                       onClick={() => navigate(`/wards/${assignment.ward}`)}
                       className="font-medium text-sm text-foreground hover:text-primary transition-colors truncate"
                     >
                       {assignment.ward_name}
                     </button>
                     {assignment.is_primary && (
-                      <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                      <Star className="size-3.5 text-amber-500 fill-amber-500 shrink-0" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -167,19 +170,19 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="size-8"
                   onClick={() => navigate(`/wards/${assignment.ward}`)}
                 >
-                  <ExternalLink className="h-4 w-4" />
+                  <ExternalLink className="size-4" />
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      className="size-8 text-destructive hover:text-destructive"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
@@ -210,12 +213,12 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
       {/* Empty state */}
       {assignments.length === 0 && (
         <div className="text-center py-6 border rounded-lg bg-muted/20">
-          <Building2 className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+          <Building2 className="size-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground mb-3">
             No ward assignments yet
           </p>
           <Button variant="outline" size="sm" onClick={() => setAssignDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             Add First Ward
           </Button>
         </div>
@@ -229,7 +232,7 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
  */
 function AddWardAssignmentForm({
   practitionerId,
-  existingAssignments = [],
+  existingAssignments = DEFAULT_EMPTY_ARRAY,
   onSubmit,
   isSubmitting
 }) {
@@ -347,7 +350,7 @@ function AddWardAssignmentForm({
         </div>
 
         {/* Primary Ward */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-x-2">
           <Checkbox
             id="is_primary"
             checked={formData.is_primary}

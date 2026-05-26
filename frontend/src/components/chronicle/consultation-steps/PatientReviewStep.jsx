@@ -22,7 +22,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <User className="h-4 w-4" />
+            <User className="size-4" />
             Patient Information
           </CardTitle>
         </CardHeader>
@@ -57,7 +57,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
         <Card className="border-sky-200 dark:border-sky-900 bg-sky-50/50 dark:bg-sky-900/10">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base text-sky-700 dark:text-sky-400">
-              <Send className="h-4 w-4" />
+              <Send className="size-4" />
               Referral Details
               <Badge
                 variant="secondary"
@@ -108,7 +108,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
             {prepData.referral.questions && (
               <div>
                 <p className="text-muted-foreground text-xs mb-1 flex items-center gap-1">
-                  <MessageCircle className="h-3 w-3" />
+                  <MessageCircle className="size-3" />
                   Questions to Address
                 </p>
                 <div className="p-2 bg-amber-50 dark:bg-amber-900/10 rounded border border-amber-200 dark:border-amber-800 text-sm whitespace-pre-wrap">
@@ -125,7 +125,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
         <Card className="border-amber-200 dark:border-amber-900">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base text-amber-600">
-              <AlertTriangle className="h-4 w-4" />
+              <AlertTriangle className="size-4" />
               Clinical Alerts
             </CardTitle>
           </CardHeader>
@@ -136,7 +136,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
                   key={index}
                   className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-900/10 rounded text-sm"
                 >
-                  <AlertTriangle className="h-3 w-3 text-amber-600 mt-0.5 shrink-0" />
+                  <AlertTriangle className="size-3 text-amber-600 mt-0.5 shrink-0" />
                   <span>{alert}</span>
                 </div>
               ))}
@@ -150,7 +150,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="h-4 w-4" />
+              <FileText className="size-4" />
               Active Problems
             </CardTitle>
           </CardHeader>
@@ -172,7 +172,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Pill className="h-4 w-4" />
+              <Pill className="size-4" />
               Current Medications
             </CardTitle>
           </CardHeader>
@@ -194,7 +194,7 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="size-4" />
               Last Visit
             </CardTitle>
           </CardHeader>

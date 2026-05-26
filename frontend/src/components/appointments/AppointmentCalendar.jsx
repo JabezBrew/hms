@@ -119,7 +119,7 @@ const AppointmentCalendar = ({ practitionerId, patientId, onSelectDate, onCreate
         <div className="flex items-center justify-between">
           <CardTitle>Appointments</CardTitle>
           <Button variant="outline" size="sm" onClick={handleCreateAppointment}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             New Appointment
           </Button>
         </div>
@@ -143,11 +143,11 @@ const AppointmentCalendar = ({ practitionerId, patientId, onSelectDate, onCreate
                 // Check if day is a valid date object
                 const isValidDate = day instanceof Date && !isNaN(day);
                 if (!isValidDate) {
-                  return <div className="relative w-full h-full flex items-center justify-center"></div>;
+                  return <div className="relative size-full flex items-center justify-center"></div>;
                 }
 
                 return (
-                  <div className="relative w-full h-full flex items-center justify-center">
+                  <div className="relative size-full flex items-center justify-center">
                     <span className={isToday(day) ? 'font-bold' : ''}>
                       {day.getDate()}
                     </span>
@@ -165,7 +165,7 @@ const AppointmentCalendar = ({ practitionerId, patientId, onSelectDate, onCreate
           size="sm"
           onClick={() => setDate(new Date(date.getFullYear(), date.getMonth() - 1, 1))}
         >
-          <ChevronLeft className="h-4 w-4 mr-2" />
+          <ChevronLeft className="size-4 mr-2" />
           Previous Month
         </Button>
         <Button
@@ -174,7 +174,7 @@ const AppointmentCalendar = ({ practitionerId, patientId, onSelectDate, onCreate
           onClick={() => setDate(new Date(date.getFullYear(), date.getMonth() + 1, 1))}
         >
           Next Month
-          <ChevronRight className="h-4 w-4 ml-2" />
+          <ChevronRight className="size-4 ml-2" />
         </Button>
       </CardFooter>
     </Card>

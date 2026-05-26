@@ -26,7 +26,7 @@ export default function ChronicleCopilotSlideOver({
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="rounded-lg bg-amber-500/10 p-2">
-              <Sparkles className="h-5 w-5 text-amber-600" />
+              <Sparkles className="size-5 text-amber-600" />
             </div>
             <div className="space-y-1">
               <h2 className="font-display text-xl text-foreground">Ask Chronicle</h2>
@@ -40,11 +40,11 @@ export default function ChronicleCopilotSlideOver({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0"
+            className="size-8 shrink-0"
             onClick={onClose}
             aria-label="Close Ask Chronicle"
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         </div>
       </header>

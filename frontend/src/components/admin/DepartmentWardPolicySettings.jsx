@@ -81,7 +81,7 @@ export function DepartmentWardPolicySettings({
       <Card className={cn('border-border', className)}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Shield className="h-4 w-4" />
+            <Shield className="size-4" />
             Ward Assignment Policy
           </CardTitle>
         </CardHeader>
@@ -96,7 +96,7 @@ export function DepartmentWardPolicySettings({
     <Card className={cn('border-border', className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base font-heading">
-          <Shield className="h-4 w-4" />
+          <Shield className="size-4" />
           Ward Assignment Policy
         </CardTitle>
         <CardDescription className="text-sm">
@@ -123,7 +123,7 @@ export function DepartmentWardPolicySettings({
               {POLICY_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   <div className="flex items-center gap-2">
-                    <option.icon className={cn('h-4 w-4', option.color)} />
+                    <option.icon className={cn('size-4', option.color)} />
                     <div>
                       <p className="font-medium">{option.label}</p>
                     </div>
@@ -143,7 +143,7 @@ export function DepartmentWardPolicySettings({
           )}
         >
           <div className="flex items-start gap-3">
-            <currentOption.icon className={cn('h-5 w-5 mt-0.5', currentOption.color)} />
+            <currentOption.icon className={cn('size-5 mt-0.5', currentOption.color)} />
             <div className="space-y-1">
               <p className="font-medium text-foreground">{currentOption.label} Policy</p>
               <p className="text-sm text-muted-foreground">{currentOption.description}</p>
@@ -186,7 +186,7 @@ export function WardPolicyField({ value, onChange, disabled }) {
           {POLICY_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               <div className="flex items-center gap-2">
-                <option.icon className={cn('h-4 w-4', option.color)} />
+                <option.icon className={cn('size-4', option.color)} />
                 <span>{option.label}</span>
               </div>
             </SelectItem>

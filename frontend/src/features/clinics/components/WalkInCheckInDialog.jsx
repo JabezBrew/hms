@@ -165,7 +165,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Stethoscope className="h-5 w-5 text-primary" />
+            <Stethoscope className="size-5 text-primary" />
             Arrived Now (Walk-In)
           </DialogTitle>
           <DialogDescription>
@@ -176,18 +176,18 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
         {!facilityCode ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
             <div className="flex items-center gap-2 text-amber-800">
-              <AlertCircle className="h-4 w-4" />
+              <AlertCircle className="size-4" />
               <p className="text-sm">Facility context is required.</p>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Department
-              </label>
-              <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                <SelectTrigger className="font-mono">
+	              <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">
+	                Department
+	              </span>
+	              <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+	                <SelectTrigger aria-label="Department" className="font-mono">
                   <SelectValue placeholder={isDepartmentsLoading ? 'Loading departments...' : 'Select department'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -201,9 +201,9 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
             </div>
 
             <div className="space-y-2">
-              <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Active Pool Clinic
-              </label>
+	              <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">
+	                Active Pool Clinic
+	              </span>
 
               {!selectedDepartment ? (
                 <div className="rounded-lg border border-border bg-card/50 p-3 text-sm text-muted-foreground">
@@ -214,7 +214,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
               ) : activePoolClinics.length === 0 ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <div className="flex items-center gap-2 text-amber-800">
-                    <AlertCircle className="h-4 w-4" />
+                    <AlertCircle className="size-4" />
                     <p className="text-sm">
                       No active pool clinics accepting walk-ins are on-duty right now for this department.
                     </p>
@@ -223,7 +223,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
               ) : activePoolClinics.length === 1 ? (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                   <div className="flex items-center gap-2 text-emerald-800">
-                    <CheckCircle className="h-4 w-4" />
+                    <CheckCircle className="size-4" />
                     <p className="text-sm">
                       Auto-selected: <span className="font-mono font-medium">{activePoolClinics[0].name}</span>
                     </p>
@@ -231,7 +231,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
                 </div>
               ) : (
                 <Select value={selectedClinic} onValueChange={setSelectedClinic}>
-                  <SelectTrigger className="font-mono">
+	                  <SelectTrigger aria-label="Active pool clinic" className="font-mono">
                     <SelectValue placeholder="Select clinic" />
                   </SelectTrigger>
                   <SelectContent>
@@ -246,11 +246,12 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
             </div>
 
             <div className="space-y-2">
-              <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Reason (Optional)
-              </label>
-              <Textarea
-                value={reason}
+	              <label htmlFor="walk-in-check-in-reason" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+	                Reason (Optional)
+	              </label>
+	              <Textarea
+	                id="walk-in-check-in-reason"
+	                value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Brief reason for visit..."
                 rows={3}

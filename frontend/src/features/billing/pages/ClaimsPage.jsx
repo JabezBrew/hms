@@ -31,6 +31,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClaims } from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'draft', label: 'Draft' },
@@ -220,17 +226,17 @@ export default function ClaimsPage() {
             onClick={() => refetch()}
             className="font-mono text-xs w-full sm:w-auto"
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="size-4 mr-2" />
             Refresh
           </Button>
         )}
       />
 
       {/* Filters */}
-      <div className="px-4 sm:px-6 py-4 bg-card/50 border-b border-border">
+      <div className="p-4 sm:px-6 bg-card/50 border-b border-border">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder="Search by claim number or patient..."
               value={search}
@@ -240,7 +246,7 @@ export default function ClaimsPage() {
           </div>
           <Select value={status} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-full sm:w-[180px] font-mono text-sm">
-              <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+              <Filter className="size-4 mr-2 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -271,8 +277,8 @@ export default function ClaimsPage() {
           </div>
         ) : (
           <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-              <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+            <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <FileSpreadsheet className="size-8 text-muted-foreground" />
             </div>
             <h3 className="font-display text-xl text-foreground mb-2">No Claims Found</h3>
             <p className="text-muted-foreground text-sm">
@@ -297,7 +303,7 @@ export default function ClaimsPage() {
                 disabled={page <= 1}
                 className="font-mono text-xs"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
+                <ChevronLeft className="size-4 mr-1" />
                 Previous
               </Button>
               <Button
@@ -308,7 +314,7 @@ export default function ClaimsPage() {
                 className="font-mono text-xs"
               >
                 Next
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <ChevronRight className="size-4 ml-1" />
               </Button>
             </div>
           </div>
@@ -350,12 +356,12 @@ function ClaimCard({ claim, index, onClick }) {
         <div className="min-w-0 flex-1">
           {/* Claim Header */}
           <div className="flex items-center gap-2 mb-2">
-            <FileSpreadsheet className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <FileSpreadsheet className="size-4 text-muted-foreground flex-shrink-0" />
             <span className="font-mono text-sm text-primary font-medium">
               {claim.claim_number}
             </span>
             <span className={cn('text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded flex items-center gap-1', badge.class)}>
-              <StatusIcon className="h-3 w-3" />
+              <StatusIcon className="size-3" />
               {badge.label}
             </span>
           </div>
@@ -369,12 +375,12 @@ function ClaimCard({ claim, index, onClick }) {
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             {claim.insurance_provider && (
               <span className="flex items-center gap-1.5">
-                <Building className="h-3 w-3" />
+                <Building className="size-3" />
                 {claim.insurance_provider}
               </span>
             )}
             <span className="flex items-center gap-1.5 font-mono text-xs">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               {formatDate(claim.submitted_at || claim.created_at)}
             </span>
             {claim.invoice_number && (
@@ -401,7 +407,7 @@ function ClaimCard({ claim, index, onClick }) {
               </div>
             )}
           </div>
-          <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
+          <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
         </div>
       </div>
     </article>
@@ -410,11 +416,7 @@ function ClaimCard({ claim, index, onClick }) {
 
 // Utility functions
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatDate(dateString) {

@@ -126,7 +126,7 @@ const StaffActivityLog = ({ userId, userName }) => {
   if (error) {
     return (
       <div className="p-6 rounded-xl bg-destructive/10 border border-destructive/30 text-center">
-        <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-2" />
+        <AlertCircle className="size-8 text-destructive mx-auto mb-2" />
         <p className="text-sm text-destructive">Failed to load activity logs</p>
       </div>
     );
@@ -206,7 +206,7 @@ const StaffActivityLog = ({ userId, userName }) => {
             disabled={isExporting || totalCount === 0}
             className="font-mono text-xs"
           >
-            <Download className="h-4 w-4 mr-2" />
+            <Download className="size-4 mr-2" />
             {isExporting ? 'Exporting...' : 'Export'}
           </Button>
         </div>
@@ -218,7 +218,7 @@ const StaffActivityLog = ({ userId, userName }) => {
           <div className="divide-y divide-border">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="p-4 flex items-start gap-3">
-                <Skeleton className="w-8 h-8 rounded-lg shrink-0" />
+                <Skeleton className="size-8 rounded-lg shrink-0" />
                 <div className="flex-1 space-y-2">
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="h-3 w-1/2" />
@@ -228,7 +228,7 @@ const StaffActivityLog = ({ userId, userName }) => {
           </div>
         ) : logs.length === 0 ? (
           <div className="p-12 text-center">
-            <History className="h-12 w-12 text-muted-foreground/50 mx-auto mb-3" />
+            <History className="size-12 text-muted-foreground/50 mx-auto mb-3" />
             <p className="text-muted-foreground">No activity recorded</p>
             <p className="text-xs text-muted-foreground mt-1">
               Actions performed by this user will appear here
@@ -246,10 +246,10 @@ const StaffActivityLog = ({ userId, userName }) => {
                   <div className="flex items-start gap-3">
                     {/* Icon */}
                     <div className={cn(
-                      "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                      "size-8 rounded-lg flex items-center justify-center shrink-0",
                       getCategoryStyle(log.category).replace('text-', 'bg-').replace('/10', '/20')
                     )}>
-                      <ActionIcon className="h-4 w-4 text-foreground/70" />
+                      <ActionIcon className="size-4 text-foreground/70" />
                     </div>
 
                     {/* Content */}
@@ -329,7 +329,7 @@ const StaffActivityLog = ({ userId, userName }) => {
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="size-4" />
             </Button>
             <Button
               variant="outline"
@@ -337,7 +337,7 @@ const StaffActivityLog = ({ userId, userName }) => {
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="size-4" />
             </Button>
           </div>
         </div>

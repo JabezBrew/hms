@@ -19,6 +19,26 @@ import { useVitalSigns } from '@/hooks/useNursingQueries';
 
 const VitalsChart = lazy(() => import('./ClinicalAssessmentVitalsChart'));
 
+const TEMPERATURE_DOMAIN = [35, 40];
+const TEMPERATURE_REFERENCE_LINES = [
+  { value: 38, color: '#ef4444', label: 'Fever' },
+  { value: 36, color: '#3b82f6', label: 'Low' },
+];
+const BLOOD_PRESSURE_DOMAIN = [40, 200];
+const BLOOD_PRESSURE_REFERENCE_LINES = [
+  { value: 140, color: '#ef4444', label: 'High' },
+  { value: 90, color: '#3b82f6', label: 'Low' },
+];
+const HEART_RATE_DOMAIN = [40, 150];
+const HEART_RATE_REFERENCE_LINES = [
+  { value: 100, color: '#f97316', label: 'Tachy' },
+  { value: 60, color: '#3b82f6', label: 'Brady' },
+];
+const SPO2_DOMAIN = [85, 100];
+const SPO2_REFERENCE_LINES = [
+  { value: 92, color: '#ef4444', label: 'Low' },
+];
+
 /**
  * Prepare chart data from vitals array
  */
@@ -50,7 +70,7 @@ function LatestVitalsCard({ vitals }) {
   if (!latest) {
     return (
       <Alert>
-        <AlertTriangle className="h-4 w-4" />
+        <AlertTriangle className="size-4" />
         <AlertDescription>No vital signs recorded in the last 48 hours.</AlertDescription>
       </Alert>
     );
@@ -72,7 +92,7 @@ function LatestVitalsCard({ vitals }) {
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div className="flex items-center gap-2">
-            <Thermometer className="h-4 w-4 text-orange-500" />
+            <Thermometer className="size-4 text-orange-500" />
             <div>
               <p className="text-xs text-muted-foreground">Temp</p>
               <p className="font-mono font-medium">
@@ -81,7 +101,7 @@ function LatestVitalsCard({ vitals }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Heart className="h-4 w-4 text-red-500" />
+            <Heart className="size-4 text-red-500" />
             <div>
               <p className="text-xs text-muted-foreground">HR</p>
               <p className="font-mono font-medium">
@@ -90,7 +110,7 @@ function LatestVitalsCard({ vitals }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-blue-500" />
+            <Activity className="size-4 text-blue-500" />
             <div>
               <p className="text-xs text-muted-foreground">BP</p>
               <p className="font-mono font-medium">
@@ -101,7 +121,7 @@ function LatestVitalsCard({ vitals }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Wind className="h-4 w-4 text-cyan-500" />
+            <Wind className="size-4 text-cyan-500" />
             <div>
               <p className="text-xs text-muted-foreground">RR</p>
               <p className="font-mono font-medium">
@@ -110,7 +130,7 @@ function LatestVitalsCard({ vitals }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Droplets className="h-4 w-4 text-purple-500" />
+            <Droplets className="size-4 text-purple-500" />
             <div>
               <p className="text-xs text-muted-foreground">SpO2</p>
               <p className="font-mono font-medium">
@@ -180,7 +200,7 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
       <Card>
         <CardHeader>
           <CardTitle className="text-base font-medium flex items-center gap-2">
-            <Activity className="h-4 w-4" />
+            <Activity className="size-4" />
             Vital Signs Trends (48 hours)
           </CardTitle>
           <CardDescription>
@@ -200,7 +220,7 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
                   {/* Temperature */}
                   <div>
                     <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Thermometer className="h-4 w-4 text-orange-500" />
+                      <Thermometer className="size-4 text-orange-500" />
                       Temperature (°C)
                     </h4>
                     <VitalsChart
@@ -208,19 +228,16 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
                       dataKey="temperature"
                       title="Temperature"
                       color="#f97316"
-                      domain={[35, 40]}
-                      unit="°C"
-                      referenceLines={[
-                        { value: 38, color: '#ef4444', label: 'Fever' },
-                        { value: 36, color: '#3b82f6', label: 'Low' },
-                      ]}
+	                      domain={TEMPERATURE_DOMAIN}
+	                      unit="°C"
+	                      referenceLines={TEMPERATURE_REFERENCE_LINES}
                     />
                   </div>
 
                   {/* Blood Pressure */}
                   <div>
                     <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Activity className="h-4 w-4 text-blue-500" />
+                      <Activity className="size-4 text-blue-500" />
                       Blood Pressure (mmHg)
                     </h4>
                     <VitalsChart
@@ -230,19 +247,16 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
                       title="Systolic"
                       color="#ef4444"
                       secondaryColor="#22c55e"
-                      domain={[40, 200]}
-                      unit="mmHg"
-                      referenceLines={[
-                        { value: 140, color: '#ef4444', label: 'High' },
-                        { value: 90, color: '#3b82f6', label: 'Low' },
-                      ]}
+	                      domain={BLOOD_PRESSURE_DOMAIN}
+	                      unit="mmHg"
+	                      referenceLines={BLOOD_PRESSURE_REFERENCE_LINES}
                     />
                   </div>
 
                   {/* Heart Rate */}
                   <div>
                     <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Heart className="h-4 w-4 text-red-500" />
+                      <Heart className="size-4 text-red-500" />
                       Heart Rate (bpm)
                     </h4>
                     <VitalsChart
@@ -250,19 +264,16 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
                       dataKey="heart_rate"
                       title="Heart Rate"
                       color="#ef4444"
-                      domain={[40, 150]}
-                      unit="bpm"
-                      referenceLines={[
-                        { value: 100, color: '#f97316', label: 'Tachy' },
-                        { value: 60, color: '#3b82f6', label: 'Brady' },
-                      ]}
+	                      domain={HEART_RATE_DOMAIN}
+	                      unit="bpm"
+	                      referenceLines={HEART_RATE_REFERENCE_LINES}
                     />
                   </div>
 
                   {/* SpO2 */}
                   <div>
                     <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Droplets className="h-4 w-4 text-purple-500" />
+                      <Droplets className="size-4 text-purple-500" />
                       Oxygen Saturation (%)
                     </h4>
                     <VitalsChart
@@ -270,11 +281,9 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
                       dataKey="spo2"
                       title="SpO2"
                       color="#8b5cf6"
-                      domain={[85, 100]}
-                      unit="%"
-                      referenceLines={[
-                        { value: 92, color: '#ef4444', label: 'Low' },
-                      ]}
+	                      domain={SPO2_DOMAIN}
+	                      unit="%"
+	                      referenceLines={SPO2_REFERENCE_LINES}
                     />
                   </div>
                 </div>
@@ -285,7 +294,7 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
       </Card>
 
       {/* Vitals Reviewed Checkbox */}
-      <div className="flex items-start space-x-3 p-4 rounded-lg border bg-muted/30">
+      <div className="flex items-start gap-x-3 p-4 rounded-lg border bg-muted/30">
         <Checkbox
           id="vitals_reviewed"
           checked={localData.vitals_reviewed}

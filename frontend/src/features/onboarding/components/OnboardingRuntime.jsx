@@ -57,11 +57,11 @@ export default function OnboardingRuntime() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 shrink-0"
+                className="size-7 shrink-0"
                 onClick={() => setCollapsed((value) => !value)}
                 aria-label={collapsed ? 'Expand onboarding panel' : 'Collapse onboarding panel'}
               >
-                {collapsed ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
+                {collapsed ? <Maximize2 className="size-3.5" /> : <Minimize2 className="size-3.5" />}
               </Button>
             </div>
           </CardHeader>
@@ -79,7 +79,7 @@ export default function OnboardingRuntime() {
 
               <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
                 <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                  <Compass className="h-3.5 w-3.5 text-amber-600" />
+                  <Compass className="size-3.5 text-amber-600" />
                   {currentStep.title}
                 </div>
                 {currentStep.description && (
@@ -97,7 +97,7 @@ export default function OnboardingRuntime() {
                   disabled={isMutating || !currentStep?.action?.route}
                 >
                   {currentStep?.action?.label || 'Open Step'}
-                  <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
+                  <ArrowUpRight className="ml-1.5 size-3.5" />
                 </Button>
                 <Button
                   size="sm"
@@ -108,7 +108,7 @@ export default function OnboardingRuntime() {
                   }}
                   disabled={isMutating}
                 >
-                  <SkipForward className="mr-1.5 h-3.5 w-3.5" />
+                  <SkipForward className="mr-1.5 size-3.5" />
                   Skip
                 </Button>
               </div>

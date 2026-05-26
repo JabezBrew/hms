@@ -191,13 +191,13 @@ export function WardDashboard() {
   if (isWardError || isBedsError) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
+        <Building2 className="size-12 text-muted-foreground mb-4" />
         <h2 className="text-xl font-display text-foreground mb-2">Unable to load ward</h2>
         <p className="text-muted-foreground text-sm mb-4">
           {wardError?.message || 'Please try again'}
         </p>
         <Button onClick={handleRefresh} variant="outline">
-          <RefreshCw className="h-4 w-4 mr-2" />
+          <RefreshCw className="size-4 mr-2" />
           Try Again
         </Button>
       </div>
@@ -207,7 +207,7 @@ export function WardDashboard() {
   if (!ward) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
+        <Building2 className="size-12 text-muted-foreground mb-4" />
         <h2 className="text-xl font-display text-foreground">Ward not found</h2>
         <p className="text-muted-foreground text-sm mt-1">
           The requested ward could not be found
@@ -255,7 +255,7 @@ export function WardDashboard() {
           </p>
         </div>
         <Button onClick={handleNewAdmission} className="shrink-0">
-          <UserPlus className="h-4 w-4 mr-2" />
+          <UserPlus className="size-4 mr-2" />
           New Admission
         </Button>
       </div>
@@ -317,7 +317,7 @@ export function WardDashboard() {
         <div className="flex flex-wrap gap-3 items-center flex-1">
           {/* Search */}
           <div className="relative w-full sm:w-auto">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
             <Label htmlFor="bed-search" className="sr-only">Search beds</Label>
             <Input
               id="bed-search"
@@ -354,7 +354,7 @@ export function WardDashboard() {
               onClick={clearFilters}
               className="text-muted-foreground"
             >
-              <Filter className="h-4 w-4 mr-1" />
+              <Filter className="size-4 mr-1" />
               Clear
             </Button>
           )}
@@ -366,21 +366,21 @@ export function WardDashboard() {
             variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setViewMode('grid')}
-            className="h-8 w-8 p-0"
+            className="size-8 p-0"
             aria-label="Grid view"
             aria-pressed={viewMode === 'grid'}
           >
-            <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+            <LayoutGrid className="size-4" aria-hidden="true" />
           </Button>
           <Button
             variant={viewMode === 'list' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setViewMode('list')}
-            className="h-8 w-8 p-0"
+            className="size-8 p-0"
             aria-label="List view"
             aria-pressed={viewMode === 'list'}
           >
-            <List className="h-4 w-4" aria-hidden="true" />
+            <List className="size-4" aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -388,7 +388,7 @@ export function WardDashboard() {
       {/* Beds Display */}
       {filteredBeds.length === 0 ? (
         <div className="text-center py-12">
-          <Bed className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <Bed className="size-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium text-foreground">
             {beds.length > 0 ? 'No beds match your filters' : 'No beds configured'}
           </h3>
@@ -486,7 +486,7 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
       <div className="flex items-center gap-3">
         {Icon && (
           <div className={cn("p-2 rounded-lg", colors.bg)}>
-            <Icon className={cn("h-4 w-4", colors.icon)} aria-hidden="true" />
+            <Icon className={cn("size-4", colors.icon)} aria-hidden="true" />
           </div>
         )}
         <div>
@@ -508,11 +508,11 @@ function SectionStatCard({ section }) {
   const getTierIcon = (tier) => {
     switch (tier) {
       case 'vip':
-        return <Sparkles className="h-3.5 w-3.5" />;
+        return <Sparkles className="size-3.5" />;
       case 'private':
-        return <Home className="h-3.5 w-3.5" />;
+        return <Home className="size-3.5" />;
       case 'semi_private':
-        return <Users className="h-3.5 w-3.5" />;
+        return <Users className="size-3.5" />;
       default:
         return null;
     }
@@ -597,7 +597,7 @@ function SectionStatCard({ section }) {
         )}
         {section.is_isolation_capable && (
           <Badge variant="outline" className="text-xs">
-            <Shield className="h-3 w-3 mr-1" />
+            <Shield className="size-3 mr-1" />
             Isolation
           </Badge>
         )}

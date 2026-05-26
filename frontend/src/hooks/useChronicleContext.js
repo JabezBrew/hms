@@ -88,9 +88,12 @@ function adaptV2LatestVitals(chartEntries = []) {
     }
   }
 
-  const latestEntry = [...latestByType.values()].sort((left, right) =>
-    String(right.measured_at || '').localeCompare(String(left.measured_at || ''))
-  )[0];
+  let latestEntry = null;
+  for (const entry of latestByType.values()) {
+    if (!latestEntry || String(entry.measured_at || '') > String(latestEntry.measured_at || '')) {
+      latestEntry = entry;
+    }
+  }
 
   const vitals = {
     id: latestEntry?.id,

@@ -37,8 +37,8 @@ export default function AppFailureState({
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-2xl border-border/80 shadow-lg">
         <CardHeader className="space-y-4">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-            <AlertCircle className="h-6 w-6 text-destructive" />
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-destructive/10">
+            <AlertCircle className="size-6 text-destructive" />
           </div>
           <div className="space-y-2 text-center">
             <CardTitle>{title}</CardTitle>
@@ -59,7 +59,7 @@ export default function AppFailureState({
 
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button onClick={onPrimaryAction} className="flex-1">
-              <RefreshCw className="mr-2 h-4 w-4" />
+              <RefreshCw className="mr-2 size-4" />
               {primaryActionLabel}
             </Button>
             <Button
@@ -71,7 +71,7 @@ export default function AppFailureState({
               Go Home
             </Button>
             <Button type="button" variant="outline" className="flex-1" onClick={handleCopyDiagnostics}>
-              <Clipboard className="mr-2 h-4 w-4" />
+              <Clipboard className="mr-2 size-4" />
               {copyStatus === 'copied'
                 ? 'Copied'
                 : copyStatus === 'unsupported'

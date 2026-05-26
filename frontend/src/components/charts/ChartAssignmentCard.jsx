@@ -76,6 +76,18 @@ const ChartAssignmentCard = ({
     ? formatDistanceToNow(nextDue, { addSuffix: true })
     : null;
 
+  const handleViewDetails = () => {
+    onViewDetails?.(assignment);
+  };
+
+  const handleViewDetailsKeyDown = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    event.preventDefault();
+    handleViewDetails();
+  };
+
   if (compact) {
     return (
       <div
@@ -86,11 +98,15 @@ const ChartAssignmentCard = ({
           isOverdue && "border-rose-300 dark:border-rose-800",
           `stagger-${Math.min(index + 1, 10)}`
         )}
-        onClick={() => onViewDetails?.(assignment)}
+        onClick={handleViewDetails}
+        onKeyDown={handleViewDetailsKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label={`View chart assignment ${assignment.template_name}`}
       >
         {/* Icon */}
         <div className={cn("p-1.5 rounded-lg", statusConfig.bgClass)}>
-          <ClipboardList className={cn("h-4 w-4", statusConfig.textClass)} />
+          <ClipboardList className={cn("size-4", statusConfig.textClass)} />
         </div>
 
         {/* Info */}
@@ -109,8 +125,8 @@ const ChartAssignmentCard = ({
             "flex items-center gap-1 text-[10px] font-mono",
             isOverdue ? "text-rose-500" : "text-muted-foreground"
           )}>
-            {isOverdue && <AlertTriangle className="h-3 w-3" />}
-            <Clock className="h-3 w-3" />
+            {isOverdue && <AlertTriangle className="size-3" />}
+            <Clock className="size-3" />
             <span>{nextDueTime}</span>
           </div>
         )}
@@ -137,7 +153,7 @@ const ChartAssignmentCard = ({
   }
 
   return (
-    <article
+    <div
       className={cn(
         "group relative bg-card border border-border rounded-xl overflow-hidden",
         "hover:border-primary/30 hover:shadow-md transition-all cursor-pointer",
@@ -145,7 +161,11 @@ const ChartAssignmentCard = ({
         isOverdue && "border-rose-300 dark:border-rose-800",
         `stagger-${Math.min(index + 1, 10)}`
       )}
-      onClick={() => onViewDetails?.(assignment)}
+      onClick={handleViewDetails}
+      onKeyDown={handleViewDetailsKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`View chart assignment ${assignment.template_name}`}
     >
       {/* Overdue ribbon */}
       {isOverdue && (
@@ -157,7 +177,7 @@ const ChartAssignmentCard = ({
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className={cn("p-2 rounded-lg", statusConfig.bgClass)}>
-              <ClipboardList className={cn("h-5 w-5", statusConfig.textClass)} />
+              <ClipboardList className={cn("size-5", statusConfig.textClass)} />
             </div>
             <div className="min-w-0">
               <h3 className="font-display text-base text-foreground truncate">
@@ -168,7 +188,7 @@ const ChartAssignmentCard = ({
                   "flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded",
                   statusConfig.bgClass, statusConfig.textClass
                 )}>
-                  <StatusIcon className="h-3 w-3" />
+                  <StatusIcon className="size-3" />
                   {statusConfig.label}
                 </span>
                 <span className="font-mono text-[10px] text-muted-foreground">
@@ -178,7 +198,7 @@ const ChartAssignmentCard = ({
             </div>
           </div>
 
-          <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
 
         {/* Stats */}
@@ -218,7 +238,7 @@ const ChartAssignmentCard = ({
         {/* Overdue warning */}
         {isOverdue && (
           <div className="flex items-center gap-2 p-2 rounded-lg bg-rose-50 dark:bg-rose-900/20 mb-3">
-            <AlertTriangle className="h-4 w-4 text-rose-500" />
+            <AlertTriangle className="size-4 text-rose-500" />
             <span className="font-mono text-xs text-rose-600 dark:text-rose-400">
               Entry overdue
             </span>
@@ -239,12 +259,12 @@ const ChartAssignmentCard = ({
               onRecordEntry?.(assignment);
             }}
           >
-            <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+            <ClipboardList className="size-3.5 mr-1.5" />
             Record Entry
           </Button>
         )}
       </div>
-    </article>
+    </div>
   );
 };
 

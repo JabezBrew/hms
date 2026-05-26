@@ -317,7 +317,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium", roleConfig.badgeClass)}>
-          <RoleIcon className="h-3 w-3" />
+          <RoleIcon className="size-3" />
           {roleConfig.label}
         </span>
         <span className="font-mono text-xs text-muted-foreground">{employeeId}</span>
@@ -331,8 +331,8 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
       <PageHeader
         title={(
           <span className="flex items-center gap-4">
-            <span className={cn("w-16 h-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0", roleConfig.badgeClass.replace('text-', 'bg-').replace('/10', '/20'))}>
-              <RoleIcon className="h-8 w-8 sm:h-10 sm:w-10 text-foreground/70" />
+            <span className={cn("size-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0", roleConfig.badgeClass.replace('text-', 'bg-').replace('/10', '/20'))}>
+              <RoleIcon className="size-8 sm:h-10 sm:w-10 text-foreground/70" />
             </span>
             <span className="flex flex-wrap items-center gap-2">
               {fullName}
@@ -347,11 +347,11 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
             {isEditing ? (
               <>
                 <Button variant="outline" size="sm" onClick={handleCancelEdit}>
-                  <X className="h-4 w-4 mr-2" />
+                  <X className="size-4 mr-2" />
                   Cancel
                 </Button>
                 <Button size="sm" onClick={form.handleSubmit(onSubmit)} disabled={updateMutation.isPending}>
-                  <Save className="h-4 w-4 mr-2" />
+                  <Save className="size-4 mr-2" />
                   {updateMutation.isPending ? 'Saving...' : 'Save'}
                 </Button>
               </>
@@ -365,19 +365,19 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                     disabled={reactivateMutation.isPending}
                     className="font-mono text-xs"
                   >
-                    <UserCheck className="h-4 w-4 mr-2" />
+                    <UserCheck className="size-4 mr-2" />
                     {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate'}
                   </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                  <Edit className="h-4 w-4 mr-2" />
+                  <Edit className="size-4 mr-2" />
                   <span className="hidden sm:inline">Edit</span>
                 </Button>
                 {isActive && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                        <Trash2 className="h-4 w-4 sm:mr-2" />
+                        <Trash2 className="size-4 sm:mr-2" />
                         <span className="hidden sm:inline">Deactivate</span>
                       </Button>
                     </AlertDialogTrigger>
@@ -404,7 +404,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
         contentClassName="max-w-4xl mx-auto w-full"
       >
         <Button variant="ghost" size="sm" onClick={onBack} className="self-start -ml-2">
-          <ChevronLeft className="h-4 w-4 mr-1" />
+          <ChevronLeft className="size-4 mr-1" />
           Staff Directory
         </Button>
       </PageHeader>
@@ -415,7 +415,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
           {/* Employment Information */}
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <Briefcase className="h-5 w-5 text-muted-foreground" />
+              <Briefcase className="size-5 text-muted-foreground" />
               Employment
             </h2>
             <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -459,7 +459,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
           {/* Contact Information */}
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <Mail className="h-5 w-5 text-muted-foreground" />
+              <Mail className="size-5 text-muted-foreground" />
               Contact
             </h2>
             <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -497,8 +497,8 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                      <Mail className="h-5 w-5 text-muted-foreground" />
+                    <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                      <Mail className="size-5 text-muted-foreground" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-mono text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Email</p>
@@ -510,8 +510,8 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                      <Phone className="h-5 w-5 text-muted-foreground" />
+                    <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                      <Phone className="size-5 text-muted-foreground" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-mono text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Phone</p>
@@ -531,7 +531,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
           {isPractitioner && (
             <section>
               <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-                <GraduationCap className="h-5 w-5 text-muted-foreground" />
+                <GraduationCap className="size-5 text-muted-foreground" />
                 Professional
               </h2>
               <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border space-y-6">
@@ -571,9 +571,9 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                 {!isEditing && userType === 'doctor' && (
                   <div className="pt-4 border-t border-border">
                     <Button variant="outline" className="w-full sm:w-auto" onClick={handleManageSchedule}>
-                      <Calendar className="h-4 w-4 mr-2" />
+                      <Calendar className="size-4 mr-2" />
                       Manage Schedule & Availability
-                      <ExternalLink className="h-3 w-3 ml-2" />
+                      <ExternalLink className="size-3 ml-2" />
                     </Button>
                     <p className="text-xs text-muted-foreground mt-2">
                       Configure personal calendars, blocked times, and appointment slots
@@ -589,7 +589,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
         {!isEditing && isPractitioner && practitioner?.id && (
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-muted-foreground" />
+              <Building2 className="size-5 text-muted-foreground" />
               Ward Assignments
             </h2>
             <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -602,7 +602,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
         {!isEditing && (
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <History className="h-5 w-5 text-muted-foreground" />
+              <History className="size-5 text-muted-foreground" />
               Activity Log
             </h2>
             <StaffActivityLog userId={staff.user_details?.id} userName={fullName} />
@@ -620,17 +620,17 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                   disabled={reactivateMutation.isPending}
                   className="font-mono text-xs"
                 >
-                  <UserCheck className="h-4 w-4 mr-2" />
+                  <UserCheck className="size-4 mr-2" />
                   {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate'}
                 </Button>
               )}
               <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="size-4 mr-2" />
                 Edit Profile
               </Button>
               {userType === 'doctor' && (
                 <Button variant="outline" size="sm" onClick={handleManageSchedule}>
-                  <Calendar className="h-4 w-4 mr-2" />
+                  <Calendar className="size-4 mr-2" />
                   Schedule
                 </Button>
               )}
@@ -639,7 +639,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="outline" size="sm">
-                        <KeyRound className="h-4 w-4 mr-2" />
+                        <KeyRound className="size-4 mr-2" />
                         Reset Password
                       </Button>
                     </AlertDialogTrigger>
@@ -661,7 +661,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="outline" size="sm">
-                        <Mail className="h-4 w-4 mr-2" />
+                        <Mail className="size-4 mr-2" />
                         Resend Setup Link
                       </Button>
                     </AlertDialogTrigger>
@@ -697,11 +697,11 @@ const InfoItem = ({ label, value, icon: Icon, className }) => {
   return (
     <div className={cn("min-w-0", className)}>
       <div className="flex items-center gap-1.5 mb-1">
-        {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
+        {Icon && <Icon className="size-3.5 text-muted-foreground" />}
         <p className="font-mono text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
       </div>
       <p className="text-sm sm:text-base text-foreground truncate">
-        {value || <span className="text-muted-foreground">—</span>}
+        {value || <span className="text-muted-foreground">-</span>}
       </p>
     </div>
   );

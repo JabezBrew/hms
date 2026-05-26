@@ -190,7 +190,7 @@ export default function DoctorDashboard() {
                   onClick={() => navigate('/referrals/sent')}
                   className="font-mono text-xs"
                 >
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="size-4 mr-2" />
                   Sent Referrals
                 </Button>
                 <Button
@@ -199,7 +199,7 @@ export default function DoctorDashboard() {
                   onClick={() => navigate('/referrals/inbox')}
                   className="font-mono text-xs"
                 >
-                  <Inbox className="h-4 w-4 mr-2" />
+                  <Inbox className="size-4 mr-2" />
                   Referral Inbox
                 </Button>
               </>
@@ -211,7 +211,7 @@ export default function DoctorDashboard() {
               className="font-mono text-xs"
               disabled={isFetching}
             >
-              <RefreshCw className={cn('h-4 w-4 mr-2', isFetching && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isFetching && 'animate-spin')} />
               Refresh
             </Button>
           </div>
@@ -232,8 +232,8 @@ export default function DoctorDashboard() {
 
             <header className="flex items-start justify-between mb-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <PlayCircle className="h-5 w-5 text-primary" />
+                <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <PlayCircle className="size-5 text-primary" />
                 </div>
                 <div>
                   <p className="font-mono text-[10px] uppercase tracking-widest text-primary">
@@ -265,7 +265,7 @@ export default function DoctorDashboard() {
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   {data.current_patient.reason && (
                     <span className="flex items-center gap-1.5">
-                      <Stethoscope className="h-3.5 w-3.5" />
+                      <Stethoscope className="size-3.5" />
                       {data.current_patient.reason}
                     </span>
                   )}
@@ -281,7 +281,7 @@ export default function DoctorDashboard() {
                   className="font-mono"
                 >
                   Begin Consultation
-                  <ChevronRight className="h-4 w-4 ml-2" />
+                  <ChevronRight className="size-4 ml-2" />
                 </Button>
               ) : null}
             </div>
@@ -291,8 +291,8 @@ export default function DoctorDashboard() {
             "bg-card/50 border border-border rounded-2xl p-12 text-center",
             "animate-chronicle-enter"
           )}>
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-              <Clock className="h-8 w-8 text-muted-foreground" />
+            <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <Clock className="size-8 text-muted-foreground" />
             </div>
             <h3 className="font-display text-xl text-foreground mb-2">No Current Patient</h3>
             <p className="text-muted-foreground text-sm">
@@ -309,7 +309,7 @@ export default function DoctorDashboard() {
         {data.waiting_room && data.waiting_room.length > 0 && (
           <section>
             <header className="flex items-center gap-3 mb-4">
-              <Users className="h-5 w-5 text-amber-400" />
+              <Users className="size-5 text-amber-400" />
               <h2 className="font-display text-2xl text-foreground">Waiting Room</h2>
               <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
                 {data.waiting_room.length}
@@ -337,7 +337,7 @@ export default function DoctorDashboard() {
         {canUseAppointments ? (
         <section>
           <header className="flex items-center gap-3 mb-4">
-            <Calendar className="h-5 w-5 text-muted-foreground" />
+            <Calendar className="size-5 text-muted-foreground" />
             <h2 className="font-display text-2xl text-foreground">Upcoming</h2>
             <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
               {data.upcoming?.length || 0}
@@ -370,7 +370,7 @@ export default function DoctorDashboard() {
         {canUseAppointments && data.completed && data.completed.length > 0 && (
           <section>
             <header className="flex items-center gap-3 mb-4">
-              <CheckCircle className="h-5 w-5 text-[oklch(0.70_0.17_155)]" />
+              <CheckCircle className="size-5 text-[oklch(0.70_0.17_155)]" />
               <h2 className="font-display text-2xl text-foreground">Completed</h2>
               <span className="font-mono text-xs text-[oklch(0.70_0.17_155)] bg-[oklch(0.70_0.17_155_/_0.1)] px-2 py-0.5 rounded-full">
                 {data.completed.length}
@@ -440,7 +440,7 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5 font-mono text-xs">
-              <Clock className="h-3 w-3" />
+              <Clock className="size-3" />
               {appointment.time_display}
             </span>
             {appointment.reason && (
@@ -459,7 +459,7 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
             className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
           >
             Start
-            <ChevronRight className="h-3 w-3 ml-1" />
+            <ChevronRight className="size-3 ml-1" />
           </Button>
         ) : null}
       </div>
@@ -483,7 +483,7 @@ function CompletedCard({ appointment, index, onViewPatient }) {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <CheckCircle className="h-4 w-4 text-[oklch(0.70_0.17_155)]" />
+          <CheckCircle className="size-4 text-[oklch(0.70_0.17_155)]" />
           <div>
             <h3 className="font-medium text-foreground">
               {appointment.patient_name}
@@ -548,12 +548,12 @@ function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCa
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5 font-mono text-xs">
-              <Clock className="h-3 w-3" />
+              <Clock className="size-3" />
               Checked in {visit.checked_in_at ? new Date(visit.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
             </span>
             {isCalled && visit.called_at && (
               <span className="flex items-center gap-1.5 font-mono text-xs text-amber-400">
-                <Phone className="h-3 w-3" />
+                <Phone className="size-3" />
                 Called {new Date(visit.called_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
@@ -568,7 +568,7 @@ function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCa
               disabled={isCallingPending}
               className="font-mono text-xs"
             >
-              <Phone className="h-3 w-3 mr-1" />
+              <Phone className="size-3 mr-1" />
               Call
             </Button>
           )}
@@ -580,7 +580,7 @@ function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCa
               className="font-mono text-xs"
             >
               Start Consultation
-              <ChevronRight className="h-3 w-3 ml-1" />
+              <ChevronRight className="size-3 ml-1" />
             </Button>
           )}
         </div>

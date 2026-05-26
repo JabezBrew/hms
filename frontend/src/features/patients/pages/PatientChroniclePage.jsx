@@ -279,7 +279,7 @@ function toTimestampMs(value) {
 }
 
 function sortEntriesByTimestampDesc(entries = []) {
-  return [...entries].sort((a, b) => {
+  return entries.toSorted((a, b) => {
     const timestampA = toTimestampMs(getEntryTimestamp(a)) || 0;
     const timestampB = toTimestampMs(getEntryTimestamp(b)) || 0;
     return timestampB - timestampA;
@@ -427,7 +427,7 @@ function compactLabDetail(lab) {
 const PatientChroniclePage = ({ defaultAction }) => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
+  const { pathname, search } = useLocation();
   const { user, loading: authLoading } = useAuth();
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
@@ -436,7 +436,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const lastFilterEventRef = useRef(null);
   const encounterExpansionSeedRef = useRef(null);
   const noteExpansionSeedRef = useRef(null);
-  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [expandedEncounters, setExpandedEncounters] = useState(() => new Set());
@@ -465,11 +465,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const chronicleModeParam = searchParams.get('mode');
   const isWardRoundMode = chronicleModeParam === 'ward-round' || defaultAction === 'ward_round';
   const clearQueryParams = useCallback(() => {
-    const nextSearch = stripTransientChronicleParams(location.search);
-    if (nextSearch !== location.search) {
-      navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
+    const nextSearch = stripTransientChronicleParams(search);
+    if (nextSearch !== search) {
+      navigate({ pathname, search: nextSearch }, { replace: true });
     }
-  }, [location.pathname, location.search, navigate]);
+  }, [navigate, pathname, search]);
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
   const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
@@ -559,7 +559,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     slideOvers.open(workspaceId);
   }, [prefetchWorkspaceForOpen, slideOvers]);
   const openWardRoundMode = useCallback(() => {
-    const nextSearchParams = new URLSearchParams(location.search);
+    const nextSearchParams = new URLSearchParams(search);
     nextSearchParams.set('mode', 'ward-round');
     nextSearchParams.delete('action');
     nextSearchParams.delete('wardRound');
@@ -567,7 +567,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       pathname: `/patients/${id}`,
       search: `?${nextSearchParams.toString()}`,
     });
-  }, [id, location.search, navigate]);
+  }, [id, navigate, search]);
 
   useEffect(() => {
     const action = actionParam || defaultAction;
@@ -1146,9 +1146,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return groups;
   }, [filteredEntries, encounters]);
 
-  const expansionSeedKey = useMemo(() => (
-    `${id}:${resolvedVisitScope || 'pending'}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`
-  ), [activeFilter, debouncedSearch, id, resolvedVisitScope]);
+  const expansionSeedKey = `${id}:${resolvedVisitScope || 'pending'}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`;
 
   // Use stable length values instead of array references to avoid spurious re-runs.
   // The seed key already captures meaningful changes (patient, visit scope, filter, search).
@@ -1312,14 +1310,14 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return;
     }
 
-    const nextSearch = buildChronicleSearch(location.search, {
+    const nextSearch = buildChronicleSearch(search, {
       updates: {
         [CHRONICLE_VISIT_PARAM]: resolvedVisitScope,
       },
     });
 
-    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
-  }, [location.pathname, location.search, navigate, resolvedVisitScope, visitParam]);
+    navigate({ pathname, search: nextSearch }, { replace: true });
+  }, [navigate, pathname, resolvedVisitScope, search, visitParam]);
 
   // ============================================
   // Event handlers
@@ -1531,14 +1529,14 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [activeFilter, id, searchInput, selectedEncounterId]);
 
   const handleVisitScopeChange = useCallback((nextVisitScope) => {
-    const nextSearch = buildChronicleSearch(location.search, {
+    const nextSearch = buildChronicleSearch(search, {
       updates: {
         [CHRONICLE_VISIT_PARAM]: nextVisitScope,
       },
     });
 
-    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
-  }, [location.pathname, location.search, navigate]);
+    navigate({ pathname, search: nextSearch }, { replace: true });
+  }, [navigate, pathname, search]);
 
   const handleViewAllHistory = useCallback(() => {
     handleVisitScopeChange(CHRONICLE_ALL_VISITS);
@@ -1827,7 +1825,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               refetchPatient();
               refetchContext();
             }}>
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Try Again
             </Button>
           </div>
@@ -1877,7 +1875,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               onClick={handleOpenWardBoard}
               className="font-mono text-xs"
             >
-              <ClipboardList className="h-4 w-4 mr-2" />
+              <ClipboardList className="size-4 mr-2" />
               Open Ward Board
             </Button>
           </div>
@@ -1924,7 +1922,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
             />
           </div>
           {/* Timeline Chronicle or single-page Chronicle mode */}
-          <main className="min-w-0 flex-1 px-4 py-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
+          <main className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
           {isWardRoundMode ? (
             <Suspense fallback={(
               <div className="mx-auto max-w-4xl space-y-4">
@@ -1952,7 +1950,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 space-y-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <Clock className="size-5 text-muted-foreground" />
                     <h2 className="font-display text-xl text-foreground sm:text-2xl">
                       Clinical Chronicle
                     </h2>
@@ -1983,10 +1981,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   size="sm"
                   onClick={() => refetchTimeline()}
                   aria-label="Refresh timeline"
-                  className="h-9 w-9 shrink-0 p-0 font-mono text-xs sm:w-auto sm:px-3"
+                  className="size-9 shrink-0 p-0 font-mono text-xs sm:w-auto sm:px-3"
                 >
                   <RefreshCw className={cn(
-                    "h-3.5 w-3.5 sm:mr-1.5",
+                    "size-3.5 sm:mr-1.5",
                     isTimelineLoading && "animate-spin"
                   )} />
                   <span className="hidden sm:inline">Refresh</span>
@@ -1995,7 +1993,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
               <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                 <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Calendar className="size-4 text-muted-foreground" />
                   <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     Visit focus
                   </span>
@@ -2045,7 +2043,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                 {/* Search Input */}
                 <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                   <Input
                     type="text"
                     placeholder="Search notes, prescriptions..."
@@ -2057,7 +2055,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
                 {/* Filter Tabs */}
                 <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-                  <Filter className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block" />
+                  <Filter className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
                   <div className="flex w-full min-w-0 max-w-full overflow-x-auto rounded-lg bg-muted p-1 [-webkit-overflow-scrolling:touch] sm:w-auto" data-onboarding="chronicle-filter-group">
                     {[
                       { key: 'all', label: 'All', icon: null },
@@ -2085,7 +2083,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                             : "text-muted-foreground hover:text-foreground"
                         )}
                       >
-                        {filter.icon && <filter.icon className="h-3 w-3" />}
+                        {filter.icon && <filter.icon className="size-3" />}
                         {filter.label}
                       </button>
                     ))}
@@ -2143,16 +2141,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 return (
                   <div key={encounter.id} className="overflow-hidden rounded-lg border border-border bg-card">
                     {/* Encounter Header */}
-                    <div className="flex w-full flex-col gap-3 px-3 py-3 text-left transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:px-4">
+                    <div className="flex w-full flex-col gap-3 p-3 text-left transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:px-4">
                       <button
                         type="button"
                         onClick={() => toggleEncounter(normalizedEncounterId)}
                         className="flex min-w-0 flex-1 items-start gap-3 text-left sm:items-center"
                       >
                         {isExpanded ? (
-                          <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                          <ChevronDown className="size-4 flex-shrink-0 text-muted-foreground" />
                         ) : (
-                          <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                          <ChevronRight className="size-4 flex-shrink-0 text-muted-foreground" />
                         )}
 
                         <div className={cn(
@@ -2160,7 +2158,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                           ['inpatient', 'admission', 'hospitalization'].includes(encounterKind) ? "bg-blue-500/10" : "bg-amber-500/10"
                         )}>
                           <TypeIcon className={cn(
-                            "h-4 w-4",
+                            "size-4",
                             ['inpatient', 'admission', 'hospitalization'].includes(encounterKind) ? "text-blue-500" : "text-amber-500"
                           )} />
                         </div>
@@ -2210,7 +2208,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                               handleViewMedicationHistory();
                             }}
                           >
-                            <Pill className="h-3.5 w-3.5 mr-1" />
+                            <Pill className="size-3.5 mr-1" />
                             Meds
                           </Button>
                           <Button
@@ -2222,7 +2220,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                               handleRecordFluids();
                             }}
                           >
-                            <Droplets className="h-3.5 w-3.5 mr-1" />
+                            <Droplets className="size-3.5 mr-1" />
                             Fluids
                           </Button>
                         </div>
@@ -2234,7 +2232,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     </div>
 
                     {/* Encounter Entries — CSS-hidden instead of unmount to avoid animation replay */}
-                    <div className={cn("min-w-0 space-y-3 border-t border-border px-3 py-3 sm:px-4", !isExpanded && "hidden")}>
+                    <div className={cn("min-w-0 space-y-3 border-t border-border p-3 sm:px-4", !isExpanded && "hidden")}>
                       {entries.map((entry, index) => (
                         <TimelineEntry
                           key={entry.id}
@@ -2265,13 +2263,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
                   >
                     {expandedEncounters.has('unlinked') ? (
-                      <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                      <ChevronDown className="size-4 flex-shrink-0 text-muted-foreground" />
                     ) : (
-                      <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                      <ChevronRight className="size-4 flex-shrink-0 text-muted-foreground" />
                     )}
 
                     <div className="rounded-lg bg-muted p-2">
-                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                      <AlertCircle className="size-4 text-muted-foreground" />
                     </div>
 
                     <div className="min-w-0 flex-1">
@@ -2291,7 +2289,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   </button>
 
                   {/* Unlinked Entries List — CSS-hidden instead of unmount */}
-                  <div className={cn("min-w-0 space-y-3 border-t border-dashed border-border px-3 py-3 sm:px-4", !expandedEncounters.has('unlinked') && "hidden")}>
+                  <div className={cn("min-w-0 space-y-3 border-t border-dashed border-border p-3 sm:px-4", !expandedEncounters.has('unlinked') && "hidden")}>
                     {groupedByEncounter.unlinked.map((entry, index) => (
                       <TimelineEntry
                         key={entry.id}
@@ -2352,8 +2350,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 >
                   {isFetchingNextPage ? (
                     <div className="flex items-center gap-2 text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="font-mono text-xs">Loading more...</span>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span className="font-mono text-xs">Loading more…</span>
                     </div>
                   ) : (
                     <Button

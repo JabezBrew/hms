@@ -412,7 +412,7 @@ const AddPrescriptionSlideOver = ({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <Pill className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+            <Pill className="size-5 text-sky-600 dark:text-sky-400" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">
@@ -430,7 +430,7 @@ const AddPrescriptionSlideOver = ({
           onClick={handleClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -439,7 +439,7 @@ const AddPrescriptionSlideOver = ({
       {allergiesData?.allergies?.length > 0 && (
         <div className="px-6 pt-4">
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertDescription>
               <span className="font-semibold">Patient Allergies ({allergiesData.count}):</span>{' '}
               {allergiesData.allergies
@@ -457,7 +457,7 @@ const AddPrescriptionSlideOver = ({
           {/* Medication Name with Safety Check */}
           <div className="space-y-2">
             <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Shield className="h-3.5 w-3.5 text-sky-600" />
+              <Shield className="size-3.5 text-sky-600" />
               {drugSafetyEnhancementsAvailable
                 ? 'Medication Name * (with drug safety check)'
                 : 'Medication Name *'}
@@ -498,14 +498,14 @@ const AddPrescriptionSlideOver = ({
           {drugSafetyEnhancementsAvailable && selectedRxcui && (
             <div className="space-y-2">
               <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Package className="h-3.5 w-3.5 text-sky-600" />
+                <Package className="size-3.5 text-sky-600" />
                 Select Formulation (Optional)
               </Label>
               {isLoadingForms ? (
                 <div className="flex items-center gap-2 py-3 px-4 bg-muted/50 rounded-lg">
-                  <Loader2 className="h-4 w-4 animate-spin text-sky-600" />
+                  <Loader2 className="size-4 animate-spin text-sky-600" />
                   <span className="font-mono text-sm text-muted-foreground">
-                    Loading available formulations...
+                    Loading available formulations…
                   </span>
                 </div>
               ) : drugForms.length > 0 ? (
@@ -635,7 +635,7 @@ const AddPrescriptionSlideOver = ({
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" />
+                <Calendar className="size-3.5" />
                 Start Date
               </Label>
               <Input
@@ -687,7 +687,7 @@ const AddPrescriptionSlideOver = ({
                     htmlFor="generate-mar"
                     className="font-mono text-sm font-medium cursor-pointer flex items-center gap-2"
                   >
-                    <ClipboardList className="h-4 w-4 text-sky-600" />
+                    <ClipboardList className="size-4 text-sky-600" />
                     Generate Medication Administration Record (MAR)
                   </Label>
                   <p className="text-xs text-muted-foreground">
@@ -719,7 +719,7 @@ const AddPrescriptionSlideOver = ({
             </div>
           ) : (
             <Alert>
-              <ClipboardList className="h-4 w-4" />
+              <ClipboardList className="size-4" />
               <AlertDescription>
                 MAR generation is not available in Rust V2 mode yet.
               </AlertDescription>
@@ -774,14 +774,14 @@ const AddPrescriptionSlideOver = ({
           >
             {safetyCheckPending ? (
               <>
-                <Shield className="h-3.5 w-3.5 mr-1.5 animate-pulse" />
-                Checking Safety...
+                <Shield className="size-3.5 mr-1.5 animate-pulse" />
+                Checking Safety…
               </>
             ) : createPrescriptionMutation.isPending ? (
-              'Creating...'
+              'Creating…'
             ) : (
               <>
-                <Check className="h-3.5 w-3.5 mr-1.5" />
+                <Check className="size-3.5 mr-1.5" />
                 Create Prescription
               </>
             )}

@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
+const DEFAULT_EMPTY_OBJECT = {};
+
 const DISCHARGE_CRITERIA = [
   'Clinical condition stable',
   'Pain controlled',
@@ -58,7 +60,7 @@ function fromLocalInputValue(localValue) {
   return date.toISOString();
 }
 
-const DischargePlanningStep = ({ formData = {}, onChange, contextData, validationErrors = {} }) => {
+const DischargePlanningStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, contextData, validationErrors = DEFAULT_EMPTY_OBJECT }) => {
   const criteria = formData.discharge_criteria_met || [];
 
   const setField = (field, value) => {
@@ -114,7 +116,7 @@ const DischargePlanningStep = ({ formData = {}, onChange, contextData, validatio
       <Card className={cn(validationErrors.discharge_disposition && 'border-destructive')}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Home className="h-4 w-4" />
+            <Home className="size-4" />
             Disposition <span className="text-destructive">*</span>
           </CardTitle>
         </CardHeader>
@@ -144,7 +146,7 @@ const DischargePlanningStep = ({ formData = {}, onChange, contextData, validatio
       <Card className={cn(validationErrors.discharge_date && 'border-destructive')}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-4 w-4" />
+            <Clock className="size-4" />
             Planned Discharge Date & Time <span className="text-destructive">*</span>
           </CardTitle>
         </CardHeader>
@@ -189,7 +191,7 @@ const DischargePlanningStep = ({ formData = {}, onChange, contextData, validatio
 
       <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
         <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5" />
+          <AlertTriangle className="mt-0.5 size-3.5" />
           <p>Only continue when disposition and discharge time are confirmed with the care team.</p>
         </div>
       </div>

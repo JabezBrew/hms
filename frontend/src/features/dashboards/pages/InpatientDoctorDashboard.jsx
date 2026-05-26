@@ -84,7 +84,7 @@ export default function InpatientDoctorDashboard() {
                   size="sm"
                   onClick={() => navigate('/referrals/sent')}
                 >
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="size-4 mr-2" />
                   Sent Referrals
                 </Button>
                 <Button
@@ -92,7 +92,7 @@ export default function InpatientDoctorDashboard() {
                   size="sm"
                   onClick={() => navigate('/referrals/inbox')}
                 >
-                  <Inbox className="h-4 w-4 mr-2" />
+                  <Inbox className="size-4 mr-2" />
                   Referral Inbox
                 </Button>
               </div>
@@ -175,7 +175,7 @@ export default function InpatientDoctorDashboard() {
                   size="sm"
                   onClick={() => navigate('/referrals/sent')}
                 >
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="size-4 mr-2" />
                   Sent Referrals
                 </Button>
                 <Button
@@ -183,7 +183,7 @@ export default function InpatientDoctorDashboard() {
                   size="sm"
                   onClick={() => navigate('/referrals/inbox')}
                 >
-                  <Inbox className="h-4 w-4 mr-2" />
+                  <Inbox className="size-4 mr-2" />
                   Referral Inbox
                 </Button>
               </div>
@@ -228,7 +228,7 @@ export default function InpatientDoctorDashboard() {
                     size="sm"
                     onClick={() => navigate('/referrals/sent')}
                   >
-                    <Send className="h-4 w-4 mr-2" />
+                    <Send className="size-4 mr-2" />
                     Sent Referrals
                   </Button>
                   <Button
@@ -236,7 +236,7 @@ export default function InpatientDoctorDashboard() {
                     size="sm"
                     onClick={() => navigate('/referrals/inbox')}
                   >
-                    <Inbox className="h-4 w-4 mr-2" />
+                    <Inbox className="size-4 mr-2" />
                     Referral Inbox
                   </Button>
                 </>
@@ -247,7 +247,7 @@ export default function InpatientDoctorDashboard() {
                   size="sm"
                   trigger={
                     <Button variant="default" size="sm">
-                      <Stethoscope className="h-4 w-4 mr-2" />
+                      <Stethoscope className="size-4 mr-2" />
                       Start Workflow
                     </Button>
                   }
@@ -259,7 +259,7 @@ export default function InpatientDoctorDashboard() {
                   size="sm"
                   onClick={() => navigate('/ward-board')}
                 >
-                  <ClipboardList className="h-4 w-4 mr-2" />
+                  <ClipboardList className="size-4 mr-2" />
                   Open Ward Board
                 </Button>
               ) : null}
@@ -270,7 +270,7 @@ export default function InpatientDoctorDashboard() {
                 disabled={isFetching}
                 aria-label="Refresh dashboard"
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
               </Button>
             </div>
           )}
@@ -332,7 +332,7 @@ export default function InpatientDoctorDashboard() {
             </div>
           ) : newAdmissions.length === 0 ? (
             <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-              <UserPlus className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <UserPlus className="size-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No new admissions in the last 24 hours</p>
             </div>
           ) : (
@@ -412,7 +412,7 @@ export default function InpatientDoctorDashboard() {
             </div>
           ) : myPatients.length === 0 ? (
             <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <Users className="size-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No active patients</p>
             </div>
           ) : (
@@ -492,7 +492,7 @@ export default function InpatientDoctorDashboard() {
             </div>
           ) : plannedDischarges.length === 0 ? (
             <div className="text-center py-8 rounded-xl border border-border bg-card/50">
-              <UserCheck className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <UserCheck className="size-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No discharges planned for today</p>
             </div>
           ) : (

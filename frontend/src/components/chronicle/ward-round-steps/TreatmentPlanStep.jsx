@@ -98,7 +98,7 @@ function AddMedicationDialog({ open, onClose, onAdd }) {
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Pill className="h-5 w-5" />
+            <Pill className="size-5" />
             Add Medication Order
           </DialogTitle>
           <DialogDescription>
@@ -242,9 +242,9 @@ function OrdersList({ orders, onRemove, type }) {
             variant="ghost"
             size="sm"
             onClick={() => onRemove(index)}
-            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+            className="size-8 p-0 text-muted-foreground hover:text-destructive"
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         </div>
       ))}
@@ -412,7 +412,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base font-medium flex items-center gap-2">
-              <ClipboardList className="h-4 w-4" />
+              <ClipboardList className="size-4" />
               Orders
             </CardTitle>
             {totalOrders > 0 && (
@@ -427,28 +427,28 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
           <Tabs defaultValue="medications" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="medications" className="flex items-center gap-1">
-                <Pill className="h-3.5 w-3.5" />
+                <Pill className="size-3.5" />
                 Meds
                 {localData.orders_placed?.medications?.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 justify-center">
+                  <Badge variant="secondary" className="ml-1 size-5 p-0 justify-center">
                     {localData.orders_placed.medications.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="labs" className="flex items-center gap-1">
-                <FlaskConical className="h-3.5 w-3.5" />
+                <FlaskConical className="size-3.5" />
                 Labs
                 {localData.orders_placed?.labs?.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 justify-center">
+                  <Badge variant="secondary" className="ml-1 size-5 p-0 justify-center">
                     {localData.orders_placed.labs.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="nursing" className="flex items-center gap-1">
-                <Stethoscope className="h-3.5 w-3.5" />
+                <Stethoscope className="size-3.5" />
                 Nursing
                 {localData.orders_placed?.nursing?.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 justify-center">
+                  <Badge variant="secondary" className="ml-1 size-5 p-0 justify-center">
                     {localData.orders_placed.nursing.length}
                   </Badge>
                 )}
@@ -468,7 +468,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
                 onClick={() => setMedicationDialogOpen(true)}
                 className="w-full"
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Add Medication
               </Button>
             </TabsContent>
@@ -492,7 +492,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
                       className="text-xs"
                       disabled={localData.orders_placed?.labs?.some(l => l.test_code === lab.code)}
                     >
-                      <Plus className="h-3 w-3 mr-1" />
+                      <Plus className="size-3 mr-1" />
                       {lab.code}
                     </Button>
                   ))}
@@ -525,7 +525,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
                   onClick={handleAddNursingOrder}
                   disabled={!nursingOrderText.trim()}
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="size-4" />
                 </Button>
               </div>
             </TabsContent>
@@ -543,7 +543,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
       {/* Orders Summary Note */}
       {totalOrders > 0 && (
         <Alert>
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="size-4" />
           <AlertDescription>
             {totalOrders} order{totalOrders !== 1 ? 's' : ''} will be submitted when you complete this ward round.
           </AlertDescription>

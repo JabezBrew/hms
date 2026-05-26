@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+const DEFAULT_EMPTY_OBJECT = {};
+
 function createPrescription() {
   return {
     medication_name: '',
@@ -18,7 +20,7 @@ function createPrescription() {
   };
 }
 
-const DischargeMedicationsStep = ({ formData = {}, onChange, validationErrors = {} }) => {
+const DischargeMedicationsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, validationErrors = DEFAULT_EMPTY_OBJECT }) => {
   const prescriptions = formData.discharge_prescriptions || [];
 
   const setField = (field, value) => {
@@ -56,9 +58,10 @@ const DischargeMedicationsStep = ({ formData = {}, onChange, validationErrors = 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox
-              checked={formData.medications_reconciled === true}
+	          <label htmlFor="discharge-medications-reconciled" className="flex items-start gap-2 text-sm">
+	            <Checkbox
+	              id="discharge-medications-reconciled"
+	              checked={formData.medications_reconciled === true}
               onCheckedChange={(checked) => setField('medications_reconciled', checked === true)}
             />
             <span>
@@ -74,7 +77,7 @@ const DischargeMedicationsStep = ({ formData = {}, onChange, validationErrors = 
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Pill className="h-4 w-4" />
+            <Pill className="size-4" />
             Discharge Prescriptions
           </CardTitle>
           <CardDescription>
@@ -89,35 +92,39 @@ const DischargeMedicationsStep = ({ formData = {}, onChange, validationErrors = 
           {prescriptions.map((prescription, index) => (
             <div key={`rx-${index}`} className="rounded-lg border p-3 space-y-2">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Medication</Label>
-                  <Input
-                    value={prescription.medication_name || ''}
+	                <div className="space-y-1">
+	                  <Label htmlFor={`discharge-rx-${index}-medication`} className="text-xs">Medication</Label>
+	                  <Input
+	                    id={`discharge-rx-${index}-medication`}
+	                    value={prescription.medication_name || ''}
                     onChange={(event) => updatePrescription(index, 'medication_name', event.target.value)}
                     placeholder="Medication name"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Dosage</Label>
-                  <Input
-                    value={prescription.dosage || ''}
+	                <div className="space-y-1">
+	                  <Label htmlFor={`discharge-rx-${index}-dosage`} className="text-xs">Dosage</Label>
+	                  <Input
+	                    id={`discharge-rx-${index}-dosage`}
+	                    value={prescription.dosage || ''}
                     onChange={(event) => updatePrescription(index, 'dosage', event.target.value)}
                     placeholder="e.g. 500 mg"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Frequency</Label>
-                  <Input
-                    value={prescription.frequency || ''}
+	                <div className="space-y-1">
+	                  <Label htmlFor={`discharge-rx-${index}-frequency`} className="text-xs">Frequency</Label>
+	                  <Input
+	                    id={`discharge-rx-${index}-frequency`}
+	                    value={prescription.frequency || ''}
                     onChange={(event) => updatePrescription(index, 'frequency', event.target.value)}
                     placeholder="e.g. BID"
                   />
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Instructions</Label>
-                <Input
-                  value={prescription.instructions || ''}
+	                <Label htmlFor={`discharge-rx-${index}-instructions`} className="text-xs">Instructions</Label>
+	                <Input
+	                  id={`discharge-rx-${index}-instructions`}
+	                  value={prescription.instructions || ''}
                   onChange={(event) => updatePrescription(index, 'instructions', event.target.value)}
                   placeholder="e.g. Take with meals"
                 />
@@ -130,7 +137,7 @@ const DischargeMedicationsStep = ({ formData = {}, onChange, validationErrors = 
                   onClick={() => removePrescription(index)}
                   className="text-muted-foreground"
                 >
-                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  <Trash2 className="size-4 mr-1.5" />
                   Remove
                 </Button>
               </div>
@@ -138,7 +145,7 @@ const DischargeMedicationsStep = ({ formData = {}, onChange, validationErrors = 
           ))}
 
           <Button type="button" variant="outline" size="sm" onClick={addPrescription}>
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="size-4 mr-1.5" />
             Add Prescription
           </Button>
         </CardContent>
@@ -156,9 +163,10 @@ const DischargeMedicationsStep = ({ formData = {}, onChange, validationErrors = 
             rows={5}
             className="font-mono text-sm"
           />
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox
-              checked={formData.medication_education_completed === true}
+	          <label htmlFor="discharge-medication-education-completed" className="flex items-start gap-2 text-sm">
+	            <Checkbox
+	              id="discharge-medication-education-completed"
+	              checked={formData.medication_education_completed === true}
               onCheckedChange={(checked) => setField('medication_education_completed', checked === true)}
             />
             <span>Patient/family educated on medication plan</span>

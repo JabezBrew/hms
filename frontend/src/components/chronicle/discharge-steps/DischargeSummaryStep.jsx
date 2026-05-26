@@ -5,7 +5,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
-const DischargeSummaryStep = ({ formData = {}, onChange, validationErrors = {}, allFormData = {} }) => {
+const DEFAULT_EMPTY_OBJECT = {};
+
+const DischargeSummaryStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, validationErrors = DEFAULT_EMPTY_OBJECT, allFormData = DEFAULT_EMPTY_OBJECT }) => {
   const setField = (field, value) => {
     onChange({
       ...formData,
@@ -20,7 +22,7 @@ const DischargeSummaryStep = ({ formData = {}, onChange, validationErrors = {}, 
       <Card className={cn(validationErrors.discharge_summary && 'border-destructive')}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="h-4 w-4" />
+            <FileText className="size-4" />
             Discharge Summary <span className="text-destructive">*</span>
           </CardTitle>
           <CardDescription>
@@ -44,7 +46,7 @@ const DischargeSummaryStep = ({ formData = {}, onChange, validationErrors = {}, 
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <CheckCircle className="h-4 w-4" />
+            <CheckCircle className="size-4" />
             Completion Checklist
           </CardTitle>
           <CardDescription>
@@ -52,9 +54,10 @@ const DischargeSummaryStep = ({ formData = {}, onChange, validationErrors = {}, 
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <label className="flex items-start gap-2">
-            <Checkbox
-              checked={formData.patient_education_complete === true}
+	          <label htmlFor="discharge-patient-education-complete" className="flex items-start gap-2">
+	            <Checkbox
+	              id="discharge-patient-education-complete"
+	              checked={formData.patient_education_complete === true}
               onCheckedChange={(checked) => setField('patient_education_complete', checked === true)}
             />
             <span>
@@ -65,9 +68,10 @@ const DischargeSummaryStep = ({ formData = {}, onChange, validationErrors = {}, 
             <p className="text-xs text-destructive">{validationErrors.patient_education_complete}</p>
           )}
 
-          <label className="flex items-start gap-2">
-            <Checkbox
-              checked={formData.discharge_instructions_given === true}
+	          <label htmlFor="discharge-instructions-given" className="flex items-start gap-2">
+	            <Checkbox
+	              id="discharge-instructions-given"
+	              checked={formData.discharge_instructions_given === true}
               onCheckedChange={(checked) => setField('discharge_instructions_given', checked === true)}
             />
             <span>

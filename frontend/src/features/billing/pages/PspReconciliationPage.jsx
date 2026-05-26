@@ -35,13 +35,15 @@ import {
   useSettlementLines,
 } from '@/features/billing/hooks';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 function formatCurrency(amount) {
   const n = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(Number.isFinite(n) ? n : 0);
+  return GHS_CURRENCY_FORMATTER.format(Number.isFinite(n) ? n : 0);
 }
 
 function formatDate(dateString) {
@@ -183,7 +185,7 @@ export default function PspReconciliationPage() {
         const Icon = meta.icon;
         return (
           <span className={cn('inline-flex items-center gap-1 font-mono text-xs px-2 py-1 rounded', meta.cls)}>
-            <Icon className="h-3 w-3" />
+            <Icon className="size-3" />
             {meta.label}
           </span>
         );
@@ -239,7 +241,7 @@ export default function PspReconciliationPage() {
         const Icon = meta.icon;
         return (
           <span className={cn('inline-flex items-center gap-1 font-mono text-xs px-2 py-1 rounded', meta.cls)}>
-            <Icon className="h-3 w-3" />
+            <Icon className="size-3" />
             {meta.label}
           </span>
         );
@@ -305,7 +307,7 @@ export default function PspReconciliationPage() {
       <PageHeader
         title={(
           <span className="flex items-center gap-3">
-            <CreditCard className="h-7 w-7 text-[oklch(0.70_0.17_155)]" />
+            <CreditCard className="size-7 text-[oklch(0.70_0.17_155)]" />
             PSP Collections
           </span>
         )}
@@ -316,7 +318,7 @@ export default function PspReconciliationPage() {
             className="font-mono text-xs"
             onClick={() => handleRefresh()}
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="size-4 mr-2" />
             Refresh
           </Button>
         )}
@@ -420,7 +422,7 @@ export default function PspReconciliationPage() {
                       className="font-mono text-xs"
                       onClick={downloadSettlementTemplate}
                     >
-                      <Download className="h-4 w-4 mr-2" />
+                      <Download className="size-4 mr-2" />
                       Download Template
                     </Button>
                   </div>
@@ -448,7 +450,7 @@ export default function PspReconciliationPage() {
                       }
                     }}
                   >
-                    <Upload className="h-4 w-4 mr-2" />
+                    <Upload className="size-4 mr-2" />
                     Import
                   </Button>
                 </div>
@@ -456,7 +458,7 @@ export default function PspReconciliationPage() {
             ) : (
               <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-[oklch(0.72_0.17_70)] mt-0.5" />
+                  <AlertTriangle className="size-5 text-[oklch(0.72_0.17_70)] mt-0.5" />
                   <div>
                     <h2 className="font-display text-lg text-foreground">Settlement Imports Deferred</h2>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -583,9 +585,9 @@ export default function PspReconciliationPage() {
                         row.match_status === 'matched' ? 'badge-chronicle-emerald' : 'badge-chronicle-rose'
                       )}>
                         {row.match_status === 'matched' ? (
-                          <CheckCircle className="h-3 w-3" />
+                          <CheckCircle className="size-3" />
                         ) : (
-                          <AlertTriangle className="h-3 w-3" />
+                          <AlertTriangle className="size-3" />
                         )}
                         {row.match_status}
                       </span>

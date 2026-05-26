@@ -22,98 +22,7 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Truck from 'lucide-react/dist/esm/icons/truck.js';
-
-/**
- * Status configuration
- */
-const STATUS_CONFIG = {
-  draft: {
-    label: 'Draft',
-    variant: 'secondary',
-    bgColor: 'bg-muted',
-    textColor: 'text-muted-foreground',
-  },
-  pending: {
-    label: 'Pending Approval',
-    variant: 'outline',
-    bgColor: 'bg-amber-500/10',
-    textColor: 'text-amber-500',
-    borderColor: 'border-amber-500/30',
-  },
-  approved: {
-    label: 'Approved',
-    variant: 'default',
-    bgColor: 'bg-emerald-500/10',
-    textColor: 'text-emerald-500',
-    borderColor: 'border-emerald-500/30',
-  },
-  sent: {
-    label: 'Sent to Supplier',
-    variant: 'default',
-    bgColor: 'bg-sky-500/10',
-    textColor: 'text-sky-500',
-    borderColor: 'border-sky-500/30',
-  },
-  acknowledged: {
-    label: 'Acknowledged',
-    variant: 'default',
-    bgColor: 'bg-sky-500/10',
-    textColor: 'text-sky-500',
-    borderColor: 'border-sky-500/30',
-  },
-  receiving: {
-    label: 'Receiving',
-    variant: 'default',
-    bgColor: 'bg-violet-500/10',
-    textColor: 'text-violet-500',
-    borderColor: 'border-violet-500/30',
-  },
-  partially_received: {
-    label: 'Partially Received',
-    variant: 'default',
-    bgColor: 'bg-amber-500/10',
-    textColor: 'text-amber-500',
-    borderColor: 'border-amber-500/30',
-  },
-  received: {
-    label: 'Received',
-    variant: 'default',
-    bgColor: 'bg-emerald-500/10',
-    textColor: 'text-emerald-500',
-    borderColor: 'border-emerald-500/30',
-  },
-  closed: {
-    label: 'Closed',
-    variant: 'secondary',
-    bgColor: 'bg-muted',
-    textColor: 'text-muted-foreground',
-  },
-  cancelled: {
-    label: 'Cancelled',
-    variant: 'destructive',
-    bgColor: 'bg-rose-500/10',
-    textColor: 'text-rose-500',
-    borderColor: 'border-rose-500/30',
-  },
-};
-
-/**
- * Get status config
- */
-export function getStatusConfig(status) {
-  return STATUS_CONFIG[status?.toLowerCase()] || STATUS_CONFIG.draft;
-}
-
-/**
- * Format currency
- */
-export function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
-}
+import { formatPOCurrency, getPOStatusConfig } from './po-card-utils';
 
 /**
  * POCard - Card display for purchase orders
@@ -135,7 +44,7 @@ export function POCard({
   onPrint,
   className,
 }) {
-  const statusConfig = getStatusConfig(po.status);
+  const statusConfig = getPOStatusConfig(po.status);
 
   const canSend = po.status === 'approved';
   const canCreateGRN = ['sent', 'acknowledged', 'receiving', 'partially_received'].includes(po.status);
@@ -156,7 +65,7 @@ export function POCard({
         <div className="flex items-start justify-between mb-3">
           {/* PO number */}
           <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <FileText className="size-4 text-muted-foreground" />
             <span className="font-mono text-sm font-medium text-primary">
               {po.po_number || po.number}
             </span>
@@ -168,25 +77,25 @@ export function POCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canSend && onSend && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onSend(); }}>
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="size-4 mr-2" />
                   Send to Supplier
                 </DropdownMenuItem>
               )}
               {canCreateGRN && onCreateGRN && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onCreateGRN(); }}>
-                  <Package className="h-4 w-4 mr-2" />
+                  <Package className="size-4 mr-2" />
                   Create GRN
                 </DropdownMenuItem>
               )}
@@ -194,7 +103,7 @@ export function POCard({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPrint(); }}>
-                    <Printer className="h-4 w-4 mr-2" />
+                    <Printer className="size-4 mr-2" />
                     Print
                   </DropdownMenuItem>
                 </>
@@ -227,7 +136,7 @@ export function POCard({
         <div className="space-y-2 mb-3">
           {po.order_date && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               <span>
                 Ordered{' '}
                 <span className="font-mono">
@@ -238,7 +147,7 @@ export function POCard({
           )}
           {po.expected_delivery_date && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Truck className="h-3 w-3" />
+              <Truck className="size-3" />
               <span>
                 Expected{' '}
                 <span className="font-mono">
@@ -255,7 +164,7 @@ export function POCard({
             {po.items_count || po.item_count || 0} item{(po.items_count || po.item_count || 0) !== 1 ? 's' : ''}
           </div>
           <div className="font-mono text-sm font-semibold text-emerald-500">
-            {formatCurrency(po.total_amount || po.total)}
+            {formatPOCurrency(po.total_amount || po.total)}
           </div>
         </div>
 
@@ -290,10 +199,10 @@ export function POCardSkeleton() {
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Skeleton className="h-4 w-4" />
+            <Skeleton className="size-4" />
             <Skeleton className="h-4 w-24" />
           </div>
-          <Skeleton className="h-8 w-8" />
+          <Skeleton className="size-8" />
         </div>
         <div className="flex items-center gap-2 mb-3">
           <Skeleton className="h-5 w-28" />
@@ -323,7 +232,7 @@ export function PORow({
   onCreateGRN,
   onPrint,
 }) {
-  const statusConfig = getStatusConfig(po.status);
+  const statusConfig = getPOStatusConfig(po.status);
 
   const canSend = po.status === 'approved';
   const canCreateGRN = ['sent', 'acknowledged', 'receiving', 'partially_received'].includes(po.status);
@@ -339,7 +248,7 @@ export function PORow({
     >
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
+          <FileText className="size-4 text-muted-foreground" />
           <span className="font-mono text-sm font-medium text-primary">
             {po.po_number || po.number}
           </span>
@@ -360,7 +269,7 @@ export function PORow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-muted-foreground" />
+          <Building2 className="size-4 text-muted-foreground" />
           <span className="text-sm truncate max-w-[200px]">
             {po.supplier_name || po.supplier}
           </span>
@@ -391,30 +300,30 @@ export function PORow({
       </td>
       <td className="px-4 py-3 text-right">
         <span className="font-mono text-sm font-semibold text-emerald-500">
-          {formatCurrency(po.total_amount || po.total)}
+          {formatPOCurrency(po.total_amount || po.total)}
         </span>
       </td>
       <td className="px-4 py-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="size-8 p-0">
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-              <Eye className="h-4 w-4 mr-2" />
+              <Eye className="size-4 mr-2" />
               View Details
             </DropdownMenuItem>
             {canSend && onSend && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onSend(); }}>
-                <Send className="h-4 w-4 mr-2" />
+                <Send className="size-4 mr-2" />
                 Send to Supplier
               </DropdownMenuItem>
             )}
             {canCreateGRN && onCreateGRN && (
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onCreateGRN(); }}>
-                <Package className="h-4 w-4 mr-2" />
+                <Package className="size-4 mr-2" />
                 Create GRN
               </DropdownMenuItem>
             )}
@@ -422,7 +331,7 @@ export function PORow({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPrint(); }}>
-                  <Printer className="h-4 w-4 mr-2" />
+                  <Printer className="size-4 mr-2" />
                   Print
                 </DropdownMenuItem>
               </>
@@ -442,7 +351,7 @@ export function PORowSkeleton() {
     <tr>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <Skeleton className="h-4 w-4" />
+          <Skeleton className="size-4" />
           <Skeleton className="h-4 w-24" />
         </div>
       </td>
@@ -465,7 +374,7 @@ export function PORowSkeleton() {
         <Skeleton className="h-4 w-24 ml-auto" />
       </td>
       <td className="px-4 py-3">
-        <Skeleton className="h-8 w-8" />
+        <Skeleton className="size-8" />
       </td>
     </tr>
   );

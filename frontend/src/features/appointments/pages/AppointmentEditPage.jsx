@@ -182,7 +182,7 @@ const AppointmentEditPage = () => {
       {pageMeta}
       <div className="space-y-6 p-6">
         <Button variant="ghost" onClick={handleBack} className="pl-0">
-          <ArrowLeft className="mr-2 h-4 w-4" />
+          <ArrowLeft className="mr-2 size-4" />
           Back to Appointment Details
         </Button>
         

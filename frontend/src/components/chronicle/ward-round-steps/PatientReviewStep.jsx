@@ -57,21 +57,21 @@ export function PatientReviewStep({ formData, onChange, contextData, validationE
       <Card className="bg-muted/30 border-muted">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-medium flex items-center gap-2">
-            <User className="h-4 w-4" />
+            <User className="size-4" />
             Admission Context
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="flex items-center gap-2">
-              <Bed className="h-4 w-4 text-muted-foreground" />
+              <Bed className="size-4 text-muted-foreground" />
               <span className="text-muted-foreground">Location:</span>
               <span className="font-medium">
                 {contextData?.ward_name || 'Unknown'} - Bed {contextData?.bed_number || '?'}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Calendar className="size-4 text-muted-foreground" />
               <span className="text-muted-foreground">Admitted:</span>
               <span className="font-medium">
                 {admissionDate
@@ -80,7 +80,7 @@ export function PatientReviewStep({ formData, onChange, contextData, validationE
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
+              <Clock className="size-4 text-muted-foreground" />
               <span className="text-muted-foreground">Length of Stay:</span>
               <Badge variant="outline" className="font-mono">
                 Day {prepData.admission_days || 0}

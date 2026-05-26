@@ -225,7 +225,7 @@ export default function AdmissionDetailPage() {
               size="sm"
               onClick={() => navigate(backToWardPath)}
             >
-              <ChevronLeft className="h-4 w-4 mr-2" />
+              <ChevronLeft className="size-4 mr-2" />
               {backLabel}
             </Button>
             {admission.admission_case_id && (
@@ -337,15 +337,15 @@ export default function AdmissionDetailPage() {
       <Tabs defaultValue="notes">
           <TabsList>
             <TabsTrigger value="notes">
-              <Clipboard className="h-4 w-4 mr-2" />
+              <Clipboard className="size-4 mr-2" />
               Notes
             </TabsTrigger>
             <TabsTrigger value="vitals">
-              <FileText className="h-4 w-4 mr-2" />
+              <FileText className="size-4 mr-2" />
               Vital Signs
             </TabsTrigger>
             <TabsTrigger value="billing">
-              <DollarSign className="h-4 w-4 mr-2" />
+              <DollarSign className="size-4 mr-2" />
               Billing
             </TabsTrigger>
           </TabsList>
@@ -386,7 +386,7 @@ export default function AdmissionDetailPage() {
                 
                 <div className="mt-4">
                   <Button variant="outline">
-                    <FileText className="h-4 w-4 mr-2" />
+                    <FileText className="size-4 mr-2" />
                     Record Vital Signs
                   </Button>
                 </div>
@@ -426,11 +426,11 @@ export default function AdmissionDetailPage() {
                     <h3 className="text-sm font-medium mb-2">Actions</h3>
                     <div className="flex gap-2">
                       <Button variant="outline">
-                        <DollarSign className="h-4 w-4 mr-2" />
+                        <DollarSign className="size-4 mr-2" />
                         Generate Invoice
                       </Button>
                       <Button variant="outline">
-                        <FileText className="h-4 w-4 mr-2" />
+                        <FileText className="size-4 mr-2" />
                         View Invoices
                       </Button>
                     </div>

@@ -1,15 +1,21 @@
+const BROWSER_BRAND_PATTERNS = [
+  [/edge/, 'Edge'],
+  [/chrome/, 'Chrome'],
+  [/firefox/, 'Firefox'],
+  [/opera/, 'Opera'],
+  [/safari/, 'Safari'],
+  [/chromium/, 'Chrome'],
+];
+
 function browserFromBrands(brands = []) {
   for (const brandItem of brands) {
     const brand = String(brandItem?.brand || '').toLowerCase();
     if (!brand || brand === 'not a brand' || brand === 'not_a_brand') {
       continue;
     }
-    if (brand.includes('edge')) return 'Edge';
-    if (brand.includes('chrome')) return 'Chrome';
-    if (brand.includes('firefox')) return 'Firefox';
-    if (brand.includes('opera')) return 'Opera';
-    if (brand.includes('safari')) return 'Safari';
-    if (brand.includes('chromium')) return 'Chrome';
+    for (const [pattern, browser] of BROWSER_BRAND_PATTERNS) {
+      if (pattern.test(brand)) return browser;
+    }
   }
   return '';
 }
@@ -70,4 +76,3 @@ export function getClientDeviceLabel() {
   );
   return osName ? `${browser} on ${osName}` : browser;
 }
-

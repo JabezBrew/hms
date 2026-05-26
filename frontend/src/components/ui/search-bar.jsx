@@ -3,6 +3,8 @@ import X from 'lucide-react/dist/esm/icons/x.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useRef, useEffect } from "react";
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,7 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 
 const SearchBar = ({
-  options = [],
+  options = DEFAULT_EMPTY_ARRAY,
   value,
   onChange,
   onInputChange,
@@ -89,7 +91,7 @@ const SearchBar = ({
         <PopoverTrigger asChild>
           <div className="flex items-center">
             <div className="relative flex-grow">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={inputRef}
                 value={selectedOption ? displayValue ? displayValue(value) : selectedOption.label : searchQuery}
@@ -113,7 +115,7 @@ const SearchBar = ({
                   onClick={(e) => handleClear(e)}
                   disabled={disabled}
                 >
-                  <X className="h-4 w-4 text-muted-foreground" />
+                  <X className="size-4 text-muted-foreground" />
                   <span className="sr-only">Clear</span>
                 </Button>
               )}
@@ -131,8 +133,8 @@ const SearchBar = ({
                 <CommandEmpty>
                   {isLoading ? (
                     <div className="flex items-center justify-center py-6">
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2" />
-                      <span>Searching...</span>
+                      <Loader2 className="size-4 animate-spin text-muted-foreground mr-2" />
+                      <span>Searching…</span>
                     </div>
                   ) : (
                     emptyMessage
@@ -151,7 +153,7 @@ const SearchBar = ({
                       )}
                       <div className="flex-grow truncate">{option.label}</div>
                       {value === option.value && (
-                        <div className="ml-2 flex h-4 w-4 items-center justify-center">
+                        <div className="ml-2 flex size-4 items-center justify-center">
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
                             viewBox="0 0 24 24"
@@ -160,7 +162,7 @@ const SearchBar = ({
                             strokeWidth="2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
-                            className="h-4 w-4"
+                            className="size-4"
                           >
                             <path d="M20 6L9 17l-5-5" />
                           </svg>

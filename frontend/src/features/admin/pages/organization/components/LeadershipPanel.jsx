@@ -121,15 +121,15 @@ export function LeadershipPanel({ unitId }) {
           onClick={() => setShowAddDialog(true)}
           className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs"
         >
-          <Plus className="h-4 w-4 mr-1.5" />
+          <Plus className="size-4 mr-1.5" />
           Add Leader
         </Button>
       </div>
 
       {leaders.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-3">
-            <UserCog className="h-7 w-7 text-muted-foreground/50" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted/50 mb-3">
+            <UserCog className="size-7 text-muted-foreground/50" />
           </div>
           <p className="text-sm text-muted-foreground">No leadership assignments</p>
           <p className="text-xs text-muted-foreground/60 mt-1">Add leaders to manage this unit</p>
@@ -147,8 +147,8 @@ export function LeadershipPanel({ unitId }) {
               style={{ animationDelay: `${index * 50}ms` }}
             >
               <div className="flex items-center gap-4">
-                <div className="h-11 w-11 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                  <UserCog className="h-5 w-5 text-amber-700 dark:text-amber-400" />
+                <div className="size-11 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                  <UserCog className="size-5 text-amber-700 dark:text-amber-400" />
                 </div>
                 <div>
                   <div className="font-display font-medium">{leader.user_name}</div>
@@ -161,7 +161,7 @@ export function LeadershipPanel({ unitId }) {
                     {leader.role_name}
                   </span>
                   <div className="font-mono text-[10px] text-muted-foreground mt-1.5 flex items-center justify-end gap-1">
-                    <Calendar className="h-3 w-3" />
+                    <Calendar className="size-3" />
                     {format(new Date(leader.effective_from), 'MMM d, yyyy')}
                     {leader.effective_until && ` — ${format(new Date(leader.effective_until), 'MMM d, yyyy')}`}
                   </div>
@@ -169,10 +169,10 @@ export function LeadershipPanel({ unitId }) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                  className="size-8 opacity-0 group-hover:opacity-100 transition-opacity text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20"
                   onClick={() => handleDelete(leader.id)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="size-4" />
                 </Button>
               </div>
             </div>
@@ -185,8 +185,8 @@ export function LeadershipPanel({ unitId }) {
         <DialogContent>
           <DialogHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                <UserCog className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
+                <UserCog className="size-5 text-amber-600 dark:text-amber-400" />
               </div>
               <DialogTitle className="font-display text-xl">Add Leadership Assignment</DialogTitle>
             </div>

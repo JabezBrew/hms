@@ -2,6 +2,8 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,7 +33,7 @@ function serviceCodeFromName(name) {
     .slice(0, 48);
 }
 
-export default function BookableServicesPanel({ services = [], isLoading = false }) {
+export default function BookableServicesPanel({ services = DEFAULT_EMPTY_ARRAY, isLoading = false }) {
   const [form, setForm] = useState(initialForm);
   const createService = useCreateSchedulingService();
 

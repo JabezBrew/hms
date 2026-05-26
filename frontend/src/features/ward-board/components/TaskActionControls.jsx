@@ -50,7 +50,7 @@ export function TaskActionControls({
             )}
             title={`${item.label} task (${status})`}
           >
-            <Icon className="h-3 w-3" aria-hidden="true" />
+            <Icon className="size-3" aria-hidden="true" />
             <span>{isPending ? '…' : item.label}</span>
           </Button>
         );

@@ -179,7 +179,7 @@ export function InventoryItemForm({
         <Card className="bg-card/30 border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Package className="h-5 w-5 text-sky-500" />
+              <Package className="size-5 text-sky-500" />
               Basic Information
             </CardTitle>
             <CardDescription>
@@ -298,7 +298,7 @@ export function InventoryItemForm({
         <Card className="bg-card/30 border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <DollarSign className="h-5 w-5 text-emerald-500" />
+              <DollarSign className="size-5 text-emerald-500" />
               Pricing & Stock Levels
             </CardTitle>
             <CardDescription>
@@ -395,7 +395,7 @@ export function InventoryItemForm({
         <Card className="bg-card/30 border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-5 w-5 text-amber-500" />
+              <Building2 className="size-5 text-amber-500" />
               Supplier
             </CardTitle>
             <CardDescription>
@@ -456,7 +456,7 @@ export function InventoryItemForm({
         <Card className="bg-card/30 border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Settings className="h-5 w-5 text-muted-foreground" />
+              <Settings className="size-5 text-muted-foreground" />
               Settings
             </CardTitle>
             <CardDescription>
@@ -554,15 +554,15 @@ export function InventoryItemForm({
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
-              <X className="h-4 w-4 mr-2" />
+              <X className="size-4 mr-2" />
               Cancel
             </Button>
           )}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
             ) : (
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="size-4 mr-2" />
             )}
             {isEditing ? 'Update Item' : 'Create Item'}
           </Button>

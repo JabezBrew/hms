@@ -2,6 +2,8 @@ import { useCallback, useRef } from 'react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 function getScrollMargin(element) {
   if (!element) return 0;
 
@@ -18,7 +20,7 @@ function getScrollMargin(element) {
 }
 
 export function VirtualizedList({
-  items = [],
+  items = DEFAULT_EMPTY_ARRAY,
   renderItem,
   estimateSize = 80,
   overscan = 6,

@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { cn } from '@/lib/utils';
 
+const DEFAULT_EMPTY_OBJECT = {};
+
 /**
  * WorkflowStepRenderer - Dynamically renders form fields based on workflow step definition
  *
@@ -26,10 +28,10 @@ import { cn } from '@/lib/utils';
  */
 export default function WorkflowStepRenderer({
   stepDefinition,
-  values = {},
+  values = DEFAULT_EMPTY_OBJECT,
   onChange,
-  contextData = {},
-  errors = {},
+  contextData = DEFAULT_EMPTY_OBJECT,
+  errors = DEFAULT_EMPTY_OBJECT,
 }) {
   if (!stepDefinition || !stepDefinition.fields) {
     return <div className="text-muted-foreground">No fields defined for this step</div>;
@@ -128,7 +130,7 @@ export default function WorkflowStepRenderer({
 
       case 'checkbox':
         return fieldWrapper(
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-x-2">
             <Checkbox
               id={field.name}
               checked={fieldValue === true || fieldValue === 'true'}
@@ -174,7 +176,7 @@ export default function WorkflowStepRenderer({
           >
             <div className="space-y-2">
               {field.options?.map((option) => (
-                <div key={option} className="flex items-center space-x-2">
+                <div key={option} className="flex items-center gap-x-2">
                   <RadioGroupItem value={option} id={`${field.name}-${option}`} />
                   <Label
                     htmlFor={`${field.name}-${option}`}

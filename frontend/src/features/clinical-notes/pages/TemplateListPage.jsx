@@ -148,7 +148,7 @@ export default function TemplateListPage() {
                 className="font-mono text-xs w-full sm:w-auto"
                 data-onboarding="note-template-create"
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Create Template
               </Button>
             )}
@@ -159,7 +159,7 @@ export default function TemplateListPage() {
             {/* Search and Filters */}
             <div className="flex flex-col gap-3">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   placeholder="Search templates..."
                   value={searchQuery}
@@ -172,6 +172,7 @@ export default function TemplateListPage() {
                 {/* View Mode Toggle */}
                 <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
                   <button
+                    type="button"
                     onClick={() => setViewMode('grid')}
                     className={cn(
                       "p-1.5 rounded-md transition-colors",
@@ -180,9 +181,10 @@ export default function TemplateListPage() {
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    <LayoutGrid className="h-4 w-4" />
+                    <LayoutGrid className="size-4" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => setViewMode('list')}
                     className={cn(
                       "p-1.5 rounded-md transition-colors",
@@ -191,7 +193,7 @@ export default function TemplateListPage() {
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    <List className="h-4 w-4" />
+                    <List className="size-4" />
                   </button>
                 </div>
 
@@ -199,9 +201,9 @@ export default function TemplateListPage() {
                   variant="ghost"
                   size="icon"
                   onClick={() => refetch()}
-                  className="shrink-0 h-9 w-9"
+                  className="shrink-0 size-9"
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw className="size-4" />
                 </Button>
 
                 {searchQuery && (
@@ -211,7 +213,7 @@ export default function TemplateListPage() {
                     onClick={() => setSearchQuery('')}
                     className="font-mono text-xs h-9"
                   >
-                    <X className="h-4 w-4 mr-1" />
+                    <X className="size-4 mr-1" />
                     Clear
                   </Button>
                 )}
@@ -292,7 +294,7 @@ export default function TemplateListPage() {
             title={(
               <span className="flex items-center gap-3">
                 <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                  <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                  <ClipboardList className="size-6 text-amber-600 dark:text-amber-400" />
                 </span>
                 {isEditingTemplate ? 'Edit Note Template' : 'New Note Template'}
               </span>
@@ -314,7 +316,7 @@ export default function TemplateListPage() {
                 }}
                 className="font-mono text-xs"
               >
-                <ChevronLeft className="h-4 w-4 mr-1.5" />
+                <ChevronLeft className="size-4 mr-1.5" />
                 Back to Templates
               </Button>
             )}
@@ -347,7 +349,7 @@ export default function TemplateListPage() {
                 size="sm"
                 onClick={() => setView('edit')}
               >
-                <Pencil className="h-4 w-4 mr-2" />
+                <Pencil className="size-4 mr-2" />
                 Edit
               </Button>
             )}
@@ -361,7 +363,7 @@ export default function TemplateListPage() {
               }}
               className="-ml-2"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Templates
             </Button>
           </PageHeader>
@@ -381,9 +383,9 @@ export default function TemplateListPage() {
                       : "bg-muted text-muted-foreground border border-border"
                   )}>
                     {selectedTemplate.is_active ? (
-                      <CheckCircle className="h-3 w-3" />
+                      <CheckCircle className="size-3" />
                     ) : (
-                      <XCircle className="h-3 w-3" />
+                      <XCircle className="size-3" />
                     )}
                     {selectedTemplate.is_active ? 'Active' : 'Inactive'}
                   </span>
@@ -394,9 +396,9 @@ export default function TemplateListPage() {
                       : "bg-muted text-muted-foreground border border-border"
                   )}>
                     {selectedTemplate.is_public ? (
-                      <Globe className="h-3 w-3" />
+                      <Globe className="size-3" />
                     ) : (
-                      <Lock className="h-3 w-3" />
+                      <Lock className="size-3" />
                     )}
                     {selectedTemplate.is_public ? 'Public' : 'Private'}
                   </span>
@@ -417,7 +419,7 @@ export default function TemplateListPage() {
             {/* Template Structure */}
             <section>
               <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-                <FileText className="h-5 w-5 text-muted-foreground" />
+                <FileText className="size-5 text-muted-foreground" />
                 Template Structure
               </h2>
               <div className="space-y-3">
@@ -500,7 +502,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
           </span>
           {template.is_public && (
             <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-sky-500/10 text-sky-600">
-              <Globe className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+              <Globe className="size-2.5 sm:h-3 sm:w-3" />
               <span className="hidden sm:inline">Public</span>
             </span>
           )}
@@ -545,7 +547,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
               onView();
             }}
           >
-            <Eye className="h-3 w-3 mr-1" />
+            <Eye className="size-3 mr-1" />
             View
           </Button>
           <Button
@@ -557,7 +559,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
               onEdit();
             }}
           >
-            <Pencil className="h-3 w-3 mr-1" />
+            <Pencil className="size-3 mr-1" />
             Edit
           </Button>
           <Button
@@ -569,7 +571,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
               onDelete();
             }}
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="size-3" />
           </Button>
         </div>
       </footer>
@@ -614,13 +616,13 @@ function LoadingSkeleton({ viewMode }) {
 function ErrorState({ onRetry }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-        <XCircle className="h-8 w-8 text-destructive" />
+      <div className="size-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+        <XCircle className="size-8 text-destructive" />
       </div>
       <h3 className="font-display text-xl text-foreground mb-2">Failed to load templates</h3>
       <p className="text-muted-foreground text-sm mb-4">Please try again later.</p>
       <Button variant="outline" size="sm" onClick={onRetry}>
-        <RefreshCw className="h-4 w-4 mr-2" />
+        <RefreshCw className="size-4 mr-2" />
         Try Again
       </Button>
     </div>
@@ -633,8 +635,8 @@ function ErrorState({ onRetry }) {
 function EmptyState({ hasSearch, onClear, onCreate }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-        <FileText className="h-8 w-8 text-muted-foreground" />
+      <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+        <FileText className="size-8 text-muted-foreground" />
       </div>
       <h3 className="font-display text-xl text-foreground mb-2">
         {hasSearch ? 'No matching templates' : 'No templates yet'}
@@ -646,12 +648,12 @@ function EmptyState({ hasSearch, onClear, onCreate }) {
       </p>
       {hasSearch ? (
         <Button variant="outline" size="sm" onClick={onClear}>
-          <X className="h-4 w-4 mr-2" />
+          <X className="size-4 mr-2" />
           Clear Search
         </Button>
       ) : (
         <Button size="sm" onClick={onCreate} data-onboarding="note-template-create">
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="size-4 mr-2" />
           Create Template
         </Button>
       )}

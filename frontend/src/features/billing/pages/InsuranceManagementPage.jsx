@@ -296,14 +296,14 @@ export default function InsuranceManagementPage() {
       <PageHeader
         title={(
           <span className="flex items-center gap-3">
-            <Shield className="h-7 w-7 text-[oklch(0.70_0.15_230)]" />
+            <Shield className="size-7 text-[oklch(0.70_0.15_230)]" />
             Patient Insurance
           </span>
         )}
         description="Manage patient insurance records and coverage"
         actions={insuranceMutationsAvailable ? (
           <Button onClick={handleAddInsurance} className="font-mono text-xs">
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             Add Insurance
           </Button>
         ) : null}
@@ -326,7 +326,7 @@ export default function InsuranceManagementPage() {
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder="Search by patient name, policy number..."
               value={search}
@@ -352,7 +352,7 @@ export default function InsuranceManagementPage() {
           {/* Clear Filters */}
           {hasActiveFilters && (
             <Button variant="ghost" onClick={clearFilters} className="font-mono text-xs">
-              <Filter className="h-4 w-4 mr-2" />
+              <Filter className="size-4 mr-2" />
               Clear Filters
             </Button>
           )}
@@ -368,7 +368,7 @@ export default function InsuranceManagementPage() {
         {/* Insurance List */}
         {insurances.length === 0 ? (
           <div className="text-center py-12">
-            <Shield className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+            <Shield className="size-12 text-muted-foreground/50 mx-auto mb-4" />
             <h3 className="font-display text-lg text-foreground mb-2">No insurance records found</h3>
             <p className="text-muted-foreground text-sm mb-4">
               {hasActiveFilters
@@ -377,7 +377,7 @@ export default function InsuranceManagementPage() {
             </p>
             {!hasActiveFilters && insuranceMutationsAvailable && (
               <Button onClick={handleAddInsurance} className="font-mono text-xs">
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Add Insurance
               </Button>
             )}
@@ -410,7 +410,7 @@ export default function InsuranceManagementPage() {
                 disabled={page <= 1}
                 className="font-mono text-xs"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
+                <ChevronLeft className="size-4 mr-1" />
                 Previous
               </Button>
               <Button
@@ -421,7 +421,7 @@ export default function InsuranceManagementPage() {
                 className="font-mono text-xs"
               >
                 Next
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <ChevronRight className="size-4 ml-1" />
               </Button>
             </div>
           </div>
@@ -487,9 +487,9 @@ function InsuranceCard({ insurance, onEdit, onDelete, formatDate }) {
             )}
           >
             {isValid ? (
-              <CheckCircle className="h-5 w-5 text-[oklch(0.70_0.17_155)]" />
+              <CheckCircle className="size-5 text-[oklch(0.70_0.17_155)]" />
             ) : (
-              <XCircle className="h-5 w-5 text-muted-foreground" />
+              <XCircle className="size-5 text-muted-foreground" />
             )}
           </div>
 
@@ -514,7 +514,7 @@ function InsuranceCard({ insurance, onEdit, onDelete, formatDate }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-2">
               {/* Provider & Plan */}
               <div className="flex items-center gap-2 text-sm">
-                <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Building className="size-4 text-muted-foreground shrink-0" />
                 <span className="text-muted-foreground truncate">
                   {insurance.provider_name || insurance.plan_name || '-'}
                 </span>
@@ -523,7 +523,7 @@ function InsuranceCard({ insurance, onEdit, onDelete, formatDate }) {
               {/* Plan Name */}
               {insurance.plan_name && insurance.provider_name && (
                 <div className="flex items-center gap-2 text-sm">
-                  <Shield className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <Shield className="size-4 text-muted-foreground shrink-0" />
                   <span className="text-muted-foreground truncate">{insurance.plan_name}</span>
                 </div>
               )}
@@ -547,7 +547,7 @@ function InsuranceCard({ insurance, onEdit, onDelete, formatDate }) {
 
             {/* Validity Period */}
             <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               <span>
                 Valid: {formatDate(insurance.valid_from)}
                 {insurance.valid_until ? ` - ${formatDate(insurance.valid_until)}` : ' (No expiry)'}
@@ -564,7 +564,7 @@ function InsuranceCard({ insurance, onEdit, onDelete, formatDate }) {
             onClick={onEdit}
             className="font-mono text-xs"
           >
-            <Edit className="h-4 w-4" />
+            <Edit className="size-4" />
           </Button>
           <Button
             variant="ghost"
@@ -572,7 +572,7 @@ function InsuranceCard({ insurance, onEdit, onDelete, formatDate }) {
             onClick={onDelete}
             className="font-mono text-xs text-destructive hover:text-destructive"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="size-4" />
           </Button>
         </div>
       </div>

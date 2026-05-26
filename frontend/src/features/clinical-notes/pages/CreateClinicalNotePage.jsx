@@ -230,12 +230,12 @@ export default function CreateClinicalNotePage() {
           {isLoadingEncounter ? (
             <Card>
               <CardHeader>
-                <CardTitle>Loading encounter details...</CardTitle>
+                <CardTitle>Loading encounter details…</CardTitle>
               </CardHeader>
             </Card>
           ) : isErrorEncounter ? (
             <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
+              <AlertCircle className="size-4" />
               <AlertTitle>Error</AlertTitle>
               <AlertDescription>
                 Failed to load encounter details. Please try again later.
@@ -243,7 +243,7 @@ export default function CreateClinicalNotePage() {
             </Alert>
           ) : !isEncounterValid ? (
             <Alert>
-              <AlertCircle className="h-4 w-4" />
+              <AlertCircle className="size-4" />
               <AlertTitle>Note</AlertTitle>
               <AlertDescription>
                 Clinical notes can only be added to active or planned encounters.
@@ -398,7 +398,7 @@ export default function CreateClinicalNotePage() {
                     </CardHeader>
                     <CardContent>
                       {isLoadingNotes ? (
-                        <p>Loading notes...</p>
+                        <p>Loading notes…</p>
                       ) : isErrorNotes ? (
                         <p className="text-red-500">Failed to load notes. Please try again later.</p>
                       ) : !existingNotes || existingNotes.length === 0 ? (

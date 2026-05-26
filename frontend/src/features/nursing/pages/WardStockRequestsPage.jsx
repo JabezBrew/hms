@@ -327,7 +327,7 @@ function WardStockRequestForm({ open, onOpenChange }) {
                   size="sm"
                   onClick={() => append({ item: '', quantity_requested: 1, notes: '' })}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
+                  <Plus className="mr-2 size-4" />
                   Add Item
                 </Button>
               </div>
@@ -392,7 +392,7 @@ function WardStockRequestForm({ open, onOpenChange }) {
                     disabled={fields.length === 1}
                     aria-label="Remove item"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
               ))}
@@ -418,9 +418,9 @@ function WardStockRequestForm({ open, onOpenChange }) {
               </Button>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 size-4 animate-spin" />
                 ) : (
-                  <Send className="mr-2 h-4 w-4" />
+                  <Send className="mr-2 size-4" />
                 )}
                 Submit Request
               </Button>
@@ -527,11 +527,11 @@ export default function WardStockRequestsPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('mr-2 h-4 w-4', isFetching && 'animate-spin')} />
+              <RefreshCw className={cn('mr-2 size-4', isFetching && 'animate-spin')} />
               Refresh
             </Button>
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-2 size-4" />
               Request Stock
             </Button>
           </div>
@@ -551,7 +551,7 @@ export default function WardStockRequestsPage() {
           </Tabs>
 
           <div className="relative w-full lg:w-[360px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={handleSearchChange}
@@ -575,7 +575,7 @@ export default function WardStockRequestsPage() {
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div className="min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                          <ClipboardList className="size-4 text-muted-foreground" />
                           <span className="font-mono text-sm font-medium text-primary">
                             {request.requisition_number}
                           </span>
@@ -585,11 +585,11 @@ export default function WardStockRequestsPage() {
                         </div>
                         <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
-                            <MapPin className="h-4 w-4" />
+                            <MapPin className="size-4" />
                             {request.requesting_location_name}
                           </span>
                           <span className="inline-flex items-center gap-1">
-                            <Package className="h-4 w-4" />
+                            <Package className="size-4" />
                             {request.items_count || 0} item{(request.items_count || 0) === 1 ? '' : 's'}
                           </span>
                           <span className="font-mono">{formatDate(request.date_required)}</span>
@@ -610,13 +610,13 @@ export default function WardStockRequestsPage() {
           </div>
         ) : (
           <div className="rounded-lg border bg-card/40 p-10 text-center">
-            <Package className="mx-auto mb-3 h-10 w-10 text-muted-foreground/60" />
+            <Package className="mx-auto mb-3 size-10 text-muted-foreground/60" />
             <h2 className="font-display text-xl">No Ward Stock Requests</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Requests submitted here go to inventory or pharmacy for approval and issue.
             </p>
             <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-2 size-4" />
               Request Stock
             </Button>
           </div>
@@ -629,12 +629,12 @@ export default function WardStockRequestsPage() {
             </p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => handlePageChange(page - 1)} disabled={page <= 1}>
-                <ChevronLeft className="mr-1 h-4 w-4" />
+                <ChevronLeft className="mr-1 size-4" />
                 Previous
               </Button>
               <Button variant="outline" size="sm" onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages}>
                 Next
-                <ChevronRight className="ml-1 h-4 w-4" />
+                <ChevronRight className="ml-1 size-4" />
               </Button>
             </div>
           </div>

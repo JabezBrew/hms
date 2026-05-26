@@ -118,9 +118,20 @@ const ChartTemplateCard = ({
   };
 
   const colors = colorStyles[colorClass];
+  const handleSelect = () => {
+    onSelect?.(template);
+  };
+
+  const handleSelectKeyDown = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    event.preventDefault();
+    handleSelect();
+  };
 
   return (
-    <article
+    <div
       className={cn(
         "group relative bg-card border border-border rounded-xl sm:rounded-2xl overflow-hidden",
         "transition-all duration-300 hover:border-primary/30 hover:shadow-lg",
@@ -128,7 +139,11 @@ const ChartTemplateCard = ({
         selected && `ring-2 ring-primary ${colors.border}`,
         `stagger-${Math.min(index + 1, 10)}`
       )}
-      onClick={() => onSelect?.(template)}
+      onClick={handleSelect}
+      onKeyDown={handleSelectKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`Select chart template ${template.name}`}
     >
       {/* Category ribbon */}
       <div className={cn(
@@ -142,7 +157,7 @@ const ChartTemplateCard = ({
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className={cn("p-2 rounded-lg", colors.bg)}>
-              <CategoryIcon className={cn("h-4 w-4 sm:h-5 sm:w-5", colors.text)} />
+              <CategoryIcon className={cn("size-4 sm:h-5 sm:w-5", colors.text)} />
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="font-display text-base sm:text-lg text-foreground truncate">
@@ -161,27 +176,27 @@ const ChartTemplateCard = ({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="size-8 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="z-[200]">
                 {onView && (
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(template); }}>
-                    <Eye className="h-4 w-4 mr-2" />
+                    <Eye className="size-4 mr-2" />
                     View Details
                   </DropdownMenuItem>
                 )}
                 {onEdit && !template.is_system && (
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(template); }}>
-                    <Pencil className="h-4 w-4 mr-2" />
+                    <Pencil className="size-4 mr-2" />
                     Edit
                   </DropdownMenuItem>
                 )}
                 {onClone && (
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClone(template); }}>
-                    <Copy className="h-4 w-4 mr-2" />
+                    <Copy className="size-4 mr-2" />
                     Clone
                   </DropdownMenuItem>
                 )}
@@ -192,7 +207,7 @@ const ChartTemplateCard = ({
                       onClick={(e) => { e.stopPropagation(); onDelete(template); }}
                       className="text-destructive focus:text-destructive"
                     >
-                      <Trash2 className="h-4 w-4 mr-2" />
+                      <Trash2 className="size-4 mr-2" />
                       Delete
                     </DropdownMenuItem>
                   </>
@@ -235,7 +250,7 @@ const ChartTemplateCard = ({
             "flex items-center gap-1 font-mono text-[10px] sm:text-xs",
             "px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
           )}>
-            <VisibilityIcon className="h-3 w-3" />
+            <VisibilityIcon className="size-3" />
             <span className="hidden sm:inline">{template.visibility}</span>
           </span>
 
@@ -254,7 +269,7 @@ const ChartTemplateCard = ({
           </p>
         )}
       </div>
-    </article>
+    </div>
   );
 };
 

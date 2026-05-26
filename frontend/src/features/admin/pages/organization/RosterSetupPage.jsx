@@ -383,7 +383,7 @@ function DutyTypesPanel({ departmentId }) {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button onClick={() => openForm()} size="sm">
-          <Plus className="h-4 w-4 mr-1" />
+          <Plus className="size-4 mr-1" />
           <span className="font-mono text-xs">Add Duty Type</span>
         </Button>
       </div>
@@ -470,10 +470,10 @@ function DutyTypesPanel({ departmentId }) {
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon" onClick={() => openForm(dt)}>
-                    <Pencil className="h-4 w-4" />
+                    <Pencil className="size-4" />
                   </Button>
                   <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(dt)}>
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </TableCell>
               </TableRow>
@@ -644,7 +644,7 @@ function DutyTypesPanel({ departmentId }) {
             {formState.category === 'clinic' && (
               <div className="space-y-4 pt-2 border-t border-border">
                 <div className="flex items-center gap-2 text-amber-600">
-                  <CalendarClock className="h-4 w-4" />
+                  <CalendarClock className="size-4" />
                   <span className="text-xs font-medium">Appointment Scheduling Settings</span>
                 </div>
 
@@ -736,7 +736,7 @@ function DutyTypesPanel({ departmentId }) {
                         }))
                       }
                     >
-                      <Plus className="h-3 w-3 mr-1" />
+                      <Plus className="size-3 mr-1" />
                       <span className="text-xs">Add Break</span>
                     </Button>
                   </div>
@@ -783,7 +783,7 @@ function DutyTypesPanel({ departmentId }) {
                               }));
                             }}
                           >
-                            <Trash2 className="h-4 w-4 text-muted-foreground" />
+                            <Trash2 className="size-4 text-muted-foreground" />
                           </Button>
                         </div>
                       ))}
@@ -992,7 +992,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button onClick={() => openForm()} size="sm" disabled={teams.length === 0 || dutyTypes.length === 0}>
-          <Plus className="h-4 w-4 mr-1" />
+          <Plus className="size-4 mr-1" />
           <span className="font-mono text-xs">Add Rule</span>
         </Button>
       </div>
@@ -1065,10 +1065,10 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
                       {rule.is_active ? 'Active' : 'Inactive'}
                     </Badge>
                     <Button variant="ghost" size="icon" onClick={() => openForm(rule)}>
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="size-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(rule)}>
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </div>
                 </div>
@@ -1415,7 +1415,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button size="sm" onClick={() => openForm()}>
-          <Plus className="h-4 w-4 mr-1" />
+          <Plus className="size-4 mr-1" />
           Add Rule
         </Button>
       </div>
@@ -1465,7 +1465,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                 </div>
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="icon" onClick={() => openForm(rule)}>
-                    <Pencil className="h-4 w-4" />
+                    <Pencil className="size-4" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -1473,7 +1473,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                     onClick={() => setDeleteConfirm(rule)}
                     disabled={deleteMutation.isPending}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
               </div>
@@ -1637,7 +1637,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                           setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
                         }}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="size-4" />
                       </Button>
                     </div>
                   ))}
@@ -1649,7 +1649,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                       setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
                     }}
                   >
-                    <Plus className="h-4 w-4 mr-1" />
+                    <Plus className="size-4 mr-1" />
                     Add Pair
                   </Button>
                 </div>
@@ -1967,7 +1967,7 @@ export default function RosterSetupPage() {
         actions={(
           <Button variant="ghost" size="sm" asChild>
             <Link to="/admin/organization/duty-roster">
-              <ArrowLeft className="h-4 w-4 mr-1" />
+              <ArrowLeft className="size-4 mr-1" />
               Back to Roster
             </Link>
           </Button>
@@ -1980,7 +1980,7 @@ export default function RosterSetupPage() {
           <Card className="mb-6 border-border">
             <CardHeader className="pb-3">
               <CardTitle className="font-heading text-lg flex items-center gap-2">
-                <CalendarClock className="h-5 w-5 text-primary" />
+                <CalendarClock className="size-5 text-primary" />
                 Select Unit
               </CardTitle>
               <CardDescription>
@@ -2003,8 +2003,8 @@ export default function RosterSetupPage() {
             <AccordionItem value="teams" className="border rounded-lg">
               <AccordionTrigger className="px-4 py-3 hover:no-underline">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-sky-500/10 flex items-center justify-center">
-                    <Users className="h-4 w-4 text-sky-500" />
+                  <div className="size-8 rounded-lg bg-sky-500/10 flex items-center justify-center">
+                    <Users className="size-4 text-sky-500" />
                   </div>
                   <div className="text-left">
                     <h3 className="font-heading font-medium">Teams</h3>
@@ -2023,8 +2023,8 @@ export default function RosterSetupPage() {
             <AccordionItem value="duty-types" className="border rounded-lg">
               <AccordionTrigger className="px-4 py-3 hover:no-underline">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                    <Clipboard className="h-4 w-4 text-amber-500" />
+                  <div className="size-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                    <Clipboard className="size-4 text-amber-500" />
                   </div>
                   <div className="text-left">
                     <h3 className="font-heading font-medium">Duty Types</h3>
@@ -2043,8 +2043,8 @@ export default function RosterSetupPage() {
             <AccordionItem value="rotation-rules" className="border rounded-lg">
               <AccordionTrigger className="px-4 py-3 hover:no-underline">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                    <RotateCw className="h-4 w-4 text-emerald-500" />
+                  <div className="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                    <RotateCw className="size-4 text-emerald-500" />
                   </div>
                   <div className="text-left">
                     <h3 className="font-heading font-medium">Rotation Rules</h3>
@@ -2067,8 +2067,8 @@ export default function RosterSetupPage() {
             <AccordionItem value="validation-rules" className="border rounded-lg !border-b">
               <AccordionTrigger className="px-4 py-3 hover:no-underline">
                 <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-rose-500/10 flex items-center justify-center">
-                    <ShieldAlert className="h-4 w-4 text-rose-500" />
+                  <div className="size-8 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                    <ShieldAlert className="size-4 text-rose-500" />
                   </div>
                   <div className="text-left">
                     <h3 className="font-heading font-medium">Validation Rules</h3>

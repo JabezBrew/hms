@@ -164,10 +164,10 @@ const AuditLogCard = ({ log, index = 0, className }) => {
         <div className="flex items-center gap-3 min-w-0 flex-1">
           {/* Action Icon */}
           <div className={cn(
-            "shrink-0 w-9 h-9 rounded-lg flex items-center justify-center",
+            "shrink-0 size-9 rounded-lg flex items-center justify-center",
             "bg-background border border-border"
           )}>
-            <ActionIcon className={cn("h-4 w-4", actionColor)} />
+            <ActionIcon className={cn("size-4", actionColor)} />
           </div>
 
           {/* Description */}
@@ -231,12 +231,12 @@ const AuditLogCard = ({ log, index = 0, className }) => {
               >
                 {isExpanded ? (
                   <>
-                    <ChevronUp className="h-3 w-3 mr-1" />
+                    <ChevronUp className="size-3 mr-1" />
                     Hide Changes
                   </>
                 ) : (
                   <>
-                    <ChevronDown className="h-3 w-3 mr-1" />
+                    <ChevronDown className="size-3 mr-1" />
                     View Changes
                   </>
                 )}

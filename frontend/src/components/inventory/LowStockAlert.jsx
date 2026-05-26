@@ -9,6 +9,8 @@ import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 /**
  * LowStockAlert - Widget showing items with low stock
  * @param {Object} props
@@ -19,7 +21,7 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
  * @param {string} [props.className] - Additional CSS classes
  */
 export function LowStockAlert({
-  items = [],
+  items = DEFAULT_EMPTY_ARRAY,
   limit = 10,
   isLoading,
   onCreateRequisition,
@@ -41,7 +43,7 @@ export function LowStockAlert({
       <Card className={cn('bg-card/30 border-border/50', className)}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <Skeleton className="h-5 w-5 rounded" />
+            <Skeleton className="size-5 rounded" />
             <Skeleton className="h-5 w-32" />
           </div>
         </CardHeader>
@@ -65,13 +67,13 @@ export function LowStockAlert({
       <Card className={cn('bg-card/30 border-border/50', className)}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            <AlertTriangle className="size-5 text-amber-500" />
             Low Stock Alerts
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Package className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <Package className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
               All items are well stocked
             </p>
@@ -86,7 +88,7 @@ export function LowStockAlert({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            <AlertTriangle className="size-5 text-amber-500" />
             Low Stock Alerts
             <span className="text-sm font-normal text-muted-foreground">
               ({items.length})
@@ -98,7 +100,7 @@ export function LowStockAlert({
               size="sm"
               onClick={() => onCreateRequisition(items)}
             >
-              <ShoppingCart className="h-4 w-4 mr-1" />
+              <ShoppingCart className="size-4 mr-1" />
               Order
             </Button>
           )}
@@ -108,7 +110,7 @@ export function LowStockAlert({
         {displayItems.map((item) => (
           <div
             key={item.id}
-            className="flex items-center justify-between py-2 px-2 -mx-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+            className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
             onClick={() => handleItemClick(item.id)}
           >
             <div className="min-w-0 flex-1">
@@ -137,7 +139,7 @@ export function LowStockAlert({
             onClick={handleViewAll}
           >
             View all {items.length} items
-            <ArrowRight className="h-4 w-4 ml-1" />
+            <ArrowRight className="size-4 ml-1" />
           </Button>
         )}
       </CardContent>

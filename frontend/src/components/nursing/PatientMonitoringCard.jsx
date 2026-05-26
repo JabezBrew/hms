@@ -90,7 +90,7 @@ export function PatientMonitoringCard({ patientData }) {
           {/* Alert Count Badge */}
           {active_alerts && active_alerts.length > 0 && (
             <Badge variant="destructive" className="flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" />
+              <AlertTriangle className="size-3" />
               {active_alerts.length}
             </Badge>
           )}
@@ -103,7 +103,7 @@ export function PatientMonitoringCard({ patientData }) {
           <div className="grid grid-cols-2 gap-2">
             {latest_vitals.temperature && (
               <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                <Thermometer className={`h-4 w-4 ${getStatusColor(getVitalStatus('temperature', latest_vitals.temperature))}`} />
+                <Thermometer className={`size-4 ${getStatusColor(getVitalStatus('temperature', latest_vitals.temperature))}`} />
                 <div className="flex-1">
                   <div className="text-xs text-muted-foreground">Temp</div>
                   <div className="text-sm font-medium">{latest_vitals.temperature}°C</div>
@@ -113,7 +113,7 @@ export function PatientMonitoringCard({ patientData }) {
 
             {latest_vitals.heart_rate && (
               <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                <Heart className={`h-4 w-4 ${getStatusColor(getVitalStatus('heart_rate', latest_vitals.heart_rate))}`} />
+                <Heart className={`size-4 ${getStatusColor(getVitalStatus('heart_rate', latest_vitals.heart_rate))}`} />
                 <div className="flex-1">
                   <div className="text-xs text-muted-foreground">HR</div>
                   <div className="text-sm font-medium">{latest_vitals.heart_rate} bpm</div>
@@ -123,7 +123,7 @@ export function PatientMonitoringCard({ patientData }) {
 
             {latest_vitals.blood_pressure && (
               <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                <Activity className="h-4 w-4" />
+                <Activity className="size-4" />
                 <div className="flex-1">
                   <div className="text-xs text-muted-foreground">BP</div>
                   <div className="text-sm font-medium">{latest_vitals.blood_pressure} mmHg</div>
@@ -133,7 +133,7 @@ export function PatientMonitoringCard({ patientData }) {
 
             {latest_vitals.oxygen_saturation && (
               <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                <Wind className={`h-4 w-4 ${getStatusColor(getVitalStatus('oxygen_saturation', latest_vitals.oxygen_saturation))}`} />
+                <Wind className={`size-4 ${getStatusColor(getVitalStatus('oxygen_saturation', latest_vitals.oxygen_saturation))}`} />
                 <div className="flex-1">
                   <div className="text-xs text-muted-foreground">SpO2</div>
                   <div className="text-sm font-medium">{latest_vitals.oxygen_saturation}%</div>
@@ -154,7 +154,7 @@ export function PatientMonitoringCard({ patientData }) {
             <div className="space-y-1">
               {active_alerts.slice(0, 2).map((alert) => (
                 <div key={alert.id} className="flex items-start gap-2 text-xs p-2 bg-red-50 rounded">
-                  <AlertTriangle className="h-3 w-3 text-red-600 mt-0.5 flex-shrink-0" />
+                  <AlertTriangle className="size-3 text-red-600 mt-0.5 flex-shrink-0" />
                   <span className="text-red-800">{alert.message}</span>
                 </div>
               ))}
@@ -171,11 +171,11 @@ export function PatientMonitoringCard({ patientData }) {
         <div className="flex items-center justify-between pt-2 border-t">
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <div className="flex items-center gap-1">
-              <ClipboardList className="h-3 w-3" />
+              <ClipboardList className="size-3" />
               <span>{pending_tasks?.length || 0} Tasks</span>
             </div>
             <div className="flex items-center gap-1">
-              <Pill className="h-3 w-3" />
+              <Pill className="size-3" />
               <span>{medications_due?.length || 0} Meds</span>
             </div>
           </div>

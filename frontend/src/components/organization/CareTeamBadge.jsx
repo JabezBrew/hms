@@ -9,6 +9,8 @@ import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 
+const DEFAULT_EMPTY_ARRAY = [];
+
 const ROLE_CONFIG = {
   primary: {
     label: 'Primary',
@@ -37,13 +39,15 @@ const ROLE_CONFIG = {
 };
 
 export function CareTeamBadge({
-  role = 'primary',
+  teamRole,
+  role: legacyRole,
   teamName = null,
   showIcon = true,
   size = 'default',
   className,
 }) {
-  const config = ROLE_CONFIG[role] || ROLE_CONFIG.consulting;
+  const careTeamRole = teamRole || legacyRole || 'primary';
+  const config = ROLE_CONFIG[careTeamRole] || ROLE_CONFIG.consulting;
   const Icon = config.icon;
 
   return (
@@ -61,7 +65,7 @@ export function CareTeamBadge({
         <Icon
           className={cn(
             'mr-1',
-            size === 'sm' ? 'h-3 w-3' : size === 'lg' ? 'h-4 w-4' : 'h-3.5 w-3.5'
+            size === 'sm' ? 'size-3' : size === 'lg' ? 'size-4' : 'size-3.5'
           )}
         />
       )}
@@ -75,7 +79,7 @@ export function CareTeamBadge({
  */
 export function CareTeamList({
   primaryTeam = null,
-  consultingTeams = [],
+  consultingTeams = DEFAULT_EMPTY_ARRAY,
   showLabels = true,
   className,
 }) {
@@ -91,14 +95,14 @@ export function CareTeamList({
     <div className={cn('flex flex-wrap gap-2', className)}>
       {primaryTeam && (
         <CareTeamBadge
-          role="primary"
+          teamRole="primary"
           teamName={showLabels ? `${primaryTeam.name} (Primary)` : primaryTeam.name}
         />
       )}
       {consultingTeams.map((assignment) => (
         <CareTeamBadge
           key={assignment.id}
-          role={assignment.role}
+          teamRole={assignment.role}
           teamName={assignment.team?.name || assignment.team_name}
         />
       ))}

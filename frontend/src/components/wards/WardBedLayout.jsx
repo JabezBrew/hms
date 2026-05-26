@@ -210,11 +210,11 @@ function SectionHeader({ section }) {
   const getTierIcon = (tier) => {
     switch (tier) {
       case 'vip':
-        return <Sparkles className="h-4 w-4" />;
+        return <Sparkles className="size-4" />;
       case 'private':
-        return <Home className="h-4 w-4" />;
+        return <Home className="size-4" />;
       case 'semi_private':
-        return <Users className="h-4 w-4" />;
+        return <Users className="size-4" />;
       default:
         return null;
     }
@@ -274,7 +274,7 @@ function SectionHeader({ section }) {
           {/* Isolation capability */}
           {section.is_isolation_capable && (
             <Badge variant="outline" className="text-xs">
-              <Shield className="h-3 w-3 mr-1" />
+              <Shield className="size-3 mr-1" />
               Isolation
             </Badge>
           )}
@@ -331,7 +331,7 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                         >
                           <div className="flex items-start justify-between mb-3">
                             <div className={cn("p-2 rounded-lg", `bg-${config.color}-500/20`)}>
-                              <Bed className={cn("h-5 w-5", config.iconClass)} />
+                              <Bed className={cn("size-5", config.iconClass)} />
                             </div>
                             <span className={cn(
                               "font-mono text-lg font-bold",
@@ -346,7 +346,7 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                               "flex items-center gap-1.5",
                               config.textClass
                             )}>
-                              <StatusIcon className="h-3.5 w-3.5" />
+                              <StatusIcon className="size-3.5" />
                               <span className="font-mono text-xs font-medium">
                                 {config.label}
                               </span>
@@ -391,7 +391,7 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
         {Object.entries(statusConfig).map(([status, config]) => (
           <div key={status} className="flex items-center gap-2">
             <div className={cn(
-              "w-3 h-3 rounded-full",
+              "size-3 rounded-full",
               `bg-${config.color}-500`
             )} />
             <span className="font-mono text-xs text-muted-foreground">
@@ -443,7 +443,7 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       "p-3 rounded-xl shrink-0",
                       config.bgClass
                     )}>
-                      <Bed className={cn("h-5 w-5", config.iconClass)} />
+                      <Bed className={cn("size-5", config.iconClass)} />
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -456,7 +456,7 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                           config.bgClass,
                           config.textClass
                         )}>
-                          <StatusIcon className="h-3 w-3" />
+                          <StatusIcon className="size-3" />
                           {config.label}
                         </span>
                         <span className="font-mono text-xs text-muted-foreground uppercase">
@@ -467,11 +467,11 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       {patientInfo ? (
                         <div className="flex items-center gap-4 mt-1.5">
                           <div className="flex items-center gap-1.5 text-sm text-foreground">
-                            <User className="h-3.5 w-3.5 text-muted-foreground" />
+                            <User className="size-3.5 text-muted-foreground" />
                             <span className="font-medium">{patientInfo.name}</span>
                           </div>
                           <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                            <Calendar className="h-3 w-3" />
+                            <Calendar className="size-3" />
                             {formatDate(patientInfo.admissionDate)}
                           </div>
                           <div className="font-mono text-xs text-muted-foreground">
@@ -503,7 +503,7 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       </div>
                     )}
 
-                    <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <ChevronRight className="size-5 text-muted-foreground shrink-0" />
                   </div>
                 );
               }}
@@ -556,24 +556,24 @@ function BedTooltip({ bed, config, bedTypeLabels, patientInfo, formatDate }) {
       {patientInfo && (
         <div className="pt-3 border-t border-border space-y-2">
           <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-muted-foreground" />
+            <User className="size-4 text-muted-foreground" />
             <span className="font-medium text-foreground">
               {patientInfo.name}
             </span>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="h-3.5 w-3.5" />
+            <Calendar className="size-3.5" />
             Admitted {formatDate(patientInfo.admissionDate)}
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            <Clock className="size-3.5 text-muted-foreground" />
             <span className="font-mono text-amber-600">
               Day {patientInfo.daysAdmitted}
             </span>
           </div>
           {patientInfo.diagnosis && (
             <div className="flex items-start gap-2 text-sm text-muted-foreground">
-              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
               <span className="line-clamp-2">{patientInfo.diagnosis}</span>
             </div>
           )}

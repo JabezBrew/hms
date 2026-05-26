@@ -136,7 +136,7 @@ const LabOrderDetailSlideOver = ({
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-              <TestTube2 className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+              <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" />
             </div>
             <div>
               <h2 className="font-display text-xl text-foreground">
@@ -156,7 +156,7 @@ const LabOrderDetailSlideOver = ({
             onClick={onClose}
             className="font-mono text-xs"
           >
-            <X className="h-4 w-4 mr-1.5" />
+            <X className="size-4 mr-1.5" />
             Close
           </Button>
         </header>
@@ -197,7 +197,7 @@ const LabOrderDetailSlideOver = ({
                     variant="outline"
                     className="px-3 py-1 bg-rose-100 text-rose-700 border-rose-300"
                   >
-                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    <AlertTriangle className="size-3 mr-1" />
                     Critical
                   </Badge>
                 )}
@@ -210,7 +210,7 @@ const LabOrderDetailSlideOver = ({
                 </h3>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-muted-foreground" />
+                    <User className="size-4 text-muted-foreground" />
                     <span className="font-display text-lg">{order.patient_name}</span>
                   </div>
                   <div className="font-mono text-xs text-muted-foreground">
@@ -301,42 +301,42 @@ const LabOrderDetailSlideOver = ({
                 <div className="space-y-3">
                   {order.created_at && (
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="h-2 w-2 rounded-full bg-stone-400" />
+                      <div className="size-2 rounded-full bg-stone-400" />
                       <span className="text-muted-foreground">Created:</span>
                       <span className="font-mono text-xs">{formatDate(order.created_at)}</span>
                     </div>
                   )}
                   {order.ordered_at && (
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="h-2 w-2 rounded-full bg-sky-500" />
+                      <div className="size-2 rounded-full bg-sky-500" />
                       <span className="text-muted-foreground">Ordered:</span>
                       <span className="font-mono text-xs">{formatDate(order.ordered_at)}</span>
                     </div>
                   )}
                   {order.collected_at && (
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="h-2 w-2 rounded-full bg-amber-500" />
+                      <div className="size-2 rounded-full bg-amber-500" />
                       <span className="text-muted-foreground">Collected:</span>
                       <span className="font-mono text-xs">{formatDate(order.collected_at)}</span>
                     </div>
                   )}
                   {order.received_at && (
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="h-2 w-2 rounded-full bg-violet-500" />
+                      <div className="size-2 rounded-full bg-violet-500" />
                       <span className="text-muted-foreground">Received:</span>
                       <span className="font-mono text-xs">{formatDate(order.received_at)}</span>
                     </div>
                   )}
                   {order.completed_at && (
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                      <div className="size-2 rounded-full bg-emerald-500" />
                       <span className="text-muted-foreground">Completed:</span>
                       <span className="font-mono text-xs">{formatDate(order.completed_at)}</span>
                     </div>
                   )}
                   {order.cancelled_at && (
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="h-2 w-2 rounded-full bg-rose-500" />
+                      <div className="size-2 rounded-full bg-rose-500" />
                       <span className="text-muted-foreground">Cancelled:</span>
                       <span className="font-mono text-xs">{formatDate(order.cancelled_at)}</span>
                     </div>
@@ -357,7 +357,7 @@ const LabOrderDetailSlideOver = ({
                         className="flex items-center justify-between py-2 px-3 bg-background rounded-md"
                       >
                         <div className="flex items-center gap-3">
-                          <Droplet className="h-4 w-4 text-amber-500" />
+                          <Droplet className="size-4 text-amber-500" />
                           <div>
                             <p className="text-sm font-medium capitalize">
                               {specimen.specimen_type}
@@ -407,7 +407,7 @@ const LabOrderDetailSlideOver = ({
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-16">
-              <TestTube2 className="h-12 w-12 text-muted-foreground/50 mb-4" />
+              <TestTube2 className="size-12 text-muted-foreground/50 mb-4" />
               <p className="text-muted-foreground">Order not found</p>
             </div>
           )}
@@ -424,7 +424,7 @@ const LabOrderDetailSlideOver = ({
                     onClick={() => setCollectDialogOpen(true)}
                     className="bg-amber-600 hover:bg-amber-700 text-white"
                   >
-                    <Droplet className="h-4 w-4 mr-2" />
+                    <Droplet className="size-4 mr-2" />
                     Collect Specimen
                   </Button>
                 )}
@@ -434,7 +434,7 @@ const LabOrderDetailSlideOver = ({
                     onClick={() => setResultEntryOpen(true)}
                     className="bg-sky-600 hover:bg-sky-700 text-white"
                   >
-                    <ClipboardEdit className="h-4 w-4 mr-2" />
+                    <ClipboardEdit className="size-4 mr-2" />
                     Enter Results
                   </Button>
                 )}
@@ -448,7 +448,7 @@ const LabOrderDetailSlideOver = ({
                     onClick={() => setCancelDialogOpen(true)}
                     className="bg-rose-600 hover:bg-rose-700"
                   >
-                    <XCircle className="h-4 w-4 mr-2" />
+                    <XCircle className="size-4 mr-2" />
                     Cancel Order
                   </Button>
                 )}

@@ -206,7 +206,7 @@ const ReferralSent = () => {
           description="Track the status of referrals you've sent to specialists"
         />
         <div className="flex items-center justify-center py-12">
-          <div className="text-muted-foreground">Loading referrals...</div>
+          <div className="text-muted-foreground">Loading referrals…</div>
         </div>
       </PageShell>
     );
@@ -251,7 +251,7 @@ const ReferralSent = () => {
         </div>
 
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by patient name, MRN, department, or reason..."
             value={searchQuery}
@@ -264,7 +264,7 @@ const ReferralSent = () => {
           <Card className="bg-card border-border">
             <CardContent className="py-12">
               <div className="text-center text-muted-foreground">
-                <Send className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <Send className="size-12 mx-auto mb-3 opacity-50" />
                 <p className="font-heading font-medium">No referrals found</p>
                 <p className="text-sm mt-1">
                   {hasActiveFilters
@@ -292,18 +292,18 @@ const ReferralSent = () => {
                             Referral #{referral.referral_number}
                           </CardTitle>
                           <span className={cn('gap-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full', status.badgeClass)}>
-                            <StatusIcon className="h-3 w-3" />
+                            <StatusIcon className="size-3" />
                             {status.label}
                           </span>
                           <span className={cn('gap-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full', urgency.badgeClass)}>
-                            <UrgencyIcon className="h-3 w-3" />
+                            <UrgencyIcon className="size-3" />
                             {urgency.label}
                           </span>
                         </div>
                         <CardDescription className="space-y-1">
                           <div className="flex items-center gap-4 flex-wrap text-muted-foreground">
                             <span className="flex items-center gap-1">
-                              <User className="h-3 w-3" />
+                              <User className="size-3" />
                               {referral.patientName}
                             </span>
                             {referral.patientMrn && (
@@ -313,13 +313,13 @@ const ReferralSent = () => {
                             )}
                             {referral.created_at && (
                               <span className="flex items-center gap-1 font-mono text-xs">
-                                <Calendar className="h-3 w-3" />
+                                <Calendar className="size-3" />
                                 {format(new Date(referral.created_at), 'MMM dd, yyyy')}
                               </span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <Building2 className="h-3 w-3" />
+                            <Building2 className="size-3" />
                             <span className="capitalize">
                               {referral.referred_to_department?.replace(/_/g, ' ')}
                             </span>
@@ -337,7 +337,7 @@ const ReferralSent = () => {
                         onClick={() => handleViewDetails(referral)}
                         className="font-mono text-xs"
                       >
-                        <Eye className="h-4 w-4 mr-2" />
+                        <Eye className="size-4 mr-2" />
                         View Details
                       </Button>
                     </div>
@@ -357,14 +357,14 @@ const ReferralSent = () => {
                               <div className="flex flex-col items-center">
                                 <div
                                   className={cn(
-                                    'w-8 h-8 rounded-full flex items-center justify-center transition-all',
+                                    'size-8 rounded-full flex items-center justify-center transition-all',
                                     isCompleted
                                       ? 'bg-emerald-500 text-white'
                                       : 'bg-muted text-muted-foreground',
                                     isCurrent && 'ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-background'
                                   )}
                                 >
-                                  <StepIcon className="h-4 w-4" />
+                                  <StepIcon className="size-4" />
                                 </div>
                                 <span
                                   className={cn(
@@ -393,13 +393,13 @@ const ReferralSent = () => {
                   {referral.status === 'declined' && (
                     <div className="px-6 py-3 border-t border-border bg-rose-50/50 dark:bg-rose-900/10">
                       <div className="flex items-center gap-2">
-                        <XCircle className="h-4 w-4 text-rose-500" />
+                        <XCircle className="size-4 text-rose-500" />
                         <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
                           Referral Declined
                         </span>
                         {referral.decline_reason && (
                           <span className="text-sm text-muted-foreground ml-2">
-                            — {referral.decline_reason.slice(0, 50)}
+                            : {referral.decline_reason.slice(0, 50)}
                             {referral.decline_reason.length > 50 ? '...' : ''}
                           </span>
                         )}
@@ -410,7 +410,7 @@ const ReferralSent = () => {
                   <CardContent className="space-y-3">
                     <div>
                       <p className="text-sm font-heading font-medium text-foreground mb-1 flex items-center gap-1">
-                        <FileText className="h-3 w-3" />
+                        <FileText className="size-3" />
                         Reason:
                       </p>
                       <p className="text-sm text-muted-foreground">{referral.reason}</p>
@@ -419,7 +419,7 @@ const ReferralSent = () => {
                     {referral.status === 'pending' && (
                       <div className="bg-[oklch(0.75_0.18_55_/_0.1)] border border-[oklch(0.75_0.18_55_/_0.3)] rounded-lg p-3">
                         <p className="text-xs text-[oklch(0.75_0.18_55)]">
-                          <Clock className="inline h-3 w-3 mr-1" />
+                          <Clock className="inline size-3 mr-1" />
                           Awaiting specialist response
                         </p>
                       </div>

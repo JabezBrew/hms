@@ -260,7 +260,7 @@ const StaffChronicleCard = ({
           "flex items-center gap-1.5 px-2 py-1 rounded-full border text-[10px] sm:text-xs font-medium shrink-0",
           roleConfig.badgeClass
         )}>
-          <RoleIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+          <RoleIcon className="size-3 sm:h-3.5 sm:w-3.5" />
           <span className="hidden sm:inline">{roleConfig.label}</span>
           <span className="sm:hidden">{roleConfig.shortLabel}</span>
         </div>
@@ -320,7 +320,7 @@ const StaffChronicleCard = ({
       <footer className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 sm:pt-4 border-t border-border">
         <div className="flex items-center gap-2 text-muted-foreground">
           <span className={cn(
-            "w-2 h-2 rounded-full",
+            "size-2 rounded-full",
             active ? "bg-emerald-500" : "bg-muted-foreground"
           )} />
           <span className="font-mono text-[10px] sm:text-xs">
@@ -344,7 +344,7 @@ const StaffChronicleCard = ({
               className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
               onClick={handleManageSchedule}
             >
-              <Calendar className="h-3 w-3 mr-1" />
+              <Calendar className="size-3 mr-1" />
               Schedule
             </Button>
           )}

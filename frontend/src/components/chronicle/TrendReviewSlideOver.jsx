@@ -64,7 +64,7 @@ function EmptyState({ title, body }) {
   return (
     <Card className="border-dashed border-border/70 bg-muted/20">
       <CardContent className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-        <CircleAlert className="h-5 w-5 text-muted-foreground" />
+        <CircleAlert className="size-5 text-muted-foreground" />
         <div className="space-y-1">
           <p className="font-heading text-sm text-foreground">{title}</p>
           <p className="max-w-md text-sm text-muted-foreground">{body}</p>
@@ -211,7 +211,7 @@ export default function TrendReviewSlideOver({
           <div className="space-y-2">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-amber-100 p-2 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-                <BarChart3 className="h-5 w-5" />
+                <BarChart3 className="size-5" />
               </div>
               <div>
                 <h2 className="font-display text-xl text-foreground">Trend Review</h2>
@@ -237,23 +237,23 @@ export default function TrendReviewSlideOver({
             onClick={onClose}
             className="font-mono text-xs"
           >
-            <X className="mr-1.5 h-4 w-4" />
+            <X className="mr-1.5 size-4" />
             Close
           </Button>
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 chronicle-scrollbar">
+      <div className="min-h-0 flex-1 overflow-y-auto p-6 chronicle-scrollbar">
         <div className="space-y-6 pb-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className={cn('grid w-full bg-muted/50', showFluidTab ? 'grid-cols-2' : 'grid-cols-1')}>
               <TabsTrigger value="vitals" className="font-mono text-xs">
-                <Activity className="mr-1.5 h-3.5 w-3.5" />
+                <Activity className="mr-1.5 size-3.5" />
                 Vitals
               </TabsTrigger>
               {showFluidTab ? (
                 <TabsTrigger value="fluids" className="font-mono text-xs">
-                  <Droplets className="mr-1.5 h-3.5 w-3.5" />
+                  <Droplets className="mr-1.5 size-3.5" />
                   Fluid Balance
                 </TabsTrigger>
               ) : null}
@@ -438,7 +438,7 @@ export default function TrendReviewSlideOver({
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                        <Clock3 className="h-4 w-4" />
+                        <Clock3 className="size-4" />
                         Daily totals are aggregated from recorded intake and output entries.
                       </div>
                       <FluidBalanceTrendsChart data={formattedFluidTrendData} />

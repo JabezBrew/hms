@@ -172,7 +172,7 @@ export default function ReceptionistDashboard() {
                   size="sm"
                   onClick={() => navigate('/patients/create')}
                 >
-                  <UserPlus className="h-4 w-4 mr-2" />
+                  <UserPlus className="size-4 mr-2" />
                   Register Patient
                 </Button>
               ) : null}
@@ -182,7 +182,7 @@ export default function ReceptionistDashboard() {
                   size="sm"
                   onClick={() => navigate('/triage')}
                 >
-                  <ClipboardList className="h-4 w-4 mr-2" />
+                  <ClipboardList className="size-4 mr-2" />
                   Triage Queue
                 </Button>
               ) : null}
@@ -193,7 +193,7 @@ export default function ReceptionistDashboard() {
                 disabled={isFetching}
                 aria-label="Refresh dashboard"
               >
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
               </Button>
             </div>
           )}
@@ -262,7 +262,7 @@ export default function ReceptionistDashboard() {
             </div>
           ) : checkInQueue.length === 0 ? (
             <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-              <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-3" />
+              <CheckCircle className="size-12 text-emerald-400 mx-auto mb-3" />
               <p className="text-muted-foreground">All patients checked in</p>
             </div>
           ) : (
@@ -346,7 +346,7 @@ export default function ReceptionistDashboard() {
             </div>
           ) : todaysAppointments.length === 0 ? (
             <div className="text-center py-8 rounded-xl border border-border bg-card/50">
-              <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <Calendar className="size-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No appointments scheduled for today</p>
             </div>
           ) : (
@@ -384,7 +384,7 @@ export default function ReceptionistDashboard() {
                   </div>
                   <div className="space-y-1.5 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1.5">
-                      <Clock className="h-3 w-3" />
+                      <Clock className="size-3" />
                       <span>{format(new Date(appointment.start_time), 'h:mm a')}</span>
                     </div>
                     <div className="truncate">
@@ -412,7 +412,7 @@ export default function ReceptionistDashboard() {
             </div>
           ) : recentRegistrations.length === 0 ? (
             <div className="text-center py-8 rounded-xl border border-border bg-card/50">
-              <UserPlus className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <UserPlus className="size-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">No new registrations in the last 24 hours</p>
             </div>
           ) : (

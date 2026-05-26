@@ -180,6 +180,7 @@ const InboxPage = () => {
         <div className="flex items-center gap-2 flex-wrap mt-4 sm:mt-6">
           {filters.map((filter) => (
             <button
+              type="button"
               key={filter.id}
               onClick={() => setActiveFilter(filter.id)}
               className={cn(
@@ -206,9 +207,9 @@ const InboxPage = () => {
             variant="ghost"
             size="icon"
             onClick={handleRefresh}
-            className="shrink-0 h-8 w-8"
+            className="shrink-0 size-8"
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="size-4" />
           </Button>
         </div>
       </PageHeader>
@@ -224,7 +225,7 @@ const InboxPage = () => {
                   {Array.from({ length: 2 }).map((_, j) => (
                     <div key={j} className="bg-card border border-border rounded-xl p-4">
                       <div className="flex gap-4">
-                        <div className="h-10 w-10 bg-muted rounded-full" />
+                        <div className="size-10 bg-muted rounded-full" />
                         <div className="flex-1">
                           <div className="h-4 bg-muted rounded w-1/3 mb-2" />
                           <div className="h-3 bg-muted rounded w-2/3" />
@@ -238,8 +239,8 @@ const InboxPage = () => {
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-              <Inbox className="h-8 w-8 text-muted-foreground" />
+            <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+              <Inbox className="size-8 text-muted-foreground" />
             </div>
             <h3 className="font-display text-xl text-foreground mb-2">
               {activeFilter === 'unread'
@@ -311,14 +312,14 @@ const InboxPage = () => {
                           {/* Timeline Node */}
                           <div
                             className={cn(
-                              "absolute left-[13px] w-5 h-5 rounded-full flex items-center justify-center",
+                              "absolute left-[13px] size-5 rounded-full flex items-center justify-center",
                               "bg-card border-2 border-border transition-all",
                               "group-hover:scale-110",
                               !item.isRead && "border-primary animate-node-pulse"
                             )}
                           >
                             <div className={cn(
-                              "w-2 h-2 rounded-full",
+                              "size-2 rounded-full",
                               indicatorClass
                             )} />
                           </div>
@@ -335,11 +336,11 @@ const InboxPage = () => {
                               {/* Icon */}
                               <div
                                 className={cn(
-                                  "h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0",
+                                  "size-10 rounded-full flex items-center justify-center flex-shrink-0",
                                   "bg-muted/50"
                                 )}
                               >
-                                <Icon className={cn('h-5 w-5', config.iconClass)} />
+                                <Icon className={cn('size-5', config.iconClass)} />
                               </div>
 
                               {/* Details */}
@@ -353,7 +354,7 @@ const InboxPage = () => {
                                       {item.title}
                                     </span>
                                     {!item.isRead && (
-                                      <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                                      <span className="size-2 rounded-full bg-primary flex-shrink-0" />
                                     )}
                                   </div>
                                   <span className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
@@ -378,7 +379,7 @@ const InboxPage = () => {
                                     )}
                                     {item.category === 'action' && (
                                       <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-mono">
-                                        <AlertCircle className="h-3 w-3" />
+                                        <AlertCircle className="size-3" />
                                         ACTION REQUIRED
                                       </span>
                                     )}
@@ -392,7 +393,7 @@ const InboxPage = () => {
                                       disabled={markInboxRead.isPending}
                                       onClick={(event) => handleMarkRead(event, item)}
                                     >
-                                      <Check className="h-3.5 w-3.5 mr-1" />
+                                      <Check className="size-3.5 mr-1" />
                                       Mark read
                                     </Button>
                                   )}

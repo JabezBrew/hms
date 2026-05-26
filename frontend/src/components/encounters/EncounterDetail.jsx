@@ -217,13 +217,13 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <XCircle className="h-8 w-8 text-destructive" />
+          <div className="size-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <XCircle className="size-8 text-destructive" />
           </div>
           <h2 className="font-display text-xl text-foreground">Unable to load encounter</h2>
           <p className="text-muted-foreground text-sm">{error || 'Please try again'}</p>
           <Button variant="outline" onClick={() => navigate('/encounters')}>
-            <ChevronLeft className="h-4 w-4 mr-2" />
+            <ChevronLeft className="size-4 mr-2" />
             Back to Encounters
           </Button>
         </div>
@@ -236,13 +236,13 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto">
-            <FileText className="h-8 w-8 text-muted-foreground" />
+          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto">
+            <FileText className="size-8 text-muted-foreground" />
           </div>
           <h2 className="font-display text-xl text-foreground">Encounter not found</h2>
           <p className="text-muted-foreground text-sm">The requested encounter could not be found.</p>
           <Button variant="outline" onClick={() => navigate('/encounters')}>
-            <ChevronLeft className="h-4 w-4 mr-2" />
+            <ChevronLeft className="size-4 mr-2" />
             Back to Encounters
           </Button>
         </div>
@@ -271,7 +271,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
     <div className="min-h-screen bg-background">
       {/* Encounter Identity Header */}
       <header className="bg-card border-b border-border">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+        <div className="max-w-5xl mx-auto p-4 sm:p-6">
           {/* Navigation */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
             <Button
@@ -280,7 +280,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
               onClick={() => navigate('/encounters')}
               className="self-start -ml-2"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Encounters
             </Button>
 
@@ -292,7 +292,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                   size="sm"
                   onClick={() => navigate(`/encounters/${id}/edit`)}
                 >
-                  <Edit className="h-4 w-4 mr-2" />
+                  <Edit className="size-4 mr-2" />
                   <span className="hidden sm:inline">Edit</span>
                 </Button>
               )}
@@ -303,7 +303,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                   onClick={() => setShowDischargeDialog(true)}
                   className="text-emerald-600 hover:text-emerald-600 hover:bg-emerald-500/10"
                 >
-                  <CheckCircle className="h-4 w-4 sm:mr-2" />
+                  <CheckCircle className="size-4 sm:mr-2" />
                   <span className="hidden sm:inline">Discharge</span>
                 </Button>
               )}
@@ -314,7 +314,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                   onClick={() => setShowCancelDialog(true)}
                   className="text-destructive hover:text-destructive hover:bg-destructive/10"
                 >
-                  <XCircle className="h-4 w-4 sm:mr-2" />
+                  <XCircle className="size-4 sm:mr-2" />
                   <span className="hidden sm:inline">Cancel</span>
                 </Button>
               )}
@@ -331,10 +331,10 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
           <div className="flex flex-col sm:flex-row sm:items-start gap-4">
             {/* Type Icon */}
             <div className={cn(
-              "w-14 h-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0",
+              "size-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0",
               typeConfig.badgeClass.replace('text-', 'bg-').replace('/10', '/20')
             )}>
-              <TypeIcon className="h-7 w-7 sm:h-8 sm:w-8 text-foreground/70" />
+              <TypeIcon className="size-7 sm:h-8 sm:w-8 text-foreground/70" />
             </div>
 
             {/* Info */}
@@ -347,7 +347,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                   "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium",
                   statusConfig.badgeClass
                 )}>
-                  <StatusIcon className="h-3 w-3" />
+                  <StatusIcon className="size-3" />
                   {statusConfig.label}
                 </span>
               </div>
@@ -358,9 +358,9 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                   to={`/patients/${encounter.patient}`}
                   className="inline-flex items-center gap-2 text-primary hover:underline mb-2"
                 >
-                  <User className="h-4 w-4" />
+                  <User className="size-4" />
                   <span className="font-medium">{encounter.patient_name}</span>
-                  <ExternalLink className="h-3 w-3" />
+                  <ExternalLink className="size-3" />
                 </Link>
               )}
 
@@ -368,19 +368,19 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 {encounter.practitioner_name && (
                   <span className="flex items-center gap-1.5">
-                    <Stethoscope className="h-3.5 w-3.5" />
+                    <Stethoscope className="size-3.5" />
                     {encounter.practitioner_name}
                   </span>
                 )}
                 {encounter.location && (
                   <span className="flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5" />
+                    <MapPin className="size-3.5" />
                     {encounter.location}
                   </span>
                 )}
                 {encounter.start_time && (
                   <span className="flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5" />
+                    <Calendar className="size-3.5" />
                     {formatDateShort(encounter.start_time)}
                   </span>
                 )}
@@ -395,7 +395,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
         {/* Encounter Details */}
         <section>
           <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-            <FileText className="h-5 w-5 text-muted-foreground" />
+            <FileText className="size-5 text-muted-foreground" />
             Details
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -436,7 +436,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
         {/* Timeline / Clinical Notes */}
         <section>
           <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-            <Clock className="h-5 w-5 text-muted-foreground" />
+            <Clock className="size-5 text-muted-foreground" />
             Clinical Notes
             {timelineEntries.length > 0 && (
               <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded ml-2">
@@ -453,7 +453,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
             </div>
           ) : timelineEntries.length === 0 ? (
             <div className="p-8 rounded-xl sm:rounded-2xl bg-card/50 border border-dashed border-border text-center">
-              <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <FileText className="size-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground text-sm">No clinical notes for this encounter</p>
             </div>
           ) : (
@@ -478,7 +478,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                 size="sm"
                 onClick={() => navigate(`/patients/${encounter.patient}`)}
               >
-                <User className="h-4 w-4 mr-2" />
+                <User className="size-4 mr-2" />
                 View Patient Record
               </Button>
             )}
@@ -488,7 +488,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
                 size="sm"
                 onClick={() => navigate(`/encounters/${id}/edit`)}
               >
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="size-4 mr-2" />
                 Edit Encounter
               </Button>
             )}
@@ -550,13 +550,13 @@ function InfoItem({ label, value, icon: Icon, className }) {
   return (
     <div className={cn("min-w-0", className)}>
       <div className="flex items-center gap-1.5 mb-1">
-        {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
+        {Icon && <Icon className="size-3.5 text-muted-foreground" />}
         <p className="font-mono text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground">
           {label}
         </p>
       </div>
       <p className="text-sm sm:text-base text-foreground truncate">
-        {value || <span className="text-muted-foreground">—</span>}
+        {value || <span className="text-muted-foreground">-</span>}
       </p>
     </div>
   );

@@ -57,23 +57,23 @@ export function TablePagination({
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
+          className="size-8"
           onClick={() => onPageChange(1)}
           disabled={currentPage === 1}
           aria-label="Go to first page"
         >
-          <ChevronsLeft className="h-4 w-4" />
+          <ChevronsLeft className="size-4" />
         </Button>
         {/* Previous page */}
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
+          className="size-8"
           onClick={() => onPageChange(currentPage - 1)}
           disabled={!hasPrevPage}
           aria-label="Go to previous page"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="size-4" />
         </Button>
         {/* Page indicator */}
         <span className="px-3 text-sm text-muted-foreground">
@@ -84,23 +84,23 @@ export function TablePagination({
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
+          className="size-8"
           onClick={() => onPageChange(currentPage + 1)}
           disabled={!hasNextPage}
           aria-label="Go to next page"
         >
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="size-4" />
         </Button>
         {/* Last page */}
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
+          className="size-8"
           onClick={() => onPageChange(totalPages)}
           disabled={currentPage === totalPages || totalPages === 0}
           aria-label="Go to last page"
         >
-          <ChevronsRight className="h-4 w-4" />
+          <ChevronsRight className="size-4" />
         </Button>
       </div>
     </div>

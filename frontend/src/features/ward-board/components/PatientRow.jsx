@@ -33,7 +33,7 @@ function DischargeCell({ patient }) {
   const blockerCount = patient?.discharge_blocker_count ?? patient?.discharge_blocker_reasons?.length ?? 0;
 
   if (status === 'none' || (!status && count === 0)) {
-    return <span className="font-mono text-[11px] text-muted-foreground">—</span>;
+    return <span className="font-mono text-[11px] text-muted-foreground">-</span>;
   }
 
   const styleClass = DISCHARGE_STATUS_STYLES[status] ?? 'border-border bg-muted text-foreground';
@@ -66,7 +66,7 @@ function ResultCell({ patient }) {
   const count = getPatientResultCount(patient);
   const due = patient?.reviews_due_count ?? 0;
   if (count === 0 && due === 0) {
-    return <span className="font-mono text-[11px] text-muted-foreground">—</span>;
+    return <span className="font-mono text-[11px] text-muted-foreground">-</span>;
   }
   return (
     <div className="space-y-0.5">
@@ -105,14 +105,14 @@ export function PatientRow({ patient, expanded, onToggle, onTaskAction, pendingA
         onClick={onToggle}
         aria-expanded={expanded}
       >
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <div className="flex flex-col">
             <span className="font-mono text-[9px] uppercase leading-none text-muted-foreground">Bed</span>
             <span className="font-mono text-sm font-medium leading-tight text-foreground">{bed ?? '—'}</span>
           </div>
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <div className="min-w-0">
             <p className="truncate font-display text-base leading-tight text-foreground">{name}</p>
             <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
@@ -121,45 +121,45 @@ export function PatientRow({ patient, expanded, onToggle, onTaskAction, pendingA
           </div>
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', urgencyClassName)}>
             {urgency}
           </Badge>
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <p className="truncate text-xs text-foreground">
-            {problems ?? <span className="text-muted-foreground">—</span>}
+            {problems ?? <span className="text-muted-foreground">-</span>}
           </p>
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <ResultCell patient={patient} />
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           {(patient?.reviews_due_count ?? 0) > 0 ? (
             <Badge variant="outline" className="border-amber-200 bg-amber-50 font-mono text-[10px] text-amber-700">
               Due soon
             </Badge>
           ) : (
-            <span className="font-mono text-[11px] text-muted-foreground">—</span>
+            <span className="font-mono text-[11px] text-muted-foreground">-</span>
           )}
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <TaskCell patient={patient} />
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <DischargeCell patient={patient} />
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <p className="truncate font-mono text-[11px] text-foreground">{owner ?? '—'}</p>
         </td>
 
-        <td className="px-3 py-3 align-middle">
+        <td className="p-3 align-middle">
           <div className="flex items-center justify-between gap-1">
             <span className="font-mono text-[11px] text-muted-foreground">
               {lastEvent ? formatTimestamp(lastEvent) : '—'}
@@ -171,10 +171,10 @@ export function PatientRow({ patient, expanded, onToggle, onTaskAction, pendingA
               tabIndex={-1}
               aria-label={`Open Chronicle for ${name}`}
             >
-              <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-amber-700" />
+              <ExternalLink className="size-3 text-muted-foreground hover:text-amber-700" />
             </Link>
             <ChevronDown
-              className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150', expanded && 'rotate-180')}
+              className={cn('size-4 shrink-0 text-muted-foreground transition-transform duration-150', expanded && 'rotate-180')}
               aria-hidden="true"
             />
           </div>

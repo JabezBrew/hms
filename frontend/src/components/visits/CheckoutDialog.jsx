@@ -104,7 +104,7 @@ export function CheckoutDialog({
         <div className="space-y-4 py-4">
           {isVisitLoading && (
             <div className="text-sm text-muted-foreground">
-              Loading checkout requirements...
+              Loading checkout requirements…
             </div>
           )}
 
@@ -128,16 +128,16 @@ export function CheckoutDialog({
                 >
                   <div className="flex items-center gap-3">
                     <Icon
-                      className={`h-5 w-5 ${
+                      className={`size-5 ${
                         status ? 'text-emerald-400' : 'text-rose-400'
                       }`}
                     />
                     <span className="text-sm font-medium">{item.label}</span>
                   </div>
                   {status ? (
-                    <CheckCircle className="h-5 w-5 text-emerald-400" />
+                    <CheckCircle className="size-5 text-emerald-400" />
                   ) : (
-                    <XCircle className="h-5 w-5 text-rose-400" />
+                    <XCircle className="size-5 text-rose-400" />
                   )}
                 </div>
               );
@@ -147,7 +147,7 @@ export function CheckoutDialog({
           {/* Warning if requirements not met */}
           {!isVisitLoading && !allMet && (
             <div className="flex items-start gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5">
-              <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <AlertTriangle className="size-5 text-amber-400 shrink-0 mt-0.5" />
               <div className="text-sm">
                 <p className="font-medium text-amber-400">
                   Some requirements are not met

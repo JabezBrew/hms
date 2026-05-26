@@ -160,7 +160,7 @@ export function DepartmentRosterPlansTab() {
         subtitle="Define authoritative coverage cycles for each department."
         actions={
           <Button onClick={() => openForm(null)}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             <span className="font-mono text-xs uppercase tracking-wide">Add Roster Plan</span>
           </Button>
         }

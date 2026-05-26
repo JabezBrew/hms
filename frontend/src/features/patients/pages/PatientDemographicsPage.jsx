@@ -216,10 +216,10 @@ const PatientDemographicsPage = () => {
         {pageMeta}
         <div className="min-h-screen bg-background">
           <header className="bg-card border-b border-border">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+            <div className="max-w-4xl mx-auto p-4 sm:p-6">
               <Skeleton className="h-8 w-32 mb-4" />
               <div className="flex items-start gap-4">
-                <Skeleton className="w-16 h-16 rounded-xl" />
+                <Skeleton className="size-16 rounded-xl" />
                 <div>
                   <Skeleton className="h-8 w-48 mb-2" />
                   <Skeleton className="h-4 w-32" />
@@ -243,7 +243,7 @@ const PatientDemographicsPage = () => {
         {pageMeta}
         <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="text-center">
-            <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <AlertCircle className="size-12 text-destructive mx-auto mb-4" />
             <h2 className="text-lg font-semibold mb-2">Failed to load patient</h2>
             <p className="text-muted-foreground mb-4">{error?.message}</p>
             <Button onClick={() => navigate(-1)}>Go Back</Button>
@@ -259,7 +259,7 @@ const PatientDemographicsPage = () => {
       <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="bg-card border-b border-border">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6">
           {/* Navigation */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
             <Button
@@ -268,7 +268,7 @@ const PatientDemographicsPage = () => {
               onClick={() => navigate('/patients')}
               className="self-start -ml-2"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Patient Registry
             </Button>
 
@@ -281,7 +281,7 @@ const PatientDemographicsPage = () => {
                     size="sm"
                     onClick={handleCancelEdit}
                   >
-                    <X className="h-4 w-4 mr-2" />
+                    <X className="size-4 mr-2" />
                     Cancel
                   </Button>
                   <Button
@@ -289,13 +289,13 @@ const PatientDemographicsPage = () => {
                     onClick={form.handleSubmit(onSubmit)}
                     disabled={updateMutation.isPending}
                   >
-                    <Save className="h-4 w-4 mr-2" />
+                    <Save className="size-4 mr-2" />
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </Button>
                 </>
               ) : (
                 <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                  <Edit className="h-4 w-4 mr-2" />
+                  <Edit className="size-4 mr-2" />
                   Edit
                 </Button>
               )}
@@ -305,8 +305,8 @@ const PatientDemographicsPage = () => {
           {/* Identity Hero */}
           <div className="flex flex-col sm:flex-row sm:items-start gap-4">
             {/* Avatar */}
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl bg-sky-500/20 flex items-center justify-center shrink-0">
-              <User className="h-8 w-8 sm:h-10 sm:w-10 text-sky-600" />
+            <div className="size-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl bg-sky-500/20 flex items-center justify-center shrink-0">
+              <User className="size-8 sm:h-10 sm:w-10 text-sky-600" />
             </div>
 
             {/* Info */}
@@ -318,7 +318,7 @@ const PatientDemographicsPage = () => {
               </div>
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium bg-sky-500/10 text-sky-600 border-sky-500/30">
-                  <User className="h-3 w-3" />
+                  <User className="size-3" />
                   Patient
                 </span>
                 <span className="font-mono text-xs text-muted-foreground">
@@ -341,7 +341,7 @@ const PatientDemographicsPage = () => {
           {/* Personal Information */}
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <User className="h-5 w-5 text-muted-foreground" />
+              <User className="size-5 text-muted-foreground" />
               Personal Information
             </h2>
             <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -417,7 +417,7 @@ const PatientDemographicsPage = () => {
           {/* Contact Information */}
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <Phone className="h-5 w-5 text-muted-foreground" />
+              <Phone className="size-5 text-muted-foreground" />
               Contact Information
             </h2>
             <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -453,8 +453,8 @@ const PatientDemographicsPage = () => {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                      <Mail className="h-5 w-5 text-muted-foreground" />
+                    <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                      <Mail className="size-5 text-muted-foreground" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-mono text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">
@@ -470,8 +470,8 @@ const PatientDemographicsPage = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                      <Phone className="h-5 w-5 text-muted-foreground" />
+                    <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                      <Phone className="size-5 text-muted-foreground" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-mono text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">
@@ -494,7 +494,7 @@ const PatientDemographicsPage = () => {
           {/* Address */}
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-muted-foreground" />
+              <MapPin className="size-5 text-muted-foreground" />
               Address
             </h2>
             <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -597,7 +597,7 @@ const PatientDemographicsPage = () => {
           {/* Emergency Contact */}
           <section>
             <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-muted-foreground" />
+              <AlertCircle className="size-5 text-muted-foreground" />
               Emergency Contact
             </h2>
             <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -657,7 +657,7 @@ const PatientDemographicsPage = () => {
         {/* Insurance Information (Read-only) */}
         <section>
           <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-            <Shield className="h-5 w-5 text-muted-foreground" />
+            <Shield className="size-5 text-muted-foreground" />
             Insurance
           </h2>
           <div className="p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
@@ -686,7 +686,7 @@ const PatientDemographicsPage = () => {
               size="sm"
               onClick={() => navigate(`/appointments/create?patient=${id}`)}
             >
-              <CalendarPlus className="h-4 w-4 mr-2" />
+              <CalendarPlus className="size-4 mr-2" />
               Schedule Appointment
             </Button>
             {canWalkInCheckIn && (
@@ -695,13 +695,13 @@ const PatientDemographicsPage = () => {
                 size="sm"
                 onClick={() => setWalkInOpen(true)}
               >
-                <Stethoscope className="h-4 w-4 mr-2" />
+                <Stethoscope className="size-4 mr-2" />
                 Arrived Now
               </Button>
             )}
             {!isEditing && (
               <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="size-4 mr-2" />
                 Edit Information
               </Button>
             )}
@@ -731,13 +731,13 @@ const InfoItem = ({ label, value, icon: Icon, className }) => {
   return (
     <div className={cn("min-w-0", className)}>
       <div className="flex items-center gap-1.5 mb-1">
-        {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
+        {Icon && <Icon className="size-3.5 text-muted-foreground" />}
         <p className="font-mono text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground">
           {label}
         </p>
       </div>
       <p className="text-sm sm:text-base text-foreground truncate">
-        {value || <span className="text-muted-foreground">—</span>}
+        {value || <span className="text-muted-foreground">-</span>}
       </p>
     </div>
   );

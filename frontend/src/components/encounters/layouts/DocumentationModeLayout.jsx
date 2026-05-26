@@ -48,14 +48,14 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
           <div className="flex justify-between items-start">
             <div>
               <CardTitle className="flex items-center">
-                <User className="h-5 w-5 mr-2 text-primary" />
+                <User className="size-5 mr-2 text-primary" />
                 {encounter.patient_name || 'Unknown Patient'}
               </CardTitle>
               <CardDescription>
                 Encounter ID: {encounter.id}
               </CardDescription>
             </div>
-            <div className="flex space-x-2">
+            <div className="flex gap-x-2">
               {getTypeBadge(encounter.encounter_type)}
               {getStatusBadge(encounter.status)}
             </div>
@@ -68,7 +68,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
               <div>
                 <h3 className="text-sm font-medium mb-1">Practitioner</h3>
                 <div className="flex items-center">
-                  <Stethoscope className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <Stethoscope className="size-4 mr-2 text-muted-foreground" />
                   <span>{encounter.practitioner_name || 'No practitioner assigned'}</span>
                 </div>
               </div>
@@ -76,7 +76,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
               <div>
                 <h3 className="text-sm font-medium mb-1">Start Time</h3>
                 <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <Calendar className="size-4 mr-2 text-muted-foreground" />
                   <span>{formatDate(encounter.start_time)}</span>
                 </div>
               </div>
@@ -84,7 +84,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
               <div>
                 <h3 className="text-sm font-medium mb-1">End Time</h3>
                 <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <Calendar className="size-4 mr-2 text-muted-foreground" />
                   <span>{encounter.end_time ? formatDate(encounter.end_time) : 'Not ended'}</span>
                 </div>
               </div>
@@ -92,7 +92,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
               <div>
                 <h3 className="text-sm font-medium mb-1">Location</h3>
                 <div className="flex items-center">
-                  <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <Building2 className="size-4 mr-2 text-muted-foreground" />
                   <span>{encounter.location || 'No location specified'}</span>
                 </div>
               </div>
@@ -103,7 +103,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
               <div>
                 <h3 className="text-sm font-medium mb-1">Service Type</h3>
                 <div className="flex items-center">
-                  <Activity className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <Activity className="size-4 mr-2 text-muted-foreground" />
                   <span>{encounter.service_type || 'No service type specified'}</span>
                 </div>
               </div>
@@ -111,7 +111,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
               <div>
                 <h3 className="text-sm font-medium mb-1">Reason for Visit</h3>
                 <div className="flex items-start">
-                  <FileText className="h-4 w-4 mr-2 mt-0.5 text-muted-foreground" />
+                  <FileText className="size-4 mr-2 mt-0.5 text-muted-foreground" />
                   <span>{encounter.reason || 'No reason specified'}</span>
                 </div>
               </div>
@@ -120,7 +120,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
                 <div>
                   <h3 className="text-sm font-medium mb-1">Admission Source</h3>
                   <div className="flex items-center">
-                    <Clipboard className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <Clipboard className="size-4 mr-2 text-muted-foreground" />
                     <span>{encounter.admission_source ? getAdmissionSourceText(encounter.admission_source) : 'Not specified'}</span>
                   </div>
                 </div>
@@ -130,7 +130,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
                 <div>
                   <h3 className="text-sm font-medium mb-1">Discharge Disposition</h3>
                   <div className="flex items-center">
-                    <ClipboardList className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <ClipboardList className="size-4 mr-2 text-muted-foreground" />
                     <span>{encounter.discharge_disposition ? getDischargeDispositionText(encounter.discharge_disposition) : 'Not specified'}</span>
                   </div>
                 </div>
@@ -140,7 +140,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
         </CardContent>
         <CardFooter className="border-t pt-6">
           <div className="flex items-center text-sm text-muted-foreground">
-            <CalendarClock className="h-4 w-4 mr-2" />
+            <CalendarClock className="size-4 mr-2" />
             <span>Created: {formatDate(encounter.created_at)}</span>
             {encounter.updated_at && encounter.updated_at !== encounter.created_at && (
               <>
@@ -173,7 +173,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
               <div className="space-y-4">
                 <div className="flex items-start">
                   <div className="mr-4 mt-1">
-                    <div className="h-2 w-2 rounded-full bg-primary" />
+                    <div className="size-2 rounded-full bg-primary" />
                   </div>
                   <div>
                     <div className="font-medium">Encounter Created</div>
@@ -183,7 +183,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
                 {encounter.status === 'in-progress' && (
                   <div className="flex items-start">
                     <div className="mr-4 mt-1">
-                      <div className="h-2 w-2 rounded-full bg-primary" />
+                      <div className="size-2 rounded-full bg-primary" />
                     </div>
                     <div>
                       <div className="font-medium">Encounter Started</div>
@@ -204,7 +204,7 @@ export function DocumentationModeLayout({ encounter, formatDate, getStatusBadge,
             </CardHeader>
             <CardContent>
               {isLoadingNotes ? (
-                <p className="text-sm text-muted-foreground">Loading notes...</p>
+                <p className="text-sm text-muted-foreground">Loading notes…</p>
               ) : clinicalNotes && clinicalNotes.length > 0 ? (
                 <div className="space-y-4">
                   {clinicalNotes.map((note) => (

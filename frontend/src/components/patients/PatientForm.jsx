@@ -62,6 +62,25 @@ import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 
+const validationRegexCache = new Map();
+
+function getValidationRegex(pattern) {
+  const anchored = pattern.startsWith('^') ? pattern : `^(?:${pattern})`;
+  const cached = validationRegexCache.get(anchored);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  try {
+    const compiled = new RegExp(anchored);
+    validationRegexCache.set(anchored, compiled);
+    return compiled;
+  } catch (_e) {
+    validationRegexCache.set(anchored, null);
+    return null;
+  }
+}
+
 // Form validation schema
 const patientFormSchema = z.object({
   // User fields
@@ -376,16 +395,11 @@ const PatientForm = ({ patient, onSuccess }) => {
           break;
         }
         if (rule.validation_regex && valueStr.trim() !== '') {
-          try {
-            const pattern = String(rule.validation_regex);
-            const anchored = pattern.startsWith('^') ? pattern : `^(?:${pattern})`;
-            const re = new RegExp(anchored);
-            if (!re.test(valueStr)) {
-              errors.push({ field: fieldName, message: rule.validation_message || `${fieldName} is invalid` });
-              break;
-            }
-          } catch (_e) {
-            // If regex is not JS-compatible, skip client-side and let the server validate.
+          const re = getValidationRegex(String(rule.validation_regex));
+          // If regex is not JS-compatible, skip client-side and let the server validate.
+          if (re && !re.test(valueStr)) {
+            errors.push({ field: fieldName, message: rule.validation_message || `${fieldName} is invalid` });
+            break;
           }
         }
       }
@@ -869,7 +883,7 @@ const PatientForm = ({ patient, onSuccess }) => {
               return (
                 <TabsTrigger key={step.key} value={step.key} className="font-mono text-xs">
                   <span className="inline-flex items-center gap-2">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
+                    <span className="inline-flex size-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
                       {idx + 1}
                     </span>
                     <span>{step.label}</span>
@@ -889,10 +903,10 @@ const PatientForm = ({ patient, onSuccess }) => {
               {!isEditMode && (
                 <TabsContent value="encounter" className="space-y-4 mt-4">
                   <div className="space-y-3">
-                    <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      <Stethoscope className="h-4 w-4" />
-                      Encounter Type
-                    </label>
+	                    <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+	                      <Stethoscope className="size-4" />
+	                      Encounter Type
+	                    </span>
                     <RadioGroup
                       value={admissionType}
                       onValueChange={(val) => {
@@ -904,21 +918,21 @@ const PatientForm = ({ patient, onSuccess }) => {
                         setIsWaitingList(false);
                         form.setValue("bed_id", "");
                       }}
-                      className="flex flex-col space-y-2"
+                      className="flex flex-col gap-y-2"
                     >
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-x-2">
                         <RadioGroupItem value="outpatient" id="outpatient" />
                         <label htmlFor="outpatient" className="font-normal cursor-pointer">
                           Outpatient (Clinic visit)
                         </label>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-x-2">
                         <RadioGroupItem value="inpatient" id="inpatient" />
                         <label htmlFor="inpatient" className="font-normal cursor-pointer">
                           Inpatient (Admit to ward)
                         </label>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-x-2">
                         <RadioGroupItem value="emergency" id="emergency" />
                         <label htmlFor="emergency" className="font-normal cursor-pointer">
                           Emergency (ED triage)
@@ -930,11 +944,11 @@ const PatientForm = ({ patient, onSuccess }) => {
                   <Separator className="my-4" />
 
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      <Building2 className="h-4 w-4" />
-                      Department
-                      <span className="text-rose-500">*</span>
-                    </label>
+	                    <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+	                      <Building2 className="size-4" />
+	                      Department
+	                      <span className="text-rose-500">*</span>
+	                    </span>
                     <Select
                       value={selectedDepartment}
                       onValueChange={(val) => {
@@ -965,7 +979,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                   {admissionType === 'outpatient' && selectedDepartment && (
                     <div className="space-y-2">
                       <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        <Stethoscope className="h-4 w-4" />
+                        <Stethoscope className="size-4" />
                         Clinic
                         {clinicSelectionRequired && <span className="text-rose-500">*</span>}
                       </label>
@@ -974,7 +988,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                         outpatientRequiresActiveClinicSchedule ? (
                           <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
                             <div className="flex items-center gap-2">
-                              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                              <AlertCircle className="size-4 text-amber-600 dark:text-amber-400" />
                               <p className="text-sm text-amber-700 dark:text-amber-300 font-mono">
                                 No clinics are scheduled right now for this department. Choose another department or publish a roster session.
                               </p>
@@ -983,7 +997,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                         ) : (
                           <div className="p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
                             <div className="flex items-center gap-2">
-                              <AlertCircle className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                              <AlertCircle className="size-4 text-sky-600 dark:text-sky-400" />
                               <p className="text-sm text-sky-700 dark:text-sky-300 font-mono">
                                 No active clinic schedule found. Registration will continue under the selected department.
                               </p>
@@ -993,7 +1007,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                       ) : activeClinicOptions.length === 1 ? (
                         <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
                           <div className="flex items-center gap-2">
-                            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
                             <p className="text-sm text-emerald-700 dark:text-emerald-300">
                               Auto-selected: <span className="font-mono font-medium">{activeClinicOptions[0].name}</span>
                             </p>
@@ -1033,10 +1047,11 @@ const PatientForm = ({ patient, onSuccess }) => {
 
                   {admissionType === 'inpatient' && selectedDepartment && (
                     <>
-                      <div className="flex items-center space-x-2 mb-2">
+                      <div className="flex items-center gap-x-2 mb-2">
                         <input
                           type="checkbox"
                           id="waitingList"
+                          aria-label="Add to waiting list and assign bed later"
                           checked={isWaitingList}
                           onChange={(e) => {
                             setIsWaitingList(e.target.checked);
@@ -1045,7 +1060,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                               form.setValue("bed_id", "");
                             }
                           }}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                         />
                         <label htmlFor="waitingList" className="text-sm font-medium leading-none">
                           Add to waiting list (assign bed later)
@@ -1163,7 +1178,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                                 )}
                               >
                                 {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                <CalendarIcon className="ml-auto size-4 opacity-50" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
@@ -1203,9 +1218,10 @@ const PatientForm = ({ patient, onSuccess }) => {
                             <input
                               id="noEmail"
                               type="checkbox"
+                              aria-label="No email available"
                               checked={noEmail}
                               onChange={(e) => setNoEmail(e.target.checked)}
-                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                              className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                             />
                             <label htmlFor="noEmail" className="text-xs text-muted-foreground font-mono">
                               No email available (a placeholder will be generated)
@@ -1303,11 +1319,11 @@ const PatientForm = ({ patient, onSuccess }) => {
                   <div className="p-4 border border-border rounded-lg bg-muted/20">
                     <div className="flex items-center justify-between gap-3 mb-2">
                       <div className="flex items-center gap-2">
-                        <Search className="h-4 w-4 text-muted-foreground" />
+                        <Search className="size-4 text-muted-foreground" />
                         <p className="text-sm font-medium">Possible duplicates</p>
                       </div>
                       {isMatchesLoading && (
-                        <span className="text-xs text-muted-foreground font-mono">Searching...</span>
+                        <span className="text-xs text-muted-foreground font-mono">Searching…</span>
                       )}
                     </div>
                     {possibleMatches.length === 0 ? (
@@ -1509,7 +1525,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                       showValidation && insuranceData.hasInsurance && !validateInsuranceStep() ? "border-rose-200 bg-rose-50/40 dark:border-rose-900/40 dark:bg-rose-900/10" : "border-border bg-muted/20"
                     )}>
                       <div className="flex items-center gap-3">
-                        <Shield className="h-5 w-5 text-muted-foreground" />
+                        <Shield className="size-5 text-muted-foreground" />
                         <div>
                           <p className="text-sm font-medium">Insurance Coverage</p>
                           <p className="text-xs text-muted-foreground">
@@ -1523,6 +1539,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                         </span>
                         <input
                           type="checkbox"
+                          aria-label="Enable insurance coverage"
                           checked={insuranceData.hasInsurance}
                           onChange={(e) => {
                             const checked = e.target.checked;
@@ -1540,7 +1557,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                               setSelectedProviderId('');
                             }
                           }}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                         />
                       </div>
                     </div>
@@ -1636,7 +1653,7 @@ const PatientForm = ({ patient, onSuccess }) => {
 
                     {!insuranceData.hasInsurance && (
                       <div className="text-center py-8 text-muted-foreground">
-                        <Shield className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                        <Shield className="size-10 mx-auto mb-3 opacity-30" />
                         <p className="text-sm">No insurance will be added</p>
                         <p className="text-xs mt-1">You can add insurance later from the patient's profile</p>
                       </div>

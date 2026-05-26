@@ -86,7 +86,7 @@ const NoteHistoryModal = ({ open, onOpenChange, noteId, noteTitle }) => {
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <History className="h-5 w-5 text-amber-600" />
+            <History className="size-5 text-amber-600" />
             Version History
           </DialogTitle>
           <DialogDescription>
@@ -108,7 +108,7 @@ const NoteHistoryModal = ({ open, onOpenChange, noteId, noteTitle }) => {
                 className="h-7 text-xs"
                 onClick={toggleCompareMode}
               >
-                <ArrowLeftRight className="h-3 w-3 mr-1" />
+                <ArrowLeftRight className="size-3 mr-1" />
                 Compare
               </Button>
             </div>
@@ -190,7 +190,7 @@ const NoteHistoryModal = ({ open, onOpenChange, noteId, noteTitle }) => {
             ) : (
               <div className="h-full flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
-                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <FileText className="size-12 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">
                     {compareMode
                       ? "Select two versions to compare"
@@ -234,6 +234,7 @@ const VersionItem = ({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "w-full text-left p-3 rounded-lg border transition-colors",
@@ -260,16 +261,16 @@ const VersionItem = ({
           )}
         </div>
         {isSelected && !compareMode && (
-          <ChevronRight className="h-4 w-4 text-primary" />
+          <ChevronRight className="size-4 text-primary" />
         )}
       </div>
       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        <Clock className="h-3 w-3" />
+        <Clock className="size-3" />
         <span>{formatDateTime(version.created_at)}</span>
       </div>
       {version.edited_by_name && version.edited_by_name !== "Current" && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-          <User className="h-3 w-3" />
+          <User className="size-3" />
           <span>{version.edited_by_name}</span>
         </div>
       )}
@@ -321,8 +322,8 @@ const CompareView = ({ comparison, isLoading }) => {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">Loading comparison...</p>
+          <div className="animate-spin size-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">Loading comparison…</p>
         </div>
       </div>
     );
@@ -353,15 +354,15 @@ const CompareView = ({ comparison, isLoading }) => {
           <Badge variant="outline" className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800">
             {versionALabel}
           </Badge>
-          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          <ArrowRight className="size-4 text-muted-foreground" />
           <Badge variant="outline" className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800">
             {versionBLabel}
           </Badge>
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          <span className="inline-block w-3 h-3 bg-rose-100 dark:bg-rose-900/40 rounded mr-1 align-middle" /> Removed
+          <span className="inline-block size-3 bg-rose-100 dark:bg-rose-900/40 rounded mr-1 align-middle" /> Removed
           <span className="mx-2">·</span>
-          <span className="inline-block w-3 h-3 bg-emerald-100 dark:bg-emerald-900/40 rounded mr-1 align-middle" /> Added
+          <span className="inline-block size-3 bg-emerald-100 dark:bg-emerald-900/40 rounded mr-1 align-middle" /> Added
         </p>
       </div>
 

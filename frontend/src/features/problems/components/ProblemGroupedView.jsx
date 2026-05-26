@@ -90,12 +90,12 @@ export default function ProblemGroupedView({ patientId, className }) {
                   const meta = KIND_META[e.kind] || KIND_META.note;
                   return (
                     <li key={`${e.kind}-${e.id}`} className="flex items-center gap-2 py-2">
-                      <meta.Icon className="h-4 w-4 text-muted-foreground" />
+                      <meta.Icon className="size-4 text-muted-foreground" />
                       <span className="text-xs font-mono uppercase text-muted-foreground w-16">
                         {meta.label}
                       </span>
                       <span className="text-sm flex-1 truncate">{e.summary}</span>
-                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                      <ChevronRight className="size-3 text-muted-foreground" />
                     </li>
                   );
                 })}

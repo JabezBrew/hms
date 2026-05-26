@@ -362,7 +362,7 @@ export default function LabOrdersPage() {
             className="flex items-center gap-2"
             disabled={isFetching}
           >
-            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
             Refresh
           </Button>
         )}
@@ -384,7 +384,7 @@ export default function LabOrdersPage() {
               <Select value={selectedDoctorFilter} onValueChange={setSelectedDoctorFilter}>
                 <SelectTrigger className="w-full font-mono text-sm sm:w-[200px]">
                   <div className="flex items-center gap-2">
-                    <UserRound className="h-4 w-4 text-muted-foreground" />
+                    <UserRound className="size-4 text-muted-foreground" />
                     <SelectValue placeholder="Ordering Doctor" />
                   </div>
                 </SelectTrigger>
@@ -432,7 +432,7 @@ export default function LabOrdersPage() {
                 onClick={handleClearFilters}
                 className="font-mono text-xs text-muted-foreground"
               >
-                <X className="h-4 w-4 mr-1" />
+                <X className="size-4 mr-1" />
                 Clear
               </Button>
             )}

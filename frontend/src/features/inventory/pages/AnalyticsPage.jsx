@@ -30,6 +30,15 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import PieChart from 'lucide-react/dist/esm/icons/pie-chart.js';
 
+const USD_COMPACT_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
 const PERIOD_OPTIONS = [
   { value: '7d', label: 'Last 7 days' },
   { value: '30d', label: 'Last 30 days' },
@@ -41,19 +50,14 @@ const PERIOD_OPTIONS = [
  * Format currency
  */
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(amount || 0);
+  return USD_COMPACT_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 /**
  * Format number
  */
 function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value || 0);
+  return US_NUMBER_FORMATTER.format(value || 0);
 }
 
 /**
@@ -92,9 +96,9 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, trendValue, varia
             {trend !== undefined && trendValue && (
               <div className="flex items-center gap-1 mt-2 text-xs">
                 {trend === 'up' ? (
-                  <TrendingUp className="h-3 w-3 text-emerald-500" />
+                  <TrendingUp className="size-3 text-emerald-500" />
                 ) : (
-                  <TrendingDown className="h-3 w-3 text-rose-500" />
+                  <TrendingDown className="size-3 text-rose-500" />
                 )}
                 <span className={trend === 'up' ? 'text-emerald-500' : 'text-rose-500'}>
                   {trendValue}
@@ -104,7 +108,7 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, trendValue, varia
           </div>
           {Icon && (
             <div className={cn('p-2 rounded-lg bg-muted/50', iconStyles[variant])}>
-              <Icon className="h-5 w-5" />
+              <Icon className="size-5" />
             </div>
           )}
         </div>
@@ -167,7 +171,7 @@ function ConsumptionTab({ period }) {
       <Card className="bg-card/30 border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="h-5 w-5 text-sky-500" />
+            <TrendingUp className="size-5 text-sky-500" />
             Top Consumed Items
           </CardTitle>
         </CardHeader>
@@ -177,7 +181,7 @@ function ConsumptionTab({ period }) {
               {topItems.map((item, index) => (
                 <div
                   key={item.id || index}
-                  className="flex items-center justify-between py-2 px-2 -mx-2 rounded-lg hover:bg-muted/50 transition-colors"
+                  className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-sm text-muted-foreground w-6">
@@ -203,7 +207,7 @@ function ConsumptionTab({ period }) {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-8 text-center">
-              <Package className="h-10 w-10 text-muted-foreground/50 mb-3" />
+              <Package className="size-10 text-muted-foreground/50 mb-3" />
               <p className="text-sm text-muted-foreground">No consumption data available</p>
             </div>
           )}
@@ -277,14 +281,14 @@ function ABCAnalysisTab() {
       <Card className="bg-card/30 border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <PieChart className="h-5 w-5 text-violet-500" />
+            <PieChart className="size-5 text-violet-500" />
             ABC Distribution
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-12 text-center">
             <div>
-              <PieChart className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+              <PieChart className="size-16 text-muted-foreground/30 mx-auto mb-4" />
               <p className="text-sm text-muted-foreground">
                 Chart visualization would be rendered here
               </p>
@@ -347,7 +351,7 @@ function SupplierTab({ period }) {
       <Card className="bg-card/30 border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Building2 className="h-5 w-5 text-amber-500" />
+            <Building2 className="size-5 text-amber-500" />
             Supplier Performance
           </CardTitle>
         </CardHeader>
@@ -397,7 +401,7 @@ function SupplierTab({ period }) {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-8 text-center">
-              <Building2 className="h-10 w-10 text-muted-foreground/50 mb-3" />
+              <Building2 className="size-10 text-muted-foreground/50 mb-3" />
               <p className="text-sm text-muted-foreground">No supplier data available</p>
             </div>
           )}
@@ -464,7 +468,7 @@ function ValuationTab() {
         <Card className="bg-card/30 border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <PieChart className="h-5 w-5 text-sky-500" />
+              <PieChart className="size-5 text-sky-500" />
               Value by Category
             </CardTitle>
           </CardHeader>
@@ -495,7 +499,7 @@ function ValuationTab() {
         <Card className="bg-card/30 border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-5 w-5 text-emerald-500" />
+              <BarChart3 className="size-5 text-emerald-500" />
               Value by Location
             </CardTitle>
           </CardHeader>
@@ -577,19 +581,19 @@ export default function AnalyticsPage() {
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="consumption" className="font-mono text-xs">
-            <TrendingUp className="h-4 w-4 mr-2" />
+            <TrendingUp className="size-4 mr-2" />
             Consumption
           </TabsTrigger>
           <TabsTrigger value="abc" className="font-mono text-xs">
-            <PieChart className="h-4 w-4 mr-2" />
+            <PieChart className="size-4 mr-2" />
             ABC Analysis
           </TabsTrigger>
           <TabsTrigger value="suppliers" className="font-mono text-xs">
-            <Building2 className="h-4 w-4 mr-2" />
+            <Building2 className="size-4 mr-2" />
             Suppliers
           </TabsTrigger>
           <TabsTrigger value="valuation" className="font-mono text-xs">
-            <DollarSign className="h-4 w-4 mr-2" />
+            <DollarSign className="size-4 mr-2" />
             Valuation
           </TabsTrigger>
         </TabsList>

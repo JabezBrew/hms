@@ -13,7 +13,7 @@ const FacilityRequiredPanel = ({ className }) => {
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-amber-700">
-                <AlertTriangle className="h-4 w-4" />
+                <AlertTriangle className="size-4" />
                 <span className="text-xs font-mono uppercase tracking-widest">
                   Facility Context Required
                 </span>
@@ -29,7 +29,7 @@ const FacilityRequiredPanel = ({ className }) => {
             <FacilitySwitcher />
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Building2 className="h-3.5 w-3.5" />
+            <Building2 className="size-3.5" />
             <span>
               First-time admin? Create the facility code in Admin or seed it,
               then select it here.

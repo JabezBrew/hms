@@ -234,8 +234,8 @@ export function ClinicsPanel({ unitId, unitType }) {
   if (!canHaveClinics) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-4">
-          <Stethoscope className="h-7 w-7 text-muted-foreground/50" />
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-muted/50 mb-4">
+          <Stethoscope className="size-7 text-muted-foreground/50" />
         </div>
         <p className="text-sm text-muted-foreground">
           Clinics can only be added to departments or divisions
@@ -265,19 +265,19 @@ export function ClinicsPanel({ unitId, unitType }) {
           </p>
         </div>
         <Button onClick={() => openForm()} size="sm" className="font-mono text-xs">
-          <Plus className="h-4 w-4 mr-1" />
+          <Plus className="size-4 mr-1" />
           Add Clinic
         </Button>
         <Button onClick={() => openWizard()} size="sm" variant="outline" className="font-mono text-xs">
-          <CalendarClock className="h-4 w-4 mr-1" />
+          <CalendarClock className="size-4 mr-1" />
           Add + Roster
         </Button>
       </div>
 
       {clinics.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 border border-dashed rounded-lg">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/50 mb-3">
-            <Stethoscope className="h-6 w-6 text-muted-foreground/50" />
+          <div className="flex size-12 items-center justify-center rounded-xl bg-muted/50 mb-3">
+            <Stethoscope className="size-6 text-muted-foreground/50" />
           </div>
           <p className="text-sm text-muted-foreground">No clinics configured</p>
           <p className="text-xs text-muted-foreground mt-1">
@@ -292,8 +292,8 @@ export function ClinicsPanel({ unitId, unitType }) {
 	              className="flex items-center justify-between p-4 rounded-lg border bg-card hover:shadow-sm transition-shadow"
 	            >
 	              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                  <Stethoscope className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <div className="flex size-10 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <Stethoscope className="size-5 text-amber-600 dark:text-amber-400" />
                 </div>
 	                <div>
 	                  <div className="flex items-center gap-2">
@@ -307,7 +307,7 @@ export function ClinicsPanel({ unitId, unitType }) {
 	                  </div>
 	                  <div className="flex items-center gap-3 mt-1">
 	                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-	                      <Clock className="h-3 w-3" />
+	                      <Clock className="size-3" />
                       {clinic.operates_24_hours
                         ? '24 hours'
                         : clinic.operating_hours_start && clinic.operating_hours_end
@@ -343,26 +343,26 @@ export function ClinicsPanel({ unitId, unitType }) {
 	                <Button
 	                  variant="ghost"
 	                  size="icon"
-	                  className="h-8 w-8"
+	                  className="size-8"
 	                  onClick={() => openLink(clinic)}
 	                  title="Link roster template"
 	                >
-	                  <Link2 className="h-4 w-4" />
+	                  <Link2 className="size-4" />
 	                </Button>
 	                <Button
 	                  variant="ghost"
 	                  size="icon"
-	                  className="h-8 w-8"
+	                  className="size-8"
 	                  onClick={() => openWizard(clinic)}
                   title="Roster clinic"
                 >
-                  <CalendarClock className="h-4 w-4" />
+                  <CalendarClock className="size-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openForm(clinic)}>
-                  <Pencil className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8" onClick={() => openForm(clinic)}>
+                  <Pencil className="size-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteConfirm(clinic)}>
-                  <Trash2 className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="size-8" onClick={() => setDeleteConfirm(clinic)}>
+                  <Trash2 className="size-4" />
                 </Button>
               </div>
             </div>

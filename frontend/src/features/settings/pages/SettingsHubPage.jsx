@@ -126,7 +126,7 @@ const SettingsHubPage = () => {
           title={(
             <span className="flex items-center gap-3 sm:gap-4">
               <span className="p-2.5 sm:p-3 rounded-xl bg-primary/10 border border-primary/20">
-                <Settings className="h-6 w-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
+                <Settings className="size-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
               </span>
               Settings
             </span>
@@ -194,15 +194,9 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
 
   const config = colorConfig[color];
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onClick?.();
-    }
-  };
-
   return (
-    <article
+    <button
+      type="button"
       className={cn(
         'group relative rounded-2xl p-5 sm:p-6',
         'bg-card border border-border',
@@ -217,19 +211,16 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
       )}
       style={{ animationDelay: `${index * 75}ms` }}
       onClick={onClick}
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
-      role="button"
       aria-label={`${title}: ${description}`}
     >
       {/* Icon */}
       <div className={cn(
-        'w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center mb-4',
+        'size-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center mb-4',
         config.iconBg,
         config.iconBorder,
         'border'
       )}>
-        <Icon className={cn('h-6 w-6 sm:h-7 sm:w-7', config.iconColor)} aria-hidden="true" />
+        <Icon className={cn('size-6 sm:h-7 sm:w-7', config.iconColor)} aria-hidden="true" />
       </div>
 
       {/* Content */}
@@ -239,7 +230,7 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
             {title}
           </h3>
           <ChevronRight
-            className="h-5 w-5 text-muted-foreground/50 group-hover:text-foreground group-hover:translate-x-1 transition-all"
+            className="size-5 text-muted-foreground/50 group-hover:text-foreground group-hover:translate-x-1 transition-all"
             aria-hidden="true"
           />
         </div>
@@ -254,7 +245,7 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
           Coming Soon
         </span>
       )}
-    </article>
+    </button>
   );
 };
 

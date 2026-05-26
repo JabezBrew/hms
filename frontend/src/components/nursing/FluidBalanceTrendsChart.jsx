@@ -10,7 +10,9 @@ import {
   ReferenceLine,
 } from 'recharts';
 
-export default function FluidBalanceTrendsChart({ data = [] }) {
+const DEFAULT_EMPTY_ARRAY = [];
+
+export default function FluidBalanceTrendsChart({ data = DEFAULT_EMPTY_ARRAY }) {
   return (
     <div className="space-y-8">
       <div>

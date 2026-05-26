@@ -131,7 +131,7 @@ function ResultRows({ results }) {
         const isCritical = result?.is_critical || status === 'critical';
         return (
           <div key={result?.id ?? index} className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-1.5">
-            <span className={cn('h-2 w-2 rounded-full shrink-0', isCritical ? 'bg-rose-500' : 'bg-sky-400')} aria-hidden="true" />
+            <span className={cn('size-2 rounded-full shrink-0', isCritical ? 'bg-rose-500' : 'bg-sky-400')} aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
               {result?.name ?? result?.test_name ?? result?.panel ?? 'Result'}
             </span>
@@ -209,7 +209,7 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
                   className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-amber-700"
                 >
                   Patient Chronicle
-                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  <ExternalLink className="size-3" aria-hidden="true" />
                 </Link>
               </div>
               <TaskTable

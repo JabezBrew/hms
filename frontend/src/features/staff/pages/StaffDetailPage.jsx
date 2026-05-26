@@ -61,11 +61,11 @@ const StaffDetailPage = () => {
               <div>
                 <div className="flex flex-col">
                   <Button variant="outline" size="sm" className="mb-2 w-fit">
-                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    <ArrowLeft className="mr-2 size-4" />
                     Back
                   </Button>
                   <div className="flex items-center pl-0">
-                    <Skeleton className="h-12 w-12 rounded-full mr-4" />
+                    <Skeleton className="size-12 rounded-full mr-4" />
                     <div>
                       <Skeleton className="h-8 w-48 mb-2" />
                       <Skeleton className="h-4 w-32" />
@@ -73,7 +73,7 @@ const StaffDetailPage = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex space-x-2">
+              <div className="flex gap-x-2">
                 <Skeleton className="h-9 w-20" />
                 <Skeleton className="h-9 w-24" />
               </div>

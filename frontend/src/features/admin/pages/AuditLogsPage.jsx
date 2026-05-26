@@ -161,7 +161,7 @@ const AuditLogsPage = () => {
         <PageHeader
           title={(
             <span className="flex items-center gap-2">
-              <Shield className="h-6 w-6 text-primary" />
+              <Shield className="size-6 text-primary" />
               Audit Logs
             </span>
           )}
@@ -173,7 +173,7 @@ const AuditLogsPage = () => {
               size="sm"
               className="font-mono text-xs w-full sm:w-auto"
             >
-              <Download className="h-4 w-4 mr-2" />
+              <Download className="size-4 mr-2" />
               Export CSV
             </Button>
           )}
@@ -215,7 +215,7 @@ const AuditLogsPage = () => {
           <div className="flex flex-col gap-3">
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
               <Label htmlFor="audit-search" className="sr-only">Search logs by description, user, or resource</Label>
               <Input
                 id="audit-search"
@@ -231,7 +231,7 @@ const AuditLogsPage = () => {
               {/* Category Filter */}
               <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                 <SelectTrigger className="w-full sm:w-[150px] font-mono text-xs h-9">
-                  <Filter className="h-3.5 w-3.5 mr-2" />
+                  <Filter className="size-3.5 mr-2" />
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -247,7 +247,7 @@ const AuditLogsPage = () => {
               {/* Action Filter */}
               <Select value={selectedAction} onValueChange={setSelectedAction}>
                 <SelectTrigger className="w-full sm:w-[150px] font-mono text-xs h-9">
-                  <Activity className="h-3.5 w-3.5 mr-2" />
+                  <Activity className="size-3.5 mr-2" />
                   <SelectValue placeholder="Action" />
                 </SelectTrigger>
                 <SelectContent>
@@ -276,10 +276,10 @@ const AuditLogsPage = () => {
                 variant="ghost"
                 size="icon"
                 onClick={() => refetch()}
-                className="shrink-0 h-9 w-9"
+                className="shrink-0 size-9"
                 aria-label="Refresh audit logs"
               >
-                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                <RefreshCw className="size-4" aria-hidden="true" />
               </Button>
 
               {/* Clear Filters */}
@@ -290,7 +290,7 @@ const AuditLogsPage = () => {
                   onClick={handleClearFilters}
                   className="font-mono text-xs h-9"
                 >
-                  <X className="h-4 w-4 mr-1" />
+                  <X className="size-4 mr-1" />
                   Clear
                 </Button>
               )}
@@ -335,7 +335,7 @@ const AuditLogsPage = () => {
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="bg-card/50 border border-border rounded-lg p-3">
     <div className="flex items-center gap-2 mb-1">
-      <Icon className={cn("h-4 w-4", color)} aria-hidden="true" />
+      <Icon className={cn("size-4", color)} aria-hidden="true" />
       <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
@@ -357,7 +357,7 @@ const LoadingSkeleton = () => (
         className="bg-card/50 border border-border rounded-2xl p-5 space-y-3"
       >
         <div className="flex items-start gap-3">
-          <Skeleton className="h-9 w-9 rounded-lg" />
+          <Skeleton className="size-9 rounded-lg" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-3 w-1/3" />
@@ -375,8 +375,8 @@ const LoadingSkeleton = () => (
  */
 const EmptyState = ({ hasFilters, onClear }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center">
-    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-      <Shield className="h-8 w-8 text-muted-foreground" />
+    <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+      <Shield className="size-8 text-muted-foreground" />
     </div>
     <h3 className="font-display text-xl text-foreground mb-2">
       {hasFilters ? 'No matching logs' : 'No audit logs yet'}
@@ -388,7 +388,7 @@ const EmptyState = ({ hasFilters, onClear }) => (
     </p>
     {hasFilters && (
       <Button variant="outline" size="sm" onClick={onClear}>
-        <X className="h-4 w-4 mr-2" />
+        <X className="size-4 mr-2" />
         Clear Filters
       </Button>
     )}
@@ -400,8 +400,8 @@ const EmptyState = ({ hasFilters, onClear }) => (
  */
 const ErrorState = ({ onRetry }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center">
-    <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-      <Shield className="h-8 w-8 text-destructive" />
+    <div className="size-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+      <Shield className="size-8 text-destructive" />
     </div>
     <h3 className="font-display text-xl text-foreground mb-2">
       Failed to load audit logs
@@ -410,7 +410,7 @@ const ErrorState = ({ onRetry }) => (
       There was an error loading the audit logs. Please try again.
     </p>
     <Button variant="outline" size="sm" onClick={onRetry}>
-      <RefreshCw className="h-4 w-4 mr-2" />
+      <RefreshCw className="size-4 mr-2" />
       Retry
     </Button>
   </div>

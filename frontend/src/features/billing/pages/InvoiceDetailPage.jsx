@@ -28,6 +28,12 @@ import { toast } from 'sonner';
 
 import RecordPaymentSlideOver from '@/components/billing/RecordPaymentSlideOver';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 export default function InvoiceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -63,7 +69,7 @@ export default function InvoiceDetailPage() {
     return (
       <PageState variant="loading">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10 rounded-lg" />
+          <Skeleton className="size-10 rounded-lg" />
           <Skeleton className="h-8 w-48" />
         </div>
         <Skeleton className="h-48 rounded-2xl" />
@@ -82,11 +88,11 @@ export default function InvoiceDetailPage() {
         action={(
           <div className="flex gap-2 justify-center">
             <Button variant="outline" onClick={() => navigate('/billing/invoices')} className="font-mono text-xs">
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="size-4 mr-2" />
               Back to Invoices
             </Button>
             <Button onClick={() => refetch()} className="font-mono text-xs">
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="size-4 mr-2" />
               Retry
             </Button>
           </div>
@@ -128,10 +134,10 @@ export default function InvoiceDetailPage() {
       <PageHeader
         title={(
           <span className="flex items-center gap-3">
-            <FileText className="h-6 w-6 text-primary" />
+            <FileText className="size-6 text-primary" />
             {invoice.invoice_number}
             <span className={cn("text-xs px-2 py-1 rounded flex items-center gap-1", badge.class)}>
-              <StatusIcon className="h-3 w-3" />
+              <StatusIcon className="size-3" />
               {badge.label}
             </span>
           </span>
@@ -149,7 +155,7 @@ export default function InvoiceDetailPage() {
                 onClick={() => setShowPaymentSlideOver(true)}
                 className="font-mono text-xs"
               >
-                <CreditCard className="h-4 w-4 mr-2" />
+                <CreditCard className="size-4 mr-2" />
                 Record Payment
               </Button>
             )}
@@ -160,7 +166,7 @@ export default function InvoiceDetailPage() {
                 disabled={generateClaimMutation.isPending}
                 className="font-mono text-xs"
               >
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                <FileSpreadsheet className="size-4 mr-2" />
                 Generate Claim
               </Button>
             )}
@@ -172,12 +178,12 @@ export default function InvoiceDetailPage() {
             >
               {printingId === id ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Loading...
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  Loading…
                 </>
               ) : (
                 <>
-                  <Printer className="h-4 w-4 mr-2" />
+                  <Printer className="size-4 mr-2" />
                   Print Invoice
                 </>
               )}
@@ -191,7 +197,7 @@ export default function InvoiceDetailPage() {
           onClick={() => navigate('/billing/invoices')}
           className="font-mono text-xs w-fit -ml-2"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to Invoices
         </Button>
       </PageHeader>
@@ -203,7 +209,7 @@ export default function InvoiceDetailPage() {
             {/* Patient Info */}
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
-                <User className="h-5 w-5 text-muted-foreground" />
+                <User className="size-5 text-muted-foreground" />
                 Patient Information
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -228,13 +234,13 @@ export default function InvoiceDetailPage() {
                 )}
                 {patientPhone && (
                   <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <Phone className="size-4 text-muted-foreground" />
                     <p className="font-mono text-sm text-foreground">{patientPhone}</p>
                   </div>
                 )}
                 {patientEmail && (
                   <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <Mail className="size-4 text-muted-foreground" />
                     <p className="font-mono text-sm text-foreground">{patientEmail}</p>
                   </div>
                 )}
@@ -273,10 +279,10 @@ export default function InvoiceDetailPage() {
                             <p className="font-mono text-xs text-muted-foreground">{item.service_code}</p>
                           )}
                         </td>
-                        <td className="px-4 py-4 text-right font-mono text-sm text-foreground">
+                        <td className="p-4 text-right font-mono text-sm text-foreground">
                           {item.quantity}
                         </td>
-                        <td className="px-4 py-4 text-right font-mono text-sm text-foreground">
+                        <td className="p-4 text-right font-mono text-sm text-foreground">
                           {formatCurrency(item.unit_price)}
                         </td>
                         <td className="px-5 sm:px-6 py-4 text-right font-mono text-sm text-foreground">
@@ -353,7 +359,7 @@ export default function InvoiceDetailPage() {
               <section className="bg-card border border-border rounded-2xl overflow-hidden">
                 <header className="px-5 sm:px-6 py-4 border-b border-border">
                   <h2 className="font-display text-lg text-foreground flex items-center gap-2">
-                    <CreditCard className="h-5 w-5 text-[oklch(0.70_0.17_155)]" />
+                    <CreditCard className="size-5 text-[oklch(0.70_0.17_155)]" />
                     Payment History
                   </h2>
                 </header>
@@ -376,7 +382,7 @@ export default function InvoiceDetailPage() {
                       {payment.receipt_number && (
                         <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <FileText className="size-4 text-muted-foreground" />
                             <span className="font-mono text-xs text-muted-foreground">
                               Receipt: {payment.receipt_number}
                             </span>
@@ -390,12 +396,12 @@ export default function InvoiceDetailPage() {
                           >
                             {printingId === payment.id ? (
                               <>
-                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                Loading...
+                                <Loader2 className="size-3 mr-1 animate-spin" />
+                                Loading…
                               </>
                             ) : (
                               <>
-                                <Printer className="h-3 w-3 mr-1" />
+                                <Printer className="size-3 mr-1" />
                                 Print Receipt
                               </>
                             )}
@@ -442,7 +448,7 @@ export default function InvoiceDetailPage() {
             {facilityName && (
               <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
                 <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
-                  <Building className="h-5 w-5 text-muted-foreground" />
+                  <Building className="size-5 text-muted-foreground" />
                   Facility
                 </h2>
                 <p className="text-foreground">{facilityName}</p>
@@ -456,7 +462,7 @@ export default function InvoiceDetailPage() {
             {invoice.encounter && (
               <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
                 <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-muted-foreground" />
+                  <Calendar className="size-5 text-muted-foreground" />
                   Related Encounter
                 </h2>
                 <Button
@@ -494,11 +500,7 @@ export default function InvoiceDetailPage() {
 
 // Utility functions
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatDate(dateString) {

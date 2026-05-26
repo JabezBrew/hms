@@ -22,8 +22,8 @@ import XCircle from 'lucide-react/dist/esm/icons/x-circle.js';
  */
 export const EmptyState = ({ icon: Icon, title, description, action }) => (
   <div className="text-center py-12 text-muted-foreground">
-    <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50 border border-border">
-      <Icon className="h-5 w-5 text-muted-foreground" />
+    <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-muted/50 border border-border">
+      <Icon className="size-5 text-muted-foreground" />
     </div>
     <p className="font-heading text-sm font-medium text-foreground">{title}</p>
     <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">{description}</p>
@@ -68,7 +68,7 @@ export const RosterHeader = ({ title, subtitle, actions }) => (
  */
 export const CsvStatus = ({ label, count, icon: Icon, tone }) => (
   <div className={cn('flex items-center gap-2 text-xs font-mono uppercase tracking-wide', tone)}>
-    <Icon className="h-4 w-4" />
+    <Icon className="size-4" />
     <span>{label}</span>
     <span className="text-sm font-semibold">{count}</span>
   </div>

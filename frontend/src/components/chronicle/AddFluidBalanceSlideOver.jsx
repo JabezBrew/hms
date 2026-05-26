@@ -343,9 +343,9 @@ const AddFluidBalanceSlideOver = ({
     >
       <div className="flex items-center gap-3">
         {record.entry_type === 'intake' ? (
-          <ArrowDownCircle className="h-4 w-4 text-sky-500 flex-shrink-0" />
+          <ArrowDownCircle className="size-4 text-sky-500 flex-shrink-0" />
         ) : (
-          <ArrowUpCircle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+          <ArrowUpCircle className="size-4 text-amber-500 flex-shrink-0" />
         )}
         <div>
           <div className="font-mono text-sm">
@@ -373,11 +373,11 @@ const AddFluidBalanceSlideOver = ({
           variant="ghost"
           size="icon"
           aria-label="Delete fluid balance entry"
-          className="h-7 w-7 text-muted-foreground hover:text-destructive flex-shrink-0"
+          className="size-7 text-muted-foreground hover:text-destructive flex-shrink-0"
           onClick={() => handleDelete(record.id)}
           disabled={deleteMutation.isPending}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="size-3.5" />
         </Button>
       )}
     </div>
@@ -391,11 +391,11 @@ const AddFluidBalanceSlideOver = ({
       </span>
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5">
-          <ArrowDownCircle className="h-3.5 w-3.5 text-sky-500" />
+          <ArrowDownCircle className="size-3.5 text-sky-500" />
           <span className="font-mono text-sm text-sky-600">{intake}ml</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <ArrowUpCircle className="h-3.5 w-3.5 text-amber-500" />
+          <ArrowUpCircle className="size-3.5 text-amber-500" />
           <span className="font-mono text-sm text-amber-600">{output}ml</span>
         </div>
         <div className={cn(
@@ -423,7 +423,7 @@ const AddFluidBalanceSlideOver = ({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <Droplets className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+            <Droplets className="size-5 text-sky-600 dark:text-sky-400" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">
@@ -441,7 +441,7 @@ const AddFluidBalanceSlideOver = ({
           onClick={handleClose}
           className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
         >
-          <X className="h-4 w-4 mr-1.5" />
+          <X className="size-4 mr-1.5" />
           Close
         </Button>
       </header>
@@ -450,6 +450,7 @@ const AddFluidBalanceSlideOver = ({
       <div className="flex border-b border-border bg-card">
         {allowEntry && (
           <button
+            type="button"
             onClick={() => setActiveTab('entry')}
             className={cn(
               "flex-1 flex items-center justify-center gap-2 px-4 py-3 font-mono text-sm transition-colors",
@@ -459,11 +460,12 @@ const AddFluidBalanceSlideOver = ({
                 : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
             )}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="size-4" />
             Record Entry
           </button>
         )}
         <button
+          type="button"
           onClick={() => setActiveTab('history')}
           className={cn(
             "flex items-center justify-center gap-2 px-4 py-3 font-mono text-sm transition-colors",
@@ -474,7 +476,7 @@ const AddFluidBalanceSlideOver = ({
               : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
           )}
         >
-          <History className="h-4 w-4" />
+          <History className="size-4" />
           History
         </button>
       </div>
@@ -512,7 +514,7 @@ const AddFluidBalanceSlideOver = ({
                         : "border-border hover:border-sky-300 text-muted-foreground"
                     )}
                   >
-                    <ArrowDownCircle className="h-4 w-4" />
+                    <ArrowDownCircle className="size-4" />
                     Intake (IN)
                   </button>
                   <button
@@ -526,7 +528,7 @@ const AddFluidBalanceSlideOver = ({
                         : "border-border hover:border-amber-300 text-muted-foreground"
                     )}
                   >
-                    <ArrowUpCircle className="h-4 w-4" />
+                    <ArrowUpCircle className="size-4" />
                     Output (OUT)
                   </button>
                 </div>
@@ -658,7 +660,7 @@ const AddFluidBalanceSlideOver = ({
                   </h3>
                   {todayLoading ? (
                     <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      <Loader2 className="size-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -694,12 +696,12 @@ const AddFluidBalanceSlideOver = ({
               >
                 {createMutation.isPending ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    Recording...
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                    Recording…
                   </>
                 ) : (
                   <>
-                    <Check className="h-3.5 w-3.5 mr-1.5" />
+                    <Check className="size-3.5 mr-1.5" />
                     Record {formData.type === 'intake' ? 'Intake' : 'Output'}
                   </>
                 )}
@@ -717,10 +719,10 @@ const AddFluidBalanceSlideOver = ({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="size-8"
                   onClick={goToPreviousDay}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className="size-4" />
                 </Button>
 
                 <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
@@ -729,7 +731,7 @@ const AddFluidBalanceSlideOver = ({
                       variant="outline"
                       className="min-w-[180px] justify-start text-left font-mono text-sm"
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      <CalendarIcon className="mr-2 size-4" />
                       {format(historyDate, 'EEE, MMM d, yyyy')}
                     </Button>
                   </PopoverTrigger>
@@ -752,11 +754,11 @@ const AddFluidBalanceSlideOver = ({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="size-8"
                   onClick={goToNextDay}
                   disabled={isHistoryToday}
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="size-4" />
                 </Button>
 
                 {!isHistoryToday && (
@@ -796,11 +798,11 @@ const AddFluidBalanceSlideOver = ({
 
               {historyLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
                 </div>
               ) : historyRecordsList.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <Droplets className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <Droplets className="size-8 mx-auto mb-2 opacity-50" />
                   <p className="font-mono text-sm">No entries recorded for this date</p>
                 </div>
               ) : (

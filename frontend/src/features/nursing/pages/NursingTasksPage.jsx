@@ -295,13 +295,13 @@ export default function NursingTasksPage() {
           actions={(
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => refetch()}>
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <RefreshCw className="mr-2 size-4" />
                 Refresh
               </Button>
               <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
                 <DialogTrigger asChild>
                   <Button>
-                    <Plus className="mr-2 h-4 w-4" />
+                    <Plus className="mr-2 size-4" />
                     New Task
                   </Button>
                 </DialogTrigger>
@@ -419,8 +419,8 @@ export default function NursingTasksPage() {
                   <Button onClick={handleCreateTask} disabled={createMutation.isPending}>
                     {createMutation.isPending ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating...
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Creating…
                       </>
                     ) : (
                       'Create Task'
@@ -443,7 +443,7 @@ export default function NursingTasksPage() {
                   <p className="text-sm text-muted-foreground">Total Tasks</p>
                   <p className="text-2xl font-bold">{stats.total}</p>
                 </div>
-                <ClipboardList className="h-8 w-8 text-muted-foreground" />
+                <ClipboardList className="size-8 text-muted-foreground" />
               </div>
             </CardContent>
           </Card>
@@ -454,7 +454,7 @@ export default function NursingTasksPage() {
                   <p className="text-sm text-muted-foreground">Pending</p>
                   <p className="text-2xl font-bold text-amber-600">{stats.pending}</p>
                 </div>
-                <Clock className="h-8 w-8 text-amber-500" />
+                <Clock className="size-8 text-amber-500" />
               </div>
             </CardContent>
           </Card>
@@ -465,7 +465,7 @@ export default function NursingTasksPage() {
                   <p className="text-sm text-muted-foreground">Overdue</p>
                   <p className="text-2xl font-bold text-red-600">{stats.overdue}</p>
                 </div>
-                <AlertTriangle className="h-8 w-8 text-red-500" />
+                <AlertTriangle className="size-8 text-red-500" />
               </div>
             </CardContent>
           </Card>
@@ -476,7 +476,7 @@ export default function NursingTasksPage() {
                   <p className="text-sm text-muted-foreground">Completed Today</p>
                   <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-green-500" />
+                <CheckCircle className="size-8 text-green-500" />
               </div>
             </CardContent>
           </Card>
@@ -495,7 +495,7 @@ export default function NursingTasksPage() {
               <div className="flex-1 min-w-[200px]">
                 <Label htmlFor="search" className="sr-only">Search</Label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                   <Input
                     id="search"
                     placeholder="Search by patient name, MRN, or description..."
@@ -632,7 +632,7 @@ export default function NursingTasksPage() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm">
-                                <MoreHorizontal className="h-4 w-4" />
+                                <MoreHorizontal className="size-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -721,12 +721,12 @@ export default function NursingTasksPage() {
               >
                 {completeMutation.isPending ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Completing...
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Completing…
                   </>
                 ) : (
                   <>
-                    <CheckCircle className="mr-2 h-4 w-4" />
+                    <CheckCircle className="mr-2 size-4" />
                     Complete Task
                   </>
                 )}

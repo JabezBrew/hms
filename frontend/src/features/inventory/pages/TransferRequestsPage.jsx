@@ -133,7 +133,7 @@ function TransferCard({
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
-            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+            <ArrowRightLeft className="size-4 text-muted-foreground" />
             <span className="font-mono text-sm font-medium text-primary">
               {transfer.transfer_number || transfer.number}
             </span>
@@ -144,31 +144,31 @@ function TransferCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canApprove && onApprove && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onApprove(); }}>
-                  <Check className="h-4 w-4 mr-2" />
+                  <Check className="size-4 mr-2" />
                   Approve
                 </DropdownMenuItem>
               )}
               {canDispatch && onDispatch && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDispatch(); }}>
-                  <Truck className="h-4 w-4 mr-2" />
+                  <Truck className="size-4 mr-2" />
                   Dispatch
                 </DropdownMenuItem>
               )}
               {canReceive && onReceive && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReceive(); }}>
-                  <Package className="h-4 w-4 mr-2" />
+                  <Package className="size-4 mr-2" />
                   Receive
                 </DropdownMenuItem>
               )}
@@ -193,12 +193,12 @@ function TransferCard({
         {/* From/To locations */}
         <div className="flex items-center gap-2 mb-3 text-sm">
           <div className="flex items-center gap-1 text-muted-foreground">
-            <MapPin className="h-3 w-3" />
+            <MapPin className="size-3" />
             <span className="truncate max-w-[100px]">{transfer.from_location_name || 'Source'}</span>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <ArrowRight className="size-4 text-muted-foreground flex-shrink-0" />
           <div className="flex items-center gap-1">
-            <MapPin className="h-3 w-3 text-primary" />
+            <MapPin className="size-3 text-primary" />
             <span className="truncate max-w-[100px]">{transfer.to_location_name || 'Destination'}</span>
           </div>
         </div>
@@ -206,13 +206,13 @@ function TransferCard({
         <div className="space-y-1 mb-3">
           {transfer.requested_by_name && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <User className="h-3 w-3" />
+              <User className="size-3" />
               <span>{transfer.requested_by_name}</span>
             </div>
           )}
           {transfer.created_at && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="size-3" />
               <span className="font-mono">
                 {format(parseISO(transfer.created_at), 'MMM d, yyyy')}
               </span>
@@ -472,11 +472,11 @@ export default function TransferRequestsPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             <Button onClick={handleCreate}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New Transfer
             </Button>
           </div>
@@ -503,7 +503,7 @@ export default function TransferRequestsPage() {
 
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by transfer number..."
             value={search}
@@ -514,7 +514,7 @@ export default function TransferRequestsPage() {
 
         <Select value={fromLocation || 'all'} onValueChange={handleFromLocationChange}>
           <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+            <Filter className="size-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="From" />
           </SelectTrigger>
           <SelectContent>
@@ -539,7 +539,7 @@ export default function TransferRequestsPage() {
 
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-            <X className="h-4 w-4 mr-1" />
+            <X className="size-4 mr-1" />
             Clear
           </Button>
         )}
@@ -560,14 +560,14 @@ export default function TransferRequestsPage() {
         </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
-          <ArrowRightLeft className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+          <ArrowRightLeft className="size-10 text-muted-foreground/50 mx-auto mb-3" />
           <h3 className="font-display text-xl mb-2">No Transfers Found</h3>
           <p className="text-muted-foreground text-sm mb-4">
             {hasActiveFilters ? 'Try adjusting your filters' : 'Create a new transfer request'}
           </p>
           {!hasActiveFilters && (
             <Button onClick={handleCreate}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               New Transfer
             </Button>
           )}
@@ -581,12 +581,12 @@ export default function TransferRequestsPage() {
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="size-4 mr-1" />
               Previous
             </Button>
             <Button variant="outline" size="sm" onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages}>
               Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+              <ChevronRight className="size-4 ml-1" />
             </Button>
           </div>
         </div>

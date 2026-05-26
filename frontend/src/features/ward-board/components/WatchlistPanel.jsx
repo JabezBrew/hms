@@ -26,7 +26,7 @@ function SectionHeader({ icon: Icon, label, count, accent }) {
   return (
     <div className="flex items-center justify-between gap-2 pb-2">
       <div className="flex items-center gap-1.5">
-        <Icon className={cn('h-3.5 w-3.5', accents[accent])} aria-hidden="true" />
+        <Icon className={cn('size-3.5', accents[accent])} aria-hidden="true" />
         <h3 className={cn('font-mono text-[11px] font-semibold uppercase tracking-wide', accents[accent])}>
           {label}
           {count != null ? ` (${count})` : ''}
@@ -53,7 +53,7 @@ export function WatchlistPanel({ patients, boardData, className }) {
     >
       <div className="flex h-12 items-center justify-between gap-2 border-b border-border px-4">
         <h2 className="font-heading text-sm font-semibold text-foreground">Watchlist</h2>
-        <Settings2 className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+        <Settings2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
@@ -101,7 +101,7 @@ export function WatchlistPanel({ patients, boardData, className }) {
           ) : (
             <div className="space-y-1">
               {abnormal.slice(0, 5).map((result, index) => (
-                <div key={result?.id ?? index} className="flex items-center gap-2 px-1 py-1">
+                <div key={result?.id ?? index} className="flex items-center gap-2 p-1">
                   <span className="shrink-0 w-9 font-mono text-[10px] font-medium text-muted-foreground">
                     {result?._bed ?? '—'}
                   </span>
@@ -123,7 +123,7 @@ export function WatchlistPanel({ patients, boardData, className }) {
           ) : (
             <div className="space-y-1">
               {overdue.slice(0, 7).map((task, index) => (
-                <div key={task?.id ?? index} className="flex items-center gap-2 px-1 py-1">
+                <div key={task?.id ?? index} className="flex items-center gap-2 p-1">
                   <span className="shrink-0 w-9 font-mono text-[10px] font-medium text-muted-foreground">
                     {task?._bed ?? '—'}
                   </span>

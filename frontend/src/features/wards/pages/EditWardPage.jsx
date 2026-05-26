@@ -192,7 +192,7 @@ export default function EditWardPage() {
       <main className="p-6">
         {error && (
           <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="size-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
@@ -281,19 +281,20 @@ export default function EditWardPage() {
                 />
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-x-2">
               <input
                 id="is_active"
                 name="is_active"
                 type="checkbox"
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                aria-label="Ward is active"
+                className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                 checked={formData.is_active}
                 onChange={handleChange}
               />
               <Label htmlFor="is_active">Active</Label>
             </div>
           </CardContent>
-          <CardFooter className="flex justify-end space-x-2">
+          <CardFooter className="flex justify-end gap-x-2">
             <Button
               type="button"
               variant="outline"

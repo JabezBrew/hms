@@ -19,7 +19,7 @@ import Copy from 'lucide-react/dist/esm/icons/copy.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -272,6 +272,13 @@ const TimelineEntry = ({
   const noteExpanded = typeof isNoteExpanded === 'boolean'
     ? isNoteExpanded
     : isFallbackNoteExpanded;
+  const copyNoteEntry = useMemo(() => ({
+    id: entry.id,
+    template: entry.template,
+    template_id: entry.template_id,
+    template_title: entry.template_title || entry.title || config.label,
+    data: entry.data,
+  }), [config.label, entry.data, entry.id, entry.template, entry.template_id, entry.template_title, entry.title]);
 
   // ============================================
   // Check if entry is a copyable clinical note
@@ -412,13 +419,13 @@ const TimelineEntry = ({
               {formatTime(entryTimestamp)}
             </time>
             <span className={getBadgeClass(config.color)}>
-              <Icon className="h-3 w-3 mr-1 inline" />
+              <Icon className="size-3 mr-1 inline" />
               {config.label}
             </span>
             {/* Edited indicator with last edited time */}
             {entry.has_edits && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                <Pencil className="h-2.5 w-2.5" />
+                <Pencil className="size-2.5" />
                 Edited
                 {entry.updated_at && (
                   <span className="text-amber-500/70 ml-1">
@@ -451,9 +458,9 @@ const TimelineEntry = ({
                 aria-expanded={noteExpanded}
               >
                 {noteExpanded ? (
-                  <ChevronUp className="h-3 w-3 mr-1" />
+                  <ChevronUp className="size-3 mr-1" />
                 ) : (
-                  <ChevronDown className="h-3 w-3 mr-1" />
+                  <ChevronDown className="size-3 mr-1" />
                 )}
                 {noteExpanded ? 'Collapse note' : 'Open note'}
               </Button>
@@ -465,7 +472,7 @@ const TimelineEntry = ({
                 className="font-mono text-xs text-primary p-0 h-auto hover:bg-transparent"
                 onClick={() => setIsModalOpen(true)}
               >
-                <Expand className="h-3 w-3 mr-1" />
+                <Expand className="size-3 mr-1" />
                 {canInlineExpand ? 'Focus view' : 'View details'}
               </Button>
             )}
@@ -476,7 +483,7 @@ const TimelineEntry = ({
                 className="font-mono text-xs text-muted-foreground p-0 h-auto hover:bg-transparent hover:text-primary"
                 onClick={handleEditClick}
               >
-                <Pencil className="h-3 w-3 mr-1" />
+                <Pencil className="size-3 mr-1" />
                 Edit
               </Button>
             )}
@@ -487,7 +494,7 @@ const TimelineEntry = ({
                 className="font-mono text-xs text-muted-foreground p-0 h-auto hover:bg-transparent hover:text-primary"
                 onClick={() => setIsCopyModalOpen(true)}
               >
-                <Copy className="h-3 w-3 mr-1" />
+                <Copy className="size-3 mr-1" />
                 Copy note
               </Button>
             )}
@@ -515,13 +522,7 @@ const TimelineEntry = ({
           <CopyNoteModal
             open={isCopyModalOpen}
             onOpenChange={setIsCopyModalOpen}
-            noteEntry={{
-              id: entry.id,
-              template: entry.template,  // Full template object from timeline API
-              template_id: entry.template_id,
-              template_title: entry.template_title || entry.title || config.label,
-              data: entry.data,
-            }}
+	            noteEntry={copyNoteEntry}
             onCopyConfirm={onCopyNote}
           />
         </Suspense>
@@ -697,7 +698,7 @@ const LabResultContent = ({ result }) => {
             ))}
           {results.filter(r => r.is_abnormal || r.is_critical).length > 3 && (
             <p className="text-xs text-muted-foreground font-mono pl-2">
-              +{results.filter(r => r.is_abnormal || r.is_critical).length - 3} more abnormal...
+              +{results.filter(r => r.is_abnormal || r.is_critical).length - 3} more abnormal…
             </p>
           )}
         </div>
@@ -781,12 +782,12 @@ const LabResultContent = ({ result }) => {
         >
           {isExpanded ? (
             <>
-              <ChevronUp className="h-3 w-3" />
+              <ChevronUp className="size-3" />
               Hide details
             </>
           ) : (
             <>
-              <ChevronDown className="h-3 w-3" />
+              <ChevronDown className="size-3" />
               View all {results.length} results
             </>
           )}
@@ -802,12 +803,16 @@ const LabResultContent = ({ result }) => {
 const MedicationContent = ({ medication, entry }) => {
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState(null);
+  const prescriptionId = medication?.id || entry?.data?.id || entry?.id;
+  const prescriptionForAction = useMemo(
+    () => (medication ? { ...medication, id: prescriptionId } : null),
+    [medication, prescriptionId]
+  );
 
   if (!medication) return null;
 
   // Get status from medication data or entry
   const status = medication.status || entry?.data?.status || 'active';
-  const prescriptionId = medication.id || entry?.data?.id || entry?.id;
 
   // Status badge configuration
   const getStatusBadge = (status) => {
@@ -873,22 +878,22 @@ const MedicationContent = ({ medication, entry }) => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 hover:bg-muted"
+                  className="size-6 p-0 hover:bg-muted"
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="size-4" />
                   <span className="sr-only">Prescription actions</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 {canEdit && (
                   <DropdownMenuItem onClick={() => handleAction('edit')}>
-                    <Edit className="h-4 w-4 mr-2" />
+                    <Edit className="size-4 mr-2" />
                     Edit Prescription
                   </DropdownMenuItem>
                 )}
                 {canRenew && (
                   <DropdownMenuItem onClick={() => handleAction('renew')}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
+                    <RefreshCw className="size-4 mr-2" />
                     Renew
                   </DropdownMenuItem>
                 )}
@@ -897,13 +902,13 @@ const MedicationContent = ({ medication, entry }) => {
                 )}
                 {canHold && (
                   <DropdownMenuItem onClick={() => handleAction('hold')}>
-                    <PauseCircle className="h-4 w-4 mr-2" />
+                    <PauseCircle className="size-4 mr-2" />
                     Put on Hold
                   </DropdownMenuItem>
                 )}
                 {canResume && (
                   <DropdownMenuItem onClick={() => handleAction('resume')}>
-                    <PlayCircle className="h-4 w-4 mr-2" />
+                    <PlayCircle className="size-4 mr-2" />
                     Resume
                   </DropdownMenuItem>
                 )}
@@ -914,7 +919,7 @@ const MedicationContent = ({ medication, entry }) => {
                       onClick={() => handleAction('discontinue')}
                       className="text-destructive focus:text-destructive"
                     >
-                      <XCircle className="h-4 w-4 mr-2" />
+                      <XCircle className="size-4 mr-2" />
                       Discontinue
                     </DropdownMenuItem>
                   </>
@@ -960,7 +965,7 @@ const MedicationContent = ({ medication, entry }) => {
           <PrescriptionActionsDialog
             open={actionDialogOpen}
             onOpenChange={setActionDialogOpen}
-            prescription={{ ...medication, id: prescriptionId }}
+	            prescription={prescriptionForAction}
             action={selectedAction}
             onSuccess={() => {
               // Dialog handles toast, just close
@@ -1019,7 +1024,7 @@ const ReferralContent = ({ referral }) => {
         <span className="text-muted-foreground">
           {referral.referring_department}
         </span>
-        <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+        <ArrowRight className="size-4 text-muted-foreground/50" />
         <span className="font-medium text-foreground/90">
           {referral.referred_to_specialty || referral.referred_to_department}
         </span>

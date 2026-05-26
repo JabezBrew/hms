@@ -30,6 +30,12 @@ import {
 import { toast } from 'sonner';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Cash' },
   { value: 'mobile_money', label: 'Mobile Money' },
@@ -176,11 +182,7 @@ export default function RecordPaymentSlideOver({
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-GH', {
-      style: 'currency',
-      currency: 'GHS',
-      minimumFractionDigits: 2,
-    }).format(amount || 0);
+    return GHS_CURRENCY_FORMATTER.format(amount || 0);
   };
 
   return (
@@ -196,7 +198,7 @@ export default function RecordPaymentSlideOver({
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-[oklch(0.70_0.17_155_/_0.1)]">
-            <CreditCard className="h-5 w-5 text-[oklch(0.70_0.17_155)]" />
+            <CreditCard className="size-5 text-[oklch(0.70_0.17_155)]" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">Record Payment</h2>
@@ -211,12 +213,12 @@ export default function RecordPaymentSlideOver({
           onClick={onClose}
           className="font-mono text-xs"
         >
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </Button>
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto p-6">
         {cashControlEnabled && !currentSession && (
           <div className="mb-6 rounded-xl border border-border bg-muted/20 p-4">
             <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mb-2">
@@ -266,7 +268,7 @@ export default function RecordPaymentSlideOver({
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
-                  <Smartphone className="h-5 w-5 text-[oklch(0.70_0.15_230)]" />
+                  <Smartphone className="size-5 text-[oklch(0.70_0.15_230)]" />
                 </div>
                 <div>
                   <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
@@ -287,8 +289,8 @@ export default function RecordPaymentSlideOver({
               >
                 {paymentIntentPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Sending...
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Sending…
                   </>
                 ) : (
                   'Send Prompt'
@@ -333,7 +335,7 @@ export default function RecordPaymentSlideOver({
                           className="font-mono text-xs"
                           onClick={() => window.open(intent.checkout_url, '_blank', 'noopener,noreferrer')}
                         >
-                          <ExternalLink className="h-4 w-4 mr-2" />
+                          <ExternalLink className="size-4 mr-2" />
                           Open Checkout
                         </Button>
                         <Button
@@ -366,7 +368,7 @@ export default function RecordPaymentSlideOver({
           <div className="mb-6 rounded-xl border border-border bg-muted/30 p-4">
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
-                <Smartphone className="h-5 w-5 text-[oklch(0.70_0.15_230)]" />
+                <Smartphone className="size-5 text-[oklch(0.70_0.15_230)]" />
               </div>
               <div>
                 <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
@@ -383,7 +385,7 @@ export default function RecordPaymentSlideOver({
         {/* Invoice Summary */}
         <div className="bg-muted/30 rounded-xl p-4 mb-6">
           <div className="flex items-center gap-2 mb-3">
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="size-4 text-muted-foreground" />
             <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
               Invoice Summary
             </span>
@@ -532,7 +534,7 @@ export default function RecordPaymentSlideOver({
                 Automatically create a payment receipt
               </p>
             </div>
-            <Receipt className="h-5 w-5 text-muted-foreground" />
+            <Receipt className="size-5 text-muted-foreground" />
           </div>
         </form>
       </div>
@@ -554,17 +556,17 @@ export default function RecordPaymentSlideOver({
         >
           {recordPaymentMutation.isPending ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Recording...
+              <Loader2 className="size-4 mr-2 animate-spin" />
+              Recording…
             </>
           ) : hasPendingIntent ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
               Awaiting Confirmation
             </>
           ) : (
             <>
-              <CreditCard className="h-4 w-4 mr-2" />
+              <CreditCard className="size-4 mr-2" />
               Record Payment (Manual)
             </>
           )}

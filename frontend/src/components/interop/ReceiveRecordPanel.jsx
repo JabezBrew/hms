@@ -115,7 +115,7 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-sky-100 text-sky-700">
-            <Download className="h-5 w-5" />
+            <Download className="size-5" />
           </div>
           <div>
             <h2 className="font-display text-xl text-foreground">Receive Shared Record</h2>
@@ -125,7 +125,7 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </Button>
       </header>
 
@@ -145,7 +145,7 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
                 Source Facility Code
               </Label>
               <div className="relative">
-                <Building2 className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input
                   value={sourceFacilityCode}
                   onChange={(event) => setSourceFacilityCode(event.target.value.toUpperCase())}
@@ -165,7 +165,7 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
                 Export Job ID
               </Label>
               <div className="relative">
-                <Hash className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                <Hash className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input
                   value={exportId}
                   onChange={(event) => setExportId(event.target.value)}
@@ -180,7 +180,7 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
                 Consent Token
               </Label>
               <div className="relative">
-                <KeyRound className="h-4 w-4 text-muted-foreground absolute left-3 top-3" />
+                <KeyRound className="size-4 text-muted-foreground absolute left-3 top-3" />
                 <Textarea
                   value={consentToken}
                   onChange={(event) => setConsentToken(event.target.value)}

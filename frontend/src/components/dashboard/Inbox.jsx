@@ -12,57 +12,57 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { SlideOver } from "@/components/ui/SlideOver"
 
+function getTaskIcon(type) {
+    switch (type) {
+        case 'Refill': return <Pill className="size-4 text-blue-500" />
+        case 'LabReview': return <FlaskConical className="size-4 text-purple-500" />
+        case 'SignNote': return <FileText className="size-4 text-orange-500" />
+        default: return <FileText className="size-4" />
+    }
+}
+
+function getPriorityColor(priority) {
+    return priority === 'Urgent' ? 'text-red-600 bg-red-50 border-red-200' : 'text-gray-600 bg-gray-50 border-gray-200'
+}
+
+function TaskList({ tasks, filter, onSelectTask }) {
+    const filteredTasks = filter === 'All' ? tasks : tasks.filter(t => t.type === filter)
+
+    if (filteredTasks.length === 0) {
+        return <div className="p-8 text-center text-muted-foreground">No tasks found.</div>
+    }
+
+    return (
+        <div className="space-y-2">
+            {filteredTasks.map(task => (
+                <div
+                    key={task.id}
+                    className="group flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
+                    onClick={() => onSelectTask(task)}
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-full bg-background border shadow-sm">
+                            {getTaskIcon(task.type)}
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{task.patientName}</span>
+                                <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                                    {task.priority}
+                                </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{task.details}</p>
+                        </div>
+                    </div>
+                    <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+            ))}
+        </div>
+    )
+}
+
 export function Inbox({ tasks }) {
     const [selectedTask, setSelectedTask] = useState(null)
-
-    const getTaskIcon = (type) => {
-        switch (type) {
-            case 'Refill': return <Pill className="h-4 w-4 text-blue-500" />
-            case 'LabReview': return <FlaskConical className="h-4 w-4 text-purple-500" />
-            case 'SignNote': return <FileText className="h-4 w-4 text-orange-500" />
-            default: return <FileText className="h-4 w-4" />
-        }
-    }
-
-    const getPriorityColor = (priority) => {
-        return priority === 'Urgent' ? 'text-red-600 bg-red-50 border-red-200' : 'text-gray-600 bg-gray-50 border-gray-200'
-    }
-
-    const TaskList = ({ filter }) => {
-        const filteredTasks = filter === 'All' ? tasks : tasks.filter(t => t.type === filter)
-
-        if (filteredTasks.length === 0) {
-            return <div className="p-8 text-center text-muted-foreground">No tasks found.</div>
-        }
-
-        return (
-            <div className="space-y-2">
-                {filteredTasks.map(task => (
-                    <div
-                        key={task.id}
-                        className="group flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
-                        onClick={() => setSelectedTask(task)}
-                    >
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-full bg-background border shadow-sm">
-                                {getTaskIcon(task.type)}
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium text-sm">{task.patientName}</span>
-                                    <Badge variant="outline" className={getPriorityColor(task.priority)}>
-                                        {task.priority}
-                                    </Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground">{task.details}</p>
-                            </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </div>
-                ))}
-            </div>
-        )
-    }
 
     return (
         <>
@@ -89,10 +89,10 @@ export function Inbox({ tasks }) {
                         </div>
 
                         <ScrollArea className="flex-1 px-6 py-4">
-                            <TabsContent value="All" className="mt-0"><TaskList filter="All" /></TabsContent>
-                            <TabsContent value="Refill" className="mt-0"><TaskList filter="Refill" /></TabsContent>
-                            <TabsContent value="LabReview" className="mt-0"><TaskList filter="LabReview" /></TabsContent>
-                            <TabsContent value="SignNote" className="mt-0"><TaskList filter="SignNote" /></TabsContent>
+                            <TabsContent value="All" className="mt-0"><TaskList tasks={tasks} filter="All" onSelectTask={setSelectedTask} /></TabsContent>
+                            <TabsContent value="Refill" className="mt-0"><TaskList tasks={tasks} filter="Refill" onSelectTask={setSelectedTask} /></TabsContent>
+                            <TabsContent value="LabReview" className="mt-0"><TaskList tasks={tasks} filter="LabReview" onSelectTask={setSelectedTask} /></TabsContent>
+                            <TabsContent value="SignNote" className="mt-0"><TaskList tasks={tasks} filter="SignNote" onSelectTask={setSelectedTask} /></TabsContent>
                         </ScrollArea>
                     </Tabs>
                 </CardContent>
@@ -106,7 +106,7 @@ export function Inbox({ tasks }) {
                 {selectedTask && (
                     <div className="space-y-6">
                         <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-lg border">
-                            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
+                            <div className="size-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
                                 {selectedTask.patientName.split(' ').map(n => n[0]).join('')}
                             </div>
                             <div>
@@ -127,11 +127,11 @@ export function Inbox({ tasks }) {
                             <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">Actions</h4>
                             <div className="grid grid-cols-2 gap-3">
                                 <Button className="w-full" onClick={() => setSelectedTask(null)}>
-                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                    <CheckCircle2 className="mr-2 size-4" />
                                     Approve
                                 </Button>
                                 <Button variant="outline" className="w-full" onClick={() => setSelectedTask(null)}>
-                                    <Clock className="mr-2 h-4 w-4" />
+                                    <Clock className="mr-2 size-4" />
                                     Defer
                                 </Button>
                             </div>

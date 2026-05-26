@@ -151,7 +151,7 @@ const CopyNoteModal = ({
       <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Copy className="h-5 w-5 text-primary" />
+            <Copy className="size-5 text-primary" />
             Copy Note
           </DialogTitle>
           <DialogDescription>
@@ -162,17 +162,17 @@ const CopyNoteModal = ({
         <div className="flex-1 overflow-y-auto py-4">
           {sectionsLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">Loading sections...</span>
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Loading sections…</span>
             </div>
           ) : sectionsError ? (
             <div className="flex items-center justify-center py-8 text-destructive">
-              <AlertCircle className="h-5 w-5 mr-2" />
+              <AlertCircle className="size-5 mr-2" />
               <span>Failed to load sections</span>
             </div>
           ) : sections?.length === 0 ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
-              <FileText className="h-5 w-5 mr-2" />
+              <FileText className="size-5 mr-2" />
               <span>No sections available</span>
             </div>
           ) : (
@@ -234,7 +234,7 @@ const CopyNoteModal = ({
                               {section.name}
                             </Label>
                             {isSelected && (
-                              <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                              <CheckCircle2 className="size-3.5 text-primary" />
                             )}
                           </div>
 
@@ -272,7 +272,7 @@ const CopyNoteModal = ({
             onClick={handleCopy}
             disabled={sectionsLoading || selectedSections.size === 0}
           >
-            <Copy className="h-4 w-4 mr-2" />
+            <Copy className="size-4 mr-2" />
             Copy & Edit {selectedSections.size > 0 ? `(${selectedSections.size})` : ''}
           </Button>
         </DialogFooter>

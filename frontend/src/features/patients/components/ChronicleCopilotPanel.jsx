@@ -153,7 +153,7 @@ export default function ChronicleCopilotPanel({
     <>
       <div className="flex items-center justify-between gap-2">
         <CardTitle className="flex items-center gap-2 font-display text-lg">
-          <Sparkles className="h-4 w-4 text-amber-600" />
+          <Sparkles className="size-4 text-amber-600" />
           Ask Chronicle
         </CardTitle>
         {response && (
@@ -201,7 +201,7 @@ export default function ChronicleCopilotPanel({
             onClick={() => handleQuickPrompt(prompt)}
             disabled={isBusy}
           >
-            <MessageSquare className="mr-1.5 h-3 w-3" />
+            <MessageSquare className="mr-1.5 size-3" />
             {prompt.label}
           </Button>
         ))}
@@ -224,11 +224,11 @@ export default function ChronicleCopilotPanel({
         <Button
           type="button"
           size="icon"
-          className="h-8 w-8 shrink-0"
+          className="size-8 shrink-0"
           disabled={isBusy || !String(question || '').trim()}
           onClick={handleAskSubmit}
         >
-          {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <SendHorizontal className="h-3.5 w-3.5" />}
+          {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <SendHorizontal className="size-3.5" />}
         </Button>
       </div>
 

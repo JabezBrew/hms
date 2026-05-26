@@ -358,7 +358,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
         <CardTitle>Patients</CardTitle>
         {canRegisterPatients && (
           <Button onClick={handleAddPatient}>
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-2 size-4" />
             Add Patient
           </Button>
         )}
@@ -367,7 +367,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
         <div className="mb-4 space-y-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
               <Input
                 placeholder="Search patients by name, MRN, or NHIS ID..."
                 value={searchQuery}
@@ -399,7 +399,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                     !admissionDate && "text-muted-foreground"
                   )}
                 >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  <CalendarIcon className="mr-2 size-4" />
                   {admissionDate ? format(admissionDate, "PPP") : <span>Filter by Admission Date</span>}
                 </Button>
               </PopoverTrigger>
@@ -415,7 +415,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
 
             {(searchQuery || selectedWard !== "all" || admissionDate) && (
               <Button variant="ghost" onClick={clearFilters} className="px-3">
-                <X className="mr-2 h-4 w-4" />
+                <X className="mr-2 size-4" />
                 Clear
               </Button>
             )}
@@ -439,7 +439,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                   <TableRow key={`skeleton-row-${index}`}>
                     <TableCell>
                       <div className="flex items-center">
-                        <Skeleton className="h-8 w-8 rounded-full mr-2" />
+                        <Skeleton className="size-8 rounded-full mr-2" />
                         <Skeleton className="h-4 w-32" />
                       </div>
                     </TableCell>
@@ -502,7 +502,7 @@ const PatientList = ({ onPatientSelect, onAddPatient }) => {
                       >
                         <TableCell className="font-medium">
                           <div className="flex items-center">
-                            <Avatar className="h-8 w-8 mr-2">
+                            <Avatar className="size-8 mr-2">
                               <AvatarFallback>{initials}</AvatarFallback>
                             </Avatar>
                             <span>{displayName}</span>

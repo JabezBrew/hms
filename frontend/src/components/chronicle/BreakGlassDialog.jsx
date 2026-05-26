@@ -41,7 +41,7 @@ const BreakGlassDialog = ({
         <div className="rounded-xl border border-border/70 bg-background/60 p-4 space-y-3">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 text-chronicle-rose">
-              <AlertTriangle className="h-4 w-4" />
+              <AlertTriangle className="size-4" />
             </div>
             <div className="space-y-1">
               <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -77,7 +77,7 @@ const BreakGlassDialog = ({
         </div>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Clock className="h-3.5 w-3.5" />
+          <Clock className="size-3.5" />
           <span>Access expires automatically in about {ttlMinutes} minutes.</span>
         </div>
 

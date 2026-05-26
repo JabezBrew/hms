@@ -1,4 +1,4 @@
-import {useId, useContext, createContext, forwardRef} from "react";
+import {useId, useContext, createContext, forwardRef, useMemo} from "react";
 import { Slot } from "@radix-ui/react-slot"
 import { Controller, FormProvider, useFormContext, useFormState } from "react-hook-form";
 
@@ -15,8 +15,10 @@ const FormField = forwardRef(function FormField(
   },
   ref
 ) {
+  const contextValue = useMemo(() => ({ name: props.name }), [props.name])
+
   return (
-    <FormFieldContext.Provider value={{ name: props.name }}>
+    <FormFieldContext.Provider value={contextValue}>
       <Controller {...props} ref={ref} />
     </FormFieldContext.Provider>
   );
@@ -52,9 +54,10 @@ const FormItem = forwardRef(function FormItem({
   ...props
 }, ref) {
   const id = useId()
+  const contextValue = useMemo(() => ({ id }), [id])
 
   return (
-    <FormItemContext.Provider value={{ id }}>
+    <FormItemContext.Provider value={contextValue}>
       <div data-slot="form-item" className={cn("grid gap-2", className)} ref={ref} {...props} />
     </FormItemContext.Provider>
   );

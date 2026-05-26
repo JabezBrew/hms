@@ -210,7 +210,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                                                 ) : (
                                                     <span>Pick a date</span>
                                                 )}
-                                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                <CalendarIcon className="ml-auto size-4 opacity-50" />
                                             </Button>
                                         </FormControl>
                                     </PopoverTrigger>
@@ -253,7 +253,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                                                     ) : (
                                                         <span>Pick a date</span>
                                                     )}
-                                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                    <CalendarIcon className="ml-auto size-4 opacity-50" />
                                                 </Button>
                                             </FormControl>
                                         </PopoverTrigger>
@@ -294,7 +294,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                                                     ) : (
                                                         <span>Pick a date</span>
                                                     )}
-                                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                    <CalendarIcon className="ml-auto size-4 opacity-50" />
                                                 </Button>
                                             </FormControl>
                                         </PopoverTrigger>
@@ -322,7 +322,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                         control={form.control}
                         name="is_all_day"
                         render={({ field }) => (
-                            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                            <FormItem className="flex flex-row items-start gap-x-3 gap-y-0 rounded-md border p-4">
                                 <FormControl>
                                     <Checkbox
                                         checked={field.value}
@@ -391,12 +391,12 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                     )}
                 />
 
-                <div className="flex justify-end space-x-2">
+                <div className="flex justify-end gap-x-2">
                     <Button variant="outline" type="button" onClick={onCancel}>
                         Cancel
                     </Button>
                     <Button type="submit" disabled={isSubmitting}>
-                        {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
                         {initialData ? 'Update' : 'Create'}
                     </Button>
                 </div>

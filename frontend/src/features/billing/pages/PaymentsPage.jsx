@@ -29,6 +29,12 @@ import { usePayments } from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
 
+const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency: 'GHS',
+  minimumFractionDigits: 2,
+});
+
 const PAYMENT_METHODS = [
   { value: 'all', label: 'All Methods' },
   { value: 'cash', label: 'Cash' },
@@ -132,6 +138,7 @@ export default function PaymentsPage() {
       width: '200px',
       render: (payment) => (
         <button
+          type="button"
           onClick={() => navigate(`/patients/${payment.patient_id}`)}
           className="text-left hover:text-primary transition-colors"
         >
@@ -148,6 +155,7 @@ export default function PaymentsPage() {
       width: '160px',
       render: (payment) => (
         <button
+          type="button"
           onClick={() => navigate(`/billing/invoices/${payment.invoice}`)}
           className="font-mono text-xs text-primary hover:underline"
         >
@@ -184,13 +192,13 @@ export default function PaymentsPage() {
       render: (payment) => (
         payment.receipt_number ? (
           <div className="flex items-center gap-1">
-            <FileText className="h-3 w-3 text-muted-foreground" />
+            <FileText className="size-3 text-muted-foreground" />
             <span className="font-mono text-xs text-muted-foreground">
               {payment.receipt_number}
             </span>
           </div>
         ) : (
-          <span className="font-mono text-xs text-muted-foreground/50">—</span>
+          <span className="font-mono text-xs text-muted-foreground/50">-</span>
         )
       ),
     },
@@ -211,12 +219,12 @@ export default function PaymentsPage() {
           >
             {printingId === payment.id ? (
               <>
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                Loading...
+                <Loader2 className="size-3 mr-1 animate-spin" />
+                Loading…
               </>
             ) : (
               <>
-                <Printer className="h-3 w-3 mr-1" />
+                <Printer className="size-3 mr-1" />
                 Print
               </>
             )}
@@ -268,7 +276,7 @@ export default function PaymentsPage() {
       <PageHeader
         title={(
           <span className="flex items-center gap-3">
-            <CreditCard className="h-8 w-8 text-primary" />
+            <CreditCard className="size-8 text-primary" />
             Payment History
           </span>
         )}
@@ -280,7 +288,7 @@ export default function PaymentsPage() {
             onClick={() => refetch()}
             className="font-mono text-xs"
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="size-4 mr-2" />
             Refresh
           </Button>
         )}
@@ -292,7 +300,7 @@ export default function PaymentsPage() {
             onClick={() => navigate('/billing')}
             className="font-mono text-xs w-fit -ml-2"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="size-4 mr-2" />
             Back to Billing
           </Button>
         </div>
@@ -302,14 +310,14 @@ export default function PaymentsPage() {
         {/* Filters */}
         <section className="bg-card border border-border rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
-            <Filter className="h-5 w-5 text-muted-foreground" />
+            <Filter className="size-5 text-muted-foreground" />
             <h2 className="font-display text-lg text-foreground">Filters</h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Search */}
             <div className="relative sm:col-span-2 lg:col-span-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 type="text"
                 placeholder="Search by patient, invoice, receipt..."
@@ -338,7 +346,7 @@ export default function PaymentsPage() {
 
             {/* Date From */}
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 type="date"
                 placeholder="From Date"
@@ -350,7 +358,7 @@ export default function PaymentsPage() {
 
             {/* Date To */}
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 type="date"
                 placeholder="To Date"
@@ -367,8 +375,8 @@ export default function PaymentsPage() {
           {payments.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <div className="flex flex-col items-center">
-                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                  <CreditCard className="h-6 w-6 text-muted-foreground" />
+                <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <CreditCard className="size-6 text-muted-foreground" />
                 </div>
                 <p className="text-muted-foreground">No payments found</p>
                 {(debouncedSearch || (paymentMethod && paymentMethod !== 'all') || dateFrom || dateTo) && (
@@ -401,7 +409,7 @@ export default function PaymentsPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="px-4 sm:px-6 py-4 border-t border-border flex items-center justify-between">
+            <div className="p-4 sm:px-6 border-t border-border flex items-center justify-between">
               <p className="font-mono text-xs text-muted-foreground">
                 Page {currentPage} of {totalPages} ({totalCount} total)
               </p>
@@ -413,7 +421,7 @@ export default function PaymentsPage() {
                   disabled={!hasPrev}
                   className="font-mono text-xs"
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className="size-4" />
                   Previous
                 </Button>
                 <Button
@@ -424,7 +432,7 @@ export default function PaymentsPage() {
                   className="font-mono text-xs"
                 >
                   Next
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="size-4" />
                 </Button>
               </div>
             </div>
@@ -437,11 +445,7 @@ export default function PaymentsPage() {
 
 // Utility functions
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
-    minimumFractionDigits: 2,
-  }).format(amount || 0);
+  return GHS_CURRENCY_FORMATTER.format(amount || 0);
 }
 
 function formatDate(dateString) {
