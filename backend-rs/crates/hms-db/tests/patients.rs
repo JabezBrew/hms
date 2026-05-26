@@ -195,6 +195,76 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
 }
 
 #[tokio::test]
+async fn patient_registry_projection_includes_current_location_and_opt_in_count() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let scenario = db
+        .scenario("registry-location")
+        .admission_case_with_available_bed()
+        .await
+        .expect("admission scenario builds");
+    let admission = hms_db::ward::activate_admission_case(
+        db.pool(),
+        db.facility_id(),
+        scenario.admission.id,
+        db.owner_user_id(),
+    )
+    .await
+    .expect("activation query succeeds")
+    .expect("admission activates");
+    let bed_code = admission.bed_code.as_deref().expect("admission has a bed");
+    let expected_location = format!("{} - Bed {}", admission.ward_name, bed_code);
+
+    let (rows_result, observed_queries) = hms_observability::with_request_query_counter(async {
+        hms_db::patients::list_patient_registry(
+            db.pool(),
+            db.facility_id(),
+            None,
+            10,
+            Some(&scenario.patient.patient_code),
+            Some(PatientAdministrativeStatus::Active),
+        )
+        .await
+    })
+    .await;
+    let rows = rows_result.expect("patient registry projection succeeds");
+
+    assert_eq!(
+        observed_queries, 1,
+        "patient registry location must be loaded by the list projection, not per row"
+    );
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].patient.id, scenario.patient.id);
+    assert_eq!(
+        rows[0].patient_location.as_deref(),
+        Some(expected_location.as_str())
+    );
+
+    let count = hms_db::patients::count_patients(
+        db.pool(),
+        db.facility_id(),
+        Some(&scenario.patient.patient_code),
+        Some(PatientAdministrativeStatus::Active),
+    )
+    .await
+    .expect("patient count succeeds");
+    assert_eq!(count, 1);
+
+    let cross_facility_rows = hms_db::patients::list_patient_registry(
+        db.pool(),
+        uuid::Uuid::new_v4(),
+        None,
+        10,
+        Some(&scenario.patient.patient_code),
+        Some(PatientAdministrativeStatus::Active),
+    )
+    .await
+    .expect("cross-facility registry projection succeeds");
+    assert!(cross_facility_rows.is_empty());
+}
+
+#[tokio::test]
 async fn patient_validation_rules_repository_is_facility_scoped_and_active_only() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

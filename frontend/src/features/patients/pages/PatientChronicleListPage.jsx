@@ -349,9 +349,9 @@ const PatientChronicleListPage = () => {
       ordering: searchOrdering,
       page: searchPage,
       page_size: SEARCH_TABLE_PAGE_SIZE,
-      include_total: 'false',
+      include_total: hasSearchSignal ? 'false' : 'true',
     }),
-    [baseSearchParams, searchOrdering, searchPage]
+    [baseSearchParams, hasSearchSignal, searchOrdering, searchPage]
   );
 
   const {

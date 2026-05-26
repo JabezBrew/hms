@@ -51,6 +51,18 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "deletePatientChronicleWardRoundAction": {
+    "operationId": "deletePatientChronicleWardRoundAction",
+    "method": "DELETE",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/{round_id}/actions/{action_id}",
+    "pathParamNames": [
+      "patient_id",
+      "round_id",
+      "action_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAdminAuditEvents": {
     "operationId": "getAdminAuditEvents",
     "method": "GET",
@@ -1411,6 +1423,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getPatientChronicleCurrentWardRound": {
+    "operationId": "getPatientChronicleCurrentWardRound",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/current",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getPatientChroniclePrint": {
     "operationId": "getPatientChroniclePrint",
     "method": "GET",
@@ -1435,6 +1457,17 @@ export const operations = {
       "search",
       "encounter_id"
     ],
+    "hasBody": false
+  },
+  "getPatientChronicleWardRound": {
+    "operationId": "getPatientChronicleWardRound",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/{round_id}",
+    "pathParamNames": [
+      "patient_id",
+      "round_id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getPatientClinicalNotes": {
@@ -2078,6 +2111,29 @@ export const operations = {
     "path": "/api/v2/patients/{id}",
     "pathParamNames": [
       "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "patchPatientChronicleWardRound": {
+    "operationId": "patchPatientChronicleWardRound",
+    "method": "PATCH",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/{round_id}",
+    "pathParamNames": [
+      "patient_id",
+      "round_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "patchPatientChronicleWardRoundAction": {
+    "operationId": "patchPatientChronicleWardRoundAction",
+    "method": "PATCH",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/{round_id}/actions/{action_id}",
+    "pathParamNames": [
+      "patient_id",
+      "round_id",
+      "action_id"
     ],
     "queryParamNames": [],
     "hasBody": true
@@ -3024,6 +3080,38 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPatientChronicleWardRoundActions": {
+    "operationId": "postPatientChronicleWardRoundActions",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/{round_id}/actions",
+    "pathParamNames": [
+      "patient_id",
+      "round_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientChronicleWardRoundCommit": {
+    "operationId": "postPatientChronicleWardRoundCommit",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/{round_id}/commit",
+    "pathParamNames": [
+      "patient_id",
+      "round_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientChronicleWardRounds": {
+    "operationId": "postPatientChronicleWardRounds",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPatientClinicalNotes": {
     "operationId": "postPatientClinicalNotes",
     "method": "POST",
@@ -3503,6 +3591,7 @@ export function createGeneratedClient(request) {
     deleteClinicalNoteTemplate: createOperation(request, operations.deleteClinicalNoteTemplate),
     deleteClinicalProblemLink: createOperation(request, operations.deleteClinicalProblemLink),
     deleteClinicById: createOperation(request, operations.deleteClinicById),
+    deletePatientChronicleWardRoundAction: createOperation(request, operations.deletePatientChronicleWardRoundAction),
     getAdminAuditEvents: createOperation(request, operations.getAdminAuditEvents),
     getAdminAuthorityAppointments: createOperation(request, operations.getAdminAuthorityAppointments),
     getAdminCommittees: createOperation(request, operations.getAdminCommittees),
@@ -3623,8 +3712,10 @@ export function createGeneratedClient(request) {
     getPatientById: createOperation(request, operations.getPatientById),
     getPatientChartEntries: createOperation(request, operations.getPatientChartEntries),
     getPatientChronicle: createOperation(request, operations.getPatientChronicle),
+    getPatientChronicleCurrentWardRound: createOperation(request, operations.getPatientChronicleCurrentWardRound),
     getPatientChroniclePrint: createOperation(request, operations.getPatientChroniclePrint),
     getPatientChronicleTimeline: createOperation(request, operations.getPatientChronicleTimeline),
+    getPatientChronicleWardRound: createOperation(request, operations.getPatientChronicleWardRound),
     getPatientClinicalNotes: createOperation(request, operations.getPatientClinicalNotes),
     getPatientContextList: createOperation(request, operations.getPatientContextList),
     getPatientPharmacyClinicalContext: createOperation(request, operations.getPatientPharmacyClinicalContext),
@@ -3683,6 +3774,8 @@ export function createGeneratedClient(request) {
     patchClinicById: createOperation(request, operations.patchClinicById),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
     patchPatientById: createOperation(request, operations.patchPatientById),
+    patchPatientChronicleWardRound: createOperation(request, operations.patchPatientChronicleWardRound),
+    patchPatientChronicleWardRoundAction: createOperation(request, operations.patchPatientChronicleWardRoundAction),
     patchWard: createOperation(request, operations.patchWard),
     patchWardBed: createOperation(request, operations.patchWardBed),
     patchWardSection: createOperation(request, operations.patchWardSection),
@@ -3788,6 +3881,9 @@ export function createGeneratedClient(request) {
     postPatientBreakGlass: createOperation(request, operations.postPatientBreakGlass),
     postPatientBreakGlassEnd: createOperation(request, operations.postPatientBreakGlassEnd),
     postPatientChartEntries: createOperation(request, operations.postPatientChartEntries),
+    postPatientChronicleWardRoundActions: createOperation(request, operations.postPatientChronicleWardRoundActions),
+    postPatientChronicleWardRoundCommit: createOperation(request, operations.postPatientChronicleWardRoundCommit),
+    postPatientChronicleWardRounds: createOperation(request, operations.postPatientChronicleWardRounds),
     postPatientClinicalNotes: createOperation(request, operations.postPatientClinicalNotes),
     postPatientPrescriptions: createOperation(request, operations.postPatientPrescriptions),
     postPatientProblems: createOperation(request, operations.postPatientProblems),

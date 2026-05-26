@@ -191,39 +191,65 @@ impl PatientsService {
         query: PatientListQuery,
     ) -> Result<ListResponse<PatientListItem>, ApiError> {
         require_patient_registry_access(ctx, self.facility_id())?;
+        let include_total = query.include_total.unwrap_or(false);
         let search = query
             .search
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
+        let status = query.status.clone();
         let page = patient_page_request(&query)?;
         let fetch_limit = page.fetch_limit();
-        let patients = hms_db::patients::list_patients(
+        let patients = hms_db::patients::list_patient_registry(
             self.pool(),
             self.facility_id(),
             page.cursor,
             fetch_limit,
             search,
-            query.status,
+            status.clone(),
         )
         .await
         .map_err(|_| ApiError::conflict("patient_list_failed", "Patients could not be loaded."))?;
+        let total_count = if include_total {
+            Some(
+                hms_db::patients::count_patients(self.pool(), self.facility_id(), search, status)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict(
+                            "patient_count_failed",
+                            "Patient registry count could not be loaded.",
+                        )
+                    })?,
+            )
+        } else {
+            None
+        };
 
         let mut visible = Vec::with_capacity(patients.len());
         for patient in patients {
-            if hms_access::require_patient_demographics_access(ctx, &patient).is_ok() {
+            if hms_access::require_patient_demographics_access(ctx, &patient.patient).is_ok() {
                 visible.push(patient);
             }
         }
 
         let page = cursor_list::page_response(visible, page.limit, |patient| {
-            cursor_list::encode_cursor(patient.created_at, patient.id)
+            cursor_list::encode_cursor(patient.patient.created_at, patient.patient.id)
         });
 
-        Ok(list(
-            page.data.iter().map(PatientListItem::from).collect(),
+        let mut response = list(
+            page.data
+                .iter()
+                .map(patient_list_item_from_record)
+                .collect(),
             page.page,
-        ))
+        );
+        if let Some(total_count) = total_count {
+            response.meta = json!({
+                "count_exact": true,
+                "total_count": total_count,
+            });
+        }
+        Ok(response)
     }
 
     pub async fn list_context_patients(
@@ -704,6 +730,12 @@ fn patient_context_page_request(
             patient_id,
         },
     )?)
+}
+
+fn patient_list_item_from_record(value: &hms_db::patients::PatientListRecord) -> PatientListItem {
+    let mut item = PatientListItem::from(&value.patient);
+    item.patient_location = value.patient_location.clone();
+    item
 }
 
 fn chronicle_timeline_page_request(

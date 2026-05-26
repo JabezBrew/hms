@@ -130,6 +130,10 @@ function adaptV2PatientListResponse(response, params = {}) {
     : [];
   const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
   const knownResultCount = ((currentPage - 1) * limit) + results.length;
+  const exactTotal = response?.meta?.count_exact === true
+    ? Number(response?.meta?.total_count)
+    : NaN;
+  const hasExactTotal = Number.isFinite(exactTotal) && exactTotal >= 0;
 
   cacheCursorForNextPage(params, response);
 
@@ -137,10 +141,10 @@ function adaptV2PatientListResponse(response, params = {}) {
     results,
     page: currentPage,
     page_size: limit,
-    count: knownResultCount,
-    total: knownResultCount,
-    count_exact: !hasNext,
-    total_is_lower_bound: hasNext,
+    count: hasExactTotal ? exactTotal : knownResultCount,
+    total: hasExactTotal ? exactTotal : knownResultCount,
+    count_exact: hasExactTotal || !hasNext,
+    total_is_lower_bound: !hasExactTotal && hasNext,
     next: hasNext ? response.page.next_cursor : null,
     previous: currentPage > 1 ? String(currentPage - 1) : null,
     next_cursor: response?.page?.next_cursor || null,
@@ -159,6 +163,9 @@ function getV2PatientListQuery(params = {}) {
   const status = normalizePatientStatus(params.status || params.registry_scope);
   if (status) {
     query.status = status;
+  }
+  if (params.include_total === true || params.include_total === 'true') {
+    query.include_total = true;
   }
   const cursor = getCursorForParams(params);
   if (cursor) {

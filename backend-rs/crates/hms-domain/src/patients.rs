@@ -54,6 +54,7 @@ pub struct PatientListItem {
     pub display_name: String,
     pub sex: Sex,
     pub birth_year: i32,
+    pub patient_location: Option<String>,
     pub status: PatientAdministrativeStatus,
     pub created_at: DateTime<Utc>,
 }
@@ -95,6 +96,7 @@ impl From<&PatientRecord> for PatientListItem {
                 .to_string()
                 .parse()
                 .unwrap_or_default(),
+            patient_location: None,
             status: value.status.clone(),
             created_at: value.created_at,
         }
@@ -139,6 +141,7 @@ pub struct PatientListQuery {
     pub search: Option<String>,
     pub patient_id: Option<Uuid>,
     pub status: Option<PatientAdministrativeStatus>,
+    pub include_total: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

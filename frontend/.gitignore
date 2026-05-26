@@ -38,3 +38,5 @@ tests/e2e/.auth/
 !src/lib/**
 !src/shared/lib/
 !src/shared/lib/**
+
+.agents

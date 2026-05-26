@@ -9,7 +9,7 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/api/v2/patients?limit=1")
+                .uri("/api/v2/patients?limit=1&include_total=true")
                 .header(AUTHORIZATION, format!("Bearer {access_token}"))
                 .body(Body::empty())
                 .expect("request builds"),
@@ -24,6 +24,9 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
     assert_eq!(body["page"]["has_next"], true);
     assert!(body["page"]["next_cursor"].is_string());
     assert!(body["data"][0]["display_name"].is_string());
+    assert!(body["data"][0].get("patient_location").is_some());
+    assert_eq!(body["meta"]["count_exact"], true);
+    assert!(body["meta"]["total_count"].as_i64().unwrap_or_default() >= 1);
 
     let patient_id = body["data"][0]["id"].as_str().unwrap();
     let detail = app
@@ -134,7 +137,7 @@ async fn patient_list_records_stable_query_metrics_without_phi_labels() {
         .expect("metrics body reads");
     let body = String::from_utf8(bytes.to_vec()).expect("metrics body is utf-8");
 
-    assert!(body.contains("query=\"patient.registry.list\""));
+    assert!(body.contains("query=\"patient.registry.list_projection\""));
     assert!(body.contains("route=\"/api/v2/patients\""));
     assert!(!body.contains("Ama"));
     assert!(!body.contains("Mensah"));

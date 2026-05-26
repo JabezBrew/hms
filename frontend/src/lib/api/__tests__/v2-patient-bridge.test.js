@@ -158,6 +158,54 @@ describe('Rust V2 patient bridge', () => {
     expect(response.count_exact).toBe(true);
   });
 
+  it('passes opt-in exact totals through to Rust and consumes total count metadata', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'patient-1',
+              patient_code: 'MRN-MAIN-2026-000001',
+              display_name: 'Ama Mensah',
+              sex: 'female',
+              birth_year: 1989,
+              status: 'active',
+              created_at: '2026-05-01T08:00:00Z',
+            },
+          ],
+          page: {
+            limit: 25,
+            has_next: true,
+            next_cursor: 'cursor-2',
+          },
+          meta: {
+            count_exact: true,
+            total_count: 270,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.searchPatientsWithMeta(
+      { page_size: 25, registry_scope: 'active', include_total: 'true' },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients?limit=25&status=active&include_total=true',
+      expect.anything(),
+    );
+    expect(response.count).toBe(270);
+    expect(response.total).toBe(270);
+    expect(response.count_exact).toBe(true);
+    expect(response.total_is_lower_bound).toBe(false);
+    expect(response.next).toBe('cursor-2');
+  });
+
   it('preserves AbortError from Rust patient list calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);

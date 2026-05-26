@@ -30,6 +30,12 @@ pub struct PatientContextFilters {
 }
 
 #[derive(Clone, Debug)]
+pub struct PatientListRecord {
+    pub patient: PatientRecord,
+    pub patient_location: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 pub struct NewPatient {
     pub id: Uuid,
     pub facility_id: Uuid,
@@ -68,6 +74,21 @@ struct PatientRow {
 }
 
 #[derive(Clone, Debug, FromRow)]
+struct PatientListRow {
+    id: Uuid,
+    facility_id: Uuid,
+    patient_code: String,
+    first_name: String,
+    last_name: String,
+    date_of_birth: NaiveDate,
+    sex: String,
+    status: String,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    patient_location: Option<String>,
+}
+
+#[derive(Clone, Debug, FromRow)]
 struct PatientContextRow {
     id: Uuid,
     patient_code: String,
@@ -90,6 +111,87 @@ struct PatientRegistrationValidationRuleRow {
     is_active: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+pub async fn list_patient_registry(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<PatientCursor>,
+    limit: i64,
+    search: Option<&str>,
+    status: Option<PatientAdministrativeStatus>,
+) -> anyhow::Result<Vec<PatientListRecord>> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT patients.id,
+               patients.facility_id,
+               patients.patient_code,
+               patients.first_name,
+               patients.last_name,
+               patients.date_of_birth,
+               patients.sex,
+               patients.status,
+               patients.created_at,
+               patients.updated_at,
+               CASE
+                   WHEN current_admission.id IS NULL THEN NULL
+                   WHEN current_bed.bed_code IS NULL THEN current_ward.name
+                   ELSE current_ward.name || ' - Bed ' || current_bed.bed_code
+               END AS patient_location
+        FROM patients
+        LEFT JOIN LATERAL (
+            SELECT admission_cases.id,
+                   admission_cases.facility_id,
+                   admission_cases.ward_id,
+                   admission_cases.bed_id
+            FROM admission_cases
+            WHERE admission_cases.facility_id = patients.facility_id
+              AND admission_cases.patient_id = patients.id
+              AND admission_cases.status IN ('admitted', 'discharge_pending')
+            ORDER BY admission_cases.admitted_at DESC, admission_cases.id DESC
+            LIMIT 1
+        ) current_admission ON TRUE
+        LEFT JOIN wards current_ward
+          ON current_ward.facility_id = current_admission.facility_id
+         AND current_ward.id = current_admission.ward_id
+        LEFT JOIN beds current_bed
+          ON current_bed.facility_id = current_admission.facility_id
+         AND current_bed.id = current_admission.bed_id
+        WHERE patients.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+
+    if let Some(cursor) = cursor {
+        query.push(" AND (patients.created_at, patients.id) > (");
+        query.push_bind(cursor.created_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+
+    if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
+        let pattern = format!("%{}%", search.to_lowercase());
+        query.push(
+            " AND lower(patients.patient_code || ' ' || patients.first_name || ' ' || patients.last_name) LIKE ",
+        );
+        query.push_bind(pattern);
+    }
+
+    if let Some(status) = status {
+        query.push(" AND patients.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+
+    query.push(" ORDER BY patients.created_at ASC, patients.id ASC LIMIT ");
+    query.push_bind(limit);
+
+    let rows = observe_db_query(
+        "patient.registry.list_projection",
+        query.build_query_as::<PatientListRow>().fetch_all(pool),
+    )
+    .await?;
+    rows.into_iter().map(patient_list_from_row).collect()
 }
 
 pub async fn list_patients(
@@ -146,6 +248,40 @@ pub async fn list_patients(
     )
     .await?;
     rows.into_iter().map(patient_from_row).collect()
+}
+
+pub async fn count_patients(
+    pool: &PgPool,
+    facility_id: Uuid,
+    search: Option<&str>,
+    status: Option<PatientAdministrativeStatus>,
+) -> anyhow::Result<i64> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT count(*)::bigint
+        FROM patients
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+
+    if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
+        let pattern = format!("%{}%", search.to_lowercase());
+        query.push(" AND lower(patient_code || ' ' || first_name || ' ' || last_name) LIKE ");
+        query.push_bind(pattern);
+    }
+
+    if let Some(status) = status {
+        query.push(" AND status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+
+    let count = observe_db_query(
+        "patient.registry.count",
+        query.build_query_scalar::<i64>().fetch_one(pool),
+    )
+    .await?;
+    Ok(count)
 }
 
 pub async fn get_patient(
@@ -528,6 +664,24 @@ fn patient_from_row(row: PatientRow) -> anyhow::Result<PatientRecord> {
         status: codec::decode::<PatientAdministrativeStatus>(&row.status)?,
         created_at: row.created_at,
         updated_at: row.updated_at,
+    })
+}
+
+fn patient_list_from_row(row: PatientListRow) -> anyhow::Result<PatientListRecord> {
+    Ok(PatientListRecord {
+        patient: PatientRecord {
+            id: row.id,
+            facility_id: row.facility_id,
+            patient_code: row.patient_code,
+            first_name: row.first_name,
+            last_name: row.last_name,
+            date_of_birth: row.date_of_birth,
+            sex: codec::decode(&row.sex)?,
+            status: codec::decode::<PatientAdministrativeStatus>(&row.status)?,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        },
+        patient_location: row.patient_location,
     })
 }
 

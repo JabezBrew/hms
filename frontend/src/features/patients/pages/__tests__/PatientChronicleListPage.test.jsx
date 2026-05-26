@@ -162,6 +162,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
     expect(firstCallParams.registry_scope).toBe('active')
+    expect(firstCallParams.include_total).toBe('true')
     expect(screen.getByText('Active patients')).toBeInTheDocument()
     expect(screen.getByText('(2)')).toBeInTheDocument()
   })
@@ -176,6 +177,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
       const lastCallParams = mockUsePatientSearch.mock.calls.at(-1)[0]
       expect(lastCallParams.query).toBe('jo')
       expect(lastCallParams.registry_scope).toBe('all')
+      expect(lastCallParams.include_total).toBe('false')
       expect(screen.getByText('Search results')).toBeInTheDocument()
       expect(screen.getByText('(4)')).toBeInTheDocument()
     })
