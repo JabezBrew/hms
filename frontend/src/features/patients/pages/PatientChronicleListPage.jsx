@@ -228,6 +228,23 @@ const formatAdmissionStatus = (status) => {
     .join(' ');
 };
 
+const getAdmissionLocationLabel = (patient) => {
+  const admission = patient?.active_admission || patient?.active_context?.admission || patient?.admission || null;
+  const wardName = patient?.ward_name || patient?.current_ward || admission?.ward_name || admission?.ward || '';
+  const bedCode = patient?.bed_code || patient?.bed_number || patient?.current_bed || admission?.bed_code || admission?.bed_number || '';
+
+  if (wardName && bedCode) {
+    return `${wardName} / Bed ${bedCode}`;
+  }
+  if (wardName) {
+    return wardName;
+  }
+  if (bedCode) {
+    return `Bed ${bedCode}`;
+  }
+  return '';
+};
+
 const getPatientLocationDisplay = (patient) => {
   const activeClinicNames = Array.isArray(patient?.active_clinic_names)
     ? patient.active_clinic_names.filter(Boolean)
@@ -248,9 +265,44 @@ const getPatientLocationDisplay = (patient) => {
   }
 
   return {
-    label: patient?.patient_location || patient?.current_ward || '—',
+    label: patient?.patient_location || getAdmissionLocationLabel(patient) || '—',
     tooltip: null,
   };
+};
+
+const getKnownResultCount = ({ currentPage, pageSize, visibleCount }) => {
+  if (visibleCount <= 0) {
+    return 0;
+  }
+  return ((currentPage - 1) * pageSize) + visibleCount;
+};
+
+const formatResultCountLabel = ({ count, isExact, hasNextPage }) => {
+  if (isExact || !hasNextPage) {
+    return String(count);
+  }
+  return `${count}+`;
+};
+
+const formatFooterResultLabel = ({ currentPage, pageSize, visibleCount, totalResults, isExact, hasNextPage }) => {
+  if (isExact) {
+    return `${totalResults} result${totalResults === 1 ? '' : 's'}`;
+  }
+  if (visibleCount <= 0) {
+    return '0 results';
+  }
+
+  const start = ((currentPage - 1) * pageSize) + 1;
+  const end = start + visibleCount - 1;
+  const range = start === end ? String(start) : `${start}-${end}`;
+  return `Showing ${range}${hasNextPage ? '+' : ''} result${end === 1 && !hasNextPage ? '' : 's'}`;
+};
+
+const formatFooterPageLabel = ({ currentPage, totalPages, isExact, hasNextPage }) => {
+  if (isExact || !hasNextPage) {
+    return `Page ${currentPage} of ${totalPages}`;
+  }
+  return `Page ${currentPage}`;
 };
 
 /**
@@ -335,14 +387,41 @@ const PatientChronicleListPage = () => {
   const searchCountExact = searchResults?.count_exact !== false;
   const searchHasNext = Boolean(searchResults?.next);
   const searchHasPrevious = Boolean(searchResults?.previous) || searchCurrentPage > 1;
+  const searchKnownResultCount = getKnownResultCount({
+    currentPage: searchCurrentPage,
+    pageSize: searchPageSize,
+    visibleCount: searchPatients.length,
+  });
   const searchTotal = searchCountExact
     ? (searchResults?.total ?? searchResults?.count ?? searchPatients.length)
-    : ((searchCurrentPage - 1) * searchPageSize) + searchPatients.length + (searchHasNext ? 1 : 0);
+    : searchKnownResultCount;
+  const searchTotalLabel = formatResultCountLabel({
+    count: searchTotal,
+    isExact: searchCountExact,
+    hasNextPage: searchHasNext,
+  });
   const searchTotalPages = searchCountExact
     ? (searchPageSize > 0
       ? Math.max(1, Math.ceil(searchTotal / searchPageSize))
       : 1)
-    : (searchHasNext ? searchCurrentPage + 1 : searchCurrentPage);
+    : searchCurrentPage;
+  const searchPagination = useMemo(() => ({
+    currentPage: searchCurrentPage,
+    pageSize: searchPageSize,
+    totalPages: searchTotalPages,
+    totalResults: searchTotal,
+    totalResultsExact: searchCountExact,
+    hasNextPage: searchHasNext,
+    hasPreviousPage: searchHasPrevious,
+  }), [
+    searchCountExact,
+    searchCurrentPage,
+    searchHasNext,
+    searchHasPrevious,
+    searchPageSize,
+    searchTotal,
+    searchTotalPages,
+  ]);
 
   const searchSummary = hasSearchSignal
     ? (effectiveSearchQuery
@@ -595,6 +674,7 @@ const PatientChronicleListPage = () => {
               />
               {hasSearchQuery && (
                 <button
+                  type="button"
                   onClick={handleClearSearch}
                   aria-label="Clear search"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
@@ -914,7 +994,7 @@ const PatientChronicleListPage = () => {
             <h2 className="font-heading text-sm font-medium text-foreground">
               {listHeaderLabel}
             </h2>
-            <span className="text-xs">({searchTotal})</span>
+            <span className="text-xs">({searchTotalLabel})</span>
           </div>
           {listControls}
         </div>
@@ -925,11 +1005,7 @@ const PatientChronicleListPage = () => {
           hasActiveFilters={hasActiveFilters}
           ordering={searchOrdering}
           onOrderingChange={handleSearchOrderingChange}
-          currentPage={searchCurrentPage}
-          totalPages={searchTotalPages}
-          totalResults={searchTotal}
-          hasNextPage={searchHasNext}
-          hasPreviousPage={searchHasPrevious}
+          pagination={searchPagination}
           onPageChange={handleSearchPageChange}
           onOpenPatient={handleOpenPatient}
           onPointerDownPatient={handlePointerDownPatient}
@@ -963,11 +1039,7 @@ const SearchResultsSection = ({
   hasActiveFilters,
   ordering,
   onOrderingChange,
-  currentPage,
-  totalPages,
-  totalResults,
-  hasNextPage,
-  hasPreviousPage,
+  pagination,
   onPageChange,
   onOpenPatient,
   onPointerDownPatient,
@@ -991,11 +1063,7 @@ const SearchResultsSection = ({
       patients={uniquePatients}
       ordering={ordering}
       onOrderingChange={onOrderingChange}
-      currentPage={currentPage}
-      totalPages={totalPages}
-      totalResults={totalResults}
-      hasNextPage={hasNextPage}
-      hasPreviousPage={hasPreviousPage}
+      pagination={pagination}
       onPageChange={onPageChange}
       onOpenPatient={onOpenPatient}
       onPointerDownPatient={onPointerDownPatient}
@@ -1038,11 +1106,7 @@ const SearchResultsTable = ({
   patients,
   ordering,
   onOrderingChange,
-  currentPage,
-  totalPages,
-  totalResults,
-  hasNextPage,
-  hasPreviousPage,
+  pagination,
   onPageChange,
   onOpenPatient,
   onPointerDownPatient,
@@ -1055,6 +1119,29 @@ const SearchResultsTable = ({
     : hasActiveFilters
       ? 'No patients match these filters. Try adjusting your criteria.'
       : 'No patients found.';
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalResults,
+    totalResultsExact,
+    hasNextPage,
+    hasPreviousPage,
+  } = pagination;
+  const footerResultLabel = formatFooterResultLabel({
+    currentPage,
+    pageSize,
+    visibleCount: patients.length,
+    totalResults,
+    isExact: totalResultsExact,
+    hasNextPage,
+  });
+  const footerPageLabel = formatFooterPageLabel({
+    currentPage,
+    totalPages,
+    isExact: totalResultsExact,
+    hasNextPage,
+  });
 
   return (
     <div className="rounded-xl border border-border/70 bg-card overflow-x-auto">
@@ -1168,7 +1255,8 @@ const SearchResultsTable = ({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
         <p className="text-xs font-mono text-muted-foreground">
-          {totalResults} result{totalResults === 1 ? '' : 's'} · Page {currentPage} of {totalPages}
+          {footerResultLabel} · {footerPageLabel}
+          {!totalResultsExact && hasNextPage ? ' · More available' : ''}
         </p>
         <div className="flex items-center gap-2">
           <Button

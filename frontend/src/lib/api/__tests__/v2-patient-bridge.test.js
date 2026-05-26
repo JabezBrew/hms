@@ -82,18 +82,80 @@ describe('Rust V2 patient bridge', () => {
           gender: 'female',
           patient_location: null,
           active_clinic_names: [],
+          active_admission: null,
+          ward_name: null,
+          bed_code: null,
+          current_ward: null,
+          current_bed: null,
           registry_status: 'active',
         },
       ],
       page: 1,
       page_size: 25,
-      count: 2,
-      total: 2,
+      count: 1,
+      total: 1,
       count_exact: false,
+      total_is_lower_bound: true,
       next: 'cursor-2',
       previous: null,
       next_cursor: 'cursor-2',
     });
+  });
+
+  it('preserves list-supplied admission location fields when Rust exposes them', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'patient-1',
+              patient_code: 'MRN-MAIN-2026-000001',
+              display_name: 'Ama Mensah',
+              sex: 'female',
+              birth_year: 1989,
+              status: 'active',
+              created_at: '2026-05-01T08:00:00Z',
+              active_admission: {
+                admission_id: 'admission-1',
+                ward_name: 'Medical Ward',
+                bed_code: 'A-12',
+              },
+            },
+          ],
+          page: {
+            limit: 25,
+            has_next: false,
+            next_cursor: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.searchPatientsWithMeta(
+      { page_size: 25, registry_scope: 'active' },
+      { signal: new AbortController().signal },
+    );
+
+    expect(response.results[0]).toEqual(
+      expect.objectContaining({
+        active_admission: expect.objectContaining({
+          admission_id: 'admission-1',
+          ward_name: 'Medical Ward',
+          bed_code: 'A-12',
+          bed_number: 'A-12',
+        }),
+        ward_name: 'Medical Ward',
+        bed_code: 'A-12',
+        current_ward: 'Medical Ward',
+        current_bed: 'A-12',
+      }),
+    );
+    expect(response.count_exact).toBe(true);
   });
 
   it('preserves AbortError from Rust patient list calls', async () => {

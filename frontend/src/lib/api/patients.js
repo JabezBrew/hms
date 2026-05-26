@@ -56,7 +56,27 @@ function birthYearToDate(value) {
   return `${String(value).padStart(4, '0')}-01-01`;
 }
 
+function adaptV2PatientListAdmission(admission) {
+  if (!admission) {
+    return null;
+  }
+  return {
+    ...admission,
+    id: admission.admission_id || admission.id,
+    admission_id: admission.admission_id || admission.id,
+    ward_name: admission.ward_name || null,
+    bed_code: admission.bed_code || admission.bed_number || null,
+    bed_number: admission.bed_number || admission.bed_code || null,
+  };
+}
+
 function adaptV2PatientListItem(patient) {
+  const activeAdmission = adaptV2PatientListAdmission(
+    patient.active_admission || patient.active_context?.admission,
+  );
+  const wardName = patient.ward_name || patient.current_ward || activeAdmission?.ward_name || null;
+  const bedCode = patient.bed_code || patient.bed_number || patient.current_bed || activeAdmission?.bed_code || null;
+
   return {
     id: patient.id,
     created_at: patient.created_at,
@@ -64,8 +84,13 @@ function adaptV2PatientListItem(patient) {
     name: patient.display_name,
     date_of_birth: birthYearToDate(patient.birth_year),
     gender: patient.sex,
-    patient_location: null,
-    active_clinic_names: [],
+    patient_location: patient.patient_location || null,
+    active_clinic_names: Array.isArray(patient.active_clinic_names) ? patient.active_clinic_names : [],
+    active_admission: activeAdmission,
+    ward_name: wardName,
+    bed_code: bedCode,
+    current_ward: wardName,
+    current_bed: bedCode,
     registry_status: patient.status,
   };
 }
@@ -104,7 +129,7 @@ function adaptV2PatientListResponse(response, params = {}) {
     ? response.data.map(adaptV2PatientListItem)
     : [];
   const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
-  const estimatedTotal = ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0);
+  const knownResultCount = ((currentPage - 1) * limit) + results.length;
 
   cacheCursorForNextPage(params, response);
 
@@ -112,9 +137,10 @@ function adaptV2PatientListResponse(response, params = {}) {
     results,
     page: currentPage,
     page_size: limit,
-    count: estimatedTotal,
-    total: estimatedTotal,
-    count_exact: false,
+    count: knownResultCount,
+    total: knownResultCount,
+    count_exact: !hasNext,
+    total_is_lower_bound: hasNext,
     next: hasNext ? response.page.next_cursor : null,
     previous: currentPage > 1 ? String(currentPage - 1) : null,
     next_cursor: response?.page?.next_cursor || null,
