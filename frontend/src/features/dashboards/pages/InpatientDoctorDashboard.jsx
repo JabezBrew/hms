@@ -220,7 +220,7 @@ export default function InpatientDoctorDashboard() {
           title="Inpatient Dashboard"
           description="Manage ward patients, rounds, and discharges"
           actions={(
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               {canUseReferrals ? (
                 <>
                   <Button

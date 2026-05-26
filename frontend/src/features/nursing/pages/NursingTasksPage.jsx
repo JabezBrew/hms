@@ -585,7 +585,79 @@ export default function NursingTasksPage() {
                 <Skeleton className="h-12 w-full" />
               </div>
             ) : (
-              <ScrollArea className="h-[500px]">
+              <>
+              <div className="space-y-3 md:hidden">
+                {filteredTasks.length === 0 ? (
+                  <div className="rounded-lg border border-border/60 bg-card p-8 text-center text-sm text-muted-foreground">
+                    No tasks found
+                  </div>
+                ) : filteredTasks.map((task) => (
+                  <article key={task.id} className="rounded-lg border border-border/60 bg-card p-3 shadow-sm">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">{task.patient_name}</p>
+                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">{task.patient_mrn}</p>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {task.status === 'pending' && generalTaskEditsAvailable && (
+                            <DropdownMenuItem onClick={() => handleStatusUpdate(task, 'in_progress')}>
+                              Start Task
+                            </DropdownMenuItem>
+                          )}
+                          {(task.status === 'pending' || task.status === 'in_progress') && (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedTask(task);
+                                setShowCompleteDialog(true);
+                              }}
+                            >
+                              Complete Task
+                            </DropdownMenuItem>
+                          )}
+                          {task.status !== 'cancelled' && task.status !== 'completed' && (
+                            <DropdownMenuItem
+                              onClick={() => handleStatusUpdate(task, 'cancelled')}
+                              className="text-red-600"
+                            >
+                              Cancel Task
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <p className="mt-3 text-sm text-foreground">{task.description}</p>
+                    <dl className="mt-3 grid gap-2 text-xs">
+                      <div className="grid grid-cols-[6rem_1fr] gap-3">
+                        <dt className="font-mono uppercase text-muted-foreground">Type</dt>
+                        <dd><Badge variant="outline">{TASK_TYPE_LABELS.get(task.task_type) || task.task_type}</Badge></dd>
+                      </div>
+                      <div className="grid grid-cols-[6rem_1fr] gap-3">
+                        <dt className="font-mono uppercase text-muted-foreground">Priority</dt>
+                        <dd><Badge className={getPriorityBadge(task.priority)}>{PRIORITY_LEVELS.find(p => p.value === task.priority)?.label || task.priority}</Badge></dd>
+                      </div>
+                      <div className="grid grid-cols-[6rem_1fr] gap-3">
+                        <dt className="font-mono uppercase text-muted-foreground">Status</dt>
+                        <dd><Badge className={getStatusBadge(task.status)}>{STATUS_OPTIONS.find(s => s.value === task.status)?.label || task.status}</Badge></dd>
+                      </div>
+                      <div className="grid grid-cols-[6rem_1fr] gap-3">
+                        <dt className="font-mono uppercase text-muted-foreground">Scheduled</dt>
+                        <dd>{formatScheduledTime(task.scheduled_time)}</dd>
+                      </div>
+                      <div className="grid grid-cols-[6rem_1fr] gap-3">
+                        <dt className="font-mono uppercase text-muted-foreground">Assigned</dt>
+                        <dd>{task.assigned_to_name || '-'}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+              <ScrollArea className="hidden h-[500px] md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -677,6 +749,7 @@ export default function NursingTasksPage() {
                   </TableBody>
                 </Table>
               </ScrollArea>
+              </>
             )}
           </CardContent>
         </Card>

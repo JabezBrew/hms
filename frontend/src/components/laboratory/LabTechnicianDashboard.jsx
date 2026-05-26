@@ -363,7 +363,7 @@ const LabTechnicianDashboard = () => {
       </div>
 
       {/* Chronicle-styled Tabs */}
-      <div role="tablist" aria-label="Lab order status" className="flex gap-2 border-b border-border pb-0">
+      <div role="tablist" aria-label="Lab order status" className="flex max-w-full gap-2 overflow-x-auto border-b border-border pb-0 [-webkit-overflow-scrolling:touch]">
         <button
           role="tab"
           id="tab-ordered"
@@ -371,7 +371,7 @@ const LabTechnicianDashboard = () => {
           aria-controls="tabpanel-ordered"
           onClick={() => setActiveTab("ordered")}
           className={cn(
-            "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
+            "relative shrink-0 px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
             activeTab === "ordered"
               ? "text-[oklch(0.65_0.22_15)]"
               : "text-muted-foreground hover:text-foreground"
@@ -396,7 +396,7 @@ const LabTechnicianDashboard = () => {
           aria-controls="tabpanel-collected"
           onClick={() => setActiveTab("collected")}
           className={cn(
-            "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
+            "relative shrink-0 px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
             activeTab === "collected"
               ? "text-primary"
               : "text-muted-foreground hover:text-foreground"
@@ -421,7 +421,7 @@ const LabTechnicianDashboard = () => {
           aria-controls="tabpanel-processing"
           onClick={() => setActiveTab("processing")}
           className={cn(
-            "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
+            "relative shrink-0 px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
             activeTab === "processing"
               ? "text-[oklch(0.70_0.15_230)]"
               : "text-muted-foreground hover:text-foreground"
@@ -446,7 +446,7 @@ const LabTechnicianDashboard = () => {
           aria-controls="tabpanel-verify"
           onClick={() => setActiveTab("verify")}
           className={cn(
-            "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
+            "relative shrink-0 px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
             activeTab === "verify"
               ? "text-[oklch(0.70_0.17_155)]"
               : "text-muted-foreground hover:text-foreground"

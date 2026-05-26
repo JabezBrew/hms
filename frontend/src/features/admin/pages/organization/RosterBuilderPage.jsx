@@ -634,7 +634,7 @@ export default function RosterBuilderPage() {
         title="Roster Builder"
         description="Generate, edit, and publish the duty roster."
         actions={(
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/admin/organization/duty-roster">
                 <ArrowLeft className="h-4 w-4 mr-1" />
@@ -655,10 +655,10 @@ export default function RosterBuilderPage() {
 
           {/* Controls */}
           <Card className="mb-6 border-border">
-            <CardContent className="p-4 pr-6">
+            <CardContent className="p-4 sm:pr-6">
               <div className="flex flex-col md:flex-row md:items-end gap-4">
                 {/* Unit Selector (Departments & Divisions) */}
-                <div className="min-w-[200px]">
+                <div className="min-w-0 md:min-w-[200px]">
                   <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 block">
                     Department / Division
                   </label>
@@ -709,7 +709,7 @@ export default function RosterBuilderPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 ml-auto">
+                <div className="ml-0 flex flex-wrap items-center gap-2 md:ml-auto">
                   <Button
                     variant="outline"
                     onClick={handleGenerate}

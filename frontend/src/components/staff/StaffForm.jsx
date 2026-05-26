@@ -246,7 +246,29 @@ const StaffForm = ({ onSuccess }) => {
         )}
 
         <Tabs value={activeStep} onValueChange={setActiveStep}>
-          <TabsList className="grid w-full mb-6 grid-cols-5">
+          <div className="mb-6 rounded-lg border border-border/60 bg-muted/20 p-3 sm:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-mono text-[10px] uppercase text-muted-foreground">
+                Step {currentStepIndex + 1} of {staffStepDefs.length}
+              </p>
+              {stepErrorCounts[activeStep] > 0 && (
+                <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                  {stepErrorCounts[activeStep]}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 font-heading text-sm font-semibold text-foreground">
+              {staffStepDefs[currentStepIndex]?.label || 'Staff details'}
+            </p>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/70">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${((currentStepIndex + 1) / staffStepDefs.length) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          <TabsList className="mb-6 hidden w-full grid-cols-5 sm:grid">
             {staffStepDefs.map((step, idx) => {
               const count = stepErrorCounts[step.key] || 0;
               return (

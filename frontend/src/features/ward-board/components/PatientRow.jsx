@@ -198,7 +198,7 @@ export function PatientRow({ patient, expanded, onToggle, onTaskAction, pendingA
 
 export function PatientTable({ children }) {
   return (
-    <table className="w-full min-w-[900px] border-collapse text-left">
+    <table className="w-full border-collapse text-left md:min-w-[900px] [&_col:nth-child(n+3)]:hidden [&_td:nth-child(n+3)]:hidden [&_th:nth-child(n+3)]:hidden md:[&_col:nth-child(n+3)]:table-column md:[&_td:nth-child(n+3)]:table-cell md:[&_th:nth-child(n+3)]:table-cell">
       <colgroup>
         <col className="w-16" />
         <col className="w-48" />

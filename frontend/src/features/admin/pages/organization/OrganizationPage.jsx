@@ -234,11 +234,11 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-background">
       {/* Header */}
       <div className="p-6 border-b bg-card">
-        <div className="flex items-start justify-between mb-4">
-          <div>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h2 className="font-display text-2xl font-semibold tracking-tight">{unit.name}</h2>
             <UnitBreadcrumb unit={unit} showIcon={false} className="mt-1 font-mono text-xs text-muted-foreground" />
           </div>
@@ -249,13 +249,13 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b -mb-px">
+        <div className="-mb-px flex max-w-full gap-1 overflow-x-auto border-b [-webkit-overflow-scrolling:touch]">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                'flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab.id
                   ? 'border-amber-500 text-amber-700 dark:text-amber-400'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -269,7 +269,7 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
       </div>
 
       {/* Tab Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {activeTab === 'overview' && (
           <div className="space-y-8">
             {/* Basic Info */}
@@ -277,7 +277,7 @@ function UnitDetailPanel({ unitId, onClose, onEdit }) {
               <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-4">
                 Basic Information
               </h3>
-              <dl className="grid grid-cols-2 gap-6">
+              <dl className="grid gap-4 sm:grid-cols-2 sm:gap-6">
                 <div>
                   <dt className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Code</dt>
                   <dd className="font-mono text-sm">{unit.code}</dd>
@@ -633,12 +633,12 @@ export default function OrganizationPage() {
   return (
     <PageShell>
       {pageMeta}
-      <div className="flex h-[calc(100vh-4rem)]">
+      <div className="flex min-w-0 flex-col lg:h-[calc(100vh-4rem)] lg:flex-row">
         {/* Left Panel - Tree View */}
-        <div className="w-[420px] border-r flex flex-col bg-card">
+        <div className="flex max-h-[70vh] w-full min-w-0 flex-col border-b bg-card lg:max-h-none lg:w-[420px] lg:shrink-0 lg:border-b-0 lg:border-r">
           {/* Header */}
           <div className="p-5 border-b bg-background">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
                   <FolderTree className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -663,7 +663,7 @@ export default function OrganizationPage() {
             </div>
 
             {/* Toolbar */}
-            <div className="flex items-center gap-1 mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-1">
               <Button variant="ghost" size="sm" className="font-mono text-xs text-muted-foreground hover:text-foreground" onClick={handleExpandAll}>
                 Expand All
               </Button>
@@ -715,7 +715,10 @@ export default function OrganizationPage() {
         </div>
 
         {/* Right Panel - Detail View */}
-        <div className="flex-1 bg-muted/20">
+        <div className={cn(
+          "min-w-0 flex-1 bg-muted/20",
+          selectedUnitId ? "block" : "hidden lg:block"
+        )}>
           {selectedUnitId ? (
             <UnitDetailPanel
               unitId={selectedUnitId}

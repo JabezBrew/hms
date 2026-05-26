@@ -239,7 +239,7 @@ export default function WardsPage() {
             className="border-none bg-transparent p-0"
             titleClassName="text-3xl"
             actions={(
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
                   size="icon"
@@ -262,7 +262,7 @@ export default function WardsPage() {
             )}
           />
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
             <div className="bg-background/50 rounded-xl p-4 border border-border/50">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">

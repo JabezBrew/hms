@@ -263,8 +263,8 @@ export function EncounterList() {
     <div className="min-h-screen bg-background">
       {/* Page Header */}
       <header className="bg-card border-b border-border px-6 py-8">
-        <div className="flex items-start justify-between">
-          <div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2">
               Clinical Documentation
             </p>
@@ -280,7 +280,7 @@ export function EncounterList() {
               )}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"

@@ -47,7 +47,7 @@ export function PageHeader({
         ) : null}
         {children}
       </div>
-      {actions ? <div className="shrink-0">{actions}</div> : null}
+      {actions ? <div className="w-full min-w-0 sm:w-auto sm:shrink-0">{actions}</div> : null}
     </div>
   )
 
