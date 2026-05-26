@@ -50,7 +50,7 @@ function orderRowsForView(rows, view) {
   if (view !== 'by-urgency') {
     return rows;
   }
-  return [...rows].sort((left, right) => {
+  return rows.toSorted((left, right) => {
     const leftOrder = URGENCY_ORDER[getPatientUrgency(left)] ?? 99;
     const rightOrder = URGENCY_ORDER[getPatientUrgency(right)] ?? 99;
     return leftOrder - rightOrder;
@@ -208,8 +208,8 @@ export default function WardBoardPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
               {isLiveConnected
-                ? <Wifi className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
-                : <WifiOff className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
+                ? <Wifi className="size-3.5 text-emerald-500" aria-hidden="true" />
+                : <WifiOff className="size-3.5 text-muted-foreground" aria-hidden="true" />}
               <span>{isFetching ? 'Refreshing…' : isLiveConnected ? 'Live' : 'Fallback'}</span>
             </div>
           </div>

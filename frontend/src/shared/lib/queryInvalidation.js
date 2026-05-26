@@ -3,7 +3,13 @@ export function hasQueryPrefix(queryKey, prefix) {
     return false;
   }
 
-  return prefix.every((value, index) => Object.is(queryKey[index], value));
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (!Object.is(queryKey[index], prefix[index])) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function invalidateQueryKeys(queryClient, queryKeys = []) {

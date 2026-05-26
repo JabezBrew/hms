@@ -24,7 +24,7 @@ const SECTION_ORDER = [
   'history', 'examination', 'diagnosis', 'treatment', 'notes', 'findings', 'recommendations',
 ];
 
-const sortClinicalEntries = (entries) => [...entries].sort((a, b) => {
+const sortClinicalEntries = (entries) => entries.toSorted((a, b) => {
   const indexA = SECTION_ORDER.indexOf(a[0].toLowerCase());
   const indexB = SECTION_ORDER.indexOf(b[0].toLowerCase());
 
@@ -38,6 +38,31 @@ const formatLabel = (label) => label
   .replace(/_/g, ' ')
   .replace(/([a-z])([A-Z])/g, '$1 $2')
   .replace(/\b\w/g, (character) => character.toUpperCase());
+
+const serializeArrayKeyPart = (item) => {
+  if (item === null) return 'null';
+  if (item === undefined) return 'undefined';
+  if (typeof item !== 'object') return `${typeof item}:${String(item)}`;
+
+  try {
+    return `object:${JSON.stringify(item)}`;
+  } catch {
+    return 'object:unserializable';
+  }
+};
+
+const getStableArrayItems = (items) => {
+  const seen = new Map();
+  return items.map((item) => {
+    const keyPart = serializeArrayKeyPart(item);
+    const occurrence = seen.get(keyPart) || 0;
+    seen.set(keyPart, occurrence + 1);
+    return {
+      item,
+      key: `${keyPart}:${occurrence}`,
+    };
+  });
+};
 
 const getSectionColor = (label) => {
   const lowerLabel = label.toLowerCase();
@@ -77,11 +102,12 @@ const GenericDataRenderer = ({ data, depth = 0 }) => {
     }
 
     const hasComplexItems = data.some((item) => typeof item === 'object' && item !== null);
+    const keyedItems = getStableArrayItems(data);
     if (!hasComplexItems) {
       return (
         <ul className="list-disc list-inside text-sm text-foreground/80 space-y-1">
-          {data.map((item, index) => (
-            <li key={`${String(item)}-${index}`}>{String(item)}</li>
+          {keyedItems.map(({ item, key }) => (
+            <li key={key}>{String(item)}</li>
           ))}
         </ul>
       );
@@ -89,8 +115,8 @@ const GenericDataRenderer = ({ data, depth = 0 }) => {
 
     return (
       <div className="space-y-3">
-        {data.map((item, index) => (
-          <div key={index} className="min-w-0 pl-3 border-l-2 border-border/50">
+        {keyedItems.map(({ item, key }) => (
+          <div key={key} className="min-w-0 pl-3 border-l-2 border-border/50">
             <GenericDataRenderer data={item} depth={depth + 1} />
           </div>
         ))}

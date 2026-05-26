@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Popover,
   PopoverContent,
@@ -17,23 +16,33 @@ import Check from 'lucide-react/dist/esm/icons/check.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 
+const EMPTY_ARRAY = [];
+
 /**
  * Sort batches by FEFO (First Expiry First Out)
  */
 function sortByFEFO(batches) {
-  return [...batches].sort((a, b) => {
+  return batches.toSorted((a, b) => {
     const dateA = a.expiry_date ? parseISO(a.expiry_date) : new Date('9999-12-31');
     const dateB = b.expiry_date ? parseISO(b.expiry_date) : new Date('9999-12-31');
     return dateA - dateB;
   });
 }
 
+function createBatchMap(batches) {
+  return new Map(batches.map((batch) => [batch.id, batch]));
+}
+
+function createAllocationMap(allocations) {
+  return new Map(allocations.map((allocation) => [allocation.batch_id, allocation]));
+}
+
 /**
  * Calculate available quantity from selected batches
  */
-function calculateSelectedQuantity(selectedBatches, batches) {
+function calculateSelectedQuantity(selectedBatches, batchById) {
   return selectedBatches.reduce((sum, batchId) => {
-    const batch = batches.find(b => b.id === batchId);
+    const batch = batchById.get(batchId);
     return sum + (batch?.quantity || batch?.available_quantity || 0);
   }, 0);
 }
@@ -46,28 +55,36 @@ function BatchOption({
   isSelected,
   isRecommended,
   onSelect,
+  referenceDate,
   showLocation = false,
 }) {
   const expiryDate = batch.expiry_date;
-  const daysUntilExpiry = expiryDate ? differenceInDays(parseISO(expiryDate), new Date()) : null;
+  const daysUntilExpiry = expiryDate ? differenceInDays(parseISO(expiryDate), referenceDate) : null;
   const isExpired = daysUntilExpiry !== null && daysUntilExpiry < 0;
   const isUrgent = daysUntilExpiry !== null && daysUntilExpiry <= 7 && daysUntilExpiry >= 0;
   const quantity = batch.quantity || batch.available_quantity || 0;
 
   return (
-    <div
+    <button
+      type="button"
+      disabled={isExpired}
+      aria-pressed={isSelected}
       className={cn(
-        'flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors',
+        'flex w-full items-center gap-3 p-3 rounded-lg text-left transition-colors',
         isSelected ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted/50 border border-transparent',
         isExpired && 'opacity-50 cursor-not-allowed'
       )}
       onClick={() => !isExpired && onSelect(batch.id)}
     >
-      <Checkbox
-        checked={isSelected}
-        disabled={isExpired}
-        className="pointer-events-none"
-      />
+      <span
+        className={cn(
+          'flex size-4 shrink-0 items-center justify-center rounded-sm border border-border',
+          isSelected && 'border-primary bg-primary text-primary-foreground'
+        )}
+        aria-hidden="true"
+      >
+        {isSelected ? <Check className="size-3" /> : null}
+      </span>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
@@ -111,7 +128,7 @@ function BatchOption({
           {batch.unit || 'units'}
         </span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -130,8 +147,8 @@ function BatchOption({
  * @param {string} [props.className] - Additional CSS classes
  */
 export function BatchSelector({
-  batches = [],
-  selectedBatches = [],
+  batches = EMPTY_ARRAY,
+  selectedBatches = EMPTY_ARRAY,
   onSelectionChange,
   requiredQuantity,
   showLocation = false,
@@ -146,11 +163,14 @@ export function BatchSelector({
 
   // Sort batches by FEFO
   const sortedBatches = useMemo(() => sortByFEFO(batches), [batches]);
+  const batchById = useMemo(() => createBatchMap(batches), [batches]);
+  const selectedBatchSet = useMemo(() => new Set(selectedBatches), [selectedBatches]);
+  const renderedAt = useMemo(() => new Date(), []);
 
   // Calculate selected quantity
   const selectedQuantity = useMemo(
-    () => calculateSelectedQuantity(selectedBatches, batches),
-    [selectedBatches, batches]
+    () => calculateSelectedQuantity(selectedBatches, batchById),
+    [selectedBatches, batchById]
   );
 
   // Check if quantity requirement is met
@@ -165,7 +185,7 @@ export function BatchSelector({
       return;
     }
 
-    const isSelected = selectedBatches.includes(batchId);
+    const isSelected = selectedBatchSet.has(batchId);
     if (isSelected) {
       onSelectionChange(selectedBatches.filter(id => id !== batchId));
     } else {
@@ -205,7 +225,7 @@ export function BatchSelector({
       return placeholder;
     }
     if (selectedBatches.length === 1) {
-      const batch = batches.find(b => b.id === selectedBatches[0]);
+      const batch = batchById.get(selectedBatches[0]);
       return batch?.batch_number || 'Selected batch';
     }
     return `${selectedBatches.length} batches selected`;
@@ -218,7 +238,7 @@ export function BatchSelector({
   if (!batches.length) {
     return (
       <div className={cn('flex items-center gap-2 p-3 bg-muted/50 rounded-lg text-muted-foreground', className)}>
-        <Package className="h-4 w-4" />
+        <Package className="size-4" />
         <span className="text-sm">No batches available</span>
       </div>
     );
@@ -240,7 +260,7 @@ export function BatchSelector({
             )}
           >
             <span className="truncate">{getDisplayText()}</span>
-            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[400px] p-0" align="start">
@@ -284,9 +304,10 @@ export function BatchSelector({
               <BatchOption
                 key={batch.id}
                 batch={batch}
-                isSelected={selectedBatches.includes(batch.id)}
+                isSelected={selectedBatchSet.has(batch.id)}
                 isRecommended={index === 0}
                 onSelect={handleSelect}
+                referenceDate={renderedAt}
                 showLocation={showLocation}
               />
             ))}
@@ -309,7 +330,7 @@ export function BatchSelector({
       {/* Quantity warning */}
       {requiredQuantity && !quantityMet && selectedBatches.length > 0 && (
         <div className="flex items-center gap-2 text-xs text-amber-500">
-          <AlertTriangle className="h-3 w-3" />
+          <AlertTriangle className="size-3" />
           <span>Need {shortfall} more to meet required quantity</span>
         </div>
       )}
@@ -321,7 +342,7 @@ export function BatchSelector({
  * SimpleBatchSelector - Single batch selection dropdown
  */
 export function SimpleBatchSelector({
-  batches = [],
+  batches = EMPTY_ARRAY,
   selectedBatch,
   onSelect,
   showLocation = false,
@@ -347,8 +368,8 @@ export function SimpleBatchSelector({
  * BatchQuantityInput - Batch selector with quantity input per batch
  */
 export function BatchQuantityInput({
-  batches = [],
-  allocations = [], // [{ batch_id, quantity }]
+  batches = EMPTY_ARRAY,
+  allocations = EMPTY_ARRAY, // [{ batch_id, quantity }]
   onAllocationsChange,
   maxQuantity,
   showLocation = false,
@@ -356,6 +377,9 @@ export function BatchQuantityInput({
   className,
 }) {
   const sortedBatches = useMemo(() => sortByFEFO(batches), [batches]);
+  const batchById = useMemo(() => createBatchMap(batches), [batches]);
+  const allocationByBatchId = useMemo(() => createAllocationMap(allocations), [allocations]);
+  const renderedAt = useMemo(() => new Date(), []);
 
   const totalAllocated = useMemo(
     () => allocations.reduce((sum, a) => sum + (a.quantity || 0), 0),
@@ -363,11 +387,11 @@ export function BatchQuantityInput({
   );
 
   const handleQuantityChange = (batchId, quantity) => {
-    const batch = batches.find(b => b.id === batchId);
+    const batch = batchById.get(batchId);
     const maxBatchQty = batch?.quantity || batch?.available_quantity || 0;
     const clampedQty = Math.max(0, Math.min(quantity, maxBatchQty));
 
-    const existing = allocations.find(a => a.batch_id === batchId);
+    const existing = allocationByBatchId.get(batchId);
     if (existing) {
       if (clampedQty === 0) {
         onAllocationsChange(allocations.filter(a => a.batch_id !== batchId));
@@ -394,7 +418,7 @@ export function BatchQuantityInput({
   if (!batches.length) {
     return (
       <div className={cn('flex items-center gap-2 p-3 bg-muted/50 rounded-lg text-muted-foreground', className)}>
-        <Package className="h-4 w-4" />
+        <Package className="size-4" />
         <span className="text-sm">No batches available</span>
       </div>
     );
@@ -415,11 +439,11 @@ export function BatchQuantityInput({
       )}
 
       {sortedBatches.map((batch, index) => {
-        const allocation = allocations.find(a => a.batch_id === batch.id);
+        const allocation = allocationByBatchId.get(batch.id);
         const quantity = allocation?.quantity || 0;
         const maxBatchQty = batch.quantity || batch.available_quantity || 0;
         const expiryDate = batch.expiry_date;
-        const daysUntilExpiry = expiryDate ? differenceInDays(parseISO(expiryDate), new Date()) : null;
+        const daysUntilExpiry = expiryDate ? differenceInDays(parseISO(expiryDate), renderedAt) : null;
         const isExpired = daysUntilExpiry !== null && daysUntilExpiry < 0;
 
         return (

@@ -72,7 +72,7 @@ export default function FeatureEntitlementsPage() {
   const facilityRequired = scope === FACILITY_SCOPE && facilityId === NO_FACILITY
 
   const sortedFeatures = useMemo(
-    () => [...featureManifest].sort((a, b) => a.label.localeCompare(b.label)),
+    () => featureManifest.toSorted((a, b) => a.label.localeCompare(b.label)),
     [featureManifest]
   )
   const moduleFeatures = useMemo(
@@ -86,9 +86,11 @@ export default function FeatureEntitlementsPage() {
 
   const globalOverrideByFeature = useMemo(() => {
     const byFeature = new Map()
-    overrides
-      .filter((override) => override.scope === GLOBAL_SCOPE)
-      .forEach((override) => byFeature.set(override.feature_key, override))
+    for (const override of overrides) {
+      if (override.scope === GLOBAL_SCOPE) {
+        byFeature.set(override.feature_key, override)
+      }
+    }
     return byFeature
   }, [overrides])
 
@@ -234,7 +236,7 @@ export default function FeatureEntitlementsPage() {
               disabled={isSaving}
               className="font-mono text-xs"
             >
-              <RotateCcw className="mr-2 h-3.5 w-3.5" />
+              <RotateCcw className="mr-2 size-3.5" />
               Inherit
             </Button>
           ) : null}
@@ -250,7 +252,7 @@ export default function FeatureEntitlementsPage() {
         title={(
           <span className="flex items-center gap-3 sm:gap-4">
             <span className="p-2.5 sm:p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-              <Boxes className="h-6 w-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
+              <Boxes className="size-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
             </span>
             Feature Entitlements
           </span>
@@ -264,7 +266,7 @@ export default function FeatureEntitlementsPage() {
           onClick={() => navigate('/settings')}
           className="-ml-2 font-mono text-xs"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="size-4 mr-2" />
           Back to Settings
         </Button>
       </PageHeader>
@@ -285,7 +287,7 @@ export default function FeatureEntitlementsPage() {
             </div>
 
             {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading module toggles...</p>
+              <p className="text-sm text-muted-foreground">Loading module toggles…</p>
             ) : moduleFeatures.length === 0 ? (
               <p className="text-sm text-muted-foreground">No product modules are available.</p>
             ) : (
@@ -376,7 +378,7 @@ export default function FeatureEntitlementsPage() {
                         disabled={deleteOverride.isPending}
                         aria-label={`Remove ${override.feature_key} override`}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="size-4" />
                       </Button>
                     </div>
                     <p className="mt-2 font-mono text-[11px]">
@@ -396,7 +398,7 @@ export default function FeatureEntitlementsPage() {
               </p>
             </div>
             {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading feature controls...</p>
+              <p className="text-sm text-muted-foreground">Loading feature controls…</p>
             ) : advancedFeatures.length === 0 ? (
               <p className="text-sm text-muted-foreground">No advanced features are available.</p>
             ) : (

@@ -191,8 +191,8 @@ const DoctorAvailabilityCalendar = ({
     if (!selectedDate) {
       return [];
     }
-    return [...(availabilityMap[format(selectedDate, 'yyyy-MM-dd')] || [])]
-      .sort((a, b) => new Date(a.start) - new Date(b.start));
+    return (availabilityMap[format(selectedDate, 'yyyy-MM-dd')] || [])
+      .toSorted((a, b) => new Date(a.start) - new Date(b.start));
   }, [availabilityMap, selectedDate]);
 
   const capacitySummary = useMemo(() => {
@@ -224,9 +224,9 @@ const DoctorAvailabilityCalendar = ({
               variant="ghost"
               size="sm"
               onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
-              className="h-8 w-8 p-0"
+              className="size-8 p-0"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="size-4" />
             </Button>
             <h3 className="font-semibold text-foreground">
               {format(currentMonth, 'MMMM yyyy')}
@@ -235,16 +235,16 @@ const DoctorAvailabilityCalendar = ({
               variant="ghost"
               size="sm"
               onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
-              className="h-8 w-8 p-0"
+              className="size-8 p-0"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="size-4" />
             </Button>
           </div>
 
           {/* Calendar Grid */}
           {isLoading ? (
             <div className="h-[300px] flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
             <Calendar
@@ -270,11 +270,11 @@ const DoctorAvailabilityCalendar = ({
         {/* Legend */}
         <div className="flex items-center justify-center gap-6 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500/50" />
+            <div className="size-3 rounded-full bg-emerald-500/30 border border-emerald-500/50" />
             <span className="text-muted-foreground">Available</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-rose-500/20 border border-rose-500/30" />
+            <div className="size-3 rounded-full bg-rose-500/20 border border-rose-500/30" />
             <span className="text-muted-foreground">Unavailable</span>
           </div>
         </div>
@@ -298,11 +298,11 @@ const DoctorAvailabilityCalendar = ({
           {selectedDateSlots.length > 0 && (
             <div className="flex gap-2">
               <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                <CalendarCheck className="h-3 w-3 mr-1" />
+                <CalendarCheck className="size-3 mr-1" />
                 {capacitySummary.totalRemaining}
               </Badge>
               <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30">
-                <CalendarX className="h-3 w-3 mr-1" />
+                <CalendarX className="size-3 mr-1" />
                 {capacitySummary.totalBooked}
               </Badge>
             </div>
@@ -340,7 +340,7 @@ const DoctorAvailabilityCalendar = ({
                   >
                     <div className="flex items-center gap-2">
                       <Clock className={cn(
-                        "h-4 w-4",
+                        "size-4",
                         isBooked ? "text-rose-400" : availability.overbook ? "text-amber-500" : "text-emerald-500"
                       )} />
                       <span className="font-mono text-sm">
@@ -370,7 +370,7 @@ const DoctorAvailabilityCalendar = ({
           </ScrollArea>
         ) : (
           <div className="flex flex-col items-center justify-center h-[200px] rounded-xl border border-border/50 bg-muted/20">
-            <Clock className="h-10 w-10 text-muted-foreground mb-3" />
+            <Clock className="size-10 text-muted-foreground mb-3" />
             <p className="text-muted-foreground text-sm">No slots for this date</p>
             <p className="text-muted-foreground/60 text-xs mt-1">
               Select an available day on the calendar

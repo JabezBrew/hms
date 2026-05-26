@@ -17,6 +17,9 @@ import parseISO from "date-fns/parseISO";
 import { useChartEntries, useChartAssignment } from "@/features/charts/hooks";
 import { formatBodyMapValue } from "./bodyMapUtils";
 
+const EMPTY_ARRAY = [];
+const MAX_VISIBLE_ENTRIES = 12;
+
 const ChartDataGrid = ({
   assignmentId,
   assignment: assignmentProp = null,
@@ -42,22 +45,26 @@ const ChartDataGrid = ({
   const assignment = assignmentProp || assignmentQueryData;
   const resolvedEntriesData = entriesDataProp || entriesData;
   const template = assignment?.template;
-  const entries = resolvedEntriesData?.results || resolvedEntriesData || [];
+  const entries = resolvedEntriesData?.results || resolvedEntriesData || EMPTY_ARRAY;
   const totalEntries = resolvedEntriesData?.count ?? entries.length;
 
   // Sort entries by observation time (most recent first for display)
   const sortedEntries = useMemo(() => {
-    return [...entries].sort((a, b) =>
+    return entries.toSorted((a, b) =>
       new Date(b.observation_datetime) - new Date(a.observation_datetime)
     );
   }, [entries]);
+  const visibleEntries = useMemo(
+    () => sortedEntries.slice(0, MAX_VISIBLE_ENTRIES),
+    [sortedEntries]
+  );
 
   // Get non-calculated fields for display
   const displayFields = useMemo(() => {
     if (!template?.fields) return [];
     return template.fields
       .filter((f) => f.field_type !== 'calculated' || template.fields.length <= 5)
-      .sort((a, b) => a.display_order - b.display_order);
+      .toSorted((a, b) => a.display_order - b.display_order);
   }, [template]);
 
   // Check if a value is critical
@@ -115,7 +122,7 @@ const ChartDataGrid = ({
   if (isLoading) {
     return (
       <div className={cn("flex items-center justify-center py-12", className)}>
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -131,7 +138,7 @@ const ChartDataGrid = ({
   if (entries.length === 0) {
     return (
       <div className={cn("text-center py-12 text-muted-foreground", className)}>
-        <Calendar className="h-12 w-12 mx-auto mb-3 opacity-50" />
+        <Calendar className="size-12 mx-auto mb-3 opacity-50" />
         <p>No entries recorded yet</p>
       </div>
     );
@@ -164,7 +171,7 @@ const ChartDataGrid = ({
                     Field
                   </span>
                 </th>
-                {sortedEntries.slice(0, 12).map((entry) => (
+                {visibleEntries.map((entry) => (
                   <th key={entry.id} className="px-3 py-2 text-center min-w-[80px]">
                     <div className="font-mono text-[10px] text-muted-foreground">
                       {format(parseISO(entry.observation_datetime), 'MMM d')}
@@ -173,7 +180,7 @@ const ChartDataGrid = ({
                       {format(parseISO(entry.observation_datetime), 'h:mm a')}
                     </div>
                     {entry.has_critical_values && (
-                      <AlertTriangle className="h-3 w-3 text-rose-500 mx-auto mt-1" />
+                      <AlertTriangle className="size-3 text-rose-500 mx-auto mt-1" />
                     )}
                   </th>
                 ))}
@@ -200,7 +207,7 @@ const ChartDataGrid = ({
                       )}
                     </div>
                   </td>
-                  {sortedEntries.slice(0, 12).map((entry) => {
+                  {visibleEntries.map((entry) => {
                     const value = entry.data?.[field.field_key];
                     const critical = isCritical(field, value);
 
@@ -235,7 +242,7 @@ const ChartDataGrid = ({
                     Notes
                   </span>
                 </td>
-                {sortedEntries.slice(0, 12).map((entry) => (
+                {visibleEntries.map((entry) => (
                   <td key={entry.id} className="px-3 py-2 text-center">
                     {entry.notes ? (
                       <span className="font-mono text-[10px] text-muted-foreground">
@@ -244,7 +251,7 @@ const ChartDataGrid = ({
                           : entry.notes}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">No notes</span>
                     )}
                   </td>
                 ))}
@@ -257,7 +264,7 @@ const ChartDataGrid = ({
                     Recorded by
                   </span>
                 </td>
-                {sortedEntries.slice(0, 12).map((entry) => (
+                {visibleEntries.map((entry) => (
                   <td key={entry.id} className="px-3 py-2 text-center">
                     <span className="font-mono text-[10px] text-muted-foreground">
                       {entry.recorded_by_name || '—'}
@@ -272,10 +279,10 @@ const ChartDataGrid = ({
       </ScrollArea>
 
       {/* Footer */}
-      {totalEntries > 12 && (
+      {totalEntries > MAX_VISIBLE_ENTRIES && (
         <div className="px-4 py-2 border-t border-border bg-muted/20">
           <p className="font-mono text-[10px] text-muted-foreground text-center">
-            Showing 12 of {totalEntries} entries. Scroll horizontally for more.
+            Showing {MAX_VISIBLE_ENTRIES} of {totalEntries} entries. Scroll horizontally for more.
           </p>
         </div>
       )}

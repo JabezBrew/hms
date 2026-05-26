@@ -4,6 +4,8 @@ import React from 'react';
 
 import { cn } from '@/lib/utils';
 
+const EMPTY_WARDS = [];
+
 /**
  * OccupancyTrendChart - Simple bar chart for occupancy visualization
  *
@@ -11,7 +13,7 @@ import { cn } from '@/lib/utils';
  * @param {Array} props.wards - Array of ward data with occupancy info
  * @param {string} props.className - Additional CSS classes
  */
-export default function OccupancyTrendChart({ wards = [], className }) {
+export default function OccupancyTrendChart({ wards = EMPTY_WARDS, className }) {
   if (!wards || wards.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -29,7 +31,7 @@ export default function OccupancyTrendChart({ wards = [], className }) {
     }, 0) / wards.length;
 
   // Sort wards by occupancy for better visualization
-  const sortedWards = [...wards].sort((a, b) => {
+  const sortedWards = wards.toSorted((a, b) => {
     const aOccupancy =
       a.total_beds > 0 ? (a.occupied_beds / a.total_beds) * 100 : 0;
     const bOccupancy =
@@ -52,12 +54,12 @@ export default function OccupancyTrendChart({ wards = [], className }) {
         <div className="flex items-center gap-2">
           {avgOccupancy > 75 ? (
             <>
-              <TrendingUp className="h-4 w-4 text-rose-400" />
+              <TrendingUp className="size-4 text-rose-400" />
               <span className="text-sm font-mono text-rose-400">High</span>
             </>
           ) : (
             <>
-              <TrendingDown className="h-4 w-4 text-emerald-400" />
+              <TrendingDown className="size-4 text-emerald-400" />
               <span className="text-sm font-mono text-emerald-400">Normal</span>
             </>
           )}
@@ -138,19 +140,19 @@ export default function OccupancyTrendChart({ wards = [], className }) {
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-border">
         <div className="flex items-center gap-2">
-          <div className="h-3 w-3 rounded-sm bg-emerald-500" />
+          <div className="size-3 rounded-sm bg-emerald-500" />
           <span className="text-xs text-muted-foreground">{'<75% (Normal)'}</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="h-3 w-3 rounded-sm bg-sky-500" />
+          <div className="size-3 rounded-sm bg-sky-500" />
           <span className="text-xs text-muted-foreground">75-90% (Moderate)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="h-3 w-3 rounded-sm bg-amber-500" />
+          <div className="size-3 rounded-sm bg-amber-500" />
           <span className="text-xs text-muted-foreground">90-100% (High)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="h-3 w-3 rounded-sm bg-rose-500" />
+          <div className="size-3 rounded-sm bg-rose-500" />
           <span className="text-xs text-muted-foreground">{'≥100% (Critical)'}</span>
         </div>
       </div>
