@@ -254,32 +254,32 @@ const PatientIdentityHero = ({
 
   return (
     <header className={cn(
-      "relative bg-card border-b border-border",
-      "px-6 py-8 mb-6",
+      "relative max-w-full overflow-hidden bg-card border-b border-border",
+      "px-4 py-6 mb-6 sm:px-6 sm:py-8",
       className
     )}>
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent" />
 
-      <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+      <div className="relative flex min-w-0 flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
         {/* Left: Patient Identity */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Status + Name */}
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-4">
             {status === 'critical' && (
               <span className="badge-chronicle-rose flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" />
                 CRITICAL
               </span>
             )}
-            <h1 className="font-display text-4xl md:text-5xl text-foreground tracking-tight">
+            <h1 className="min-w-0 [overflow-wrap:anywhere] font-display text-4xl md:text-5xl text-foreground tracking-tight">
               {displayName}
             </h1>
           </div>
 
           {/* Demographics line */}
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground">
-            <span className="font-mono text-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground">
+            <span className="min-w-0 [overflow-wrap:anywhere] font-mono text-sm">
               MRN: <span className="text-foreground">{mrn}</span>
             </span>
 
@@ -304,7 +304,7 @@ const PatientIdentityHero = ({
             )}
 
             {location && (
-              <span className="flex items-center gap-1.5 font-mono text-sm">
+              <span className="flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere] font-mono text-sm">
                 <MapPin className="h-3.5 w-3.5" />
                 {location}
               </span>
@@ -380,7 +380,7 @@ const PatientIdentityHero = ({
         </div>
 
         {/* Right: Quick Actions */}
-        <div className="flex flex-wrap items-center gap-2 xl:max-w-[32rem] xl:justify-end">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 xl:max-w-[32rem] xl:justify-end">
           <Button
             variant="outline"
             size="sm"

@@ -631,8 +631,24 @@ const PatientChroniclePage = ({ defaultAction }) => {
     enabled: !rustV2Mode && canFetchClinical,
   });
   const rustV2Encounters = useMemo(
-    () => (chronicleContext?.active_encounter ? [chronicleContext.active_encounter] : []),
-    [chronicleContext?.active_encounter],
+    () => {
+      const encountersById = new Map();
+
+      if (Array.isArray(chronicleContext?.encounters)) {
+        chronicleContext.encounters.forEach((encounter) => {
+          if (encounter?.id !== null && encounter?.id !== undefined) {
+            encountersById.set(String(encounter.id), encounter);
+          }
+        });
+      }
+
+      if (chronicleContext?.active_encounter?.id !== null && chronicleContext?.active_encounter?.id !== undefined) {
+        encountersById.set(String(chronicleContext.active_encounter.id), chronicleContext.active_encounter);
+      }
+
+      return Array.from(encountersById.values());
+    },
+    [chronicleContext?.active_encounter, chronicleContext?.encounters],
   );
   const encounters = rustV2Mode ? rustV2Encounters : legacyEncounters;
   const areEncountersLoading = rustV2Mode ? false : areLegacyEncountersLoading;
@@ -1728,7 +1744,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   return (
     <>
       {pageMeta}
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen max-w-full overflow-x-hidden bg-background">
         {/* Patient Identity Hero */}
         <PatientIdentityHero
           patient={patientForChronicle}
@@ -1755,7 +1771,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         />
 
         {canOpenWardBoard && (
-          <div className="px-6 pt-4">
+          <div className="px-4 pt-4 sm:px-6">
             <Button
               variant="outline"
               size="sm"
@@ -1779,7 +1795,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
         {/* Main Content: Sidebar + Timeline */}
         <div className={cn(
-          "flex transition-all duration-300",
+          "flex min-w-0 max-w-full overflow-x-hidden transition-all duration-300",
           isCopilotSlideOverOpen
             ? "lg:mr-[34rem]"
             : isAnySlideOverOpen && "lg:mr-[50%]"
@@ -1809,7 +1825,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
             />
           </div>
           {/* Timeline Chronicle or single-page Chronicle mode */}
-          <main className="flex-1 p-6 transition-all duration-300">
+          <main className="min-w-0 flex-1 px-4 py-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
           {isWardRoundMode ? (
             <Suspense fallback={(
               <div className="mx-auto max-w-4xl space-y-4">
@@ -1830,32 +1846,36 @@ const PatientChroniclePage = ({ defaultAction }) => {
               />
             </Suspense>
           ) : (
-          <div className="min-w-0 max-w-4xl mx-auto">
+          <div className="mx-auto w-full min-w-0 max-w-4xl">
             {/* Timeline Header with Search and Filters */}
             <div className="mb-6 space-y-4">
               {/* Title and count */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="font-display text-2xl text-foreground">
-                    Clinical Chronicle
-                  </h2>
-                  {totalCount > 0 && (
-                    <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
-                      {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
-                    </span>
-                  )}
-                  {selectedEncounter && !isAllVisitsScope && (
-                    <span className="font-mono text-xs text-muted-foreground/80">
-                      Focused on {formatEncounterScopeLabel(selectedEncounter, activeEncounter?.id)}
-                    </span>
-                  )}
-                  {/* Show encounter count hint when some encounters have no documentation */}
-                  {isAllVisitsScope && encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
-                    <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
-                      • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
-                    </span>
-                  )}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="font-display text-xl text-foreground sm:text-2xl">
+                      Clinical Chronicle
+                    </h2>
+                    {totalCount > 0 && (
+                      <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                        {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    {selectedEncounter && !isAllVisitsScope && (
+                      <p className="min-w-0 [overflow-wrap:anywhere] font-mono text-xs text-muted-foreground/80">
+                        Focused on {formatEncounterScopeLabel(selectedEncounter, activeEncounter?.id)}
+                      </p>
+                    )}
+                    {/* Show encounter count hint when some encounters have no documentation */}
+                    {isAllVisitsScope && encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
+                      <p className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
+                        {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Refresh button */}
@@ -1863,17 +1883,18 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   variant="ghost"
                   size="sm"
                   onClick={() => refetchTimeline()}
-                  className="font-mono text-xs"
+                  aria-label="Refresh timeline"
+                  className="h-9 w-9 shrink-0 p-0 font-mono text-xs sm:w-auto sm:px-3"
                 >
                   <RefreshCw className={cn(
-                    "h-3.5 w-3.5 mr-1.5",
+                    "h-3.5 w-3.5 sm:mr-1.5",
                     isTimelineLoading && "animate-spin"
                   )} />
-                  Refresh
+                  <span className="hidden sm:inline">Refresh</span>
                 </Button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
@@ -1884,7 +1905,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   value={resolvedVisitScope || CHRONICLE_ALL_VISITS}
                   onValueChange={handleVisitScopeChange}
                 >
-                  <SelectTrigger className="min-w-[260px] max-w-[420px] font-mono text-xs">
+                  <SelectTrigger className="w-full font-mono text-xs sm:min-w-[260px] sm:max-w-[420px]">
                     <SelectValue placeholder="Select visit" />
                   </SelectTrigger>
                   <SelectContent className="z-[200]">
@@ -1904,7 +1925,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     variant="ghost"
                     size="sm"
                     onClick={handleViewAllHistory}
-                    className="h-8 px-2 font-mono text-xs"
+                    className="h-8 self-start px-2 font-mono text-xs"
                   >
                     All history
                   </Button>
@@ -1914,7 +1935,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     variant="ghost"
                     size="sm"
                     onClick={handleViewCurrentVisit}
-                    className="h-8 px-2 font-mono text-xs"
+                    className="h-8 self-start px-2 font-mono text-xs"
                   >
                     Current visit
                   </Button>
@@ -1922,9 +1943,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
               </div>
 
               {/* Search and Filter row */}
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                 {/* Search Input */}
-                <div className="relative flex-1 max-w-sm">
+                <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="text"
@@ -1936,9 +1957,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 </div>
 
                 {/* Filter Tabs */}
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex rounded-lg bg-muted p-1" data-onboarding="chronicle-filter-group">
+                <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                  <Filter className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block" />
+                  <div className="flex w-full min-w-0 max-w-full overflow-x-auto rounded-lg bg-muted p-1 [-webkit-overflow-scrolling:touch] sm:w-auto" data-onboarding="chronicle-filter-group">
                     {[
                       { key: 'all', label: 'All', icon: null },
                       { key: 'progress_note', label: 'Notes', icon: FileText },
@@ -1958,8 +1979,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
                               : undefined
                         }
                         className={cn(
-                          "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
-                          "flex items-center gap-1.5",
+                          "shrink-0 px-2 py-1.5 rounded-md font-mono text-xs transition-colors sm:px-3",
+                          "flex items-center gap-1 sm:gap-1.5",
                           activeFilter === filter.key
                             ? "bg-background text-foreground shadow-sm"
                             : "text-muted-foreground hover:text-foreground"
@@ -1974,7 +1995,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
                 {/* Expand/Collapse All */}
                 {isAllVisitsScope && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1997,7 +2018,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
             </div>
 
             {/* Timeline Entries Grouped by Encounter */}
-            <div className="relative space-y-4">
+            <div className="relative min-w-0 max-w-full space-y-4">
               {/* Loading state for initial load */}
               {(isTimelineLoading || isVisitScopePending) && filteredEntries.length === 0 && (
                 <div className="space-y-4">
@@ -2023,11 +2044,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 return (
                   <div key={encounter.id} className="overflow-hidden rounded-lg border border-border bg-card">
                     {/* Encounter Header */}
-                    <div className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50">
+                    <div className="flex w-full flex-col gap-3 px-3 py-3 text-left transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:px-4">
                       <button
                         type="button"
                         onClick={() => toggleEncounter(normalizedEncounterId)}
-                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        className="flex min-w-0 flex-1 items-start gap-3 text-left sm:items-center"
                       >
                         {isExpanded ? (
                           <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -2036,7 +2057,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                         )}
 
                         <div className={cn(
-                          "rounded-lg p-2",
+                          "shrink-0 rounded-lg p-2",
                           ['inpatient', 'admission', 'hospitalization'].includes(encounterKind) ? "bg-blue-500/10" : "bg-amber-500/10"
                         )}>
                           <TypeIcon className={cn(
@@ -2046,8 +2067,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium capitalize">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="min-w-0 [overflow-wrap:anywhere] text-sm font-medium capitalize">
                               {getEncounterTitle(encounter)}
                             </span>
                             {encounter.status && (
@@ -2061,7 +2082,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                               </span>
                             )}
                           </div>
-                          <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                             <span>{dateRange}</span>
                             {encounter.practitioner_name && (
                               <>
@@ -2079,7 +2100,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                         </div>
                       </button>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
                         <div className="hidden xl:flex items-center gap-1">
                           <Button
                             variant="ghost"
@@ -2114,7 +2135,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                     </div>
 
                     {/* Encounter Entries — CSS-hidden instead of unmount to avoid animation replay */}
-                    <div className={cn("space-y-3 border-t border-border px-4 py-3", !isExpanded && "hidden")}>
+                    <div className={cn("min-w-0 space-y-3 border-t border-border px-3 py-3 sm:px-4", !isExpanded && "hidden")}>
                       {entries.map((entry, index) => (
                         <TimelineEntry
                           key={entry.id}
@@ -2171,7 +2192,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                   </button>
 
                   {/* Unlinked Entries List — CSS-hidden instead of unmount */}
-                  <div className={cn("space-y-3 border-t border-dashed border-border px-4 py-3", !expandedEncounters.has('unlinked') && "hidden")}>
+                  <div className={cn("min-w-0 space-y-3 border-t border-dashed border-border px-3 py-3 sm:px-4", !expandedEncounters.has('unlinked') && "hidden")}>
                     {groupedByEncounter.unlinked.map((entry, index) => (
                       <TimelineEntry
                         key={entry.id}

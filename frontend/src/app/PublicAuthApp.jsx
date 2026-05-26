@@ -10,7 +10,7 @@ export default function PublicAuthApp() {
       <Route
         path="/login"
         element={
-          <div className="flex min-h-screen items-center justify-center">
+          <div className="flex min-h-dvh items-start justify-center pt-24 pb-10 sm:min-h-screen sm:items-center sm:py-10">
             <LoginForm />
           </div>
         }

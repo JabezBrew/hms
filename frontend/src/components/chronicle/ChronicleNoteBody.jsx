@@ -65,7 +65,7 @@ const GenericDataRenderer = ({ data, depth = 0 }) => {
 
   if (typeof data === 'string') {
     return (
-      <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
+      <p className="[overflow-wrap:anywhere] text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
         {data}
       </p>
     );
@@ -90,7 +90,7 @@ const GenericDataRenderer = ({ data, depth = 0 }) => {
     return (
       <div className="space-y-3">
         {data.map((item, index) => (
-          <div key={index} className="pl-3 border-l-2 border-border/50">
+          <div key={index} className="min-w-0 pl-3 border-l-2 border-border/50">
             <GenericDataRenderer data={item} depth={depth + 1} />
           </div>
         ))}
@@ -134,7 +134,7 @@ const GenericDataRenderer = ({ data, depth = 0 }) => {
   }
 
   return (
-    <span className="text-sm text-foreground/80">{String(data)}</span>
+    <span className="[overflow-wrap:anywhere] text-sm text-foreground/80">{String(data)}</span>
   );
 };
 
@@ -163,20 +163,20 @@ const DataSection = ({ label, value, depth }) => {
   return (
     <div
       className={cn(
-        "border-l-2 pl-4",
+        "min-w-0 border-l-2 pl-4",
         isMajorSection ? getSectionColor(label) : 'border-border/50',
         isMajorSection && "pb-2"
       )}
     >
       <h5
         className={cn(
-          "font-mono text-xs uppercase tracking-wider mb-2",
+          "[overflow-wrap:anywhere] font-mono text-xs uppercase tracking-wider mb-2",
           isMajorSection ? "text-foreground/70 font-semibold" : "text-muted-foreground/70"
         )}
       >
         {formatLabel(label)}
       </h5>
-      <div className={cn(depth > 0 && "text-sm")}>
+      <div className={cn("min-w-0", depth > 0 && "text-sm")}>
         <GenericDataRenderer data={value} depth={depth + 1} />
       </div>
     </div>
@@ -184,9 +184,9 @@ const DataSection = ({ label, value, depth }) => {
 };
 
 const ChronicleNoteBody = ({ content, data, className }) => (
-  <div className={cn("space-y-4", className)}>
+  <div className={cn("min-w-0 max-w-full space-y-4", className)}>
     {typeof content === 'string' && content.trim() && (
-      <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
+      <div className="[overflow-wrap:anywhere] text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
         {content}
       </div>
     )}

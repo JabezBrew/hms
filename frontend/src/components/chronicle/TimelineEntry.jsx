@@ -384,7 +384,7 @@ const TimelineEntry = ({
   return (
     <article
       className={cn(
-        "relative pl-8 pb-8 last:pb-0",
+        "relative min-w-0 max-w-full pl-5 pb-8 last:pb-0 sm:pl-8",
         !hasAnimatedRef.current && "animate-chronicle-enter",
         className
       )}
@@ -402,13 +402,13 @@ const TimelineEntry = ({
 
       {/* Entry content */}
       <div className={cn(
-        "bg-card/30 rounded-xl p-5 border border-border/50",
+        "min-w-0 max-w-full overflow-hidden bg-card/30 rounded-xl border border-border/50 p-4 sm:p-5",
         "hover:border-border transition-colors group"
       )}>
         {/* Meta line */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <time className="font-mono text-xs text-primary">
+        <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+            <time className="min-w-0 [overflow-wrap:anywhere] font-mono text-xs text-primary">
               {formatTime(entryTimestamp)}
             </time>
             <span className={getBadgeClass(config.color)}>
@@ -429,7 +429,7 @@ const TimelineEntry = ({
             )}
           </div>
           {entry.author && (
-            <span className="font-mono text-xs text-muted-foreground">
+            <span className="min-w-0 [overflow-wrap:anywhere] font-mono text-xs text-muted-foreground sm:text-right">
               {entry.author}
             </span>
           )}
@@ -440,7 +440,7 @@ const TimelineEntry = ({
 
         {/* Action buttons */}
         {(hasDetailContent || isCopyableNote() || isEditableNote() || canInlineExpand) && (
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
             {canInlineExpand && (
               <Button
                 variant="ghost"

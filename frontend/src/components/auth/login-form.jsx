@@ -55,7 +55,7 @@ export function LoginForm() {
   }
 
   return (
-    <div className="mx-auto flex w-full flex-col justify-center gap-8 sm:w-[380px]">
+    <div className="mx-auto flex w-full max-w-[420px] flex-col justify-center gap-8 px-5 sm:w-[380px] sm:px-0">
       {/* Header */}
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
