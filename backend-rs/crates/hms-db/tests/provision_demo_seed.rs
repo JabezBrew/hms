@@ -137,6 +137,19 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
     .expect("chronicle startup loads");
 
     assert!(startup.active_admission.is_some());
+    assert!(startup.encounters.len() > 1);
+    let encounter_ids = startup
+        .encounters
+        .iter()
+        .map(|encounter| encounter.id)
+        .collect::<std::collections::HashSet<_>>();
+    for entry in startup
+        .timeline_entries
+        .iter()
+        .filter(|entry| entry.encounter_id.is_some())
+    {
+        assert!(encounter_ids.contains(&entry.encounter_id.unwrap()));
+    }
     assert!(!startup.notes.is_empty());
     assert!(!startup.prescriptions.is_empty());
     assert!(!startup.chart_entries.is_empty());

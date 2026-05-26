@@ -142,6 +142,11 @@ function adaptChronicleStartup(response) {
   const data = response?.data || response || {}
   const activeEncounter = adaptEncounter(data.active_context?.encounter || data.active_encounter)
   const activeAdmission = adaptAdmission(data.active_context?.admission || data.active_admission)
+  const encounters = Array.isArray(data.encounters)
+    ? data.encounters.map(adaptEncounter).filter(Boolean)
+    : activeEncounter
+      ? [activeEncounter]
+      : []
   const labs = Array.isArray(data.lab_results)
     ? data.lab_results.map(adaptLabResult)
     : Array.isArray(data.summaries?.labs)
@@ -158,6 +163,7 @@ function adaptChronicleStartup(response) {
     },
     active_encounter: activeEncounter,
     active_admission: activeAdmission,
+    encounters,
     active_medications: data.active_medications || data.summaries?.medications || [],
     allergies: data.allergies || data.summaries?.allergies || [],
     problems: data.problems || data.summaries?.problems || [],

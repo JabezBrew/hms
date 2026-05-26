@@ -586,6 +586,40 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(screen.getByText('20 entries')).toBeInTheDocument()
   })
 
+  it('uses the Rust startup encounter list for documented visit focus options', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    chronicleStartupState.data = {
+      ...chronicleStartupState.data,
+      encounters: [
+        {
+          id: 'encounter-1',
+          admission_id: 'admission-1',
+          encounter_type: 'inpatient',
+          status: 'in-progress',
+          started_at: '2026-05-20T08:00:00Z',
+        },
+        {
+          id: 'encounter-2',
+          encounter_type: 'outpatient',
+          status: 'completed',
+          started_at: '2026-03-21T09:00:00Z',
+          ended_at: '2026-03-21T10:00:00Z',
+        },
+      ],
+    }
+
+    renderPage('/patients/patient-1?visit=encounter-2')
+
+    expect(timelineHookState.calls.at(-1)).toEqual(
+      expect.objectContaining({
+        params: expect.objectContaining({
+          encounterId: 'encounter-2',
+        }),
+      }),
+    )
+    expect(screen.getByText(/Focused on Outpatient visit - Mar 21, 2026/)).toBeInTheDocument()
+  })
+
   it('uses entry timestamps for visit group dates when encounter metadata has no start time', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     timelineHookState.entries = [{

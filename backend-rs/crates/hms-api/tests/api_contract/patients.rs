@@ -202,6 +202,25 @@ async fn patient_chronicle_startup_is_shaped_bounded_and_query_budgeted() {
     assert!(body["data"]["summaries"]["allergies"].is_array());
     assert!(body["data"]["summaries"]["medications"].is_array());
     assert!(body["data"]["summaries"]["labs"].is_array());
+    assert!(body["data"]["encounters"].is_array());
+    let encounter_ids = body["data"]["encounters"]
+        .as_array()
+        .expect("encounters is an array")
+        .iter()
+        .filter_map(|encounter| encounter["id"].as_str())
+        .collect::<std::collections::HashSet<_>>();
+    for entry in body["data"]["timeline"]["data"]
+        .as_array()
+        .expect("timeline data is an array")
+        .iter()
+    {
+        if let Some(encounter_id) = entry["encounter_id"].as_str() {
+            assert!(
+                encounter_ids.contains(encounter_id),
+                "encounter-linked timeline entry {encounter_id} must be present in Chronicle visit focus options"
+            );
+        }
+    }
     assert!(body["data"]["timeline"]["results"].is_null());
     assert!(body["data"]["timeline"]["data"].is_array());
     assert_eq!(body["data"]["timeline"]["page"]["limit"], 20);

@@ -296,6 +296,7 @@ pub struct ChronicleTimelineEntryRead {
 pub struct PatientChronicleStartupRead {
     pub active_encounter: Option<ChronicleEncounterRead>,
     pub active_admission: Option<ChronicleAdmissionRead>,
+    pub encounters: Vec<ChronicleEncounterRead>,
     pub care_team: Vec<ChronicleCareTeamMemberRead>,
     pub notes: Vec<ClinicalNoteListItem>,
     pub problems: Vec<ProblemListItem>,
@@ -310,6 +311,7 @@ pub struct PatientChronicleStartupRead {
 struct ChronicleStartupRow {
     active_encounter: JsonValue,
     active_admission: JsonValue,
+    encounters: JsonValue,
     care_team: JsonValue,
     notes: JsonValue,
     problems: JsonValue,
@@ -1274,6 +1276,7 @@ pub async fn patient_chronicle_startup_for_patient(
             row.active_admission,
             "active_admission",
         )?,
+        encounters: decode_chronicle_section(row.encounters, "encounters")?,
         care_team: decode_chronicle_section(row.care_team, "care_team")?,
         notes: decode_chronicle_section(row.notes, "notes")?,
         problems: decode_chronicle_section(row.problems, "problems")?,
@@ -1394,12 +1397,18 @@ async fn patient_chronicle_sections(
 }
 
 const CHRONICLE_STARTUP_SQL: &str = r#"
-WITH active_encounter AS (
+WITH patient_encounters AS (
   SELECT id, patient_id, encounter_type, status, started_at, ended_at
   FROM encounters
   WHERE facility_id = $1
     AND patient_id = $2
-    AND status = 'in_progress'
+  ORDER BY started_at DESC, id DESC
+  LIMIT 50
+),
+active_encounter AS (
+  SELECT id, patient_id, encounter_type, status, started_at, ended_at
+  FROM patient_encounters
+  WHERE status = 'in_progress'
   ORDER BY started_at DESC, id DESC
   LIMIT 1
 ),
@@ -1637,6 +1646,10 @@ timeline_entries AS (
 SELECT
   COALESCE((SELECT to_jsonb(active_encounter) FROM active_encounter), 'null'::jsonb) AS active_encounter,
   COALESCE((SELECT to_jsonb(active_admission) FROM active_admission), 'null'::jsonb) AS active_admission,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(patient_encounters) ORDER BY patient_encounters.started_at DESC, patient_encounters.id DESC)
+    FROM patient_encounters
+  ), '[]'::jsonb) AS encounters,
   COALESCE((
     SELECT jsonb_agg(to_jsonb(care_team) ORDER BY care_team.created_at ASC, care_team.assignment_id ASC)
     FROM care_team

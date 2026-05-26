@@ -52,6 +52,7 @@ pub struct PatientChronicleStartup {
     pub active_context: PatientChronicleActiveContext,
     pub active_encounter: Option<PatientChronicleEncounterSummary>,
     pub active_admission: Option<PatientChronicleAdmissionSummary>,
+    pub encounters: Vec<PatientChronicleEncounterSummary>,
     pub care_team: Vec<PatientChronicleCareTeamMember>,
     pub summaries: PatientChronicleSummarySlices,
     pub timeline: ListResponse<PatientChronicleTimelineEntry>,
@@ -804,6 +805,11 @@ fn patient_chronicle_startup_from_read(
         },
         active_encounter: encounter,
         active_admission: admission,
+        encounters: read
+            .encounters
+            .into_iter()
+            .map(patient_chronicle_encounter_from_read)
+            .collect(),
         care_team: read
             .care_team
             .into_iter()
