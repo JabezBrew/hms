@@ -5,7 +5,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
@@ -95,7 +95,7 @@ export default function NhisClaimsArPage() {
   // Remittances
   const [remittancePage, setRemittancePage] = useState(1);
   const [selectedPayer, setSelectedPayer] = useState('');
-  const [remittanceFile, setRemittanceFile] = useState(null);
+  const remittanceFileRef = useRef(null);
   const remittancesQuery = useRemittanceImportJobs({ page: remittancePage, page_size: 20 });
   const importRemittanceMutation = useImportRemittance();
   const providersQuery = useInsuranceProviders({ page_size: 200 });
@@ -674,7 +674,7 @@ export default function NhisClaimsArPage() {
                     <Input
                       type="file"
                       accept=".csv,.xlsx"
-                      onChange={(e) => setRemittanceFile(e.target.files?.[0] || null)}
+                      onChange={(e) => { remittanceFileRef.current = e.target.files?.[0] || null; }}
                       className="font-mono"
                     />
                     <p className="text-xs text-muted-foreground">
@@ -691,6 +691,7 @@ export default function NhisClaimsArPage() {
                         toast.error('Select a payer');
                         return;
                       }
+                      const remittanceFile = remittanceFileRef.current;
                       if (!remittanceFile) {
                         toast.error('Select a file');
                         return;
@@ -698,7 +699,7 @@ export default function NhisClaimsArPage() {
                       try {
                         await importRemittanceMutation.mutateAsync({ payerId: selectedPayer, file: remittanceFile });
                         toast.success('Remittance import started');
-                        setRemittanceFile(null);
+                        remittanceFileRef.current = null;
                       } catch (err) {
                         toast.error(err.message || 'Failed to import remittance');
                       }

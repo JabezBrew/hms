@@ -1,5 +1,5 @@
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useState } from 'react';
+import { useRef } from 'react';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 
@@ -28,12 +28,13 @@ const TimeSlotsGrid = ({
   emptyMessage = "No available time slots for the selected date."
 }) => {
   // State for tracking which slots have been seen for analytics (optional)
-  const [viewedSlots, setViewedSlots] = useState(new Set());
+  const viewedSlotsRef = useRef(new Set());
 
   // Mark slots as viewed when they come into view (for analytics)
   const handleSlotInView = (slotId) => {
+    const viewedSlots = viewedSlotsRef.current;
     if (!viewedSlots.has(slotId)) {
-      setViewedSlots(new Set([...viewedSlots, slotId]));
+      viewedSlotsRef.current = new Set([...viewedSlots, slotId]);
     }
   };
 

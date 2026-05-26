@@ -8,7 +8,7 @@ import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Building from 'lucide-react/dist/esm/icons/building.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -74,7 +74,7 @@ export default function PatientInsuranceSlideOver({
 
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [insuranceToDelete, setInsuranceToDelete] = useState(null);
+  const insuranceToDeleteRef = useRef(null);
 
   const handleAddInsurance = () => {
     setEditingInsurance(null);
@@ -87,18 +87,19 @@ export default function PatientInsuranceSlideOver({
   };
 
   const handleDeleteClick = (insurance) => {
-    setInsuranceToDelete(insurance);
+    insuranceToDeleteRef.current = insurance;
     setDeleteDialogOpen(true);
   };
 
   const handleConfirmDelete = async () => {
+    const insuranceToDelete = insuranceToDeleteRef.current;
     if (!insuranceToDelete) return;
 
     try {
       await deleteMutation.mutateAsync(insuranceToDelete.id);
       toast.success('Insurance deleted successfully');
       setDeleteDialogOpen(false);
-      setInsuranceToDelete(null);
+      insuranceToDeleteRef.current = null;
     } catch (err) {
       toast.error(err.message || 'Failed to delete insurance');
     }

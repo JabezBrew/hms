@@ -1,5 +1,5 @@
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEncounter } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
@@ -27,8 +27,8 @@ export default function CreateClinicalNotePage() {
   const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [activeTab, setActiveTab] = useState('new');
-  const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
-  const [isCreatingTemplates, setIsCreatingTemplates] = useState(false);
+  const showTemplateBuilderRef = useRef(false);
+  const isCreatingTemplatesRef = useRef(false);
   const rustV2Mode = isRustV2ApiMode();
 
   // Get the user's authentication information
@@ -92,7 +92,7 @@ export default function CreateClinicalNotePage() {
   // Create default nursing templates
   const createDefaultNursingTemplates = useCallback(async () => {
     try {
-      setIsCreatingTemplates(true);
+      isCreatingTemplatesRef.current = true;
 
       // Define the templates
       const nursingTemplates = [
@@ -151,14 +151,14 @@ export default function CreateClinicalNotePage() {
       toast.error('Failed to create default nursing templates');
       console.error('Error creating templates:', error);
     } finally {
-      setIsCreatingTemplates(false);
+      isCreatingTemplatesRef.current = false;
     }
   }, [createNoteTemplate]);
 
   // Automatically create default nursing templates for nurses
   useEffect(() => {
     // Only proceed if user is a nurse and templates are loaded and not already creating templates
-    if (isNurse && !isLoadingTemplates && activeTemplates && !isCreatingTemplates) {
+    if (isNurse && !isLoadingTemplates && activeTemplates && !isCreatingTemplatesRef.current) {
       // Get exact template titles to check
       const exactTitles = ['Nursing Vitals', 'Nursing I/O', 'Nursing Meds', 'Nursing Note'];
 
@@ -172,13 +172,13 @@ export default function CreateClinicalNotePage() {
         createDefaultNursingTemplates();
       }
     }
-  }, [isNurse, isLoadingTemplates, activeTemplates, createDefaultNursingTemplates, isCreatingTemplates]);
+  }, [isNurse, isLoadingTemplates, activeTemplates, createDefaultNursingTemplates]);
 
   // Handle template selection
   const handleSelectTemplate = (template) => {
     setSelectedTemplate(template);
     setActiveTab('form');
-    setShowTemplateBuilder(false);
+    showTemplateBuilderRef.current = false;
   };
 
   // Handle form submission success
@@ -186,7 +186,7 @@ export default function CreateClinicalNotePage() {
     // Reset the form
     setSelectedTemplate(null);
     setActiveTab('new');
-    setShowTemplateBuilder(false);
+    showTemplateBuilderRef.current = false;
 
     // Navigate back to the encounter detail page
     navigate(`/encounters/${encounterId}`);
@@ -195,7 +195,7 @@ export default function CreateClinicalNotePage() {
   // Handle template creation success
   const handleTemplateCreationSuccess = () => {
     toast.success('Template created successfully. You can now select it from the template list.');
-    setShowTemplateBuilder(false);
+    showTemplateBuilderRef.current = false;
   };
 
   // Check if encounter is valid for adding notes

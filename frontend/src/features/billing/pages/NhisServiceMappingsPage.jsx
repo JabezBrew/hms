@@ -5,7 +5,7 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import Pencil from 'lucide-react/dist/esm/icons/square-pen.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import Upload from 'lucide-react/dist/esm/icons/upload.js';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
@@ -94,7 +94,7 @@ export default function NhisServiceMappingsPage() {
   const isLoading = providersQuery.isLoading || servicesQuery.isLoading || codesQuery.isLoading;
   const error = providersQuery.error || servicesQuery.error || codesQuery.error;
 
-  const [importFile, setImportFile] = useState(null);
+  const importFileRef = useRef(null);
   const [seedServices, setSeedServices] = useState(false);
   const [activeImportJobId, setActiveImportJobId] = useState('');
 
@@ -159,6 +159,7 @@ export default function NhisServiceMappingsPage() {
       toast.error('Select an NHIS payer');
       return;
     }
+    const importFile = importFileRef.current;
     if (!importFile) {
       toast.error('Select a CSV or XLSX file');
       return;
@@ -378,7 +379,7 @@ export default function NhisServiceMappingsPage() {
                   type="file"
                   accept=".csv,.xlsx,.xls"
                   className="font-mono text-sm"
-                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  onChange={(e) => { importFileRef.current = e.target.files?.[0] || null; }}
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button

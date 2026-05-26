@@ -5,7 +5,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
@@ -85,7 +85,7 @@ export default function PspReconciliationPage() {
   const settlementsQuery = useSettlementBatches({ page: settlementPage, page_size: 20 });
   const importSettlementMutation = useImportSettlement();
   const [statementDate, setStatementDate] = useState('');
-  const [settlementFile, setSettlementFile] = useState(null);
+  const settlementFileRef = useRef(null);
 
   const downloadSettlementTemplate = () => {
     const csv = [
@@ -391,7 +391,7 @@ export default function PspReconciliationPage() {
                     <Input
                       type="file"
                       accept=".csv"
-                      onChange={(e) => setSettlementFile(e.target.files?.[0] || null)}
+                      onChange={(e) => { settlementFileRef.current = e.target.files?.[0] || null; }}
                       className="font-mono"
                     />
                     <p className="text-xs text-muted-foreground">
@@ -430,6 +430,7 @@ export default function PspReconciliationPage() {
                     className="font-mono text-xs"
                     disabled={importSettlementMutation.isPending}
                     onClick={async () => {
+                      const settlementFile = settlementFileRef.current;
                       if (!settlementFile) {
                         toast.error('Select a CSV file');
                         return;
@@ -441,7 +442,7 @@ export default function PspReconciliationPage() {
                           file: settlementFile,
                         });
                         toast.success('Settlement import started');
-                        setSettlementFile(null);
+                        settlementFileRef.current = null;
                       } catch (err) {
                         toast.error(err.message || 'Failed to import settlement');
                       }

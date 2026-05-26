@@ -1,5 +1,5 @@
 import { EncounterForm } from '@/components/encounters/EncounterForm';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { encountersApi } from '@/features/encounters/api';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -9,18 +9,18 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
 export default function EncounterEditPage() {
   const { id } = useParams();
   const [encounter, setEncounter] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const loadingRef = useRef(true);
   
   useEffect(() => {
     const loadEncounter = async () => {
       try {
-        setLoading(true);
+        loadingRef.current = true;
         const data = await encountersApi.getEncounter(id);
         setEncounter(data);
       } catch (error) {
         console.error('Error loading encounter:', error);
       } finally {
-        setLoading(false);
+        loadingRef.current = false;
       }
     };
     

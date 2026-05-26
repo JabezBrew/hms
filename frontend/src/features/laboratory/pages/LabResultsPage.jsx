@@ -13,7 +13,7 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -109,8 +109,8 @@ export default function LabResultsPage() {
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [verifyMode, setVerifyMode] = useState("single"); // 'single' or 'order'
   const [selectedResult, setSelectedResult] = useState(null);
-  const [selectedOrderId, setSelectedOrderId] = useState(null);
-  const [selectedResultIds, setSelectedResultIds] = useState([]);
+  const selectedOrderIdRef = useRef(null);
+  const selectedResultIdsRef = useRef([]);
   const [verificationNotes, setVerificationNotes] = useState("");
 
   // AI interpretation dialog state
@@ -545,7 +545,7 @@ export default function LabResultsPage() {
   const handleVerifyClick = (result) => {
     setVerifyMode("single");
     setSelectedResult(result);
-    setSelectedOrderId(null);
+    selectedOrderIdRef.current = null;
     setVerificationNotes("");
     setVerifyDialogOpen(true);
   };
@@ -555,9 +555,9 @@ export default function LabResultsPage() {
     setVerifyMode("order");
     setSelectedResult(null);
     // Store the group for batch verification
-    setSelectedOrderId(group.order_id);
+    selectedOrderIdRef.current = group.order_id;
     // Store result IDs as fallback when order_id is not available
-    setSelectedResultIds(group.results.filter(r => !r.is_verified).map(r => r.id));
+    selectedResultIdsRef.current = group.results.filter(r => !r.is_verified).map(r => r.id);
     setVerificationNotes("");
     setVerifyDialogOpen(true);
   };
@@ -573,9 +573,10 @@ export default function LabResultsPage() {
         toast.success("Result verified successfully");
       } else if (verifyMode === "order") {
         // Use order_id if available, otherwise fall back to result_ids
+        const selectedOrderId = selectedOrderIdRef.current;
         const payload = selectedOrderId
           ? { order_id: selectedOrderId }
-          : { result_ids: selectedResultIds };
+          : { result_ids: selectedResultIdsRef.current };
 
         if (verificationNotes.trim()) {
           payload.verification_notes = verificationNotes.trim();
@@ -587,8 +588,8 @@ export default function LabResultsPage() {
 
       setVerifyDialogOpen(false);
       setSelectedResult(null);
-      setSelectedOrderId(null);
-      setSelectedResultIds([]);
+      selectedOrderIdRef.current = null;
+      selectedResultIdsRef.current = [];
       setVerificationNotes("");
     } catch (err) {
       console.error("Failed to verify result:", err);

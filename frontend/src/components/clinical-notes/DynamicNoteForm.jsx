@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useCreateNoteEntry } from '@/features/clinical-notes/hooks';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,7 @@ const DynamicNoteForm = ({
 }) => {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm();
   const createNoteEntry = useCreateNoteEntry();
-  const [formData, setFormData] = useState({});
+  const formDataRef = useRef({});
 
   // Initialize form data based on template structure
   useEffect(() => {
@@ -77,7 +77,7 @@ const DynamicNoteForm = ({
           initialData[sectionName] = '';
         }
       });
-      setFormData(initialData);
+      formDataRef.current = initialData;
     }
   }, [template]);
 
@@ -114,10 +114,10 @@ const DynamicNoteForm = ({
   // Handle changes in form fields
   const handleChange = (section, value) => {
     setValue(section, value);
-    setFormData(prev => ({
-      ...prev,
+    formDataRef.current = {
+      ...formDataRef.current,
       [section]: value
-    }));
+    };
   };
 
   // Handle changes in nested form fields (e.g., vitals)
@@ -128,10 +128,10 @@ const DynamicNoteForm = ({
       [field]: value
     };
     setValue(section, updatedData);
-    setFormData(prev => ({
-      ...prev,
+    formDataRef.current = {
+      ...formDataRef.current,
       [section]: updatedData
-    }));
+    };
   };
 
   if (isLoading) {

@@ -1,7 +1,7 @@
 import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -68,7 +68,7 @@ const AppointmentTypeManager = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [appointmentTypeToDelete, setAppointmentTypeToDelete] = useState(null);
+  const appointmentTypeToDeleteRef = useRef(null);
   // Define color options
   const colorOptions = [
     { name: 'Blue', value: '#1976D2' },
@@ -214,12 +214,13 @@ const AppointmentTypeManager = () => {
 
   // Handle deletion of an appointment type
   const handleDelete = (id) => {
-    setAppointmentTypeToDelete(id);
+    appointmentTypeToDeleteRef.current = id;
     setIsDeleteDialogOpen(true);
   };
 
   // Confirm deletion of an appointment type
   const confirmDelete = () => {
+    const appointmentTypeToDelete = appointmentTypeToDeleteRef.current;
     if (!appointmentTypeToDelete) return;
 
     deleteAppointmentTypeMutation.mutate(
@@ -228,7 +229,7 @@ const AppointmentTypeManager = () => {
         onSuccess: () => {
           toast.success('Appointment type deleted successfully');
           setIsDeleteDialogOpen(false);
-          setAppointmentTypeToDelete(null);
+          appointmentTypeToDeleteRef.current = null;
         },
         onError: (error) => {
           console.error('Error deleting appointment type:', error);
@@ -480,7 +481,7 @@ const AppointmentTypeManager = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setAppointmentTypeToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => { appointmentTypeToDeleteRef.current = null; }}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -4,7 +4,7 @@ import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import ClipboardCopy from 'lucide-react/dist/esm/icons/clipboard-copy.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -49,7 +49,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
   const [reasonCode, setReasonCode] = useState("");
   const [consentReason, setConsentReason] = useState("");
   const [expiresInDays, setExpiresInDays] = useState("");
-  const [referral, setReferral] = useState(null);
+  const referralRef = useRef(null);
   const [consent, setConsent] = useState(null);
   const [issuedToken, setIssuedToken] = useState(null);
   const [exportJob, setExportJob] = useState(null);
@@ -80,7 +80,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
       setReasonCode("");
       setConsentReason("");
       setExpiresInDays("");
-      setReferral(null);
+      referralRef.current = null;
       setConsent(null);
       setIssuedToken(null);
       setExportJob(null);
@@ -108,7 +108,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
         target_facility_code: targetFacilityCode.trim().toUpperCase(),
         reason_code: reasonCode.trim(),
       });
-      setReferral(created);
+      referralRef.current = created;
       setStepIndex((prev) => Math.min(prev + 1, workflowSteps.length - 1));
       toast.success("Referral requested", {
         description: `Referral sent to ${created.target_facility_code}.`,
