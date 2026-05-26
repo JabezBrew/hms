@@ -1143,89 +1143,8 @@ const SearchResultsTable = ({
     hasNextPage,
   });
 
-  const renderMobileRows = () => {
-    if (isLoading) {
-      return (
-        <div className="space-y-3 md:hidden">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div key={`mobile-loading-row-${index}`} className="rounded-lg border border-border/60 bg-card p-3">
-              <div className="h-3.5 w-2/3 rounded bg-muted/70 animate-pulse" />
-              <div className="mt-3 grid gap-2">
-                <div className="h-3 w-full rounded bg-muted/50 animate-pulse" />
-                <div className="h-3 w-1/2 rounded bg-muted/50 animate-pulse" />
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    if (patients.length === 0) {
-      return (
-        <div className="rounded-lg border border-border/60 bg-card p-8 text-center md:hidden">
-          <Search className="mx-auto h-5 w-5 text-muted-foreground" aria-hidden="true" />
-          <p className="mt-2 text-sm text-muted-foreground">{emptyDescription}</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-3 md:hidden">
-        {patients.map(({ patient, originalIndex }, index) => {
-          const patientId = getPatientId(patient);
-          const rowKey = patientId ? `mobile-${patientId}` : `mobile-${originalIndex}-${index}`;
-          const age = getPatientAge(patient?.date_of_birth);
-          const dobLabel = formatDateLabel(patient?.date_of_birth);
-          const dobWithAge = age === null ? dobLabel : `${dobLabel} · ${age}y`;
-          const locationDisplay = getPatientLocationDisplay(patient);
-
-          return (
-            <button
-              key={rowKey}
-              type="button"
-              className="block w-full rounded-lg border border-border/60 bg-card p-3 text-left shadow-sm transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              data-onboarding={index === 0 ? 'patient-list-row' : undefined}
-              onPointerDown={() => onPointerDownPatient(patient)}
-              onClick={() => onOpenPatient(patient)}
-            >
-              <div className="flex min-w-0 items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">
-                    {patient?.name || 'Unknown Patient'}
-                  </p>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">
-                    {patient?.medical_record_number || '—'}
-                  </p>
-                </div>
-                <Badge variant="outline" className="shrink-0 font-mono text-[10px]">
-                  {formatAdmissionStatus(patient?.registry_status || patient?.admission_status)}
-                </Badge>
-              </div>
-              <dl className="mt-3 grid gap-2 text-xs">
-                <div className="grid grid-cols-[6rem_1fr] gap-3">
-                  <dt className="font-mono uppercase text-muted-foreground">Registered</dt>
-                  <dd className="min-w-0 text-foreground">{formatDateLabel(patient?.created_at)}</dd>
-                </div>
-                <div className="grid grid-cols-[6rem_1fr] gap-3">
-                  <dt className="font-mono uppercase text-muted-foreground">DOB / Age</dt>
-                  <dd className="min-w-0 text-foreground">{dobWithAge}</dd>
-                </div>
-                <div className="grid grid-cols-[6rem_1fr] gap-3">
-                  <dt className="font-mono uppercase text-muted-foreground">Location</dt>
-                  <dd className="min-w-0 text-foreground">{locationDisplay.label}</dd>
-                </div>
-              </dl>
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
   return (
-    <div className="rounded-xl border border-border/70 bg-card">
-      {renderMobileRows()}
-      <div className="hidden overflow-x-auto md:block">
+    <div className="rounded-xl border border-border/70 bg-card overflow-x-auto">
       <Table className="min-w-[920px]">
         <TableHeader className="bg-muted/30">
           <TableRow>
@@ -1333,7 +1252,6 @@ const SearchResultsTable = ({
           }
         </TableBody>
       </Table>
-      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
         <p className="text-xs font-mono text-muted-foreground">
