@@ -119,9 +119,10 @@ export function AlertsPanel({ alerts, isLoading }) {
           ) : (
             <div className="space-y-3 max-h-[600px] overflow-y-auto">
               {alerts.map((alert) => (
-                <div
+                <button
+                  type="button"
                   key={alert.id}
-                  className="border rounded-lg p-3 space-y-2 hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="w-full border rounded-lg p-3 space-y-2 hover:bg-gray-50 cursor-pointer transition-colors text-left"
                   onClick={() => setSelectedAlert(alert)}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -148,7 +149,7 @@ export function AlertsPanel({ alerts, isLoading }) {
                     </div>
                     <AlertTriangle className="size-4 text-orange-500 flex-shrink-0" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}

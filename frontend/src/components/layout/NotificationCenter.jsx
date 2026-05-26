@@ -222,10 +222,11 @@ const NotificationCenter = () => {
                 const Icon = config.icon;
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={`${item.type}-${item.id}`}
                     className={cn(
-                      'px-4 py-3 cursor-pointer transition-all hover:bg-muted/50',
+                      'w-full px-4 py-3 cursor-pointer transition-all hover:bg-muted/50 text-left',
                       !item.isRead && 'bg-primary/5 border-l-2 border-l-primary',
                       'animate-chronicle-enter'
                     )}
@@ -267,7 +268,7 @@ const NotificationCenter = () => {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

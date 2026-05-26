@@ -164,10 +164,11 @@ const ReferralNotificationBell = () => {
                 const Icon = config.icon;
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={notification.id}
                     className={cn(
-                      'p-4 hover:bg-muted cursor-pointer border-b last:border-b-0 transition-colors',
+                      'w-full p-4 hover:bg-muted cursor-pointer border-b last:border-b-0 transition-colors text-left',
                       !notification.is_read && 'bg-primary/5'
                     )}
                     onClick={() => handleNotificationClick(notification)}
@@ -212,7 +213,7 @@ const ReferralNotificationBell = () => {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

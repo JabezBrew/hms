@@ -35,9 +35,10 @@ function TaskList({ tasks, filter, onSelectTask }) {
     return (
         <div className="space-y-2">
             {filteredTasks.map(task => (
-                <div
+                <button
+                    type="button"
                     key={task.id}
-                    className="group flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
+                    className="group flex w-full items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors text-left"
                     onClick={() => onSelectTask(task)}
                 >
                     <div className="flex items-center gap-3">
@@ -55,7 +56,7 @@ function TaskList({ tasks, filter, onSelectTask }) {
                         </div>
                     </div>
                     <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
+                </button>
             ))}
         </div>
     )

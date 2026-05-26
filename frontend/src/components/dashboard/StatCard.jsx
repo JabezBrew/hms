@@ -61,27 +61,20 @@ export default function StatCard({
     : trend?.direction === 'down' ? 'text-rose-400'
     : 'text-muted-foreground';
 
-  const handleKeyDown = (e) => {
-    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault();
-      onClick();
-    }
-  };
+  const CardElement = onClick ? 'button' : 'div';
 
   return (
-    <div
+    <CardElement
+      type={onClick ? 'button' : undefined}
       className={cn(
         'group relative rounded-xl sm:rounded-2xl p-4 sm:p-6',
         'bg-card border border-border',
         'hover:border-primary/30 transition-all duration-200',
-        onClick && 'cursor-pointer hover:shadow-lg hover:shadow-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        onClick && 'block w-full text-left cursor-pointer hover:shadow-lg hover:shadow-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         'animate-chronicle-enter',
         className
       )}
       onClick={onClick}
-      onKeyDown={handleKeyDown}
-      tabIndex={onClick ? 0 : undefined}
-      role={onClick ? "button" : undefined}
       aria-label={onClick ? `${title}: ${value}` : undefined}
     >
       {/* Top row - Icon and trend */}
@@ -127,6 +120,6 @@ export default function StatCard({
       {onClick && (
         <div className="absolute inset-0 rounded-xl sm:rounded-2xl border-2 border-primary/0 group-hover:border-primary/50 transition-colors pointer-events-none" />
       )}
-    </div>
+    </CardElement>
   );
 }

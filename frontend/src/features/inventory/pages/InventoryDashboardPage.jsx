@@ -96,10 +96,11 @@ function PendingActionsWidget({ isLoading, metrics, className }) {
             </p>
           </div>
         ) : (
-          actions.map((action, index) => (
-            <div
-              key={index}
-              className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+          actions.map((action) => (
+            <button
+              type="button"
+              key={action.href}
+              className="flex w-full items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors text-left"
               onClick={() => navigate(action.href)}
             >
               <div className="flex items-center gap-3">
@@ -121,7 +122,7 @@ function PendingActionsWidget({ isLoading, metrics, className }) {
                 </span>
                 <ArrowRight className="size-4 text-muted-foreground" />
               </div>
-            </div>
+            </button>
           ))
         )}
       </CardContent>

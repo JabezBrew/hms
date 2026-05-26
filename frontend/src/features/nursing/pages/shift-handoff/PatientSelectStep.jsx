@@ -63,11 +63,12 @@ export function PatientSelectStep({
         <ScrollArea className="h-[450px]">
           <div className="space-y-3 pr-4">
             {filteredPatients.map((patient) => (
-              <div
+              <button
+                type="button"
                 key={patient.patient_id}
                 onClick={() => onSelectPatient(patient)}
                 className={cn(
-                  "p-4 rounded-xl border cursor-pointer transition-all",
+                  "w-full p-4 rounded-xl border cursor-pointer transition-all text-left",
                   "hover:border-amber-500/50 hover:bg-amber-500/5",
                   selectedPatient?.patient_id === patient.patient_id
                     ? "border-amber-500 bg-amber-500/10"
@@ -117,7 +118,7 @@ export function PatientSelectStep({
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
 
             {filteredPatients.length === 0 && (
