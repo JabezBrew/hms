@@ -155,6 +155,46 @@ function getMedicationName(medication) {
     || null;
 }
 
+function getAllergyName(allergy) {
+  if (typeof allergy === 'string') {
+    return allergy;
+  }
+
+  return allergy?.name
+    || allergy?.allergen_name
+    || allergy?.substance
+    || allergy?.allergen
+    || null;
+}
+
+function getAllergySeverity(allergy) {
+  return typeof allergy === 'object' && allergy !== null ? allergy.severity : null;
+}
+
+function getStableClinicalItemKey(prefix, item, index, fallbackParts = EMPTY_ARRAY) {
+  if (typeof item === 'object' && item !== null) {
+    const stableId = item.id
+      || item.uuid
+      || item.allergy_id
+      || item.patient_allergy_id
+      || item.problem_id;
+
+    if (hasDisplayValue(stableId)) {
+      return `${prefix}-${stableId}`;
+    }
+  }
+
+  const fallbackSegments = [];
+  for (const part of fallbackParts) {
+    if (hasDisplayValue(part)) {
+      fallbackSegments.push(String(part).trim());
+    }
+  }
+  const fallback = fallbackSegments.join('-');
+
+  return `${prefix}-${fallback || 'item'}-${index}`;
+}
+
 /**
  * ProblemsSection - Active problems list with severity indicators
  */
@@ -324,15 +364,13 @@ const AllergiesSection = ({ allergies }) => {
       </header>
 
       <div className="flex flex-wrap gap-2">
-        {allergies.map((allergy) => {
-          const allergyName = typeof allergy === 'string'
-            ? allergy
-            : allergy.name || allergy.allergen_name || allergy.substance || allergy.allergen;
-          const severity = typeof allergy === 'object' ? allergy.severity : null;
+        {allergies.map((allergy, index) => {
+          const allergyName = getAllergyName(allergy);
+          const severity = getAllergySeverity(allergy);
 
           return (
             <span
-              key={`${allergyName}-${severity || 'allergy'}`}
+              key={getStableClinicalItemKey('allergy', allergy, index, [allergyName, severity || 'allergy'])}
               className={cn(
                 "px-2 py-1 rounded font-mono text-xs border",
                 severity === 'severe'
@@ -644,14 +682,18 @@ const MiniClinicalSummary = ({ allergies = EMPTY_ARRAY, problems = EMPTY_ARRAY }
           <span className="font-mono text-[10px] uppercase tracking-wider text-destructive">
             Allergies:
           </span>
-          {allergies.map((allergy) => (
-            <span
-              key={typeof allergy === 'string' ? allergy : allergy.id || allergy.name}
-              className="badge-chronicle-rose text-[10px]"
-            >
-              {typeof allergy === 'string' ? allergy : allergy.name}
-            </span>
-          ))}
+          {allergies.map((allergy, index) => {
+            const allergyName = getAllergyName(allergy);
+
+            return (
+              <span
+                key={getStableClinicalItemKey('allergy-mini', allergy, index, [allergyName])}
+                className="badge-chronicle-rose text-[10px]"
+              >
+                {allergyName}
+              </span>
+            );
+          })}
         </div>
       ) : (
         <div className="flex items-center gap-2">

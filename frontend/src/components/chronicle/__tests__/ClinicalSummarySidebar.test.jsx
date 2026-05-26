@@ -8,7 +8,11 @@ vi.mock('@/features/nursing/hooks', () => ({
 }));
 
 vi.mock('@/components/billing', () => ({
-  InvoiceChronicleCard: () => null,
+  InvoiceChronicleCard: () => (
+    <section>
+      <h3>Billing</h3>
+    </section>
+  ),
 }));
 
 vi.mock('@/components/chronicle/PatientCareTeamCard', () => ({
@@ -67,7 +71,7 @@ describe('ClinicalSummarySidebar', () => {
   it('orders high-value clinical sidebar sections before lower-context panels', () => {
     const { container } = render(
       <ClinicalSummarySidebar
-        patient={{ id: 'patient-1' }}
+        patient={{ id: 'patient-1', current_admission_id: 'admission-1' }}
         allergies={['Penicillin']}
         vitals={[{ id: 'hr-1', name: 'HR', value: '88', unit: 'bpm' }]}
         problems={[{ id: 'problem-1', label: 'Hypertension' }]}
@@ -83,8 +87,38 @@ describe('ClinicalSummarySidebar', () => {
       'Recent Vitals',
       'Active Problems',
       'Active Medications',
+      'Fluid Balance (Today)',
       'Recent Labs',
+      'Billing',
     ]);
+  });
+
+  it('does not emit duplicate React key warnings for repeated allergy labels', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      render(
+        <ClinicalSummarySidebar
+          patient={{ id: 'patient-1' }}
+          allergies={[
+            { substance: 'Latex', severity: 'severe' },
+            { substance: 'Latex', severity: 'severe' },
+            { substance: 'Penicillin', severity: 'moderate' },
+            { substance: 'Penicillin', severity: 'moderate' },
+          ]}
+        />,
+      );
+
+      expect(screen.getAllByText(/Latex/)).toHaveLength(2);
+      expect(screen.getAllByText('Penicillin')).toHaveLength(2);
+      expect(
+        consoleErrorSpy.mock.calls.some((call) => (
+          call.some((argument) => String(argument).includes('Encountered two children with the same key'))
+        )),
+      ).toBe(false);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
 

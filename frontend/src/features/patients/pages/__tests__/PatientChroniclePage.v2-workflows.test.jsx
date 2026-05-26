@@ -74,6 +74,7 @@ const timelineHookState = vi.hoisted(() => ({
   calls: [],
   entries: [],
   totalCount: 0,
+  returnNoDataWhenDisabled: false,
 }))
 
 const workspaceHostState = vi.hoisted(() => ({
@@ -85,6 +86,9 @@ const summarySidebarState = vi.hoisted(() => ({
 }))
 
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
+  patientKeys: {
+    chronicleTimeline: (id, params = {}) => ['patients', 'detail', id, 'chronicle', 'timeline', params],
+  },
   usePatient: (_id, _options) => ({
     data: patientHookState.data,
     isLoading: false,
@@ -102,13 +106,17 @@ vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
   },
   usePatientChronicleTimeline: (patientId, params, options) => {
     timelineHookState.calls.push({ patientId, params, options })
+    const data = options?.enabled === false && timelineHookState.returnNoDataWhenDisabled
+      ? undefined
+      : {
+          pages: [{
+            results: timelineHookState.entries,
+            count: timelineHookState.totalCount || timelineHookState.entries.length,
+          }],
+        }
+
     return {
-      data: {
-        pages: [{
-          results: timelineHookState.entries,
-          count: timelineHookState.totalCount || timelineHookState.entries.length,
-        }],
-      },
+      data,
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
@@ -281,6 +289,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     timelineHookState.calls = []
     timelineHookState.entries = []
     timelineHookState.totalCount = 0
+    timelineHookState.returnNoDataWhenDisabled = false
     chronicleHookState.data = {
       active_medications: [],
       allergies: [],
@@ -534,6 +543,47 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
         }),
       }),
     )
+  })
+
+  it('renders the Rust startup timeline when the disabled infinite query has no materialized pages', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    timelineHookState.returnNoDataWhenDisabled = true
+    chronicleStartupState.data = {
+      ...chronicleStartupState.data,
+      timeline: {
+        results: [{
+          id: 'problem-1',
+          type: 'problem',
+          entry_type: 'problem',
+          title: 'Hypertension',
+          content: 'Hypertension',
+          timestamp: '2026-05-12T09:00:00Z',
+          data: { name: 'Hypertension' },
+        }],
+        has_next: true,
+        next_cursor: 'cursor-2',
+        page_size: 20,
+        count: 20,
+      },
+    }
+
+    renderPage()
+
+    expect(timelineHookState.calls.at(-1)).toEqual(
+      expect.objectContaining({
+        patientId: 'patient-1',
+        options: expect.objectContaining({
+          enabled: false,
+          initialPage: expect.objectContaining({
+            results: expect.arrayContaining([
+              expect.objectContaining({ id: 'problem-1' }),
+            ]),
+          }),
+        }),
+      }),
+    )
+    expect(screen.getByText('Timeline entry')).toBeInTheDocument()
+    expect(screen.getByText('20 entries')).toBeInTheDocument()
   })
 
   it('uses entry timestamps for visit group dates when encounter metadata has no start time', () => {

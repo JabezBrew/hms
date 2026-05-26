@@ -17,6 +17,7 @@ import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
+  patientKeys,
   usePatient,
   usePatientChronicleStartup,
   usePatientChronicleTimeline,
@@ -231,6 +232,21 @@ function normalizeLabResultsForSidebar(results) {
 
 function hasSeedableTimelinePage(page) {
   return Array.isArray(page?.results) && page.results.length > 0;
+}
+
+function hasTimelinePageResults(data) {
+  return Array.isArray(data?.pages) && data.pages.some(hasSeedableTimelinePage);
+}
+
+function buildTimelineDataFromInitialPage(page) {
+  if (!hasSeedableTimelinePage(page)) {
+    return null;
+  }
+
+  return {
+    pages: [page],
+    pageParams: [null],
+  };
 }
 
 function getEncounterKind(encounter) {
@@ -842,6 +858,33 @@ const PatientChroniclePage = ({ defaultAction }) => {
     isLoading: isTimelineLoading,
     refetch: refetchTimeline,
   } = activeTimelineQuery;
+  const seededRustTimelineData = useMemo(
+    () => buildTimelineDataFromInitialPage(canSeedRustTimeline ? chronicleContext?.timeline : null),
+    [canSeedRustTimeline, chronicleContext?.timeline],
+  );
+  const timelineDisplayData = useMemo(() => {
+    if (seededRustTimelineData && !hasTimelinePageResults(timelineData)) {
+      return seededRustTimelineData;
+    }
+
+    return timelineData;
+  }, [seededRustTimelineData, timelineData]);
+
+  useEffect(() => {
+    if (!id || !seededRustTimelineData) {
+      return;
+    }
+
+    queryClient.setQueryData(
+      patientKeys.chronicleTimeline(id, chronicleTimelineParams),
+      (current) => {
+        if (Array.isArray(current?.pages) && current.pages.length > 1) {
+          return current;
+        }
+        return seededRustTimelineData;
+      },
+    );
+  }, [chronicleTimelineParams, id, queryClient, seededRustTimelineData]);
 
   // Invalidate timeline cache helper
   const invalidateTimeline = useInvalidateTimeline();
@@ -872,9 +915,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // ============================================
 
   const timelineEntries = useMemo(() => {
-    if (!timelineData) return [];
+    if (!timelineDisplayData) return [];
 
-    const flatEntries = flattenTimelinePages(timelineData);
+    const flatEntries = flattenTimelinePages(timelineDisplayData);
 
     // Transform API entries to match TimelineEntry component format
     return flatEntries.map(entry => {
@@ -928,7 +971,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         timestamp: normalizedTimestamp,
       };
     });
-  }, [timelineData]);
+  }, [timelineDisplayData]);
 
   // Use allergies from clinical summary hook (already parsed from patient data)
   // The hook handles parsing from string/array formats
@@ -1149,7 +1192,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, []);
 
   // Get total count for display
-  const totalCount = useMemo(() => getTimelineTotalCount(timelineData), [timelineData]);
+  const totalCount = useMemo(() => getTimelineTotalCount(timelineDisplayData), [timelineDisplayData]);
 
   useEffect(() => {
     if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
