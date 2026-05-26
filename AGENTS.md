@@ -188,9 +188,10 @@ favor correctness, least privilege, and predictable performance.
 ## Deployment Notes
 - HMS deploys one client per Hetzner VPS with Docker Compose. The active Rust
   V2 runbook is `ops/hetzner-v2/README.md`.
-- For HMS Hetzner VPS access from this laptop, use `ssh hms-staging`. The alias
-  lives in `/Users/jebre/.ssh/config`, connects as `deploy@staging.thehms.systems`,
-  and uses the local key `~/.ssh/hms_staging`.
+- For HMS Hetzner VPS access from this laptop, prefer `ssh hms-staging` when the
+  staging hostname is DNS-only. If `staging.thehms.systems` is proxied through
+  Cloudflare, SSH must bypass the hostname and use the Hetzner origin directly:
+  `ssh -F /dev/null -i /Users/jebre/.ssh/hms_staging deploy@157.180.81.144`.
 - Use `ssh hms-staging-root` only when root access is explicitly needed.
 - On the VPS, HMS lives at `/opt/hms`. Normal Docker Compose operations should
   run as `deploy` from `/opt/hms` and do not require `sudo`.
