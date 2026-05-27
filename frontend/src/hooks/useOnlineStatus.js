@@ -1,12 +1,18 @@
-import { useState, useEffect, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 
 /**
  * Shared online status store using a singleton pattern.
  * This ensures only one set of event listeners exists across all components.
  */
+const ONLINE_SERVER_SNAPSHOT = { isOnline: true, reconnectVersion: 0 };
+
 const onlineStatusStore = {
   listeners: new Set(),
-  isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+  snapshot: {
+    isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+    reconnectVersion: 0,
+  },
+  wasOffline: false,
 
   subscribe(callback) {
     this.listeners.add(callback);
@@ -14,11 +20,35 @@ const onlineStatusStore = {
   },
 
   getSnapshot() {
-    return this.isOnline;
+    return this.snapshot;
   },
 
   getServerSnapshot() {
-    return true; // Assume online during SSR
+    return ONLINE_SERVER_SNAPSHOT; // Assume online during SSR
+  },
+
+  getIsOnlineSnapshot() {
+    return this.snapshot.isOnline;
+  },
+
+  getIsOnlineServerSnapshot() {
+    return true;
+  },
+
+  setOnlineStatus(isOnline) {
+    if (this.snapshot.isOnline === isOnline) {
+      return;
+    }
+
+    const wasOfflineBeforeUpdate = this.wasOffline || !this.snapshot.isOnline;
+    this.wasOffline = !isOnline;
+    this.snapshot = {
+      isOnline,
+      reconnectVersion: isOnline && wasOfflineBeforeUpdate
+        ? this.snapshot.reconnectVersion + 1
+        : this.snapshot.reconnectVersion,
+    };
+    this.notify();
   },
 
   notify() {
@@ -29,13 +59,11 @@ const onlineStatusStore = {
 // Set up global event listeners once
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    onlineStatusStore.isOnline = true;
-    onlineStatusStore.notify();
+    onlineStatusStore.setOnlineStatus(true);
   });
 
   window.addEventListener('offline', () => {
-    onlineStatusStore.isOnline = false;
-    onlineStatusStore.notify();
+    onlineStatusStore.setOnlineStatus(false);
   });
 }
 
@@ -56,8 +84,8 @@ if (typeof window !== 'undefined') {
 export function useOnlineStatus() {
   return useSyncExternalStore(
     (callback) => onlineStatusStore.subscribe(callback),
-    () => onlineStatusStore.getSnapshot(),
-    () => onlineStatusStore.getServerSnapshot()
+    () => onlineStatusStore.getIsOnlineSnapshot(),
+    () => onlineStatusStore.getIsOnlineServerSnapshot()
   );
 }
 
@@ -86,29 +114,27 @@ export function useOnlineStatus() {
  * }
  */
 export function useOnlineStatusWithReconnect() {
-  const isOnline = useOnlineStatus();
-  const [wasOffline, setWasOffline] = useState(false);
-  const [showReconnected, setShowReconnected] = useState(false);
+  const snapshot = useSyncExternalStore(
+    (callback) => onlineStatusStore.subscribe(callback),
+    () => onlineStatusStore.getSnapshot(),
+    () => onlineStatusStore.getServerSnapshot()
+  );
+  const [clearedReconnectVersion, setClearedReconnectVersion] = useState(
+    () => snapshot.reconnectVersion
+  );
 
-  useEffect(() => {
-    if (!isOnline) {
-      setWasOffline(true);
-      setShowReconnected(false);
-    } else if (wasOffline) {
-      setShowReconnected(true);
-    }
-  }, [isOnline, wasOffline]);
+  const hasUnclearedReconnect = snapshot.reconnectVersion > clearedReconnectVersion;
+  const wasOffline = !snapshot.isOnline || hasUnclearedReconnect;
+  const showReconnected = snapshot.isOnline && hasUnclearedReconnect;
 
   const clearReconnected = () => {
-    setShowReconnected(false);
-    setWasOffline(false);
+    setClearedReconnectVersion(snapshot.reconnectVersion);
   };
 
   return {
-    isOnline,
+    isOnline: snapshot.isOnline,
     wasOffline,
     showReconnected,
     clearReconnected,
   };
 }
-

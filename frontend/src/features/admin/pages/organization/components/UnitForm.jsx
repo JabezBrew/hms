@@ -1,5 +1,5 @@
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
-import { useEffect } from 'react';
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -52,13 +52,34 @@ const unitSchema = z.object({
  */
 export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
   const { data: unitTypesData } = useUnitTypes();
-  // apiClient.get() auto-extracts results array from paginated responses
-  const unitTypes = Array.isArray(unitTypesData) ? unitTypesData : [];
+  const formKey = unit
+    ? `unit:${unit.id || unit.code || 'edit'}`
+    : `new:${parentUnit?.id || 'root'}`;
 
+  return (
+    <UnitFormContent
+      key={formKey}
+      unit={unit}
+      parentUnit={parentUnit}
+      unitTypesData={unitTypesData}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+      isLoading={isLoading}
+    />
+  );
+}
+
+function UnitFormContent({ unit, parentUnit, unitTypesData, onSubmit, onCancel, isLoading }) {
+  // apiClient.get() auto-extracts results array from paginated responses
+  const unitTypes = useMemo(
+    () => (Array.isArray(unitTypesData) ? unitTypesData : []),
+    [unitTypesData]
+  );
   // Filter unit types based on parent - child units can't be root types
-  const availableTypes = parentUnit
-    ? unitTypes.filter((type) => !type.can_be_root)
-    : unitTypes;
+  const availableTypes = useMemo(
+    () => (parentUnit ? unitTypes.filter((type) => !type.can_be_root) : unitTypes),
+    [parentUnit, unitTypes]
+  );
 
   const form = useForm({
     resolver: zodResolver(unitSchema),
@@ -84,73 +105,45 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
     },
   });
 
-  const selectedUnitTypeId = form.watch('unit_type');
   const selectedUnitCategory = form.watch('unit_category');
-  const selectedStaffingMode = form.watch('staffing_mode');
-  const staffingModeDirty = !!form.formState.dirtyFields?.staffing_mode;
   const isOpsOnlyCategory = selectedUnitCategory === 'ops_only';
-  const isOpsOnlyStaffing = selectedStaffingMode === 'ops_only';
 
-  // Reset form when unit data changes (for edit mode)
-  useEffect(() => {
-    if (unit) {
-      form.reset({
-        code: unit.code || '',
-        name: unit.name || '',
-        short_name: unit.short_name || '',
-        description: unit.description || '',
-        unit_type: unit.unit_type?.toString() || '',
-        unit_category: unit.unit_category || 'clinical',
-        staffing_mode: unit.staffing_mode || 'clinical_only',
-        ward_assignment_policy: unit.ward_assignment_policy || 'flexible',
-        location: unit.location || '',
-        floor: unit.floor || '',
-        building: unit.building || '',
-        phone: unit.phone || '',
-        email: unit.email || '',
-        is_active: unit.is_active ?? true,
-        accepts_admissions: unit.accepts_admissions ?? true,
-        accepts_referrals: unit.accepts_referrals ?? true,
-        has_own_budget: unit.has_own_budget ?? false,
-        operates_24_hours: unit.operates_24_hours ?? false,
-      });
-    }
-  }, [unit, form]);
-
-  // Auto-set staffing mode based on unit type for new units
-  useEffect(() => {
-    if (unit || staffingModeDirty) {
-      return;
-    }
-
-    const selectedType = unitTypes.find((type) => type.id.toString() === selectedUnitTypeId);
-    if (!selectedType) {
-      return;
-    }
-
+  const defaultStaffingModeForType = (unitTypeId) => {
+    const selectedType = unitTypes.find((type) => type.id.toString() === unitTypeId);
+    if (!selectedType) return null;
     const defaultMode = ['facility', 'department', 'division'].includes(selectedType.code)
       ? 'mixed'
       : 'clinical_only';
-    form.setValue('staffing_mode', defaultMode, { shouldDirty: false });
-  }, [unit, staffingModeDirty, selectedUnitTypeId, unitTypes, form]);
+    return defaultMode;
+  };
 
-  // Auto-update clinical fields when unit category changes to ops_only
-  useEffect(() => {
-    if (isOpsOnlyCategory) {
+  const handleUnitTypeChange = (value, onChange) => {
+    onChange(value);
+    if (unit || form.formState.dirtyFields?.staffing_mode) return;
+
+    const defaultMode = defaultStaffingModeForType(value);
+    if (defaultMode) {
+      form.setValue('staffing_mode', defaultMode, { shouldDirty: false });
+    }
+  };
+
+  const handleUnitCategoryChange = (value, onChange) => {
+    onChange(value);
+    if (value === 'ops_only') {
       form.setValue('accepts_admissions', false);
       form.setValue('accepts_referrals', false);
-      form.setValue('ward_assignment_policy', 'flexible'); // Reset to default
-      form.setValue('staffing_mode', 'ops_only'); // Ops category should have ops staffing
+      form.setValue('ward_assignment_policy', 'flexible');
+      form.setValue('staffing_mode', 'ops_only');
     }
-  }, [isOpsOnlyCategory, form]);
+  };
 
-  // Also sync when staffing mode is ops_only
-  useEffect(() => {
-    if (isOpsOnlyStaffing) {
+  const handleStaffingModeChange = (value, onChange) => {
+    onChange(value);
+    if (value === 'ops_only') {
       form.setValue('accepts_admissions', false);
       form.setValue('accepts_referrals', false);
     }
-  }, [isOpsOnlyStaffing, form]);
+  };
 
   const handleSubmit = (data) => {
     // Remove empty/null values - don't send them to API
@@ -179,7 +172,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="font-mono text-xs uppercase tracking-wider">Unit Type *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select value={field.value} onValueChange={(value) => handleUnitTypeChange(value, field.onChange)}>
                   <FormControl>
                     <SelectTrigger className="font-mono text-sm">
                       <SelectValue placeholder="Select unit type" />
@@ -204,7 +197,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="font-mono text-xs uppercase tracking-wider">Unit Category *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select value={field.value} onValueChange={(value) => handleUnitCategoryChange(value, field.onChange)}>
                   <FormControl>
                     <SelectTrigger className="font-mono text-sm">
                       <SelectValue placeholder="Select category" />
@@ -230,7 +223,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="font-mono text-xs uppercase tracking-wider">Staffing Mode *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select value={field.value} onValueChange={(value) => handleStaffingModeChange(value, field.onChange)}>
                   <FormControl>
                     <SelectTrigger className="font-mono text-sm">
                       <SelectValue placeholder="Select staffing mode" />
@@ -257,7 +250,7 @@ export function UnitForm({ unit, parentUnit, onSubmit, onCancel, isLoading }) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="font-mono text-xs uppercase tracking-wider">Ward Assignment Policy</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
                       <SelectTrigger className="font-mono text-sm">
                         <SelectValue placeholder="Select policy" />
