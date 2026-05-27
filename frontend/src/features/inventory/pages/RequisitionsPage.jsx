@@ -32,9 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  RequisitionCardSkeleton,
-} from '@/components/inventory/RequisitionCard';
+import { RequisitionCardSkeleton } from '@/components/inventory/RequisitionCard';
 import {
   formatRequisitionCurrency,
   getRequisitionPriorityConfig,
@@ -72,54 +70,16 @@ const PRIORITY_OPTIONS = [
   { value: 'urgent', label: 'Urgent' },
 ];
 
-/**
- * RequisitionsPage - Purchase requisitions list page
- */
-export default function RequisitionsPage() {
-  const navigate = useNavigate();
+function useRequisitionListFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
-
-  // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const status = searchParams.get('status') || 'all';
   const priority = searchParams.get('priority') || '';
+  const action = searchParams.get('action');
+  const initialItems = searchParams.get('items')?.split(',').filter(Boolean) || [];
   const page = parseInt(searchParams.get('page') || '1', 10);
-
-  // Debounced search
   const debouncedSearch = useDebounce(search, 300);
 
-  // Sheet state from URL
-  const action = searchParams.get('action');
-  const isCreateOpen = action === 'create';
-  const initialItems = searchParams.get('items')?.split(',').filter(Boolean) || [];
-
-  // Build query params
-  const queryParams = {
-    page,
-    page_size: 20,
-    ...(debouncedSearch && { search: debouncedSearch }),
-    ...(status !== 'all' && { status }),
-    ...(priority && priority !== 'all' && { priority }),
-  };
-
-  // Fetch data
-  const {
-    data: requisitionsData,
-    isLoading,
-    error,
-    refetch,
-  } = useRequisitions(queryParams);
-
-  const requisitions = requisitionsData?.results || [];
-  const totalCount = requisitionsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
-
-  // Handle search input
-  const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-  };
-
-  // Update search params when debounced search changes
   useEffect(() => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
@@ -133,8 +93,7 @@ export default function RequisitionsPage() {
     });
   }, [debouncedSearch, setSearchParams]);
 
-  // Handle tab change
-  const handleTabChange = (value) => {
+  const handleTabChange = useCallback((value) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       if (value !== 'all') {
@@ -145,10 +104,9 @@ export default function RequisitionsPage() {
       params.set('page', '1');
       return params;
     });
-  };
+  }, [setSearchParams]);
 
-  // Handle filter changes
-  const handlePriorityChange = (value) => {
+  const handlePriorityChange = useCallback((value) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       if (value && value !== 'all') {
@@ -159,50 +117,54 @@ export default function RequisitionsPage() {
       params.set('page', '1');
       return params;
     });
-  };
+  }, [setSearchParams]);
 
-  const handlePageChange = (newPage) => {
+  const handlePageChange = useCallback((newPage) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.set('page', newPage.toString());
       return params;
     });
-  };
+  }, [setSearchParams]);
 
-  // Clear all filters
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSearch('');
     setSearchParams({});
+  }, [setSearchParams]);
+
+  const queryParams = useMemo(() => ({
+    page,
+    page_size: 20,
+    ...(debouncedSearch && { search: debouncedSearch }),
+    ...(status !== 'all' && { status }),
+    ...(priority && priority !== 'all' && { priority }),
+  }), [debouncedSearch, page, priority, status]);
+
+  return {
+    search,
+    status,
+    priority,
+    action,
+    initialItems,
+    page,
+    queryParams,
+    hasActiveFilters: Boolean(debouncedSearch || status !== 'all' || priority),
+    handleSearchChange: (event) => setSearch(event.target.value),
+    handleTabChange,
+    handlePriorityChange,
+    handlePageChange,
+    clearFilters,
+    setSearchParams,
   };
+}
 
-  const hasActiveFilters = debouncedSearch || status !== 'all' || priority;
-
-  // Navigate handlers
-  const handleRequisitionClick = useCallback((requisitionId) => {
-    navigate(`/inventory/requisitions/${requisitionId}`);
-  }, [navigate]);
-
-  const handleApprove = useCallback((requisitionId) => {
-    navigate(`/inventory/requisitions/${requisitionId}?action=approve`);
-  }, [navigate]);
-
-  const handleReject = useCallback((requisitionId) => {
-    navigate(`/inventory/requisitions/${requisitionId}?action=reject`);
-  }, [navigate]);
-
-  const handleConvertToPO = useCallback((requisitionId) => {
-    navigate(`/inventory/purchase-orders?action=create&requisition=${requisitionId}`);
-  }, [navigate]);
-
-  const handleCreateRequisition = () => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set('action', 'create');
-      return params;
-    });
-  };
-
-  const requisitionColumns = useMemo(() => ([
+function createRequisitionColumns({
+  onOpenRequisition,
+  onApprove,
+  onReject,
+  onConvertToPO,
+}) {
+  return [
     {
       key: 'number',
       header: 'Requisition #',
@@ -317,18 +279,18 @@ export default function RequisitionsPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleRequisitionClick(requisition.id); }}>
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onOpenRequisition(requisition.id); }}>
                 <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canApprove && (
-                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleApprove(requisition.id); }}>
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onApprove(requisition.id); }}>
                   <Check className="size-4 mr-2" />
                   Approve
                 </DropdownMenuItem>
               )}
               {canReject && (
-                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleReject(requisition.id); }}>
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onReject(requisition.id); }}>
                   <X className="size-4 mr-2" />
                   Reject
                 </DropdownMenuItem>
@@ -336,7 +298,7 @@ export default function RequisitionsPage() {
               {canConvert && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleConvertToPO(requisition.id); }}>
+                  <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onConvertToPO(requisition.id); }}>
                     <FileText className="size-4 mr-2" />
                     Convert to PO
                   </DropdownMenuItem>
@@ -347,53 +309,309 @@ export default function RequisitionsPage() {
         );
       },
     },
-  ]), [
-    handleApprove,
-    handleConvertToPO,
-    handleReject,
-    handleRequisitionClick,
-  ]);
+  ];
+}
 
-  const handleCloseSheet = () => {
+function RequisitionsLoadingState() {
+  return (
+    <PageState variant="loading" fullHeight={false} className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <Skeleton className="h-9 w-56" />
+          <Skeleton className="h-5 w-32 mt-2" />
+        </div>
+        <Skeleton className="h-10 w-40" />
+      </div>
+      <Skeleton className="h-10 w-full max-w-md" />
+      <div className="flex gap-3">
+        <Skeleton className="h-10 flex-1 max-w-md" />
+        <Skeleton className="h-10 w-40" />
+      </div>
+      <div className="space-y-3">
+        {[...Array(6)].map((_, i) => (
+          <RequisitionCardSkeleton key={i} />
+        ))}
+      </div>
+    </PageState>
+  );
+}
+
+function RequisitionsHeader({ totalCount, isLoading, onRefresh, onCreateRequisition }) {
+  return (
+    <PageHeader
+      title="Purchase Requisitions"
+      description={`${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
+      actions={(
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onRefresh}>
+            <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Button onClick={onCreateRequisition}>
+            <Plus className="size-4 mr-2" />
+            New Requisition
+          </Button>
+        </div>
+      )}
+    />
+  );
+}
+
+function RequisitionStatusTabs({ status, onStatusChange }) {
+  return (
+    <Tabs value={status} onValueChange={onStatusChange}>
+      <TabsList className="w-full sm:w-auto">
+        {STATUS_TABS.map((tab) => (
+          <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
+            {tab.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function RequisitionsFilters({
+  search,
+  priority,
+  hasActiveFilters,
+  onSearchChange,
+  onPriorityChange,
+  onClearFilters,
+}) {
+  return (
+    <div className="flex flex-col lg:flex-row gap-3">
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by number or requester..."
+          value={search}
+          onChange={onSearchChange}
+          className="pl-9 font-mono text-sm"
+        />
+      </div>
+
+      <Select value={priority || 'all'} onValueChange={onPriorityChange}>
+        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+          <SelectValue placeholder="Priority" />
+        </SelectTrigger>
+        <SelectContent>
+          {PRIORITY_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {hasActiveFilters && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClearFilters}
+          className="font-mono text-xs text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-4 mr-1" />
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function RequisitionsTable({ requisitions, columns, onOpenRequisition }) {
+  return (
+    <div className="overflow-x-auto">
+      <VirtualizedTable
+        rows={requisitions}
+        rowKey={(requisition) => requisition.id}
+        rowHeight={64}
+        columns={columns}
+        onRowClick={(requisition) => onOpenRequisition(requisition.id)}
+        rowClassName="hover:bg-muted/30"
+        className="min-w-[960px]"
+        headerClassName="bg-muted/50 border-b border-border"
+      />
+    </div>
+  );
+}
+
+function RequisitionsEmptyState({ hasActiveFilters, onCreateRequisition }) {
+  return (
+    <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
+      <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+        <ClipboardList className="size-8 text-muted-foreground" />
+      </div>
+      <h3 className="font-display text-xl text-foreground mb-2">
+        No Requisitions Found
+      </h3>
+      <p className="text-muted-foreground text-sm mb-4">
+        {hasActiveFilters
+          ? 'Try adjusting your filters'
+          : 'Create your first requisition to get started'}
+      </p>
+      {!hasActiveFilters && (
+        <Button onClick={onCreateRequisition} className="font-mono text-xs">
+          <Plus className="size-4 mr-2" />
+          New Requisition
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function RequisitionsDisplay({
+  requisitions,
+  columns,
+  hasActiveFilters,
+  onOpenRequisition,
+  onCreateRequisition,
+}) {
+  if (requisitions.length === 0) {
+    return (
+      <RequisitionsEmptyState
+        hasActiveFilters={hasActiveFilters}
+        onCreateRequisition={onCreateRequisition}
+      />
+    );
+  }
+
+  return (
+    <RequisitionsTable
+      requisitions={requisitions}
+      columns={columns}
+      onOpenRequisition={onOpenRequisition}
+    />
+  );
+}
+
+function RequisitionsPagination({ page, totalPages, totalCount, onPageChange }) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center justify-between pt-4 border-t border-border">
+      <p className="font-mono text-xs text-muted-foreground">
+        Page {page} of {totalPages} ({totalCount} requisitions)
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+          className="font-mono text-xs"
+        >
+          <ChevronLeft className="size-4 mr-1" />
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+          className="font-mono text-xs"
+        >
+          Next
+          <ChevronRight className="size-4 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CreateRequisitionSheet({ isOpen, initialItems, onClose, onCreateSuccess }) {
+  return (
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="sm:max-w-2xl overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-display text-2xl">New Requisition</SheetTitle>
+          <SheetDescription>
+            Create a new purchase requisition for inventory items.
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          <RequisitionForm
+            initialItems={initialItems}
+            onSuccess={onCreateSuccess}
+            onCancel={onClose}
+          />
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/**
+ * RequisitionsPage - Purchase requisitions list page
+ */
+export default function RequisitionsPage() {
+  const navigate = useNavigate();
+  const {
+    search,
+    status,
+    priority,
+    action,
+    initialItems,
+    page,
+    queryParams,
+    hasActiveFilters,
+    handleSearchChange,
+    handleTabChange,
+    handlePriorityChange,
+    handlePageChange,
+    clearFilters,
+    setSearchParams,
+  } = useRequisitionListFilters();
+  const isCreateOpen = action === 'create';
+  const { data: requisitionsData, isLoading, error, refetch } = useRequisitions(queryParams);
+  const requisitions = requisitionsData?.results || [];
+  const totalCount = requisitionsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / 20);
+
+  const handleRequisitionClick = useCallback((requisitionId) => {
+    navigate(`/inventory/requisitions/${requisitionId}`);
+  }, [navigate]);
+  const handleApprove = useCallback((requisitionId) => {
+    navigate(`/inventory/requisitions/${requisitionId}?action=approve`);
+  }, [navigate]);
+  const handleReject = useCallback((requisitionId) => {
+    navigate(`/inventory/requisitions/${requisitionId}?action=reject`);
+  }, [navigate]);
+  const handleConvertToPO = useCallback((requisitionId) => {
+    navigate(`/inventory/purchase-orders?action=create&requisition=${requisitionId}`);
+  }, [navigate]);
+  const handleCreateRequisition = useCallback(() => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('action', 'create');
+      return params;
+    });
+  }, [setSearchParams]);
+  const handleCloseSheet = useCallback(() => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.delete('action');
       params.delete('items');
       return params;
     });
-  };
-
-  const handleCreateSuccess = () => {
+  }, [setSearchParams]);
+  const handleCreateSuccess = useCallback(() => {
     handleCloseSheet();
     refetch();
-  };
+  }, [handleCloseSheet, refetch]);
+  const requisitionColumns = useMemo(() => createRequisitionColumns({
+    onOpenRequisition: handleRequisitionClick,
+    onApprove: handleApprove,
+    onReject: handleReject,
+    onConvertToPO: handleConvertToPO,
+  }), [handleApprove, handleConvertToPO, handleReject, handleRequisitionClick]);
 
-  // Loading state (only show skeleton on initial load, not on refetches)
   if (isLoading && !requisitionsData) {
-    return (
-      <PageState variant="loading" fullHeight={false} className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <Skeleton className="h-9 w-56" />
-            <Skeleton className="h-5 w-32 mt-2" />
-          </div>
-          <Skeleton className="h-10 w-40" />
-        </div>
-        <Skeleton className="h-10 w-full max-w-md" />
-        <div className="flex gap-3">
-          <Skeleton className="h-10 flex-1 max-w-md" />
-          <Skeleton className="h-10 w-40" />
-        </div>
-        <div className="space-y-3">
-          {[...Array(6)].map((_, i) => (
-            <RequisitionCardSkeleton key={i} />
-          ))}
-        </div>
-      </PageState>
-    );
+    return <RequisitionsLoadingState />;
   }
 
-  // Error state
   if (error) {
     return (
       <PageState
@@ -407,162 +625,46 @@ export default function RequisitionsPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Purchase Requisitions"
-        description={`${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
-        actions={(
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
-              Refresh
-            </Button>
-            <Button onClick={handleCreateRequisition}>
-              <Plus className="size-4 mr-2" />
-              New Requisition
-            </Button>
-          </div>
-        )}
+      <RequisitionsHeader
+        totalCount={totalCount}
+        isLoading={isLoading}
+        onRefresh={refetch}
+        onCreateRequisition={handleCreateRequisition}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
+        <RequisitionStatusTabs status={status} onStatusChange={handleTabChange} />
 
-      {/* Status Tabs */}
-      <Tabs value={status} onValueChange={handleTabChange}>
-        <TabsList className="w-full sm:w-auto">
-          {STATUS_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+        <RequisitionsFilters
+          search={search}
+          priority={priority}
+          hasActiveFilters={hasActiveFilters}
+          onSearchChange={handleSearchChange}
+          onPriorityChange={handlePriorityChange}
+          onClearFilters={clearFilters}
+        />
 
-      {/* Filters Row */}
-      <div className="flex flex-col lg:flex-row gap-3">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by number or requester..."
-            value={search}
-            onChange={handleSearchChange}
-            className="pl-9 font-mono text-sm"
-          />
-        </div>
+        <RequisitionsDisplay
+          requisitions={requisitions}
+          columns={requisitionColumns}
+          hasActiveFilters={hasActiveFilters}
+          onOpenRequisition={handleRequisitionClick}
+          onCreateRequisition={handleCreateRequisition}
+        />
 
-        {/* Priority Filter */}
-        <Select value={priority || 'all'} onValueChange={handlePriorityChange}>
-          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            {PRIORITY_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <RequisitionsPagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={handlePageChange}
+        />
 
-        {/* Clear Filters */}
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="font-mono text-xs text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4 mr-1" />
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {/* Requisitions Display */}
-      {requisitions.length > 0 ? (
-        <div className="overflow-x-auto">
-          <VirtualizedTable
-            rows={requisitions}
-            rowKey={(requisition) => requisition.id}
-            rowHeight={64}
-            columns={requisitionColumns}
-            onRowClick={(requisition) => handleRequisitionClick(requisition.id)}
-            rowClassName="hover:bg-muted/30"
-            className="min-w-[960px]"
-            headerClassName="bg-muted/50 border-b border-border"
-          />
-        </div>
-      ) : (
-        <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <ClipboardList className="size-8 text-muted-foreground" />
-          </div>
-          <h3 className="font-display text-xl text-foreground mb-2">
-            No Requisitions Found
-          </h3>
-          <p className="text-muted-foreground text-sm mb-4">
-            {hasActiveFilters
-              ? 'Try adjusting your filters'
-              : 'Create your first requisition to get started'}
-          </p>
-          {!hasActiveFilters && (
-            <Button onClick={handleCreateRequisition} className="font-mono text-xs">
-              <Plus className="size-4 mr-2" />
-              New Requisition
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t border-border">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {page} of {totalPages} ({totalCount} requisitions)
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page <= 1}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="font-mono text-xs"
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Create Requisition Sheet */}
-      <Sheet open={isCreateOpen} onOpenChange={(open) => !open && handleCloseSheet()}>
-        <SheetContent className="sm:max-w-2xl overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="font-display text-2xl">New Requisition</SheetTitle>
-            <SheetDescription>
-              Create a new purchase requisition for inventory items.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            <RequisitionForm
-              initialItems={initialItems}
-              onSuccess={handleCreateSuccess}
-              onCancel={handleCloseSheet}
-            />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
+        <CreateRequisitionSheet
+          isOpen={isCreateOpen}
+          initialItems={initialItems}
+          onClose={handleCloseSheet}
+          onCreateSuccess={handleCreateSuccess}
+        />
       </div>
     </PageShell>
   );
