@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -170,22 +170,22 @@ export default function PurchaseOrdersPage() {
   const hasActiveFilters = debouncedSearch || status !== 'all' || supplier;
 
   // Navigate handlers
-  const handlePOClick = (poId) => {
+  const handlePOClick = useCallback((poId) => {
     navigate(`/inventory/purchase-orders/${poId}`);
-  };
+  }, [navigate]);
 
-  const handleSend = (poId) => {
+  const handleSend = useCallback((poId) => {
     navigate(`/inventory/purchase-orders/${poId}?action=send`);
-  };
+  }, [navigate]);
 
-  const handleCreateGRN = (poId) => {
+  const handleCreateGRN = useCallback((poId) => {
     navigate(`/inventory/grns?action=create&po=${poId}`);
-  };
+  }, [navigate]);
 
-  const handlePrint = (poId) => {
+  const handlePrint = useCallback(() => {
     // In a real app, this would open a print dialog
     window.print();
-  };
+  }, []);
 
   // Sheet state from URL
   const action = searchParams.get('action');
@@ -333,7 +333,7 @@ export default function PurchaseOrdersPage() {
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handlePrint(po.id); }}>
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handlePrint(); }}>
                 <Printer className="size-4 mr-2" />
                 Print
               </DropdownMenuItem>

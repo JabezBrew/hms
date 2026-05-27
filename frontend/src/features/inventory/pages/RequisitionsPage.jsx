@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -178,21 +178,21 @@ export default function RequisitionsPage() {
   const hasActiveFilters = debouncedSearch || status !== 'all' || priority;
 
   // Navigate handlers
-  const handleRequisitionClick = (requisitionId) => {
+  const handleRequisitionClick = useCallback((requisitionId) => {
     navigate(`/inventory/requisitions/${requisitionId}`);
-  };
+  }, [navigate]);
 
-  const handleApprove = (requisitionId) => {
+  const handleApprove = useCallback((requisitionId) => {
     navigate(`/inventory/requisitions/${requisitionId}?action=approve`);
-  };
+  }, [navigate]);
 
-  const handleReject = (requisitionId) => {
+  const handleReject = useCallback((requisitionId) => {
     navigate(`/inventory/requisitions/${requisitionId}?action=reject`);
-  };
+  }, [navigate]);
 
-  const handleConvertToPO = (requisitionId) => {
+  const handleConvertToPO = useCallback((requisitionId) => {
     navigate(`/inventory/purchase-orders?action=create&requisition=${requisitionId}`);
-  };
+  }, [navigate]);
 
   const handleCreateRequisition = () => {
     setSearchParams((prev) => {

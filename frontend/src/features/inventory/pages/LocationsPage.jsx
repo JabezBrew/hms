@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -183,20 +183,20 @@ export default function LocationsPage() {
     navigate(`/inventory/locations/${locationId}`);
   };
 
-  const handleViewStock = (locationId) => {
+  const handleViewStock = useCallback((locationId) => {
     navigate(`/inventory/items?location=${locationId}`);
-  };
+  }, [navigate]);
 
-  const handleEditLocation = (locationId) => {
+  const handleEditLocation = useCallback((locationId) => {
     if (!locationMutationsAvailable) {
       return;
     }
     navigate(`/inventory/locations/${locationId}?action=edit`);
-  };
+  }, [locationMutationsAvailable, navigate]);
 
-  const handleTransferTo = (locationId) => {
+  const handleTransferTo = useCallback((locationId) => {
     navigate(`/inventory/transfers?action=create&to=${locationId}`);
-  };
+  }, [navigate]);
 
   const handleCreateLocation = () => {
     if (!locationMutationsAvailable) {
