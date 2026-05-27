@@ -5,7 +5,7 @@ import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js';
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,6 +46,20 @@ const PAYMENT_METHODS = [
   { value: 'other', label: 'Other' },
 ];
 
+function getInitialPaymentForm(invoice) {
+  return {
+    amount: invoice?.balance_due?.toString() || '',
+    payment_method: 'cash',
+    reference_number: '',
+    notes: '',
+  };
+}
+
+function getPaymentFormKey(invoice) {
+  if (!invoice) return 'closed';
+  return `${invoice.id}:${invoice.balance_due ?? ''}:${invoice.patient_phone ?? ''}`;
+}
+
 /**
  * RecordPaymentSlideOver - Slide-over panel for recording invoice payments
  *
@@ -62,23 +76,44 @@ export default function RecordPaymentSlideOver({
   invoice,
   onRefreshInvoice,
 }) {
+  return (
+    <div
+      className={cn(
+        'fixed inset-y-0 right-0 z-[100] w-full lg:w-[480px] bg-background border-l border-border',
+        'transform transition-transform duration-300 ease-in-out',
+        'flex flex-col shadow-2xl',
+        open ? 'translate-x-0' : 'translate-x-full'
+      )}
+    >
+      {open && invoice ? (
+        <RecordPaymentSlideOverContent
+          key={getPaymentFormKey(invoice)}
+          invoice={invoice}
+          onClose={onClose}
+          onRefreshInvoice={onRefreshInvoice}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function RecordPaymentSlideOverContent({
+  invoice,
+  onClose,
+  onRefreshInvoice,
+}) {
   const recordPaymentMutation = useRecordPayment();
   const openCashSessionMutation = useOpenCashSession();
   const createPaymentIntentMutation = useCreatePaymentIntent();
   const { data: settingsRows } = useActiveFacilityBillingSettings();
-  const { data: currentSessionData } = useCurrentCashSession({ enabled: open });
+  const { data: currentSessionData } = useCurrentCashSession({ enabled: true });
   const billingSettings = Array.isArray(settingsRows) ? settingsRows[0] : null;
   const cashControlEnabled = !!billingSettings?.cash_control_enabled;
   const currentSession = currentSessionData?.session || null;
 
   // Form state
-  const [formData, setFormData] = useState({
-    amount: '',
-    payment_method: 'cash',
-    reference_number: '',
-    notes: '',
-  });
-  const [mobileNumber, setMobileNumber] = useState('');
+  const [formData, setFormData] = useState(() => getInitialPaymentForm(invoice));
+  const [mobileNumber, setMobileNumber] = useState(() => invoice.patient_phone || '');
   const [intent, setIntent] = useState(null);
   const [generateReceipt, setGenerateReceipt] = useState(true);
   const [openingFloat, setOpeningFloat] = useState('0.00');
@@ -86,22 +121,6 @@ export default function RecordPaymentSlideOver({
   const paymentIntentsAvailable = !isRustV2ApiMode();
   const paymentIntentPending = paymentIntentsAvailable && createPaymentIntentMutation.isPending;
   const hasPendingIntent = paymentIntentsAvailable && !!intent && intent.status === 'pending';
-
-  // Reset form when panel opens/closes
-  useEffect(() => {
-    if (open && invoice) {
-      setFormData({
-        amount: invoice.balance_due?.toString() || '',
-        payment_method: 'cash',
-        reference_number: '',
-        notes: '',
-      });
-      setMobileNumber(invoice.patient_phone || '');
-      setIntent(null);
-      setGenerateReceipt(true);
-      setErrors({});
-    }
-  }, [open, invoice]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -186,14 +205,7 @@ export default function RecordPaymentSlideOver({
   };
 
   return (
-    <div
-      className={cn(
-        'fixed inset-y-0 right-0 z-[100] w-full lg:w-[480px] bg-background border-l border-border',
-        'transform transition-transform duration-300 ease-in-out',
-        'flex flex-col shadow-2xl',
-        open ? 'translate-x-0' : 'translate-x-full'
-      )}
-    >
+    <>
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
@@ -572,6 +584,6 @@ export default function RecordPaymentSlideOver({
           )}
         </Button>
       </footer>
-    </div>
+    </>
   );
 }
