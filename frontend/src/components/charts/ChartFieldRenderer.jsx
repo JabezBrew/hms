@@ -8,7 +8,7 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Info from 'lucide-react/dist/esm/icons/info.js';
 import Calculator from 'lucide-react/dist/esm/icons/calculator.js';
-import { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +37,7 @@ const ChartFieldRenderer = ({
   className,
   inSlideOver = false,
 }) => {
-  const config = field.config || {};
+  const config = useMemo(() => field.config || {}, [field.config]);
 
   // Check if value is in critical range
   const isCritical = useMemo(() => {
@@ -51,131 +51,7 @@ const ChartFieldRenderer = ({
     if (critical_high !== undefined && numValue > critical_high) return true;
 
     return false;
-  }, [value, field, config]);
-
-  // Render the appropriate input based on field type
-  const renderField = () => {
-    switch (field.field_type) {
-      case 'numeric':
-        return (
-          <NumericField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-            isCritical={isCritical}
-          />
-        );
-
-      case 'select':
-        return (
-          <SelectField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-            inSlideOver={inSlideOver}
-          />
-        );
-
-      case 'multi_select':
-        return (
-          <MultiSelectField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-          />
-        );
-
-      case 'scale':
-        return (
-          <ScaleField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-            isCritical={isCritical}
-          />
-        );
-
-      case 'text':
-        return (
-          <TextField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-          />
-        );
-
-      case 'textarea':
-        return (
-          <TextAreaField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-          />
-        );
-
-      case 'calculated':
-        return (
-          <CalculatedField
-            field={field}
-            value={value}
-          />
-        );
-
-      case 'paired':
-        return (
-          <PairedField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-            isCritical={isCritical}
-          />
-        );
-
-      case 'time':
-        return (
-          <TimeField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-          />
-        );
-
-      case 'boolean':
-        return (
-          <BooleanField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-          />
-        );
-
-      case 'body_map':
-        return (
-          <BodyMapField
-            field={field}
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-          />
-        );
-
-      default:
-        return (
-          <div className="text-muted-foreground text-sm">
-            Unknown field type: {field.field_type}
-          </div>
-        );
-    }
-  };
+  }, [value, field.field_type, config]);
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -191,7 +67,14 @@ const ChartFieldRenderer = ({
         </div>
       )}
 
-      {renderField()}
+      <ChartFieldInput
+        field={field}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        isCritical={isCritical}
+        inSlideOver={inSlideOver}
+      />
 
       {/* Help text */}
       {field.help_text && (
@@ -219,6 +102,134 @@ const ChartFieldRenderer = ({
     </div>
   );
 };
+
+function ChartFieldInput({
+  field,
+  value,
+  onChange,
+  disabled,
+  isCritical,
+  inSlideOver,
+}) {
+  switch (field.field_type) {
+    case 'numeric':
+      return (
+        <NumericField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          isCritical={isCritical}
+        />
+      );
+
+    case 'select':
+      return (
+        <SelectField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          inSlideOver={inSlideOver}
+        />
+      );
+
+    case 'multi_select':
+      return (
+        <MultiSelectField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+
+    case 'scale':
+      return (
+        <ScaleField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          isCritical={isCritical}
+        />
+      );
+
+    case 'text':
+      return (
+        <TextField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+
+    case 'textarea':
+      return (
+        <TextAreaField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+
+    case 'calculated':
+      return (
+        <CalculatedField
+          field={field}
+          value={value}
+        />
+      );
+
+    case 'paired':
+      return (
+        <PairedField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          isCritical={isCritical}
+        />
+      );
+
+    case 'time':
+      return (
+        <TimeField
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+
+    case 'boolean':
+      return (
+        <BooleanField
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+
+    case 'body_map':
+      return (
+        <BodyMapField
+          field={field}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+
+    default:
+      return (
+        <div className="text-muted-foreground text-sm">
+          Unknown field type: {field.field_type}
+        </div>
+      );
+  }
+}
 
 /**
  * Numeric field with unit display
@@ -485,7 +496,7 @@ const PairedField = ({ field, value, onChange, disabled, isCritical }) => {
 /**
  * Time field
  */
-const TimeField = ({ field, value, onChange, disabled }) => {
+const TimeField = ({ value, onChange, disabled }) => {
   return (
     <Input
       type="time"
@@ -500,7 +511,7 @@ const TimeField = ({ field, value, onChange, disabled }) => {
 /**
  * Boolean (yes/no) field
  */
-const BooleanField = ({ field, value, onChange, disabled }) => {
+const BooleanField = ({ value, onChange, disabled }) => {
   return (
     <div className="flex items-center gap-3">
       <Switch
