@@ -52,12 +52,11 @@ import { ProblemListSidebar } from "@/features/problems";
 import { normalizeExpansionId } from "@/components/chronicle/chronicleNoteUtils";
 import { useChronicleBreakGlassAccess } from "@/features/patients/chronicle/useChronicleBreakGlassAccess";
 import { useChronicleTimelineExpansion } from "@/features/patients/chronicle/useChronicleTimelineExpansion";
+import { useChronicleVisitScope } from "@/features/patients/chronicle/useChronicleVisitScope";
 import { useChronicleWorkspaceRouting } from "@/features/patients/chronicle/useChronicleWorkspaceRouting";
 import {
-  buildChronicleSearch,
   CHRONICLE_ALL_VISITS,
   CHRONICLE_VISIT_PARAM,
-  resolveChronicleVisitScope,
 } from "@/features/patients/chronicle/visitScopeUtils";
 import { emitOnboardingEvent } from "@/features/onboarding";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
@@ -1987,53 +1986,42 @@ const PatientChroniclePage = ({ defaultAction }) => {
     navigate(wardBoardHref);
   }, [navigate, wardBoardHref]);
 
-  const resolvedVisitScope = useMemo(() => resolveChronicleVisitScope({
-    requestedVisit: visitParam || (rustV2Mode ? CHRONICLE_ALL_VISITS : undefined),
-    activeEncounterId: chronicleContext?.active_encounter?.id || activeEncounter?.id,
-    encounters,
+  const {
+    chartContextAdmissionId,
+    chartContextEncounter,
+    chronicleVisitState,
+    handleViewAllHistory,
+    handleViewCurrentVisit,
+    handleVisitScopeChange,
+    isAllVisitsScope,
+    isVisitScopePending,
+    resolvedVisitScope,
+    selectedEncounter,
+    selectedEncounterId,
+    visitScopeRedirectSearch,
+    visitScopeOptions,
+  } = useChronicleVisitScope({
+    activeEncounter,
+    activeEncounterId: chronicleContext?.active_encounter?.id,
     areEncountersLoading,
-  }), [
-    activeEncounter?.id,
-    areEncountersLoading,
-    chronicleContext?.active_encounter?.id,
+    canFetchClinical,
     encounters,
+    formatEncounterScopeLabel,
+    navigate,
+    pathname,
+    rustV2ActiveAdmissionId,
     rustV2Mode,
+    search,
     visitParam,
-  ]);
-  const isAllVisitsScope = resolvedVisitScope === CHRONICLE_ALL_VISITS;
-  const selectedEncounterId = !resolvedVisitScope || isAllVisitsScope ? null : resolvedVisitScope;
-  const isVisitScopePending = canFetchClinical && !resolvedVisitScope;
-  const selectedEncounter = useMemo(
-    () => encounters?.find((encounter) => String(encounter.id) === String(selectedEncounterId)) || null,
-    [encounters, selectedEncounterId]
-  );
-  const chartContextEncounter = useMemo(() => {
-    if (isAllVisitsScope) {
-      return null;
-    }
-    return selectedEncounter || activeEncounter || null;
-  }, [activeEncounter, isAllVisitsScope, selectedEncounter]);
-  const chartContextAdmissionId = chartContextEncounter?.admission_id
-    || chartContextEncounter?.admission?.id
-    || rustV2ActiveAdmissionId
-    || null;
-  const visitScopeOptions = useMemo(() => {
-    const options = [{
-      value: CHRONICLE_ALL_VISITS,
-      label: 'All history',
-    }];
+  });
 
-    if (!Array.isArray(encounters)) {
-      return options;
+  useEffect(() => {
+    if (!visitScopeRedirectSearch) {
+      return;
     }
 
-    return options.concat(
-      encounters.map((encounter) => ({
-        value: String(encounter.id),
-        label: formatEncounterScopeLabel(encounter, activeEncounter?.id),
-      }))
-    );
-  }, [activeEncounter?.id, encounters]);
+    navigate({ pathname, search: visitScopeRedirectSearch }, { replace: true });
+  }, [navigate, pathname, visitScopeRedirectSearch]);
 
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
@@ -2239,20 +2227,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     resolvedVisitScope,
   });
 
-  useEffect(() => {
-    if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
-      return;
-    }
-
-    const nextSearch = buildChronicleSearch(search, {
-      updates: {
-        [CHRONICLE_VISIT_PARAM]: resolvedVisitScope,
-      },
-    });
-
-    navigate({ pathname, search: nextSearch }, { replace: true });
-  }, [navigate, pathname, resolvedVisitScope, search, visitParam]);
-
   // ============================================
   // Event handlers
   // ============================================
@@ -2451,37 +2425,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
     );
   }, [activeFilter, id, searchInput, selectedEncounterId]);
 
-  const handleVisitScopeChange = useCallback((nextVisitScope) => {
-    const nextSearch = buildChronicleSearch(search, {
-      updates: {
-        [CHRONICLE_VISIT_PARAM]: nextVisitScope,
-      },
-    });
-
-    navigate({ pathname, search: nextSearch }, { replace: true });
-  }, [navigate, pathname, search]);
-
-  const handleViewAllHistory = useCallback(() => {
-    handleVisitScopeChange(CHRONICLE_ALL_VISITS);
-  }, [handleVisitScopeChange]);
-
-  const handleViewCurrentVisit = useCallback(() => {
-    if (!activeEncounter?.id) {
-      return;
-    }
-
-    handleVisitScopeChange(String(activeEncounter.id));
-  }, [activeEncounter?.id, handleVisitScopeChange]);
-
   const handleClearTimelineSearch = useCallback(() => {
     setSearchInput('');
   }, []);
-
-  const chronicleVisitState = useMemo(() => ({
-    isAllVisitsScope,
-    resolvedVisitScope,
-    selectedEncounterId,
-  }), [isAllVisitsScope, resolvedVisitScope, selectedEncounterId]);
 
   const chronicleTimelineState = useMemo(() => ({
     hasNextPage,
