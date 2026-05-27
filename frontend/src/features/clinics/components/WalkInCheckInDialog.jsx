@@ -1,7 +1,7 @@
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -35,18 +35,41 @@ const walkInKeys = {
 
 export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }) {
   const { facilityCode, user } = useAuth();
+  const canUse = user?.role === 'receptionist' || user?.role === 'admin';
+
+  if (!canUse) {
+    return null;
+  }
+
+  const contentKey = open ? `${patientId || 'patient'}:${facilityCode || 'facility'}` : 'closed';
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <WalkInCheckInDialogContent
+        key={contentKey}
+        facilityCode={facilityCode}
+        onOpenChange={onOpenChange}
+        onSuccess={onSuccess}
+        open={open}
+        patientId={patientId}
+      />
+    </Dialog>
+  );
+}
+
+function WalkInCheckInDialogContent({ facilityCode, onOpenChange, onSuccess, open, patientId }) {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedClinic, setSelectedClinic] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const canUse = user?.role === 'receptionist' || user?.role === 'admin';
-
   const { data: departmentsData, isLoading: isDepartmentsLoading } = useDepartments();
-  const allUnits = Array.isArray(departmentsData) ? departmentsData : [];
   const departments = useMemo(
-    () => allUnits.filter((unit) => unit.unit_type_code === 'department' && unit.unit_category === 'clinical'),
-    [allUnits]
+    () => {
+      const allUnits = Array.isArray(departmentsData) ? departmentsData : [];
+      return allUnits.filter((unit) => unit.unit_type_code === 'department' && unit.unit_category === 'clinical');
+    },
+    [departmentsData]
   );
 
   const { data: onDutyData, isLoading: isOnDutyLoading } = useRosterOnDutyDepartment(
@@ -69,7 +92,10 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
     staleTime: 60 * 1000,
   });
 
-  const clinics = Array.isArray(clinicsQuery.data) ? clinicsQuery.data : [];
+  const clinics = useMemo(
+    () => (Array.isArray(clinicsQuery.data) ? clinicsQuery.data : []),
+    [clinicsQuery.data]
+  );
   const clinicById = useMemo(() => {
     const map = new Map();
     clinics.forEach((clinic) => {
@@ -104,24 +130,16 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
     return results;
   }, [onDutyEntries, clinicById]);
 
-  useEffect(() => {
-    if (!open) {
-      setSelectedDepartment('');
-      setSelectedClinic('');
-      setReason('');
-      setSubmitting(false);
-      return;
-    }
-    // Reset downstream selections when department changes.
-    setSelectedClinic('');
-  }, [open, selectedDepartment]);
+  const selectedClinicForSubmit = activePoolClinics.length === 1
+    ? activePoolClinics[0].id
+    : activePoolClinics.some((clinic) => clinic.id === selectedClinic)
+      ? selectedClinic
+      : '';
 
-  useEffect(() => {
-    if (!open) return;
-    if (activePoolClinics.length === 1) {
-      setSelectedClinic(activePoolClinics[0].id);
-    }
-  }, [open, activePoolClinics]);
+  const handleDepartmentChange = (departmentId) => {
+    setSelectedDepartment(departmentId);
+    setSelectedClinic('');
+  };
 
   const handleSubmit = async () => {
     if (!patientId) {
@@ -132,7 +150,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
       toast.error('Please select a department');
       return;
     }
-    if (!selectedClinic) {
+    if (!selectedClinicForSubmit) {
       toast.error('Please select an active clinic');
       return;
     }
@@ -141,13 +159,13 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
     try {
       const result = await clinicWalkInApi.checkIn({
         patientId,
-        clinicId: selectedClinic,
+        clinicId: selectedClinicForSubmit,
         reason,
       });
       toast.success('Checked in to clinic', {
         description: result?.queue_number ? `Queue #${result.queue_number}` : undefined,
       });
-      onSuccess?.(result, { clinicId: selectedClinic, departmentId: selectedDepartment });
+      onSuccess?.(result, { clinicId: selectedClinicForSubmit, departmentId: selectedDepartment });
       onOpenChange(false);
     } catch (error) {
       toast.error(error.message || 'Failed to check in walk-in patient');
@@ -156,13 +174,8 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
     }
   };
 
-  if (!canUse) {
-    return null;
-  }
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="size-5 text-primary" />
@@ -186,7 +199,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
 	              <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">
 	                Department
 	              </span>
-	              <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+	              <Select value={selectedDepartment} onValueChange={handleDepartmentChange}>
 	                <SelectTrigger aria-label="Department" className="font-mono">
                   <SelectValue placeholder={isDepartmentsLoading ? 'Loading departments...' : 'Select department'} />
                 </SelectTrigger>
@@ -230,7 +243,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
                   </div>
                 </div>
               ) : (
-                <Select value={selectedClinic} onValueChange={setSelectedClinic}>
+                <Select value={selectedClinicForSubmit} onValueChange={setSelectedClinic}>
 	                  <SelectTrigger aria-label="Active pool clinic" className="font-mono">
                     <SelectValue placeholder="Select clinic" />
                   </SelectTrigger>
@@ -271,8 +284,7 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
             {submitting ? 'Checking in...' : 'Check In'}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 }
 
