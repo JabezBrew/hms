@@ -111,6 +111,196 @@ const ChartEntryForm = (props) => {
   );
 };
 
+function ChartEntryHeader({ patientName, template, onClose }) {
+  return (
+    <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+          <ClipboardList className="size-5 text-amber-600 dark:text-amber-400" />
+        </div>
+        <div>
+          <h2 className="font-display text-xl text-foreground">
+            {template?.name || 'Chart Entry'}
+          </h2>
+          <p className="font-mono text-xs text-muted-foreground mt-0.5">
+            {patientName}
+          </p>
+        </div>
+      </div>
+
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={onClose}
+        className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+      >
+        <X className="size-4 mr-1.5" />
+        Close
+      </Button>
+    </header>
+  );
+}
+
+function ChartEntryStatusBar({ criticalCount, observedAt }) {
+  return (
+    <div className="px-6 py-3 bg-muted/30 border-b border-border">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5 font-mono">
+            <Calendar className="size-3.5" />
+            {format(observedAt, 'MMM d, yyyy')}
+          </span>
+          <span className="flex items-center gap-1.5 font-mono">
+            <Clock className="size-3.5" />
+            {format(observedAt, 'h:mm a')}
+          </span>
+        </div>
+        {criticalCount > 0 && (
+          <span className="flex items-center gap-1.5 text-xs font-mono text-rose-500">
+            <AlertTriangle className="size-3.5" />
+            {criticalCount} critical value(s)
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChartEntryFields({ computedData, errors, groupedFields, onFieldChange }) {
+  return (
+    <div className="space-y-6">
+      {groupedFields.map((group, groupIndex) => (
+        <div key={group.name || groupIndex}>
+          {group.name && (
+            <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-3 pb-2 border-b border-border">
+              {group.name}
+            </h3>
+          )}
+          <div className="space-y-4">
+            {group.fields.map((field) => (
+              <ChartFieldRenderer
+                key={field.id}
+                field={field}
+                value={computedData[field.field_key]}
+                onChange={(value) => onFieldChange(field.field_key, value)}
+                error={errors[field.field_key]}
+                disabled={field.field_type === 'calculated'}
+                inSlideOver
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChartEntryNotes({ notes, onNotesChange }) {
+  return (
+    <div className="space-y-2 pt-4 border-t border-border">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Notes
+      </Label>
+      <Textarea
+        value={notes}
+        onChange={(event) => onNotesChange(event.target.value)}
+        placeholder="Additional observations..."
+        className="font-mono text-sm resize-none"
+        rows={3}
+      />
+    </div>
+  );
+}
+
+function ChartEntryBody({
+  computedData,
+  errors,
+  groupedFields,
+  isLoading,
+  notes,
+  template,
+  onFieldChange,
+  onNotesChange,
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!template) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <ClipboardList className="size-12 mx-auto mb-3 opacity-50" />
+        <p>Chart template not found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <ChartEntryFields
+        computedData={computedData}
+        errors={errors}
+        groupedFields={groupedFields}
+        onFieldChange={onFieldChange}
+      />
+      <ChartEntryNotes notes={notes} onNotesChange={onNotesChange} />
+    </div>
+  );
+}
+
+function ChartEntryFooter({
+  criticalCount,
+  isSubmitting,
+  template,
+  onClose,
+  onSubmit,
+}) {
+  return (
+    <footer className="px-6 py-4 border-t border-border bg-card">
+      <div className="flex items-center justify-between">
+        {criticalCount > 0 && (
+          <p className="flex items-center gap-1.5 text-xs text-rose-500 font-mono">
+            <AlertTriangle className="size-3.5" />
+            Critical values will trigger an alert
+          </p>
+        )}
+        <div className="flex items-center gap-2 ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            className="font-mono text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={onSubmit}
+            disabled={isSubmitting || !template}
+            className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Check className="size-3.5 mr-1.5" />
+                Record Entry
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 const ChartEntryFormContent = ({
   open,
   onClose,
@@ -280,150 +470,30 @@ const ChartEntryFormContent = ({
         open ? "translate-x-0" : "translate-x-full"
       )}
     >
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-            <ClipboardList className="size-5 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div>
-            <h2 className="font-display text-xl text-foreground">
-              {template?.name || 'Chart Entry'}
-            </h2>
-            <p className="font-mono text-xs text-muted-foreground mt-0.5">
-              {patientName}
-            </p>
-          </div>
-        </div>
-
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={onClose}
-          className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
-        >
-          <X className="size-4 mr-1.5" />
-          Close
-        </Button>
-      </header>
-
-      {/* Timestamp & Status */}
-      <div className="px-6 py-3 bg-muted/30 border-b border-border">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5 font-mono">
-              <Calendar className="size-3.5" />
-              {format(observedAt, 'MMM d, yyyy')}
-            </span>
-            <span className="flex items-center gap-1.5 font-mono">
-              <Clock className="size-3.5" />
-              {format(observedAt, 'h:mm a')}
-            </span>
-          </div>
-          {criticalFields.length > 0 && (
-            <span className="flex items-center gap-1.5 text-xs font-mono text-rose-500">
-              <AlertTriangle className="size-3.5" />
-              {criticalFields.length} critical value(s)
-            </span>
-          )}
-        </div>
-      </div>
+      <ChartEntryHeader patientName={patientName} template={template} onClose={onClose} />
+      <ChartEntryStatusBar criticalCount={criticalFields.length} observedAt={observedAt} />
 
       {/* Content */}
       <ScrollArea className="flex-1 p-6">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : !template ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <ClipboardList className="size-12 mx-auto mb-3 opacity-50" />
-            <p>Chart template not found</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {groupedFields.map((group, groupIndex) => (
-              <div key={group.name || groupIndex}>
-                {group.name && (
-                  <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-3 pb-2 border-b border-border">
-                    {group.name}
-                  </h3>
-                )}
-                <div className="space-y-4">
-                  {group.fields.map((field) => (
-                    <ChartFieldRenderer
-                      key={field.id}
-                      field={field}
-                      value={computedData[field.field_key]}
-                      onChange={(value) => updateField(field.field_key, value)}
-                      error={errors[field.field_key]}
-                      disabled={field.field_type === 'calculated'}
-                      inSlideOver
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {/* Notes */}
-            <div className="space-y-2 pt-4 border-t border-border">
-              <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                Notes
-              </Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => dispatch({
-                  type: 'notesChanged',
-                  value: e.target.value,
-                })}
-                placeholder="Additional observations..."
-                className="font-mono text-sm resize-none"
-                rows={3}
-              />
-            </div>
-          </div>
-        )}
+        <ChartEntryBody
+          computedData={computedData}
+          errors={errors}
+          groupedFields={groupedFields}
+          isLoading={isLoading}
+          notes={notes}
+          template={template}
+          onFieldChange={updateField}
+          onNotesChange={(value) => dispatch({ type: 'notesChanged', value })}
+        />
       </ScrollArea>
 
-      {/* Footer */}
-      <footer className="px-6 py-4 border-t border-border bg-card">
-        <div className="flex items-center justify-between">
-          {criticalFields.length > 0 && (
-            <p className="flex items-center gap-1.5 text-xs text-rose-500 font-mono">
-              <AlertTriangle className="size-3.5" />
-              Critical values will trigger an alert
-            </p>
-          )}
-          <div className="flex items-center gap-2 ml-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="font-mono text-xs"
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={createMutation.isPending || !template}
-              className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
-            >
-              {createMutation.isPending ? (
-                <>
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  <Check className="size-3.5 mr-1.5" />
-                  Record Entry
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </footer>
+      <ChartEntryFooter
+        criticalCount={criticalFields.length}
+        isSubmitting={createMutation.isPending}
+        template={template}
+        onClose={onClose}
+        onSubmit={handleSubmit}
+      />
     </div>
   );
 };
