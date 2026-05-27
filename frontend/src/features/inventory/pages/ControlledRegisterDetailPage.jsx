@@ -316,6 +316,375 @@ function DiscrepanciesTab({ registerId }) {
   );
 }
 
+function ControlledRegisterLoadingState() {
+  return (
+    <PageState variant="loading" fullHeight={false} className="space-y-6">
+      <div className="flex items-center gap-4">
+        <Skeleton className="size-10" />
+        <div>
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-5 w-48 mt-2" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <Skeleton className="h-64" />
+        </div>
+        <Skeleton className="h-80" />
+      </div>
+    </PageState>
+  );
+}
+
+function ControlledRegisterErrorState({ error, onBack, onRetry }) {
+  return (
+    <PageState
+      variant="error"
+      title="Error Loading Register"
+      description={error.message}
+      action={(
+        <div className="flex items-center justify-center gap-2">
+          <Button variant="outline" onClick={onBack}>
+            <ArrowLeft className="size-4 mr-2" />
+            Back to Registers
+          </Button>
+          <Button onClick={onRetry}>
+            <RefreshCw className="size-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      )}
+    />
+  );
+}
+
+function ControlledRegisterNotFoundState({ onBack }) {
+  return (
+    <PageState
+      variant="empty"
+      title="Register Not Found"
+      description="The requested controlled substance register does not exist."
+      action={(
+        <Button variant="outline" onClick={onBack}>
+          <ArrowLeft className="size-4 mr-2" />
+          Back to Registers
+        </Button>
+      )}
+    />
+  );
+}
+
+function ControlledRegisterHeader({
+  register,
+  onBack,
+  onOpenCount,
+  onOpenDispense,
+  onOpenWastage,
+  onRefresh,
+}) {
+  return (
+    <PageHeader
+      title={(
+        <span className="flex items-center gap-3">
+          <span>{register.item_name || register.name}</span>
+          <Badge variant="outline" className="text-[10px] bg-rose-500/10 text-rose-500 border-rose-500/30">
+            <Shield className="size-3 mr-1" />
+            Controlled
+          </Badge>
+        </span>
+      )}
+      description={(
+        <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+          {register.location_name && (
+            <span className="flex items-center gap-1.5">
+              <MapPin className="size-4" />
+              <span className="text-sm">{register.location_name}</span>
+            </span>
+          )}
+          {register.schedule && (
+            <Badge variant="outline" className="text-xs">
+              Schedule {register.schedule}
+            </Badge>
+          )}
+        </div>
+      )}
+      actions={(
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={onOpenCount}>
+            <ClipboardCheck className="size-4 mr-2" />
+            Count
+          </Button>
+          <Button onClick={onOpenDispense} className="bg-rose-600 hover:bg-rose-700">
+            <Pill className="size-4 mr-2" />
+            Dispense
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" aria-label="Controlled register actions">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onOpenWastage}>
+                <Trash2 className="size-4 mr-2" />
+                Record Wastage
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>
+                <Printer className="size-4 mr-2" />
+                Print Register
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onRefresh}>
+                <RefreshCw className="size-4 mr-2" />
+                Refresh
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-fit -ml-2"
+        onClick={onBack}
+      >
+        <ArrowLeft className="size-4 mr-2" />
+        Back to Controlled Substances
+      </Button>
+    </PageHeader>
+  );
+}
+
+function ControlledRegisterAlerts({ register, hasDiscrepancy, auditDue, lastAuditDays }) {
+  if (!hasDiscrepancy && !auditDue) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      {hasDiscrepancy && (
+        <Card className="bg-rose-500/5 border-rose-500/30">
+          <CardContent className="py-3 px-4 flex items-center gap-3">
+            <AlertOctagon className="size-5 text-rose-500" />
+            <div>
+              <p className="text-sm font-medium text-rose-500">Unresolved Discrepancy</p>
+              <p className="text-xs text-muted-foreground">
+                This register has {register.discrepancy_count || 'an'} unresolved discrepanc{(register.discrepancy_count || 1) > 1 ? 'ies' : 'y'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {auditDue && (
+        <Card className="bg-amber-500/5 border-amber-500/30">
+          <CardContent className="py-3 px-4 flex items-center gap-3">
+            <AlertTriangle className="size-5 text-amber-500" />
+            <div>
+              <p className="text-sm font-medium text-amber-500">Audit Overdue</p>
+              <p className="text-xs text-muted-foreground">
+                Last audit was {lastAuditDays} days ago. Physical count recommended.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function ControlledRegisterBalanceCard({ register }) {
+  return (
+    <Card className="bg-card/30 border-border/50">
+      <CardContent className="py-6">
+        <div className="flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground mb-1">Current Balance</p>
+            <p className="text-6xl font-mono font-bold">
+              {formatNumber(register.current_balance || 0)}
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {register.unit_of_measure || 'units'}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ControlledRegisterTabs({
+  registerId,
+  activeTab,
+  entriesPage,
+  hasDiscrepancy,
+  discrepancyCount,
+  onTabChange,
+  onEntriesPageChange,
+}) {
+  return (
+    <Tabs value={activeTab} onValueChange={onTabChange}>
+      <TabsList className="w-full sm:w-auto">
+        <TabsTrigger value="entries" className="font-mono text-xs">
+          <FileText className="size-4 mr-2" />
+          Entries
+        </TabsTrigger>
+        <TabsTrigger value="discrepancies" className="font-mono text-xs">
+          <AlertOctagon className="size-4 mr-2" />
+          Discrepancies
+          {hasDiscrepancy && (
+            <Badge variant="destructive" className="ml-2 h-5 px-1.5">
+              {discrepancyCount || '!'}
+            </Badge>
+          )}
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="entries" className="mt-6">
+        <EntriesTable
+          registerId={registerId}
+          page={entriesPage}
+          onPageChange={onEntriesPageChange}
+        />
+      </TabsContent>
+
+      <TabsContent value="discrepancies" className="mt-6">
+        <DiscrepanciesTab registerId={registerId} />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function ControlledRegisterDetailsCard({ register, auditDue }) {
+  return (
+    <Card className="bg-card/30 border-border/50">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Details</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-start gap-3">
+          <MapPin className="size-4 mt-0.5 text-muted-foreground" />
+          <div>
+            <p className="text-xs text-muted-foreground">Location</p>
+            <p className="text-sm">{register.location_name || 'N/A'}</p>
+          </div>
+        </div>
+
+        {register.item_sku && (
+          <div className="flex items-start gap-3">
+            <Shield className="size-4 mt-0.5 text-muted-foreground" />
+            <div>
+              <p className="text-xs text-muted-foreground">SKU</p>
+              <p className="text-sm font-mono">{register.item_sku}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-start gap-3">
+          <Calendar className="size-4 mt-0.5 text-muted-foreground" />
+          <div>
+            <p className="text-xs text-muted-foreground">Last Audit</p>
+            {register.last_audit_date ? (
+              <p className={cn(
+                'text-sm font-mono',
+                auditDue && 'text-amber-500'
+              )}>
+                {format(parseISO(register.last_audit_date), 'MMM d, yyyy')}
+                {auditDue && ' (Overdue)'}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Never</p>
+            )}
+          </div>
+        </div>
+
+        {register.created_at && (
+          <div className="flex items-start gap-3">
+            <Clock className="size-4 mt-0.5 text-muted-foreground" />
+            <div>
+              <p className="text-xs text-muted-foreground">Register Created</p>
+              <p className="text-sm font-mono">
+                {format(parseISO(register.created_at), 'MMM d, yyyy')}
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ControlledRegisterActivitySummary({ register }) {
+  return (
+    <Card className="bg-card/30 border-border/50">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Activity Summary</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Total Entries</span>
+          <span className="font-mono">{formatNumber(register.entry_count || 0)}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Total Dispensed</span>
+          <span className="font-mono text-rose-500">
+            {formatNumber(register.total_dispensed || 0)}
+          </span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Total Received</span>
+          <span className="font-mono text-emerald-500">
+            {formatNumber(register.total_received || 0)}
+          </span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Total Wastage</span>
+          <span className="font-mono text-amber-500">
+            {formatNumber(register.total_wastage || 0)}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ControlledRegisterForms({
+  register,
+  dispenseOpen,
+  countOpen,
+  wastageOpen,
+  onDispenseOpenChange,
+  onCountOpenChange,
+  onWastageOpenChange,
+  onSuccess,
+}) {
+  return (
+    <>
+      <ControlledDispenseForm
+        register={register}
+        open={dispenseOpen}
+        onOpenChange={onDispenseOpenChange}
+        onSuccess={onSuccess}
+      />
+
+      <ControlledCountForm
+        register={register}
+        open={countOpen}
+        onOpenChange={onCountOpenChange}
+        onSuccess={onSuccess}
+      />
+
+      <WastageForm
+        register={register}
+        open={wastageOpen}
+        onOpenChange={onWastageOpenChange}
+        onSuccess={onSuccess}
+      />
+    </>
+  );
+}
+
 /**
  * ControlledRegisterDetailPage - Detailed view of controlled substance register
  */
@@ -371,65 +740,16 @@ export default function ControlledRegisterDetailPage() {
     refetch();
   };
 
-  // Loading state
   if (isLoading) {
-    return (
-      <PageState variant="loading" fullHeight={false} className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Skeleton className="size-10" />
-          <div>
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-5 w-48 mt-2" />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <Skeleton className="h-64" />
-          </div>
-          <Skeleton className="h-80" />
-        </div>
-      </PageState>
-    );
+    return <ControlledRegisterLoadingState />;
   }
 
-  // Error state
   if (error) {
-    return (
-      <PageState
-        variant="error"
-        title="Error Loading Register"
-        description={error.message}
-        action={(
-          <div className="flex items-center justify-center gap-2">
-            <Button variant="outline" onClick={handleBack}>
-              <ArrowLeft className="size-4 mr-2" />
-              Back to Registers
-            </Button>
-            <Button onClick={() => refetch()}>
-              <RefreshCw className="size-4 mr-2" />
-              Retry
-            </Button>
-          </div>
-        )}
-      />
-    );
+    return <ControlledRegisterErrorState error={error} onBack={handleBack} onRetry={refetch} />;
   }
 
-  // Not found
   if (!register) {
-    return (
-      <PageState
-        variant="empty"
-        title="Register Not Found"
-        description="The requested controlled substance register does not exist."
-        action={(
-          <Button variant="outline" onClick={handleBack}>
-            <ArrowLeft className="size-4 mr-2" />
-            Back to Registers
-          </Button>
-        )}
-      />
-    );
+    return <ControlledRegisterNotFoundState onBack={handleBack} />;
   }
 
   const hasDiscrepancy = register.has_discrepancy || register.discrepancy_count > 0;
@@ -440,280 +760,59 @@ export default function ControlledRegisterDetailPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title={(
-          <span className="flex items-center gap-3">
-            <span>{register.item_name || register.name}</span>
-            <Badge variant="outline" className="text-[10px] bg-rose-500/10 text-rose-500 border-rose-500/30">
-              <Shield className="size-3 mr-1" />
-              Controlled
-            </Badge>
-          </span>
-        )}
-        description={(
-          <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
-            {register.location_name && (
-              <span className="flex items-center gap-1.5">
-                <MapPin className="size-4" />
-                <span className="text-sm">{register.location_name}</span>
-              </span>
-            )}
-            {register.schedule && (
-              <Badge variant="outline" className="text-xs">
-                Schedule {register.schedule}
-              </Badge>
-            )}
-          </div>
-        )}
-        actions={(
-          <div className="flex items-center gap-2 shrink-0">
-            <Button variant="outline" onClick={() => setCountOpen(true)}>
-              <ClipboardCheck className="size-4 mr-2" />
-              Count
-            </Button>
-            <Button onClick={() => setDispenseOpen(true)} className="bg-rose-600 hover:bg-rose-700">
-              <Pill className="size-4 mr-2" />
-              Dispense
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon">
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setWastageOpen(true)}>
-                  <Trash2 className="size-4 mr-2" />
-                  Record Wastage
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <Printer className="size-4 mr-2" />
-                  Print Register
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => refetch()}>
-                  <RefreshCw className="size-4 mr-2" />
-                  Refresh
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit -ml-2"
-          onClick={handleBack}
-        >
-          <ArrowLeft className="size-4 mr-2" />
-          Back to Controlled Substances
-        </Button>
-      </PageHeader>
+      <ControlledRegisterHeader
+        register={register}
+        onBack={handleBack}
+        onOpenCount={() => setCountOpen(true)}
+        onOpenDispense={() => setDispenseOpen(true)}
+        onOpenWastage={() => setWastageOpen(true)}
+        onRefresh={refetch}
+      />
 
       <div className="p-4 sm:p-6 space-y-6">
-
-      {/* Alerts */}
-      {(hasDiscrepancy || auditDue) && (
-        <div className="space-y-2">
-          {hasDiscrepancy && (
-            <Card className="bg-rose-500/5 border-rose-500/30">
-              <CardContent className="py-3 px-4 flex items-center gap-3">
-                <AlertOctagon className="size-5 text-rose-500" />
-                <div>
-                  <p className="text-sm font-medium text-rose-500">Unresolved Discrepancy</p>
-                  <p className="text-xs text-muted-foreground">
-                    This register has {register.discrepancy_count || 'an'} unresolved discrepanc{(register.discrepancy_count || 1) > 1 ? 'ies' : 'y'}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {auditDue && (
-            <Card className="bg-amber-500/5 border-amber-500/30">
-              <CardContent className="py-3 px-4 flex items-center gap-3">
-                <AlertTriangle className="size-5 text-amber-500" />
-                <div>
-                  <p className="text-sm font-medium text-amber-500">Audit Overdue</p>
-                  <p className="text-xs text-muted-foreground">
-                    Last audit was {lastAuditDays} days ago. Physical count recommended.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+        <ControlledRegisterAlerts
+          register={register}
+          hasDiscrepancy={hasDiscrepancy}
+          auditDue={auditDue}
+          lastAuditDays={lastAuditDays}
+        />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Balance Card */}
-          <Card className="bg-card/30 border-border/50">
-            <CardContent className="py-6">
-              <div className="flex items-center justify-center">
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground mb-1">Current Balance</p>
-                  <p className="text-6xl font-mono font-bold">
-                    {formatNumber(register.current_balance || 0)}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    {register.unit_of_measure || 'units'}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ControlledRegisterBalanceCard register={register} />
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={handleTabChange}>
-            <TabsList className="w-full sm:w-auto">
-              <TabsTrigger value="entries" className="font-mono text-xs">
-                <FileText className="size-4 mr-2" />
-                Entries
-              </TabsTrigger>
-              <TabsTrigger value="discrepancies" className="font-mono text-xs">
-                <AlertOctagon className="size-4 mr-2" />
-                Discrepancies
-                {hasDiscrepancy && (
-                  <Badge variant="destructive" className="ml-2 h-5 px-1.5">
-                    {register.discrepancy_count || '!'}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="entries" className="mt-6">
-              <EntriesTable
-                registerId={id}
-                page={entriesPage}
-                onPageChange={setEntriesPage}
-              />
-            </TabsContent>
-
-            <TabsContent value="discrepancies" className="mt-6">
-              <DiscrepanciesTab registerId={id} />
-            </TabsContent>
-          </Tabs>
+          <ControlledRegisterTabs
+            registerId={id}
+            activeTab={activeTab}
+            entriesPage={entriesPage}
+            hasDiscrepancy={hasDiscrepancy}
+            discrepancyCount={register.discrepancy_count}
+            onTabChange={handleTabChange}
+            onEntriesPageChange={setEntriesPage}
+          />
         </div>
 
-        {/* Sidebar */}
         <div className="space-y-6">
-          {/* Details Card */}
-          <Card className="bg-card/30 border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-start gap-3">
-                <MapPin className="size-4 mt-0.5 text-muted-foreground" />
-                <div>
-                  <p className="text-xs text-muted-foreground">Location</p>
-                  <p className="text-sm">{register.location_name || 'N/A'}</p>
-                </div>
-              </div>
+          <ControlledRegisterDetailsCard register={register} auditDue={auditDue} />
 
-              {register.item_sku && (
-                <div className="flex items-start gap-3">
-                  <Shield className="size-4 mt-0.5 text-muted-foreground" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">SKU</p>
-                    <p className="text-sm font-mono">{register.item_sku}</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-start gap-3">
-                <Calendar className="size-4 mt-0.5 text-muted-foreground" />
-                <div>
-                  <p className="text-xs text-muted-foreground">Last Audit</p>
-                  {register.last_audit_date ? (
-                    <p className={cn(
-                      'text-sm font-mono',
-                      auditDue && 'text-amber-500'
-                    )}>
-                      {format(parseISO(register.last_audit_date), 'MMM d, yyyy')}
-                      {auditDue && ' (Overdue)'}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Never</p>
-                  )}
-                </div>
-              </div>
-
-              {register.created_at && (
-                <div className="flex items-start gap-3">
-                  <Clock className="size-4 mt-0.5 text-muted-foreground" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Register Created</p>
-                    <p className="text-sm font-mono">
-                      {format(parseISO(register.created_at), 'MMM d, yyyy')}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Quick Stats Card */}
-          <Card className="bg-card/30 border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Activity Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Entries</span>
-                <span className="font-mono">{formatNumber(register.entry_count || 0)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Dispensed</span>
-                <span className="font-mono text-rose-500">
-                  {formatNumber(register.total_dispensed || 0)}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Received</span>
-                <span className="font-mono text-emerald-500">
-                  {formatNumber(register.total_received || 0)}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Wastage</span>
-                <span className="font-mono text-amber-500">
-                  {formatNumber(register.total_wastage || 0)}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+          <ControlledRegisterActivitySummary register={register} />
         </div>
       </div>
 
-      {/* Forms */}
-      <ControlledDispenseForm
+      <ControlledRegisterForms
         register={register}
-        open={dispenseOpen}
-        onOpenChange={(open) => {
+        dispenseOpen={dispenseOpen}
+        countOpen={countOpen}
+        wastageOpen={wastageOpen}
+        onDispenseOpenChange={(open) => {
           setDispenseOpen(open);
           if (!open) clearAction();
         }}
-        onSuccess={handleFormSuccess}
-      />
-
-      <ControlledCountForm
-        register={register}
-        open={countOpen}
-        onOpenChange={(open) => {
+        onCountOpenChange={(open) => {
           setCountOpen(open);
           if (!open) clearAction();
         }}
-        onSuccess={handleFormSuccess}
-      />
-
-      <WastageForm
-        register={register}
-        open={wastageOpen}
-        onOpenChange={(open) => {
+        onWastageOpenChange={(open) => {
           setWastageOpen(open);
           if (!open) clearAction();
         }}
