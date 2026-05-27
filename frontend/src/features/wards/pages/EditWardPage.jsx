@@ -87,7 +87,7 @@ export default function EditWardPage() {
     }
   }, [isError, queryError]);
 
-  const handleChange = (e) => {
+  const updateWardFormField = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -214,7 +214,7 @@ export default function EditWardPage() {
                   id="name"
                   name="name"
                   value={formData.name}
-                  onChange={handleChange}
+                  onChange={updateWardFormField}
                   required
                 />
               </div>
@@ -246,7 +246,7 @@ export default function EditWardPage() {
                 id="description"
                 name="description"
                 value={formData.description}
-                onChange={handleChange}
+                onChange={updateWardFormField}
                 rows={4}
               />
             </div>
@@ -259,7 +259,7 @@ export default function EditWardPage() {
                   type="number"
                   min="1"
                   value={formData.total_beds}
-                  onChange={handleChange}
+                  onChange={updateWardFormField}
                   required
                 />
                 <p className="text-sm text-muted-foreground">
@@ -276,7 +276,7 @@ export default function EditWardPage() {
                   step="0.01"
                   placeholder="0.00"
                   value={formData.base_rate_per_night}
-                  onChange={handleChange}
+                  onChange={updateWardFormField}
                   required
                 />
               </div>
@@ -289,7 +289,7 @@ export default function EditWardPage() {
                 aria-label="Ward is active"
                 className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                 checked={formData.is_active}
-                onChange={handleChange}
+                onChange={updateWardFormField}
               />
               <Label htmlFor="is_active">Active</Label>
             </div>

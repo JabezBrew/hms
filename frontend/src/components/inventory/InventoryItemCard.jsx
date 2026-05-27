@@ -48,7 +48,7 @@ export function InventoryItemCard({
 }) {
   const navigate = useNavigate();
 
-  const handleClick = () => {
+  const openInventoryItemDetails = () => {
     navigate(`/inventory/items/${item.id}`);
   };
 
@@ -78,7 +78,7 @@ export function InventoryItemCard({
         'bg-card/30 border-border/50',
         className
       )}
-      onClick={handleClick}
+      onClick={openInventoryItemDetails}
     >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
@@ -101,7 +101,7 @@ export function InventoryItemCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleClick}>
+              <DropdownMenuItem onClick={openInventoryItemDetails}>
                 <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>

@@ -35,7 +35,7 @@ const SortableHeader = ({ field, label, currentSort, onSort, className }) => {
   const isActive = currentSort === field || currentSort === `-${field}`;
   const isDesc = currentSort === `-${field}`;
 
-  const handleClick = () => {
+  const toggleSortDirection = () => {
     if (currentSort === `-${field}`) {
       onSort(field); // Switch to ascending
     } else {
@@ -55,7 +55,7 @@ const SortableHeader = ({ field, label, currentSort, onSort, className }) => {
     >
       <button
         type="button"
-        onClick={handleClick}
+        onClick={toggleSortDirection}
         className="flex items-center gap-1 w-full text-left hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         {label}

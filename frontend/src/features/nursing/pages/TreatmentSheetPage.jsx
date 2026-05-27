@@ -79,7 +79,7 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
   const status = DOSE_STATUS[dose.status] || DOSE_STATUS.scheduled;
   const isClickable = ['scheduled', 'due', 'missed'].includes(dose.status);
 
-  const handleClick = () => {
+  const administerDose = () => {
     if (isClickable && onAdminister) {
       onAdminister({ medication, date, dose });
     }
@@ -101,7 +101,7 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
         <TooltipTrigger asChild>
           <button
             type="button"
-            onClick={handleClick}
+            onClick={administerDose}
             disabled={!isClickable}
             className={cn(
               "size-7 rounded-full border-2 flex items-center justify-center transition-all",

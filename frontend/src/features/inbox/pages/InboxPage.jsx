@@ -279,7 +279,7 @@ const InboxPage = () => {
                       const config = notificationConfig[item.type] || notificationConfig.default;
                       const Icon = config.icon;
 
-                      const handleClick = () => handleInboxItemClick(item.data);
+                      const openInboxItem = () => handleInboxItemClick(item.data);
                       const badgeClass = item.urgency === 'emergency'
                         ? 'badge-chronicle-rose'
                         : item.urgency === 'urgent'
@@ -302,13 +302,13 @@ const InboxPage = () => {
                       const handleMessageKeyDown = (event) => {
                         if (event.key !== 'Enter' && event.key !== ' ') return;
                         event.preventDefault();
-                        handleClick();
+                        openInboxItem();
                       };
 
                       return (
                         <div
                           key={item.id}
-                          onClick={handleClick}
+                          onClick={openInboxItem}
                           onKeyDown={handleMessageKeyDown}
                           role="button"
                           tabIndex={0}

@@ -61,7 +61,7 @@ export default function NewWardPage() {
     }
   }, [navigate]);
 
-  const handleChange = (e) => {
+  const updateWardFormField = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -160,7 +160,7 @@ export default function NewWardPage() {
                     id="name"
                     name="name"
                     value={formData.name}
-                    onChange={handleChange}
+                    onChange={updateWardFormField}
                     placeholder="e.g., General Ward A"
                     required
                   />
@@ -205,7 +205,7 @@ export default function NewWardPage() {
                   id="description"
                   name="description"
                   value={formData.description}
-                  onChange={handleChange}
+                  onChange={updateWardFormField}
                   placeholder="Brief description of the ward and its facilities..."
                   rows={3}
                 />
@@ -226,7 +226,7 @@ export default function NewWardPage() {
                     type="number"
                     min="1"
                     value={formData.total_beds}
-                    onChange={handleChange}
+                    onChange={updateWardFormField}
                     required
                   />
                 </div>
@@ -245,7 +245,7 @@ export default function NewWardPage() {
                     step="0.01"
                     placeholder="0.00"
                     value={formData.base_rate_per_night}
-                    onChange={handleChange}
+                    onChange={updateWardFormField}
                     required
                   />
                 </div>

@@ -52,7 +52,7 @@ export function InventoryItemRow({
 }) {
   const navigate = useNavigate();
 
-  const handleClick = () => {
+  const openInventoryItemDetails = () => {
     navigate(`/inventory/items/${item.id}`);
   };
 
@@ -87,7 +87,7 @@ export function InventoryItemRow({
         selected && 'bg-muted/30',
         className
       )}
-      onClick={handleClick}
+      onClick={openInventoryItemDetails}
     >
       {onSelect && (
         <TableCell className="w-12" onClick={(e) => e.stopPropagation()}>
@@ -149,7 +149,7 @@ export function InventoryItemRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleClick}>
+            <DropdownMenuItem onClick={openInventoryItemDetails}>
               <Eye className="size-4 mr-2" />
               View Details
             </DropdownMenuItem>

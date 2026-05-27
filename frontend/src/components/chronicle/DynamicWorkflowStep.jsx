@@ -20,7 +20,7 @@ const DEFAULT_EMPTY_OBJECT = {};
  * VitalsInput - Grid of vital signs inputs
  */
 const VitalsInput = ({ value = DEFAULT_EMPTY_OBJECT, onChange }) => {
-  const handleChange = (field, val) => {
+  const updateVitalField = (field, val) => {
     onChange({ ...value, [field]: val });
   };
 
@@ -48,7 +48,7 @@ const VitalsInput = ({ value = DEFAULT_EMPTY_OBJECT, onChange }) => {
                 type="number"
                 step="0.1"
                 value={value[vital.key] || ''}
-                onChange={(e) => handleChange(vital.key, e.target.value)}
+                onChange={(e) => updateVitalField(vital.key, e.target.value)}
                 placeholder={vital.placeholder}
                 className="pr-12 font-mono text-sm"
               />
@@ -67,7 +67,7 @@ const VitalsInput = ({ value = DEFAULT_EMPTY_OBJECT, onChange }) => {
  * SubsectionInput - Renders subsections as individual text areas
  */
 const SubsectionInput = ({ subsections, value = DEFAULT_EMPTY_OBJECT, onChange }) => {
-  const handleChange = (key, val) => {
+  const updateSubsectionValue = (key, val) => {
     onChange({ ...value, [key]: val });
   };
 
@@ -84,12 +84,12 @@ const SubsectionInput = ({ subsections, value = DEFAULT_EMPTY_OBJECT, onChange }
             {subsection.type === 'observation' && subsection.observationType === 'vitals' ? (
               <VitalsInput
                 value={value[key] || {}}
-                onChange={(val) => handleChange(key, val)}
+                onChange={(val) => updateSubsectionValue(key, val)}
               />
             ) : (
               <Textarea
                 value={value[key] || ''}
-                onChange={(e) => handleChange(key, e.target.value)}
+                onChange={(e) => updateSubsectionValue(key, e.target.value)}
                 placeholder={subsection.helpText || `Enter ${subsection.name.toLowerCase()}...`}
                 className="min-h-[80px] font-mono text-sm resize-none"
               />
@@ -119,7 +119,7 @@ const DynamicWorkflowStep = ({
   patient,
   template,
 }) => {
-  const handleChange = useCallback((value) => {
+  const applyStepDataChange = useCallback((value) => {
     onDataChange(value);
   }, [onDataChange]);
 
@@ -151,7 +151,7 @@ const DynamicWorkflowStep = ({
         <SubsectionInput
           subsections={subsections}
           value={formData}
-          onChange={handleChange}
+          onChange={applyStepDataChange}
         />
       );
     }
@@ -162,7 +162,7 @@ const DynamicWorkflowStep = ({
         return (
           <VitalsInput
             value={formData}
-            onChange={handleChange}
+            onChange={applyStepDataChange}
           />
         );
       }
@@ -271,7 +271,7 @@ const DynamicWorkflowStep = ({
         onChange={(e) => {
           // Handle both string and object form data
           if (typeof formData === 'string' || Object.keys(formData).length === 0) {
-            handleChange(e.target.value);
+            applyStepDataChange(e.target.value);
           } else {
             handleFieldChange('content', e.target.value);
           }

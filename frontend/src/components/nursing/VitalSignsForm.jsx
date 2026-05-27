@@ -21,7 +21,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
     notes: '',
   });
 
-  const handleChange = (e) => {
+  const updateVitalSignsFormField = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -115,7 +115,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
                 min="35"
                 max="45"
                 value={formData.temperature}
-                onChange={handleChange}
+                onChange={updateVitalSignsFormField}
                 placeholder="36.5"
               />
             </div>
@@ -130,7 +130,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
                 min="30"
                 max="250"
                 value={formData.heart_rate}
-                onChange={handleChange}
+                onChange={updateVitalSignsFormField}
                 placeholder="72"
               />
             </div>
@@ -145,7 +145,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
                 min="50"
                 max="250"
                 value={formData.blood_pressure_systolic}
-                onChange={handleChange}
+                onChange={updateVitalSignsFormField}
                 placeholder="120"
               />
             </div>
@@ -160,7 +160,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
                 min="30"
                 max="150"
                 value={formData.blood_pressure_diastolic}
-                onChange={handleChange}
+                onChange={updateVitalSignsFormField}
                 placeholder="80"
               />
             </div>
@@ -175,7 +175,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
                 min="8"
                 max="60"
                 value={formData.respiratory_rate}
-                onChange={handleChange}
+                onChange={updateVitalSignsFormField}
                 placeholder="16"
               />
             </div>
@@ -190,7 +190,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
                 min="50"
                 max="100"
                 value={formData.oxygen_saturation}
-                onChange={handleChange}
+                onChange={updateVitalSignsFormField}
                 placeholder="98"
               />
             </div>
@@ -205,7 +205,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
                 min="0"
                 max="10"
                 value={formData.pain_level}
-                onChange={handleChange}
+                onChange={updateVitalSignsFormField}
                 placeholder="0"
               />
             </div>
@@ -218,7 +218,7 @@ export function VitalSignsForm({ patientId, recordedBy, onSuccess }) {
               id="notes"
               name="notes"
               value={formData.notes}
-              onChange={handleChange}
+              onChange={updateVitalSignsFormField}
               placeholder="Additional observations or comments..."
               rows={3}
             />
