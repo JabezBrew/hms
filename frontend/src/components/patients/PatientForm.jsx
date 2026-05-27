@@ -62,6 +62,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
+import { findFirstInvalidStep } from "./patient-form/patientFormValidation";
 
 const validationRegexCache = new Map();
 const MIN_DATE_OF_BIRTH = new Date("1900-01-01");
@@ -822,14 +823,14 @@ const PatientForm = ({ patient, onSuccess }) => {
     }
 
     setShowValidation(true);
-    for (const k of stepKeys) {
-      // Validate sequentially to avoid overlapping `form.trigger()` calls.
-      // The first failing step will set field errors and we can route the user there.
-      const ok = await validateStep(k);
-      if (!ok) {
+    const invalidStep = await findFirstInvalidStep(stepKeys, validateStep);
+    if (invalidStep) {
+      if (invalidStep === 'identity' || invalidStep === 'contact') {
         goToFirstErrorStep();
-        return;
+      } else {
+        goToStep(invalidStep);
       }
+      return;
     }
 
     if (isEditMode) {
@@ -837,7 +838,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       return;
     }
     submitRegistration(data);
-  }, [activeStep, goToFirstErrorStep, handleNext, isEditMode, stepKeys, submitRegistration, submitUpdate, validateStep]);
+  }, [activeStep, goToFirstErrorStep, goToStep, handleNext, isEditMode, stepKeys, submitRegistration, submitUpdate, validateStep]);
 
   const tabColsClass =
     stepDefs.length === 5 ? 'grid-cols-5' :
