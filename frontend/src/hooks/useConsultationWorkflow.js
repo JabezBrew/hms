@@ -190,6 +190,8 @@ export function useConsultationWorkflow(patientId, options = {}) {
   const isLastStep = currentStep === totalSteps;
 
   // Start workflow mutation
+  // No cache invalidation: start returns local workflow draft state; completion below invalidates patient, timeline, notes, and referral caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId, referralId, appointmentId, encounterId, initialData }) => {
       ensureRustV2WorkflowSupported('Consultation workflow start');
@@ -215,6 +217,8 @@ export function useConsultationWorkflow(patientId, options = {}) {
   });
 
   // Update step mutation
+  // No cache invalidation: step autosave updates local draft progress; completion below invalidates the clinical caches clients read.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId, stepData }) => {
       ensureRustV2WorkflowSupported('Consultation workflow step update');

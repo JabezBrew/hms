@@ -823,6 +823,8 @@ export function useUpdateChartAssignment() {
 export function useCompleteChartAssignment() {
   const queryClient = useQueryClient();
 
+  // Invalidation is centralized in invalidateChartAssignmentMutationQueries to cover assignment detail, lists, and patient scoped chart caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: async (assignmentId) => {
       ensureRustV2ChartBuilderSupported('Chart assignment completion');
@@ -850,6 +852,8 @@ export function useCompleteChartAssignment() {
 export function usePauseChartAssignment() {
   const queryClient = useQueryClient();
 
+  // Invalidation is centralized in invalidateChartAssignmentMutationQueries to cover assignment detail, lists, and patient scoped chart caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: async (assignmentId) => {
       ensureRustV2ChartBuilderSupported('Chart assignment pause');
@@ -877,6 +881,8 @@ export function usePauseChartAssignment() {
 export function useResumeChartAssignment() {
   const queryClient = useQueryClient();
 
+  // Invalidation is centralized in invalidateChartAssignmentMutationQueries to cover assignment detail, lists, and patient scoped chart caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: async (assignmentId) => {
       ensureRustV2ChartBuilderSupported('Chart assignment resume');
@@ -904,6 +910,8 @@ export function useResumeChartAssignment() {
 export function useDiscontinueChartAssignment() {
   const queryClient = useQueryClient();
 
+  // Invalidation is centralized in invalidateChartAssignmentMutationQueries to cover assignment detail, lists, and patient scoped chart caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: async ({ assignmentId, reason }) => {
       ensureRustV2ChartBuilderSupported('Chart assignment discontinuation');
@@ -1182,6 +1190,8 @@ export function useUpdateChartEntry() {
 export function useDeleteChartEntry() {
   const queryClient = useQueryClient();
 
+  // Invalidation is centralized in invalidateChartEntryMutationQueries to cover entry detail, summaries, lists, and patient scoped chart caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: async ({ entryId, reason }) => {
       ensureRustV2ChartBuilderSupported('Chart entry deletion');

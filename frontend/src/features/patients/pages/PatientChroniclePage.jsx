@@ -25,8 +25,8 @@ import {
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
-import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
+import { timelineKeys, usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
+import { encounterKeys, usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
@@ -1657,6 +1657,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
       });
 
       // Refetch patient to update access flags, then clinical data will load
+      queryClient.invalidateQueries({ queryKey: patientKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: patientKeys.chronicleStartup(id) });
+      queryClient.invalidateQueries({ queryKey: timelineKeys.list(id) });
+      queryClient.invalidateQueries({ queryKey: encounterKeys.forPatient(id) });
       refetchPatient();
       refetchContext();
       refetchTimeline();

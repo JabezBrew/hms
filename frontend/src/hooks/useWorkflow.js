@@ -8,7 +8,8 @@ import { ensureRustV2WorkflowSupported } from './workflowV2Guard';
 const workflowKeys = {
   detail: (workflowId) => keyWith('workflow', workflowId),
   list: () => keyWith('workflows'),
-  drafts: (filters) => keyWith('draft-workflows', filters),
+  draftsAll: () => keyWith('draft-workflows'),
+  drafts: (filters) => [...workflowKeys.draftsAll(), filters],
 };
 
 /**
@@ -39,6 +40,8 @@ export function useWorkflow(workflowType) {
     onSuccess: (data) => {
       setWorkflowId(data.id);
       queryClient.setQueryData(workflowKeys.detail(data.id), data);
+      queryClient.invalidateQueries({ queryKey: workflowKeys.draftsAll() });
+      queryClient.invalidateQueries({ queryKey: workflowKeys.list() });
       toast.success('Workflow started');
     },
     onError: (error) => {
@@ -59,6 +62,7 @@ export function useWorkflow(workflowType) {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(workflowKeys.detail(workflowId), data);
+      queryClient.invalidateQueries({ queryKey: workflowKeys.draftsAll() });
       toast.success('Progress saved');
     },
     onError: (error) => {
@@ -74,8 +78,9 @@ export function useWorkflow(workflowType) {
       return apiClient.post(endpoint, finalData);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries(workflowKeys.detail(workflowId));
-      queryClient.invalidateQueries(workflowKeys.list());
+      queryClient.invalidateQueries({ queryKey: workflowKeys.detail(workflowId) });
+      queryClient.invalidateQueries({ queryKey: workflowKeys.list() });
+      queryClient.invalidateQueries({ queryKey: workflowKeys.draftsAll() });
       toast.success('Workflow completed successfully');
     },
     onError: (error) => {
@@ -91,8 +96,12 @@ export function useWorkflow(workflowType) {
         context_data: contextData,
       });
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       // Silent success for auto-save
+      if (data) {
+        queryClient.setQueryData(workflowKeys.detail(workflowId), data);
+      }
+      queryClient.invalidateQueries({ queryKey: workflowKeys.draftsAll() });
       console.log('Draft saved');
     },
     onError: (error) => {
@@ -107,8 +116,9 @@ export function useWorkflow(workflowType) {
       return apiClient.post(`/workflows/${workflowId}/cancel/`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(workflowKeys.detail(workflowId));
-      queryClient.invalidateQueries(workflowKeys.list());
+      queryClient.invalidateQueries({ queryKey: workflowKeys.detail(workflowId) });
+      queryClient.invalidateQueries({ queryKey: workflowKeys.list() });
+      queryClient.invalidateQueries({ queryKey: workflowKeys.draftsAll() });
       toast.success('Workflow cancelled');
     },
     onError: (error) => {

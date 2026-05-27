@@ -204,6 +204,8 @@ export function useNoteWorkflow(patientId, options = {}) {
   const noteType = template?.id || null;  // Use template ID as noteType
 
   // Start workflow mutation
+  // No cache invalidation: the returned workflow id is stored as local draft state; completion invalidates patient, notes, encounter, and timeline caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId, template, templateRevisionId }) => {
       ensureRustV2WorkflowSupported('Clinical-note workflow start');
@@ -226,6 +228,8 @@ export function useNoteWorkflow(patientId, options = {}) {
   });
 
   // Update step mutation
+  // No cache invalidation: step saves update local draft progress only; completion invalidates patient, notes, encounter, and timeline caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId, stepData, nextStep, noteFields }) => {
       ensureRustV2WorkflowSupported('Clinical-note workflow step update');
@@ -251,6 +255,8 @@ export function useNoteWorkflow(patientId, options = {}) {
   });
 
   // Save draft mutation
+  // No cache invalidation: autosave confirms server persistence of the local draft and does not update clinical timeline/note caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const saveDraftMutation = useMutation({
     mutationFn: async ({ workflowId, contextData }) => {
       ensureRustV2WorkflowSupported('Clinical-note workflow draft save');

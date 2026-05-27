@@ -127,6 +127,8 @@ export function useWardRoundMode({
     ])
   }, [patientId, queryClient])
 
+  // No cache invalidation: draft save confirms server persistence of the local payload; signed commit below invalidates patient clinical caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const saveDraftMutation = useMutation({
     mutationFn: () => wardRoundApi.saveDraft(patientId, payload),
     onSuccess: () => {
@@ -137,6 +139,8 @@ export function useWardRoundMode({
     },
   })
 
+  // Invalidation is centralized in invalidateWardRoundDependents so chronicle startup, patient, lab, prescription, and nursing caches refresh together.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const commitMutation = useMutation({
     mutationFn: () => {
       if (validation) {

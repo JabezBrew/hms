@@ -206,6 +206,8 @@ export function useUpdateEncounter() {
 export function useDeleteEncounter() {
   const queryClient = useQueryClient();
   
+  // Invalidation is centralized in invalidateEncounterMutationQueries so patient encounter lists and detail caches stay aligned.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: (id) => encountersApi.deleteEncounter(id),
     onSuccess: (data, variables) => {
@@ -227,6 +229,8 @@ export function useDeleteEncounter() {
 export function useDischargePatient() {
   const queryClient = useQueryClient();
   
+  // Invalidation is centralized in invalidateEncounterMutationQueries so patient encounter lists and detail caches stay aligned.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: ({ id, data }) => encountersApi.dischargePatient(id, data),
     onSuccess: (data, variables) => {
@@ -248,6 +252,8 @@ export function useDischargePatient() {
 export function useCancelEncounter() {
   const queryClient = useQueryClient();
   
+  // Invalidation is centralized in invalidateEncounterMutationQueries so patient encounter lists and detail caches stay aligned.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: (id) => encountersApi.cancelEncounter(id),
     onSuccess: (data, variables) => {

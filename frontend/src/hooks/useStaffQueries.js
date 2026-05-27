@@ -200,6 +200,8 @@ export function useReactivateStaff() {
  * @returns {Object} Mutation result
  */
 export function useResendStaffSetupLink() {
+  // No cache invalidation: resending a setup link sends an out-of-band email and does not mutate staff profile/list data.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: (staffId) => staffApi.resendSetupLink(staffId),
   });

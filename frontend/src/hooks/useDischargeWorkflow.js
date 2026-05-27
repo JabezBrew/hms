@@ -166,6 +166,8 @@ export function useDischargeWorkflow(patientId, admissionId) {
   const currentStepConfig = steps[currentStep - 1];
   const isLastStep = currentStep === totalSteps;
 
+  // No cache invalidation: start returns local workflow draft state; completion below invalidates discharge, patient, timeline, notes, and admission caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId: pid, admissionId: aid, initialData }) => {
       ensureRustV2WorkflowSupported('Discharge workflow start');
@@ -188,6 +190,8 @@ export function useDischargeWorkflow(patientId, admissionId) {
     },
   });
 
+  // No cache invalidation: step autosave updates local draft progress; completion below invalidates the clinical caches clients read.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId: id, stepData }) => {
       ensureRustV2WorkflowSupported('Discharge workflow step update');

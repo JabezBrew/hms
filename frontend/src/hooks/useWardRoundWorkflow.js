@@ -173,6 +173,8 @@ export function useWardRoundWorkflow(patientId, admissionId, options = {}) {
   const isLastStep = currentStep === totalSteps;
 
   // Start workflow mutation
+  // No cache invalidation: start returns local workflow draft state; completion below invalidates patient, timeline, and notes caches.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId, admissionId, initialData }) => {
       ensureRustV2WorkflowSupported('Ward-round workflow start');
@@ -196,6 +198,8 @@ export function useWardRoundWorkflow(patientId, admissionId, options = {}) {
   });
 
   // Update step mutation
+  // No cache invalidation: step autosave updates local draft progress; completion below invalidates the clinical caches clients read.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId, stepData }) => {
       ensureRustV2WorkflowSupported('Ward-round workflow step update');

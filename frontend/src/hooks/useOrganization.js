@@ -1828,6 +1828,8 @@ export function useDeleteValidationRule() {
 }
 
 export function useValidateRoster() {
+  // No cache invalidation: roster validation is a stateless check that returns validation results directly to the caller.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: (data) => validationRulesApi.validate(data),
   });
