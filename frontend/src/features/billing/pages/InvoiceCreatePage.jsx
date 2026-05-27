@@ -46,6 +46,323 @@ function createInvoiceItemDraft() {
   };
 }
 
+function getDefaultDueDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 30);
+  return date.toISOString().split('T')[0];
+}
+
+function InvoiceCreateHeader({ onBack }) {
+  return (
+    <PageHeader
+      title={(
+        <span className="flex items-center gap-3">
+          <span className="p-3 rounded-xl bg-primary/10">
+            <FileText className="size-6 text-primary" />
+          </span>
+          Create Invoice
+        </span>
+      )}
+      description="Add services and generate a new invoice"
+      contentClassName="max-w-4xl mx-auto w-full"
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onBack}
+        className="font-mono text-xs -ml-2 mb-4"
+      >
+        <ArrowLeft className="size-4 mr-2" />
+        Back to Invoices
+      </Button>
+    </PageHeader>
+  );
+}
+
+function PatientInformationSection({
+  selectedPatient,
+  onPatientSelect,
+  onClearPatient,
+  error,
+}) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+      <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
+        <User className="size-5 text-muted-foreground" />
+        Patient Information
+      </h2>
+
+      {selectedPatient ? (
+        <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+          <div>
+            <p className="font-display text-lg text-foreground">{selectedPatient.name}</p>
+            {selectedPatient.mrn && (
+              <p className="font-mono text-xs text-muted-foreground">MRN: {selectedPatient.mrn}</p>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onClearPatient}
+            className="font-mono text-xs"
+          >
+            Change Patient
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <PatientSelector
+            onPatientSelect={onPatientSelect}
+            selectedPatient={selectedPatient}
+            placeholder="Search and select a patient..."
+          />
+          {error && <p className="text-xs text-destructive mt-2">{error}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function InvoiceDetailsSection({ dueDate, onDueDateChange }) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+      <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
+        <Calendar className="size-5 text-muted-foreground" />
+        Invoice Details
+      </h2>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="due_date" className="font-mono text-xs uppercase tracking-wider">
+            Due Date
+          </Label>
+          <Input
+            id="due_date"
+            type="date"
+            value={dueDate}
+            onChange={(event) => onDueDateChange(event.target.value)}
+            className="font-mono"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InvoiceItemCard({
+  item,
+  index,
+  itemCount,
+  services,
+  onItemChange,
+  onRemoveItem,
+}) {
+  const unitPrice = getEstimatedUnitPrice(item.service, services);
+  const subtotal = (parseFloat(item.quantity) || 0) * (parseFloat(unitPrice) || 0);
+
+  return (
+    <div
+      className="p-4 bg-muted/20 rounded-xl border border-border/50 space-y-4"
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-xs text-muted-foreground">
+          Item {index + 1}
+        </span>
+        {itemCount > 1 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onRemoveItem(index)}
+            className="size-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label className="font-mono text-[10px] text-muted-foreground uppercase">
+          Service <span className="text-destructive">*</span>
+        </Label>
+        <Select
+          value={item.service}
+          onValueChange={(value) => onItemChange(index, 'service', value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select from service catalog..." />
+          </SelectTrigger>
+          <SelectContent>
+            {services.map((service) => (
+              <SelectItem key={service.id} value={service.id} className="font-mono text-sm">
+                <span className="flex items-center justify-between gap-4">
+                  <span>{service.name}</span>
+                  <span className="text-muted-foreground">
+                    {formatCurrency(service.base_price || service.total_price || service.price)}
+                  </span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="font-mono text-[10px] text-muted-foreground uppercase">
+          Description
+        </Label>
+        <Input
+          placeholder="Service or item description"
+          value={item.description}
+          onChange={(event) => onItemChange(index, 'description', event.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-2">
+          <Label className="font-mono text-[10px] text-muted-foreground uppercase">
+            Qty
+          </Label>
+          <Input
+            type="number"
+            min="1"
+            value={item.quantity}
+            onChange={(event) => onItemChange(index, 'quantity', event.target.value)}
+            className="font-mono"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="font-mono text-[10px] text-muted-foreground uppercase">
+            Unit Price (Est.)
+          </Label>
+          <div className="h-10 px-3 flex items-center bg-muted/50 rounded-md">
+            <span className="font-mono text-sm text-foreground">
+              {formatCurrency(unitPrice)}
+            </span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="font-mono text-[10px] text-muted-foreground uppercase">
+            Subtotal
+          </Label>
+          <div className="h-10 px-3 flex items-center bg-muted/50 rounded-md">
+            <span className="font-mono text-sm text-foreground">
+              {formatCurrency(subtotal)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InvoiceItemsSection({
+  items,
+  services,
+  total,
+  error,
+  onAddItem,
+  onItemChange,
+  onRemoveItem,
+}) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-display text-lg text-foreground flex items-center gap-2">
+          <DollarSign className="size-5 text-muted-foreground" />
+          Invoice Items
+        </h2>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onAddItem}
+          className="font-mono text-xs"
+        >
+          <Plus className="size-3 mr-1" />
+          Add Item
+        </Button>
+      </div>
+
+      {error && (
+        <p className="text-xs text-destructive mb-4">{error}</p>
+      )}
+
+      <div className="space-y-4">
+        {items.map((item, index) => (
+          <InvoiceItemCard
+            key={item._clientId}
+            item={item}
+            index={index}
+            itemCount={items.length}
+            services={services}
+            onItemChange={onItemChange}
+            onRemoveItem={onRemoveItem}
+          />
+        ))}
+      </div>
+
+      <div className="flex justify-end mt-6 pt-4 border-t border-border">
+        <div className="text-right">
+          <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mb-1">
+            Total Amount
+          </p>
+          <p className="font-display text-3xl text-foreground">
+            {formatCurrency(total)}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InvoiceNotesSection({ notes, onNotesChange }) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+      <h2 className="font-display text-lg text-foreground mb-4">Notes</h2>
+      <Textarea
+        value={notes}
+        onChange={(event) => onNotesChange(event.target.value)}
+        placeholder="Any additional notes for this invoice..."
+        rows={3}
+      />
+    </section>
+  );
+}
+
+function InvoiceActions({ isSubmitting, onCancel }) {
+  return (
+    <div className="flex items-center justify-between pt-4">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onCancel}
+        className="font-mono text-xs"
+      >
+        Cancel
+      </Button>
+      <Button
+        type="submit"
+        disabled={isSubmitting}
+        className="font-mono text-xs"
+      >
+        {isSubmitting ? (
+          <>
+            <Loader2 className="size-4 mr-2 animate-spin" />
+            Creating…
+          </>
+        ) : (
+          <>
+            <FileText className="size-4 mr-2" />
+            Create Invoice
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
 export default function InvoiceCreatePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -111,12 +428,6 @@ export default function InvoiceCreatePage() {
   const clearPatient = () => {
     setSelectedPatient(null);
   };
-
-  function getDefaultDueDate() {
-    const date = new Date();
-    date.setDate(date.getDate() + 30);
-    return date.toISOString().split('T')[0];
-  }
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -219,271 +530,38 @@ export default function InvoiceCreatePage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title={(
-          <span className="flex items-center gap-3">
-            <span className="p-3 rounded-xl bg-primary/10">
-              <FileText className="size-6 text-primary" />
-            </span>
-            Create Invoice
-          </span>
-        )}
-        description="Add services and generate a new invoice"
-        contentClassName="max-w-4xl mx-auto w-full"
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate('/billing/invoices')}
-          className="font-mono text-xs -ml-2 mb-4"
-        >
-          <ArrowLeft className="size-4 mr-2" />
-          Back to Invoices
-        </Button>
-      </PageHeader>
+      <InvoiceCreateHeader onBack={() => navigate('/billing/invoices')} />
 
-      {/* Form Content */}
       <main className="p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Patient Selection Card */}
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
-                <User className="size-5 text-muted-foreground" />
-                Patient Information
-              </h2>
-
-              {selectedPatient ? (
-                <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
-                  <div>
-                    <p className="font-display text-lg text-foreground">{selectedPatient.name}</p>
-                    {selectedPatient.mrn && (
-                      <p className="font-mono text-xs text-muted-foreground">MRN: {selectedPatient.mrn}</p>
-                    )}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={clearPatient}
-                    className="font-mono text-xs"
-                  >
-                    Change Patient
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <PatientSelector
-                    onPatientSelect={handlePatientSelect}
-                    selectedPatient={selectedPatient}
-                    placeholder="Search and select a patient..."
-                  />
-                  {errors.patient && <p className="text-xs text-destructive mt-2">{errors.patient}</p>}
-                </div>
-              )}
-            </section>
-
-            {/* Invoice Details Card */}
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display text-lg text-foreground mb-4 flex items-center gap-2">
-                <Calendar className="size-5 text-muted-foreground" />
-                Invoice Details
-              </h2>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="due_date" className="font-mono text-xs uppercase tracking-wider">
-                    Due Date
-                  </Label>
-                  <Input
-                    id="due_date"
-                    type="date"
-                    value={formData.due_date}
-                    onChange={(e) => handleChange('due_date', e.target.value)}
-                    className="font-mono"
-                  />
-                </div>
-              </div>
-            </section>
-
-            {/* Invoice Items Card */}
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-display text-lg text-foreground flex items-center gap-2">
-                  <DollarSign className="size-5 text-muted-foreground" />
-                  Invoice Items
-                </h2>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addItem}
-                  className="font-mono text-xs"
-                >
-                  <Plus className="size-3 mr-1" />
-                  Add Item
-                </Button>
-              </div>
-
-              {errors.items && (
-                <p className="text-xs text-destructive mb-4">{errors.items}</p>
-              )}
-
-              <div className="space-y-4">
-                {items.map((item, index) => (
-                  <div
-                    key={item._clientId}
-                    className="p-4 bg-muted/20 rounded-xl border border-border/50 space-y-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-muted-foreground">
-                        Item {index + 1}
-                      </span>
-                      {items.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeItem(index)}
-                          className="size-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Service Selection */}
-                    <div className="space-y-2">
-                      <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                        Service <span className="text-destructive">*</span>
-                      </Label>
-                      <Select
-                        value={item.service}
-                        onValueChange={(value) => handleItemChange(index, 'service', value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select from service catalog..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {services.map((service) => (
-                            <SelectItem key={service.id} value={service.id} className="font-mono text-sm">
-                                <span className="flex items-center justify-between gap-4">
-                                  <span>{service.name}</span>
-                                  <span className="text-muted-foreground">
-                                  {formatCurrency(service.base_price || service.total_price || service.price)}
-                                  </span>
-                                </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Description */}
-                    <div className="space-y-2">
-                      <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                        Description
-                      </Label>
-                      <Input
-                        placeholder="Service or item description"
-                        value={item.description}
-                        onChange={(e) => handleItemChange(index, 'description', e.target.value)}
-                      />
-                    </div>
-
-                    {/* Quantity and Price (Estimated) */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-2">
-                        <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                          Qty
-                        </Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                          className="font-mono"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                          Unit Price (Est.)
-                        </Label>
-                        <div className="h-10 px-3 flex items-center bg-muted/50 rounded-md">
-                          <span className="font-mono text-sm text-foreground">
-                            {formatCurrency(getEstimatedUnitPrice(item.service, services))}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="font-mono text-[10px] text-muted-foreground uppercase">
-                          Subtotal
-                        </Label>
-                        <div className="h-10 px-3 flex items-center bg-muted/50 rounded-md">
-                          <span className="font-mono text-sm text-foreground">
-                            {formatCurrency(
-                              (parseFloat(item.quantity) || 0) * (parseFloat(getEstimatedUnitPrice(item.service, services)) || 0)
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Total */}
-              <div className="flex justify-end mt-6 pt-4 border-t border-border">
-                <div className="text-right">
-                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mb-1">
-                    Total Amount
-                  </p>
-                  <p className="font-display text-3xl text-foreground">
-                    {formatCurrency(calculateTotal())}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            {/* Notes Card */}
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display text-lg text-foreground mb-4">Notes</h2>
-              <Textarea
-                value={formData.notes}
-                onChange={(e) => handleChange('notes', e.target.value)}
-                placeholder="Any additional notes for this invoice..."
-                rows={3}
-              />
-            </section>
-
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate('/billing/invoices')}
-                className="font-mono text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={createInvoiceMutation.isPending}
-                className="font-mono text-xs"
-              >
-                {createInvoiceMutation.isPending ? (
-                  <>
-                    <Loader2 className="size-4 mr-2 animate-spin" />
-                    Creating…
-                  </>
-                ) : (
-                  <>
-                    <FileText className="size-4 mr-2" />
-                    Create Invoice
-                  </>
-                )}
-              </Button>
-            </div>
+            <PatientInformationSection
+              selectedPatient={selectedPatient}
+              onPatientSelect={handlePatientSelect}
+              onClearPatient={clearPatient}
+              error={errors.patient}
+            />
+            <InvoiceDetailsSection
+              dueDate={formData.due_date}
+              onDueDateChange={(value) => handleChange('due_date', value)}
+            />
+            <InvoiceItemsSection
+              items={items}
+              services={services}
+              total={calculateTotal()}
+              error={errors.items}
+              onAddItem={addItem}
+              onItemChange={handleItemChange}
+              onRemoveItem={removeItem}
+            />
+            <InvoiceNotesSection
+              notes={formData.notes}
+              onNotesChange={(value) => handleChange('notes', value)}
+            />
+            <InvoiceActions
+              isSubmitting={createInvoiceMutation.isPending}
+              onCancel={() => navigate('/billing/invoices')}
+            />
           </form>
         </div>
       </main>
