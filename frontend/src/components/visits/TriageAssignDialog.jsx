@@ -2,13 +2,12 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import React, { useState } from 'react';
+import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import format from 'date-fns/format';
-import addMinutes from 'date-fns/addMinutes';
 import {
   Dialog,
   DialogContent,
@@ -64,6 +63,27 @@ function buildAssignSchema({ practitionerRequired }) {
  * @param {Function} props.onSuccess - Success callback
  */
 export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
+  if (!entry) return null;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <TriageAssignForm
+        key={`${entry.id}:${open ? 'open' : 'closed'}`}
+        open={open}
+        onClose={onClose}
+        entry={entry}
+        onSuccess={onSuccess}
+      />
+    </Dialog>
+  );
+}
+
+function TriageAssignForm({ open, onClose, entry, onSuccess }) {
   const { facilityCode } = useAuth();
   const { assignToClinic } = useTriageActions();
   const isRustV2 = isRustV2ApiMode();
@@ -71,6 +91,12 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
     () => buildAssignSchema({ practitionerRequired: isRustV2 }),
     [isRustV2],
   );
+  const initialFormValues = React.useMemo(() => ({
+    clinic_id: '',
+    appointment_type_id: '',
+    start_time: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    practitioner_id: '',
+  }), []);
 
   const {
     register,
@@ -81,12 +107,8 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(assignSchema),
-    defaultValues: {
-      clinic_id: '',
-      appointment_type_id: '',
-      start_time: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-      practitioner_id: '',
-    },
+    defaultValues: initialFormValues,
+    values: initialFormValues,
   });
 
   const clinicId = watch('clinic_id');
@@ -112,17 +134,6 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
     enabled: open && Boolean(clinicId),
   });
 
-  React.useEffect(() => {
-    if (open) {
-      reset({
-        clinic_id: '',
-        appointment_type_id: '',
-        start_time: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-        practitioner_id: '',
-      });
-    }
-  }, [open, reset]);
-
   const onSubmit = async (data) => {
     if (!entry) return;
 
@@ -136,7 +147,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
       },
       {
         onSuccess: () => {
-          reset();
+          reset(initialFormValues);
           onSuccess?.();
         },
       }
@@ -144,29 +155,26 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
   };
 
   const handleClose = () => {
-    reset();
+    reset(initialFormValues);
     onClose();
   };
-
-  if (!entry) return null;
 
   const clinicsList = clinics?.results || clinics || [];
   const typesList = appointmentTypes?.results || appointmentTypes || [];
   const practitionersList = practitioners?.results || practitioners || [];
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="font-display text-xl">
-            Assign to Clinic
-          </DialogTitle>
-          <DialogDescription>
-            Choose the clinic, appointment type, time, and practitioner for this triage entry.
-          </DialogDescription>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle className="font-display text-xl">
+          Assign to Clinic
+        </DialogTitle>
+        <DialogDescription>
+          Choose the clinic, appointment type, time, and practitioner for this triage entry.
+        </DialogDescription>
+      </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Patient Info */}
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-1">
@@ -344,9 +352,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
               {assignToClinic.isPending ? 'Assigning...' : 'Assign to Clinic'}
             </Button>
           </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      </form>
+    </DialogContent>
   );
 }
-
