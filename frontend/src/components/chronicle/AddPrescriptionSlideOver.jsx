@@ -442,10 +442,12 @@ const AddPrescriptionSlideOver = ({
             <AlertCircle className="size-4" />
             <AlertDescription>
               <span className="font-semibold">Patient Allergies ({allergiesData.count}):</span>{' '}
-              {allergiesData.allergies
-                .filter((a) => a.is_active)
-                .map((a) => a.allergen_name)
-                .join(', ')}
+              {allergiesData.allergies.reduce((allergenNames, allergy) => {
+                if (allergy.is_active) {
+                  allergenNames.push(allergy.allergen_name);
+                }
+                return allergenNames;
+              }, []).join(', ')}
             </AlertDescription>
           </Alert>
         </div>

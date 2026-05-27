@@ -69,27 +69,32 @@ export function useWardRoundMode({
       summary: compactText(note.summary),
     },
     actions: {
-      medications: medications
-        .filter((medication) => medicationIsComplete(medication))
-        .map((medication) => ({
-          prescription_id: medication.prescription_id || null,
-          medication_name: compactText(medication.medication_name),
-          dose: compactText(medication.dose),
-          frequency: compactText(medication.frequency),
-          decision: medication.decision || null,
-          status: medication.status || medication.decision || 'continue',
-        })),
+      medications: medications.reduce((completeMedications, medication) => {
+        if (medicationIsComplete(medication)) {
+          completeMedications.push({
+            prescription_id: medication.prescription_id || null,
+            medication_name: compactText(medication.medication_name),
+            dose: compactText(medication.dose),
+            frequency: compactText(medication.frequency),
+            decision: medication.decision || null,
+            status: medication.status || medication.decision || 'continue',
+          })
+        }
+        return completeMedications
+      }, []),
       lab_orders: labOrders.map((order) => ({
         catalog_item_id: order.id,
         catalog_item_type: order.kind || 'test',
         test_name: order.name,
       })),
-      nursing_tasks: nursingTasks
-        .filter((task) => compactText(task.title) || compactText(task.instruction))
-        .map((task) => ({
-          title: compactText(task.title),
-          instruction: compactText(task.instruction),
-        })),
+      nursing_tasks: nursingTasks.reduce((completeTasks, task) => {
+        const title = compactText(task.title)
+        const instruction = compactText(task.instruction)
+        if (title || instruction) {
+          completeTasks.push({ title, instruction })
+        }
+        return completeTasks
+      }, []),
       discharge: {
         status: dischargeRequest.status,
         request_discharge: dischargeRequest.request_discharge,

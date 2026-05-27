@@ -68,14 +68,21 @@ export function getHandoffNurseOptions({ rustV2Mode, wardStaff = [], staff = [],
     };
   }
 
-  const directoryNurses = normalizeApiResults(staff)
-    .filter((member) => member.is_active !== false)
-    .map((member) => ({
+  const directoryNurses = normalizeApiResults(staff).reduce((nurses, member) => {
+    if (member.is_active === false) {
+      return nurses;
+    }
+
+    const nurse = {
       id: member.user_id || member.id,
       full_name: member.full_name || member.name || member.display_name || member.email,
       role_name: member.user_type ? member.user_type.replaceAll('_', ' ') : member.role_name || 'Staff',
-    }))
-    .filter((member) => member.id && member.full_name);
+    };
+    if (nurse.id && nurse.full_name) {
+      nurses.push(nurse);
+    }
+    return nurses;
+  }, []);
 
   const currentUserFallback = currentUser?.id
     ? [{

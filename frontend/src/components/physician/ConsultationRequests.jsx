@@ -96,6 +96,13 @@ export function ConsultationRequests({ patient }) {
     return format(new Date(timestamp), 'MMM d, yyyy h:mm a');
   };
 
+  const completedConsultations = consultations.reduce((completed, consultation) => {
+    if (consultation.status === 'completed') {
+      completed.push(consultation);
+    }
+    return completed;
+  }, []);
+
   // Get urgency badge
   const getUrgencyBadge = (urgency) => {
     switch (urgency) {
@@ -302,7 +309,7 @@ export function ConsultationRequests({ patient }) {
       </Card>
       
       {/* Sample Consultation Findings (would be shown when a consultation is selected) */}
-      {consultations.length > 0 && consultations.some(c => c.status === 'completed') && (
+      {completedConsultations.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Consultation Findings</CardTitle>
@@ -312,9 +319,7 @@ export function ConsultationRequests({ patient }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {consultations
-                .filter(c => c.status === 'completed')
-                .map(consultation => (
+              {completedConsultations.map(consultation => (
                   <div key={`findings-${consultation.id}`} className="border rounded-md p-4">
                     <div className="flex justify-between items-start mb-2">
                       <div>

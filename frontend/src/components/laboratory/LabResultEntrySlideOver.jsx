@@ -45,13 +45,13 @@ const LabResultEntrySlideOver = ({
   // Initialize results from order tests
   useEffect(() => {
     if (order?.order_tests && open) {
-      const initialResults = order.order_tests.map((orderTest) => {
+      const initialResults = order.order_tests.reduce((pendingResults, orderTest) => {
         // Parse reference ranges from test catalog
         const refRanges = orderTest.test?.reference_ranges || {};
         // Default to adult_male or first available population
         const defaultPopulation = refRanges.adult_male || refRanges.adult || Object.values(refRanges)[0] || {};
 
-        return {
+        const result = {
           order_test_id: orderTest.id,
           test_name: orderTest.test?.name || orderTest.test?.short_name || "Unknown",
           test_code: orderTest.test?.code || "",
@@ -62,7 +62,11 @@ const LabResultEntrySlideOver = ({
           flag: null,
           hasExistingResult: orderTest.result != null,
         };
-      }).filter(r => !r.hasExistingResult); // Only show tests without existing results
+        if (!result.hasExistingResult) {
+          pendingResults.push(result);
+        }
+        return pendingResults;
+      }, []); // Only show tests without existing results
 
       setResults(initialResults);
       setFocusedIndex(0);

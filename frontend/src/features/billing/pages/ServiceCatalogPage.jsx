@@ -517,13 +517,16 @@ export default function ServiceCatalogPage() {
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories
-                      .filter((c) => c.is_active)
-                      .map((c) => (
+                    {categories.reduce((activeCategories, c) => {
+                      if (c.is_active) {
+                        activeCategories.push(
                         <SelectItem key={c.id} value={c.id} className="font-mono text-sm">
                           {c.name}
                         </SelectItem>
-                      ))}
+                        );
+                      }
+                      return activeCategories;
+                    }, [])}
                   </SelectContent>
                 </Select>
               </div>

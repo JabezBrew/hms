@@ -350,7 +350,13 @@ async function deleteRecordsWhere(predicate) {
   }
 
   const records = await adapter.listRecords()
-  await Promise.all(records.filter(predicate).map((record) => adapter.deleteRecord(record.id)))
+  const deletePromises = records.reduce((promises, record) => {
+    if (predicate(record)) {
+      promises.push(adapter.deleteRecord(record.id))
+    }
+    return promises
+  }, [])
+  await Promise.all(deletePromises)
   return true
 }
 

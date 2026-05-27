@@ -178,13 +178,16 @@ export default function InvoiceCreatePage() {
         patient: selectedPatient.id,
         due_date: formData.due_date || null,
         notes: formData.notes || null,
-        items: items
-          .filter((item) => item.service)
-          .map((item) => ({
-            service: item.service,
-            description: item.description || null,
-            quantity: parseInt(item.quantity) || 1,
-          })),
+        items: items.reduce((invoiceItems, item) => {
+          if (item.service) {
+            invoiceItems.push({
+              service: item.service,
+              description: item.description || null,
+              quantity: parseInt(item.quantity) || 1,
+            });
+          }
+          return invoiceItems;
+        }, []),
       };
 
       const result = await createInvoiceMutation.mutateAsync(invoiceData);

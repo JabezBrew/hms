@@ -151,12 +151,18 @@ function normalizeCatalogItems(data, kind) {
       : Array.isArray(data)
         ? data
         : []
-  return items.slice(0, 8).map((item) => ({
-    id: item.id,
-    name: item.name || item.test_name || item.panel_name || item.code,
-    code: item.code || item.test_code || item.panel_code || null,
-    kind,
-  })).filter((item) => item.id && item.name)
+  return items.slice(0, 8).reduce((catalogItems, item) => {
+    const catalogItem = {
+      id: item.id,
+      name: item.name || item.test_name || item.panel_name || item.code,
+      code: item.code || item.test_code || item.panel_code || null,
+      kind,
+    }
+    if (catalogItem.id && catalogItem.name) {
+      catalogItems.push(catalogItem)
+    }
+    return catalogItems
+  }, [])
 }
 
 export function LabOrderActionBlock({ labOrders, onChange }) {

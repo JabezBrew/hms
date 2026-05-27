@@ -385,7 +385,12 @@ const ChartTemplateBuilder = ({
 
         // Handle field changes
         const existingFieldIds = new Set(existingTemplate.fields?.map((f) => f.id) || []);
-        const currentFieldIds = new Set(fields.filter((f) => f.id).map((f) => f.id));
+        const currentFieldIds = new Set(fields.reduce((fieldIds, field) => {
+          if (field.id) {
+            fieldIds.push(field.id);
+          }
+          return fieldIds;
+        }, []));
 
         const removedFields = (existingTemplate.fields || []).filter((field) => !currentFieldIds.has(field.id));
         await Promise.all(removedFields.map((field) => deleteFieldMutation.mutateAsync({
@@ -413,14 +418,19 @@ const ChartTemplateBuilder = ({
         await Promise.all(fieldMutations);
 
         // Reorder if needed
-        const fieldIds = fields.filter((f) => f.id).map((f) => f.id);
-        if (fieldIds.length > 0) {
-          await reorderFieldsMutation.mutateAsync({
-            templateId,
-            fields: fields.filter((field) => field.id).map((field, index) => ({
+        const fieldsToReorder = fields.reduce((reorderFields, field, index) => {
+          if (field.id) {
+            reorderFields.push({
               id: field.id,
               display_order: index,
-            })),
+            });
+          }
+          return reorderFields;
+        }, []);
+        if (fieldsToReorder.length > 0) {
+          await reorderFieldsMutation.mutateAsync({
+            templateId,
+            fields: fieldsToReorder,
           });
         }
 
@@ -939,7 +949,12 @@ const ChartTemplateBuilder = ({
         onOpenChange={setFieldEditorOpen}
         field={editingField}
         onSave={handleSaveField}
-        existingFieldKeys={fields.map((f) => f.field_key).filter((k) => k !== editingField?.field_key)}
+        existingFieldKeys={fields.reduce((fieldKeys, field) => {
+          if (field.field_key !== editingField?.field_key) {
+            fieldKeys.push(field.field_key);
+          }
+          return fieldKeys;
+        }, [])}
       />
     </PageShell>
   );

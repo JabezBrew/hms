@@ -174,14 +174,17 @@ export default function InvoiceFormSlideOver({
         patient: selectedPatient.id,
         due_date: formData.due_date || null,
         notes: formData.notes || null,
-        items: items
-          .filter((item) => item.description && item.unit_price)
-          .map((item) => ({
-            service: item.service || null,
-            description: item.description,
-            quantity: parseInt(item.quantity) || 1,
-            unit_price: parseFloat(item.unit_price),
-          })),
+        items: items.reduce((invoiceItems, item) => {
+          if (item.description && item.unit_price) {
+            invoiceItems.push({
+              service: item.service || null,
+              description: item.description,
+              quantity: parseInt(item.quantity) || 1,
+              unit_price: parseFloat(item.unit_price),
+            });
+          }
+          return invoiceItems;
+        }, []),
       };
 
       const result = await createInvoiceMutation.mutateAsync(invoiceData);

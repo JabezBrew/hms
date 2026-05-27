@@ -390,9 +390,12 @@ export async function fetchPatientActivePrescriptions(patientId, options = {}) {
           signal: options.signal,
         },
       );
-      return (response?.data || [])
-        .filter((prescription) => prescription.status === 'active')
-        .map(normalizePrescriptionResponse);
+      return (response?.data || []).reduce((activePrescriptions, prescription) => {
+        if (prescription.status === 'active') {
+          activePrescriptions.push(normalizePrescriptionResponse(prescription));
+        }
+        return activePrescriptions;
+      }, []);
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleV2ApiError(error, 'Failed to fetch active prescriptions'));

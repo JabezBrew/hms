@@ -132,9 +132,12 @@ export default function PatientContextPanel({
   const appointments = useMemo(() => {
     if (!appointmentsData) return [];
     if (appointmentsData.entry) {
-      return appointmentsData.entry
-        .filter((entry) => entry.resource?.resourceType === "Appointment")
-        .map((entry) => entry.resource);
+      return appointmentsData.entry.reduce((appointmentsList, entry) => {
+        if (entry.resource?.resourceType === "Appointment") {
+          appointmentsList.push(entry.resource);
+        }
+        return appointmentsList;
+      }, []);
     }
     if (Array.isArray(appointmentsData)) return appointmentsData;
     if (appointmentsData.results) return appointmentsData.results;

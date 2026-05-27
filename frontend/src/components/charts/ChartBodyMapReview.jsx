@@ -46,15 +46,19 @@ const ChartBodyMapReview = ({
   }
 
   const recentFindings = entries.flatMap((entry) => (
-    bodyMapFields
-      .map((field) => ({
+    bodyMapFields.reduce((findings, field) => {
+      const item = {
         entryId: entry.id,
         fieldName: field.name,
         value: entry.data?.[field.field_key],
         observedAt: entry.observation_datetime,
         notes: entry.notes,
-      }))
-      .filter((item) => item.value)
+      };
+      if (item.value) {
+        findings.push(item);
+      }
+      return findings;
+    }, [])
   )).slice(0, 8);
 
   if (recentFindings.length === 0) {

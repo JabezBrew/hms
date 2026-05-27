@@ -553,7 +553,12 @@ export default function LabResultsPage() {
     // Store the group for batch verification
     selectedOrderIdRef.current = group.order_id;
     // Store result IDs as fallback when order_id is not available
-    selectedResultIdsRef.current = group.results.filter(r => !r.is_verified).map(r => r.id);
+    selectedResultIdsRef.current = group.results.reduce((resultIds, result) => {
+      if (!result.is_verified) {
+        resultIds.push(result.id);
+      }
+      return resultIds;
+    }, []);
     setVerificationNotes("");
     setVerifyDialogOpen(true);
   };

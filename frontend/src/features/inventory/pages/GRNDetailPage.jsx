@@ -569,14 +569,19 @@ export default function GRNDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {items.filter(i => i.rejection_reason || i.item_status === 'rejected').map((item, index) => (
-                    <div key={item.id || index} className="p-3 bg-rose-500/10 rounded-lg">
-                      <p className="text-sm font-medium">{item.item_name || item.name}</p>
-                      {item.rejection_reason && (
-                        <p className="text-sm text-muted-foreground mt-1">{item.rejection_reason}</p>
-                      )}
-                    </div>
-                  ))}
+                  {items.reduce((qualityIssueRows, item, index) => {
+                    if (item.rejection_reason || item.item_status === 'rejected') {
+                      qualityIssueRows.push(
+                        <div key={item.id || index} className="p-3 bg-rose-500/10 rounded-lg">
+                          <p className="text-sm font-medium">{item.item_name || item.name}</p>
+                          {item.rejection_reason && (
+                            <p className="text-sm text-muted-foreground mt-1">{item.rejection_reason}</p>
+                          )}
+                        </div>,
+                      );
+                    }
+                    return qualityIssueRows;
+                  }, [])}
                 </div>
               </CardContent>
             </Card>

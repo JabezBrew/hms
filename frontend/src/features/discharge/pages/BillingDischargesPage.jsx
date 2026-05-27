@@ -95,6 +95,20 @@ export default function BillingDischargesPage() {
     )
   }
 
+  const activeCaseTasks = activeCase?.tasks || activeCase?.blockers || []
+  const activeCaseBlockingTasks = activeCaseTasks.reduce((blockingTasks, task) => {
+    if (task.blocking ?? true) {
+      blockingTasks.push(task)
+    }
+    return blockingTasks
+  }, [])
+  const activeCaseAdvisoryTasks = (activeCase?.tasks || []).reduce((advisoryTasks, task) => {
+    if (!task.blocking) {
+      advisoryTasks.push(task)
+    }
+    return advisoryTasks
+  }, [])
+
   return (
     <PageShell>
       {pageMeta}
@@ -228,9 +242,7 @@ export default function BillingDischargesPage() {
 
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium">Blocking lanes</h3>
-                    {(activeCase.tasks || activeCase.blockers || [])
-                      .filter((task) => task.blocking ?? true)
-                      .map((task) => (
+                    {activeCaseBlockingTasks.map((task) => (
                       <div key={task.id || task.task_type} className="rounded-lg border p-3 text-sm">
                         <div className="flex items-center justify-between gap-3">
                           <div>
@@ -255,22 +267,20 @@ export default function BillingDischargesPage() {
                           </div>
                         </div>
                       </div>
-                      ))}
+                    ))}
                   </div>
 
                   {activeCase.tasks && (
                     <div className="space-y-2">
                       <h3 className="text-sm font-medium">Advisory follow-up</h3>
-                      {activeCase.tasks
-                        .filter((task) => !task.blocking)
-                        .map((task) => (
+                      {activeCaseAdvisoryTasks.map((task) => (
                           <div key={task.id} className="rounded-lg border p-3 text-sm">
                             <div className="flex items-center justify-between gap-3">
                               <span>{task.task_type.replace(/_/g, ' ')}</span>
                               <Badge variant="outline">{task.status.replace(/_/g, ' ')}</Badge>
                             </div>
                           </div>
-                        ))}
+                      ))}
                     </div>
                   )}
                   {activeCase.schedule_follow_up_action?.path && (

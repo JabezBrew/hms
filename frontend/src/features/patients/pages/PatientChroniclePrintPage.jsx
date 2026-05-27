@@ -161,10 +161,13 @@ function formatValue(value) {
   if (typeof value === 'object') {
     const name = value.name || value.title || value.label || value.value || value.display;
     if (name) return String(name);
-    return Object.entries(value)
-      .filter(([, nestedValue]) => nestedValue !== null && nestedValue !== undefined && nestedValue !== '')
-      .map(([key, nestedValue]) => `${titleize(key)}: ${formatValue(nestedValue)}`)
-      .join('; ') || EMPTY_VALUE;
+    const displayEntries = Object.entries(value).reduce((entries, [key, nestedValue]) => {
+      if (nestedValue !== null && nestedValue !== undefined && nestedValue !== '') {
+        entries.push(`${titleize(key)}: ${formatValue(nestedValue)}`);
+      }
+      return entries;
+    }, []);
+    return displayEntries.join('; ') || EMPTY_VALUE;
   }
   return String(value);
 }
@@ -218,17 +221,15 @@ function compactValue(value) {
 
 function uniqueValues(values) {
   const seen = new Set();
-  return values
-    .flatMap((value) => {
-      const compacted = compactValue(value);
-      return compacted ? [compacted] : [];
-    })
-    .filter((value) => {
-      const normalized = value.toLowerCase();
-      if (seen.has(normalized)) return false;
-      seen.add(normalized);
-      return true;
-    });
+  return values.reduce((unique, value) => {
+    const compacted = compactValue(value);
+    if (!compacted) return unique;
+    const normalized = compacted.toLowerCase();
+    if (seen.has(normalized)) return unique;
+    seen.add(normalized);
+    unique.push(compacted);
+    return unique;
+  }, []);
 }
 
 function isNoteEntry(entry) {

@@ -219,15 +219,21 @@ function normalizeLabResultsForSidebar(results) {
     return [];
   }
 
-  return results.map((result) => ({
-    id: result.id,
-    name: result.name || result.test_name || result.title || result.order_number || 'Lab result',
-    value: result.value ?? result.result_value ?? result.status_display ?? result.status ?? null,
-    unit: result.unit || result.result_unit || null,
-    timestamp: result.timestamp || result.entered_at || result.completed_at || result.ordered_at || result.created_at || null,
-    is_abnormal: result.is_abnormal === true || ['low', 'high', 'abnormal', 'critical_low', 'critical_high'].includes(result.flag),
-    abnormal_direction: result.abnormal_direction || result.flag || null,
-  })).filter((result) => hasDisplayValue(result.name) || hasDisplayValue(result.value));
+  return results.reduce((normalizedResults, result) => {
+    const normalizedResult = {
+      id: result.id,
+      name: result.name || result.test_name || result.title || result.order_number || 'Lab result',
+      value: result.value ?? result.result_value ?? result.status_display ?? result.status ?? null,
+      unit: result.unit || result.result_unit || null,
+      timestamp: result.timestamp || result.entered_at || result.completed_at || result.ordered_at || result.created_at || null,
+      is_abnormal: result.is_abnormal === true || ['low', 'high', 'abnormal', 'critical_low', 'critical_high'].includes(result.flag),
+      abnormal_direction: result.abnormal_direction || result.flag || null,
+    };
+    if (hasDisplayValue(normalizedResult.name) || hasDisplayValue(normalizedResult.value)) {
+      normalizedResults.push(normalizedResult);
+    }
+    return normalizedResults;
+  }, []);
 }
 
 function hasSeedableTimelinePage(page) {
