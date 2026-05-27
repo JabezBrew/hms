@@ -36,36 +36,39 @@ const teamSelectionKeys = {
 function useOnDutyTeam(departmentId, context, options = {}) {
   return useQuery({
     queryKey: teamSelectionKeys.onDutyTeam(departmentId, context),
-    queryFn: async () => {
-      if (!departmentId) {
-        return null;
-      }
-      // Use the new on-duty endpoint for the department
-      const response = await rosterEntriesApi.onDutyDepartment(departmentId);
-      // apiClient.get returns results array directly (unwrapped)
-      const results = Array.isArray(response) ? response : (response?.results || []);
-
-      if (results.length > 0) {
-        // Return the first on-duty entry (usually the primary duty type)
-        const entry = results[0];
-        return {
-          id: entry.team_id,
-          name: entry.team_name,
-          roster_entry: {
-            id: entry.id,
-            date: entry.date,
-            start_time: entry.start_time,
-            end_time: entry.end_time,
-          },
-        };
-      }
-      return null;
-    },
+    queryFn: () => fetchOnDutyTeam(departmentId),
     enabled: !!departmentId && options.enabled !== false,
     retry: false,
     staleTime: 60 * 1000,
     ...options,
   });
+}
+
+async function fetchOnDutyTeam(departmentId) {
+  if (!departmentId) {
+    return null;
+  }
+  // Use the new on-duty endpoint for the department.
+  const response = await rosterEntriesApi.onDutyDepartment(departmentId);
+  // apiClient.get returns results array directly (unwrapped).
+  const results = Array.isArray(response) ? response : (response?.results || []);
+
+  if (results.length === 0) {
+    return null;
+  }
+
+  // Return the first on-duty entry (usually the primary duty type).
+  const entry = results[0];
+  return {
+    id: entry.team_id,
+    name: entry.team_name,
+    roster_entry: {
+      id: entry.id,
+      date: entry.date,
+      start_time: entry.start_time,
+      end_time: entry.end_time,
+    },
+  };
 }
 
 /**
@@ -74,22 +77,24 @@ function useOnDutyTeam(departmentId, context, options = {}) {
 function useTeamsInDepartment(departmentId, options = {}) {
   return useQuery({
     queryKey: teamSelectionKeys.teams(departmentId),
-    queryFn: async () => {
-      if (!departmentId) {
-        return [];
-      }
-      const response = await clinicalUnitsApi.descendants(departmentId, {
-        is_active: true,
-        accepts_admissions: true,
-      });
-      const payload = response?.data?.results || response?.results || response?.data || response;
-      const results = Array.isArray(payload) ? payload : [];
-      return results.filter((team) => team.is_active !== false);
-    },
+    queryFn: () => fetchTeamsInDepartment(departmentId),
     enabled: !!departmentId && options.enabled !== false,
     staleTime: 30 * 1000,
     ...options,
   });
+}
+
+async function fetchTeamsInDepartment(departmentId) {
+  if (!departmentId) {
+    return [];
+  }
+  const response = await clinicalUnitsApi.descendants(departmentId, {
+    is_active: true,
+    accepts_admissions: true,
+  });
+  const payload = response?.data?.results || response?.results || response?.data || response;
+  const results = Array.isArray(payload) ? payload : [];
+  return results.filter((team) => team.is_active !== false);
 }
 
 /**
@@ -270,5 +275,3 @@ export function TeamSelectionField({
     </div>
   );
 }
-
-export default TeamSelectionField;
