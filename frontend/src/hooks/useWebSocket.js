@@ -101,25 +101,23 @@ export function useNotificationWebSocket(options = {}) {
     const ws = new NotificationWebSocket(activeToken);
     wsRef.current = ws;
 
-    // Connection handlers
-    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
+    const handleConnectionOpen = () => {
       dispatchConnectionState({ type: 'opened' });
-    });
+    };
 
-    const unsubscribeConnectionClose = ws.on('connection.close', () => {
+    const handleConnectionClose = () => {
       dispatchConnectionState({ type: 'closed' });
-    });
+    };
 
-    const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
+    const handleConnectionError = ({ error }) => {
       dispatchConnectionState({ type: 'errored', error });
-    });
+    };
 
-    const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
+    const handleConnectionFailed = () => {
       dispatchConnectionState({ type: 'failed' });
-    });
+    };
 
-    // Notification handler - use ref to get latest callback without re-running effect
-    const unsubscribeNotificationNew = ws.on('notification.new', ({ notification }) => {
+    const handleNotificationNew = ({ notification }) => {
       setNotifications((prev) => [notification, ...prev].slice(0, 50)); // Keep last 50
 
       // Invalidate React Query cache to refresh counts
@@ -128,18 +126,24 @@ export function useNotificationWebSocket(options = {}) {
       queryClient.invalidateQueries({ queryKey: referralKeys.inboxCount() });
 
       onNotificationRef.current?.(notification);
-    });
+    };
+
+    ws.on('connection.open', handleConnectionOpen);
+    ws.on('connection.close', handleConnectionClose);
+    ws.on('connection.error', handleConnectionError);
+    ws.on('connection.failed', handleConnectionFailed);
+    ws.on('notification.new', handleNotificationNew);
 
     // Connect
     ws.connect();
 
     // Cleanup on unmount
     return () => {
-      unsubscribeConnectionOpen();
-      unsubscribeConnectionClose();
-      unsubscribeConnectionError();
-      unsubscribeConnectionFailed();
-      unsubscribeNotificationNew();
+      ws.off('connection.open', handleConnectionOpen);
+      ws.off('connection.close', handleConnectionClose);
+      ws.off('connection.error', handleConnectionError);
+      ws.off('connection.failed', handleConnectionFailed);
+      ws.off('notification.new', handleNotificationNew);
       ws.disconnect();
       wsRef.current = null;
     };

@@ -461,11 +461,11 @@ export function useWardBoardLiveUpdates(options = {}) {
     const ws = new WardBoardWebSocket(activeToken, { wardScope: normalizedWardScope });
     wsRef.current = ws;
 
-    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
+    const handleConnectionOpen = () => {
       dispatchConnectionState({ type: 'opened' });
-    });
+    };
 
-    const unsubscribeConnectionClose = ws.on('connection.close', ({ code }) => {
+    const handleConnectionClose = ({ code }) => {
       dispatchConnectionState({ type: 'closed' });
       if ((code === 4001 || code === 4003) && refreshAccessToken) {
         refreshAccessToken()
@@ -476,18 +476,18 @@ export function useWardBoardLiveUpdates(options = {}) {
           })
           .catch(() => {});
       }
-    });
+    };
 
-    const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
+    const handleConnectionError = ({ error }) => {
       dispatchConnectionState({
         type: 'errored',
         error: error || new Error('WebSocket connection failed'),
       });
-    });
+    };
 
-    const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
+    const handleConnectionFailed = () => {
       dispatchConnectionState({ type: 'failed' });
-    });
+    };
 
     const handleWardBoardEvent = (event = {}) => {
       const { facility_code, ward_scope } = event;
@@ -512,25 +512,29 @@ export function useWardBoardLiveUpdates(options = {}) {
       queryClient.invalidateQueries({ queryKey: wardBoardKeys.lists() });
     };
 
-    const unsubscribeWardBoardInvalidate = ws.on('ward_board.invalidate', handleWardBoardEvent);
-    const unsubscribeTaskStateChanged = ws.on('ward_board.task_state_changed', handleWardBoardEvent);
-    const unsubscribeTaskUpdated = ws.on('ward_board.task_updated', handleWardBoardEvent);
-    const unsubscribeQueueStatusUpdated = ws.on('ward_board.queue_status_updated', handleWardBoardEvent);
-    const unsubscribeProjectionFreshness = ws.on('ward_board.projection_freshness', handleWardBoardEvent);
+    ws.on('connection.open', handleConnectionOpen);
+    ws.on('connection.close', handleConnectionClose);
+    ws.on('connection.error', handleConnectionError);
+    ws.on('connection.failed', handleConnectionFailed);
+    ws.on('ward_board.invalidate', handleWardBoardEvent);
+    ws.on('ward_board.task_state_changed', handleWardBoardEvent);
+    ws.on('ward_board.task_updated', handleWardBoardEvent);
+    ws.on('ward_board.queue_status_updated', handleWardBoardEvent);
+    ws.on('ward_board.projection_freshness', handleWardBoardEvent);
 
     ws.connect();
 
     return () => {
       isActive = false;
-      unsubscribeConnectionOpen();
-      unsubscribeConnectionClose();
-      unsubscribeConnectionError();
-      unsubscribeConnectionFailed();
-      unsubscribeWardBoardInvalidate();
-      unsubscribeTaskStateChanged();
-      unsubscribeTaskUpdated();
-      unsubscribeQueueStatusUpdated();
-      unsubscribeProjectionFreshness();
+      ws.off('connection.open', handleConnectionOpen);
+      ws.off('connection.close', handleConnectionClose);
+      ws.off('connection.error', handleConnectionError);
+      ws.off('connection.failed', handleConnectionFailed);
+      ws.off('ward_board.invalidate', handleWardBoardEvent);
+      ws.off('ward_board.task_state_changed', handleWardBoardEvent);
+      ws.off('ward_board.task_updated', handleWardBoardEvent);
+      ws.off('ward_board.queue_status_updated', handleWardBoardEvent);
+      ws.off('ward_board.projection_freshness', handleWardBoardEvent);
       ws.disconnect();
       wsRef.current = null;
     };

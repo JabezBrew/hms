@@ -58,11 +58,11 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
       : new DoctorDashboardWebSocket(wsToken);
     wsRef.current = ws;
 
-    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
+    const handleConnectionOpen = () => {
       dispatchConnectionState({ type: 'opened' });
-    });
+    };
 
-    const unsubscribeConnectionClose = ws.on('connection.close', ({ code }) => {
+    const handleConnectionClose = ({ code }) => {
       dispatchConnectionState({ type: 'closed' });
       if ((code === 4001 || code === 4003) && refreshAccessToken) {
         refreshAccessToken()
@@ -73,15 +73,15 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
           })
           .catch(() => {});
       }
-    });
+    };
 
-    const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
+    const handleConnectionError = ({ error }) => {
       dispatchConnectionState({ type: 'errored', error });
-    });
+    };
 
-    const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
+    const handleConnectionFailed = () => {
       dispatchConnectionState({ type: 'failed' });
-    });
+    };
 
     const handleDashboardEvent = ({ dashboard, facility_code, practitioner_id, target_date, ...event }) => {
       if (dashboard && dashboard !== 'doctor') {
@@ -136,19 +136,23 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
       }
     };
 
-    const unsubscribeDashboardInvalidate = ws.on('dashboard.invalidate', handleDashboardEvent);
-    const unsubscribeProjectionFreshness = ws.on('dashboard.projection_freshness', handleDashboardEvent);
+    ws.on('connection.open', handleConnectionOpen);
+    ws.on('connection.close', handleConnectionClose);
+    ws.on('connection.error', handleConnectionError);
+    ws.on('connection.failed', handleConnectionFailed);
+    ws.on('dashboard.invalidate', handleDashboardEvent);
+    ws.on('dashboard.projection_freshness', handleDashboardEvent);
 
     ws.connect();
 
     return () => {
       isActive = false;
-      unsubscribeConnectionOpen();
-      unsubscribeConnectionClose();
-      unsubscribeConnectionError();
-      unsubscribeConnectionFailed();
-      unsubscribeDashboardInvalidate();
-      unsubscribeProjectionFreshness();
+      ws.off('connection.open', handleConnectionOpen);
+      ws.off('connection.close', handleConnectionClose);
+      ws.off('connection.error', handleConnectionError);
+      ws.off('connection.failed', handleConnectionFailed);
+      ws.off('dashboard.invalidate', handleDashboardEvent);
+      ws.off('dashboard.projection_freshness', handleDashboardEvent);
       ws.disconnect();
       wsRef.current = null;
       dispatchConnectionState({ type: 'closed' });
