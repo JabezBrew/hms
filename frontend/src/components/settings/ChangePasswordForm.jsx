@@ -150,8 +150,8 @@ export default function ChangePasswordForm() {
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
               Password Requirements
             </p>
-            {passwordChecks.map((check, i) => (
-              <div key={i} className="flex items-center gap-2">
+            {passwordChecks.map((check) => (
+              <div key={check.label} className="flex items-center gap-2">
                 <div className={cn(
                   'size-4 rounded-full flex items-center justify-center',
                   check.met ? 'bg-emerald-500/20' : 'bg-muted'

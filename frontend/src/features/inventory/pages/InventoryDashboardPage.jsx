@@ -227,9 +227,9 @@ function QuickActionsWidget({ className }) {
         <CardTitle className="text-base">Quick Actions</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        {quickActions.map((action, index) => (
+        {quickActions.map((action) => (
           <Button
-            key={index}
+            key={action.href}
             variant={action.variant}
             className="w-full justify-start"
             onClick={() => navigate(action.href)}

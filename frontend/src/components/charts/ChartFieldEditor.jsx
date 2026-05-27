@@ -666,7 +666,7 @@ const PairedConfig = ({ config, updateConfig }) => {
     <div className="space-y-4">
       <div className="space-y-2">
         {fields.map((field, index) => (
-          <div key={index} className="flex items-center gap-2">
+          <div key={field.key || field.label} className="flex items-center gap-2">
             <span className="text-muted-foreground font-mono text-sm w-16">
               Field {index + 1}
             </span>

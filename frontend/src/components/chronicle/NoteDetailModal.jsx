@@ -327,9 +327,9 @@ const LabResultsDetail = ({ data }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {results.map((r, i) => (
+              {results.map((r) => (
                 <tr
-                  key={i}
+                  key={r.id || `${r.test_name || r.name}-${r.result_value || r.value}-${r.recorded_at || r.date}`}
                   className={cn(
                     "transition-colors",
                     r.is_critical && "bg-rose-50/50 dark:bg-rose-900/10",

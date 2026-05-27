@@ -218,7 +218,11 @@ function OrdersList({ orders, onRemove, type }) {
     <div className="space-y-2">
       {orders.map((order, index) => (
         <div
-          key={index}
+          key={
+            type === 'medications'
+              ? `${order.medication_name}-${order.dosage}-${order.frequency}`
+              : `${order.test_name || order.order_text}-${order.urgency || 'routine'}`
+          }
           className="flex items-center justify-between p-2 rounded-md bg-muted/50 border"
         >
           <div className="flex-1">

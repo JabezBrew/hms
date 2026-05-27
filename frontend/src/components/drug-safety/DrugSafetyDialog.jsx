@@ -149,8 +149,11 @@ export function DrugSafetyDialog({
                   </span>
                 </div>
 
-                {severityAlerts.map((alert, index) => (
-                  <Alert key={index} className={config.className}>
+                {severityAlerts.map((alert) => (
+                  <Alert
+                    key={alert.id || `${alert.alert_type || 'alert'}-${alert.description}`}
+                    className={config.className}
+                  >
                     <Icon className={`size-4 ${config.color}`} />
                     <AlertTitle className="font-semibold">
                       {alert.alert_type_display || alert.alert_type}

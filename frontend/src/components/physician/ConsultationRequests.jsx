@@ -236,9 +236,9 @@ export function ConsultationRequests({ patient }) {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-2">
-                {commonSpecialties.map((specialty, index) => (
+                {commonSpecialties.map((specialty) => (
                   <Button
-                    key={index}
+                    key={specialty.name}
                     variant="outline"
                     className="justify-start"
                     onClick={() => handleQuickSpecialty(specialty)}

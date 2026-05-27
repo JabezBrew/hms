@@ -34,7 +34,7 @@ export function UnitBreadcrumb({
         )}
         <ol className="flex items-center flex-wrap gap-1">
           {pathParts.map((part, index) => (
-            <li key={index} className="flex items-center">
+            <li key={pathParts.slice(0, index + 1).join(' > ')} className="flex items-center">
               {index > 0 && (
                 <ChevronRight className="size-4 text-muted-foreground mx-1 shrink-0" />
               )}

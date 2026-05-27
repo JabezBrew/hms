@@ -802,10 +802,10 @@ function RouteLatencyTable({ rows, compact = false }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedRows.map((row, index) => {
+          {sortedRows.map((row) => {
             const route = sanitizeRoutePath(valueFrom(row.route, row.path, row.name))
             return (
-              <TableRow key={`${route}-${index}`}>
+              <TableRow key={`${route}-${safeText(row.status_bucket, 'N/A', 16)}`}>
                 <TableCell className="max-w-[320px]">
                   <div className="flex items-center gap-2">
                     <RouteIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
@@ -912,18 +912,21 @@ function SlowQueryTable({ rows }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {slowRows.map((row, index) => (
-            <TableRow key={`${safeFingerprint(row.fingerprint, index)}-${index}`}>
-              <TableCell className="max-w-[360px] truncate font-mono text-xs">{safeFingerprint(row.fingerprint, index)}</TableCell>
-              <TableCell className="font-mono text-xs">{formatNumber(row.count)}</TableCell>
-              <TableCell className="font-mono text-xs">{formatMs(row.avg_ms)}</TableCell>
-              <TableCell className="font-mono text-xs">{formatMs(row.p95_ms)}</TableCell>
-              <TableCell className="font-mono text-xs">{formatMs(row.p99_ms)}</TableCell>
-              <TableCell className="font-mono text-xs">{safeText(row.source, 'in_process', 32)}</TableCell>
-              <TableCell className="font-mono text-xs">{safeText(row.fix_category, 'review_plan', 32)}</TableCell>
-              <TableCell><StatusPill status={row.status || statusForThreshold(row.p99_ms || row.p95_ms, 250, 500)} /></TableCell>
-            </TableRow>
-          ))}
+          {slowRows.map((row) => {
+            const fingerprint = safeFingerprint(row.fingerprint, `${row.source || 'source'}-${row.status || 'status'}`)
+            return (
+              <TableRow key={fingerprint}>
+                <TableCell className="max-w-[360px] truncate font-mono text-xs">{fingerprint}</TableCell>
+                <TableCell className="font-mono text-xs">{formatNumber(row.count)}</TableCell>
+                <TableCell className="font-mono text-xs">{formatMs(row.avg_ms)}</TableCell>
+                <TableCell className="font-mono text-xs">{formatMs(row.p95_ms)}</TableCell>
+                <TableCell className="font-mono text-xs">{formatMs(row.p99_ms)}</TableCell>
+                <TableCell className="font-mono text-xs">{safeText(row.source, 'in_process', 32)}</TableCell>
+                <TableCell className="font-mono text-xs">{safeText(row.fix_category, 'review_plan', 32)}</TableCell>
+                <TableCell><StatusPill status={row.status || statusForThreshold(row.p99_ms || row.p95_ms, 250, 500)} /></TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>
@@ -971,8 +974,8 @@ function DeploymentPanel({ deployment }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {services.length ? services.map((service, index) => (
-              <TableRow key={`${safeText(service.name, 'service', 40)}-${index}`}>
+            {services.length ? services.map((service) => (
+              <TableRow key={safeText(service.name, 'service', 40)}>
                 <TableCell className="font-mono text-xs">{safeText(service.name, 'service', 40)}</TableCell>
                 <TableCell><StatusPill status={valueFrom(service.status, service.health)} /></TableCell>
                 <TableCell className="font-mono text-xs">{safeText(service.version, 'N/A', 32)}</TableCell>

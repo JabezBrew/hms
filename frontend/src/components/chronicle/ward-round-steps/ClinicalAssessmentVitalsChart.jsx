@@ -62,9 +62,9 @@ function VitalsChart({
               return label;
             }}
           />
-          {referenceLines.map((line, idx) => (
+          {referenceLines.map((line) => (
             <ReferenceLine
-              key={idx}
+              key={`${line.label}-${line.value}`}
               y={line.value}
               stroke={line.color}
               strokeDasharray="5 5"

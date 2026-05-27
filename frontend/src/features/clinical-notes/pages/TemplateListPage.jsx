@@ -425,7 +425,7 @@ export default function TemplateListPage() {
               <div className="space-y-3">
                 {sections.map((section, index) => (
                   <div
-                    key={index}
+                    key={section.id || section.name || section.section}
                     className="p-4 rounded-xl bg-card/50 border border-border flex items-center justify-between"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >

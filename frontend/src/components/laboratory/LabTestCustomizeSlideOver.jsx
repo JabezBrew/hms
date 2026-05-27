@@ -507,8 +507,8 @@ pediatric: 3.8-5.2 M/uL`}
                   {/* Errors */}
                   {parsedPreview.errors.length > 0 && (
                     <div className="mb-2 space-y-1">
-                      {parsedPreview.errors.map((err, idx) => (
-                        <p key={idx} className="text-xs text-amber-700 dark:text-amber-400">
+                      {parsedPreview.errors.map((err) => (
+                        <p key={`${err.line}-${err.message}`} className="text-xs text-amber-700 dark:text-amber-400">
                           Line {err.line}: {err.message}
                         </p>
                       ))}

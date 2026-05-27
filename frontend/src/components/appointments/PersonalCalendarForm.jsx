@@ -885,8 +885,8 @@ const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
               <div className="max-h-[300px] overflow-y-auto pr-2">
                 {previewData && previewData.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
-                    {previewData.map((slot, i) => (
-                      <div key={i} className="font-mono text-xs bg-muted/50 px-2 py-1.5 rounded text-center border border-border">
+                    {previewData.map((slot) => (
+                      <div key={`${slot.start}-${slot.end}`} className="font-mono text-xs bg-muted/50 px-2 py-1.5 rounded text-center border border-border">
                         {slot.start} - {slot.end}
                       </div>
                     ))}

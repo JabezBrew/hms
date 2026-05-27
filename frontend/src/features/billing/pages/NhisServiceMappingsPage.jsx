@@ -443,8 +443,8 @@ export default function NhisServiceMappingsPage() {
               <div className="mt-4 rounded-lg border bg-background p-3">
                 <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Preview Issues (first 20)</p>
                 <div className="mt-2 space-y-1">
-                  {importIssues.slice(0, 20).map((it, i) => (
-                    <div key={i} className="flex items-start gap-2">
+                  {importIssues.slice(0, 20).map((it) => (
+                    <div key={`${it.row || 'row'}-${it.field || 'field'}-${it.message}`} className="flex items-start gap-2">
                       <span className={cn(
                         'mt-0.5 inline-flex rounded px-1.5 py-0.5 font-mono text-[10px]',
                         it.severity === 'error' ? 'badge-chronicle-rose' : 'badge-chronicle-amber'

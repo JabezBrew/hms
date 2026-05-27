@@ -263,10 +263,11 @@ function StockMovementTimelineItem({
  * StockMovementTimelineSkeleton - Loading state
  */
 function StockMovementTimelineSkeleton({ count = 5 }) {
+  const skeletonKeys = Array.from({ length: count }, (_, index) => `stock-movement-skeleton-${index}`);
   return (
     <div className="space-y-4">
-      {[...Array(count)].map((_, i) => (
-        <div key={i} className="flex gap-4">
+      {skeletonKeys.map((skeletonKey, i) => (
+        <div key={skeletonKey} className="flex gap-4">
           <div className="flex flex-col items-center">
             <Skeleton className="size-8 rounded-full" />
             {i < count - 1 && <Skeleton className="w-0.5 flex-1 mt-1" />}
