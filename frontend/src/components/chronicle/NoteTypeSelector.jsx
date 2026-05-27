@@ -65,6 +65,23 @@ const VISIBILITY_ICONS = {
   public: Globe,
 };
 
+const CATEGORY_ORDER = ['soap', 'progress', 'procedure', 'admission', 'discharge', 'nursing', 'consultation', 'general', 'custom'];
+
+// Derive steps from template structure
+const getStepsFromTemplate = (template) => {
+  if (!template.structure) return [];
+
+  // Handle both array and object structure formats
+  const sections = Array.isArray(template.structure)
+    ? template.structure
+    : template.structure.sections || [];
+
+  return sections.map((section, index) => ({
+    id: section.name?.toLowerCase().replace(/\s+/g, '_') || `step_${index}`,
+    title: section.name || section.section || `Step ${index + 1}`,
+  }));
+};
+
 /**
  * NoteTypeSelector - Grid of note templates for selection
  *
@@ -83,7 +100,10 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
   // Use provided templates or fetch from API (with lazy loading support)
   const { data: apiTemplates, isLoading: apiIsLoading } = useAvailableNoteTemplates({ enabled: enabled && !propTemplates });
 
-  const templates = propTemplates || apiTemplates || [];
+  const templates = useMemo(
+    () => (propTemplates || apiTemplates || []),
+    [apiTemplates, propTemplates]
+  );
   const isLoading = propIsLoading || apiIsLoading;
 
   // Group templates by category
@@ -99,30 +119,14 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
   }, [templates]);
 
   // Get sorted category keys (system categories first, then custom)
-  const categoryOrder = ['soap', 'progress', 'procedure', 'admission', 'discharge', 'nursing', 'consultation', 'general', 'custom'];
-  const sortedCategories = Object.keys(groupedTemplates).sort((a, b) => {
-    const indexA = categoryOrder.indexOf(a);
-    const indexB = categoryOrder.indexOf(b);
+  const sortedCategories = useMemo(() => Object.keys(groupedTemplates).sort((a, b) => {
+    const indexA = CATEGORY_ORDER.indexOf(a);
+    const indexB = CATEGORY_ORDER.indexOf(b);
     if (indexA === -1 && indexB === -1) return 0;
     if (indexA === -1) return 1;
     if (indexB === -1) return -1;
     return indexA - indexB;
-  });
-
-  // Derive steps from template structure
-  const getStepsFromTemplate = (template) => {
-    if (!template.structure) return [];
-
-    // Handle both array and object structure formats
-    const sections = Array.isArray(template.structure)
-      ? template.structure
-      : template.structure.sections || [];
-
-    return sections.map((section, index) => ({
-      id: section.name?.toLowerCase().replace(/\s+/g, '_') || `step_${index}`,
-      title: section.name || section.section || `Step ${index + 1}`,
-    }));
-  };
+  }), [groupedTemplates]);
 
   if (isLoading) {
     return (
