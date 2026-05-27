@@ -34,6 +34,18 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   minimumFractionDigits: 2,
 });
 
+let nextInvoiceItemDraftId = 0;
+
+function createInvoiceItemDraft() {
+  nextInvoiceItemDraftId += 1;
+  return {
+    _clientId: `invoice-item-${nextInvoiceItemDraftId}`,
+    service: '',
+    description: '',
+    quantity: 1,
+  };
+}
+
 export default function InvoiceCreatePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -51,9 +63,7 @@ export default function InvoiceCreatePage() {
     due_date: getDefaultDueDate(),
     notes: '',
   });
-  const [items, setItems] = useState([
-    { service: '', description: '', quantity: 1 },
-  ]);
+  const [items, setItems] = useState(() => [createInvoiceItemDraft()]);
   const [errors, setErrors] = useState({});
 
   // Load preselected patient
@@ -133,7 +143,7 @@ export default function InvoiceCreatePage() {
   };
 
   const addItem = () => {
-    setItems((prev) => [...prev, { service: '', description: '', quantity: 1 }]);
+    setItems((prev) => [...prev, createInvoiceItemDraft()]);
   };
 
   const removeItem = (index) => {
@@ -322,7 +332,7 @@ export default function InvoiceCreatePage() {
               <div className="space-y-4">
                 {items.map((item, index) => (
                   <div
-                    key={index}
+                    key={item._clientId}
                     className="p-4 bg-muted/20 rounded-xl border border-border/50 space-y-4"
                   >
                     <div className="flex items-center justify-between">

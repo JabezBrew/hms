@@ -28,9 +28,21 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
 });
 
 const INVOICE_FORM_ID = 'invoice-form';
+let nextInvoiceItemDraftId = 0;
 
 function getInvoiceFormKey(patient) {
   return `create-${patient?.id || 'none'}`;
+}
+
+function createInvoiceItemDraft() {
+  nextInvoiceItemDraftId += 1;
+  return {
+    _clientId: `invoice-item-${nextInvoiceItemDraftId}`,
+    service: '',
+    description: '',
+    quantity: 1,
+    unit_price: '',
+  };
 }
 
 function getDefaultDueDate() {
@@ -58,9 +70,7 @@ function createInvoiceDraft(patient) {
       due_date: getDefaultDueDate(),
       notes: '',
     },
-    items: [
-      { service: '', description: '', quantity: 1, unit_price: '' },
-    ],
+    items: [createInvoiceItemDraft()],
   };
 }
 
@@ -157,7 +167,7 @@ function InvoiceFormContent({
   };
 
   const addItem = () => {
-    setItems((prev) => [...prev, { service: '', description: '', quantity: 1, unit_price: '' }]);
+    setItems((prev) => [...prev, createInvoiceItemDraft()]);
   };
 
   const removeItem = (index) => {
@@ -321,7 +331,7 @@ function InvoiceFormContent({
 
             <div className="space-y-3">
               {items.map((item, index) => (
-                <div key={index} className="p-4 bg-muted/20 rounded-lg space-y-3">
+                <div key={item._clientId} className="p-4 bg-muted/20 rounded-lg space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs text-muted-foreground">Item {index + 1}</span>
                     {items.length > 1 && (
