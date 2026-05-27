@@ -1,3 +1,51 @@
+import { useReducer } from 'react';
+
+const LIVE_UPDATE_CONNECTION_INITIAL_STATE = Object.freeze({
+  isConnected: false,
+  connectionError: null,
+});
+
+function nextLiveUpdateConnectionState(state, next) {
+  if (
+    state.isConnected === next.isConnected
+    && state.connectionError === next.connectionError
+  ) {
+    return state;
+  }
+  return next;
+}
+
+function liveUpdateConnectionStateReducer(state, action) {
+  switch (action.type) {
+    case 'opened':
+      return nextLiveUpdateConnectionState(state, {
+        isConnected: true,
+        connectionError: null,
+      });
+    case 'closed':
+      return nextLiveUpdateConnectionState(state, {
+        ...state,
+        isConnected: false,
+      });
+    case 'errored':
+      return nextLiveUpdateConnectionState(state, {
+        ...state,
+        connectionError: action.error || new Error('WebSocket connection failed'),
+      });
+    case 'failed':
+      return nextLiveUpdateConnectionState(state, {
+        ...state,
+        connectionError: new Error('WebSocket reconnection attempts exhausted'),
+      });
+    default:
+      return state;
+  }
+}
+
+export function useLiveUpdateConnectionState() {
+  return useReducer(liveUpdateConnectionStateReducer, LIVE_UPDATE_CONNECTION_INITIAL_STATE);
+}
+
 const FRESHNESS_EVENT_TYPES = new Set([
   'dashboard.projection_freshness',
   'ward_board.projection_freshness',

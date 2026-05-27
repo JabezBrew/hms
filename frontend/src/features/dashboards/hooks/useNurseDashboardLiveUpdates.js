@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { NurseDashboardWebSocket } from '@/lib/websocket';
-import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
+import {
+  patchDashboardProjectionFreshness,
+  useLiveUpdateConnectionState,
+} from './realtimePatchesLiveUpdates';
 import { useDashboardWebSocketToken } from './useDashboardWebSocketToken';
 
 function normalizeFacilityCode(value) {
@@ -24,8 +27,7 @@ export function useNurseDashboardLiveUpdates(options = {}) {
   const { isAuthenticated, user, facilityCode, getAccessToken, refreshAccessToken } = useAuth();
 
   const wsRef = useRef(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionError, setConnectionError] = useState(null);
+  const [connectionState, dispatchConnectionState] = useLiveUpdateConnectionState();
 
   const normalizedWardScope = normalizeWardScope(wardScope);
   const userRole = String(user?.role || '').toLowerCase();
@@ -42,12 +44,11 @@ export function useNurseDashboardLiveUpdates(options = {}) {
     wsRef.current = ws;
 
     const unsubscribeConnectionOpen = ws.on('connection.open', () => {
-      setIsConnected(true);
-      setConnectionError(null);
+      dispatchConnectionState({ type: 'opened' });
     });
 
     const unsubscribeConnectionClose = ws.on('connection.close', ({ code }) => {
-      setIsConnected(false);
+      dispatchConnectionState({ type: 'closed' });
       if ((code === 4001 || code === 4003) && refreshAccessToken) {
         refreshAccessToken()
           .then((freshToken) => {
@@ -60,11 +61,11 @@ export function useNurseDashboardLiveUpdates(options = {}) {
     });
 
     const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
-      setConnectionError(error || new Error('WebSocket connection failed'));
+      dispatchConnectionState({ type: 'errored', error });
     });
 
     const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
-      setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
+      dispatchConnectionState({ type: 'failed' });
     });
 
     const handleDashboardEvent = ({ dashboard, facility_code, ward_scope, ...event }) => {
@@ -108,7 +109,7 @@ export function useNurseDashboardLiveUpdates(options = {}) {
       unsubscribeProjectionFreshness();
       ws.disconnect();
       wsRef.current = null;
-      setIsConnected(false);
+      dispatchConnectionState({ type: 'closed' });
     };
   }, [
     shouldConnect,
@@ -118,10 +119,8 @@ export function useNurseDashboardLiveUpdates(options = {}) {
     queryClient,
     refreshAccessToken,
     setWsToken,
+    dispatchConnectionState,
   ]);
 
-  return {
-    isConnected,
-    connectionError,
-  };
+  return connectionState;
 }
