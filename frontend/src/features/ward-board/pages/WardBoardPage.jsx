@@ -57,6 +57,26 @@ function orderRowsForView(rows, view) {
   });
 }
 
+function useUrlSyncedDraft(value) {
+  const [state, setState] = useState(() => ({
+    source: value,
+    draft: value,
+  }));
+  const draft = state.source === value ? state.draft : value;
+
+  const setDraft = useCallback((nextDraft) => {
+    setState((previous) => {
+      const currentDraft = previous.source === value ? previous.draft : value;
+      return {
+        source: value,
+        draft: typeof nextDraft === 'function' ? nextDraft(currentDraft) : nextDraft,
+      };
+    });
+  }, [value]);
+
+  return [draft, setDraft];
+}
+
 export default function WardBoardPage() {
   const { wardId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -73,7 +93,7 @@ export default function WardBoardPage() {
   const pageSize = parsePositiveInt(searchParams.get('page_size'), DEFAULT_PAGE_SIZE);
   const searchParam = searchParams.get('search') || '';
   const queryPatient = searchParams.get('patient') || '';
-  const [searchDraft, setSearchDraft] = useState(searchParam);
+  const [searchDraft, setSearchDraft] = useUrlSyncedDraft(searchParam);
   const debouncedSearch = useDebounce(searchDraft, 300);
 
   const pageMeta = usePageMeta({
@@ -105,10 +125,6 @@ export default function WardBoardPage() {
       return next;
     }, { replace });
   }, [fixedWard, setSearchParams]);
-
-  useEffect(() => {
-    setSearchDraft(searchParam);
-  }, [searchParam]);
 
   useEffect(() => {
     if (debouncedSearch === searchParam) {
@@ -171,7 +187,7 @@ export default function WardBoardPage() {
   const handleClearFilters = useCallback(() => {
     setSearchDraft('');
     updateParams({ search: '', ward: '', patient: '' }, { resetPage: true });
-  }, [updateParams]);
+  }, [setSearchDraft, updateParams]);
 
   if (isLoading && !boardData) {
     return (
