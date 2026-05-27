@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 
 import formatDistanceToNow from "date-fns/formatDistanceToNow";
 import isPast from "date-fns/isPast";
-import format from "date-fns/format";
 
 // Status configuration
 const STATUS_CONFIG = {
@@ -80,37 +79,31 @@ const ChartAssignmentCard = ({
     onViewDetails?.(assignment);
   };
 
-  const handleViewDetailsKeyDown = (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    handleViewDetails();
-  };
-
   if (compact) {
     return (
       <div
         className={cn(
-          "group flex items-center gap-3 p-3 rounded-lg border border-border",
-          "hover:border-primary/30 transition-all cursor-pointer",
+          "group relative flex items-center gap-3 p-3 rounded-lg border border-border",
+          "hover:border-primary/30 transition-all",
           "animate-chronicle-enter",
           isOverdue && "border-rose-300 dark:border-rose-800",
           `stagger-${Math.min(index + 1, 10)}`
         )}
-        onClick={handleViewDetails}
-        onKeyDown={handleViewDetailsKeyDown}
-        role="button"
-        tabIndex={0}
-        aria-label={`View chart assignment ${assignment.template_name}`}
       >
+        <button
+          type="button"
+          className="absolute inset-0 z-0 rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          onClick={handleViewDetails}
+          aria-label={`View chart assignment ${assignment.template_name}`}
+        />
+
         {/* Icon */}
-        <div className={cn("p-1.5 rounded-lg", statusConfig.bgClass)}>
+        <div className={cn("relative z-10 pointer-events-none p-1.5 rounded-lg", statusConfig.bgClass)}>
           <ClipboardList className={cn("size-4", statusConfig.textClass)} />
         </div>
 
         {/* Info */}
-        <div className="flex-1 min-w-0">
+        <div className="relative z-10 pointer-events-none flex-1 min-w-0">
           <p className="font-mono text-sm font-medium truncate">
             {assignment.template_name}
           </p>
@@ -122,7 +115,7 @@ const ChartAssignmentCard = ({
         {/* Status/Due indicator */}
         {assignment.status === 'active' && nextDue && (
           <div className={cn(
-            "flex items-center gap-1 text-[10px] font-mono",
+            "relative z-10 pointer-events-none flex items-center gap-1 text-[10px] font-mono",
             isOverdue ? "text-rose-500" : "text-muted-foreground"
           )}>
             {isOverdue && <AlertTriangle className="size-3" />}
@@ -134,10 +127,11 @@ const ChartAssignmentCard = ({
         {/* Quick action */}
         {assignment.status === 'active' && (
           <Button
+            type="button"
             size="sm"
             variant={isOverdue ? "default" : "outline"}
             className={cn(
-              "h-7 px-2 font-mono text-[10px] opacity-0 group-hover:opacity-100 transition-opacity",
+              "relative z-20 h-7 px-2 font-mono text-[10px] opacity-0 group-hover:opacity-100 transition-opacity",
               isOverdue && "bg-rose-500 hover:bg-rose-600"
             )}
             onClick={(e) => {
@@ -156,23 +150,25 @@ const ChartAssignmentCard = ({
     <div
       className={cn(
         "group relative bg-card border border-border rounded-xl overflow-hidden",
-        "hover:border-primary/30 hover:shadow-md transition-all cursor-pointer",
+        "hover:border-primary/30 hover:shadow-md transition-all",
         "animate-chronicle-enter",
         isOverdue && "border-rose-300 dark:border-rose-800",
         `stagger-${Math.min(index + 1, 10)}`
       )}
-      onClick={handleViewDetails}
-      onKeyDown={handleViewDetailsKeyDown}
-      role="button"
-      tabIndex={0}
-      aria-label={`View chart assignment ${assignment.template_name}`}
     >
+      <button
+        type="button"
+        className="absolute inset-0 z-0 rounded-xl cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        onClick={handleViewDetails}
+        aria-label={`View chart assignment ${assignment.template_name}`}
+      />
+
       {/* Overdue ribbon */}
       {isOverdue && (
         <div className="absolute top-0 left-0 right-0 h-1 bg-rose-500" />
       )}
 
-      <div className="p-4">
+      <div className="relative z-10 pointer-events-none p-4">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -248,8 +244,9 @@ const ChartAssignmentCard = ({
         {/* Action */}
         {assignment.status === 'active' && (
           <Button
+            type="button"
             className={cn(
-              "w-full font-mono text-xs",
+              "relative z-20 pointer-events-auto w-full font-mono text-xs",
               isOverdue
                 ? "bg-rose-500 hover:bg-rose-600"
                 : "bg-amber-600 hover:bg-amber-700"

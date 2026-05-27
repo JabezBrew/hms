@@ -278,240 +278,242 @@ const PatientChronicleCard = ({
   // Render
   // ============================================
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleViewRecord();
-    }
-  };
-
   return (
     <div
-      onClick={handleViewRecord}
-      onKeyDown={handleKeyDown}
       onPointerEnter={handleIntentPrefetch}
       onFocus={handleIntentPrefetch}
-      tabIndex={0}
-      role="button"
-      aria-label={`View patient ${displayName}, ${mrn}`}
       className={cn(
         "group relative bg-card/50 backdrop-blur border border-border",
-        "rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer",
+        "rounded-xl sm:rounded-2xl p-4 sm:p-6",
         "hover:border-primary/30 transition-all duration-500",
         "hover:shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
         "animate-chronicle-enter",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className
       )}
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      {/* Status Ribbon */}
-      <div className={cn(
-        "status-ribbon",
-        status === 'critical' && "status-ribbon-critical",
-        status === 'warning' && "status-ribbon-warning",
-        status === 'stable' && "status-ribbon-stable"
-      )} />
+      <button
+        type="button"
+        className="absolute inset-0 z-0 rounded-xl sm:rounded-2xl cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        onClick={handleViewRecord}
+        aria-label={`View patient ${displayName}, ${mrn}`}
+      />
 
-      {/* Header: Patient Identity */}
-      <header className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
-        <div className="min-w-0 flex-1">
-          <h3 className="font-display text-lg sm:text-2xl text-foreground tracking-tight truncate">
-            {displayName}
-          </h3>
-          <p className="font-mono text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 truncate">
-            {demographics}
-          </p>
-        </div>
+      <div className="relative z-10 pointer-events-none">
+        {/* Status Ribbon */}
+        <div className={cn(
+          "status-ribbon",
+          status === 'critical' && "status-ribbon-critical",
+          status === 'warning' && "status-ribbon-warning",
+          status === 'stable' && "status-ribbon-stable"
+        )} />
 
-        {/* Status Badges - Stack on mobile */}
-        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-2 shrink-0">
-          {status === 'critical' && (
-            <span className="badge-chronicle-rose flex items-center gap-1 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
-              <AlertTriangle className="size-2.5 sm:h-3 sm:w-3" aria-hidden="true" />
-              <span className="hidden sm:inline">CRITICAL</span>
-            </span>
-          )}
-          {allergies.length > 0 && (
-            <span className="badge-chronicle-amber text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
-              <span className="sm:hidden">ALLERGY</span>
-              <span className="hidden sm:inline">ALLERGIES</span>
-            </span>
-          )}
-        </div>
-      </header>
+        {/* Header: Patient Identity */}
+        <header className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-display text-lg sm:text-2xl text-foreground tracking-tight truncate">
+              {displayName}
+            </h3>
+            <p className="font-mono text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 truncate">
+              {demographics}
+            </p>
+          </div>
 
-      {/* Clinical Synopsis - Stack on mobile */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-6 mb-3 sm:mb-6">
-        <div className="min-w-0">
-          <dt className="font-mono text-[9px] sm:text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5 sm:mb-1">
-            Primary Dx
-          </dt>
-          <dd className="text-foreground/90 font-medium text-xs sm:text-sm truncate">
-            {primaryDx || <span className="text-muted-foreground">Not recorded</span>}
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="font-mono text-[9px] sm:text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5 sm:mb-1">
-            Admitted
-          </dt>
-          <dd className="text-foreground/90 font-medium text-xs sm:text-sm">
-            {admissionDays ? (
-              `Day ${admissionDays}`
-            ) : ward === "Waiting List" ? (
-              "Waiting List"
-            ) : ward ? (
-              "Inpatient"
-            ) : (
-              <span className="text-muted-foreground">Not Admitted</span>
+          {/* Status Badges - Stack on mobile */}
+          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-2 shrink-0">
+            {status === 'critical' && (
+              <span className="badge-chronicle-rose flex items-center gap-1 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
+                <AlertTriangle className="size-2.5 sm:h-3 sm:w-3" aria-hidden="true" />
+                <span className="hidden sm:inline">CRITICAL</span>
+              </span>
             )}
-          </dd>
+            {allergies.length > 0 && (
+              <span className="badge-chronicle-amber text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
+                <span className="sm:hidden">ALLERGY</span>
+                <span className="hidden sm:inline">ALLERGIES</span>
+              </span>
+            )}
+          </div>
+        </header>
+
+        {/* Clinical Synopsis - Stack on mobile */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-6 mb-3 sm:mb-6">
+          <div className="min-w-0">
+            <dt className="font-mono text-[9px] sm:text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5 sm:mb-1">
+              Primary Dx
+            </dt>
+            <dd className="text-foreground/90 font-medium text-xs sm:text-sm truncate">
+              {primaryDx || <span className="text-muted-foreground">Not recorded</span>}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="font-mono text-[9px] sm:text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5 sm:mb-1">
+              Admitted
+            </dt>
+            <dd className="text-foreground/90 font-medium text-xs sm:text-sm">
+              {admissionDays ? (
+                `Day ${admissionDays}`
+              ) : ward === "Waiting List" ? (
+                "Waiting List"
+              ) : ward ? (
+                "Inpatient"
+              ) : (
+                <span className="text-muted-foreground">Not Admitted</span>
+              )}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="font-mono text-[9px] sm:text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5 sm:mb-1">
+              Attending
+            </dt>
+            <dd className="text-foreground/90 font-medium text-xs sm:text-sm truncate">
+              {attending || <span className="text-muted-foreground">Not assigned</span>}
+            </dd>
+          </div>
         </div>
-        <div className="min-w-0">
-          <dt className="font-mono text-[9px] sm:text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5 sm:mb-1">
-            Attending
-          </dt>
-          <dd className="text-foreground/90 font-medium text-xs sm:text-sm truncate">
-            {attending || <span className="text-muted-foreground">Not assigned</span>}
-          </dd>
-        </div>
+
+        {/* Vital Signs - Wrap on mobile */}
+        {vitals && (
+          <div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-4 p-2 sm:p-3 rounded-lg sm:rounded-xl bg-background/50 mb-3 sm:mb-4">
+            <VitalDisplay
+              label="TEMP"
+              value={vitals.temperature}
+              unit="°"
+              trend={vitals.temperature_trend}
+              status={vitals.temperature_status}
+            />
+            <div className="hidden sm:block w-px h-8 bg-border" />
+            <VitalDisplay
+              label="BP"
+              value={vitals.blood_pressure}
+              trend={vitals.bp_trend}
+              status={vitals.bp_status}
+            />
+            <div className="hidden sm:block w-px h-8 bg-border" />
+            <VitalDisplay
+              label="SpO2"
+              value={vitals.spo2}
+              unit="%"
+              trend={vitals.spo2_trend}
+              status={vitals.spo2_status}
+            />
+            <div className="hidden sm:block w-px h-8 bg-border" />
+            <VitalDisplay
+              label="HR"
+              value={vitals.heart_rate}
+              unit=""
+              trend={vitals.hr_trend}
+              status={vitals.hr_status}
+            />
+          </div>
+        )}
+
+        {/* Action Footer - Always visible on mobile */}
+        <footer className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 sm:pt-4 border-t border-border">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            {/* Pinned indicator for My Patients */}
+            {isPinned && (
+              <span className="flex items-center gap-1 text-primary">
+                <Star className="size-3 fill-current" aria-hidden="true" />
+                <span className="font-mono text-[10px] sm:text-xs">Pinned</span>
+              </span>
+            )}
+            {!isPinned && pendingOrders > 0 && (
+              <>
+                <span className="size-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+                <span className="font-mono text-[10px] sm:text-xs">{pendingOrders} pending</span>
+              </>
+            )}
+            {!isPinned && pendingOrders === 0 && (
+              <span className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
+                <Clock className="size-3" aria-hidden="true" />
+                No pending items
+              </span>
+            )}
+          </div>
+
+          {/* Always show on mobile, hover on desktop */}
+          <div className="pointer-events-auto flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+            {/* My Patients actions */}
+            {showMyPatientsActions && !isInMyPatients && onAddToMyPatients && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="font-mono text-[10px] sm:text-xs h-8"
+                onClick={handleAddToMyPatients}
+              >
+                <UserPlus className="size-3 mr-1" />
+                Add to List
+              </Button>
+            )}
+            {showMyPatientsActions && isInMyPatients && (
+              <>
+                {onTogglePin && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "font-mono text-[10px] sm:text-xs h-8",
+                      isPinned && "text-primary"
+                    )}
+                    onClick={handleTogglePin}
+                  >
+                    {isPinned ? (
+                      <StarOff className="size-3" />
+                    ) : (
+                      <Star className="size-3" />
+                    )}
+                  </Button>
+                )}
+                {onRemoveFromMyPatients && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="font-mono text-[10px] sm:text-xs h-8 text-destructive hover:text-destructive"
+                    onClick={handleRemoveFromMyPatients}
+                  >
+                    <UserMinus className="size-3" />
+                  </Button>
+                )}
+              </>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
+              onClick={handleViewRecord}
+            >
+              View Record
+            </Button>
+            {onStartRound && isAdmitted && (
+              <Button
+                type="button"
+                size="sm"
+                className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
+                onClick={handleStartRound}
+              >
+                Start Round
+                <ChevronRight className="size-3 ml-1" />
+              </Button>
+            )}
+            {onStartConsultation && !isAdmitted && (
+              <Button
+                type="button"
+                size="sm"
+                className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
+                onClick={handleStartConsultation}
+              >
+                Consult
+                <ChevronRight className="size-3 ml-1" />
+              </Button>
+            )}
+          </div>
+        </footer>
       </div>
-
-      {/* Vital Signs - Wrap on mobile */}
-      {vitals && (
-        <div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-4 p-2 sm:p-3 rounded-lg sm:rounded-xl bg-background/50 mb-3 sm:mb-4">
-          <VitalDisplay
-            label="TEMP"
-            value={vitals.temperature}
-            unit="°"
-            trend={vitals.temperature_trend}
-            status={vitals.temperature_status}
-          />
-          <div className="hidden sm:block w-px h-8 bg-border" />
-          <VitalDisplay
-            label="BP"
-            value={vitals.blood_pressure}
-            trend={vitals.bp_trend}
-            status={vitals.bp_status}
-          />
-          <div className="hidden sm:block w-px h-8 bg-border" />
-          <VitalDisplay
-            label="SpO2"
-            value={vitals.spo2}
-            unit="%"
-            trend={vitals.spo2_trend}
-            status={vitals.spo2_status}
-          />
-          <div className="hidden sm:block w-px h-8 bg-border" />
-          <VitalDisplay
-            label="HR"
-            value={vitals.heart_rate}
-            unit=""
-            trend={vitals.hr_trend}
-            status={vitals.hr_status}
-          />
-        </div>
-      )}
-
-      {/* Action Footer - Always visible on mobile */}
-      <footer className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 sm:pt-4 border-t border-border">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          {/* Pinned indicator for My Patients */}
-          {isPinned && (
-            <span className="flex items-center gap-1 text-primary">
-              <Star className="size-3 fill-current" aria-hidden="true" />
-              <span className="font-mono text-[10px] sm:text-xs">Pinned</span>
-            </span>
-          )}
-          {!isPinned && pendingOrders > 0 && (
-            <>
-              <span className="size-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
-              <span className="font-mono text-[10px] sm:text-xs">{pendingOrders} pending</span>
-            </>
-          )}
-          {!isPinned && pendingOrders === 0 && (
-            <span className="font-mono text-[10px] sm:text-xs flex items-center gap-1">
-              <Clock className="size-3" aria-hidden="true" />
-              No pending items
-            </span>
-          )}
-        </div>
-
-        {/* Always show on mobile, hover on desktop */}
-        <div className="flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-          {/* My Patients actions */}
-          {showMyPatientsActions && !isInMyPatients && onAddToMyPatients && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="font-mono text-[10px] sm:text-xs h-8"
-              onClick={handleAddToMyPatients}
-            >
-              <UserPlus className="size-3 mr-1" />
-              Add to List
-            </Button>
-          )}
-          {showMyPatientsActions && isInMyPatients && (
-            <>
-              {onTogglePin && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "font-mono text-[10px] sm:text-xs h-8",
-                    isPinned && "text-primary"
-                  )}
-                  onClick={handleTogglePin}
-                >
-                  {isPinned ? (
-                    <StarOff className="size-3" />
-                  ) : (
-                    <Star className="size-3" />
-                  )}
-                </Button>
-              )}
-              {onRemoveFromMyPatients && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="font-mono text-[10px] sm:text-xs h-8 text-destructive hover:text-destructive"
-                  onClick={handleRemoveFromMyPatients}
-                >
-                  <UserMinus className="size-3" />
-                </Button>
-              )}
-            </>
-          )}
-          <Button
-            variant="secondary"
-            size="sm"
-            className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
-            onClick={handleViewRecord}
-          >
-            View Record
-          </Button>
-          {onStartRound && isAdmitted && (
-            <Button
-              size="sm"
-              className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
-              onClick={handleStartRound}
-            >
-              Start Round
-              <ChevronRight className="size-3 ml-1" />
-            </Button>
-          )}
-          {onStartConsultation && !isAdmitted && (
-            <Button
-              size="sm"
-              className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"
-              onClick={handleStartConsultation}
-            >
-              Consult
-              <ChevronRight className="size-3 ml-1" />
-            </Button>
-          )}
-        </div>
-      </footer>
     </div>
   );
 };

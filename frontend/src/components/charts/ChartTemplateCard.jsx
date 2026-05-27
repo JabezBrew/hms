@@ -122,29 +122,23 @@ const ChartTemplateCard = ({
     onSelect?.(template);
   };
 
-  const handleSelectKeyDown = (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    handleSelect();
-  };
-
   return (
     <div
       className={cn(
         "group relative bg-card border border-border rounded-xl sm:rounded-2xl overflow-hidden",
         "transition-all duration-300 hover:border-primary/30 hover:shadow-lg",
-        "animate-chronicle-enter cursor-pointer",
+        "animate-chronicle-enter",
         selected && `ring-2 ring-primary ${colors.border}`,
         `stagger-${Math.min(index + 1, 10)}`
       )}
-      onClick={handleSelect}
-      onKeyDown={handleSelectKeyDown}
-      role="button"
-      tabIndex={0}
-      aria-label={`Select chart template ${template.name}`}
     >
+      <button
+        type="button"
+        className="absolute inset-0 z-0 rounded-xl sm:rounded-2xl cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        onClick={handleSelect}
+        aria-label={`Select chart template ${template.name}`}
+      />
+
       {/* Category ribbon */}
       <div className={cn(
         "absolute top-0 left-0 w-1 h-full",
@@ -152,7 +146,7 @@ const ChartTemplateCard = ({
       )} />
 
       {/* Content */}
-      <div className="p-4 sm:p-5">
+      <div className="relative z-10 pointer-events-none p-4 sm:p-5">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -174,9 +168,10 @@ const ChartTemplateCard = ({
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="pointer-events-auto size-8 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <MoreHorizontal className="size-4" />
                 </Button>
