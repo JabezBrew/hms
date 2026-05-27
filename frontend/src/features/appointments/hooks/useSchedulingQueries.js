@@ -6,7 +6,7 @@ import { appointmentKeys } from './useAppointmentQueries';
 const baseKeys = createKeyFactory('scheduling');
 const availabilitySlotsKey = [...appointmentKeys.all, 'availableSlots'];
 
-export const schedulingKeys = {
+const schedulingKeys = {
   ...baseKeys,
   services: (params = {}) => [...baseKeys.all, 'services', params],
   sessions: (params = {}) => [...baseKeys.all, 'sessions', params],
@@ -100,17 +100,6 @@ export function useCreateSchedulingException() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => schedulingApi.createException(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
-      queryClient.invalidateQueries({ queryKey: availabilitySlotsKey });
-    },
-  });
-}
-
-export function useCancelSchedulingSession() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, reason }) => schedulingApi.cancelSession(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
       queryClient.invalidateQueries({ queryKey: availabilitySlotsKey });

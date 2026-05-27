@@ -52,7 +52,7 @@ const HREF_FEATURE_RULES = [
   { test: (path) => path === '/patients', features: DASHBOARD_FEATURES.patientChronicle },
 ]
 
-export function canUseFeatures(enabledFeatures, requiredFeatures) {
+function canUseFeatures(enabledFeatures, requiredFeatures) {
   return areFeaturesEnabled(requiredFeatures, enabledFeatures)
 }
 
@@ -95,7 +95,7 @@ export function getHrefFeatureRequirements(href) {
   return [...required]
 }
 
-export function isDashboardHrefEnabled(href, enabledFeatures) {
+function isDashboardHrefEnabled(href, enabledFeatures) {
   return canUseFeatures(enabledFeatures, getHrefFeatureRequirements(href))
 }
 

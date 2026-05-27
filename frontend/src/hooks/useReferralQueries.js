@@ -24,27 +24,6 @@ export const referralKeys = {
 };
 
 /**
- * Get referrals list with optional filtering
- */
-export function useReferrals(filters = {}) {
-  return useQuery({
-    queryKey: referralKeys.list(filters),
-    queryFn: ({ signal }) => referralsApi.getReferrals(filters, { signal }),
-  });
-}
-
-/**
- * Get a single referral by ID
- */
-export function useReferral(id) {
-  return useQuery({
-    queryKey: referralKeys.detail(id),
-    queryFn: ({ signal }) => referralsApi.getReferral(id, { signal }),
-    enabled: !!id,
-  });
-}
-
-/**
  * Create a new referral
  */
 export function useCreateReferral() {
@@ -55,21 +34,6 @@ export function useCreateReferral() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: referralKeys.lists() });
       queryClient.invalidateQueries({ queryKey: referralKeys.sent() });
-    },
-  });
-}
-
-/**
- * Update an existing referral
- */
-export function useUpdateReferral() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }) => referralsApi.updateReferral(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: referralKeys.detail(variables.id) });
-      queryClient.invalidateQueries({ queryKey: referralKeys.lists() });
     },
   });
 }
@@ -127,24 +91,6 @@ export function useDeclineReferral() {
 }
 
 /**
- * Schedule a referral
- */
-export function useScheduleReferral() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, appointmentId }) => referralsApi.scheduleReferral(id, appointmentId),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: referralKeys.detail(variables.id) });
-      queryClient.invalidateQueries({ queryKey: referralKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: referralKeys.inbox() });
-      queryClient.invalidateQueries({ queryKey: referralKeys.inboxCount() });
-      queryClient.invalidateQueries({ queryKey: referralKeys.pending() });
-    },
-  });
-}
-
-/**
  * Complete a referral
  */
 export function useCompleteReferral() {
@@ -159,40 +105,6 @@ export function useCompleteReferral() {
       queryClient.invalidateQueries({ queryKey: referralKeys.inbox() });
       queryClient.invalidateQueries({ queryKey: referralKeys.inboxCount() });
       queryClient.invalidateQueries({ queryKey: referralKeys.sent() });
-    },
-  });
-}
-
-/**
- * Start consultation from a referral
- */
-export function useStartConsultation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (id) => referralsApi.startConsultation(id),
-    onSuccess: (data, id) => {
-      queryClient.invalidateQueries({ queryKey: referralKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: referralKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: referralKeys.inbox() });
-      queryClient.invalidateQueries({ queryKey: referralKeys.inboxCount() });
-      queryClient.invalidateQueries({ queryKey: referralKeys.pending() });
-    },
-  });
-}
-
-/**
- * Update referral response
- */
-export function useUpdateReferralResponse() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, specialistNotes, recommendations }) =>
-      referralsApi.updateReferralResponse(id, specialistNotes, recommendations),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: referralKeys.detail(variables.id) });
-      queryClient.invalidateQueries({ queryKey: referralKeys.lists() });
     },
   });
 }
@@ -214,16 +126,6 @@ export function useReferralsSent() {
   return useQuery({
     queryKey: referralKeys.sent(),
     queryFn: ({ signal }) => referralsApi.getReferralsSent({ signal }),
-  });
-}
-
-/**
- * Get pending referrals (admin view)
- */
-export function usePendingReferrals() {
-  return useQuery({
-    queryKey: referralKeys.pending(),
-    queryFn: ({ signal }) => referralsApi.getPendingReferrals({ signal }),
   });
 }
 

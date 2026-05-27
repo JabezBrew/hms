@@ -613,7 +613,7 @@ function requestOpsSnapshots(paths, params = {}, options = {}, fallbackMessage) 
   return Promise.all(paths.map((path) => requestOpsSnapshot(path, params, options, fallbackMessage)))
 }
 
-export async function getOpsOverview(params = {}, options = {}) {
+async function getOpsOverview(params = {}, options = {}) {
   const [
     overview,
     payload,
@@ -644,7 +644,7 @@ export async function getOpsOverview(params = {}, options = {}) {
   })
 }
 
-export async function getOpsPerformance(params = {}, options = {}) {
+async function getOpsPerformance(params = {}, options = {}) {
   const [routeLatency, requestContextCache, payload] = await requestOpsSnapshots(
     [
       '/api/v2/ops/route-latency',
@@ -658,7 +658,7 @@ export async function getOpsPerformance(params = {}, options = {}) {
   return normalizePerformance({ route_latency: routeLatency, request_context_cache: requestContextCache, payload })
 }
 
-export async function getOpsDatabase(params = {}, options = {}) {
+async function getOpsDatabase(params = {}, options = {}) {
   const [dbPool, slowQueries] = await requestOpsSnapshots(
     [
       '/api/v2/ops/db-pool',
@@ -671,7 +671,7 @@ export async function getOpsDatabase(params = {}, options = {}) {
   return normalizeDatabase({ db_pool: dbPool, slow_queries: slowQueries })
 }
 
-export async function getOpsFrontend(params = {}, options = {}) {
+async function getOpsFrontend(params = {}, options = {}) {
   const snapshot = await requestOpsSnapshot(
     '/api/v2/ops/rum',
     params,

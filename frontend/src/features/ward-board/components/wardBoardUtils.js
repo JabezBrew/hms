@@ -120,10 +120,6 @@ export function getPatientBed(patient) {
   return patient?.bed_label ?? patient?.bed_name ?? patient?.bed?.label ?? patient?.bed?.name ?? patient?.bed_number ?? patient?.room_bed;
 }
 
-export function getWardLabel(patient) {
-  return patient?.ward_name ?? patient?.ward?.name ?? patient?.ward_label ?? patient?.unit_name ?? patient?.location;
-}
-
 export function getPatientAge(patient) {
   return patient?.age ?? patient?.patient?.age ?? null;
 }
@@ -187,10 +183,6 @@ export function getPatientResults(patient) {
 export function getPatientResultCount(patient) {
   const results = getPatientResults(patient);
   return results.length > 0 ? results.length : asCount(patient?.pending_results_count ?? patient?.open_lab_order_count);
-}
-
-export function getPatientReviewCount(patient) {
-  return asCount(patient?.reviews_due_count ?? patient?.reviews ?? 0);
 }
 
 export function getPatientDischargeItems(patient) {

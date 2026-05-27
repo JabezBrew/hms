@@ -1,1 +1,0 @@
-export { opsRoutes } from './routes'
