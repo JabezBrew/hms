@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 import { wardBoardApi } from '@/features/ward-board/api';
 import { useAuth } from '@/lib/auth';
@@ -76,6 +76,26 @@ const SAFE_QUEUE_FIELDS = new Set([
   'generated_at',
   'queue_status',
 ]);
+
+const initialConnectionState = {
+  isConnected: false,
+  connectionError: null,
+};
+
+function connectionReducer(state, action) {
+  switch (action.type) {
+    case 'opened':
+      return { isConnected: true, connectionError: null };
+    case 'closed':
+      return { ...state, isConnected: false };
+    case 'errored':
+      return { ...state, connectionError: action.error };
+    case 'failed':
+      return { ...state, connectionError: new Error('WebSocket reconnection attempts exhausted') };
+    default:
+      return state;
+  }
+}
 
 function normalizeId(value) {
   return value == null ? null : String(value);
@@ -386,33 +406,29 @@ export function useWardBoardLiveUpdates(options = {}) {
   const { isAuthenticated, user, facilityCode, getAccessToken, refreshAccessToken } = useAuth();
 
   const wsRef = useRef(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionError, setConnectionError] = useState(null);
   const [wsToken, setWsToken] = useState(null);
+  const [connectionState, dispatchConnectionState] = useReducer(
+    connectionReducer,
+    initialConnectionState,
+  );
 
   const normalizedWardScope = normalizeWardScope(wardScope);
   const userRole = String(user?.role || user?.user_type || '').toLowerCase();
-  const shouldConnect = (
+  const shouldAttemptConnect = (
     enabled
     && !isRustV2ApiMode()
     && isAuthenticated
     && WARD_BOARD_ROLES.has(userRole)
     && Boolean(facilityCode)
   );
+  const currentAccessToken = shouldAttemptConnect ? getAccessToken?.() : null;
+  const activeToken = currentAccessToken || (shouldAttemptConnect ? wsToken : null);
+  const shouldConnect = Boolean(shouldAttemptConnect && activeToken);
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!shouldConnect) {
-      setWsToken(null);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    const existingToken = getAccessToken?.();
-    if (existingToken) {
-      setWsToken(existingToken);
+    if (!shouldAttemptConnect || currentAccessToken) {
       return () => {
         isMounted = false;
       };
@@ -434,24 +450,23 @@ export function useWardBoardLiveUpdates(options = {}) {
     return () => {
       isMounted = false;
     };
-  }, [shouldConnect, getAccessToken, refreshAccessToken]);
+  }, [shouldAttemptConnect, currentAccessToken, refreshAccessToken]);
 
   useEffect(() => {
-    if (!shouldConnect || !wsToken) {
+    if (!shouldConnect || !activeToken) {
       return undefined;
     }
 
     let isActive = true;
-    const ws = new WardBoardWebSocket(wsToken, { wardScope: normalizedWardScope });
+    const ws = new WardBoardWebSocket(activeToken, { wardScope: normalizedWardScope });
     wsRef.current = ws;
 
     const unsubscribeConnectionOpen = ws.on('connection.open', () => {
-      setIsConnected(true);
-      setConnectionError(null);
+      dispatchConnectionState({ type: 'opened' });
     });
 
     const unsubscribeConnectionClose = ws.on('connection.close', ({ code }) => {
-      setIsConnected(false);
+      dispatchConnectionState({ type: 'closed' });
       if ((code === 4001 || code === 4003) && refreshAccessToken) {
         refreshAccessToken()
           .then((freshToken) => {
@@ -464,11 +479,14 @@ export function useWardBoardLiveUpdates(options = {}) {
     });
 
     const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
-      setConnectionError(error || new Error('WebSocket connection failed'));
+      dispatchConnectionState({
+        type: 'errored',
+        error: error || new Error('WebSocket connection failed'),
+      });
     });
 
     const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
-      setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
+      dispatchConnectionState({ type: 'failed' });
     });
 
     const handleWardBoardEvent = (event = {}) => {
@@ -515,11 +533,10 @@ export function useWardBoardLiveUpdates(options = {}) {
       unsubscribeProjectionFreshness();
       ws.disconnect();
       wsRef.current = null;
-      setIsConnected(false);
     };
   }, [
     shouldConnect,
-    wsToken,
+    activeToken,
     facilityCode,
     normalizedWardScope,
     queryClient,
@@ -527,7 +544,7 @@ export function useWardBoardLiveUpdates(options = {}) {
   ]);
 
   return {
-    isConnected,
-    connectionError,
+    isConnected: shouldConnect && connectionState.isConnected,
+    connectionError: connectionState.connectionError,
   };
 }
