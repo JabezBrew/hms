@@ -426,12 +426,7 @@ export function OmniSearchDialog() {
   }, [open])
 
   React.useEffect(() => {
-    if (!open) {
-      setServerQuery('')
-      return
-    }
-
-    if (effectiveQuery.length === 0) {
+    if (!open || effectiveQuery.length === 0) {
       setServerQuery('')
       return
     }
