@@ -1,9 +1,51 @@
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import React from 'react';
+import { useSyncExternalStore } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 import format from 'date-fns/format';
+
+const isSameLocalDay = (left, right) => (
+  left.getFullYear() === right.getFullYear() &&
+  left.getMonth() === right.getMonth() &&
+  left.getDate() === right.getDate()
+);
+
+let currentDateSnapshot = new Date();
+
+const getCurrentDateSnapshot = () => {
+  const now = new Date();
+  if (!isSameLocalDay(now, currentDateSnapshot)) {
+    currentDateSnapshot = now;
+  }
+  return currentDateSnapshot;
+};
+
+const subscribeToCurrentDate = (notify) => {
+  let timeoutId;
+
+  const scheduleNextMidnight = () => {
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    timeoutId = window.setTimeout(() => {
+      currentDateSnapshot = new Date();
+      notify();
+      scheduleNextMidnight();
+    }, Math.max(1000, nextMidnight.getTime() - now.getTime()));
+  };
+
+  scheduleNextMidnight();
+  return () => window.clearTimeout(timeoutId);
+};
+
+const useCurrentDate = () => {
+  return useSyncExternalStore(
+    subscribeToCurrentDate,
+    getCurrentDateSnapshot,
+    getCurrentDateSnapshot
+  );
+};
 
 /**
  * ChroniclePageHeader - Dashboard page header with Chronicle styling
@@ -33,6 +75,7 @@ export default function ChroniclePageHeader({
   };
 
   const roleColor = roleColors[role] || 'amber';
+  const currentDate = useCurrentDate();
 
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
@@ -63,7 +106,7 @@ export default function ChroniclePageHeader({
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Calendar className="size-4" />
                 <span className="font-mono text-xs sm:text-sm">
-                  {format(new Date(), 'EEE, MMM d, yyyy')}
+                  {format(currentDate, 'EEE, MMM d, yyyy')}
                 </span>
               </div>
             )}

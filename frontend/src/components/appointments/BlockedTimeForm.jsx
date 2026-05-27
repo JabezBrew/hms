@@ -1,6 +1,6 @@
 import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
-import { useState, useEffect } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -36,6 +36,49 @@ import { cn } from '@/lib/utils';
 import { usePractitioners } from '@/features/staff/hooks';
 import { useCreateBlockedTime, useBulkCreateBlockedTime, useUpdateBlockedTime } from '@/features/appointments/hooks/useAppointmentQueries';
 
+const startOfLocalDay = (date = new Date()) => {
+    const nextDate = new Date(date);
+    nextDate.setHours(0, 0, 0, 0);
+    return nextDate;
+};
+
+const copyDate = (date) => new Date(date.getTime());
+let currentDayStartSnapshot = startOfLocalDay();
+
+const getCurrentDayStartSnapshot = () => {
+    const nextDayStart = startOfLocalDay();
+    if (nextDayStart.getTime() !== currentDayStartSnapshot.getTime()) {
+        currentDayStartSnapshot = nextDayStart;
+    }
+    return currentDayStartSnapshot;
+};
+
+const subscribeToCurrentDayStart = (notify) => {
+    let timeoutId;
+
+    const scheduleNextMidnight = () => {
+        const now = new Date();
+        const tomorrow = startOfLocalDay(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        timeoutId = window.setTimeout(() => {
+            currentDayStartSnapshot = startOfLocalDay();
+            notify();
+            scheduleNextMidnight();
+        }, Math.max(1000, tomorrow.getTime() - now.getTime()));
+    };
+
+    scheduleNextMidnight();
+    return () => window.clearTimeout(timeoutId);
+};
+
+const useCurrentLocalDayStart = () => {
+    return useSyncExternalStore(
+        subscribeToCurrentDayStart,
+        getCurrentDayStartSnapshot,
+        getCurrentDayStartSnapshot
+    );
+};
+
 const formSchema = z.object({
     practitioner_id: z.string().min(1, 'Practitioner is required'),
     reason: z.string().min(1, 'Reason is required'),
@@ -67,6 +110,7 @@ const formSchema = z.object({
 
 const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const todayStart = useCurrentLocalDayStart();
 
     const { data: practitioners = [] } = usePractitioners();
     const createBlockedTime = useCreateBlockedTime();
@@ -80,9 +124,9 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
             reason: initialData?.reason || '',
             is_all_day: initialData?.is_all_day || false,
             mode: initialData?.end_date && initialData.start_date !== initialData.end_date ? 'range' : 'single',
-            date: initialData?.date ? new Date(initialData.date) : new Date(),
-            start_date: initialData?.start_date ? new Date(initialData.start_date) : new Date(),
-            end_date: initialData?.end_date ? new Date(initialData.end_date) : new Date(),
+            date: initialData?.date ? new Date(initialData.date) : copyDate(todayStart),
+            start_date: initialData?.start_date ? new Date(initialData.start_date) : copyDate(todayStart),
+            end_date: initialData?.end_date ? new Date(initialData.end_date) : copyDate(todayStart),
             start_time: initialData?.start_time || '09:00',
             end_time: initialData?.end_time || '17:00',
         },
@@ -219,9 +263,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                                             mode="single"
                                             selected={field.value}
                                             onSelect={field.onChange}
-                                            disabled={(date) =>
-                                                date < new Date(new Date().setHours(0, 0, 0, 0))
-                                            }
+                                            disabled={(date) => date < todayStart}
                                             initialFocus
                                         />
                                     </PopoverContent>
@@ -262,9 +304,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                                                 mode="single"
                                                 selected={field.value}
                                                 onSelect={field.onChange}
-                                                disabled={(date) =>
-                                                    date < new Date(new Date().setHours(0, 0, 0, 0))
-                                                }
+                                                disabled={(date) => date < todayStart}
                                                 initialFocus
                                             />
                                         </PopoverContent>
@@ -303,9 +343,7 @@ const BlockedTimeForm = ({ initialData, onSuccess, onCancel }) => {
                                                 mode="single"
                                                 selected={field.value}
                                                 onSelect={field.onChange}
-                                                disabled={(date) =>
-                                                    date < new Date(new Date().setHours(0, 0, 0, 0))
-                                                }
+                                                disabled={(date) => date < todayStart}
                                                 initialFocus
                                             />
                                         </PopoverContent>

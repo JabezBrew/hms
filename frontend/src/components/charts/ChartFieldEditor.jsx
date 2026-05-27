@@ -20,7 +20,7 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const DEFAULT_EMPTY_ARRAY = [];
+let nextChartEditorRowKey = 0;
+
+const createChartEditorRowKey = (prefix) => {
+  nextChartEditorRowKey += 1;
+  return `${prefix}-${nextChartEditorRowKey}`;
+};
 
 // Field type options with icons
 const FIELD_TYPES = [
@@ -436,10 +442,25 @@ const NumericConfig = ({ config, updateConfig }) => (
   </div>
 );
 
-const SelectConfig = ({ config, updateConfig, multiple = false }) => {
-  const options = config.options || [];
+const SelectConfig = ({ config, updateConfig }) => {
+  const options = config.options ?? DEFAULT_EMPTY_ARRAY;
+  const optionKeysRef = useRef([]);
+
+  if (optionKeysRef.current.length > options.length) {
+    optionKeysRef.current.length = options.length;
+  }
+  while (optionKeysRef.current.length < options.length) {
+    optionKeysRef.current.push(createChartEditorRowKey('option'));
+  }
+
+  const optionRows = options.map((option, position) => ({
+    option,
+    position,
+    rowKey: optionKeysRef.current[position] || option.value || option.label || `option-fallback-${position}`,
+  }));
 
   const addOption = () => {
+    optionKeysRef.current.push(createChartEditorRowKey('option'));
     updateConfig('options', [...options, { value: '', label: '' }]);
   };
 
@@ -456,6 +477,7 @@ const SelectConfig = ({ config, updateConfig, multiple = false }) => {
   };
 
   const removeOption = (index) => {
+    optionKeysRef.current.splice(index, 1);
     updateConfig('options', options.filter((_, i) => i !== index));
   };
 
@@ -471,24 +493,24 @@ const SelectConfig = ({ config, updateConfig, multiple = false }) => {
         </Button>
       </div>
       <div className="space-y-2">
-        {options.map((opt, index) => (
-          <div key={index} className="flex items-center gap-2">
+        {optionRows.map(({ option: opt, position, rowKey }) => (
+          <div key={rowKey} className="flex items-center gap-2">
             <Input
               value={opt.label}
-              onChange={(e) => updateOption(index, 'label', e.target.value)}
+              onChange={(e) => updateOption(position, 'label', e.target.value)}
               placeholder="Label"
               className="font-mono flex-1"
             />
             <Input
               value={opt.value}
-              onChange={(e) => updateOption(index, 'value', e.target.value)}
+              onChange={(e) => updateOption(position, 'value', e.target.value)}
               placeholder="value"
               className="font-mono w-32"
             />
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => removeOption(index)}
+              onClick={() => removeOption(position)}
               className="size-9 text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="size-4" />

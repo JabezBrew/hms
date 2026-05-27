@@ -1,7 +1,7 @@
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -49,10 +49,55 @@ import {
   stepFieldsByKey,
 } from './staffForm.utils';
 
+const MIN_STAFF_DATE = new Date("1900-01-01");
+
+const isSameLocalDay = (left, right) => (
+  left.getFullYear() === right.getFullYear() &&
+  left.getMonth() === right.getMonth() &&
+  left.getDate() === right.getDate()
+);
+
+let currentDateSnapshot = new Date();
+
+const getCurrentDateSnapshot = () => {
+  const now = new Date();
+  if (!isSameLocalDay(now, currentDateSnapshot)) {
+    currentDateSnapshot = now;
+  }
+  return currentDateSnapshot;
+};
+
+const subscribeToCurrentDate = (notify) => {
+  let timeoutId;
+
+  const scheduleNextMidnight = () => {
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    timeoutId = window.setTimeout(() => {
+      currentDateSnapshot = new Date();
+      notify();
+      scheduleNextMidnight();
+    }, Math.max(1000, nextMidnight.getTime() - now.getTime()));
+  };
+
+  scheduleNextMidnight();
+  return () => window.clearTimeout(timeoutId);
+};
+
+const useCurrentDate = () => {
+  return useSyncExternalStore(
+    subscribeToCurrentDate,
+    getCurrentDateSnapshot,
+    getCurrentDateSnapshot
+  );
+};
+
 const StaffForm = ({ onSuccess }) => {
   const registerStaffMutation = useRegisterStaff();
   const [isLoading, setIsLoading] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
+  const currentDate = useCurrentDate();
 
   const stepKeys = useMemo(() => staffStepDefs.map((step) => step.key), []);
   const [activeStep, setActiveStep] = useState(stepKeys[0]);
@@ -400,7 +445,7 @@ const StaffForm = ({ onSuccess }) => {
                               mode="single"
                               selected={field.value}
                               onSelect={field.onChange}
-                              disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                              disabled={(date) => date > currentDate || date < MIN_STAFF_DATE}
                               initialFocus
                             />
                           </PopoverContent>
@@ -559,8 +604,8 @@ const StaffForm = ({ onSuccess }) => {
                               selected={field.value}
                               onSelect={field.onChange}
                               disabled={(date) => (
-                                date > new Date() ||
-                                date < new Date("1900-01-01") ||
+                                date > currentDate ||
+                                date < MIN_STAFF_DATE ||
                                 (dateOfBirth ? date < dateOfBirth : false)
                               )}
                               initialFocus

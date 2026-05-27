@@ -1,6 +1,7 @@
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import { useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -10,6 +11,13 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_EMPTY_OBJECT = {};
+const DEFAULT_EMPTY_ARRAY = [];
+let nextPrescriptionRowKey = 0;
+
+const createPrescriptionRowKey = () => {
+  nextPrescriptionRowKey += 1;
+  return `discharge-rx-${nextPrescriptionRowKey}`;
+};
 
 function createPrescription() {
   return {
@@ -21,7 +29,21 @@ function createPrescription() {
 }
 
 const DischargeMedicationsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, validationErrors = DEFAULT_EMPTY_OBJECT }) => {
-  const prescriptions = formData.discharge_prescriptions || [];
+  const prescriptions = formData.discharge_prescriptions ?? DEFAULT_EMPTY_ARRAY;
+  const prescriptionKeysRef = useRef([]);
+
+  if (prescriptionKeysRef.current.length > prescriptions.length) {
+    prescriptionKeysRef.current.length = prescriptions.length;
+  }
+  while (prescriptionKeysRef.current.length < prescriptions.length) {
+    prescriptionKeysRef.current.push(createPrescriptionRowKey());
+  }
+
+  const prescriptionRows = prescriptions.map((prescription, position) => ({
+    prescription,
+    position,
+    rowKey: prescriptionKeysRef.current[position] || `discharge-rx-fallback-${position}`,
+  }));
 
   const setField = (field, value) => {
     onChange({
@@ -40,10 +62,12 @@ const DischargeMedicationsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, v
   };
 
   const addPrescription = () => {
+    prescriptionKeysRef.current.push(createPrescriptionRowKey());
     setField('discharge_prescriptions', [...prescriptions, createPrescription()]);
   };
 
   const removePrescription = (index) => {
+    prescriptionKeysRef.current.splice(index, 1);
     const next = prescriptions.filter((_, currentIndex) => currentIndex !== index);
     setField('discharge_prescriptions', next);
   };
@@ -89,43 +113,43 @@ const DischargeMedicationsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, v
             <p className="text-sm text-muted-foreground">No discharge prescriptions added yet.</p>
           )}
 
-          {prescriptions.map((prescription, index) => (
-            <div key={`rx-${index}`} className="rounded-lg border p-3 space-y-2">
+          {prescriptionRows.map(({ prescription, position, rowKey }) => (
+            <div key={rowKey} className="rounded-lg border p-3 space-y-2">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 	                <div className="space-y-1">
-	                  <Label htmlFor={`discharge-rx-${index}-medication`} className="text-xs">Medication</Label>
+	                  <Label htmlFor={`discharge-rx-${rowKey}-medication`} className="text-xs">Medication</Label>
 	                  <Input
-	                    id={`discharge-rx-${index}-medication`}
+	                    id={`discharge-rx-${rowKey}-medication`}
 	                    value={prescription.medication_name || ''}
-                    onChange={(event) => updatePrescription(index, 'medication_name', event.target.value)}
+                    onChange={(event) => updatePrescription(position, 'medication_name', event.target.value)}
                     placeholder="Medication name"
                   />
                 </div>
 	                <div className="space-y-1">
-	                  <Label htmlFor={`discharge-rx-${index}-dosage`} className="text-xs">Dosage</Label>
+	                  <Label htmlFor={`discharge-rx-${rowKey}-dosage`} className="text-xs">Dosage</Label>
 	                  <Input
-	                    id={`discharge-rx-${index}-dosage`}
+	                    id={`discharge-rx-${rowKey}-dosage`}
 	                    value={prescription.dosage || ''}
-                    onChange={(event) => updatePrescription(index, 'dosage', event.target.value)}
+                    onChange={(event) => updatePrescription(position, 'dosage', event.target.value)}
                     placeholder="e.g. 500 mg"
                   />
                 </div>
 	                <div className="space-y-1">
-	                  <Label htmlFor={`discharge-rx-${index}-frequency`} className="text-xs">Frequency</Label>
+	                  <Label htmlFor={`discharge-rx-${rowKey}-frequency`} className="text-xs">Frequency</Label>
 	                  <Input
-	                    id={`discharge-rx-${index}-frequency`}
+	                    id={`discharge-rx-${rowKey}-frequency`}
 	                    value={prescription.frequency || ''}
-                    onChange={(event) => updatePrescription(index, 'frequency', event.target.value)}
+                    onChange={(event) => updatePrescription(position, 'frequency', event.target.value)}
                     placeholder="e.g. BID"
                   />
                 </div>
               </div>
               <div className="space-y-1">
-	                <Label htmlFor={`discharge-rx-${index}-instructions`} className="text-xs">Instructions</Label>
+	                <Label htmlFor={`discharge-rx-${rowKey}-instructions`} className="text-xs">Instructions</Label>
 	                <Input
-	                  id={`discharge-rx-${index}-instructions`}
+	                  id={`discharge-rx-${rowKey}-instructions`}
 	                  value={prescription.instructions || ''}
-                  onChange={(event) => updatePrescription(index, 'instructions', event.target.value)}
+                  onChange={(event) => updatePrescription(position, 'instructions', event.target.value)}
                   placeholder="e.g. Take with meals"
                 />
               </div>
@@ -134,7 +158,7 @@ const DischargeMedicationsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, v
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => removePrescription(index)}
+                  onClick={() => removePrescription(position)}
                   className="text-muted-foreground"
                 >
                   <Trash2 className="size-4 mr-1.5" />
