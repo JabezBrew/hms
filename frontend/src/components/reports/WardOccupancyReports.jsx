@@ -1,11 +1,11 @@
-/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
+/* oxlint-disable react-doctor/prefer-useReducer -- Report loading uses a reducer below because ward and analytics state transition together. */
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Bed from 'lucide-react/dist/esm/icons/bed.js';
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { lazy, Suspense, useEffect, useReducer, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,308 +30,405 @@ const AdmissionsPanel = lazy(() =>
   import('./WardOccupancyCharts').then((module) => ({ default: module.AdmissionsPanel }))
 );
 
+const EMPTY_ANALYTICS = {
+  occupancyData: [],
+  lengthOfStayData: [],
+  utilizationData: [],
+  admissionsByWard: [],
+};
+
+const initialReportState = {
+  wardsLoading: true,
+  analyticsLoading: false,
+  error: null,
+  wards: [],
+  ...EMPTY_ANALYTICS,
+};
+
+function reportReducer(state, action) {
+  switch (action.type) {
+    case 'wards-loading':
+      return { ...state, wardsLoading: true, error: null };
+    case 'wards-loaded':
+      return { ...state, wardsLoading: false, wards: action.wards };
+    case 'analytics-loading':
+      return { ...state, analyticsLoading: true, error: null };
+    case 'analytics-loaded':
+      return { ...state, analyticsLoading: false, ...action.analytics };
+    case 'failed':
+      return { ...state, wardsLoading: false, analyticsLoading: false, error: action.message };
+    default:
+      return state;
+  }
+}
+
+function normalizeAnalytics(analyticsData = {}) {
+  return {
+    occupancyData: analyticsData.occupancy_trends || [],
+    lengthOfStayData: analyticsData.length_of_stay || [],
+    utilizationData: analyticsData.ward_utilization || [],
+    admissionsByWard: analyticsData.admissions_by_ward || [],
+  };
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
+}
+
+function buildWardOccupancyCsv({
+  admissionsByWard,
+  dateRange,
+  occupancyData,
+  selectedWard,
+  utilizationData,
+  wards,
+}) {
+  const lines = [
+    'Ward Occupancy Report',
+    `Date Range: ${format(dateRange.start, 'MMM dd, yyyy')} - ${format(dateRange.end, 'MMM dd, yyyy')}`,
+    '',
+    'Occupancy Trends',
+  ];
+
+  if (selectedWard === 'all') {
+    lines.push(['Date', ...wards.map((ward) => ward.name), 'Overall'].map(csvCell).join(','));
+  } else {
+    const ward = wards.find((item) => item.id === selectedWard);
+    lines.push(['Date', ward?.name || 'Ward'].map(csvCell).join(','));
+  }
+
+  occupancyData.forEach((day) => {
+    if (selectedWard === 'all') {
+      lines.push([day.date, ...wards.map((ward) => day[ward.name] || 0), day.Overall || 0].map(csvCell).join(','));
+      return;
+    }
+
+    const ward = wards.find((item) => item.id === selectedWard);
+    lines.push([day.date, day[ward?.name] || 0].map(csvCell).join(','));
+  });
+
+  lines.push(
+    '',
+    'Ward Utilization',
+    ['Ward', 'Occupancy Rate (%)', 'Turnover Rate', 'Avg LOS (days)', 'Bed Days', 'Revenue'].map(csvCell).join(',')
+  );
+  utilizationData.forEach((ward) => {
+    lines.push([
+      ward.ward,
+      ward.occupancy_rate || 0,
+      ward.turnover_rate || 0,
+      ward.avg_los || 0,
+      ward.bed_days || 0,
+      ward.revenue || 0,
+    ].map(csvCell).join(','));
+  });
+
+  lines.push(
+    '',
+    'Admissions, Discharges, and Transfers',
+    ['Ward', 'Admissions', 'Discharges', 'Transfers'].map(csvCell).join(',')
+  );
+  admissionsByWard.forEach((ward) => {
+    lines.push([ward.ward, ward.admissions, ward.discharges, ward.transfers].map(csvCell).join(','));
+  });
+
+  return lines.join('\n');
+}
+
+function useWardOccupancyReport(selectedWard, dateRange) {
+  const [state, dispatch] = useReducer(reportReducer, initialReportState);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchWards() {
+      dispatch({ type: 'wards-loading' });
+      try {
+        const wardsResponse = await wardsApi.getWards();
+        if (cancelled) return;
+
+        const wards = Array.isArray(wardsResponse) ? wardsResponse : wardsResponse.results || [];
+        dispatch({ type: 'wards-loaded', wards });
+      } catch (err) {
+        console.error('Error fetching wards:', err);
+        if (!cancelled) {
+          dispatch({ type: 'failed', message: 'Failed to load wards data. Please try again.' });
+        }
+      }
+    }
+
+    fetchWards();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (state.wards.length === 0) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function fetchAnalytics() {
+      dispatch({ type: 'analytics-loading' });
+      try {
+        const analyticsData = await wardsApi.getAnalytics({
+          ward_id: selectedWard,
+          start_date: dateRange.start.toISOString(),
+          end_date: dateRange.end.toISOString(),
+        });
+        if (!cancelled) {
+          dispatch({ type: 'analytics-loaded', analytics: normalizeAnalytics(analyticsData) });
+        }
+      } catch (err) {
+        console.error('Error fetching analytics:', err);
+        if (!cancelled) {
+          dispatch({ type: 'failed', message: 'Failed to load analytics data. Please try again.' });
+        }
+      }
+    }
+
+    fetchAnalytics();
+    return () => {
+      cancelled = true;
+    };
+  }, [dateRange, selectedWard, state.wards]);
+
+  return state;
+}
+
+function ReportError({ message }) {
+  return (
+    <Card className="m-4">
+      <CardHeader>
+        <CardTitle className="text-red-500">Error</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p>{message}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => window.location.reload()}
+        >
+          Try Again
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportLoading() {
+  return (
+    <div className="space-y-4 p-4">
+      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-64 w-full" />
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
+
+function ReportFilters({ dateRange, onDateChange, onWardChange, selectedWard, wards }) {
+  return (
+    <Card className="border-border">
+      <CardHeader className="pb-4">
+        <CardTitle className="font-display text-lg">Report Filters</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="ward" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</Label>
+            <Select value={selectedWard} onValueChange={onWardChange}>
+              <SelectTrigger id="ward">
+                <SelectValue placeholder="Select ward" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Wards</SelectItem>
+                {wards.map((ward) => (
+                  <SelectItem key={ward.id} value={ward.id}>
+                    {ward.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Start Date</Label>
+            <DatePicker
+              date={dateRange.start}
+              setDate={(date) => onDateChange('start', date)}
+              placeholder="Start date"
+              className="font-mono text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">End Date</Label>
+            <DatePicker
+              date={dateRange.end}
+              setDate={(date) => onDateChange('end', date)}
+              placeholder="End date"
+              className="font-mono text-sm"
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChartTab({ children, value }) {
+  return (
+    <TabsContent value={value} className="mt-4 data-[state=active]:mt-6">
+      <DeferredMount placeholder={<Skeleton className="h-[300px] w-full" />}>
+        <Suspense fallback={<Skeleton className="h-[300px] w-full" />}>
+          {children}
+        </Suspense>
+      </DeferredMount>
+    </TabsContent>
+  );
+}
+
+function ReportTabs({
+  admissionsByWard,
+  lengthOfStayData,
+  occupancyData,
+  selectedWard,
+  utilizationData,
+  wards,
+}) {
+  return (
+    <Tabs defaultValue="occupancy">
+      <TabsList className="bg-muted/50">
+        <TabsTrigger value="occupancy" className="font-mono text-xs">
+          <TrendingUp className="mr-2 size-4" />
+          Occupancy Trends
+        </TabsTrigger>
+        <TabsTrigger value="los" className="font-mono text-xs">
+          <Clock className="mr-2 size-4" />
+          Length of Stay
+        </TabsTrigger>
+        <TabsTrigger value="utilization" className="font-mono text-xs">
+          <Bed className="mr-2 size-4" />
+          Ward Utilization
+        </TabsTrigger>
+        <TabsTrigger value="admissions" className="font-mono text-xs">
+          <Users className="mr-2 size-4" />
+          Admissions
+        </TabsTrigger>
+      </TabsList>
+
+      <ChartTab value="occupancy">
+        <OccupancyTrendsPanel
+          occupancyData={occupancyData}
+          utilizationData={utilizationData}
+          wards={wards}
+          selectedWard={selectedWard}
+        />
+      </ChartTab>
+      <ChartTab value="los">
+        <LengthOfStayPanel
+          lengthOfStayData={lengthOfStayData}
+          utilizationData={utilizationData}
+        />
+      </ChartTab>
+      <ChartTab value="utilization">
+        <UtilizationPanel utilizationData={utilizationData} />
+      </ChartTab>
+      <ChartTab value="admissions">
+        <AdmissionsPanel admissionsByWard={admissionsByWard} wards={wards} />
+      </ChartTab>
+    </Tabs>
+  );
+}
+
 export function WardOccupancyReports() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [wards, setWards] = useState([]);
   const [selectedWard, setSelectedWard] = useState('all');
   const [dateRange, setDateRange] = useState({
     start: subDays(new Date(), 30),
-    end: new Date()
+    end: new Date(),
   });
-  const [occupancyData, setOccupancyData] = useState([]);
-  const [lengthOfStayData, setLengthOfStayData] = useState([]);
-  const [utilizationData, setUtilizationData] = useState([]);
-  const [admissionsByWard, setAdmissionsByWard] = useState([]);
+  const {
+    admissionsByWard,
+    analyticsLoading,
+    error,
+    lengthOfStayData,
+    occupancyData,
+    utilizationData,
+    wards,
+    wardsLoading,
+  } = useWardOccupancyReport(selectedWard, dateRange);
 
-  // Fetch wards and report data
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-
-        // Fetch wards
-        const wardsResponse = await wardsApi.getWards();
-        const wardsData = Array.isArray(wardsResponse) ? wardsResponse : wardsResponse.results || [];
-        setWards(wardsData);
-
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching wards:', err);
-        setError('Failed to load wards data. Please try again.');
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  // Fetch analytics data whenever filters change
-  useEffect(() => {
-    const fetchAnalytics = async () => {
-      if (wards.length === 0) return;
-
-      try {
-        setLoading(true);
-
-        // Build query parameters
-        const params = {
-          ward_id: selectedWard,
-          start_date: dateRange.start.toISOString(),
-          end_date: dateRange.end.toISOString()
-        };
-
-        // Fetch analytics data from API
-        const analyticsData = await wardsApi.getAnalytics(params);
-
-        // Update state with real data
-        setOccupancyData(analyticsData.occupancy_trends || []);
-        setLengthOfStayData(analyticsData.length_of_stay || []);
-        setUtilizationData(analyticsData.ward_utilization || []);
-        setAdmissionsByWard(analyticsData.admissions_by_ward || []);
-
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching analytics:', err);
-        setError('Failed to load analytics data. Please try again.');
-        setLoading(false);
-      }
-    };
-
-    fetchAnalytics();
-  }, [wards, selectedWard, dateRange]);
-
-  // Handle ward selection change
-  const handleWardChange = (value) => {
-    setSelectedWard(value);
-  };
-
-  // Handle date range change
   const handleDateChange = (field, date) => {
-    setDateRange(prev => ({ ...prev, [field]: date }));
+    setDateRange((prev) => ({ ...prev, [field]: date }));
   };
 
-  // Export report as CSV
   const exportReport = () => {
     try {
-      // Prepare CSV content
-      let csvContent = 'Ward Occupancy Report\n';
-      csvContent += `Date Range: ${format(dateRange.start, 'MMM dd, yyyy')} - ${format(dateRange.end, 'MMM dd, yyyy')}\n\n`;
-
-      // Add occupancy trends section
-      csvContent += 'Occupancy Trends\n';
-      csvContent += 'Date,';
-      if (selectedWard === 'all') {
-        wards.forEach(ward => {
-          csvContent += `${ward.name},`;
-        });
-        csvContent += 'Overall\n';
-      } else {
-        const ward = wards.find(w => w.id === selectedWard);
-        csvContent += `${ward?.name || 'Ward'}\n`;
-      }
-
-      occupancyData.forEach(day => {
-        csvContent += `${day.date},`;
-        if (selectedWard === 'all') {
-          wards.forEach(ward => {
-            csvContent += `${day[ward.name] || 0},`;
-          });
-          csvContent += `${day.Overall || 0}\n`;
-        } else {
-          const ward = wards.find(w => w.id === selectedWard);
-          csvContent += `${day[ward?.name] || 0}\n`;
-        }
+      const csvContent = buildWardOccupancyCsv({
+        admissionsByWard,
+        dateRange,
+        occupancyData,
+        selectedWard,
+        utilizationData,
+        wards,
       });
-
-      csvContent += '\n';
-
-      // Add utilization metrics section
-      csvContent += 'Ward Utilization\n';
-      csvContent += 'Ward,Occupancy Rate (%),Turnover Rate,Avg LOS (days),Bed Days,Revenue\n';
-      utilizationData.forEach(ward => {
-        csvContent += `${ward.ward},${ward.occupancy_rate || 0},${ward.turnover_rate || 0},${ward.avg_los || 0},${ward.bed_days || 0},${ward.revenue || 0}\n`;
-      });
-
-      csvContent += '\n';
-
-      // Add admissions section
-      csvContent += 'Admissions, Discharges, and Transfers\n';
-      csvContent += 'Ward,Admissions,Discharges,Transfers\n';
-      admissionsByWard.forEach(ward => {
-        csvContent += `${ward.ward},${ward.admissions},${ward.discharges},${ward.transfers}\n`;
-      });
-
-      // Create blob and download
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
       link.setAttribute('href', url);
       link.setAttribute('download', `ward_occupancy_report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Error exporting report:', err);
       alert('Failed to export report. Please try again.');
     }
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-4 p-4">
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-64 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
+  if (wardsLoading) {
+    return <ReportLoading />;
   }
 
   if (error) {
-    return (
-      <Card className="m-4">
-        <CardHeader>
-          <CardTitle className="text-red-500">Error</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>{error}</p>
-          <Button 
-            variant="outline" 
-            className="mt-4"
-            onClick={() => window.location.reload()}
-          >
-            Try Again
-          </Button>
-        </CardContent>
-      </Card>
-    );
+    return <ReportError message={error} />;
   }
 
   return (
     <div className="space-y-6">
-      {/* Export Button */}
       <div className="flex justify-end">
         <Button onClick={exportReport} variant="outline" className="font-mono text-xs">
-          <Download className="size-4 mr-2" />
+          <Download className="mr-2 size-4" />
           Export Report
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card className="border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="font-display text-lg">Report Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="ward" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</Label>
-              <Select
-                value={selectedWard}
-                onValueChange={handleWardChange}
-              >
-                <SelectTrigger id="ward">
-                  <SelectValue placeholder="Select ward" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Wards</SelectItem>
-                  {wards.map(ward => (
-                    <SelectItem key={ward.id} value={ward.id}>
-                      {ward.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Start Date</Label>
-              <DatePicker
-                date={dateRange.start}
-                setDate={(date) => handleDateChange('start', date)}
-                placeholder="Start date"
-                className="font-mono text-sm"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">End Date</Label>
-              <DatePicker
-                date={dateRange.end}
-                setDate={(date) => handleDateChange('end', date)}
-                placeholder="End date"
-                className="font-mono text-sm"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      
-      <Tabs defaultValue="occupancy">
-        <TabsList className="bg-muted/50">
-          <TabsTrigger value="occupancy" className="font-mono text-xs">
-            <TrendingUp className="size-4 mr-2" />
-            Occupancy Trends
-          </TabsTrigger>
-          <TabsTrigger value="los" className="font-mono text-xs">
-            <Clock className="size-4 mr-2" />
-            Length of Stay
-          </TabsTrigger>
-          <TabsTrigger value="utilization" className="font-mono text-xs">
-            <Bed className="size-4 mr-2" />
-            Ward Utilization
-          </TabsTrigger>
-          <TabsTrigger value="admissions" className="font-mono text-xs">
-            <Users className="size-4 mr-2" />
-            Admissions
-          </TabsTrigger>
-        </TabsList>
-        
-        {/* Occupancy Trends Tab */}
-        <TabsContent value="occupancy" className="mt-6">
-          <DeferredMount placeholder={<Skeleton className="h-[300px] w-full" />}>
-            <Suspense fallback={<Skeleton className="h-[300px] w-full" />}>
-              <OccupancyTrendsPanel
-                occupancyData={occupancyData}
-                utilizationData={utilizationData}
-                wards={wards}
-                selectedWard={selectedWard}
-              />
-            </Suspense>
-          </DeferredMount>
-        </TabsContent>
-        
-        {/* Length of Stay Tab */}
-        <TabsContent value="los" className="mt-4">
-          <DeferredMount placeholder={<Skeleton className="h-[300px] w-full" />}>
-            <Suspense fallback={<Skeleton className="h-[300px] w-full" />}>
-              <LengthOfStayPanel
-                lengthOfStayData={lengthOfStayData}
-                utilizationData={utilizationData}
-              />
-            </Suspense>
-          </DeferredMount>
-        </TabsContent>
-        
-        {/* Ward Utilization Tab */}
-        <TabsContent value="utilization" className="mt-4">
-          <DeferredMount placeholder={<Skeleton className="h-[300px] w-full" />}>
-            <Suspense fallback={<Skeleton className="h-[300px] w-full" />}>
-              <UtilizationPanel utilizationData={utilizationData} />
-            </Suspense>
-          </DeferredMount>
-        </TabsContent>
-        
-        {/* Admissions Tab */}
-        <TabsContent value="admissions" className="mt-4">
-          <DeferredMount placeholder={<Skeleton className="h-[300px] w-full" />}>
-            <Suspense fallback={<Skeleton className="h-[300px] w-full" />}>
-              <AdmissionsPanel admissionsByWard={admissionsByWard} wards={wards} />
-            </Suspense>
-          </DeferredMount>
-        </TabsContent>
-      </Tabs>
+      <ReportFilters
+        dateRange={dateRange}
+        onDateChange={handleDateChange}
+        onWardChange={setSelectedWard}
+        selectedWard={selectedWard}
+        wards={wards}
+      />
+
+      {analyticsLoading ? (
+        <Skeleton className="h-[300px] w-full" />
+      ) : (
+        <ReportTabs
+          admissionsByWard={admissionsByWard}
+          lengthOfStayData={lengthOfStayData}
+          occupancyData={occupancyData}
+          selectedWard={selectedWard}
+          utilizationData={utilizationData}
+          wards={wards}
+        />
+      )}
     </div>
   );
 }
