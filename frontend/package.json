@@ -23,7 +23,10 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
-    "doctor": "react-doctor"
+    "doctor": "react-doctor",
+    "doctor:summary": "node ./scripts/react-doctor-summary.mjs",
+    "quality:react": "node ./scripts/react-quality-gate.mjs",
+    "quality:react:diff": "node ./scripts/react-quality-gate.mjs --diff"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
