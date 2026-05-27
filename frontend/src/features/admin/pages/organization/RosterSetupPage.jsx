@@ -588,7 +588,7 @@ function DutyTypesPanel({ departmentId }) {
                   </button>
                 </div>
               </div>
-              <div role="group" aria-labelledby={`${fieldId}-applicable-days-label`} className="flex flex-wrap gap-2">
+              <fieldset aria-labelledby={`${fieldId}-applicable-days-label`} className="m-0 flex flex-wrap gap-2 border-0 p-0">
                 {DAYS_OF_WEEK.map((day) => (
                   <button
                     key={day.value}
@@ -604,7 +604,7 @@ function DutyTypesPanel({ departmentId }) {
                     {day.label}
                   </button>
                 ))}
-              </div>
+              </fieldset>
             </div>
 
             <div className="space-y-3">
@@ -755,7 +755,7 @@ function DutyTypesPanel({ departmentId }) {
                   ) : (
                     <div className="space-y-2">
                       {formState.breaks.map((brk, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
+                        <div key={`${brk.start}-${brk.end}`} className="flex items-center gap-2">
                           <Input
                             aria-label={`Break ${idx + 1} start time`}
                             type="time"
@@ -1159,7 +1159,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
                 <p id={`${fieldId}-team-sequence-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Team Sequence (click to toggle)
                 </p>
-                <div role="group" aria-labelledby={`${fieldId}-team-sequence-label`} className="flex flex-wrap gap-2">
+                <fieldset aria-labelledby={`${fieldId}-team-sequence-label`} className="m-0 flex flex-wrap gap-2 border-0 p-0">
                   {teams.map((team) => (
                     <button
                       key={team.id}
@@ -1175,7 +1175,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
                       {team.name}
                     </button>
                   ))}
-                </div>
+                </fieldset>
                 {formState.team_sequence.length > 0 && (
                   <p className="text-xs text-muted-foreground">
                     Order: {formState.team_sequence.map((t) => getTeamName(t)).join(' → ')}
@@ -1189,7 +1189,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
                 <p id={`${fieldId}-day-assignments-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Day Assignments (click to assign)
                 </p>
-                <div role="group" aria-labelledby={`${fieldId}-day-assignments-label`} className="border rounded-lg overflow-hidden">
+                <fieldset aria-labelledby={`${fieldId}-day-assignments-label`} className="m-0 overflow-hidden rounded-lg border p-0">
                   {/* Header row with team names */}
                   <div className="grid bg-muted/50 border-b" style={{ gridTemplateColumns: `60px repeat(${teams.length}, 1fr)` }}>
                     <div className="p-2 text-[10px] font-mono uppercase text-muted-foreground border-r">Day</div>
@@ -1239,7 +1239,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
                       })}
                     </div>
                   ))}
-                </div>
+                </fieldset>
                 <p className="text-xs text-muted-foreground">
                   Click a cell to assign that team to that day. Only one team per day.
                 </p>
@@ -1598,9 +1598,9 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                 <p id={`${fieldId}-excluded-day-pairs-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Excluded Day Pairs
                 </p>
-                <div role="group" aria-labelledby={`${fieldId}-excluded-day-pairs-label`} className="space-y-2">
+                <fieldset aria-labelledby={`${fieldId}-excluded-day-pairs-label`} className="m-0 space-y-2 border-0 p-0">
                   {(formState.params.pairs || []).map((pair, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
+                    <div key={`${pair[0]}-${pair[1]}`} className="flex items-center gap-2">
                       <Select
                         value={String(pair[0])}
                         onValueChange={(v) => {
@@ -1659,7 +1659,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                     <Plus className="size-4 mr-1" />
                     Add Pair
                   </Button>
-                </div>
+                </fieldset>
                 <p className="text-xs text-muted-foreground">
                   Team cannot work both days of a pair in the same week.
                 </p>
@@ -1714,7 +1714,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                   <p id={`${fieldId}-excluded-teams-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Excluded Teams
                   </p>
-                  <div role="group" aria-labelledby={`${fieldId}-excluded-teams-label`} className="flex flex-wrap gap-2">
+                  <fieldset aria-labelledby={`${fieldId}-excluded-teams-label`} className="m-0 flex flex-wrap gap-2 border-0 p-0">
                     {teams.map((team) => (
                       <button
                         key={team.id}
@@ -1736,13 +1736,13 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                         {team.name}
                       </button>
                     ))}
-                  </div>
+                  </fieldset>
                 </div>
                 <div className="space-y-2">
                   <p id={`${fieldId}-excluded-days-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Excluded Days
                   </p>
-                  <div role="group" aria-labelledby={`${fieldId}-excluded-days-label`} className="flex flex-wrap gap-2">
+                  <fieldset aria-labelledby={`${fieldId}-excluded-days-label`} className="m-0 flex flex-wrap gap-2 border-0 p-0">
                     {DAYS_OF_WEEK.map((day) => (
                       <button
                         key={day.value}
@@ -1764,7 +1764,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                         {day.label}
                       </button>
                     ))}
-                  </div>
+                  </fieldset>
                 </div>
               </>
             )}
@@ -1778,7 +1778,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                   <p className="text-xs text-muted-foreground">
                     Select duty types that should be treated as linked for consecutive day checking.
                   </p>
-                  <div role="group" aria-labelledby={`${fieldId}-linked-duty-types-label`} className="flex flex-wrap gap-2">
+                  <fieldset aria-labelledby={`${fieldId}-linked-duty-types-label`} className="m-0 flex flex-wrap gap-2 border-0 p-0">
                     {dutyTypes.map((dt) => (
                       <button
                         key={dt.id}
@@ -1800,7 +1800,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                         {dt.name}
                       </button>
                     ))}
-                  </div>
+                  </fieldset>
                   {(formState.params.duty_type_ids || []).length < 2 && (
                     <p className="text-xs text-amber-600">Select at least 2 duty types to link.</p>
                   )}

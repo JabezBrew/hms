@@ -6,7 +6,7 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
 import {
@@ -53,16 +53,17 @@ export default function NurseDashboard() {
     'inpatient_admissions',
     'nursing_workflows',
   ]);
-  const wardBoardHref = selectedWard && selectedWard !== 'all'
-    ? `/ward-board?ward=${encodeURIComponent(selectedWard)}`
+  const effectiveSelectedWard = moduleGate.wardsEnabled ? selectedWard : 'all';
+  const wardBoardHref = effectiveSelectedWard && effectiveSelectedWard !== 'all'
+    ? `/ward-board?ward=${encodeURIComponent(effectiveSelectedWard)}`
     : '/ward-board';
 
-  const wardFilters = moduleGate.wardsEnabled && selectedWard && selectedWard !== 'all'
-    ? { ward: selectedWard }
+  const wardFilters = moduleGate.wardsEnabled && effectiveSelectedWard && effectiveSelectedWard !== 'all'
+    ? { ward: effectiveSelectedWard }
     : {};
   const { isConnected: isLiveConnected } = useNurseDashboardLiveUpdates({
     enabled: dashboardEnabled,
-    wardScope: selectedWard,
+    wardScope: effectiveSelectedWard,
   });
 
   // Fetch dashboard data with websocket-triggered refresh, polling fallback.
@@ -83,12 +84,6 @@ export default function NurseDashboard() {
     completeTask,
   } = useDashboardActions();
 
-  useEffect(() => {
-    if (!moduleGate.wardsEnabled && selectedWard !== 'all') {
-      setSelectedWard('all');
-    }
-  }, [moduleGate.wardsEnabled, selectedWard]);
-
   if (!facilityCode) {
     return (
       <Layout>
@@ -97,7 +92,7 @@ export default function NurseDashboard() {
             title="Nurse Dashboard"
             description="Monitor patients, administer medications, and manage tasks"
             actions={moduleGate.wardsEnabled ? (
-              <WardFilterSelect selectedWard={selectedWard} onSelectedWardChange={setSelectedWard} />
+              <WardFilterSelect selectedWard={effectiveSelectedWard} onSelectedWardChange={setSelectedWard} />
             ) : null}
           />
           <div className="p-4 sm:p-6">
@@ -171,7 +166,7 @@ export default function NurseDashboard() {
             title="Nurse Dashboard"
             description="Monitor patients, administer medications, and manage tasks"
             actions={moduleGate.wardsEnabled ? (
-              <WardFilterSelect selectedWard={selectedWard} onSelectedWardChange={setSelectedWard} />
+              <WardFilterSelect selectedWard={effectiveSelectedWard} onSelectedWardChange={setSelectedWard} />
             ) : null}
           />
           <PageState
@@ -192,27 +187,7 @@ export default function NurseDashboard() {
   const medicationsSchedule = dashboardData?.medications_schedule || [];
   const tasks = dashboardData?.tasks || [];
 
-  // Prepare urgent items for banner
-  const urgentItems = [
-    ...urgent.critical_alerts.map((alert) => ({
-      id: alert.id,
-      patient_id: alert.patient_id,
-      label: 'ALERT',
-      patient_name: alert.patient_name,
-      description: alert.message,
-      time: format(new Date(alert.created_at), 'h:mm a'),
-      badge: alert.severity.toUpperCase(),
-    })),
-    ...(moduleGate.pharmacyEnabled ? urgent.overdue_medications.map((med) => ({
-      id: med.id,
-      patient_id: med.patient_id,
-      label: 'OVERDUE MED',
-      patient_name: med.patient_name,
-      description: `${med.medication_name} - Scheduled: ${format(new Date(med.scheduled_time), 'h:mm a')}`,
-      time: `${Math.floor((new Date() - new Date(med.scheduled_time)) / 60000)} min late`,
-      badge: 'OVERDUE',
-    })) : []),
-  ];
+  const urgentItems = buildUrgentItems(urgent, moduleGate.pharmacyEnabled);
 
   return (
     <Layout>
@@ -223,7 +198,7 @@ export default function NurseDashboard() {
           actions={(
             <div className="flex items-center gap-2">
               {moduleGate.wardsEnabled ? (
-                <WardFilterSelect selectedWard={selectedWard} onSelectedWardChange={setSelectedWard} />
+                <WardFilterSelect selectedWard={effectiveSelectedWard} onSelectedWardChange={setSelectedWard} />
               ) : null}
               {canOpenWardBoard ? (
                 <Button
@@ -263,241 +238,312 @@ export default function NurseDashboard() {
           />
         )}
 
-        {/* Statistics */}
-        {isLoading ? (
-          <DashboardGrid columns="4">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-32" />
-            ))}
-          </DashboardGrid>
-        ) : (
-          <DashboardGrid columns="4">
-            <StatCard
-              title="Shift Patients"
-              value={shiftPatients.length}
-              subtitle="Active patients in ward"
-              icon={Users}
-              color="amber"
-            />
-            <StatCard
-              title="Critical Alerts"
-              value={urgent.critical_alerts.length}
-              subtitle="Requiring immediate attention"
-              icon={AlertTriangle}
-              color="rose"
-            />
-            {moduleGate.pharmacyEnabled ? (
-              <StatCard
-                title="Medications Due"
-                value={medicationsSchedule.length}
-                subtitle="Next 2 hours"
-                icon={Pill}
-                color="sky"
-              />
-            ) : null}
-            <StatCard
-              title="Pending Tasks"
-              value={tasks.length}
-              subtitle="Today's remaining tasks"
-              icon={ClipboardList}
-              color="emerald"
-            />
-          </DashboardGrid>
-        )}
+        <NurseStats
+          isLoading={isLoading}
+          shiftPatientCount={shiftPatients.length}
+          criticalAlertCount={urgent.critical_alerts.length}
+          medicationCount={medicationsSchedule.length}
+          taskCount={tasks.length}
+          pharmacyEnabled={moduleGate.pharmacyEnabled}
+        />
 
         {/* Shift Patients */}
-        <DashboardSection
-          title="Shift Patients"
-          subtitle={`${shiftPatients.length} patients currently assigned`}
-        >
-          {isLoading ? (
-            <div className="space-y-4">
-              {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-40" />
-              ))}
-            </div>
-          ) : shiftPatients.length === 0 ? (
-            <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-              <Users className="size-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No patients assigned to this shift</p>
-            </div>
-          ) : (
-            <DashboardGrid columns="2">
-              {shiftPatients.map((patient) => (
-                <ActionCard
-                  key={patient.patient_id}
-                  title={patient.patient_name}
-                  subtitle={`MRN: ${patient.mrn}`}
-                  description={patient.diagnosis || 'No diagnosis recorded'}
-                  status={
-                    patient.has_critical_alerts
-                      ? 'critical'
-                      : patient.alerts_count > 0
-                      ? 'warning'
-                      : 'stable'
-                  }
-                  badges={[
-                    patient.alerts_count > 0 && {
-                      text: `${patient.alerts_count} Alert${patient.alerts_count > 1 ? 's' : ''}`,
-                      color: 'rose',
-                    },
-                    patient.tasks_count > 0 && {
-                      text: `${patient.tasks_count} Task${patient.tasks_count > 1 ? 's' : ''}`,
-                      color: 'amber',
-                    },
-                  ].filter(Boolean)}
-                  metadata={[
-                    moduleGate.wardsEnabled && {
-                      label: 'Ward/Bed',
-                      value: `${patient.ward_name} - Bed ${patient.bed_number}`,
-                      icon: Bed,
-                    },
-                    moduleGate.inpatientAdmissionsEnabled && {
-                      label: 'Admission',
-                      value: format(new Date(patient.admission_date), 'MMM d, yyyy'),
-                      icon: Clock,
-                    },
-                    patient.latest_vitals && {
-                      label: 'Last Vitals',
-                      value: format(new Date(patient.latest_vitals.recorded_at), 'h:mm a'),
-                      icon: Activity,
-                    },
-                  ].filter(Boolean)}
-                  actions={[
-                    moduleGate.patientChronicleEnabled && {
-                      label: 'Record Vitals',
-                      variant: 'default',
-                      onClick: () => navigate(`/patients/${patient.patient_id}`),
-                    },
-                    moduleGate.patientChronicleEnabled && {
-                      label: 'View Details',
-                      variant: 'outline',
-                      onClick: () => navigate(`/patients/${patient.patient_id}`),
-                    },
-                  ].filter(Boolean)}
-                  onClick={moduleGate.patientChronicleEnabled ? () => navigate(`/patients/${patient.patient_id}`) : undefined}
-                />
-              ))}
-            </DashboardGrid>
-          )}
-        </DashboardSection>
+        <ShiftPatientsSection
+          isLoading={isLoading}
+          patients={shiftPatients}
+          moduleGate={moduleGate}
+          onOpenPatient={(patientId) => navigate(`/patients/${patientId}`)}
+        />
 
         {/* Medications Schedule */}
         {moduleGate.pharmacyEnabled ? (
-          <DashboardSection
-            title="Medications Schedule"
-            subtitle="Due in the next 2 hours"
-          >
-          {isLoading ? (
-            <div className="space-y-3">
-              {[...Array(4)].map((_, i) => (
-                <Skeleton key={i} className="h-24" />
-              ))}
-            </div>
-          ) : medicationsSchedule.length === 0 ? (
-            <div className="text-center py-8 rounded-xl border border-border bg-card/50">
-              <Pill className="size-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No medications due in the next 2 hours</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {medicationsSchedule.map((med) => (
-                <ActionCard
-                  key={med.id}
-                  title={med.medication_name}
-                  subtitle={med.patient_name}
-                  description={`${med.dosage} ${med.route} - ${med.frequency}`}
-                  badges={[
-                    {
-                      text: format(new Date(med.scheduled_time), 'h:mm a'),
-                      color: 'sky',
-                    },
-                  ]}
-                  metadata={[
-                    {
-                      label: 'Ward/Bed',
-                      value: `${med.ward_name} - Bed ${med.bed_number}`,
-                      icon: Bed,
-                    },
-                  ]}
-                  actions={[
-                    {
-                      label: 'Administer',
-                      variant: 'default',
-                      onClick: () =>
-                        administerMedication.mutate({
-                          medicationId: med.id,
-                          administrationData: {
-                            administered_at: new Date().toISOString(),
-                            status: 'administered',
-                          },
-                        }),
-                    },
-                  ]}
-                />
-              ))}
-            </div>
-          )}
-          </DashboardSection>
+          <MedicationsScheduleSection
+            isLoading={isLoading}
+            medications={medicationsSchedule}
+            administerMedication={administerMedication}
+          />
         ) : null}
 
         {/* Pending Tasks */}
-        <DashboardSection
-          title="Pending Tasks"
-          subtitle="Today's remaining tasks"
-        >
-          {isLoading ? (
-            <div className="space-y-3">
-              {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-20" />
-              ))}
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="text-center py-8 rounded-xl border border-border bg-card/50">
-              <ClipboardList className="size-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No pending tasks for today</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {tasks.map((task) => (
-                <ActionCard
-                  key={task.id}
-                  title={task.title}
-                  subtitle={task.patient_name}
-                  description={task.description}
-                  badges={[
-                    {
-                      text: task.priority.toUpperCase(),
-                      color: task.priority === 'high' ? 'rose' : 'amber',
-                    },
-                  ]}
-                  metadata={[
-                    {
-                      label: 'Due',
-                      value: format(new Date(task.due_at), 'h:mm a'),
-                      icon: Clock,
-                    },
-                  ]}
-                  actions={[
-                    {
-                      label: 'Complete',
-                      variant: 'default',
-                      onClick: () =>
-                        completeTask.mutate({
-                          taskId: task.id,
-                          completionNotes: `Completed via dashboard at ${new Date().toLocaleString()}`,
-                        }),
-                    },
-                  ]}
-                />
-              ))}
-            </div>
-          )}
-        </DashboardSection>
+        <PendingTasksSection
+          isLoading={isLoading}
+          tasks={tasks}
+          completeTask={completeTask}
+        />
         </div>
       </PageShell>
     </Layout>
   );
+}
+
+function buildUrgentItems(urgent, pharmacyEnabled) {
+  return [
+    ...urgent.critical_alerts.map((alert) => ({
+      id: alert.id,
+      patient_id: alert.patient_id,
+      label: 'ALERT',
+      patient_name: alert.patient_name,
+      description: alert.message,
+      time: format(new Date(alert.created_at), 'h:mm a'),
+      badge: alert.severity.toUpperCase(),
+    })),
+    ...(pharmacyEnabled ? urgent.overdue_medications.map((med) => ({
+      id: med.id,
+      patient_id: med.patient_id,
+      label: 'OVERDUE MED',
+      patient_name: med.patient_name,
+      description: `${med.medication_name} - Scheduled: ${format(new Date(med.scheduled_time), 'h:mm a')}`,
+      time: `${Math.floor((Date.now() - Date.parse(med.scheduled_time)) / 60000)} min late`,
+      badge: 'OVERDUE',
+    })) : []),
+  ];
+}
+
+function NurseStats({
+  isLoading,
+  shiftPatientCount,
+  criticalAlertCount,
+  medicationCount,
+  taskCount,
+  pharmacyEnabled,
+}) {
+  if (isLoading) {
+    return (
+      <DashboardGrid columns="4">
+        {[...Array(4)].map((_, i) => (
+          <Skeleton key={i} className="h-32" />
+        ))}
+      </DashboardGrid>
+    );
+  }
+
+  return (
+    <DashboardGrid columns="4">
+      <StatCard
+        title="Shift Patients"
+        value={shiftPatientCount}
+        subtitle="Active patients in ward"
+        icon={Users}
+        color="amber"
+      />
+      <StatCard
+        title="Critical Alerts"
+        value={criticalAlertCount}
+        subtitle="Requiring immediate attention"
+        icon={AlertTriangle}
+        color="rose"
+      />
+      {pharmacyEnabled ? (
+        <StatCard
+          title="Medications Due"
+          value={medicationCount}
+          subtitle="Next 2 hours"
+          icon={Pill}
+          color="sky"
+        />
+      ) : null}
+      <StatCard
+        title="Pending Tasks"
+        value={taskCount}
+        subtitle="Today's remaining tasks"
+        icon={ClipboardList}
+        color="emerald"
+      />
+    </DashboardGrid>
+  );
+}
+
+function ShiftPatientsSection({ isLoading, patients, moduleGate, onOpenPatient }) {
+  return (
+    <DashboardSection
+      title="Shift Patients"
+      subtitle={`${patients.length} patients currently assigned`}
+    >
+      {isLoading ? (
+        <div className="space-y-4">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-40" />
+          ))}
+        </div>
+      ) : patients.length === 0 ? (
+        <div className="text-center py-12 rounded-xl border border-border bg-card/50">
+          <Users className="size-12 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground">No patients assigned to this shift</p>
+        </div>
+      ) : (
+        <DashboardGrid columns="2">
+          {patients.map((patient) => (
+            <ActionCard
+              key={patient.patient_id}
+              title={patient.patient_name}
+              subtitle={`MRN: ${patient.mrn}`}
+              description={patient.diagnosis || 'No diagnosis recorded'}
+              status={getPatientStatus(patient)}
+              badges={buildPatientBadges(patient)}
+              metadata={buildPatientMetadata(patient, moduleGate)}
+              actions={buildPatientActions(patient.patient_id, moduleGate, onOpenPatient)}
+              onClick={moduleGate.patientChronicleEnabled ? () => onOpenPatient(patient.patient_id) : undefined}
+            />
+          ))}
+        </DashboardGrid>
+      )}
+    </DashboardSection>
+  );
+}
+
+function getPatientStatus(patient) {
+  if (patient.has_critical_alerts) {
+    return 'critical';
+  }
+  return patient.alerts_count > 0 ? 'warning' : 'stable';
+}
+
+function buildPatientBadges(patient) {
+  return [
+    patient.alerts_count > 0 && {
+      text: `${patient.alerts_count} Alert${patient.alerts_count > 1 ? 's' : ''}`,
+      color: 'rose',
+    },
+    patient.tasks_count > 0 && {
+      text: `${patient.tasks_count} Task${patient.tasks_count > 1 ? 's' : ''}`,
+      color: 'amber',
+    },
+  ].filter(Boolean);
+}
+
+function buildPatientMetadata(patient, moduleGate) {
+  return [
+    moduleGate.wardsEnabled && {
+      label: 'Ward/Bed',
+      value: `${patient.ward_name} - Bed ${patient.bed_number}`,
+      icon: Bed,
+    },
+    moduleGate.inpatientAdmissionsEnabled && {
+      label: 'Admission',
+      value: format(new Date(patient.admission_date), 'MMM d, yyyy'),
+      icon: Clock,
+    },
+    patient.latest_vitals && {
+      label: 'Last Vitals',
+      value: format(new Date(patient.latest_vitals.recorded_at), 'h:mm a'),
+      icon: Activity,
+    },
+  ].filter(Boolean);
+}
+
+function buildPatientActions(patientId, moduleGate, onOpenPatient) {
+  return [
+    moduleGate.patientChronicleEnabled && {
+      label: 'Record Vitals',
+      variant: 'default',
+      onClick: () => onOpenPatient(patientId),
+    },
+    moduleGate.patientChronicleEnabled && {
+      label: 'View Details',
+      variant: 'outline',
+      onClick: () => onOpenPatient(patientId),
+    },
+  ].filter(Boolean);
+}
+
+function MedicationsScheduleSection({ isLoading, medications, administerMedication }) {
+  return (
+    <DashboardSection
+      title="Medications Schedule"
+      subtitle="Due in the next 2 hours"
+    >
+      {isLoading ? (
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+      ) : medications.length === 0 ? (
+        <div className="text-center py-8 rounded-xl border border-border bg-card/50">
+          <Pill className="size-10 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground">No medications due in the next 2 hours</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {medications.map((med) => (
+            <ActionCard
+              key={med.id}
+              title={med.medication_name}
+              subtitle={med.patient_name}
+              description={`${med.dosage} ${med.route} - ${med.frequency}`}
+              badges={[{ text: format(new Date(med.scheduled_time), 'h:mm a'), color: 'sky' }]}
+              metadata={[{ label: 'Ward/Bed', value: `${med.ward_name} - Bed ${med.bed_number}`, icon: Bed }]}
+              actions={[{
+                label: 'Administer',
+                variant: 'default',
+                onClick: () => administerMedicationNow(administerMedication, med.id),
+              }]}
+            />
+          ))}
+        </div>
+      )}
+    </DashboardSection>
+  );
+}
+
+function administerMedicationNow(administerMedication, medicationId) {
+  administerMedication.mutate({
+    medicationId,
+    administrationData: {
+      administered_at: new Date().toISOString(),
+      status: 'administered',
+    },
+  });
+}
+
+function PendingTasksSection({ isLoading, tasks, completeTask }) {
+  return (
+    <DashboardSection
+      title="Pending Tasks"
+      subtitle="Today's remaining tasks"
+    >
+      {isLoading ? (
+        <div className="space-y-3">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+      ) : tasks.length === 0 ? (
+        <div className="text-center py-8 rounded-xl border border-border bg-card/50">
+          <ClipboardList className="size-10 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground">No pending tasks for today</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tasks.map((task) => (
+            <ActionCard
+              key={task.id}
+              title={task.title}
+              subtitle={task.patient_name}
+              description={task.description}
+              badges={[{
+                text: task.priority.toUpperCase(),
+                color: task.priority === 'high' ? 'rose' : 'amber',
+              }]}
+              metadata={[{ label: 'Due', value: format(new Date(task.due_at), 'h:mm a'), icon: Clock }]}
+              actions={[{
+                label: 'Complete',
+                variant: 'default',
+                onClick: () => completeDashboardTask(completeTask, task.id),
+              }]}
+            />
+          ))}
+        </div>
+      )}
+    </DashboardSection>
+  );
+}
+
+function completeDashboardTask(completeTask, taskId) {
+  completeTask.mutate({
+    taskId,
+    completionNotes: `Completed via dashboard at ${new Date().toLocaleString()}`,
+  });
 }
 
 function WardFilterSelect({ selectedWard, onSelectedWardChange }) {

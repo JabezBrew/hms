@@ -451,6 +451,7 @@ function StaffPanelContent({ unitId, listSearch, setListSearch, activeQuery }) {
             renderItem={(member) => (
               <div
                 key={member.id}
+                // oxlint-disable-next-line react-doctor/prefer-tag-over-role -- The row contains a nested checkbox, so a native button would create invalid interactive markup.
                 role="button"
                 tabIndex={0}
                 className={cn(

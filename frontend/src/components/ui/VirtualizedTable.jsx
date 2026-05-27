@@ -2,6 +2,12 @@ import { useMemo, useRef } from 'react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 
+/* oxlint-disable react-doctor/prefer-tag-over-role --
+ * This component intentionally exposes ARIA table semantics over virtualized
+ * CSS grid rows. Native table tags do not support the absolute-positioned
+ * virtualizer layout used here.
+ */
+
 const EMPTY_ROWS = [];
 const EMPTY_COLUMNS = [];
 

@@ -38,9 +38,6 @@ import {
 import {
   useClinicalUnitsTree,
   useClinicalUnit,
-  useUnitLeaders,
-  useUnitStaff,
-  useUnitWards,
   useCreateClinicalUnit,
   useUpdateClinicalUnit,
   useDeleteClinicalUnit,
@@ -208,7 +205,7 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
  * UnitDetailPanel - Side panel showing unit details and related data
  * Uses Chronicle Design System styling
  */
-function UnitDetailPanel({ unitId, onClose, onEdit }) {
+function UnitDetailPanel({ unitId, onEdit }) {
   const [activeTab, setActiveTab] = useState('overview');
   const { data: unitData, isLoading } = useClinicalUnit(unitId);
   const unit = unitData?.data || unitData;
@@ -472,7 +469,7 @@ export default function OrganizationPage() {
   const updateUnit = useUpdateClinicalUnit();
   const deleteUnit = useDeleteClinicalUnit();
 
-  const tree = treeData?.data || treeData || [];
+  const tree = useMemo(() => treeData?.data || treeData || [], [treeData]);
 
   // Filter tree based on search
   const filteredTree = useMemo(() => {

@@ -28,6 +28,11 @@ import { Badge } from '@/components/ui/badge';
 import VirtualizedList from '@/components/ui/VirtualizedList';
 import format from 'date-fns/format';
 
+/* oxlint-disable react-doctor/prefer-tag-over-role --
+ * Audit logs are rendered as a virtualized CSS grid. Native table elements
+ * cannot wrap the virtualized div rows without invalid DOM/layout regressions.
+ */
+
 /**
  * SortableHeader - Clickable column header with sort indicator
  */

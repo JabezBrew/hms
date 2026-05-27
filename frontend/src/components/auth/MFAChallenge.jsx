@@ -5,7 +5,7 @@ import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Copy from 'lucide-react/dist/esm/icons/copy.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer } from 'react'
 import { authApi } from '@/shared/api/auth'
 import { notifications } from '@/lib/notifications'
 import { toRegistrationOptions, toAuthenticationOptions, serializeCredential } from '@/lib/webauthn'
@@ -14,6 +14,27 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/lib/auth'
 
+const initialMfaChallengeState = {
+  sessionOverride: null,
+  totpSecret: null,
+  totpCode: '',
+  recoveryCode: '',
+  totpConfirmed: false,
+  webauthnConfirmed: false,
+  isBusy: false,
+  copiedSecret: false,
+  challengeStatus: null,
+}
+
+function mfaChallengeReducer(state, action) {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.patch }
+    default:
+      return state
+  }
+}
+
 export function MFAChallenge() {
   const {
     mfaSession,
@@ -21,15 +42,20 @@ export function MFAChallenge() {
     mfaAvailableMethods,
     completeMfa,
   } = useAuth()
-  const [sessionOverride, setSessionOverride] = useState(null)
-  const [totpSecret, setTotpSecret] = useState(null)
-  const [totpCode, setTotpCode] = useState('')
-  const [recoveryCode, setRecoveryCode] = useState('')
-  const [totpConfirmed, setTotpConfirmed] = useState(false)
-  const [webauthnConfirmed, setWebauthnConfirmed] = useState(false)
-  const [isBusy, setIsBusy] = useState(false)
-  const [copiedSecret, setCopiedSecret] = useState(false)
-  const [challengeStatus, setChallengeStatus] = useState(null)
+  const [state, dispatch] = useReducer(mfaChallengeReducer, initialMfaChallengeState)
+  const {
+    sessionOverride,
+    totpSecret,
+    totpCode,
+    recoveryCode,
+    totpConfirmed,
+    webauthnConfirmed,
+    isBusy,
+    copiedSecret,
+    challengeStatus,
+  } = state
+
+  const updateState = useCallback((patch) => dispatch({ type: 'patch', patch }), [])
 
   const activeSession = sessionOverride?.source === mfaSession
     ? sessionOverride.value
@@ -40,18 +66,18 @@ export function MFAChallenge() {
 
     const loadStatus = async () => {
       if (!activeSession) {
-        setChallengeStatus(null)
+        updateState({ challengeStatus: null })
         return
       }
 
       try {
         const status = await authApi.mfaStatus(activeSession)
         if (!isCancelled) {
-          setChallengeStatus(status)
+          updateState({ challengeStatus: status })
         }
       } catch {
         if (!isCancelled) {
-          setChallengeStatus(null)
+          updateState({ challengeStatus: null })
         }
       }
     }
@@ -61,7 +87,7 @@ export function MFAChallenge() {
     return () => {
       isCancelled = true
     }
-  }, [activeSession])
+  }, [activeSession, updateState])
 
   const webauthnAvailable = useMemo(() => {
     return Boolean(window.PublicKeyCredential && navigator.credentials)
@@ -79,8 +105,8 @@ export function MFAChallenge() {
   const handleCopySecret = async () => {
     if (totpSecret) {
       await navigator.clipboard.writeText(totpSecret)
-      setCopiedSecret(true)
-      setTimeout(() => setCopiedSecret(false), 2000)
+      updateState({ copiedSecret: true })
+      setTimeout(() => updateState({ copiedSecret: false }), 2000)
     }
   }
 
@@ -97,56 +123,56 @@ export function MFAChallenge() {
   }
 
   const handleTotpStart = async () => {
-    setIsBusy(true)
+    updateState({ isBusy: true })
     try {
       const response = await authApi.mfaTotpStart(activeSession)
-      setTotpSecret(response.secret)
+      updateState({ totpSecret: response.secret })
     } catch (error) {
       notifications.error(error.message || 'Failed to start TOTP')
     } finally {
-      setIsBusy(false)
+      updateState({ isBusy: false })
     }
   }
 
   const handleTotpConfirm = async () => {
-    setIsBusy(true)
+    updateState({ isBusy: true })
     try {
       const response = await authApi.mfaTotpConfirm(totpCode, activeSession)
       if (!handleAuthComplete(response)) {
-        setTotpConfirmed(true)
+        updateState({ totpConfirmed: true })
         notifications.success('TOTP confirmed')
       }
     } catch (error) {
       notifications.error(error.message || 'Failed to confirm TOTP')
     } finally {
-      setIsBusy(false)
+      updateState({ isBusy: false })
     }
   }
 
   const handleTotpVerify = async () => {
-    setIsBusy(true)
+    updateState({ isBusy: true })
     try {
       const response = await authApi.mfaTotpVerify(totpCode, activeSession)
       if (!handleAuthComplete(response)) {
-        setTotpConfirmed(true)
+        updateState({ totpConfirmed: true })
         notifications.success('TOTP verified')
       }
     } catch (error) {
       notifications.error(error.message || 'Failed to verify TOTP')
     } finally {
-      setIsBusy(false)
+      updateState({ isBusy: false })
     }
   }
 
   const handleRecoveryVerify = async () => {
-    setIsBusy(true)
+    updateState({ isBusy: true })
     try {
       const response = await authApi.mfaRecoveryVerify(recoveryCode, activeSession)
       handleAuthComplete(response)
     } catch (error) {
       notifications.error(error.message || 'Failed to verify recovery code')
     } finally {
-      setIsBusy(false)
+      updateState({ isBusy: false })
     }
   }
 
@@ -155,24 +181,24 @@ export function MFAChallenge() {
       notifications.error('WebAuthn is not supported on this device')
       return
     }
-    setIsBusy(true)
+    updateState({ isBusy: true })
     try {
       const options = await authApi.mfaWebAuthnRegistrationOptions(activeSession)
       if (options.mfa_session) {
-        setSessionOverride({ source: mfaSession, value: options.mfa_session })
+        updateState({ sessionOverride: { source: mfaSession, value: options.mfa_session } })
       }
       const publicKey = toRegistrationOptions(options)
       const credential = await navigator.credentials.create({ publicKey })
       const payload = serializeCredential(credential)
       const response = await authApi.mfaWebAuthnRegistrationVerify(payload, options.mfa_session || activeSession)
       if (!handleAuthComplete(response)) {
-        setWebauthnConfirmed(true)
+        updateState({ webauthnConfirmed: true })
         notifications.success('WebAuthn registered')
       }
     } catch (error) {
       notifications.error(error.message || 'Failed to register WebAuthn')
     } finally {
-      setIsBusy(false)
+      updateState({ isBusy: false })
     }
   }
 
@@ -181,7 +207,7 @@ export function MFAChallenge() {
       notifications.error('WebAuthn is not supported on this device')
       return
     }
-    setIsBusy(true)
+    updateState({ isBusy: true })
     try {
       const options = await authApi.mfaWebAuthnAuthOptions(activeSession)
       const publicKey = toAuthenticationOptions(options)
@@ -189,13 +215,13 @@ export function MFAChallenge() {
       const payload = serializeCredential(credential)
       const response = await authApi.mfaWebAuthnAuthVerify(payload, activeSession)
       if (!handleAuthComplete(response)) {
-        setWebauthnConfirmed(true)
+        updateState({ webauthnConfirmed: true })
         notifications.success('WebAuthn verified')
       }
     } catch (error) {
       notifications.error(error.message || 'Failed to verify WebAuthn')
     } finally {
-      setIsBusy(false)
+      updateState({ isBusy: false })
     }
   }
 
@@ -296,7 +322,7 @@ export function MFAChallenge() {
               placeholder="000000"
               maxLength={6}
               value={totpCode}
-              onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))}
+              onChange={(event) => updateState({ totpCode: event.target.value.replace(/\D/g, '') })}
               disabled={isBusy || totpConfirmed}
               className="font-mono text-center text-lg tracking-[0.5em]"
             />
@@ -378,7 +404,7 @@ export function MFAChallenge() {
               id="recovery-code"
               placeholder="Enter recovery code"
               value={recoveryCode}
-              onChange={(event) => setRecoveryCode(event.target.value)}
+              onChange={(event) => updateState({ recoveryCode: event.target.value })}
               disabled={isBusy}
               className="font-mono"
             />

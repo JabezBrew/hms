@@ -12,7 +12,7 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import { useReducer, useMemo } from "react";
+import { useMemo, useReducer, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -128,6 +128,7 @@ const ChartEntryFormContent = ({
     createChartFormState,
   );
   const { formData, notes, errors } = state;
+  const [observedAt] = useState(() => new Date());
 
   // Get patient display info
   const patientName = patient?.local_data?.user_details
@@ -312,11 +313,11 @@ const ChartEntryFormContent = ({
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5 font-mono">
               <Calendar className="size-3.5" />
-              {format(new Date(), 'MMM d, yyyy')}
+              {format(observedAt, 'MMM d, yyyy')}
             </span>
             <span className="flex items-center gap-1.5 font-mono">
               <Clock className="size-3.5" />
-              {format(new Date(), 'h:mm a')}
+              {format(observedAt, 'h:mm a')}
             </span>
           </div>
           {criticalFields.length > 0 && (

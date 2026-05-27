@@ -224,7 +224,7 @@ export default function AdminDashboard() {
   );
 
   const dashboardData = summaryQuery.data || {};
-  const kpis = dashboardData.kpis || {};
+  const kpis = useMemo(() => dashboardData.kpis || {}, [dashboardData.kpis]);
   const sectionSummaries = dashboardData.section_summaries || {};
   const alerts = useMemo(
     () => filterDashboardItemsByFeature(
@@ -402,307 +402,415 @@ export default function AdminDashboard() {
           title="Admin Dashboard"
           description="Operational command center for capacity, workforce, and compliance"
           actions={(
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={window} onValueChange={setWindow}>
-                <SelectTrigger className="w-[170px]">
-                  <SelectValue placeholder="Select window" />
-                </SelectTrigger>
-                <SelectContent>
-                  {WINDOW_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="sm" onClick={() => navigate('/admin/settings')}>
-                <Settings className="mr-2 size-4" />
-                Settings
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={onRefresh}
-                disabled={anyFetching}
-                aria-label="Refresh dashboard"
-              >
-                <RefreshCw className={cn('size-4', anyFetching && 'animate-spin')} />
-              </Button>
-            </div>
+            <AdminDashboardActions
+              window={window}
+              onWindowChange={setWindow}
+              onOpenSettings={() => navigate('/admin/settings')}
+              onRefresh={onRefresh}
+              anyFetching={anyFetching}
+            />
           )}
         />
 
         <div className="space-y-6 p-4 sm:p-6">
-          <Card className="gap-3 border-primary/20 bg-gradient-to-r from-amber-500/5 to-sky-500/5 py-4">
-            <CardContent className="px-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="space-y-1">
-                  <p className="font-heading text-sm text-foreground">Current operational posture</p>
-                  <p className="text-xs text-muted-foreground">
-                    {generatedAt ? `Last updated ${formatTime(generatedAt)}` : 'Awaiting initial refresh'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-mono tracking-wide',
-                      isLiveConnected
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
-                        : 'border-amber-500/30 bg-amber-500/10 text-amber-500',
-                    )}
-                  >
-                    {isLiveConnected ? 'LIVE' : 'POLLING'}
-                  </span>
-                  {dashboardData?.meta?.stale ? (
-                    <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-mono tracking-wide text-amber-500">
-                      STALE READ
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {summaryQuery.isLoading ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <Skeleton key={index} className="h-28" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {metricCards.map((metric) => (
-                <MetricCard
-                  key={metric.label}
-                  icon={metric.icon}
-                  label={metric.label}
-                  value={metric.value}
-                  subvalue={metric.subvalue}
-                  status={metric.status}
-                />
-              ))}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.8fr_1fr]">
-            <Card className="gap-3 py-4">
-              <CardHeader className="px-4 py-0">
-                <CardTitle className="font-heading text-base">Top Alerts</CardTitle>
-                <CardDescription>Highest-priority issues requiring immediate attention</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 px-4">
-                {alerts.length === 0 ? (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
-                    No critical alerts right now.
-                  </div>
-                ) : (
-                  alerts.map((alert) => (
-                    <div key={alert.id} className="rounded-lg border border-border bg-card/70 p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle
-                              className={cn(
-                                'size-4',
-                                alert.severity === 'critical' ? 'text-rose-500' : 'text-amber-500',
-                              )}
-                            />
-                            <p className="text-sm font-medium text-foreground">{alert.title}</p>
-                          </div>
-                          <p className="text-xs text-muted-foreground">Started {formatTime(alert.started_at)}</p>
-                        </div>
-                        {alert.primary_action?.href ? (
-                          <Button variant="outline" size="sm" onClick={() => navigate(alert.primary_action.href)}>
-                            {alert.primary_action.label || 'Open'}
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="gap-3 py-4">
-              <CardHeader className="px-4 py-0">
-                <CardTitle className="font-heading text-base">Action Queue</CardTitle>
-                <CardDescription>Prioritized interventions</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 px-4">
-                {actionQueue.length === 0 ? (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
-                    No pending interventions.
-                  </div>
-                ) : (
-                  actionQueue.map((action) => (
-                    <button
-                      key={action.id}
-                      type="button"
-                      onClick={() => navigate(action.href)}
-                      className="flex w-full items-center justify-between rounded-lg border border-border bg-card/70 p-3 text-left transition-colors hover:bg-accent/40"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground">{action.title}</p>
-                        {statusBadge(action.severity)}
-                      </div>
-                      <ArrowRight className="size-4 text-muted-foreground" />
-                    </button>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-4">
-            {capacitySectionEnabled ? (
-              <SectionPanel
-                title="Capacity"
-                description="Ward occupancy, throughput, and wait-time pressure"
-                summary={sectionSummaries.capacity}
-                open={expanded.capacity}
-                onToggle={() => setExpanded((current) => ({ ...current, capacity: !current.capacity }))}
-                loading={capacityQuery.isLoading}
-                error={capacityQuery.error}
-              >
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Wait time</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    Median {capacityQuery.data?.wait_time?.median_minutes || 0} min
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    P95 {capacityQuery.data?.wait_time?.p95_minutes || 0} min
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">High occupancy wards</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {capacityQuery.data?.summary?.high_occupancy_wards || 0} of {capacityQuery.data?.summary?.ward_count || 0}
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {(capacityQuery.data?.wards || []).slice(0, 8).map((ward) => (
-                  <div key={ward.ward_id} className="rounded-lg border border-border p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-foreground">{ward.ward_name}</p>
-                      <p className="text-xs text-muted-foreground">{formatPercent(ward.occupancy_pct)}</p>
-                    </div>
-                    <Progress value={Number(ward.occupancy_pct || 0)} className="h-2" />
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {ward.occupied_beds}/{ward.total_beds} occupied, {ward.available_beds} available
-                    </p>
-                  </div>
-                ))}
-              </div>
-              </SectionPanel>
-            ) : null}
-
-            {workforceSectionEnabled ? (
-              <SectionPanel
-                title="Workforce"
-                description="Shift coverage gaps and immediate staffing risk"
-                summary={sectionSummaries.workforce}
-                open={expanded.workforce}
-                onToggle={() => setExpanded((current) => ({ ...current, workforce: !current.workforce }))}
-                loading={workforceQuery.isLoading}
-                error={workforceQuery.error}
-              >
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Coverage</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {formatRatio(
-                      workforceQuery.data?.summary?.filled_shifts || 0,
-                      workforceQuery.data?.summary?.required_shifts || 0,
-                    )}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Next 2h risks</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {workforceQuery.data?.summary?.next_2h_risks || 0} uncovered starts
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {(workforceQuery.data?.uncovered_shifts || []).slice(0, 8).map((shift) => (
-                  <div key={shift.shift_id} className="rounded-lg border border-border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-foreground">
-                        {shift.unit_name} - {shift.duty_type_name}
-                      </p>
-                      {statusBadge(shift.priority === 'high' ? 'warning' : 'normal')}
-                    </div>
-                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="size-3" />
-                      {shift.starts_at ? formatTime(shift.starts_at) : 'No start time'}
-                    </p>
-                  </div>
-                ))}
-                {(workforceQuery.data?.uncovered_shifts || []).length === 0 ? (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
-                    All tracked shifts have coverage.
-                  </div>
-                ) : null}
-              </div>
-              </SectionPanel>
-            ) : null}
-
-            {complianceSectionEnabled ? (
-              <SectionPanel
-                title="Compliance"
-                description="Break-glass monitoring, audit anomalies, and documentation"
-                summary={sectionSummaries.compliance}
-                open={expanded.compliance}
-                onToggle={() => setExpanded((current) => ({ ...current, compliance: !current.compliance }))}
-                loading={complianceQuery.isLoading}
-                error={complianceQuery.error}
-              >
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Documentation completeness</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {formatPercent(complianceQuery.data?.summary?.documentation_completeness_pct || 0)}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Pending break-glass review</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {complianceQuery.data?.summary?.break_glass_pending_review || 0}
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {(complianceQuery.data?.break_glass_recent || []).slice(0, 8).map((event) => (
-                  <div key={event.id} className="rounded-lg border border-border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-foreground">
-                        {event.scope || 'clinical'} access override
-                      </p>
-                      <span className="text-xs text-muted-foreground">{event.requester_role}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{formatTime(event.created_at)}</p>
-                  </div>
-                ))}
-                {(complianceQuery.data?.audit_anomalies_breakdown || []).slice(0, 4).map((row) => (
-                  <div key={row.action} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                    <span className="text-sm text-foreground">{row.action}</span>
-                    <span className="text-xs text-muted-foreground">{row.count}</span>
-                  </div>
-                ))}
-                {(complianceQuery.data?.break_glass_recent || []).length === 0
-                  && (complianceQuery.data?.audit_anomalies_breakdown || []).length === 0 ? (
-                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
-                      No recent compliance events in this window.
-                    </div>
-                  ) : null}
-              </div>
-              </SectionPanel>
-            ) : null}
-          </div>
+          <OperationalPostureCard
+            generatedAt={generatedAt}
+            isLiveConnected={isLiveConnected}
+            isStale={Boolean(dashboardData?.meta?.stale)}
+          />
+          <MetricCardsGrid
+            loading={summaryQuery.isLoading}
+            metricCards={metricCards}
+          />
+          <AlertsAndQueue
+            alerts={alerts}
+            actionQueue={actionQueue}
+            onNavigate={navigate}
+          />
+          <AdminDetailSections
+            capacitySectionEnabled={capacitySectionEnabled}
+            workforceSectionEnabled={workforceSectionEnabled}
+            complianceSectionEnabled={complianceSectionEnabled}
+            sectionSummaries={sectionSummaries}
+            expanded={expanded}
+            setExpanded={setExpanded}
+            capacityQuery={capacityQuery}
+            workforceQuery={workforceQuery}
+            complianceQuery={complianceQuery}
+          />
         </div>
       </PageShell>
     </Layout>
+  );
+}
+
+function AdminDashboardActions({
+  window,
+  onWindowChange,
+  onOpenSettings,
+  onRefresh,
+  anyFetching,
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={window} onValueChange={onWindowChange}>
+        <SelectTrigger className="w-[170px]">
+          <SelectValue placeholder="Select window" />
+        </SelectTrigger>
+        <SelectContent>
+          {WINDOW_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button variant="outline" size="sm" onClick={onOpenSettings}>
+        <Settings className="mr-2 size-4" />
+        Settings
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={onRefresh}
+        disabled={anyFetching}
+        aria-label="Refresh dashboard"
+      >
+        <RefreshCw className={cn('size-4', anyFetching && 'animate-spin')} />
+      </Button>
+    </div>
+  );
+}
+
+function OperationalPostureCard({ generatedAt, isLiveConnected, isStale }) {
+  return (
+    <Card className="gap-3 border-primary/20 bg-gradient-to-r from-amber-500/5 to-sky-500/5 py-4">
+      <CardContent className="px-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="space-y-1">
+            <p className="font-heading text-sm text-foreground">Current operational posture</p>
+            <p className="text-xs text-muted-foreground">
+              {generatedAt ? `Last updated ${formatTime(generatedAt)}` : 'Awaiting initial refresh'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-mono tracking-wide',
+                isLiveConnected
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+                  : 'border-amber-500/30 bg-amber-500/10 text-amber-500',
+              )}
+            >
+              {isLiveConnected ? 'LIVE' : 'POLLING'}
+            </span>
+            {isStale ? (
+              <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-mono tracking-wide text-amber-500">
+                STALE READ
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MetricCardsGrid({ loading, metricCards }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <Skeleton key={index} className="h-28" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {metricCards.map((metric) => (
+        <MetricCard
+          key={metric.label}
+          icon={metric.icon}
+          label={metric.label}
+          value={metric.value}
+          subvalue={metric.subvalue}
+          status={metric.status}
+        />
+      ))}
+    </div>
+  );
+}
+
+function AlertsAndQueue({ alerts, actionQueue, onNavigate }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.8fr_1fr]">
+      <TopAlertsCard alerts={alerts} onNavigate={onNavigate} />
+      <ActionQueueCard actionQueue={actionQueue} onNavigate={onNavigate} />
+    </div>
+  );
+}
+
+function TopAlertsCard({ alerts, onNavigate }) {
+  return (
+    <Card className="gap-3 py-4">
+      <CardHeader className="px-4 py-0">
+        <CardTitle className="font-heading text-base">Top Alerts</CardTitle>
+        <CardDescription>Highest-priority issues requiring immediate attention</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 px-4">
+        {alerts.length === 0 ? (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+            No critical alerts right now.
+          </div>
+        ) : (
+          alerts.map((alert) => (
+            <div key={alert.id} className="rounded-lg border border-border bg-card/70 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle
+                      className={cn(
+                        'size-4',
+                        alert.severity === 'critical' ? 'text-rose-500' : 'text-amber-500',
+                      )}
+                    />
+                    <p className="text-sm font-medium text-foreground">{alert.title}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Started {formatTime(alert.started_at)}</p>
+                </div>
+                {alert.primary_action?.href ? (
+                  <Button variant="outline" size="sm" onClick={() => onNavigate(alert.primary_action.href)}>
+                    {alert.primary_action.label || 'Open'}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActionQueueCard({ actionQueue, onNavigate }) {
+  return (
+    <Card className="gap-3 py-4">
+      <CardHeader className="px-4 py-0">
+        <CardTitle className="font-heading text-base">Action Queue</CardTitle>
+        <CardDescription>Prioritized interventions</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 px-4">
+        {actionQueue.length === 0 ? (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+            No pending interventions.
+          </div>
+        ) : (
+          actionQueue.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => onNavigate(action.href)}
+              className="flex w-full items-center justify-between rounded-lg border border-border bg-card/70 p-3 text-left transition-colors hover:bg-accent/40"
+            >
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">{action.title}</p>
+                {statusBadge(action.severity)}
+              </div>
+              <ArrowRight className="size-4 text-muted-foreground" />
+            </button>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AdminDetailSections({
+  capacitySectionEnabled,
+  workforceSectionEnabled,
+  complianceSectionEnabled,
+  sectionSummaries,
+  expanded,
+  setExpanded,
+  capacityQuery,
+  workforceQuery,
+  complianceQuery,
+}) {
+  return (
+    <div className="space-y-4">
+      {capacitySectionEnabled ? (
+        <SectionPanel
+          title="Capacity"
+          description="Ward occupancy, throughput, and wait-time pressure"
+          summary={sectionSummaries.capacity}
+          open={expanded.capacity}
+          onToggle={() => setExpanded((current) => ({ ...current, capacity: !current.capacity }))}
+          loading={capacityQuery.isLoading}
+          error={capacityQuery.error}
+        >
+          <CapacitySectionDetails data={capacityQuery.data} />
+        </SectionPanel>
+      ) : null}
+
+      {workforceSectionEnabled ? (
+        <SectionPanel
+          title="Workforce"
+          description="Shift coverage gaps and immediate staffing risk"
+          summary={sectionSummaries.workforce}
+          open={expanded.workforce}
+          onToggle={() => setExpanded((current) => ({ ...current, workforce: !current.workforce }))}
+          loading={workforceQuery.isLoading}
+          error={workforceQuery.error}
+        >
+          <WorkforceSectionDetails data={workforceQuery.data} />
+        </SectionPanel>
+      ) : null}
+
+      {complianceSectionEnabled ? (
+        <SectionPanel
+          title="Compliance"
+          description="Break-glass monitoring, audit anomalies, and documentation"
+          summary={sectionSummaries.compliance}
+          open={expanded.compliance}
+          onToggle={() => setExpanded((current) => ({ ...current, compliance: !current.compliance }))}
+          loading={complianceQuery.isLoading}
+          error={complianceQuery.error}
+        >
+          <ComplianceSectionDetails data={complianceQuery.data} />
+        </SectionPanel>
+      ) : null}
+    </div>
+  );
+}
+
+function CapacitySectionDetails({ data }) {
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Wait time</p>
+          <p className="mt-1 text-sm text-foreground">
+            Median {data?.wait_time?.median_minutes || 0} min
+          </p>
+          <p className="text-xs text-muted-foreground">
+            P95 {data?.wait_time?.p95_minutes || 0} min
+          </p>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">High occupancy wards</p>
+          <p className="mt-1 text-sm text-foreground">
+            {data?.summary?.high_occupancy_wards || 0} of {data?.summary?.ward_count || 0}
+          </p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {(data?.wards || []).slice(0, 8).map((ward) => (
+          <div key={ward.ward_id} className="rounded-lg border border-border p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-foreground">{ward.ward_name}</p>
+              <p className="text-xs text-muted-foreground">{formatPercent(ward.occupancy_pct)}</p>
+            </div>
+            <Progress value={Number(ward.occupancy_pct || 0)} className="h-2" />
+            <p className="mt-2 text-xs text-muted-foreground">
+              {ward.occupied_beds}/{ward.total_beds} occupied, {ward.available_beds} available
+            </p>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function WorkforceSectionDetails({ data }) {
+  const uncoveredShifts = data?.uncovered_shifts || [];
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Coverage</p>
+          <p className="mt-1 text-sm text-foreground">
+            {formatRatio(data?.summary?.filled_shifts || 0, data?.summary?.required_shifts || 0)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Next 2h risks</p>
+          <p className="mt-1 text-sm text-foreground">
+            {data?.summary?.next_2h_risks || 0} uncovered starts
+          </p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {uncoveredShifts.slice(0, 8).map((shift) => (
+          <div key={shift.shift_id} className="rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-foreground">
+                {shift.unit_name} - {shift.duty_type_name}
+              </p>
+              {statusBadge(shift.priority === 'high' ? 'warning' : 'normal')}
+            </div>
+            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="size-3" />
+              {shift.starts_at ? formatTime(shift.starts_at) : 'No start time'}
+            </p>
+          </div>
+        ))}
+        {uncoveredShifts.length === 0 ? (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+            All tracked shifts have coverage.
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function ComplianceSectionDetails({ data }) {
+  const breakGlassEvents = data?.break_glass_recent || [];
+  const auditRows = data?.audit_anomalies_breakdown || [];
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Documentation completeness</p>
+          <p className="mt-1 text-sm text-foreground">
+            {formatPercent(data?.summary?.documentation_completeness_pct || 0)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Pending break-glass review</p>
+          <p className="mt-1 text-sm text-foreground">
+            {data?.summary?.break_glass_pending_review || 0}
+          </p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {breakGlassEvents.slice(0, 8).map((event) => (
+          <div key={event.id} className="rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-foreground">
+                {event.scope || 'clinical'} access override
+              </p>
+              <span className="text-xs text-muted-foreground">{event.requester_role}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{formatTime(event.created_at)}</p>
+          </div>
+        ))}
+        {auditRows.slice(0, 4).map((row) => (
+          <div key={row.action} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+            <span className="text-sm text-foreground">{row.action}</span>
+            <span className="text-xs text-muted-foreground">{row.count}</span>
+          </div>
+        ))}
+        {breakGlassEvents.length === 0 && auditRows.length === 0 ? (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600">
+            No recent compliance events in this window.
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }

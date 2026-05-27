@@ -6,7 +6,7 @@ import X from 'lucide-react/dist/esm/icons/x.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
@@ -178,14 +178,14 @@ const AppointmentList = () => {
   };
 
   // Navigate to appointment detail
-  const viewAppointmentDetail = (appointmentId) => {
+  const viewAppointmentDetail = useCallback((appointmentId) => {
     navigate(`/appointments/${appointmentId}`);
-  };
+  }, [navigate]);
 
-  const handlePatientContext = (appointment) => {
+  const handlePatientContext = useCallback((appointment) => {
     setContextAppointment(appointment);
     setContextOpen(true);
-  };
+  }, []);
 
   const handleCloseContext = () => {
     setContextOpen(false);
@@ -203,7 +203,7 @@ const AppointmentList = () => {
     try {
       const dateTime = parseISO(dateTimeString);
       return format(dateTime, 'MMM d, yyyy h:mm a');
-    } catch (error) {
+    } catch {
       return 'Invalid date';
     }
   };
@@ -363,7 +363,7 @@ const AppointmentList = () => {
         </div>
       ),
     },
-  ]), [canOpenContext]);
+  ]), [canOpenContext, handlePatientContext, viewAppointmentDetail]);
 
   // Render loading state
   if (isLoading) {
