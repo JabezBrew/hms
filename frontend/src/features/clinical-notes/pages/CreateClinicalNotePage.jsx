@@ -22,12 +22,337 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
+const DEFAULT_NURSING_TEMPLATE_TITLES = ['Nursing Vitals', 'Nursing I/O', 'Nursing Meds', 'Nursing Note'];
+
+const DEFAULT_NURSING_TEMPLATES = [
+  {
+    title: 'Nursing Vitals',
+    description: 'Template for recording patient vital signs',
+    is_active: true,
+    is_public: true,
+    is_default: true,
+    structure: [
+      { section: 'Vitals', type: 'observation', observation_type: 'vitals' },
+      { section: 'Notes', type: 'text' },
+    ],
+  },
+  {
+    title: 'Nursing I/O',
+    description: 'Template for recording fluid intake and output',
+    is_active: true,
+    is_public: true,
+    is_default: true,
+    structure: [
+      { section: 'I/O Chart', type: 'observation', observation_type: 'fluid_balance' },
+      { section: 'Notes', type: 'text' },
+    ],
+  },
+  {
+    title: 'Nursing Meds',
+    description: 'Template for recording medications administered',
+    is_active: true,
+    is_public: true,
+    is_default: true,
+    structure: [
+      { section: 'Medication Given', type: 'medication_administration' },
+      { section: 'Notes', type: 'text' },
+    ],
+  },
+  {
+    title: 'Nursing Note',
+    description: 'Template for general nursing notes',
+    is_active: true,
+    is_public: true,
+    is_default: true,
+    structure: [{ section: 'Nurse Note', type: 'text' }],
+  },
+];
+
+const NURSING_ACTIVITIES = [
+  {
+    title: 'Vitals Chart',
+    description: 'Record patient vital signs',
+    templateNeedle: 'nursing vitals',
+    missingMessage: 'Please create a Nursing Vitals template first',
+  },
+  {
+    title: 'I/O Chart',
+    description: 'Record fluid intake and output',
+    templateNeedle: 'nursing i/o',
+    missingMessage: 'Please create a Nursing I/O template first',
+  },
+  {
+    title: 'Medications',
+    description: 'Record medications administered',
+    templateNeedle: 'nursing meds',
+    missingMessage: 'Please create a Nursing Meds template first',
+  },
+  {
+    title: 'Nurse Note',
+    description: 'Record general nursing notes',
+    templateNeedle: 'nursing note',
+    missingMessage: 'Please create a Nursing Note template first',
+  },
+];
+
+function ClinicalNotePageState({
+  isErrorEncounter,
+  isEncounterValid,
+  isLoadingEncounter,
+  encounterStatus,
+  children,
+}) {
+  if (isLoadingEncounter) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Loading encounter details…</CardTitle>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  if (isErrorEncounter) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="size-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          Failed to load encounter details. Please try again later.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!isEncounterValid) {
+    return (
+      <Alert>
+        <AlertCircle className="size-4" />
+        <AlertTitle>Note</AlertTitle>
+        <AlertDescription>
+          Clinical notes can only be added to active or planned encounters.
+          This encounter is currently marked as {encounterStatus}.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return children;
+}
+
+function ClinicalNotesTabs({
+  activeTab,
+  existingNotes,
+  encounterId,
+  isErrorNotes,
+  isLoadingNotes,
+  isNurse,
+  onChangeTemplate,
+  onCreateTemplateSuccess,
+  onFormSuccess,
+  onSelectNursingActivity,
+  onSelectTemplate,
+  patientId,
+  rustV2Mode,
+  selectedTemplate,
+  setActiveTab,
+}) {
+  return (
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <TabsList className="grid w-full grid-cols-3">
+        <TabsTrigger value="new">New Note</TabsTrigger>
+        <TabsTrigger value="history">Note History</TabsTrigger>
+        <TabsTrigger value="template">Create Template</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="new" className="space-y-4">
+        <NewNoteTab
+          encounterId={encounterId}
+          isNurse={isNurse}
+          onChangeTemplate={onChangeTemplate}
+          onFormSuccess={onFormSuccess}
+          onSelectNursingActivity={onSelectNursingActivity}
+          onSelectTemplate={onSelectTemplate}
+          patientId={patientId}
+          selectedTemplate={selectedTemplate}
+        />
+      </TabsContent>
+
+      <TabsContent value="template" className="space-y-4">
+        <TemplateBuilder onSuccess={onCreateTemplateSuccess} />
+      </TabsContent>
+
+      <TabsContent value="form" className="space-y-4">
+        {selectedTemplate ? (
+          <DynamicNoteForm
+            template={selectedTemplate}
+            encounterId={encounterId}
+            patientId={patientId}
+            onSuccess={onFormSuccess}
+          />
+        ) : null}
+      </TabsContent>
+
+      <TabsContent value="history">
+        <ClinicalNoteHistoryTab
+          existingNotes={existingNotes}
+          isErrorNotes={isErrorNotes}
+          isLoadingNotes={isLoadingNotes}
+          rustV2Mode={rustV2Mode}
+        />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function NewNoteTab({
+  encounterId,
+  isNurse,
+  onChangeTemplate,
+  onFormSuccess,
+  onSelectNursingActivity,
+  onSelectTemplate,
+  patientId,
+  selectedTemplate,
+}) {
+  if (!selectedTemplate) {
+    return (
+      <div className="space-y-6">
+        {isNurse ? <NursingActivitiesCard onSelectActivity={onSelectNursingActivity} /> : null}
+        <TemplateSelector onSelectTemplate={onSelectTemplate} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold">Create Note</h2>
+        <Button variant="outline" onClick={onChangeTemplate}>
+          Change Template
+        </Button>
+      </div>
+      <DynamicNoteForm
+        template={selectedTemplate}
+        encounterId={encounterId}
+        patientId={patientId}
+        onSuccess={onFormSuccess}
+      />
+    </div>
+  );
+}
+
+function NursingActivitiesCard({ onSelectActivity }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Nursing Activities</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4">
+          <p className="text-muted-foreground">
+            Select the nursing activity you want to record. Each activity is tracked separately for better time management.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {NURSING_ACTIVITIES.map((activity) => (
+            <NursingActivityButton
+              key={activity.title}
+              activity={activity}
+              onSelectActivity={onSelectActivity}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function NursingActivityButton({ activity, onSelectActivity }) {
+  return (
+    <button
+      type="button"
+      className="rounded-lg border bg-card text-card-foreground text-left shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      onClick={() => onSelectActivity(activity)}
+    >
+      <div className="p-6 pb-2">
+        <h3 className="text-lg font-semibold leading-none tracking-tight">{activity.title}</h3>
+      </div>
+      <div className="p-6 pt-0">
+        <p className="text-sm text-muted-foreground">{activity.description}</p>
+      </div>
+    </button>
+  );
+}
+
+function ClinicalNoteHistoryTab({ existingNotes, isErrorNotes, isLoadingNotes, rustV2Mode }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{rustV2Mode ? 'Patient Note History' : 'Note History'}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoadingNotes ? (
+          <p>Loading notes…</p>
+        ) : isErrorNotes ? (
+          <p className="text-red-500">Failed to load notes. Please try again later.</p>
+        ) : !existingNotes || existingNotes.length === 0 ? (
+          <p>
+            {rustV2Mode
+              ? 'No clinical notes have been created for this patient yet.'
+              : 'No notes have been created for this encounter yet.'}
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {existingNotes.map((note) => (
+              <ClinicalNoteHistoryCard key={note.id} note={note} />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClinicalNoteHistoryCard({ note }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{note.template_title || note.title || 'Clinical note'}</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Created: {new Date(note.created_at).toLocaleString()}
+        </p>
+        {(note.practitioner_name || note.created_by_name) ? (
+          <p className="text-sm text-muted-foreground">
+            By: {note.practitioner_name || note.created_by_name}
+          </p>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {Object.entries(note.data || {}).map(([section, data]) => (
+            <div key={section}>
+              <h4 className="font-medium">{section}</h4>
+              {typeof data === 'string' ? (
+                <p>{data}</p>
+              ) : (
+                <pre className="text-sm bg-muted p-2 rounded">
+                  {JSON.stringify(data, null, 2)}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function CreateClinicalNotePage() {
   const { id: encounterId } = useParams();
   const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [activeTab, setActiveTab] = useState('new');
-  const showTemplateBuilderRef = useRef(false);
   const isCreatingTemplatesRef = useRef(false);
   const rustV2Mode = isRustV2ApiMode();
 
@@ -63,7 +388,6 @@ export default function CreateClinicalNotePage() {
   const {
     data: activeTemplates,
     isLoading: isLoadingTemplates,
-    isError: isErrorTemplates
   } = useActiveNoteTemplates({ page_size: 200 });
 
   const encounterLabel = encounter?.patient_name
@@ -93,60 +417,11 @@ export default function CreateClinicalNotePage() {
   const createDefaultNursingTemplates = useCallback(async () => {
     try {
       isCreatingTemplatesRef.current = true;
-
-      // Define the templates
-      const nursingTemplates = [
-        {
-          title: 'Nursing Vitals',
-          description: 'Template for recording patient vital signs',
-          is_active: true,
-          is_public: true,
-          is_default: true,
-          structure: [
-            { section: 'Vitals', type: 'observation', observation_type: 'vitals' },
-            { section: 'Notes', type: 'text' }
-          ]
-        },
-        {
-          title: 'Nursing I/O',
-          description: 'Template for recording fluid intake and output',
-          is_active: true,
-          is_public: true,
-          is_default: true,
-          structure: [
-            { section: 'I/O Chart', type: 'observation', observation_type: 'fluid_balance' },
-            { section: 'Notes', type: 'text' }
-          ]
-        },
-        {
-          title: 'Nursing Meds',
-          description: 'Template for recording medications administered',
-          is_active: true,
-          is_public: true,
-          is_default: true,
-          structure: [
-            { section: 'Medication Given', type: 'medication_administration' },
-            { section: 'Notes', type: 'text' }
-          ]
-        },
-        {
-          title: 'Nursing Note',
-          description: 'Template for general nursing notes',
-          is_active: true,
-          is_public: true,
-          is_default: true,
-          structure: [
-            { section: 'Nurse Note', type: 'text' }
-          ]
-        }
-      ];
-
-      await Promise.all(nursingTemplates.map((template) => createNoteTemplate.mutateAsync(template)));
+      await Promise.all(DEFAULT_NURSING_TEMPLATES.map((template) => createNoteTemplate.mutateAsync(template)));
 
       toast.success('Default nursing templates created successfully');
-    } catch (error) {
+    } catch {
       toast.error('Failed to create default nursing templates');
-      console.error('Error creating templates:', error);
     } finally {
       isCreatingTemplatesRef.current = false;
     }
@@ -156,16 +431,12 @@ export default function CreateClinicalNotePage() {
   useEffect(() => {
     // Only proceed if user is a nurse and templates are loaded and not already creating templates
     if (isNurse && !isLoadingTemplates && activeTemplates && !isCreatingTemplatesRef.current) {
-      // Get exact template titles to check
-      const exactTitles = ['Nursing Vitals', 'Nursing I/O', 'Nursing Meds', 'Nursing Note'];
-
       // Check if all default nursing templates already exist (exact title match)
       const existingTitles = activeTemplates.map(template => template.title);
-      const missingTemplates = exactTitles.filter(title => !existingTitles.includes(title));
+      const missingTemplates = DEFAULT_NURSING_TEMPLATE_TITLES.filter(title => !existingTitles.includes(title));
 
       // Only create templates if any are missing
       if (missingTemplates.length > 0) {
-        console.log('Creating missing nursing templates:', missingTemplates);
         createDefaultNursingTemplates();
       }
     }
@@ -175,7 +446,18 @@ export default function CreateClinicalNotePage() {
   const handleSelectTemplate = (template) => {
     setSelectedTemplate(template);
     setActiveTab('form');
-    showTemplateBuilderRef.current = false;
+  };
+
+  const handleSelectNursingActivity = (activity) => {
+    const matchingTemplate = activeTemplates?.find(template =>
+      template.title.toLowerCase().includes(activity.templateNeedle)
+    );
+
+    if (matchingTemplate) {
+      handleSelectTemplate(matchingTemplate);
+    } else {
+      toast.info(activity.missingMessage);
+    }
   };
 
   // Handle form submission success
@@ -183,7 +465,6 @@ export default function CreateClinicalNotePage() {
     // Reset the form
     setSelectedTemplate(null);
     setActiveTab('new');
-    showTemplateBuilderRef.current = false;
 
     // Navigate back to the encounter detail page
     navigate(`/encounters/${encounterId}`);
@@ -192,7 +473,6 @@ export default function CreateClinicalNotePage() {
   // Handle template creation success
   const handleTemplateCreationSuccess = () => {
     toast.success('Template created successfully. You can now select it from the template list.');
-    showTemplateBuilderRef.current = false;
   };
 
   // Check if encounter is valid for adding notes
@@ -224,226 +504,30 @@ export default function CreateClinicalNotePage() {
         />
 
         <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto">
-          {isLoadingEncounter ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Loading encounter details…</CardTitle>
-              </CardHeader>
-            </Card>
-          ) : isErrorEncounter ? (
-            <Alert variant="destructive">
-              <AlertCircle className="size-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>
-                Failed to load encounter details. Please try again later.
-              </AlertDescription>
-            </Alert>
-          ) : !isEncounterValid ? (
-            <Alert>
-              <AlertCircle className="size-4" />
-              <AlertTitle>Note</AlertTitle>
-              <AlertDescription>
-                Clinical notes can only be added to active or planned encounters.
-                This encounter is currently marked as {encounter?.status}.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="new">New Note</TabsTrigger>
-                <TabsTrigger value="history">Note History</TabsTrigger>
-                <TabsTrigger value="template">Create Template</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="new" className="space-y-4">
-                {!selectedTemplate ? (
-                  <div className="space-y-6">
-                    {isNurse && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Nursing Activities</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="mb-4">
-                            <p className="text-muted-foreground">
-                              Select the nursing activity you want to record. Each activity is tracked separately for better time management.
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                              // Find the nursing vitals template
-                              const vitalsTemplate = activeTemplates?.find(template => 
-                                template.title.toLowerCase().includes('nursing vitals')
-                              );
-                              if (vitalsTemplate) {
-                                handleSelectTemplate(vitalsTemplate);
-                              } else {
-                                toast.info("Please create a Nursing Vitals template first");
-                              }
-                            }}>
-                              <CardHeader className="pb-2">
-                                <CardTitle className="text-lg">Vitals Chart</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <p className="text-sm text-muted-foreground">Record patient vital signs</p>
-                              </CardContent>
-                            </Card>
-
-                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                              // Find the nursing I/O template
-                              const ioTemplate = activeTemplates?.find(template => 
-                                template.title.toLowerCase().includes('nursing i/o')
-                              );
-                              if (ioTemplate) {
-                                handleSelectTemplate(ioTemplate);
-                              } else {
-                                toast.info("Please create a Nursing I/O template first");
-                              }
-                            }}>
-                              <CardHeader className="pb-2">
-                                <CardTitle className="text-lg">I/O Chart</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <p className="text-sm text-muted-foreground">Record fluid intake and output</p>
-                              </CardContent>
-                            </Card>
-
-                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                              // Find the nursing meds template
-                              const medsTemplate = activeTemplates?.find(template => 
-                                template.title.toLowerCase().includes('nursing meds')
-                              );
-                              if (medsTemplate) {
-                                handleSelectTemplate(medsTemplate);
-                              } else {
-                                toast.info("Please create a Nursing Meds template first");
-                              }
-                            }}>
-                              <CardHeader className="pb-2">
-                                <CardTitle className="text-lg">Medications</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <p className="text-sm text-muted-foreground">Record medications administered</p>
-                              </CardContent>
-                            </Card>
-
-                            <Card className="cursor-pointer hover:bg-accent" onClick={() => {
-                              // Find the nursing note template
-                              const noteTemplate = activeTemplates?.find(template => 
-                                template.title.toLowerCase().includes('nursing note')
-                              );
-                              if (noteTemplate) {
-                                handleSelectTemplate(noteTemplate);
-                              } else {
-                                toast.info("Please create a Nursing Note template first");
-                              }
-                            }}>
-                              <CardHeader className="pb-2">
-                                <CardTitle className="text-lg">Nurse Note</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <p className="text-sm text-muted-foreground">Record general nursing notes</p>
-                              </CardContent>
-                            </Card>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                  <TemplateSelector onSelectTemplate={handleSelectTemplate} />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h2 className="text-xl font-semibold">Create Note</h2>
-                    <Button
-                      variant="outline"
-                      onClick={() => setSelectedTemplate(null)}
-                    >
-                      Change Template
-                    </Button>
-                  </div>
-                  <DynamicNoteForm
-                    template={selectedTemplate}
-                    encounterId={encounterId}
-                    patientId={encounter?.patient}
-                    onSuccess={handleFormSuccess}
-                  />
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="template" className="space-y-4">
-              <TemplateBuilder onSuccess={handleTemplateCreationSuccess} />
-            </TabsContent>
-
-            <TabsContent value="form" className="space-y-4">
-              {selectedTemplate && (
-                <DynamicNoteForm
-                  template={selectedTemplate}
-                  encounterId={encounterId}
-                  patientId={encounter?.patient}
-                  onSuccess={handleFormSuccess}
-                />
-              )}
-            </TabsContent>
-
-            <TabsContent value="history">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>{rustV2Mode ? 'Patient Note History' : 'Note History'}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {isLoadingNotes ? (
-                        <p>Loading notes…</p>
-                      ) : isErrorNotes ? (
-                        <p className="text-red-500">Failed to load notes. Please try again later.</p>
-                      ) : !existingNotes || existingNotes.length === 0 ? (
-                        <p>
-                          {rustV2Mode
-                            ? 'No clinical notes have been created for this patient yet.'
-                            : 'No notes have been created for this encounter yet.'}
-                        </p>
-                      ) : (
-                        <div className="space-y-4">
-                          {existingNotes.map(note => (
-                            <Card key={note.id}>
-                              <CardHeader>
-                                <CardTitle>{note.template_title || note.title || 'Clinical note'}</CardTitle>
-                                <p className="text-sm text-muted-foreground">
-                                  Created: {new Date(note.created_at).toLocaleString()}
-                                </p>
-                                {(note.practitioner_name || note.created_by_name) && (
-                                  <p className="text-sm text-muted-foreground">
-                                    By: {note.practitioner_name || note.created_by_name}
-                                  </p>
-                                )}
-                              </CardHeader>
-                              <CardContent>
-                                <div className="space-y-2">
-                                  {Object.entries(note.data || {}).map(([section, data]) => (
-                                    <div key={section}>
-                                      <h4 className="font-medium">{section}</h4>
-                                  {typeof data === 'string' ? (
-                                    <p>{data}</p>
-                                  ) : (
-                                    <pre className="text-sm bg-muted p-2 rounded">
-                                      {JSON.stringify(data, null, 2)}
-                                    </pre>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        )}
+          <ClinicalNotePageState
+            encounterStatus={encounter?.status}
+            isEncounterValid={isEncounterValid}
+            isErrorEncounter={isErrorEncounter}
+            isLoadingEncounter={isLoadingEncounter}
+          >
+            <ClinicalNotesTabs
+              activeTab={activeTab}
+              encounterId={encounterId}
+              existingNotes={existingNotes}
+              isErrorNotes={isErrorNotes}
+              isLoadingNotes={isLoadingNotes}
+              isNurse={isNurse}
+              onChangeTemplate={() => setSelectedTemplate(null)}
+              onCreateTemplateSuccess={handleTemplateCreationSuccess}
+              onFormSuccess={handleFormSuccess}
+              onSelectNursingActivity={handleSelectNursingActivity}
+              onSelectTemplate={handleSelectTemplate}
+              patientId={encounter?.patient}
+              rustV2Mode={rustV2Mode}
+              selectedTemplate={selectedTemplate}
+              setActiveTab={setActiveTab}
+            />
+          </ClinicalNotePageState>
       </div>
     </PageShell>
   );
