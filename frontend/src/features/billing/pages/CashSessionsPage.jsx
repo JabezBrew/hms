@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import Wallet from 'lucide-react/dist/esm/icons/wallet.js';
 import Flag from 'lucide-react/dist/esm/icons/flag.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';

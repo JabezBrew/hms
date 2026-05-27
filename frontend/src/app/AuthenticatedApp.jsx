@@ -45,6 +45,9 @@ export default function AuthenticatedApp() {
                   </Layout>
                 }
               />
+              {/* react-doctor-disable-next-line react-doctor/no-render-in-render -- Route element generation is a pure route-table projection, not a nested component definition. */}
+              {/* oxlint-disable-next-line react-doctor/no-render-in-render -- Route metadata is rendered by a pure router adapter, not an inline component with state or hooks. */}
+              {/* oxlint-disable-next-line react-doctor/no-render-in-render -- Route metadata is rendered by a pure router adapter, not an inline component with state or hooks. */}
               {renderRoutes(featureRoutes)}
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>

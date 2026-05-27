@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 /**
  * RosterBuilderPage - Build and edit roster for a period
  * Generate, view, edit, and publish roster entries

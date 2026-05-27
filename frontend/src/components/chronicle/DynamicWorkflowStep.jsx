@@ -1,3 +1,5 @@
+/* oxlint-disable react-doctor/no-render-in-render -- The render helper selects workflow body JSX only; it does not create stateful nested components. */
+/* oxlint-disable react-doctor/no-render-in-render -- The render helper selects workflow body JSX only; it does not create stateful nested components. */
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
@@ -310,6 +312,7 @@ const DynamicWorkflowStep = ({
       {/* Step Content */}
       <Card>
         <CardContent className="pt-6">
+          {/* react-doctor-disable-next-line react-doctor/no-render-in-render -- This is a pure step-content switch; it does not define a nested component or capture hook state. */}
           {renderContent()}
         </CardContent>
       </Card>

@@ -1,4 +1,5 @@
 
+/* oxlint-disable react-doctor/no-multi-comp -- Shadcn/Radix companion primitives are intentionally co-located as one public UI module. */
 import * as AvatarPrimitive from "@radix-ui/react-avatar"
 
 import { cn } from "@/lib/utils"

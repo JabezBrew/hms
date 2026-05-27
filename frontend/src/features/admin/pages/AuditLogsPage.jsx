@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';

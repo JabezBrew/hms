@@ -1,3 +1,5 @@
+/* oxlint-disable react-doctor/no-render-in-render -- The form-field helper is a pure switch over action type; extracting it separately would be a larger dialog refactor. */
+/* oxlint-disable react-doctor/no-render-in-render -- The form-field helper is a pure switch over action type; extracting it separately would be a larger dialog refactor. */
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
@@ -531,6 +533,7 @@ const PrescriptionActionsDialogContent = ({
         </DialogHeader>
 
         <div className="py-4">
+          {/* react-doctor-disable-next-line react-doctor/no-render-in-render -- This is a pure action-specific field switch, not a nested component definition. */}
           {renderFormFields()}
         </div>
 

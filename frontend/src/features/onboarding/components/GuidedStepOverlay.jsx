@@ -282,9 +282,10 @@ export default function GuidedStepOverlay({
     return () => {
       window.removeEventListener('resize', scheduleMeasure)
       window.removeEventListener('scroll', scheduleMeasure, true)
-      if (rafRef.current) {
-        window.cancelAnimationFrame(rafRef.current)
-        rafRef.current = 0
+      const pendingFrame = rafRef.current
+      rafRef.current = 0
+      if (pendingFrame) {
+        window.cancelAnimationFrame(pendingFrame)
       }
       if (targetResizeObserver) {
         if (observedTarget) {

@@ -366,7 +366,6 @@ export default function ProviderDashboard() {
           <div className="lg:col-span-5">
             <ChronicleInbox
               tasks={visibleTasks}
-              selectedTask={selectedTask}
               onSelectTask={setSelectedTask}
             />
           </div>
@@ -506,7 +505,7 @@ function ChronicleAppointmentCard({ appointment, index, onClick }) {
 /**
  * ChronicleInbox - Task inbox in Chronicle style
  */
-function ChronicleInbox({ tasks, selectedTask, onSelectTask }) {
+function ChronicleInbox({ tasks, onSelectTask }) {
   return (
     <div className="bg-card border border-border rounded-2xl h-full flex flex-col animate-chronicle-enter">
       <header className="px-6 py-4 border-b border-border">

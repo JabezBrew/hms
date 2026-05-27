@@ -2,7 +2,7 @@ import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -563,6 +563,7 @@ export default function PatientChroniclePrintPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const hasPrintedRef = useRef(false);
+  const [printedAt] = useState(() => new Date());
   const params = useMemo(() => new URLSearchParams(search), [search]);
   const requestedVisit = params.get(CHRONICLE_VISIT_PARAM);
   const requestedType = params.get('type') || 'all';
@@ -718,7 +719,7 @@ export default function PatientChroniclePrintPage() {
                     </h1>
                   </div>
                   <div className="font-mono text-[11px] leading-5 text-neutral-600 sm:text-right">
-                    <div>Printed {formatDateTime(new Date())}</div>
+                    <div>Printed {formatDateTime(printedAt)}</div>
                     <div>Printed by {user?.full_name || user?.username || user?.email || EMPTY_VALUE}</div>
                     <div>{visitScopeLabel}</div>
                   </div>

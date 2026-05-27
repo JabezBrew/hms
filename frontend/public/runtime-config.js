@@ -1,3 +1,4 @@
+/* oxlint-disable deslop/unused-file -- Runtime entry point: this file is discovered outside static import traversal. */
 window.__HMS_RUNTIME_CONFIG__ = Object.freeze({
   apiBaseUrl: "$API_BASE_URL",
   apiMode: "$HMS_API_MODE",

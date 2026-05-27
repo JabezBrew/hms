@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-dynamic-import -- These chart modules already load through route or slide-over chunks; splitting Recharts again would add a nested loading waterfall. */
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';

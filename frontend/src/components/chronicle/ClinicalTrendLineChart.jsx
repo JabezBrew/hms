@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-dynamic-import -- These chart modules already load through route or slide-over chunks; splitting Recharts again would add a nested loading waterfall. */
 import { useMemo } from 'react';
 import { format } from 'date-fns';
 import {

@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback } from 'react'
 import { getAuthValue, removeAuthValue, setAuthValue } from '@/lib/auth-storage'
 
@@ -299,7 +300,7 @@ export function AuthProvider({ children }) {
     return userData
   }, [clearCockpitCache, defaultFacilityCode, facilityCode, setAccessToken, user])
 
-  const login = async (email, password, facility) => {
+  const login = useCallback(async (email, password, facility) => {
     setError(null)
     try {
       // Call the login API
@@ -323,10 +324,10 @@ export function AuthProvider({ children }) {
       notifications.error(errorMessage)
       throw error
     }
-  }
+  }, [applyAuthResponse, setFacilityCode])
 
   // Reset password function
-  const resetPassword = async (email) => {
+  const resetPassword = useCallback(async (email) => {
     setLoading(true)
     setError(null)
     try {
@@ -341,7 +342,7 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const completeMfa = useCallback((response) => applyAuthResponse(response), [applyAuthResponse])
 

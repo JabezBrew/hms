@@ -102,6 +102,15 @@ const ICON_TONES = Object.freeze({
   },
 })
 
+const GENERIC_RESULT_GROUPS = Object.freeze([
+  { heading: 'Visits', itemsKey: 'visits', Icon: RouteIcon, tone: 'amber', keyPrefix: 'visit' },
+  { heading: 'Clinics', itemsKey: 'clinics', Icon: Building2, tone: 'emerald', keyPrefix: 'clinic' },
+  { heading: 'Laboratory', itemsKey: 'laboratory', Icon: FlaskConical, tone: 'sky', keyPrefix: 'laboratory' },
+  { heading: 'Billing', itemsKey: 'billing', Icon: ReceiptText, tone: 'amber', keyPrefix: 'billing' },
+  { heading: 'Inventory', itemsKey: 'inventory', Icon: Boxes, tone: 'emerald', keyPrefix: 'inventory' },
+  { heading: 'Referrals', itemsKey: 'referrals', Icon: GitPullRequestArrow, tone: 'rose', keyPrefix: 'referral' },
+])
+
 function LeadingIcon({ Icon, tone = 'sky' }) {
   const selected = ICON_TONES[tone] || ICON_TONES.sky
   return (
@@ -113,6 +122,19 @@ function LeadingIcon({ Icon, tone = 'sky' }) {
     >
       <Icon className={cn("size-4", selected.icon)} />
     </span>
+  )
+}
+
+function GenericResultGroup({ heading, items, Icon, tone, keyPrefix, renderItem }) {
+  if (!Array.isArray(items) || items.length === 0) return null
+
+  return (
+    <>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+      <CommandGroup heading={heading}>
+        {items.map((item) => renderItem(item, { Icon, tone, keyPrefix }))}
+      </CommandGroup>
+    </>
   )
 }
 
@@ -714,19 +736,6 @@ export function OmniSearchDialog() {
     [onSelectAndClose]
   )
 
-  const renderGenericGroup = ({ heading, items, Icon, tone, keyPrefix }) => {
-    if (!Array.isArray(items) || items.length === 0) return null
-
-    return (
-      <>
-        <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-        <CommandGroup heading={heading}>
-          {items.map((item) => renderGenericItem(item, { Icon, tone, keyPrefix }))}
-        </CommandGroup>
-      </>
-    )
-  }
-
   const hasQuery = rawQuery.trim().length > 0
   const serverQueryReady = effectiveQuery.length === 0 || effectiveQuery.length >= 2
   const isSearching = isLoading || isDebouncing
@@ -1169,48 +1178,17 @@ export function OmniSearchDialog() {
                 </CommandGroup>
               </>
             )}
-            {renderGenericGroup({
-              heading: 'Visits',
-              items: groups.visits,
-              Icon: RouteIcon,
-              tone: 'amber',
-              keyPrefix: 'visit',
-            })}
-            {renderGenericGroup({
-              heading: 'Clinics',
-              items: groups.clinics,
-              Icon: Building2,
-              tone: 'emerald',
-              keyPrefix: 'clinic',
-            })}
-            {renderGenericGroup({
-              heading: 'Laboratory',
-              items: groups.laboratory,
-              Icon: FlaskConical,
-              tone: 'sky',
-              keyPrefix: 'laboratory',
-            })}
-            {renderGenericGroup({
-              heading: 'Billing',
-              items: groups.billing,
-              Icon: ReceiptText,
-              tone: 'amber',
-              keyPrefix: 'billing',
-            })}
-            {renderGenericGroup({
-              heading: 'Inventory',
-              items: groups.inventory,
-              Icon: Boxes,
-              tone: 'emerald',
-              keyPrefix: 'inventory',
-            })}
-            {renderGenericGroup({
-              heading: 'Referrals',
-              items: groups.referrals,
-              Icon: GitPullRequestArrow,
-              tone: 'rose',
-              keyPrefix: 'referral',
-            })}
+            {GENERIC_RESULT_GROUPS.map((group) => (
+              <GenericResultGroup
+                key={group.keyPrefix}
+                heading={group.heading}
+                items={groups[group.itemsKey]}
+                Icon={group.Icon}
+                tone={group.tone}
+                keyPrefix={group.keyPrefix}
+                renderItem={renderGenericItem}
+              />
+            ))}
           </>
         )}
 

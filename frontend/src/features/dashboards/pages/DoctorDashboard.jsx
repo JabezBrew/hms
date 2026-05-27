@@ -181,217 +181,316 @@ export default function DoctorDashboard() {
           </span>
         )}
         actions={(
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            {canUseReferrals ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate('/referrals/sent')}
-                  className="font-mono text-xs"
-                >
-                  <Send className="size-4 mr-2" />
-                  Sent Referrals
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate('/referrals/inbox')}
-                  className="font-mono text-xs"
-                >
-                  <Inbox className="size-4 mr-2" />
-                  Referral Inbox
-                </Button>
-              </>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              className="font-mono text-xs"
-              disabled={isFetching}
-            >
-              <RefreshCw className={cn('size-4 mr-2', isFetching && 'animate-spin')} />
-              Refresh
-            </Button>
-          </div>
+          <DoctorDashboardActions
+            canUseReferrals={canUseReferrals}
+            isFetching={isFetching}
+            onOpenSentReferrals={() => navigate('/referrals/sent')}
+            onOpenReferralInbox={() => navigate('/referrals/inbox')}
+            onRefresh={() => refetch()}
+          />
         )}
         descriptionClassName="text-muted-foreground mt-2"
       />
 
       <main className="p-6 space-y-6">
-        {/* Current Patient - Hero Card */}
-        {data.current_patient ? (
-          <article className={cn(
-            "relative bg-card border-2 border-primary/30 rounded-2xl p-6",
-            "shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
-            "animate-chronicle-enter"
-          )}>
-            {/* Status ribbon */}
-            <div className="status-ribbon status-ribbon-warning" />
-
-            <header className="flex items-start justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <PlayCircle className="size-5 text-primary" />
-                </div>
-                <div>
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-primary">
-                    Current Patient
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {data.current_patient.time_display}
-                  </p>
-                </div>
-              </div>
-              <span className="badge-chronicle-amber">In Progress</span>
-            </header>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-3">
-                <h2 className="font-display text-3xl text-foreground">
-                  {canUsePatientChronicle ? (
-                    <button
-                      type="button"
-                      aria-label={`View patient ${data.current_patient.patient_name}`}
-                      className="cursor-pointer bg-transparent p-0 text-left [font:inherit] hover:text-primary focus:outline-none focus-visible:underline"
-                      onClick={() => handleViewPatient(data.current_patient.patient_id)}
-                    >
-                      {data.current_patient.patient_name}
-                    </button>
-                  ) : (
-                    data.current_patient.patient_name
-                  )}
-                </h2>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  {data.current_patient.reason && (
-                    <span className="flex items-center gap-1.5">
-                      <Stethoscope className="size-3.5" />
-                      {data.current_patient.reason}
-                    </span>
-                  )}
-                  <span className="font-mono text-xs px-2 py-0.5 rounded bg-muted">
-                    {data.current_patient.appointment_type}
-                  </span>
-                </div>
-              </div>
-              {canStartConsultation ? (
-                <Button
-                  size="lg"
-                  onClick={() => handleStartConsultation(data.current_patient)}
-                  className="font-mono"
-                >
-                  Begin Consultation
-                  <ChevronRight className="size-4 ml-2" />
-                </Button>
-              ) : null}
-            </div>
-          </article>
-        ) : (
-          <article className={cn(
-            "bg-card/50 border border-border rounded-2xl p-12 text-center",
-            "animate-chronicle-enter"
-          )}>
-            <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-              <Clock className="size-8 text-muted-foreground" />
-            </div>
-            <h3 className="font-display text-xl text-foreground mb-2">No Current Patient</h3>
-            <p className="text-muted-foreground text-sm">
-              {canUseAppointments && data.upcoming && data.upcoming.length > 0
-                ? 'Next patient arriving soon'
-                : canUseAppointments
-                ? 'No appointments scheduled for today'
-                : 'No active clinic patient'}
-            </p>
-          </article>
-        )}
-
-        {/* Waiting Room - Patients ready for consultation */}
-        {data.waiting_room && data.waiting_room.length > 0 && (
-          <section>
-            <header className="flex items-center gap-3 mb-4">
-              <Users className="size-5 text-amber-400" />
-              <h2 className="font-display text-2xl text-foreground">Waiting Room</h2>
-              <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                {data.waiting_room.length}
-              </span>
-            </header>
-
-            <div className="space-y-3">
-              {data.waiting_room.map((visit, index) => (
-                <WaitingPatientCard
-                  key={visit.encounter_id}
-                  visit={visit}
-                  index={index}
-                  onCall={() => callPatient.mutate(visit.encounter_id)}
-                  onStart={canStartConsultation ? () => startConsultation.mutate(visit.encounter_id) : undefined}
-                  onViewPatient={canUsePatientChronicle ? () => handleViewPatient(visit.patient_id || visit.encounter_id) : undefined}
-                  isCallingPending={callPatient.isPending}
-                  isStartingPending={startConsultation.isPending}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Upcoming Appointments */}
-        {canUseAppointments ? (
-        <section>
-          <header className="flex items-center gap-3 mb-4">
-            <Calendar className="size-5 text-muted-foreground" />
-            <h2 className="font-display text-2xl text-foreground">Upcoming</h2>
-            <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-              {data.upcoming?.length || 0}
-            </span>
-          </header>
-
-          {data.upcoming && data.upcoming.length > 0 ? (
-            <div className="space-y-3">
-              {data.upcoming.map((appointment, index) => (
-                <AppointmentCard
-                  key={appointment.id}
-                  appointment={appointment}
-                  index={index}
-                  onStart={canStartConsultation ? () => handleStartConsultation(appointment) : undefined}
-                  onViewPatient={canUsePatientChronicle ? () => handleViewPatient(appointment.patient_id) : undefined}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="bg-card/30 border border-border rounded-xl p-8 text-center">
-              <p className="text-muted-foreground text-sm font-mono">
-                No upcoming appointments
-              </p>
-            </div>
-          )}
-        </section>
-        ) : null}
-
-        {/* Completed Today */}
-        {canUseAppointments && data.completed && data.completed.length > 0 && (
-          <section>
-            <header className="flex items-center gap-3 mb-4">
-              <CheckCircle className="size-5 text-[oklch(0.70_0.17_155)]" />
-              <h2 className="font-display text-2xl text-foreground">Completed</h2>
-              <span className="font-mono text-xs text-[oklch(0.70_0.17_155)] bg-[oklch(0.70_0.17_155_/_0.1)] px-2 py-0.5 rounded-full">
-                {data.completed.length}
-              </span>
-            </header>
-
-            <div className="space-y-2">
-              {data.completed.map((appointment, index) => (
-                <CompletedCard
-                  key={appointment.id}
-                  appointment={appointment}
-                  index={index}
-                  onViewPatient={canUsePatientChronicle ? () => handleViewPatient(appointment.patient_id) : undefined}
-                />
-              ))}
-            </div>
-          </section>
-        )}
+        <CurrentPatientPanel
+          currentPatient={data.current_patient}
+          upcomingCount={data.upcoming?.length || 0}
+          canUseAppointments={canUseAppointments}
+          canUsePatientChronicle={canUsePatientChronicle}
+          canStartConsultation={canStartConsultation}
+          onViewPatient={handleViewPatient}
+          onStartConsultation={handleStartConsultation}
+        />
+        <WaitingRoomSection
+          visits={data.waiting_room || []}
+          canStartConsultation={canStartConsultation}
+          canUsePatientChronicle={canUsePatientChronicle}
+          callPatient={callPatient}
+          startConsultation={startConsultation}
+          onViewPatient={handleViewPatient}
+        />
+        <UpcomingAppointmentsSection
+          appointments={data.upcoming || []}
+          canUseAppointments={canUseAppointments}
+          canStartConsultation={canStartConsultation}
+          canUsePatientChronicle={canUsePatientChronicle}
+          onStartConsultation={handleStartConsultation}
+          onViewPatient={handleViewPatient}
+        />
+        <CompletedAppointmentsSection
+          appointments={data.completed || []}
+          canUseAppointments={canUseAppointments}
+          canUsePatientChronicle={canUsePatientChronicle}
+          onViewPatient={handleViewPatient}
+        />
       </main>
     </PageShell>
+  );
+}
+
+function DoctorDashboardActions({
+  canUseReferrals,
+  isFetching,
+  onOpenSentReferrals,
+  onOpenReferralInbox,
+  onRefresh,
+}) {
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+      {canUseReferrals ? (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenSentReferrals}
+            className="font-mono text-xs"
+          >
+            <Send className="size-4 mr-2" />
+            Sent Referrals
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenReferralInbox}
+            className="font-mono text-xs"
+          >
+            <Inbox className="size-4 mr-2" />
+            Referral Inbox
+          </Button>
+        </>
+      ) : null}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onRefresh}
+        className="font-mono text-xs"
+        disabled={isFetching}
+      >
+        <RefreshCw className={cn('size-4 mr-2', isFetching && 'animate-spin')} />
+        Refresh
+      </Button>
+    </div>
+  );
+}
+
+function CurrentPatientPanel({
+  currentPatient,
+  upcomingCount,
+  canUseAppointments,
+  canUsePatientChronicle,
+  canStartConsultation,
+  onViewPatient,
+  onStartConsultation,
+}) {
+  if (!currentPatient) {
+    return (
+      <article className={cn(
+        "bg-card/50 border border-border rounded-2xl p-12 text-center",
+        "animate-chronicle-enter"
+      )}>
+        <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+          <Clock className="size-8 text-muted-foreground" />
+        </div>
+        <h3 className="font-display text-xl text-foreground mb-2">No Current Patient</h3>
+        <p className="text-muted-foreground text-sm">
+          {canUseAppointments && upcomingCount > 0
+            ? 'Next patient arriving soon'
+            : canUseAppointments
+            ? 'No appointments scheduled for today'
+            : 'No active clinic patient'}
+        </p>
+      </article>
+    );
+  }
+
+  return (
+    <article className={cn(
+      "relative bg-card border-2 border-primary/30 rounded-2xl p-6",
+      "shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
+      "animate-chronicle-enter"
+    )}>
+      <div className="status-ribbon status-ribbon-warning" />
+      <header className="flex items-start justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
+            <PlayCircle className="size-5 text-primary" />
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-primary">
+              Current Patient
+            </p>
+            <p className="font-mono text-xs text-muted-foreground">
+              {currentPatient.time_display}
+            </p>
+          </div>
+        </div>
+        <span className="badge-chronicle-amber">In Progress</span>
+      </header>
+
+      <div className="flex items-center justify-between">
+        <div className="space-y-3">
+          <h2 className="font-display text-3xl text-foreground">
+            {canUsePatientChronicle ? (
+              <button
+                type="button"
+                aria-label={`View patient ${currentPatient.patient_name}`}
+                className="cursor-pointer bg-transparent p-0 text-left [font:inherit] hover:text-primary focus:outline-none focus-visible:underline"
+                onClick={() => onViewPatient(currentPatient.patient_id)}
+              >
+                {currentPatient.patient_name}
+              </button>
+            ) : (
+              currentPatient.patient_name
+            )}
+          </h2>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            {currentPatient.reason && (
+              <span className="flex items-center gap-1.5">
+                <Stethoscope className="size-3.5" />
+                {currentPatient.reason}
+              </span>
+            )}
+            <span className="font-mono text-xs px-2 py-0.5 rounded bg-muted">
+              {currentPatient.appointment_type}
+            </span>
+          </div>
+        </div>
+        {canStartConsultation ? (
+          <Button
+            size="lg"
+            onClick={() => onStartConsultation(currentPatient)}
+            className="font-mono"
+          >
+            Begin Consultation
+            <ChevronRight className="size-4 ml-2" />
+          </Button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function WaitingRoomSection({
+  visits,
+  canStartConsultation,
+  canUsePatientChronicle,
+  callPatient,
+  startConsultation,
+  onViewPatient,
+}) {
+  if (visits.length === 0) {
+    return null;
+  }
+
+  return (
+    <section>
+      <header className="flex items-center gap-3 mb-4">
+        <Users className="size-5 text-amber-400" />
+        <h2 className="font-display text-2xl text-foreground">Waiting Room</h2>
+        <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+          {visits.length}
+        </span>
+      </header>
+
+      <div className="space-y-3">
+        {visits.map((visit, index) => (
+          <WaitingPatientCard
+            key={visit.encounter_id}
+            visit={visit}
+            index={index}
+            onCall={() => callPatient.mutate(visit.encounter_id)}
+            onStart={canStartConsultation ? () => startConsultation.mutate(visit.encounter_id) : undefined}
+            onViewPatient={
+              canUsePatientChronicle
+                ? () => onViewPatient(visit.patient_id || visit.encounter_id)
+                : undefined
+            }
+            isCallingPending={callPatient.isPending}
+            isStartingPending={startConsultation.isPending}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function UpcomingAppointmentsSection({
+  appointments,
+  canUseAppointments,
+  canStartConsultation,
+  canUsePatientChronicle,
+  onStartConsultation,
+  onViewPatient,
+}) {
+  if (!canUseAppointments) {
+    return null;
+  }
+
+  return (
+    <section>
+      <header className="flex items-center gap-3 mb-4">
+        <Calendar className="size-5 text-muted-foreground" />
+        <h2 className="font-display text-2xl text-foreground">Upcoming</h2>
+        <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+          {appointments.length}
+        </span>
+      </header>
+
+      {appointments.length > 0 ? (
+        <div className="space-y-3">
+          {appointments.map((appointment, index) => (
+            <AppointmentCard
+              key={appointment.id}
+              appointment={appointment}
+              index={index}
+              onStart={canStartConsultation ? () => onStartConsultation(appointment) : undefined}
+              onViewPatient={canUsePatientChronicle ? () => onViewPatient(appointment.patient_id) : undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="bg-card/30 border border-border rounded-xl p-8 text-center">
+          <p className="text-muted-foreground text-sm font-mono">
+            No upcoming appointments
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CompletedAppointmentsSection({
+  appointments,
+  canUseAppointments,
+  canUsePatientChronicle,
+  onViewPatient,
+}) {
+  if (!canUseAppointments || appointments.length === 0) {
+    return null;
+  }
+
+  return (
+    <section>
+      <header className="flex items-center gap-3 mb-4">
+        <CheckCircle className="size-5 text-[oklch(0.70_0.17_155)]" />
+        <h2 className="font-display text-2xl text-foreground">Completed</h2>
+        <span className="font-mono text-xs text-[oklch(0.70_0.17_155)] bg-[oklch(0.70_0.17_155_/_0.1)] px-2 py-0.5 rounded-full">
+          {appointments.length}
+        </span>
+      </header>
+
+      <div className="space-y-2">
+        {appointments.map((appointment, index) => (
+          <CompletedCard
+            key={appointment.id}
+            appointment={appointment}
+            index={index}
+            onViewPatient={canUsePatientChronicle ? () => onViewPatient(appointment.patient_id) : undefined}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 

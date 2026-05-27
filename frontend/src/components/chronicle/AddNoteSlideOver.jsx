@@ -198,6 +198,9 @@ const AddNoteSlideOverContent = ({
     goToStep,
     completeWorkflow,
     resetWorkflow,
+    // The hook instance is keyed by the parent-owned note open context; the
+    // copy-forward synchronization effect below documents the remaining prop-driven start.
+    // react-doctor-disable-next-line react-doctor/no-event-handler
   } = useNoteWorkflow(patientId, { editNoteId });
 
   // Computed values
@@ -493,8 +496,10 @@ const AddNoteSlideOverContent = ({
     });
   }, [finalDataHash]);
 
-  // Auto-start workflow when opened with initial template (copy forward)
+  // PatientChroniclePage owns copy-forward/edit open events; this synchronizes
+  // the controlled opening with the note workflow draft for the provided template.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler
     if (open && initialTemplate && !template) {
       startWorkflow(initialTemplate, initialData);
     }

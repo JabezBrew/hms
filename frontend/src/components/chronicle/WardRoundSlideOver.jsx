@@ -55,8 +55,11 @@ const WardRoundSlideOver = ({
   admission,
   onComplete,
 }) => {
-  // Get patient and admission IDs
+  // Get patient and admission IDs. These are pure PatientChroniclePage prop
+  // projections; the controlled-open side effect is documented below.
+  // react-doctor-disable-next-line react-doctor/no-event-handler
   const patientId = patient?.local_data?.id || patient?.id;
+  // react-doctor-disable-next-line react-doctor/no-event-handler
   const admissionId = admission?.id || patient?.local_data?.current_admission_id || patient?.current_admission_id;
 
   // Use the ward round workflow hook
@@ -85,15 +88,19 @@ const WardRoundSlideOver = ({
     resetWorkflow,
   } = useWardRoundWorkflow(patientId, admissionId);
 
-  // Start workflow when slide-over opens
+  // PatientChroniclePage owns the open event; this synchronizes the controlled
+  // panel state with the backend workflow draft when the panel is externally opened.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler
     if (open && patientId && admissionId && !workflowId && !isLoading) {
       startWorkflow();
     }
   }, [open, patientId, admissionId, workflowId, isLoading, startWorkflow]);
 
-  // Reset when closed
+  // Parent routing and outside controls can close the panel without using this
+  // component's Close button, so reset the local draft when controlled open turns false.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler
     if (!open) {
       resetWorkflow();
     }

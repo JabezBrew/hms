@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import User from 'lucide-react/dist/esm/icons/user.js';

@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/no-render-in-render -- The `renderItem` callback is this virtualizer's public render-prop API; callers own item components and keys. */
 import { useCallback, useRef } from 'react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';

@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';

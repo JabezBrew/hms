@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/no-multi-comp -- Shadcn/Radix companion primitives are intentionally co-located as one public UI module. */
 import * as React from "react"
 import { cva } from "class-variance-authority";
 

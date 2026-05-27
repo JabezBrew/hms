@@ -1,3 +1,4 @@
+/* oxlint-disable deslop/unused-file -- Runtime entry point: this file is discovered outside static import traversal. */
 import { lazy } from 'react';
 import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes';
 import { combineRoles, ROLE_GROUPS, ROLES } from '@/shared/constants/roles';

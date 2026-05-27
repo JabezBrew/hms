@@ -1,7 +1,7 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Save from 'lucide-react/dist/esm/icons/save.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -21,18 +21,47 @@ import { toast } from "sonner";
  * - Edit reason input for version tracking
  * - Optimistic updates with error handling
  */
+function cloneNoteData(data) {
+  if (!data) {
+    return {};
+  }
+
+  return JSON.parse(JSON.stringify(data));
+}
+
+// Set nested value by path
+function setNestedValue(obj, path, value) {
+  const keys = path.split(".");
+  let current = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (!current[keys[i]]) {
+      current[keys[i]] = {};
+    }
+    current = current[keys[i]];
+  }
+  current[keys[keys.length - 1]] = value;
+}
+
 const EditNoteSlideOver = ({ open, onOpenChange, entry, onSuccess }) => {
-  const [formData, setFormData] = useState({});
+  if (!open) return null;
+
+  const contentKey = entry?.id || "new-note";
+
+  return (
+    <EditNoteSlideOverContent
+      key={contentKey}
+      onOpenChange={onOpenChange}
+      entry={entry}
+      onSuccess={onSuccess}
+    />
+  );
+};
+
+const EditNoteSlideOverContent = ({ onOpenChange, entry, onSuccess }) => {
+  const [formData, setFormData] = useState(() => cloneNoteData(entry?.data));
   const [editReason, setEditReason] = useState("");
 
   const updateNote = useUpdateNoteEntry();
-
-  // Initialize form data from entry
-  useEffect(() => {
-    if (entry?.data) {
-      setFormData(JSON.parse(JSON.stringify(entry.data)));
-    }
-  }, [entry]);
 
   // Handle field change
   const handleFieldChange = (path, value) => {
@@ -41,19 +70,6 @@ const EditNoteSlideOver = ({ open, onOpenChange, entry, onSuccess }) => {
       setNestedValue(updated, path, value);
       return updated;
     });
-  };
-
-  // Set nested value by path
-  const setNestedValue = (obj, path, value) => {
-    const keys = path.split(".");
-    let current = obj;
-    for (let i = 0; i < keys.length - 1; i++) {
-      if (!current[keys[i]]) {
-        current[keys[i]] = {};
-      }
-      current = current[keys[i]];
-    }
-    current[keys[keys.length - 1]] = value;
   };
 
   // Handle save
@@ -76,8 +92,6 @@ const EditNoteSlideOver = ({ open, onOpenChange, entry, onSuccess }) => {
     setEditReason("");
     onOpenChange(false);
   };
-
-  if (!open) return null;
 
   return createPortal(
     <>

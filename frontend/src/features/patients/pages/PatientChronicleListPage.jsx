@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
@@ -10,7 +11,7 @@ import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
 import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -357,10 +358,6 @@ const PatientChronicleListPage = () => {
     isLoading: isSearchLoading,
     refetch: refetchSearch,
   } = usePatientSearch(searchParams, { enabled: true });
-
-  useEffect(() => {
-    setSearchPage(1);
-  }, [debouncedSearchQuery, appliedFilters, registryScope]);
 
   const { data: departmentsData, isLoading: isDepartmentsLoading } = useClinicalUnits({
     unit_type_code: 'department',

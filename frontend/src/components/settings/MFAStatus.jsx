@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
 import ShieldOff from 'lucide-react/dist/esm/icons/shield-off.js';
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js';

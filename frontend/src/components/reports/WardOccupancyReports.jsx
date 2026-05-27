@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';

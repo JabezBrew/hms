@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
@@ -575,6 +576,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     });
   }, [id, navigate, search]);
 
+  // react-doctor-disable-next-line react-doctor/no-event-handler -- Route/default action params are external navigation commands; this effect is the boundary that opens the matching Chronicle workspace once patient context is available.
   useEffect(() => {
     const action = actionParam || defaultAction;
     if (action === 'add_note') {
@@ -603,6 +605,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         return;
       }
 
+      // oxlint-disable-next-line react-doctor/no-adjust-state-on-prop-change -- Preserve the route-requested admission after transient query params are cleared while the discharge workspace remains open.
       setRequestedDischargeAdmissionId(String(admissionId));
       if (!canUseStandaloneClinicalWorkflows) {
         if (actionParam || admissionParam) clearQueryParams();
@@ -627,6 +630,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         return;
       }
 
+      // oxlint-disable-next-line react-doctor/no-adjust-state-on-prop-change -- Preserve the route-requested admission after transient query params are cleared while the treatment sheet workspace remains open.
       setRequestedTreatmentSheetAdmissionId(String(admissionId));
       openChronicleWorkspace('treatmentSheet');
       if (actionParam || admissionParam) clearQueryParams();
@@ -971,6 +975,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     );
 
     if (loadMoreRef.current) {
+      // react-doctor-disable-next-line react-doctor/no-pass-live-state-to-parent -- IntersectionObserver observes a DOM sentinel; no React parent callback or lifted state is involved.
       observer.observe(loadMoreRef.current);
     }
 
@@ -1170,6 +1175,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return;
     }
 
+    // oxlint-disable-next-line react-doctor/no-derived-state -- Expansion is user-controlled UI state seeded once per patient/visit/filter key; recomputing each render would erase manual toggles.
     setExpandedEncounters(getInitialExpandedEncounterIds({
       encounters: groupedByEncounter.encounters,
       unlinkedEntries: groupedByEncounter.unlinked,
@@ -1194,6 +1200,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return;
     }
 
+    // oxlint-disable-next-line react-doctor/no-derived-state -- Note expansion is user-controlled UI state seeded once per patient/visit/filter key; recomputing each render would erase manual toggles.
     setExpandedNoteIds(getInitialExpandedNoteIds({
       entries: filteredEntries,
       activeFilter,

@@ -1,3 +1,4 @@
+/* oxlint-disable deslop/unused-file -- Runtime entry point: this file is discovered outside static import traversal. */
 const HMS_STATIC_CACHE_PREFIX = 'hms-static-assets'
 const HMS_STATIC_CACHE_NAME = `${HMS_STATIC_CACHE_PREFIX}-v1`
 const HASHED_ASSET_PATTERN = /^\/assets\/[^?#/]+[-.][a-z0-9_-]{8,}\.(?:js|css|woff2?|ttf|otf|svg|png|webp|ico)$/i

@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/no-initialize-state -- Virtualized viewport size is DOM-measured after mount via ResizeObserver; render-time initialization cannot know container height. */
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 

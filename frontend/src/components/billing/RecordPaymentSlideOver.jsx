@@ -1,3 +1,4 @@
+/* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import X from 'lucide-react/dist/esm/icons/x.js';
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';

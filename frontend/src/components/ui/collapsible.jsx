@@ -1,4 +1,5 @@
 "use client"
+/* oxlint-disable react-doctor/no-multi-comp -- Shadcn/Radix companion primitives are intentionally co-located as one public UI module. */
 
 import * as CollapsiblePrimitive from "@radix-ui/react-collapsible"
 

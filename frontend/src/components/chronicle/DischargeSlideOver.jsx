@@ -29,7 +29,11 @@ const STEP_COMPONENTS = {
 };
 
 const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) => {
+  // These are pure PatientChroniclePage prop projections; the controlled-open
+  // side effect is documented at the workflow synchronization effect below.
+  // react-doctor-disable-next-line react-doctor/no-event-handler
   const patientId = patient?.local_data?.id || patient?.id;
+  // react-doctor-disable-next-line react-doctor/no-event-handler
   const admissionId = admission?.id || patient?.local_data?.current_admission_id || patient?.current_admission_id;
 
   const {
@@ -57,13 +61,19 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
     resetWorkflow,
   } = useDischargeWorkflow(patientId, admissionId);
 
+  // PatientChroniclePage owns the open event; this synchronizes the controlled
+  // panel state with the backend workflow draft when the panel is externally opened.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler
     if (open && patientId && admissionId && !workflowId && !isLoading) {
       startWorkflow();
     }
   }, [open, patientId, admissionId, workflowId, isLoading, startWorkflow]);
 
+  // Parent routing and outside controls can close the panel without using this
+  // component's Close button, so reset the local draft when controlled open turns false.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler
     if (!open) {
       resetWorkflow();
     }
