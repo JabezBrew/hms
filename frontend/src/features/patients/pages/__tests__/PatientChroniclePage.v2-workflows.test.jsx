@@ -218,7 +218,15 @@ vi.mock('@/features/patients/chronicle/ward-round/WardRoundMode', () => ({
 vi.mock('@/components/chronicle/ClinicalSummarySidebar', () => ({
   default: (props) => {
     summarySidebarState.lastProps = props
-    return <div>Clinical summary</div>
+    return (
+      <div
+        data-testid="clinical-summary"
+        className={props.className}
+        style={props.style}
+      >
+        Clinical summary
+      </div>
+    )
   },
 }))
 
@@ -366,6 +374,28 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     renderPage()
 
     expect(screen.getByTestId('ask-chronicle-action')).toHaveTextContent('false')
+  })
+
+  it('keeps the clinical summary sticky without forcing it to fill the timeline height', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+
+    renderPage()
+
+    const summary = screen.getByTestId('clinical-summary')
+    const summaryBoundary = summary.parentElement
+    const chronicleRow = summaryBoundary?.parentElement
+    const chroniclePage = chronicleRow?.parentElement
+
+    expect(summaryBoundary).toHaveClass('lg:sticky')
+    expect(summaryBoundary).toHaveClass('lg:self-start')
+    expect(summaryBoundary).not.toHaveStyle({ height: 'calc(100vh - 5rem)' })
+    expect(chronicleRow).toHaveClass('overflow-x-clip')
+    expect(chronicleRow).not.toHaveClass('overflow-x-hidden')
+    expect(chroniclePage).toHaveClass('overflow-x-clip')
+    expect(chroniclePage).not.toHaveClass('overflow-x-hidden')
+    expect(summarySidebarState.lastProps.style).toEqual({
+      maxHeight: 'calc(100vh - 5rem)',
+    })
   })
 
   it('allows Rust V2 clinical reads when the legacy access envelope is absent', () => {

@@ -25,16 +25,22 @@ function sectionByHeading(container, heading) {
 }
 
 describe('ClinicalSummarySidebar', () => {
-  it('renders as a page-stretching column instead of a viewport-clipped scroller', () => {
+  it('renders as a natural-height scroll panel inside the page-defined sidebar boundary', () => {
     const { container } = render(
-      <ClinicalSummarySidebar patient={{ id: 'patient-1' }} />,
+      <ClinicalSummarySidebar
+        patient={{ id: 'patient-1' }}
+        style={{ maxHeight: 'min(calc(100vh - 5rem), 640px)' }}
+      />,
     );
 
     const sidebar = container.querySelector('aside');
 
-    expect(sidebar).toHaveClass('flex-1');
-    expect(sidebar).not.toHaveClass('overflow-y-auto');
+    expect(sidebar).toHaveClass('min-h-0');
+    expect(sidebar).toHaveClass('overflow-y-auto');
+    expect(sidebar).not.toHaveClass('flex-1');
     expect(sidebar).not.toHaveClass('sticky');
+    expect(sidebar).not.toHaveClass('h-screen');
+    expect(sidebar).toHaveStyle({ maxHeight: 'min(calc(100vh - 5rem), 640px)' });
   });
 
   it('renders vital signs in Recent Vitals and lab results in Recent Labs', () => {

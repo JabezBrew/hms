@@ -34,7 +34,8 @@ const ClinicalSummarySidebar = ({
   encounter,
   onViewVitalsTrends,
   onViewFluidTrends,
-  className
+  className,
+  style
 }) => {
   const normalizedAllergies = Array.isArray(allergies) ? allergies : [];
   const normalizedProblems = normalizeProblems(problems);
@@ -51,11 +52,14 @@ const ClinicalSummarySidebar = ({
   const patientId = patient?.local_data?.id || patient?.id;
 
   return (
-    <aside className={cn(
-      "w-80 flex-1 bg-background border-r border-border p-6 space-y-6",
-      "chronicle-scrollbar",
-      className
-    )}>
+    <aside
+      className={cn(
+        "w-80 min-h-0 overflow-y-auto bg-background border-r border-border p-6 space-y-6",
+        "chronicle-scrollbar",
+        className
+      )}
+      style={style}
+    >
       {/* Section: Care Team */}
       {encounter && (
         <>
