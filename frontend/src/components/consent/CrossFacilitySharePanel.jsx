@@ -4,7 +4,7 @@ import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import ClipboardCopy from 'lucide-react/dist/esm/icons/clipboard-copy.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useReducer, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,16 +43,59 @@ const STEP_CONFIG = [
   },
 ];
 
+const INITIAL_SHARE_STATE = {
+  consent: null,
+  consentReason: "",
+  expiresInDays: "",
+  exportJob: null,
+  issuedToken: null,
+  reasonCode: "",
+  stepIndex: 0,
+  targetFacilityCode: "",
+};
+
+function sharePanelReducer(state, action) {
+  switch (action.type) {
+    case "field":
+      return { ...state, [action.name]: action.value };
+    case "advance":
+      return { ...state, stepIndex: Math.min(state.stepIndex + 1, action.maxStepIndex) };
+    case "back":
+      return { ...state, stepIndex: Math.max(state.stepIndex - 1, 0) };
+    default:
+      return state;
+  }
+}
+
 const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) => {
-  const [stepIndex, setStepIndex] = useState(0);
-  const [targetFacilityCode, setTargetFacilityCode] = useState("");
-  const [reasonCode, setReasonCode] = useState("");
-  const [consentReason, setConsentReason] = useState("");
-  const [expiresInDays, setExpiresInDays] = useState("");
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <CrossFacilitySharePanelContent
+      onClose={onClose}
+      patient={patient}
+      patientIdentityId={patientIdentityId}
+    />
+  );
+};
+
+function CrossFacilitySharePanelContent({ onClose, patient, patientIdentityId }) {
+  const [shareState, dispatchShare] = useReducer(sharePanelReducer, INITIAL_SHARE_STATE);
   const referralRef = useRef(null);
-  const [consent, setConsent] = useState(null);
-  const [issuedToken, setIssuedToken] = useState(null);
-  const [exportJob, setExportJob] = useState(null);
+  const {
+    consent,
+    consentReason,
+    expiresInDays,
+    exportJob,
+    issuedToken,
+    reasonCode,
+    stepIndex,
+    targetFacilityCode,
+  } = shareState;
+
+  const updateShareField = (name, value) => dispatchShare({ type: "field", name, value });
 
   const referralMutation = useCreateCrossFacilityReferral();
   const consentMutation = useCreateConsentGrant();
@@ -72,20 +115,6 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
     }
     return patient?.name || patient?.full_name || "Patient";
   }, [patient]);
-
-  useEffect(() => {
-    if (!open) {
-      setStepIndex(0);
-      setTargetFacilityCode("");
-      setReasonCode("");
-      setConsentReason("");
-      setExpiresInDays("");
-      referralRef.current = null;
-      setConsent(null);
-      setIssuedToken(null);
-      setExportJob(null);
-    }
-  }, [open]);
 
   const safeStepIndex = Math.min(stepIndex, workflowSteps.length - 1);
   const currentStep = workflowSteps[safeStepIndex];
@@ -109,7 +138,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
         reason_code: reasonCode.trim(),
       });
       referralRef.current = created;
-      setStepIndex((prev) => Math.min(prev + 1, workflowSteps.length - 1));
+      dispatchShare({ type: "advance", maxStepIndex: workflowSteps.length - 1 });
       toast.success("Referral requested", {
         description: `Referral sent to ${created.target_facility_code}.`,
       });
@@ -147,8 +176,8 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
         reason: consentReason.trim(),
         expires_at: expiresAt,
       });
-      setConsent(created);
-      setStepIndex((prev) => Math.min(prev + 1, workflowSteps.length - 1));
+      updateShareField("consent", created);
+      dispatchShare({ type: "advance", maxStepIndex: workflowSteps.length - 1 });
       toast.success("Consent granted", {
         description: `Consent active for ${created.target_facility_code}.`,
       });
@@ -171,7 +200,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
           ttl_seconds: 3600,
         },
       });
-      setIssuedToken(response.token);
+      updateShareField("issuedToken", response.token);
       toast.success("Access token issued");
     } catch (error) {
       toast.error("Token issuance failed", { description: error.message || "Please try again." });
@@ -194,7 +223,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
         target_facility_code: consent?.target_facility_code || targetFacilityCode.trim().toUpperCase(),
         consent_token: issuedToken,
       });
-      setExportJob(response);
+      updateShareField("exportJob", response);
       toast.success("Export queued", {
         description: `Export job ${response.id} created.`,
       });
@@ -229,7 +258,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
         "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
         "flex flex-col shadow-2xl",
-        open ? "translate-x-0" : "translate-x-full"
+        "translate-x-0"
       )}
     >
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
@@ -305,7 +334,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
               <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
               <Input
                 value={targetFacilityCode}
-                onChange={(event) => setTargetFacilityCode(event.target.value.toUpperCase())}
+                onChange={(event) => updateShareField("targetFacilityCode", event.target.value.toUpperCase())}
                 placeholder="E.g. REGIONAL-01"
                 className="pl-9 font-mono"
               />
@@ -319,7 +348,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
               </Label>
               <Input
                 value={reasonCode}
-                onChange={(event) => setReasonCode(event.target.value)}
+                onChange={(event) => updateShareField("reasonCode", event.target.value)}
                 placeholder="E.g. CARDIO, TRANSFER"
                 className="font-mono"
               />
@@ -334,7 +363,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
                 </Label>
                 <Textarea
                   value={consentReason}
-                  onChange={(event) => setConsentReason(event.target.value)}
+                  onChange={(event) => updateShareField("consentReason", event.target.value)}
                   placeholder="Document the patient consent discussion..."
                   className="min-h-[120px]"
                 />
@@ -345,7 +374,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
                 </Label>
                 <Input
                   value={expiresInDays}
-                  onChange={(event) => setExpiresInDays(event.target.value)}
+                  onChange={(event) => updateShareField("expiresInDays", event.target.value)}
                   placeholder="Leave blank for no expiration"
                   className="font-mono"
                 />
@@ -436,7 +465,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
           {safeStepIndex > 0 && (
             <Button
               variant="outline"
-              onClick={() => setStepIndex((prev) => Math.max(prev - 1, 0))}
+              onClick={() => dispatchShare({ type: "back" })}
               className="font-mono text-xs"
             >
               Back
@@ -482,6 +511,6 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
       </footer>
     </div>
   );
-};
+}
 
 export default CrossFacilitySharePanel;
