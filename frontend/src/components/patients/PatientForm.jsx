@@ -5,7 +5,7 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -63,6 +63,29 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 
 const validationRegexCache = new Map();
+const MIN_DATE_OF_BIRTH = new Date("1900-01-01");
+const MAX_DATE_OF_BIRTH = new Date();
+
+const EMPTY_PATIENT_FORM_VALUES = {
+  email: "",
+  first_name: "",
+  last_name: "",
+  phone_number: "",
+  date_of_birth: undefined,
+  gender: "",
+  medical_record_number: "",
+  nhis_id: "",
+  emergency_contact_name: "",
+  emergency_contact_phone: "",
+  emergency_contact_relationship: "",
+  address_line1: "",
+  address_line2: "",
+  city: "",
+  state: "",
+  postal_code: "",
+  country: "",
+  bed_id: "",
+};
 
 function getValidationRegex(pattern) {
   const anchored = pattern.startsWith('^') ? pattern : `^(?:${pattern})`;
@@ -75,10 +98,53 @@ function getValidationRegex(pattern) {
     const compiled = new RegExp(anchored);
     validationRegexCache.set(anchored, compiled);
     return compiled;
-  } catch (_e) {
+  } catch {
     validationRegexCache.set(anchored, null);
     return null;
   }
+}
+
+function createNoEmailPlaceholder() {
+  try {
+    const uuid = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `no-email+${uuid}@hms.invalid`;
+  } catch {
+    return `no-email+${Date.now()}-${Math.random().toString(16).slice(2)}@hms.invalid`;
+  }
+}
+
+function getPatientFormValues(patient) {
+  if (!patient) {
+    return EMPTY_PATIENT_FORM_VALUES;
+  }
+
+  const localData = patient.local_data || {};
+  const userDetails = localData.user_details || {};
+  const phoneFromFhir = patient.fhir_data?.telecom?.find(t => t.system === 'phone')?.value || "";
+  const dateOfBirth = userDetails.date_of_birth || localData.date_of_birth || patient.date_of_birth;
+
+  return {
+    email: userDetails.email || localData.email || patient.email || "",
+    first_name: userDetails.first_name || localData.first_name || patient.first_name || "",
+    last_name: userDetails.last_name || localData.last_name || patient.last_name || "",
+    phone_number: userDetails.phone_number || localData.phone_number || patient.phone_number || phoneFromFhir || "",
+    date_of_birth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+    gender: userDetails.gender || localData.gender || patient.gender || patient.fhir_data?.gender || "",
+    medical_record_number: localData.medical_record_number || patient.medical_record_number || patient.mrn || "",
+    nhis_id: localData.nhis_id || patient.nhis_id || "",
+    emergency_contact_name: localData.emergency_contact_name || patient.emergency_contact_name || "",
+    emergency_contact_phone: localData.emergency_contact_phone || patient.emergency_contact_phone || "",
+    emergency_contact_relationship: localData.emergency_contact_relationship || patient.emergency_contact_relationship || "",
+    address_line1: patient.fhir_data?.address?.[0]?.line?.[0] || "",
+    address_line2: patient.fhir_data?.address?.[0]?.line?.[1] || "",
+    city: patient.fhir_data?.address?.[0]?.city || "",
+    state: patient.fhir_data?.address?.[0]?.state || "",
+    postal_code: patient.fhir_data?.address?.[0]?.postalCode || "",
+    country: patient.fhir_data?.address?.[0]?.country || "",
+    bed_id: "",
+  };
 }
 
 // Form validation schema
@@ -120,22 +186,12 @@ const PatientForm = ({ patient, onSuccess }) => {
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedClinic, setSelectedClinic] = useState("");
   const [selectedPrimaryTeam, setSelectedPrimaryTeam] = useState("");
-  const [activeClinicOptions, setActiveClinicOptions] = useState([]);
-  const [clinicSelectionRequired, setClinicSelectionRequired] = useState(false);
-
   const [isWaitingList, setIsWaitingList] = useState(false);
   const [selectedWard, setSelectedWard] = useState("");
 
   // "No email" support: backend requires a unique email; generate a safe placeholder when needed.
   const [noEmail, setNoEmail] = useState(false);
-  const generatedNoEmail = useMemo(() => {
-    try {
-      const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      return `no-email+${uuid}@hms.invalid`;
-    } catch (_e) {
-      return `no-email+${Date.now()}-${Math.random().toString(16).slice(2)}@hms.invalid`;
-    }
-  }, []);
+  const [noEmailPlaceholder, setNoEmailPlaceholder] = useState("");
 
   const stepDefs = useMemo(() => {
     if (isEditMode) {
@@ -154,12 +210,11 @@ const PatientForm = ({ patient, onSuccess }) => {
     ];
   }, [isEditMode]);
   const stepKeys = useMemo(() => stepDefs.map((s) => s.key), [stepDefs]);
-  const [activeStep, setActiveStep] = useState(stepKeys[0]);
-  useEffect(() => {
-    if (!stepKeys.includes(activeStep)) {
-      setActiveStep(stepKeys[0]);
-    }
-  }, [activeStep, stepKeys]);
+  const [activeStepKey, setActiveStepKey] = useState(() => isEditMode ? 'identity' : 'encounter');
+  const activeStep = stepKeys.includes(activeStepKey) ? activeStepKey : stepKeys[0];
+  const setActiveStep = useCallback((stepKey) => {
+    setActiveStepKey(stepKeys.includes(stepKey) ? stepKey : stepKeys[0]);
+  }, [stepKeys]);
 
   // Use React Query hooks
   const { data: validationRules = [] } = usePatientValidationRules();
@@ -169,73 +224,14 @@ const PatientForm = ({ patient, onSuccess }) => {
   const outpatientRequiresActiveClinicSchedule =
     deploymentCapabilities?.capabilities?.outpatient_requires_active_clinic_schedule ?? true;
 
+  const formValues = useMemo(() => getPatientFormValues(patient), [patient]);
+
   // Initialize form with default values
   const form = useForm({
     resolver: zodResolver(patientFormSchema),
-    defaultValues: {
-      email: "",
-      first_name: "",
-      last_name: "",
-      phone_number: "",
-      date_of_birth: undefined,
-      gender: "",
-      medical_record_number: "",
-      nhis_id: "",
-      emergency_contact_name: "",
-      emergency_contact_phone: "",
-      emergency_contact_relationship: "",
-      address_line1: "",
-      address_line2: "",
-      city: "",
-      state: "",
-      postal_code: "",
-      country: "",
-      bed_id: "",
-    }
+    defaultValues: EMPTY_PATIENT_FORM_VALUES,
+    values: formValues,
   });
-
-  // Load patient data into form when in edit mode
-  useEffect(() => {
-    if (!isEditMode || !patient) {
-      return;
-    }
-    const localData = patient.local_data || {};
-    const userDetails = localData.user_details || {};
-    const phoneFromFhir = patient.fhir_data?.telecom?.find(t => t.system === 'phone')?.value || "";
-    const dateOfBirth = userDetails.date_of_birth || localData.date_of_birth || patient.date_of_birth;
-    form.reset({
-      email: userDetails.email || localData.email || patient.email || "",
-      first_name: userDetails.first_name || localData.first_name || patient.first_name || "",
-      last_name: userDetails.last_name || localData.last_name || patient.last_name || "",
-      phone_number: userDetails.phone_number || localData.phone_number || patient.phone_number || phoneFromFhir || "",
-      date_of_birth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-      gender: userDetails.gender || localData.gender || patient.gender || patient.fhir_data?.gender || "",
-      medical_record_number: localData.medical_record_number || patient.medical_record_number || patient.mrn || "",
-      nhis_id: localData.nhis_id || patient.nhis_id || "",
-      emergency_contact_name: localData.emergency_contact_name || patient.emergency_contact_name || "",
-      emergency_contact_phone: localData.emergency_contact_phone || patient.emergency_contact_phone || "",
-      emergency_contact_relationship: localData.emergency_contact_relationship || patient.emergency_contact_relationship || "",
-      address_line1: patient.fhir_data?.address?.[0]?.line?.[0] || "",
-      address_line2: patient.fhir_data?.address?.[0]?.line?.[1] || "",
-      city: patient.fhir_data?.address?.[0]?.city || "",
-      state: patient.fhir_data?.address?.[0]?.state || "",
-      postal_code: patient.fhir_data?.address?.[0]?.postalCode || "",
-      country: patient.fhir_data?.address?.[0]?.country || "",
-    });
-  }, [isEditMode, patient, form]);
-
-  // Keep email value in sync when "no email" is enabled.
-  useEffect(() => {
-    if (isEditMode) return;
-    if (noEmail) {
-      form.setValue('email', generatedNoEmail, { shouldDirty: true, shouldValidate: showValidation });
-    } else {
-      const current = form.getValues('email');
-      if (current === generatedNoEmail) {
-        form.setValue('email', '', { shouldDirty: true, shouldValidate: showValidation });
-      }
-    }
-  }, [noEmail, generatedNoEmail, form, isEditMode, showValidation]);
 
   // Department and clinic queries (registration only)
   const { data: departmentsData, isLoading: isDepartmentsLoading } = useDepartments({
@@ -272,36 +268,17 @@ const PatientForm = ({ patient, onSuccess }) => {
     }, []);
   }, [onDutyData]);
 
-  useEffect(() => {
-    if (isEditMode || admissionType !== 'outpatient' || !selectedDepartment) {
-      setActiveClinicOptions([]);
-      setClinicSelectionRequired(false);
-      return;
-    }
-
-    setActiveClinicOptions(activeClinics);
-
-    if (activeClinics.length === 1) {
-      setSelectedClinic(activeClinics[0].id);
-      setClinicSelectionRequired(false);
-    } else if (activeClinics.length > 1) {
-      const requiresSelection = outpatientRequiresActiveClinicSchedule;
-      setClinicSelectionRequired(requiresSelection);
-      if (requiresSelection && !activeClinics.some((clinic) => clinic.id === selectedClinic)) {
-        setSelectedClinic("");
-      }
-    } else {
-      setClinicSelectionRequired(false);
-      setSelectedClinic("");
-    }
-  }, [
-    activeClinics,
-    selectedDepartment,
-    admissionType,
-    isEditMode,
-    outpatientRequiresActiveClinicSchedule,
-    selectedClinic,
-  ]);
+  const activeClinicOptions = useMemo(() => (
+    !isEditMode && admissionType === 'outpatient' && selectedDepartment ? activeClinics : []
+  ), [activeClinics, admissionType, isEditMode, selectedDepartment]);
+  const selectedClinicIsActive = useMemo(() => (
+    activeClinicOptions.some((clinic) => clinic.id === selectedClinic)
+  ), [activeClinicOptions, selectedClinic]);
+  const clinicSelectionRequired =
+    activeClinicOptions.length > 1 && outpatientRequiresActiveClinicSchedule;
+  const selectedClinicForAdmission = useMemo(() => (
+    activeClinicOptions.length === 1 ? activeClinicOptions[0].id : selectedClinic
+  ), [activeClinicOptions, selectedClinic]);
 
   // Inpatient wards/beds (registration only): fetch wards from the selected department to avoid cross-department mismatches.
   const wardsQueryEnabled =
@@ -418,9 +395,9 @@ const PatientForm = ({ patient, onSuccess }) => {
     if (isEditMode) return true;
     if (!selectedDepartment) return false;
     if (admissionType === 'outpatient' && encounterBlocksOutpatient) return false;
-    if (admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinic) return false;
+    if (admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinicIsActive) return false;
     return true;
-  }, [isEditMode, selectedDepartment, admissionType, encounterBlocksOutpatient, clinicSelectionRequired, selectedClinic]);
+  }, [isEditMode, selectedDepartment, admissionType, encounterBlocksOutpatient, clinicSelectionRequired, selectedClinicIsActive]);
 
   const validateInsuranceStep = useCallback(() => {
     if (isEditMode) return true;
@@ -504,12 +481,104 @@ const PatientForm = ({ patient, onSuccess }) => {
     updatePatientMutation.isPending ||
     createInsuranceMutation.isPending;
 
+  const clearEncounterSelection = useCallback(() => {
+    setSelectedDepartment("");
+    setSelectedClinic("");
+    setSelectedPrimaryTeam("");
+    setSelectedWard("");
+    setIsWaitingList(false);
+    form.setValue("bed_id", "");
+  }, [form]);
+
+  const handleAdmissionTypeChange = useCallback((value) => {
+    setAdmissionType(value);
+    clearEncounterSelection();
+  }, [clearEncounterSelection]);
+
+  const handleDepartmentChange = useCallback((value) => {
+    setSelectedDepartment(value);
+    setSelectedClinic("");
+    setSelectedPrimaryTeam("");
+    setSelectedWard("");
+    setIsWaitingList(false);
+    form.setValue("bed_id", "");
+  }, [form]);
+
+  const handleNoEmailChange = useCallback((event) => {
+    const checked = event.target.checked;
+    if (checked) {
+      const placeholder = noEmailPlaceholder || createNoEmailPlaceholder();
+      setNoEmailPlaceholder(placeholder);
+      setNoEmail(true);
+      form.setValue('email', placeholder, { shouldDirty: true, shouldValidate: showValidation });
+      return;
+    }
+
+    if (form.getValues('email') === noEmailPlaceholder) {
+      form.setValue('email', '', { shouldDirty: true, shouldValidate: showValidation });
+    }
+    setNoEmail(false);
+    setNoEmailPlaceholder("");
+  }, [form, noEmailPlaceholder, showValidation]);
+
+  const handleWaitingListChange = useCallback((event) => {
+    const checked = event.target.checked;
+    setIsWaitingList(checked);
+    if (checked) {
+      setSelectedWard("");
+      form.setValue("bed_id", "");
+    }
+  }, [form]);
+
+  const handleWardChange = useCallback((value) => {
+    setSelectedWard(value);
+    form.setValue('bed_id', '');
+  }, [form]);
+
+  const handleInsuranceEnabledChange = useCallback((event) => {
+    const checked = event.target.checked;
+    setInsuranceData(prev => ({
+      ...prev,
+      hasInsurance: checked,
+      ...(checked ? {} : {
+        plan: '',
+        policy_number: '',
+        valid_from: null,
+        valid_until: null,
+      })
+    }));
+    if (!checked) {
+      setSelectedProviderId('');
+    }
+  }, []);
+
+  const handleInsuranceProviderChange = useCallback((value) => {
+    setSelectedProviderId(value);
+    setInsuranceData(prev => ({ ...prev, plan: '' }));
+  }, []);
+
+  const handleInsurancePlanChange = useCallback((value) => {
+    setInsuranceData(prev => ({ ...prev, plan: value }));
+  }, []);
+
+  const handleInsurancePolicyNumberChange = useCallback((event) => {
+    setInsuranceData(prev => ({ ...prev, policy_number: event.target.value }));
+  }, []);
+
+  const handleInsuranceValidFromChange = useCallback((date) => {
+    setInsuranceData(prev => ({ ...prev, valid_from: date }));
+  }, []);
+
+  const handleInsuranceValidUntilChange = useCallback((date) => {
+    setInsuranceData(prev => ({ ...prev, valid_until: date }));
+  }, []);
+
   const goToStep = useCallback((stepKey, focusField = null) => {
     setActiveStep(stepKey);
     if (focusField) {
       setTimeout(() => form.setFocus(focusField), 0);
     }
-  }, [form]);
+  }, [form, setActiveStep]);
 
   const goToFirstErrorStep = useCallback(() => {
     if (!isEditMode && !validateEncounterStep()) {
@@ -557,7 +626,7 @@ const PatientForm = ({ patient, onSuccess }) => {
     if (isFirstStep) return;
     setShowValidation(false);
     setActiveStep(stepKeys[currentStepIndex - 1]);
-  }, [currentStepIndex, isFirstStep, stepKeys]);
+  }, [currentStepIndex, isFirstStep, setActiveStep, stepKeys]);
 
   const handleNext = useCallback(async () => {
     setShowValidation(true);
@@ -569,7 +638,7 @@ const PatientForm = ({ patient, onSuccess }) => {
     if (isLastStep) return true;
     setActiveStep(stepKeys[currentStepIndex + 1]);
     return true;
-  }, [activeStep, currentStepIndex, goToFirstErrorStep, isLastStep, stepKeys, validateStep]);
+  }, [activeStep, currentStepIndex, goToFirstErrorStep, isLastStep, setActiveStep, stepKeys, validateStep]);
 
   const submitUpdate = useCallback((data) => {
     setIsLoading(true);
@@ -641,7 +710,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       setIsLoading(false);
       return;
     }
-    if (admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinic) {
+    if (admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinicIsActive) {
       toast.error("Please select a clinic");
       setIsLoading(false);
       return;
@@ -672,12 +741,12 @@ const PatientForm = ({ patient, onSuccess }) => {
       admissionDetails.primary_team_id = selectedPrimaryTeam;
     }
 
-    if (admissionType === 'outpatient' && selectedClinic) {
-      const selectedClinicOption = activeClinicOptions.find(c => c.id === selectedClinic);
+    if (admissionType === 'outpatient' && selectedClinicForAdmission) {
+      const selectedClinicOption = activeClinicOptions.find(c => c.id === selectedClinicForAdmission);
       if (selectedClinicOption?.is_duty_type) {
-        admissionDetails.duty_type_id = selectedClinic;
+        admissionDetails.duty_type_id = selectedClinicForAdmission;
       } else {
-        admissionDetails.clinic_id = selectedClinic;
+        admissionDetails.clinic_id = selectedClinicForAdmission;
       }
     }
 
@@ -708,7 +777,7 @@ const PatientForm = ({ patient, onSuccess }) => {
               is_active: true,
             });
             toast.success("Patient registered with insurance");
-          } catch (_insuranceError) {
+          } catch {
             toast.success("Patient registered successfully");
             toast.error("Failed to add insurance (you can add it later)");
           }
@@ -737,7 +806,8 @@ const PatientForm = ({ patient, onSuccess }) => {
     noEmail,
     onSuccess,
     registerPatientMutation,
-    selectedClinic,
+    selectedClinicForAdmission,
+    selectedClinicIsActive,
     selectedDepartment,
     selectedPrimaryTeam,
     selectedWard,
@@ -835,7 +905,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                     Encounter: no clinics are scheduled right now for this department
                   </button>
                 )}
-                {!isEditMode && admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinic && (
+                {!isEditMode && admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinicIsActive && (
                   <button
                     type="button"
                     className="text-left hover:underline font-mono text-xs"
@@ -914,15 +984,7 @@ const PatientForm = ({ patient, onSuccess }) => {
 	                    </span>
                     <RadioGroup
                       value={admissionType}
-                      onValueChange={(val) => {
-                        setAdmissionType(val);
-                        setSelectedDepartment("");
-                        setSelectedClinic("");
-                        setSelectedPrimaryTeam("");
-                        setSelectedWard("");
-                        setIsWaitingList(false);
-                        form.setValue("bed_id", "");
-                      }}
+                      onValueChange={handleAdmissionTypeChange}
                       className="flex flex-col gap-y-2"
                     >
                       <div className="flex items-center gap-x-2">
@@ -956,14 +1018,7 @@ const PatientForm = ({ patient, onSuccess }) => {
 	                    </span>
                     <Select
                       value={selectedDepartment}
-                      onValueChange={(val) => {
-                        setSelectedDepartment(val);
-                        setSelectedClinic("");
-                        setSelectedPrimaryTeam("");
-                        setSelectedWard("");
-                        setIsWaitingList(false);
-                        form.setValue("bed_id", "");
-                      }}
+                      onValueChange={handleDepartmentChange}
                     >
                       <SelectTrigger className={cn("font-mono", showValidation && !selectedDepartment && "border-rose-500")}>
                         <SelectValue placeholder={isDepartmentsLoading ? "Loading departments..." : "Select department"} />
@@ -1019,8 +1074,8 @@ const PatientForm = ({ patient, onSuccess }) => {
                           </div>
                         </div>
                       ) : (
-                        <Select value={selectedClinic} onValueChange={setSelectedClinic}>
-                          <SelectTrigger className={cn("font-mono", showValidation && clinicSelectionRequired && !selectedClinic && "border-rose-500")}>
+                        <Select value={selectedClinicIsActive ? selectedClinic : ""} onValueChange={setSelectedClinic}>
+                          <SelectTrigger className={cn("font-mono", showValidation && clinicSelectionRequired && !selectedClinicIsActive && "border-rose-500")}>
                             <SelectValue placeholder="Select clinic" />
                           </SelectTrigger>
                           <SelectContent>
@@ -1033,7 +1088,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                         </Select>
                       )}
 
-                      {clinicSelectionRequired && !selectedClinic && activeClinicOptions.length > 1 && showValidation && (
+                      {clinicSelectionRequired && !selectedClinicIsActive && activeClinicOptions.length > 1 && showValidation && (
                         <p className="text-xs text-rose-500 font-mono">
                           Multiple clinics are active; please select one
                         </p>
@@ -1058,13 +1113,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                           id="waitingList"
                           aria-label="Add to waiting list and assign bed later"
                           checked={isWaitingList}
-                          onChange={(e) => {
-                            setIsWaitingList(e.target.checked);
-                            if (e.target.checked) {
-                              setSelectedWard("");
-                              form.setValue("bed_id", "");
-                            }
-                          }}
+                          onChange={handleWaitingListChange}
                           className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                         />
                         <label htmlFor="waitingList" className="text-sm font-medium leading-none">
@@ -1077,10 +1126,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                           <FormItem>
                             <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</FormLabel>
                             <Select
-                              onValueChange={(val) => {
-                                setSelectedWard(val);
-                                form.setValue('bed_id', '');
-                              }}
+                              onValueChange={handleWardChange}
                               value={selectedWard}
                             >
                               <SelectTrigger className="font-mono">
@@ -1192,7 +1238,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                               mode="single"
                               selected={field.value}
                               onSelect={field.onChange}
-                              disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                              disabled={(date) => date > MAX_DATE_OF_BIRTH || date < MIN_DATE_OF_BIRTH}
                               initialFocus
                             />
                           </PopoverContent>
@@ -1225,7 +1271,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                               type="checkbox"
                               aria-label="No email available"
                               checked={noEmail}
-                              onChange={(e) => setNoEmail(e.target.checked)}
+                              onChange={handleNoEmailChange}
                               className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                             />
                             <label htmlFor="noEmail" className="text-xs text-muted-foreground font-mono">
@@ -1235,7 +1281,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                         )}
                         {noEmail && !isEditMode && (
                           <p className="text-xs text-muted-foreground font-mono">
-                            Placeholder: <span className="font-medium">{generatedNoEmail}</span>
+                            Placeholder: <span className="font-medium">{noEmailPlaceholder}</span>
                           </p>
                         )}
                         <FormMessage />
@@ -1546,22 +1592,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                           type="checkbox"
                           aria-label="Enable insurance coverage"
                           checked={insuranceData.hasInsurance}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setInsuranceData(prev => ({
-                              ...prev,
-                              hasInsurance: checked,
-                              ...(checked ? {} : {
-                                plan: '',
-                                policy_number: '',
-                                valid_from: null,
-                                valid_until: null,
-                              })
-                            }));
-                            if (!checked) {
-                              setSelectedProviderId('');
-                            }
-                          }}
+                          onChange={handleInsuranceEnabledChange}
                           className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
                         />
                       </div>
@@ -1575,10 +1606,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                           </FormLabel>
                           <Select
                             value={selectedProviderId}
-                            onValueChange={(value) => {
-                              setSelectedProviderId(value);
-                              setInsuranceData(prev => ({ ...prev, plan: '' }));
-                            }}
+                            onValueChange={handleInsuranceProviderChange}
                             disabled={!insuranceQueryEnabled}
                           >
                             <SelectTrigger className={cn("font-mono", showValidation && !selectedProviderId && "border-rose-500")}>
@@ -1600,7 +1628,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                           </FormLabel>
                           <Select
                             value={insuranceData.plan}
-                            onValueChange={(value) => setInsuranceData(prev => ({ ...prev, plan: value }))}
+                            onValueChange={handleInsurancePlanChange}
                             disabled={!selectedProviderId || !plansQueryEnabled}
                           >
                             <SelectTrigger className={cn("font-mono", showValidation && !insuranceData.plan && "border-rose-500")}>
@@ -1622,7 +1650,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                           </FormLabel>
                           <Input
                             value={insuranceData.policy_number}
-                            onChange={(e) => setInsuranceData(prev => ({ ...prev, policy_number: e.target.value }))}
+                            onChange={handleInsurancePolicyNumberChange}
                             placeholder="e.g., POL-12345678"
                             className={cn(showValidation && !insuranceData.policy_number?.trim() && "border-rose-500")}
                           />
@@ -1636,7 +1664,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                             <div className="flex-1">
                               <DatePicker
                                 date={insuranceData.valid_from}
-                                setDate={(date) => setInsuranceData(prev => ({ ...prev, valid_from: date }))}
+                                setDate={handleInsuranceValidFromChange}
                                 placeholder="Start date"
                                 className="w-full"
                               />
@@ -1645,7 +1673,7 @@ const PatientForm = ({ patient, onSuccess }) => {
                             <div className="flex-1">
                               <DatePicker
                                 date={insuranceData.valid_until}
-                                setDate={(date) => setInsuranceData(prev => ({ ...prev, valid_until: date }))}
+                                setDate={handleInsuranceValidUntilChange}
                                 placeholder="No expiry"
                                 className="w-full"
                               />
@@ -1679,10 +1707,10 @@ const PatientForm = ({ patient, onSuccess }) => {
                         <span className="font-medium">Department:</span>{' '}
                         {departments.find((d) => d.id === selectedDepartment)?.name || (selectedDepartment ? 'Selected' : 'Not selected')}
                       </p>
-                      {admissionType === 'outpatient' && selectedClinic && (
+                      {admissionType === 'outpatient' && selectedClinicForAdmission && (
                         <p className="text-sm">
                           <span className="font-medium">Clinic:</span>{' '}
-                          {activeClinicOptions.find((c) => c.id === selectedClinic)?.name || 'Selected'}
+                          {activeClinicOptions.find((c) => c.id === selectedClinicForAdmission)?.name || 'Selected'}
                         </p>
                       )}
                       {admissionType === 'inpatient' && (
