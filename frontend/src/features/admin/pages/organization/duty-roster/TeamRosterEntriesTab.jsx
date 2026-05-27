@@ -2,8 +2,7 @@
  * TeamRosterEntriesTab - Manage team roster entries
  * Chronicle Design System styling
  */
-import { useState, useEffect, useMemo } from 'react';
-import { cn } from '@/lib/utils';
+import { useReducer, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -50,92 +49,98 @@ import { SELECT_ALL, SELECT_NONE } from './constants';
 import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
-export function TeamRosterEntriesTab() {
-  const { isLoading: unitsLoading, teams, unitById } = useUnitOptions();
-  const [selectedTeam, setSelectedTeam] = useState(SELECT_ALL);
-  const [showForm, setShowForm] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null);
-
-  const teamFilter = selectedTeam === SELECT_ALL ? undefined : selectedTeam;
-
-  const { data: entriesData, isLoading } = useTeamRosterEntries({
-    team: teamFilter,
-  });
-  const entries = toList(entriesData);
-
-  const { data: dutyTypesData } = useDepartmentDutyTypes({ include_inactive: 'true' });
-  const dutyTypes = toList(dutyTypesData);
-
-  const { data: stationsData } = useDepartmentStations({ include_inactive: 'true' });
-  const stations = toList(stationsData);
-  const stationById = useMemo(() => new Map(stations.map((s) => [s.id, s])), [stations]);
-
-  const { data: practitionersData } = usePractitioners();
-  const practitioners = Array.isArray(practitionersData)
-    ? practitionersData
-    : practitionersData?.results || practitionersData?.data?.results || [];
-  const practitionerById = useMemo(() => new Map(practitioners.map((p) => [p.id, p])), [practitioners]);
-
-  const createEntry = useCreateTeamRosterEntry();
-  const updateEntry = useUpdateTeamRosterEntry();
-  const deleteEntry = useDeleteTeamRosterEntry();
-
-  const [formState, setFormState] = useState({
-    team: '',
+function createBlankTeamEntryForm(team = '') {
+  return {
+    team,
     date: '',
     duty_type: '',
-    station: '',
+    station: SELECT_NONE,
     practitioner: '',
     start_time: '',
     end_time: '',
     notes: '',
-  });
-
-  useEffect(() => {
-    if (!showForm) {
-      setEditingEntry(null);
-      setFormState({
-        team: teamFilter || '',
-        date: '',
-        duty_type: '',
-        station: '',
-        practitioner: '',
-        start_time: '',
-        end_time: '',
-        notes: '',
-      });
-    }
-  }, [showForm, selectedTeam]);
-
-  const openForm = async (entry) => {
-    if (entry) {
-      try {
-        const result = await teamRosterEntriesApi.get(entry.id);
-        const payload = result?.data || result;
-        setEditingEntry(payload);
-        setFormState({
-          team: toValue(payload.team),
-          date: safeDate(payload.date),
-          duty_type: toValue(payload.duty_type),
-          station: toValue(payload.station),
-          practitioner: toValue(payload.practitioner),
-          start_time: payload.start_time ? payload.start_time.slice(0, 5) : '',
-          end_time: payload.end_time ? payload.end_time.slice(0, 5) : '',
-          notes: payload.notes || '',
-        });
-      } catch (error) {
-        toast.error(error.message || 'Failed to load team roster entry.');
-        return;
-      }
-    } else {
-      setEditingEntry(null);
-      setFormState((prev) => ({
-        ...prev,
-        team: selectedTeam || prev.team,
-      }));
-    }
-    setShowForm(true);
   };
+}
+
+function createTeamEntryFormState({ entry, team }) {
+  if (!entry) {
+    return createBlankTeamEntryForm(team);
+  }
+  return {
+    team: toValue(entry.team),
+    date: safeDate(entry.date),
+    duty_type: toValue(entry.duty_type),
+    station: toValue(entry.station) || SELECT_NONE,
+    practitioner: toValue(entry.practitioner),
+    start_time: entry.start_time ? entry.start_time.slice(0, 5) : '',
+    end_time: entry.end_time ? entry.end_time.slice(0, 5) : '',
+    notes: entry.notes || '',
+  };
+}
+
+function teamEntryFormReducer(state, action) {
+  if (action.type === 'field') {
+    return { ...state, [action.name]: action.value };
+  }
+  return state;
+}
+
+function TeamEntryFormDialog({
+  createEntry,
+  dutyTypes,
+  editingEntry,
+  getPractitionerName,
+  onOpenChange,
+  open,
+  practitioners,
+  selectedTeam,
+  stations,
+  teams,
+  updateEntry,
+}) {
+  const team = selectedTeam === SELECT_ALL ? '' : selectedTeam;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <TeamEntryFormContent
+          key={editingEntry ? editingEntry.id : `new-${team || 'all'}`}
+          createEntry={createEntry}
+          dutyTypes={dutyTypes}
+          editingEntry={editingEntry}
+          getPractitionerName={getPractitionerName}
+          initialTeam={team}
+          onClose={() => onOpenChange(false)}
+          practitioners={practitioners}
+          stations={stations}
+          teams={teams}
+          updateEntry={updateEntry}
+        />
+      ) : null}
+    </Dialog>
+  );
+}
+
+function TeamEntryFormContent({
+  createEntry,
+  dutyTypes,
+  editingEntry,
+  getPractitionerName,
+  initialTeam,
+  onClose,
+  practitioners,
+  stations,
+  teams,
+  updateEntry,
+}) {
+  const [formState, dispatchForm] = useReducer(
+    teamEntryFormReducer,
+    { entry: editingEntry, team: initialTeam },
+    createTeamEntryFormState,
+  );
+
+  const updateField = (name) => (value) => dispatchForm({ type: 'field', name, value });
+  const updateInputField = (name) => (event) => updateField(name)(event.target.value);
 
   const handleSubmit = async () => {
     try {
@@ -143,7 +148,7 @@ export function TeamRosterEntriesTab() {
         team: formState.team,
         date: formState.date,
         duty_type: formState.duty_type,
-        station: formState.station || null,
+        station: formState.station === SELECT_NONE ? null : (formState.station || null),
         practitioner: formState.practitioner,
         start_time: formState.start_time || null,
         end_time: formState.end_time || null,
@@ -164,9 +169,136 @@ export function TeamRosterEntriesTab() {
         await createEntry.mutateAsync(payload);
         toast.success('Team roster entry created.');
       }
-      setShowForm(false);
+      onClose();
     } catch (error) {
       toast.error(error.message || 'Failed to save team roster entry.');
+    }
+  };
+
+  return (
+    <DialogContent className="sm:max-w-2xl">
+      <DialogHeader>
+        <DialogTitle className="font-display text-xl">{editingEntry ? 'Edit Team Entry' : 'Add Team Entry'}</DialogTitle>
+        <DialogDescription>Team entries add practitioner detail for coverage.</DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        <FieldRow>
+          <InlineField label="Team">
+            <Select value={formState.team} onValueChange={updateField('team')}>
+              <SelectTrigger><SelectValue placeholder="Select team" /></SelectTrigger>
+              <SelectContent className="z-[200]">
+                {teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </InlineField>
+          <InlineField label="Date">
+            <Input type="date" value={formState.date} onChange={updateInputField('date')} className="font-mono" />
+          </InlineField>
+        </FieldRow>
+        <FieldRow>
+          <InlineField label="Duty Type">
+            <Select value={formState.duty_type} onValueChange={updateField('duty_type')}>
+              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectContent className="z-[200]">
+                {dutyTypes.map((dt) => <SelectItem key={dt.id} value={dt.id}>{dt.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </InlineField>
+          <InlineField label="Practitioner">
+            <Select value={formState.practitioner} onValueChange={updateField('practitioner')}>
+              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectContent className="z-[200]">
+                {practitioners.map((practitioner) => (
+                  <SelectItem key={practitioner.id} value={practitioner.id}>
+                    {getPractitionerName(practitioner) || practitioner.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </InlineField>
+        </FieldRow>
+        <FieldRow>
+          <InlineField label="Station (Optional)">
+            <Select value={formState.station} onValueChange={updateField('station')}>
+              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+              <SelectContent className="z-[200]">
+                <SelectItem value={SELECT_NONE}>None</SelectItem>
+                {stations.map((station) => <SelectItem key={station.id} value={station.id}>{station.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </InlineField>
+          <InlineField label="Timing">
+            <div className="grid grid-cols-2 gap-3">
+              <Input type="time" value={formState.start_time} onChange={updateInputField('start_time')} className="font-mono" placeholder="Start" />
+              <Input type="time" value={formState.end_time} onChange={updateInputField('end_time')} className="font-mono" placeholder="End" />
+            </div>
+          </InlineField>
+        </FieldRow>
+        <InlineField label="Notes (Optional)">
+          <Textarea value={formState.notes} onChange={updateInputField('notes')} rows={2} />
+        </InlineField>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSubmit} disabled={createEntry.isPending || updateEntry.isPending}>
+          {editingEntry ? 'Save Changes' : 'Create Entry'}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+export function TeamRosterEntriesTab() {
+  const { isLoading: unitsLoading, teams, unitById } = useUnitOptions();
+  const [selectedTeam, setSelectedTeam] = useState(SELECT_ALL);
+  const [formDialog, setFormDialog] = useState({
+    editingEntry: null,
+    open: false,
+  });
+
+  const teamFilter = selectedTeam === SELECT_ALL ? undefined : selectedTeam;
+
+  const { data: entriesData, isLoading } = useTeamRosterEntries({
+    team: teamFilter,
+  });
+  const entries = toList(entriesData);
+
+  const { data: dutyTypesData } = useDepartmentDutyTypes({ include_inactive: 'true' });
+  const dutyTypes = toList(dutyTypesData);
+
+  const { data: stationsData } = useDepartmentStations({ include_inactive: 'true' });
+  const stations = toList(stationsData);
+  const stationById = useMemo(() => new Map(stations.map((s) => [s.id, s])), [stations]);
+
+  const { data: practitionersData } = usePractitioners();
+  const practitioners = useMemo(() => (
+    Array.isArray(practitionersData)
+      ? practitionersData
+      : practitionersData?.results || practitionersData?.data?.results || []
+  ), [practitionersData]);
+  const practitionerById = useMemo(() => new Map(practitioners.map((p) => [p.id, p])), [practitioners]);
+
+  const createEntry = useCreateTeamRosterEntry();
+  const updateEntry = useUpdateTeamRosterEntry();
+  const deleteEntry = useDeleteTeamRosterEntry();
+
+  const openForm = async (entry) => {
+    if (entry) {
+      try {
+        const result = await teamRosterEntriesApi.get(entry.id);
+        const payload = result?.data || result;
+        setFormDialog({ editingEntry: payload, open: true });
+      } catch (error) {
+        toast.error(error.message || 'Failed to load team roster entry.');
+      }
+    } else {
+      setFormDialog({ editingEntry: null, open: true });
+    }
+  };
+
+  const handleFormOpenChange = (open) => {
+    if (!open) {
+      setFormDialog({ editingEntry: null, open: false });
     }
   };
 
@@ -278,78 +410,19 @@ export function TeamRosterEntriesTab() {
         </CardContent>
       </Card>
 
-      {/* Form Dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">{editingEntry ? 'Edit Team Entry' : 'Add Team Entry'}</DialogTitle>
-            <DialogDescription>Team entries add practitioner detail for coverage.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <FieldRow>
-              <InlineField label="Team">
-                <Select value={formState.team} onValueChange={(v) => setFormState((p) => ({ ...p, team: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select team" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-              <InlineField label="Date">
-                <Input type="date" value={formState.date} onChange={(e) => setFormState((p) => ({ ...p, date: e.target.value }))} className="font-mono" />
-              </InlineField>
-            </FieldRow>
-            <FieldRow>
-              <InlineField label="Duty Type">
-                <Select value={formState.duty_type} onValueChange={(v) => setFormState((p) => ({ ...p, duty_type: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {dutyTypes.map((dt) => <SelectItem key={dt.id} value={dt.id}>{dt.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-              <InlineField label="Practitioner">
-                <Select value={formState.practitioner} onValueChange={(v) => setFormState((p) => ({ ...p, practitioner: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {practitioners.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {getPractitionerName(p) || p.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-            </FieldRow>
-            <FieldRow>
-              <InlineField label="Station (Optional)">
-                <Select value={formState.station} onValueChange={(v) => setFormState((p) => ({ ...p, station: v }))}>
-                  <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    <SelectItem value={SELECT_NONE}>None</SelectItem>
-                    {stations.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-              <InlineField label="Timing">
-                <div className="grid grid-cols-2 gap-3">
-                  <Input type="time" value={formState.start_time} onChange={(e) => setFormState((p) => ({ ...p, start_time: e.target.value }))} className="font-mono" placeholder="Start" />
-                  <Input type="time" value={formState.end_time} onChange={(e) => setFormState((p) => ({ ...p, end_time: e.target.value }))} className="font-mono" placeholder="End" />
-                </div>
-              </InlineField>
-            </FieldRow>
-            <InlineField label="Notes (Optional)">
-              <Textarea value={formState.notes} onChange={(e) => setFormState((p) => ({ ...p, notes: e.target.value }))} rows={2} />
-            </InlineField>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createEntry.isPending || updateEntry.isPending}>
-              {editingEntry ? 'Save Changes' : 'Create Entry'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TeamEntryFormDialog
+        createEntry={createEntry}
+        dutyTypes={dutyTypes}
+        editingEntry={formDialog.editingEntry}
+        getPractitionerName={getPractitionerName}
+        onOpenChange={handleFormOpenChange}
+        open={formDialog.open}
+        practitioners={practitioners}
+        selectedTeam={selectedTeam}
+        stations={stations}
+        teams={teams}
+        updateEntry={updateEntry}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@
  * DepartmentRosterPlansTab - Manage department roster plans
  * Chronicle Design System styling
  */
-import { useState, useEffect } from 'react';
+import { useReducer, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,25 +47,9 @@ import { DUTY_STATUS_OPTIONS, STATUS_BADGE_CLASSES, DEFAULT_CYCLE_LENGTH, SELECT
 import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
-export function DepartmentRosterPlansTab() {
-  const { isLoading: unitsLoading, departments, unitById } = useUnitOptions();
-  const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
-  const [showForm, setShowForm] = useState(false);
-  const [editingPlan, setEditingPlan] = useState(null);
-
-  const departmentFilter = selectedDepartment === SELECT_ALL ? undefined : selectedDepartment;
-
-  const { data: plansData, isLoading } = useDepartmentRosterPlans({
-    department: departmentFilter,
-  });
-  const plans = toList(plansData);
-
-  const createPlan = useCreateDepartmentRosterPlan();
-  const updatePlan = useUpdateDepartmentRosterPlan();
-  const deletePlan = useDeleteDepartmentRosterPlan();
-
-  const [formState, setFormState] = useState({
-    department: '',
+function createBlankDepartmentPlanForm(department = '') {
+  return {
+    department,
     name: '',
     cycle_length_days: DEFAULT_CYCLE_LENGTH,
     effective_from: '',
@@ -73,46 +57,76 @@ export function DepartmentRosterPlansTab() {
     status: 'draft',
     version: 1,
     notes: '',
-  });
-
-  useEffect(() => {
-    if (!showForm) {
-      setEditingPlan(null);
-      setFormState({
-        department: departmentFilter || '',
-        name: '',
-        cycle_length_days: DEFAULT_CYCLE_LENGTH,
-        effective_from: '',
-        effective_until: '',
-        status: 'draft',
-        version: 1,
-        notes: '',
-      });
-    }
-  }, [showForm, selectedDepartment]);
-
-  const openForm = (plan) => {
-    if (plan) {
-      setEditingPlan(plan);
-      setFormState({
-        department: toValue(plan.department),
-        name: plan.name || '',
-        cycle_length_days: plan.cycle_length_days ?? DEFAULT_CYCLE_LENGTH,
-        effective_from: safeDate(plan.effective_from),
-        effective_until: plan.effective_until ? safeDate(plan.effective_until) : '',
-        status: plan.status || 'draft',
-        version: plan.version ?? 1,
-        notes: plan.notes || '',
-      });
-    } else {
-      setEditingPlan(null);
-      setFormState((prev) => ({
-        ...prev,
-        department: selectedDepartment || prev.department,
-      }));
-    }
-    setShowForm(true);
   };
+}
+
+function createDepartmentPlanFormState({ department, plan }) {
+  if (!plan) {
+    return createBlankDepartmentPlanForm(department);
+  }
+  return {
+    department: toValue(plan.department),
+    name: plan.name || '',
+    cycle_length_days: plan.cycle_length_days ?? DEFAULT_CYCLE_LENGTH,
+    effective_from: safeDate(plan.effective_from),
+    effective_until: plan.effective_until ? safeDate(plan.effective_until) : '',
+    status: plan.status || 'draft',
+    version: plan.version ?? 1,
+    notes: plan.notes || '',
+  };
+}
+
+function departmentPlanFormReducer(state, action) {
+  if (action.type === 'field') {
+    return { ...state, [action.name]: action.value };
+  }
+  return state;
+}
+
+function DepartmentPlanFormDialog({
+  createPlan,
+  departments,
+  editingPlan,
+  onOpenChange,
+  open,
+  selectedDepartment,
+  updatePlan,
+}) {
+  const department = selectedDepartment === SELECT_ALL ? '' : selectedDepartment;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <DepartmentPlanFormContent
+          key={editingPlan ? editingPlan.id : `new-${department || 'all'}`}
+          createPlan={createPlan}
+          departments={departments}
+          editingPlan={editingPlan}
+          initialDepartment={department}
+          onClose={() => onOpenChange(false)}
+          updatePlan={updatePlan}
+        />
+      ) : null}
+    </Dialog>
+  );
+}
+
+function DepartmentPlanFormContent({
+  createPlan,
+  departments,
+  editingPlan,
+  initialDepartment,
+  onClose,
+  updatePlan,
+}) {
+  const [formState, dispatchForm] = useReducer(
+    departmentPlanFormReducer,
+    { department: initialDepartment, plan: editingPlan },
+    createDepartmentPlanFormState,
+  );
+
+  const updateField = (name) => (value) => dispatchForm({ type: 'field', name, value });
+  const updateInputField = (name) => (event) => updateField(name)(event.target.value);
 
   const handleSubmit = async () => {
     try {
@@ -137,9 +151,139 @@ export function DepartmentRosterPlansTab() {
         await createPlan.mutateAsync(payload);
         toast.success('Roster plan created.');
       }
-      setShowForm(false);
+      onClose();
     } catch (error) {
       toast.error(error.message || 'Failed to save roster plan.');
+    }
+  };
+
+  return (
+    <DialogContent className="sm:max-w-xl">
+      <DialogHeader>
+        <DialogTitle className="font-display text-xl">
+          {editingPlan ? 'Edit Roster Plan' : 'Add Roster Plan'}
+        </DialogTitle>
+        <DialogDescription>
+          Define the coverage cycle and effective window.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        <InlineField label="Department">
+          <Select value={formState.department} onValueChange={updateField('department')}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select department" />
+            </SelectTrigger>
+            <SelectContent className="z-[200]">
+              {departments.map((dept) => (
+                <SelectItem key={dept.id} value={dept.id}>
+                  {dept.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </InlineField>
+        <FieldRow>
+          <InlineField label="Plan Name">
+            <Input value={formState.name} onChange={updateInputField('name')} />
+          </InlineField>
+          <InlineField label="Cycle Length (days)">
+            <Input
+              type="number"
+              min="1"
+              value={formState.cycle_length_days}
+              onChange={updateInputField('cycle_length_days')}
+              className="font-mono"
+            />
+          </InlineField>
+        </FieldRow>
+        <FieldRow>
+          <InlineField label="Effective From">
+            <Input
+              type="date"
+              value={formState.effective_from}
+              onChange={updateInputField('effective_from')}
+              className="font-mono"
+            />
+          </InlineField>
+          <InlineField label="Effective Until (Optional)">
+            <Input
+              type="date"
+              value={formState.effective_until}
+              onChange={updateInputField('effective_until')}
+              className="font-mono"
+            />
+          </InlineField>
+        </FieldRow>
+        <FieldRow>
+          <InlineField label="Status">
+            <Select value={formState.status} onValueChange={updateField('status')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-[200]">
+                {DUTY_STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </InlineField>
+          <InlineField label="Version">
+            <Input
+              type="number"
+              min="1"
+              value={formState.version}
+              onChange={updateInputField('version')}
+              className="font-mono"
+            />
+          </InlineField>
+        </FieldRow>
+        <InlineField label="Notes (Optional)">
+          <Textarea value={formState.notes} onChange={updateInputField('notes')} rows={3} />
+        </InlineField>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          disabled={createPlan.isPending || updatePlan.isPending}
+        >
+          {editingPlan ? 'Save Changes' : 'Create Plan'}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+export function DepartmentRosterPlansTab() {
+  const { isLoading: unitsLoading, departments, unitById } = useUnitOptions();
+  const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
+  const [formDialog, setFormDialog] = useState({
+    editingPlan: null,
+    open: false,
+  });
+
+  const departmentFilter = selectedDepartment === SELECT_ALL ? undefined : selectedDepartment;
+
+  const { data: plansData, isLoading } = useDepartmentRosterPlans({
+    department: departmentFilter,
+  });
+  const plans = toList(plansData);
+
+  const createPlan = useCreateDepartmentRosterPlan();
+  const updatePlan = useUpdateDepartmentRosterPlan();
+  const deletePlan = useDeleteDepartmentRosterPlan();
+
+  const openForm = (plan) => {
+    setFormDialog({ editingPlan: plan || null, open: true });
+  };
+
+  const handleFormOpenChange = (open) => {
+    if (!open) {
+      setFormDialog({ editingPlan: null, open: false });
     }
   };
 
@@ -259,119 +403,15 @@ export function DepartmentRosterPlansTab() {
         </CardContent>
       </Card>
 
-      {/* Form Dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">
-              {editingPlan ? 'Edit Roster Plan' : 'Add Roster Plan'}
-            </DialogTitle>
-            <DialogDescription>
-              Define the coverage cycle and effective window.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <InlineField label="Department">
-              <Select
-                value={formState.department}
-                onValueChange={(value) => setFormState((prev) => ({ ...prev, department: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select department" />
-                </SelectTrigger>
-                <SelectContent className="z-[200]">
-                  {departments.map((dept) => (
-                    <SelectItem key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </InlineField>
-            <FieldRow>
-              <InlineField label="Plan Name">
-                <Input
-                  value={formState.name}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, name: e.target.value }))}
-                />
-              </InlineField>
-              <InlineField label="Cycle Length (days)">
-                <Input
-                  type="number"
-                  min="1"
-                  value={formState.cycle_length_days}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, cycle_length_days: e.target.value }))}
-                  className="font-mono"
-                />
-              </InlineField>
-            </FieldRow>
-            <FieldRow>
-              <InlineField label="Effective From">
-                <Input
-                  type="date"
-                  value={formState.effective_from}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, effective_from: e.target.value }))}
-                  className="font-mono"
-                />
-              </InlineField>
-              <InlineField label="Effective Until (Optional)">
-                <Input
-                  type="date"
-                  value={formState.effective_until}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, effective_until: e.target.value }))}
-                  className="font-mono"
-                />
-              </InlineField>
-            </FieldRow>
-            <FieldRow>
-              <InlineField label="Status">
-                <Select
-                  value={formState.status}
-                  onValueChange={(value) => setFormState((prev) => ({ ...prev, status: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {DUTY_STATUS_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-              <InlineField label="Version">
-                <Input
-                  type="number"
-                  min="1"
-                  value={formState.version}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, version: e.target.value }))}
-                  className="font-mono"
-                />
-              </InlineField>
-            </FieldRow>
-            <InlineField label="Notes (Optional)">
-              <Textarea
-                value={formState.notes}
-                onChange={(e) => setFormState((prev) => ({ ...prev, notes: e.target.value }))}
-                rows={3}
-              />
-            </InlineField>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={createPlan.isPending || updatePlan.isPending}
-            >
-              {editingPlan ? 'Save Changes' : 'Create Plan'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DepartmentPlanFormDialog
+        createPlan={createPlan}
+        departments={departments}
+        editingPlan={formDialog.editingPlan}
+        onOpenChange={handleFormOpenChange}
+        open={formDialog.open}
+        selectedDepartment={selectedDepartment}
+        updatePlan={updatePlan}
+      />
     </div>
   );
 }
