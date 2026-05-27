@@ -13,10 +13,15 @@ function adaptV2Facility(unit) {
 }
 
 function adaptV2FacilitiesResponse(response, includeInactive) {
-  return (Array.isArray(response?.data) ? response.data : [])
-    .filter((unit) => unit.unit_type === "facility")
-    .map(adaptV2Facility)
-    .filter((facility) => includeInactive || facility.is_active);
+  const facilities = [];
+  for (const unit of Array.isArray(response?.data) ? response.data : []) {
+    if (unit.unit_type !== "facility") continue;
+    const facility = adaptV2Facility(unit);
+    if (includeInactive || facility.is_active) {
+      facilities.push(facility);
+    }
+  }
+  return facilities;
 }
 
 function rethrowAbortError(error) {

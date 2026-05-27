@@ -53,9 +53,11 @@ const AppointmentCalendar = ({ practitionerId, patientId, onSelectDate, onCreate
       // Process appointments
       let appointmentData = [];
       if (response && response.entry) {
-        appointmentData = response.entry
-          .filter(entry => entry.resource && entry.resource.resourceType === 'Appointment')
-          .map(entry => entry.resource);
+        for (const entry of response.entry) {
+          if (entry.resource && entry.resource.resourceType === 'Appointment') {
+            appointmentData.push(entry.resource);
+          }
+        }
       }
 
       setAppointments(appointmentData);

@@ -497,14 +497,14 @@ export const admissionsApi = {
           },
           signal: options.signal,
         })
-        return v2ListData(response)
-          .map(adaptV2PractitionerSearchItem)
-          .filter((practitioner) => {
-            if (!doctorsOnly) {
-              return true
-            }
-            return String(practitioner.role || '').toLowerCase().includes('doctor')
-          })
+        const practitioners = []
+        for (const item of v2ListData(response)) {
+          const practitioner = adaptV2PractitionerSearchItem(item)
+          if (!doctorsOnly || String(practitioner.role || '').toLowerCase().includes('doctor')) {
+            practitioners.push(practitioner)
+          }
+        }
+        return practitioners
       }
 
       const params = new URLSearchParams({ q: query })

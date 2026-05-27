@@ -38,12 +38,14 @@ function normalizeTypes(types) {
     labs: 'laboratory',
     referral: 'referrals',
   }
-  return types
-    .flatMap((type) => {
-      const normalizedType = String(type || '').trim().toLowerCase()
-      return normalizedType ? [normalizedType] : []
-    })
-    .map((type) => aliases[type] || type)
+  const normalizedTypes = []
+  for (const type of types) {
+    const normalizedType = String(type || '').trim().toLowerCase()
+    if (normalizedType) {
+      normalizedTypes.push(aliases[normalizedType] || normalizedType)
+    }
+  }
+  return normalizedTypes
 }
 
 function emptySearchResponse({ q, types, limit }) {

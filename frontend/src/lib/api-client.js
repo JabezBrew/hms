@@ -15,6 +15,7 @@ const AUTH_ENDPOINTS = [
   '/auth/logout/',
   '/auth/mfa/'
 ];
+const RESPONSE_ERROR_META_FIELDS = new Set(['status', 'code']);
 
 // Token provider - will be set by the auth context
 let getAccessToken = () => null;
@@ -297,12 +298,12 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
         message = data.message;
       } else if (typeof data === 'object' && data !== null) {
         // Django REST Framework field errors
-        const fieldErrors = Object.entries(data)
-          .filter(([key]) => !['status', 'code'].includes(key))
-          .map(([field, errors]) => {
-            const errorArray = Array.isArray(errors) ? errors : [errors];
-            return `${field}: ${errorArray.join(', ')}`;
-          });
+        const fieldErrors = [];
+        for (const [field, errors] of Object.entries(data)) {
+          if (RESPONSE_ERROR_META_FIELDS.has(field)) continue;
+          const errorArray = Array.isArray(errors) ? errors : [errors];
+          fieldErrors.push(`${field}: ${errorArray.join(', ')}`);
+        }
 
         if (fieldErrors.length > 0) {
           message = fieldErrors.join('; ');

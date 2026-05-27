@@ -313,9 +313,15 @@ function matchesTimelineSearch(entry, search) {
 function buildV2TimelinePage(context, options = {}) {
   const pageSize = Number(options.page_size || options.pageSize || 20);
   const page = Math.max(Number(options.page || 1), 1);
-  const filteredEntries = buildV2TimelineEntries(context)
-    .filter((entry) => matchesTimelineType(entry, options.type))
-    .filter((entry) => matchesTimelineSearch(entry, options.search));
+  const filteredEntries = [];
+  for (const entry of buildV2TimelineEntries(context)) {
+    if (
+      matchesTimelineType(entry, options.type) &&
+      matchesTimelineSearch(entry, options.search)
+    ) {
+      filteredEntries.push(entry);
+    }
+  }
   const startIndex = (page - 1) * pageSize;
   const results = filteredEntries.slice(startIndex, startIndex + pageSize);
 

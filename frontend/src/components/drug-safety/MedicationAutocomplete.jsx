@@ -40,11 +40,13 @@ export function MedicationAutocomplete({
   // Filter out entries with null names and deduplicate by rxcui
   // Note: apiClient.get() already extracts the results array from { results: [...] }
   const rawResults = Array.isArray(searchResults) ? searchResults : (searchResults?.results || []);
-  const results = rawResults
-    .filter(drug => drug.name && drug.rxcui)
-    .filter((drug, index, self) =>
-      index === self.findIndex(d => d.rxcui === drug.rxcui)
-    );
+  const seenRxcuis = new Set();
+  const results = [];
+  for (const drug of rawResults) {
+    if (!drug.name || !drug.rxcui || seenRxcuis.has(drug.rxcui)) continue;
+    seenRxcuis.add(drug.rxcui);
+    results.push(drug);
+  }
 
   const handleSelect = (medication) => {
     // Return both name and rxcui for drug form lookup

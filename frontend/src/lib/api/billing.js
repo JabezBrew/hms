@@ -251,14 +251,22 @@ async function getV2ServicesPage(params = {}, options = {}) {
 
 function v2ServiceCategoriesPage(catalogResponse, params = {}) {
   const search = String(params.search || '').trim().toLowerCase();
-  const categories = Array.from(new Set(v2List(catalogResponse).flatMap((item) => (item.service_kind ? [item.service_kind] : []))))
-    .map((serviceKind) => ({
+  const categories = [];
+  const seenKinds = new Set();
+  for (const item of v2List(catalogResponse)) {
+    const serviceKind = item.service_kind;
+    if (!serviceKind || seenKinds.has(serviceKind)) continue;
+    seenKinds.add(serviceKind);
+    const category = {
       id: serviceKind,
       name: titleCase(serviceKind) || 'Other',
       description: '',
       is_active: true,
-    }))
-    .filter((category) => !search || category.name.toLowerCase().includes(search));
+    };
+    if (!search || category.name.toLowerCase().includes(search)) {
+      categories.push(category);
+    }
+  }
   return {
     ...emptyPage(),
     count: categories.length,

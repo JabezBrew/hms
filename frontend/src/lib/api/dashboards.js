@@ -145,9 +145,13 @@ function adaptV2AppointmentForDashboard(item = {}) {
 
 function adaptV2AppointmentsToClinicSchedule(response, params = {}) {
   const date = params.date || new Date().toISOString().slice(0, 10);
-  const appointments = (response?.data || [])
-    .map(adaptV2AppointmentForDashboard)
-    .filter((appointment) => !params.date || appointment.start_time?.slice(0, 10) === params.date);
+  const appointments = [];
+  for (const item of response?.data || []) {
+    const appointment = adaptV2AppointmentForDashboard(item);
+    if (!params.date || appointment.start_time?.slice(0, 10) === params.date) {
+      appointments.push(appointment);
+    }
+  }
   return {
     date,
     appointments,

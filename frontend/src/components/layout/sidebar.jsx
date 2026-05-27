@@ -662,22 +662,25 @@ function resolveItem(entry, context) {
 
 function dedupeSections(sections) {
   const seenHrefs = new Set()
+  const dedupedSections = []
 
-  return sections
-    .map((currentSection) => {
-      const items = currentSection.items.filter((currentItem) => {
-        if (!currentItem.href) {
-          return true
-        }
-        if (seenHrefs.has(currentItem.href)) {
-          return false
-        }
-        seenHrefs.add(currentItem.href)
+  for (const currentSection of sections) {
+    const items = currentSection.items.filter((currentItem) => {
+      if (!currentItem.href) {
         return true
-      })
-      return { ...currentSection, items }
+      }
+      if (seenHrefs.has(currentItem.href)) {
+        return false
+      }
+      seenHrefs.add(currentItem.href)
+      return true
     })
-    .filter((currentSection) => currentSection.items.length > 0)
+    if (items.length > 0) {
+      dedupedSections.push({ ...currentSection, items })
+    }
+  }
+
+  return dedupedSections
 }
 
 /* eslint-disable react-refresh/only-export-components */
@@ -695,15 +698,19 @@ export function resolveSidebarSections({ sidebar, user, enabledFeatures, inboxCo
       inbox: inboxCount,
     },
   }
-  const resolvedSections = baseSections
-    .map((currentSection) => ({
-      ...currentSection,
-      items: currentSection.items.flatMap((currentItem) => {
-        const resolvedItem = resolveItem(currentItem, context)
-        return resolvedItem ? [resolvedItem] : []
-      }),
-    }))
-    .filter((currentSection) => currentSection.items.length > 0)
+  const resolvedSections = []
+  for (const currentSection of baseSections) {
+    const items = []
+    for (const currentItem of currentSection.items) {
+      const resolvedItem = resolveItem(currentItem, context)
+      if (resolvedItem) {
+        items.push(resolvedItem)
+      }
+    }
+    if (items.length > 0) {
+      resolvedSections.push({ ...currentSection, items })
+    }
+  }
 
   if (sidebarKey === SIDEBARS.GLOBAL) {
     return resolvedSections

@@ -659,15 +659,28 @@ function isDueMedicationAdministration(item) {
   return item.status === 'scheduled' && item.scheduled_time && Date.parse(item.scheduled_time) <= Date.now();
 }
 
+function adaptMatchingV2Items(items, adapt, matches) {
+  const adaptedItems = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    const adaptedItem = adapt(item);
+    if (matches(adaptedItem)) {
+      adaptedItems.push(adaptedItem);
+    }
+  }
+  return adaptedItems;
+}
+
 async function getV2MedicationAdministrations(filters = {}, { signal } = {}) {
   try {
     const response = await v2Api.getMedicationAdministrations({
       query: { limit: MAX_MEDICATION_ADMIN_PAGE_SIZE },
       signal,
     });
-    return (Array.isArray(response?.data) ? response.data : [])
-      .map(adaptV2MedicationAdministration)
-      .filter((item) => medicationAdministrationMatchesFilters(item, filters));
+    return adaptMatchingV2Items(
+      response?.data,
+      adaptV2MedicationAdministration,
+      (item) => medicationAdministrationMatchesFilters(item, filters)
+    );
   } catch (error) {
     rethrowV2Error(error, 'Failed to load medication administrations');
   }
@@ -679,9 +692,11 @@ async function getV2TreatmentSheets(filters = {}, { signal } = {}) {
       query: { limit: MAX_TREATMENT_SHEET_PAGE_SIZE },
       signal,
     });
-    return (Array.isArray(response?.data) ? response.data : [])
-      .map(adaptV2TreatmentSheet)
-      .filter((item) => treatmentSheetMatchesFilters(item, filters));
+    return adaptMatchingV2Items(
+      response?.data,
+      adaptV2TreatmentSheet,
+      (item) => treatmentSheetMatchesFilters(item, filters)
+    );
   } catch (error) {
     rethrowV2Error(error, 'Failed to load treatment sheets');
   }
@@ -693,9 +708,11 @@ async function getV2WardStockRequests(filters = {}, { signal } = {}) {
       query: { limit: MAX_WARD_STOCK_REQUEST_PAGE_SIZE },
       signal,
     });
-    return (Array.isArray(response?.data) ? response.data : [])
-      .map(adaptV2WardStockRequest)
-      .filter((item) => wardStockRequestMatchesFilters(item, filters));
+    return adaptMatchingV2Items(
+      response?.data,
+      adaptV2WardStockRequest,
+      (item) => wardStockRequestMatchesFilters(item, filters)
+    );
   } catch (error) {
     rethrowV2Error(error, 'Failed to load ward stock requests');
   }
@@ -722,12 +739,15 @@ function fluidBalanceMatchesFilters(item, patientId, filters = {}) {
 }
 
 function summarizeFluidBalance(records = []) {
-  const totalIntake = records
-    .filter((record) => record.entry_type === 'intake')
-    .reduce((sum, record) => sum + (Number(record.volume_ml) || 0), 0);
-  const totalOutput = records
-    .filter((record) => record.entry_type === 'output')
-    .reduce((sum, record) => sum + (Number(record.volume_ml) || 0), 0);
+  let totalIntake = 0;
+  let totalOutput = 0;
+  for (const record of records) {
+    if (record.entry_type === 'intake') {
+      totalIntake += Number(record.volume_ml) || 0;
+    } else if (record.entry_type === 'output') {
+      totalOutput += Number(record.volume_ml) || 0;
+    }
+  }
   return {
     total_intake: totalIntake,
     total_output: totalOutput,
@@ -793,9 +813,13 @@ async function getV2FluidBalanceEntries(patientId, filters = {}, { signal } = {}
       query: { limit: MAX_FLUID_BALANCE_PAGE_SIZE },
       signal,
     });
-    return (Array.isArray(response?.data) ? response.data : [])
-      .filter((item) => fluidBalanceMatchesFilters(item, patientId, filters))
-      .flatMap(adaptV2FluidBalanceItem);
+    const entries = [];
+    for (const item of Array.isArray(response?.data) ? response.data : []) {
+      if (fluidBalanceMatchesFilters(item, patientId, filters)) {
+        entries.push(...adaptV2FluidBalanceItem(item));
+      }
+    }
+    return entries;
   } catch (error) {
     rethrowV2Error(error, 'Failed to load fluid balance entries');
   }
@@ -807,9 +831,11 @@ async function getV2NursingAlerts(filters = {}, { signal } = {}) {
       query: { limit: MAX_ALERT_PAGE_SIZE },
       signal,
     });
-    return (Array.isArray(response?.data) ? response.data : [])
-      .map(adaptV2NursingAlert)
-      .filter((alert) => alertMatchesFilters(alert, filters));
+    return adaptMatchingV2Items(
+      response?.data,
+      adaptV2NursingAlert,
+      (alert) => alertMatchesFilters(alert, filters)
+    );
   } catch (error) {
     rethrowV2Error(error, 'Failed to load nursing alerts');
   }
@@ -821,9 +847,11 @@ async function getV2NursingTasks(filters = {}, { signal } = {}) {
       query: { limit: MAX_TASK_PAGE_SIZE },
       signal,
     });
-    return (Array.isArray(response?.data) ? response.data : [])
-      .map(adaptV2NursingTask)
-      .filter((task) => taskMatchesFilters(task, filters));
+    return adaptMatchingV2Items(
+      response?.data,
+      adaptV2NursingTask,
+      (task) => taskMatchesFilters(task, filters)
+    );
   } catch (error) {
     rethrowV2Error(error, 'Failed to load nursing tasks');
   }
@@ -835,9 +863,11 @@ async function getV2Handoffs(filters = {}, { signal } = {}) {
       query: { limit: MAX_HANDOFF_PAGE_SIZE },
       signal,
     });
-    return (Array.isArray(response?.data) ? response.data : [])
-      .map(adaptV2Handoff)
-      .filter((handoff) => handoffMatchesFilters(handoff, filters));
+    return adaptMatchingV2Items(
+      response?.data,
+      adaptV2Handoff,
+      (handoff) => handoffMatchesFilters(handoff, filters)
+    );
   } catch (error) {
     rethrowV2Error(error, 'Failed to load shift handoffs');
   }

@@ -13,9 +13,11 @@ export function hasQueryPrefix(queryKey, prefix) {
 }
 
 export function invalidateQueryKeys(queryClient, queryKeys = []) {
-  const tasks = queryKeys
-    .filter(Boolean)
-    .map((queryKey) => queryClient.invalidateQueries({ queryKey }));
+  const tasks = [];
+  for (const queryKey of queryKeys) {
+    if (!queryKey) continue;
+    tasks.push(queryClient.invalidateQueries({ queryKey }));
+  }
 
   return Promise.all(tasks);
 }

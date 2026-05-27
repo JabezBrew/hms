@@ -643,9 +643,13 @@ export const referralsApi = {
           },
           signal: options.signal,
         });
-        return (response?.data || [])
-          .filter(isV2ReferralNotification)
-          .map(adaptV2ReferralNotification);
+        const notifications = [];
+        for (const item of response?.data || []) {
+          if (isV2ReferralNotification(item)) {
+            notifications.push(adaptV2ReferralNotification(item));
+          }
+        }
+        return notifications;
       }
       const response = await apiClient.getWithPagination('/referrals/notifications/', {
         ...options,

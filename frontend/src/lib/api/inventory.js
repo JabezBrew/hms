@@ -455,10 +455,13 @@ export const inventoryApi = {
           query: { limit },
           signal: options.signal,
         });
-        return unwrapV2List(response)
-          .filter((batch) => toNumber(batch?.quantity_on_hand) <= 0)
-          .map(adaptV2StockBatch)
-          .slice(0, limit);
+        const lowStockBatches = [];
+        for (const batch of unwrapV2List(response)) {
+          if (toNumber(batch?.quantity_on_hand) > 0) continue;
+          lowStockBatches.push(adaptV2StockBatch(batch));
+          if (lowStockBatches.length >= limit) break;
+        }
+        return lowStockBatches;
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -491,10 +494,13 @@ export const inventoryApi = {
           query: { limit },
           signal: options.signal,
         });
-        return unwrapV2List(response)
-          .filter((batch) => isExpiringWithin(batch, days))
-          .map(adaptV2StockBatch)
-          .slice(0, limit);
+        const expiringBatches = [];
+        for (const batch of unwrapV2List(response)) {
+          if (!isExpiringWithin(batch, days)) continue;
+          expiringBatches.push(adaptV2StockBatch(batch));
+          if (expiringBatches.length >= limit) break;
+        }
+        return expiringBatches;
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -2603,11 +2609,15 @@ export const inventoryApi = {
           query: buildV2CursorQuery(params),
           signal: options.signal || params.signal,
         });
+        const discrepancies = [];
+        for (const entry of unwrapV2List(response)) {
+          if (entry?.entry_type === 'count' && toNumber(entry?.quantity) !== 0) {
+            discrepancies.push(adaptV2ControlledDiscrepancy(entry, registerId));
+          }
+        }
         return adaptV2PaginatedList({
           ...response,
-          data: unwrapV2List(response)
-            .filter((entry) => entry?.entry_type === 'count' && toNumber(entry?.quantity) !== 0)
-            .map((entry) => adaptV2ControlledDiscrepancy(entry, registerId)),
+          data: discrepancies,
         }, params);
       }
 

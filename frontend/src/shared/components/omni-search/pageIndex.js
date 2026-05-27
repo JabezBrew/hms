@@ -56,15 +56,17 @@ function roleAllowsRoute(route, role) {
 }
 
 const ALL_STATIC_PAGES = Object.freeze(
-  featureRoutes
-    .filter((route) => isStaticPath(route?.path))
-    .map((route) => ({
+  featureRoutes.reduce((pages, route) => {
+    if (!isStaticPath(route?.path)) return pages
+    pages.push({
       id: route.path,
       path: route.path,
       label: routeLabel(route),
       keywords: toKeywords(route),
       roles: route.roles,
-    }))
+    })
+    return pages
+  }, [])
 )
 
 const pagesByRoleCache = new Map()
@@ -106,4 +108,3 @@ export function getStaticPathLabelMapForRole(role) {
   pathLabelByRoleCache.set(normalizedRole, map)
   return map
 }
-

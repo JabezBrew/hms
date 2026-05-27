@@ -118,22 +118,27 @@ function deriveV2DischargeTasks(cases, params = {}) {
     ? String(params.status)
     : null
 
-  return cases
-    .flatMap((item) => (item.blockers || []).map((task) => ({
-      ...task,
-      discharge_case: item.id,
-      discharge: item.id,
-      admission_case: item.admission_case,
-      admission: item.admission,
-      patient: item.patient,
-      patient_name: item.patient_name,
-      medical_record_number: item.medical_record_number,
-      ward_name: item.ward_name,
-      created_at: item.medical_ready_at,
-      updated_at: item.medical_ready_at,
-    })))
-    .filter((task) => !taskType || task.task_type === taskType)
-    .filter((task) => !status || task.status === status)
+  const tasks = []
+  for (const item of cases) {
+    for (const task of item.blockers || []) {
+      if (taskType && task.task_type !== taskType) continue
+      if (status && task.status !== status) continue
+      tasks.push({
+        ...task,
+        discharge_case: item.id,
+        discharge: item.id,
+        admission_case: item.admission_case,
+        admission: item.admission,
+        patient: item.patient,
+        patient_name: item.patient_name,
+        medical_record_number: item.medical_record_number,
+        ward_name: item.ward_name,
+        created_at: item.medical_ready_at,
+        updated_at: item.medical_ready_at,
+      })
+    }
+  }
+  return tasks
 }
 
 async function getV2DischargeCases(params = {}, options = {}) {

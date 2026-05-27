@@ -57,9 +57,12 @@ const CopyNoteModal = ({
   useEffect(() => {
     if (sections && open) {
       // Pre-select all sections that have data
-      const sectionsWithData = sections
-        .filter((s) => s.has_data)
-        .map((s) => s.name);
+      const sectionsWithData = [];
+      for (const section of sections) {
+        if (section.has_data) {
+          sectionsWithData.push(section.name);
+        }
+      }
       setSelectedSections(new Set(sectionsWithData));
     }
   }, [sections, open]);
@@ -87,9 +90,12 @@ const CopyNoteModal = ({
     if (selectedSections.size === sections?.filter((s) => s.has_data).length) {
       setSelectedSections(new Set());
     } else {
-      const allWithData = sections
-        .filter((s) => s.has_data)
-        .map((s) => s.name);
+      const allWithData = [];
+      for (const section of sections) {
+        if (section.has_data) {
+          allWithData.push(section.name);
+        }
+      }
       setSelectedSections(new Set(allWithData));
     }
   };

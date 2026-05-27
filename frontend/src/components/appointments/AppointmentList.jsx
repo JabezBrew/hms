@@ -93,9 +93,12 @@ const AppointmentList = () => {
   if (appointmentsData) {
     // Extract appointments from response
     if (appointmentsData.entry) {
-      appointments = appointmentsData.entry
-        .filter(entry => entry.resource && entry.resource.resourceType === 'Appointment')
-        .map(entry => entry.resource);
+      appointments = [];
+      for (const entry of appointmentsData.entry) {
+        if (entry.resource && entry.resource.resourceType === 'Appointment') {
+          appointments.push(entry.resource);
+        }
+      }
     } else if (Array.isArray(appointmentsData)) {
       appointments = appointmentsData;
     } else if (appointmentsData.results) {
