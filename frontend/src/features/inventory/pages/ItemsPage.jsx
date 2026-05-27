@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -137,7 +137,7 @@ export default function ItemsPage() {
   const { data: categoriesData } = useInventoryCategories();
   const { data: suppliersData } = useSuppliers();
 
-  const items = itemsData?.results || [];
+  const items = useMemo(() => itemsData?.results || [], [itemsData]);
   const totalCount = itemsData?.count || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -242,7 +242,7 @@ export default function ItemsPage() {
   const hasActiveFilters = debouncedSearch || tab !== 'all' || category || supplier || location;
 
   // Selection handlers
-  const toggleItemSelection = (itemId) => {
+  const toggleItemSelection = useCallback((itemId) => {
     setSelectedItems((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(itemId)) {
@@ -252,16 +252,16 @@ export default function ItemsPage() {
       }
       return newSet;
     });
-  };
+  }, []);
 
-  const handleSelectAll = () => {
+  const handleSelectAll = useCallback(() => {
     if (selectAll) {
       setSelectedItems(new Set());
     } else {
       setSelectedItems(new Set(items.map((item) => item.id)));
     }
     setSelectAll(!selectAll);
-  };
+  }, [items, selectAll]);
 
   // Bulk actions
   const handleBulkReorder = () => {
@@ -270,16 +270,16 @@ export default function ItemsPage() {
   };
 
   // Navigate to item
-  const handleItemClick = (itemId) => {
+  const handleItemClick = useCallback((itemId) => {
     navigate(`/inventory/items/${itemId}`);
-  };
+  }, [navigate]);
 
-  const handleEditItem = (itemId) => {
+  const handleEditItem = useCallback((itemId) => {
     if (!itemMutationsAvailable) {
       return;
     }
     navigate(`/inventory/items/${itemId}?action=edit`);
-  };
+  }, [itemMutationsAvailable, navigate]);
 
   const handleCreateItem = () => {
     if (!itemMutationsAvailable) {

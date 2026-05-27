@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -140,21 +140,21 @@ export default function GRNsPage() {
   const hasActiveFilters = debouncedSearch || status !== 'all';
 
   // Navigate handlers
-  const handleGRNClick = (grnId) => {
+  const handleGRNClick = useCallback((grnId) => {
     navigate(`/inventory/grns/${grnId}`);
-  };
+  }, [navigate]);
 
-  const handleInspect = (grnId) => {
+  const handleInspect = useCallback((grnId) => {
     navigate(`/inventory/grns/${grnId}?action=inspect`);
-  };
+  }, [navigate]);
 
-  const handleAccept = (grnId) => {
+  const handleAccept = useCallback((grnId) => {
     navigate(`/inventory/grns/${grnId}?action=accept`);
-  };
+  }, [navigate]);
 
-  const handleReject = (grnId) => {
+  const handleReject = useCallback((grnId) => {
     navigate(`/inventory/grns/${grnId}?action=reject`);
-  };
+  }, [navigate]);
 
   // Sheet state from URL
   const action = searchParams.get('action');
