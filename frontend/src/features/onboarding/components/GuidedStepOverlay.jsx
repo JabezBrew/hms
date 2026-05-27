@@ -121,6 +121,21 @@ function arrowClassForPlacement(placement) {
   }
 }
 
+function updateMeasuredTargetRect(setTargetRect, target) {
+  if (!target || !target.isConnected) {
+    setTargetRect((previousRect) => (previousRect ? null : previousRect))
+    return
+  }
+
+  const nextRect = toComparableRect(target.getBoundingClientRect())
+  if (nextRect.width <= 0 || nextRect.height <= 0) {
+    setTargetRect((previousRect) => (previousRect ? null : previousRect))
+    return
+  }
+
+  setTargetRect((previousRect) => (hasRectChanged(previousRect, nextRect) ? nextRect : previousRect))
+}
+
 export default function GuidedStepOverlay({
   currentStep,
   currentStepNumber,
@@ -136,7 +151,6 @@ export default function GuidedStepOverlay({
 
   const targetRef = useRef(null)
   const tooltipRef = useRef(null)
-  const rafRef = useRef(0)
   const scrolledStepTokenRef = useRef('')
 
   const stepUi = currentStep?.ui
@@ -199,7 +213,7 @@ export default function GuidedStepOverlay({
   useEffect(() => {
     if (!isClient || !selector) {
       targetRef.current = null
-      setTargetRect((previousRect) => (previousRect ? null : previousRect))
+      updateMeasuredTargetRect(setTargetRect, null)
       return undefined
     }
 
@@ -212,6 +226,7 @@ export default function GuidedStepOverlay({
     }
 
     let observedTarget = null
+    let pendingFrame = 0
     const targetResizeObserver =
       typeof ResizeObserver !== 'undefined'
         ? new ResizeObserver(() => {
@@ -239,30 +254,18 @@ export default function GuidedStepOverlay({
     }
 
     const measure = () => {
-      rafRef.current = 0
+      pendingFrame = 0
       const nextTarget = queryTarget()
       targetRef.current = nextTarget
       syncObservedTarget(nextTarget)
-
-      if (!nextTarget || !nextTarget.isConnected) {
-        setTargetRect((previousRect) => (previousRect ? null : previousRect))
-        return
-      }
-
-      const nextRect = toComparableRect(nextTarget.getBoundingClientRect())
-      if (nextRect.width <= 0 || nextRect.height <= 0) {
-        setTargetRect((previousRect) => (previousRect ? null : previousRect))
-        return
-      }
-
-      setTargetRect((previousRect) => (hasRectChanged(previousRect, nextRect) ? nextRect : previousRect))
+      updateMeasuredTargetRect(setTargetRect, nextTarget)
     }
 
     const scheduleMeasure = () => {
-      if (rafRef.current) {
+      if (pendingFrame) {
         return
       }
-      rafRef.current = window.requestAnimationFrame(() => {
+      pendingFrame = window.requestAnimationFrame(() => {
         measure()
       })
     }
@@ -282,10 +285,9 @@ export default function GuidedStepOverlay({
     return () => {
       window.removeEventListener('resize', scheduleMeasure)
       window.removeEventListener('scroll', scheduleMeasure, true)
-      const pendingFrame = rafRef.current
-      rafRef.current = 0
       if (pendingFrame) {
         window.cancelAnimationFrame(pendingFrame)
+        pendingFrame = 0
       }
       if (targetResizeObserver) {
         if (observedTarget) {
