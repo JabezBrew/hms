@@ -304,6 +304,77 @@ const formatFooterPageLabel = ({ currentPage, totalPages, isExact, hasNextPage }
   return `Page ${currentPage}`;
 };
 
+function buildSearchResultMeta({
+  searchResults,
+  searchPage,
+  searchPatients,
+  hasSearchSignal,
+  effectiveSearchQuery,
+}) {
+  const currentPage = searchResults?.page ?? searchPage;
+  const pageSize = searchResults?.page_size ?? SEARCH_TABLE_PAGE_SIZE;
+  const countExact = searchResults?.count_exact !== false;
+  const hasNext = Boolean(searchResults?.next);
+  const hasPrevious = Boolean(searchResults?.previous) || currentPage > 1;
+  const knownResultCount = getKnownResultCount({
+    currentPage,
+    pageSize,
+    visibleCount: searchPatients.length,
+  });
+  const total = countExact
+    ? (searchResults?.total ?? searchResults?.count ?? searchPatients.length)
+    : knownResultCount;
+  const totalPages = countExact
+    ? (pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1)
+    : currentPage;
+
+  return {
+    currentPage,
+    total,
+    totalLabel: formatResultCountLabel({
+      count: total,
+      isExact: countExact,
+      hasNextPage: hasNext,
+    }),
+    pagination: {
+      currentPage,
+      pageSize,
+      totalPages,
+      totalResults: total,
+      totalResultsExact: countExact,
+      hasNextPage: hasNext,
+      hasPreviousPage: hasPrevious,
+    },
+    summary: formatSearchSummary({
+      hasSearchSignal,
+      effectiveSearchQuery,
+      countExact,
+      total,
+      visibleCount: searchPatients.length,
+    }),
+  };
+}
+
+function formatSearchSummary({
+  hasSearchSignal,
+  effectiveSearchQuery,
+  countExact,
+  total,
+  visibleCount,
+}) {
+  if (!hasSearchSignal) {
+    return '';
+  }
+  if (effectiveSearchQuery) {
+    return countExact
+      ? `${total} result${total === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
+      : `Showing ${visibleCount} result${visibleCount === 1 ? '' : 's'} for "${effectiveSearchQuery}"`;
+  }
+  return countExact
+    ? `${total} filtered result${total === 1 ? '' : 's'}`
+    : `Showing ${visibleCount} filtered result${visibleCount === 1 ? '' : 's'}`;
+}
+
 /**
  * PatientChronicleListPage - Table-first patient registry
  *
@@ -377,56 +448,13 @@ const PatientChronicleListPage = () => {
 
   const searchPatients = useMemo(() => normalizeApiResults(searchResults), [searchResults]);
 
-  const searchCurrentPage = searchResults?.page ?? searchPage;
-  const searchPageSize = searchResults?.page_size ?? SEARCH_TABLE_PAGE_SIZE;
-  const searchCountExact = searchResults?.count_exact !== false;
-  const searchHasNext = Boolean(searchResults?.next);
-  const searchHasPrevious = Boolean(searchResults?.previous) || searchCurrentPage > 1;
-  const searchKnownResultCount = getKnownResultCount({
-    currentPage: searchCurrentPage,
-    pageSize: searchPageSize,
-    visibleCount: searchPatients.length,
-  });
-  const searchTotal = searchCountExact
-    ? (searchResults?.total ?? searchResults?.count ?? searchPatients.length)
-    : searchKnownResultCount;
-  const searchTotalLabel = formatResultCountLabel({
-    count: searchTotal,
-    isExact: searchCountExact,
-    hasNextPage: searchHasNext,
-  });
-  const searchTotalPages = searchCountExact
-    ? (searchPageSize > 0
-      ? Math.max(1, Math.ceil(searchTotal / searchPageSize))
-      : 1)
-    : searchCurrentPage;
-  const searchPagination = useMemo(() => ({
-    currentPage: searchCurrentPage,
-    pageSize: searchPageSize,
-    totalPages: searchTotalPages,
-    totalResults: searchTotal,
-    totalResultsExact: searchCountExact,
-    hasNextPage: searchHasNext,
-    hasPreviousPage: searchHasPrevious,
-  }), [
-    searchCountExact,
-    searchCurrentPage,
-    searchHasNext,
-    searchHasPrevious,
-    searchPageSize,
-    searchTotal,
-    searchTotalPages,
-  ]);
-
-  const searchSummary = hasSearchSignal
-    ? (effectiveSearchQuery
-      ? (searchCountExact
-        ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
-        : `Showing ${searchPatients.length} result${searchPatients.length === 1 ? '' : 's'} for "${effectiveSearchQuery}"`)
-      : (searchCountExact
-        ? `${searchTotal} filtered result${searchTotal === 1 ? '' : 's'}`
-        : `Showing ${searchPatients.length} filtered result${searchPatients.length === 1 ? '' : 's'}`))
-    : '';
+  const searchMeta = useMemo(() => buildSearchResultMeta({
+    searchResults,
+    searchPage,
+    searchPatients,
+    hasSearchSignal,
+    effectiveSearchQuery,
+  }), [effectiveSearchQuery, hasSearchSignal, searchPage, searchPatients, searchResults]);
 
   const departments = useMemo(() => normalizeApiResults(departmentsData), [departmentsData]);
   const wards = useMemo(() => normalizeApiResults(wardsData), [wardsData]);
@@ -550,9 +578,9 @@ const PatientChronicleListPage = () => {
 
   const handleSearchPageChange = (nextPage) => {
     if (!Number.isFinite(nextPage)) return;
-    const maxPage = searchCountExact
-      ? searchTotalPages
-      : (searchHasNext ? searchCurrentPage + 1 : searchCurrentPage);
+    const maxPage = searchMeta.pagination.totalResultsExact
+      ? searchMeta.pagination.totalPages
+      : (searchMeta.pagination.hasNextPage ? searchMeta.currentPage + 1 : searchMeta.currentPage);
     const boundedPage = Math.min(Math.max(nextPage, 1), Math.max(maxPage, 1));
     setSearchPage(boundedPage);
   };
@@ -563,28 +591,6 @@ const PatientChronicleListPage = () => {
     setSearchPage(1);
   };
 
-  const listControls = (
-    <div className="flex items-center justify-end gap-2">
-      {/* Refresh */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={handleRefresh}
-        className="shrink-0 size-9"
-        aria-label="Refresh patient list"
-      >
-        <RefreshCw className="size-4" aria-hidden="true" />
-      </Button>
-    </div>
-  );
-
-  const headerActions = ['admin', 'receptionist'].includes(user?.role) ? (
-    <Button onClick={handleAddPatient} size="sm" className="font-mono text-xs">
-      <Plus className="size-4 mr-2" />
-      Register Patient
-    </Button>
-  ) : null;
-
   const listHeaderLabel = effectiveSearchQuery
     ? 'Search results'
     : (REGISTRY_SCOPE_LABELS[registryScope] || REGISTRY_SCOPE_LABELS[DEFAULT_REGISTRY_SCOPE]);
@@ -592,390 +598,42 @@ const PatientChronicleListPage = () => {
   return (
     <PageShell>
       {pageMeta}
-      <PageHeader
-        title="Patient Registry"
-        description="Search and browse all patients in a sortable registry table"
-        size="md"
-        actions={headerActions}
-        contentClassName="sm:items-start"
-      >
-        {/* Tab Navigation - Using NavLinks for routes */}
-        {isClinicalProvider && (
-          <div className="flex items-center gap-1 mt-4 bg-muted rounded-lg p-1 w-fit">
-            <NavLink
-              to="/patients"
-              end
-              className={({ isActive }) => cn(
-                "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
-                isActive
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Users className="size-4" />
-              All Patients
-            </NavLink>
-            <NavLink
-              to="/patients/my-patients"
-              className={({ isActive }) => cn(
-                "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
-                isActive
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Star className="size-4" />
-              My Patients
-            </NavLink>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2 mt-4">
-          {REGISTRY_SCOPE_TABS.map((scopeTab) => (
-            <Button
-              key={scopeTab.value}
-              type="button"
-              variant={registryScope === scopeTab.value ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleRegistryScopeChange(scopeTab.value)}
-              className={cn(
-                "font-mono text-xs",
-                registryScope === scopeTab.value
-                  ? "bg-foreground text-background hover:bg-foreground/90"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {scopeTab.label}
-            </Button>
-          ))}
-        </div>
-
-        {/* Search Bar */}
-        <div className="flex flex-col gap-3 mt-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative w-full sm:max-w-3xl lg:max-w-4xl">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
-              <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
-              <Input
-                id="patient-search"
-                placeholder="Search by name, MRN, or NHIS ID..."
-                value={searchQuery}
-                onChange={handleSearchChange}
-                className="pl-10 pr-10 font-mono text-sm bg-background"
-              />
-              {hasSearchQuery && (
-                <button
-                  type="button"
-                  onClick={handleClearSearch}
-                  aria-label="Clear search"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setFiltersOpen((open) => !open)}
-                className="font-mono text-xs"
-              >
-                <Filter className="size-4 mr-2" />
-                Filters
-                {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
-                    {activeFilterCount}
-                  </Badge>
-                )}
-              </Button>
-            </div>
-          </div>
-
-          {filtersOpen && (
-            <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Admission Date</Label>
-                  <DateRangePicker
-                    from={draftFilters.admissionStart}
-                    to={draftFilters.admissionEnd}
-                    onChange={({ from, to }) => setDraftFilters((prev) => ({
-                      ...prev,
-                      admissionStart: from,
-                      admissionEnd: to,
-                    }))}
-                    pickerClassName="w-[140px] font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Admission Status</Label>
-                  <Select
-                    value={draftFilters.admissionStatus}
-                    onValueChange={(value) => setDraftFilters((prev) => ({ ...prev, admissionStatus: value }))}
-                  >
-                    <SelectTrigger className="w-full font-mono text-xs">
-                      <SelectValue placeholder="Any status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ADMISSION_STATUS_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Admission Type</Label>
-                  <Select
-                    value={draftFilters.admissionType}
-                    onValueChange={(value) => setDraftFilters((prev) => ({ ...prev, admissionType: value }))}
-                  >
-                    <SelectTrigger className="w-full font-mono text-xs">
-                      <SelectValue placeholder="Any type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ADMISSION_TYPE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Department</Label>
-                  <Select
-                    value={draftFilters.departmentId || 'all'}
-                    onValueChange={(value) => setDraftFilters((prev) => ({
-                      ...prev,
-                      departmentId: value === 'all' ? '' : value,
-                    }))}
-                  >
-                    <SelectTrigger className="w-full font-mono text-xs">
-                      <SelectValue placeholder={isDepartmentsLoading ? "Loading..." : "Any department"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="font-mono text-xs">Any department</SelectItem>
-                      {departmentOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Ward</Label>
-                  <Select
-                    value={draftFilters.wardId || 'all'}
-                    onValueChange={(value) => setDraftFilters((prev) => ({
-                      ...prev,
-                      wardId: value === 'all' ? '' : value,
-                    }))}
-                  >
-                    <SelectTrigger className="w-full font-mono text-xs">
-                      <SelectValue placeholder={isWardsLoading ? "Loading..." : "Any ward"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="font-mono text-xs">Any ward</SelectItem>
-                      {wardOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Encounter Type</Label>
-                  <Select
-                    value={draftFilters.encounterType}
-                    onValueChange={(value) => setDraftFilters((prev) => ({ ...prev, encounterType: value }))}
-                  >
-                    <SelectTrigger className="w-full font-mono text-xs">
-                      <SelectValue placeholder="Any encounter" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ENCOUNTER_TYPE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Attending Clinician</Label>
-                  <Combobox
-                    options={practitionerOptions}
-                    value={draftFilters.attending?.id || null}
-                    onChange={(value) => {
-                      const selected = practitionerOptions.find((option) => option.value === value);
-                      setDraftFilters((prev) => ({
-                        ...prev,
-                        attending: selected ? { id: selected.value, name: selected.label } : null,
-                      }));
-                      setPractitionerSearch("");
-                    }}
-                    onInputChange={(value) => setPractitionerSearch(value)}
-                    displayValue={() => draftFilters.attending?.name || "Select clinician"}
-                    searchPlaceholder="Search clinicians..."
-                    emptyMessage="No clinicians found."
-                    isLoading={isPractitionersLoading}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Age Range</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      min="0"
-                      placeholder="Min"
-                      value={draftFilters.ageMin}
-                      onChange={(e) => setDraftFilters((prev) => ({
-                        ...prev,
-                        ageMin: e.target.value.replace(/[^\d]/g, ''),
-                      }))}
-                      className="w-20 font-mono text-xs"
-                    />
-                    <span className="text-xs text-muted-foreground">to</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      placeholder="Max"
-                      value={draftFilters.ageMax}
-                      onChange={(e) => setDraftFilters((prev) => ({
-                        ...prev,
-                        ageMax: e.target.value.replace(/[^\d]/g, ''),
-                      }))}
-                      className="w-20 font-mono text-xs"
-                    />
-                  </div>
-                </div>
-                {isClinicalProvider && (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-mono text-muted-foreground">My Patients</Label>
-                    <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
-                      <span className="text-xs text-muted-foreground">Only patients in my list</span>
-                      <Switch
-                        checked={draftFilters.myPatients}
-                        onCheckedChange={(checked) => setDraftFilters((prev) => ({
-                          ...prev,
-                          myPatients: checked,
-                        }))}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs text-muted-foreground">
-                  {activeFilterCount > 0 ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'No active filters'}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleClearFilters}
-                    className="font-mono text-xs"
-                  >
-                    Reset
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleApplyFilters}
-                    className="font-mono text-xs"
-                  >
-                    Apply Filters
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {hasActiveFilters && (
-            <div className="flex flex-wrap items-center gap-2">
-              {(appliedFilters.admissionStart || appliedFilters.admissionEnd) && (
-                <FilterChip
-                  label={appliedFilters.admissionStart && appliedFilters.admissionEnd
-                    ? `Admission ${format(appliedFilters.admissionStart, 'MMM d')}–${format(appliedFilters.admissionEnd, 'MMM d')}`
-                    : appliedFilters.admissionStart
-                      ? `Admission after ${format(appliedFilters.admissionStart, 'MMM d')}`
-                      : `Admission before ${format(appliedFilters.admissionEnd, 'MMM d')}`}
-                  onRemove={() => handleRemoveFilter('admissionRange')}
-                />
-              )}
-              {appliedFilters.departmentId && (
-                <FilterChip
-                  label={`Department: ${departmentLabels.get(appliedFilters.departmentId) || 'Selected'}`}
-                  onRemove={() => handleRemoveFilter('departmentId')}
-                />
-              )}
-              {appliedFilters.wardId && (
-                <FilterChip
-                  label={`Ward: ${wardLabels.get(appliedFilters.wardId) || 'Selected'}`}
-                  onRemove={() => handleRemoveFilter('wardId')}
-                />
-              )}
-              {appliedFilters.admissionStatus !== 'all' && (
-                <FilterChip
-                  label={`Status: ${ADMISSION_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.admissionStatus)?.label || appliedFilters.admissionStatus}`}
-                  onRemove={() => handleRemoveFilter('admissionStatus')}
-                />
-              )}
-              {appliedFilters.admissionType !== 'all' && (
-                <FilterChip
-                  label={`Admission Type: ${ADMISSION_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.admissionType)?.label || appliedFilters.admissionType}`}
-                  onRemove={() => handleRemoveFilter('admissionType')}
-                />
-              )}
-              {appliedFilters.encounterType !== 'all' && (
-                <FilterChip
-                  label={`Encounter: ${ENCOUNTER_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.encounterType)?.label || appliedFilters.encounterType}`}
-                  onRemove={() => handleRemoveFilter('encounterType')}
-                />
-              )}
-              {appliedFilters.attending?.id && (
-                <FilterChip
-                  label={`Attending: ${appliedFilters.attending.name}`}
-                  onRemove={() => handleRemoveFilter('attending')}
-                />
-              )}
-              {(appliedFilters.ageMin || appliedFilters.ageMax) && (
-                <FilterChip
-                  label={`Age ${appliedFilters.ageMin || '0'}–${appliedFilters.ageMax || '∞'}`}
-                  onRemove={() => handleRemoveFilter('ageRange')}
-                />
-              )}
-              {appliedFilters.myPatients && (
-                <FilterChip
-                  label="My Patients"
-                  onRemove={() => handleRemoveFilter('myPatients')}
-                />
-              )}
-              {(hasSearchQuery || hasActiveFilters) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClearAll}
-                  className="font-mono text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Clear all
-                </Button>
-              )}
-            </div>
-          )}
-
-          {hasSearchSignal && (
-            <div className="text-xs text-muted-foreground">
-              <span>{searchSummary}</span>
-            </div>
-          )}
-        </div>
-      </PageHeader>
+      <PatientRegistryHeader
+        state={{
+          userRole: user?.role,
+          isClinicalProvider,
+          registryScope,
+          searchQuery,
+          hasSearchQuery,
+          filtersOpen,
+          activeFilterCount,
+          draftFilters,
+          appliedFilters,
+          hasActiveFilters,
+          hasSearchSignal,
+          searchSummary: searchMeta.summary,
+        }}
+        loading={{
+          departments: isDepartmentsLoading,
+          wards: isWardsLoading,
+          practitioners: isPractitionersLoading,
+        }}
+        options={{ departmentOptions, wardOptions, practitionerOptions }}
+        labels={{ departmentLabels, wardLabels }}
+        handlers={{
+          onAddPatient: handleAddPatient,
+          onRegistryScopeChange: handleRegistryScopeChange,
+          onSearchChange: handleSearchChange,
+          onClearSearch: handleClearSearch,
+          onToggleFilters: () => setFiltersOpen((open) => !open),
+          onDraftFiltersChange: setDraftFilters,
+          onPractitionerSearch: setPractitionerSearch,
+          onClearFilters: handleClearFilters,
+          onApplyFilters: handleApplyFilters,
+          onRemoveFilter: handleRemoveFilter,
+          onClearAll: handleClearAll,
+        }}
+      />
 
       {/* Main Content */}
       <main className="p-4 sm:p-6 space-y-8">
@@ -985,9 +643,9 @@ const PatientChronicleListPage = () => {
             <h2 className="font-heading text-sm font-medium text-foreground">
               {listHeaderLabel}
             </h2>
-            <span className="text-xs">({searchTotalLabel})</span>
+            <span className="text-xs">({searchMeta.totalLabel})</span>
           </div>
-          {listControls}
+          <PatientListRefreshButton onRefresh={handleRefresh} />
         </div>
         <SearchResultsSection
           patients={searchPatients}
@@ -996,7 +654,7 @@ const PatientChronicleListPage = () => {
           hasActiveFilters={hasActiveFilters}
           ordering={searchOrdering}
           onOrderingChange={handleSearchOrderingChange}
-          pagination={searchPagination}
+          pagination={searchMeta.pagination}
           onPageChange={handleSearchPageChange}
           onOpenPatient={handleOpenPatient}
           onPointerDownPatient={handlePointerDownPatient}
@@ -1005,6 +663,530 @@ const PatientChronicleListPage = () => {
     </PageShell>
   );
 };
+
+function PatientRegistryHeader({ state, loading, options, labels, handlers }) {
+  const headerActions = ['admin', 'receptionist'].includes(state.userRole) ? (
+    <Button onClick={handlers.onAddPatient} size="sm" className="font-mono text-xs">
+      <Plus className="size-4 mr-2" />
+      Register Patient
+    </Button>
+  ) : null;
+
+  return (
+    <PageHeader
+      title="Patient Registry"
+      description="Search and browse all patients in a sortable registry table"
+      size="md"
+      actions={headerActions}
+      contentClassName="sm:items-start"
+    >
+      <PatientRegistryRouteTabs isClinicalProvider={state.isClinicalProvider} />
+      <RegistryScopeTabs
+        registryScope={state.registryScope}
+        onRegistryScopeChange={handlers.onRegistryScopeChange}
+      />
+
+      <div className="flex flex-col gap-3 mt-4">
+        <PatientRegistrySearchControls
+          searchQuery={state.searchQuery}
+          hasSearchQuery={state.hasSearchQuery}
+          activeFilterCount={state.activeFilterCount}
+          onSearchChange={handlers.onSearchChange}
+          onClearSearch={handlers.onClearSearch}
+          onToggleFilters={handlers.onToggleFilters}
+        />
+
+        {state.filtersOpen && (
+          <PatientRegistryFiltersPanel
+            draftFilters={state.draftFilters}
+            activeFilterCount={state.activeFilterCount}
+            roleState={{ isClinicalProvider: state.isClinicalProvider }}
+            loading={loading}
+            options={options}
+            onDraftFiltersChange={handlers.onDraftFiltersChange}
+            onPractitionerSearch={handlers.onPractitionerSearch}
+            onClearFilters={handlers.onClearFilters}
+            onApplyFilters={handlers.onApplyFilters}
+          />
+        )}
+
+        {state.hasActiveFilters && (
+          <ActiveFilterChips
+            appliedFilters={state.appliedFilters}
+            labels={labels}
+            displayState={{
+              hasSearchQuery: state.hasSearchQuery,
+              hasActiveFilters: state.hasActiveFilters,
+            }}
+            onRemoveFilter={handlers.onRemoveFilter}
+            onClearAll={handlers.onClearAll}
+          />
+        )}
+
+        {state.hasSearchSignal && (
+          <div className="text-xs text-muted-foreground">
+            <span>{state.searchSummary}</span>
+          </div>
+        )}
+      </div>
+    </PageHeader>
+  );
+}
+
+function PatientRegistryRouteTabs({ isClinicalProvider }) {
+  if (!isClinicalProvider) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-1 mt-4 bg-muted rounded-lg p-1 w-fit">
+      <PatientRegistryRouteTab to="/patients" label="All Patients" icon={Users} end />
+      <PatientRegistryRouteTab to="/patients/my-patients" label="My Patients" icon={Star} />
+    </div>
+  );
+}
+
+function PatientRegistryRouteTab({ to, label, icon: Icon, end = false }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) => cn(
+        "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
+        isActive
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
+      )}
+    >
+      <Icon className="size-4" />
+      {label}
+    </NavLink>
+  );
+}
+
+function RegistryScopeTabs({ registryScope, onRegistryScopeChange }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 mt-4">
+      {REGISTRY_SCOPE_TABS.map((scopeTab) => (
+        <Button
+          key={scopeTab.value}
+          type="button"
+          variant={registryScope === scopeTab.value ? "default" : "outline"}
+          size="sm"
+          onClick={() => onRegistryScopeChange(scopeTab.value)}
+          className={cn(
+            "font-mono text-xs",
+            registryScope === scopeTab.value
+              ? "bg-foreground text-background hover:bg-foreground/90"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {scopeTab.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function PatientRegistrySearchControls({
+  searchQuery,
+  hasSearchQuery,
+  activeFilterCount,
+  onSearchChange,
+  onClearSearch,
+  onToggleFilters,
+}) {
+  return (
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      <div className="relative w-full sm:max-w-3xl lg:max-w-4xl">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
+        <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
+        <Input
+          id="patient-search"
+          placeholder="Search by name, MRN, or NHIS ID..."
+          value={searchQuery}
+          onChange={onSearchChange}
+          className="pl-10 pr-10 font-mono text-sm bg-background"
+        />
+        {hasSearchQuery && (
+          <button
+            type="button"
+            onClick={onClearSearch}
+            aria-label="Clear search"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onToggleFilters}
+          className="font-mono text-xs"
+        >
+          <Filter className="size-4 mr-2" />
+          Filters
+          {activeFilterCount > 0 && (
+            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
+              {activeFilterCount}
+            </Badge>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PatientRegistryFiltersPanel({
+  draftFilters,
+  activeFilterCount,
+  roleState,
+  loading,
+  options,
+  onDraftFiltersChange,
+  onPractitionerSearch,
+  onClearFilters,
+  onApplyFilters,
+}) {
+  const updateDraftFilter = (updates) => {
+    onDraftFiltersChange((prev) => ({ ...prev, ...updates }));
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <AdmissionDateFilter
+          draftFilters={draftFilters}
+          onDraftFilterChange={updateDraftFilter}
+        />
+        <SelectFilter
+          label="Admission Status"
+          value={draftFilters.admissionStatus}
+          options={ADMISSION_STATUS_OPTIONS}
+          placeholder="Any status"
+          onChange={(value) => updateDraftFilter({ admissionStatus: value })}
+        />
+        <SelectFilter
+          label="Admission Type"
+          value={draftFilters.admissionType}
+          options={ADMISSION_TYPE_OPTIONS}
+          placeholder="Any type"
+          onChange={(value) => updateDraftFilter({ admissionType: value })}
+        />
+        <DepartmentFilter
+          value={draftFilters.departmentId || 'all'}
+          isLoading={loading.departments}
+          departmentOptions={options.departmentOptions}
+          onChange={(value) => updateDraftFilter({ departmentId: value === 'all' ? '' : value })}
+        />
+        <WardFilter
+          value={draftFilters.wardId || 'all'}
+          isLoading={loading.wards}
+          wardOptions={options.wardOptions}
+          onChange={(value) => updateDraftFilter({ wardId: value === 'all' ? '' : value })}
+        />
+        <SelectFilter
+          label="Encounter Type"
+          value={draftFilters.encounterType}
+          options={ENCOUNTER_TYPE_OPTIONS}
+          placeholder="Any encounter"
+          onChange={(value) => updateDraftFilter({ encounterType: value })}
+        />
+        <AttendingClinicianFilter
+          draftFilters={draftFilters}
+          practitionerOptions={options.practitionerOptions}
+          isLoading={loading.practitioners}
+          onDraftFilterChange={updateDraftFilter}
+          onPractitionerSearch={onPractitionerSearch}
+        />
+        <AgeRangeFilter
+          draftFilters={draftFilters}
+          onDraftFilterChange={updateDraftFilter}
+        />
+        {roleState.isClinicalProvider && (
+          <MyPatientsFilter
+            checked={draftFilters.myPatients}
+            onChange={(checked) => updateDraftFilter({ myPatients: checked })}
+          />
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground">
+          {activeFilterCount > 0 ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'No active filters'}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearFilters}
+            className="font-mono text-xs"
+          >
+            Reset
+          </Button>
+          <Button
+            size="sm"
+            onClick={onApplyFilters}
+            className="font-mono text-xs"
+          >
+            Apply Filters
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdmissionDateFilter({ draftFilters, onDraftFilterChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-mono text-muted-foreground">Admission Date</Label>
+      <DateRangePicker
+        from={draftFilters.admissionStart}
+        to={draftFilters.admissionEnd}
+        onChange={({ from, to }) => onDraftFilterChange({
+          admissionStart: from,
+          admissionEnd: to,
+        })}
+        pickerClassName="w-[140px] font-mono text-xs"
+      />
+    </div>
+  );
+}
+
+function SelectFilter({ label, value, options, placeholder, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-mono text-muted-foreground">{label}</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-full font-mono text-xs">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function DepartmentFilter({ value, isLoading, departmentOptions, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-mono text-muted-foreground">Department</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-full font-mono text-xs">
+          <SelectValue placeholder={isLoading ? "Loading..." : "Any department"} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all" className="font-mono text-xs">Any department</SelectItem>
+          {departmentOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function WardFilter({ value, isLoading, wardOptions, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-mono text-muted-foreground">Ward</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-full font-mono text-xs">
+          <SelectValue placeholder={isLoading ? "Loading..." : "Any ward"} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all" className="font-mono text-xs">Any ward</SelectItem>
+          {wardOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function AttendingClinicianFilter({
+  draftFilters,
+  practitionerOptions,
+  isLoading,
+  onDraftFilterChange,
+  onPractitionerSearch
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-mono text-muted-foreground">Attending Clinician</Label>
+      <Combobox
+        options={practitionerOptions}
+        value={draftFilters.attending?.id || null}
+        onChange={(value) => {
+          const selected = practitionerOptions.find((option) => option.value === value);
+          onDraftFilterChange({
+            attending: selected ? { id: selected.value, name: selected.label } : null,
+          });
+          onPractitionerSearch("");
+        }}
+        onInputChange={onPractitionerSearch}
+        displayValue={() => draftFilters.attending?.name || "Select clinician"}
+        searchPlaceholder="Search clinicians..."
+        emptyMessage="No clinicians found."
+        isLoading={isLoading}
+        className="font-mono text-xs"
+      />
+    </div>
+  );
+}
+
+function AgeRangeFilter({ draftFilters, onDraftFilterChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-mono text-muted-foreground">Age Range</Label>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min="0"
+          placeholder="Min"
+          value={draftFilters.ageMin}
+          onChange={(event) => onDraftFilterChange({
+            ageMin: event.target.value.replace(/[^\d]/g, ''),
+          })}
+          className="w-20 font-mono text-xs"
+        />
+        <span className="text-xs text-muted-foreground">to</span>
+        <Input
+          type="number"
+          min="0"
+          placeholder="Max"
+          value={draftFilters.ageMax}
+          onChange={(event) => onDraftFilterChange({
+            ageMax: event.target.value.replace(/[^\d]/g, ''),
+          })}
+          className="w-20 font-mono text-xs"
+        />
+      </div>
+    </div>
+  );
+}
+
+function MyPatientsFilter({ checked, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-mono text-muted-foreground">My Patients</Label>
+      <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
+        <span className="text-xs text-muted-foreground">Only patients in my list</span>
+        <Switch checked={checked} onCheckedChange={onChange} />
+      </div>
+    </div>
+  );
+}
+
+function ActiveFilterChips({
+  appliedFilters,
+  labels,
+  displayState,
+  onRemoveFilter,
+  onClearAll,
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {(appliedFilters.admissionStart || appliedFilters.admissionEnd) && (
+        <FilterChip
+          label={appliedFilters.admissionStart && appliedFilters.admissionEnd
+            ? `Admission ${format(appliedFilters.admissionStart, 'MMM d')}-${format(appliedFilters.admissionEnd, 'MMM d')}`
+            : appliedFilters.admissionStart
+              ? `Admission after ${format(appliedFilters.admissionStart, 'MMM d')}`
+              : `Admission before ${format(appliedFilters.admissionEnd, 'MMM d')}`}
+          onRemove={() => onRemoveFilter('admissionRange')}
+        />
+      )}
+      {appliedFilters.departmentId && (
+        <FilterChip
+          label={`Department: ${labels.departmentLabels.get(appliedFilters.departmentId) || 'Selected'}`}
+          onRemove={() => onRemoveFilter('departmentId')}
+        />
+      )}
+      {appliedFilters.wardId && (
+        <FilterChip
+          label={`Ward: ${labels.wardLabels.get(appliedFilters.wardId) || 'Selected'}`}
+          onRemove={() => onRemoveFilter('wardId')}
+        />
+      )}
+      {appliedFilters.admissionStatus !== 'all' && (
+        <FilterChip
+          label={`Status: ${ADMISSION_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.admissionStatus)?.label || appliedFilters.admissionStatus}`}
+          onRemove={() => onRemoveFilter('admissionStatus')}
+        />
+      )}
+      {appliedFilters.admissionType !== 'all' && (
+        <FilterChip
+          label={`Admission Type: ${ADMISSION_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.admissionType)?.label || appliedFilters.admissionType}`}
+          onRemove={() => onRemoveFilter('admissionType')}
+        />
+      )}
+      {appliedFilters.encounterType !== 'all' && (
+        <FilterChip
+          label={`Encounter: ${ENCOUNTER_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.encounterType)?.label || appliedFilters.encounterType}`}
+          onRemove={() => onRemoveFilter('encounterType')}
+        />
+      )}
+      {appliedFilters.attending?.id && (
+        <FilterChip
+          label={`Attending: ${appliedFilters.attending.name}`}
+          onRemove={() => onRemoveFilter('attending')}
+        />
+      )}
+      {(appliedFilters.ageMin || appliedFilters.ageMax) && (
+        <FilterChip
+          label={`Age ${appliedFilters.ageMin || '0'}-${appliedFilters.ageMax || '∞'}`}
+          onRemove={() => onRemoveFilter('ageRange')}
+        />
+      )}
+      {appliedFilters.myPatients && (
+        <FilterChip
+          label="My Patients"
+          onRemove={() => onRemoveFilter('myPatients')}
+        />
+      )}
+      {(displayState.hasSearchQuery || displayState.hasActiveFilters) && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClearAll}
+          className="font-mono text-xs text-muted-foreground hover:text-foreground"
+        >
+          Clear all
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function PatientListRefreshButton({ onRefresh }) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onRefresh}
+        className="shrink-0 size-9"
+        aria-label="Refresh patient list"
+      >
+        <RefreshCw className="size-4" aria-hidden="true" />
+      </Button>
+    </div>
+  );
+}
 
 const FilterChip = ({ label, onRemove }) => (
   <Badge variant="secondary" className="gap-1 pr-1 text-[10px] font-mono">
