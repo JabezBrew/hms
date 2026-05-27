@@ -68,6 +68,483 @@ function SortableHeader({ label, field, sortField, sortDirection, onSort, classN
   );
 }
 
+function StaffPanelToolbar({
+  countLabel,
+  selectedCount,
+  onBulkDelete,
+  onAddStaff,
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Clinical Staff
+        </h3>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          {countLabel}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        {selectedCount > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onBulkDelete}
+            className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20 font-mono text-xs"
+          >
+            <Trash2 className="size-4 mr-1.5" />
+            Remove ({selectedCount})
+          </Button>
+        )}
+        <Button
+          size="sm"
+          onClick={onAddStaff}
+          className="bg-sky-600 hover:bg-sky-700 text-white font-mono text-xs"
+        >
+          <Plus className="size-4 mr-1.5" />
+          Add Staff
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function StaffPanelSearch({
+  listSearch,
+  setListSearch,
+  isSearchActive,
+  totalCount,
+  staffCount,
+  resolvedTotalCount,
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <Input
+        value={listSearch}
+        onChange={(event) => setListSearch(event.target.value)}
+        placeholder="Search by name or employee ID"
+        className="max-w-sm font-mono text-xs"
+      />
+      {isSearchActive && (
+        <span className="text-xs text-muted-foreground">
+          {totalCount == null
+            ? `Showing ${staffCount}`
+            : `Showing ${staffCount} of ${resolvedTotalCount}`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function StaffPanelSkeleton() {
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="h-10 bg-muted/30 border-b" />
+      {[...Array(5)].map((_, i) => (
+        <Skeleton key={i} className="h-11 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function StaffPanelEmptyState({
+  emptyTitle,
+  emptyDetail,
+  showLoadMore,
+  isFetchingNextPage,
+  onLoadMore,
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-muted/50 mb-3">
+        <Users className="size-7 text-muted-foreground/50" />
+      </div>
+      <p className="text-sm text-muted-foreground">{emptyTitle}</p>
+      <p className="text-xs text-muted-foreground/60 mt-1">{emptyDetail}</p>
+      {showLoadMore && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-4 font-mono text-xs"
+          onClick={onLoadMore}
+          disabled={isFetchingNextPage}
+        >
+          Load more from parent
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function StaffAssignmentsTable({
+  tableState,
+  sortState,
+  rowActions,
+  pagination,
+}) {
+  const { sortedStaff, selectedRows } = tableState;
+  const { sortField, sortDirection, handleSort, handleSelectAll, handleSelectRow } = sortState;
+  const { handleOpenStaff, handleEdit, handleDelete } = rowActions;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = pagination;
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="grid grid-cols-[32px_minmax(140px,1fr)_100px_80px_minmax(120px,1fr)_60px_90px_72px] gap-2 px-3 py-2 bg-muted/30 border-b">
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={selectedRows.size === sortedStaff.length && sortedStaff.length > 0}
+            onCheckedChange={handleSelectAll}
+            aria-label="Select all"
+          />
+        </div>
+        <SortableHeader label="Name" field="practitioner_name" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+        <SortableHeader label="Employee ID" field="employee_id" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+        <SortableHeader label="Unit" field="unit_name" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+        <SortableHeader label="Type" field="assignment_type_name" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+        <SortableHeader label="FTE" field="fte_percentage" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} className="justify-center" />
+        <SortableHeader label="Effective" field="effective_from" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+        <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground text-center">Actions</div>
+      </div>
+      <VirtualList
+        items={sortedStaff}
+        itemHeight={44}
+        className="h-[50vh]"
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        }}
+        renderItem={(member) => (
+          <div
+            key={member.id}
+            // oxlint-disable-next-line react-doctor/prefer-tag-over-role -- The row contains a nested checkbox, so a native button would create invalid interactive markup.
+            role="button"
+            tabIndex={0}
+            className={cn(
+              "group grid grid-cols-[32px_minmax(140px,1fr)_100px_80px_minmax(120px,1fr)_60px_90px_72px] gap-2 items-center px-3 py-2 border-b border-border/40 last:border-0 hover:bg-muted/20 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70",
+              selectedRows.has(member.id) && "bg-amber-50/50 dark:bg-amber-900/10"
+            )}
+            onClick={() => handleOpenStaff(member.staff_id)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleOpenStaff(member.staff_id);
+              }
+            }}
+          >
+            <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={selectedRows.has(member.id)}
+                onCheckedChange={() => handleSelectRow(member.id, { stopPropagation: () => {} })}
+                onClick={(e) => handleSelectRow(member.id, e)}
+                aria-label={`Select ${member.practitioner_name}`}
+              />
+            </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-medium text-sm truncate">{member.practitioner_name}</span>
+              {member.is_primary && (
+                <Star className="size-3.5 text-amber-500 fill-amber-500 shrink-0" />
+              )}
+            </div>
+            <div className="truncate">
+              <span className="font-mono text-xs text-muted-foreground">
+                {member.employee_id || '—'}
+              </span>
+            </div>
+            <div className="truncate">
+              {member.unit_name && (
+                <span className={`inline-flex font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded truncate ${getHashColor(member.unit_name)}`}>
+                  {member.unit_name}
+                </span>
+              )}
+            </div>
+            <div className="truncate">
+              <span className={`inline-flex font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded truncate ${getHashColor(member.assignment_type_name)}`}>
+                {member.assignment_type_name}
+              </span>
+            </div>
+            <div className="text-center">
+              <span className="font-mono text-xs text-muted-foreground">
+                {member.fte_percentage}%
+              </span>
+            </div>
+            <div>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {member.effective_from && format(new Date(member.effective_from), 'MMM d, yyyy')}
+              </span>
+            </div>
+            <div className="flex items-center justify-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                onClick={(event) => handleEdit(member, event)}
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 opacity-0 group-hover:opacity-100 transition-opacity text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                onClick={(event) => handleDelete(member.id, event)}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
+      />
+      {isFetchingNextPage && (
+        <div className="text-xs text-muted-foreground text-center py-2 border-t">Loading more…</div>
+      )}
+    </div>
+  );
+}
+
+function AddStaffAssignmentDialog({
+  dialogState,
+  assignmentState,
+  optionsState,
+  handlers,
+}) {
+  const { showAddDialog, setShowAddDialog } = dialogState;
+  const {
+    newAssignment,
+    setNewAssignment,
+    selectedPractitioner,
+    setSelectedPractitioner,
+  } = assignmentState;
+  const {
+    assignmentTypes,
+    practitionerOptions,
+    staffResults,
+    searchTerm,
+    setSearchTerm,
+    isSearching,
+    createAssignment,
+  } = optionsState;
+  const { handleAdd } = handlers;
+
+  return (
+    <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/30">
+              <Users className="size-5 text-sky-600 dark:text-sky-400" />
+            </div>
+            <DialogTitle className="font-display text-xl">Add Staff Assignment</DialogTitle>
+          </div>
+        </DialogHeader>
+        <div className="space-y-5 py-4">
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider">Assignment Type</Label>
+            <Select
+              value={newAssignment.assignment_type}
+              onValueChange={(value) => setNewAssignment({ ...newAssignment, assignment_type: value })}
+            >
+              <SelectTrigger className="font-mono text-sm">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent className="z-[200]">
+                {assignmentTypes.map((type) => (
+                  <SelectItem key={type.id} value={type.id.toString()}>
+                    {type.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider">Practitioner</Label>
+            <Combobox
+              options={practitionerOptions}
+              value={newAssignment.practitioner}
+              onChange={(value) => {
+                setNewAssignment({ ...newAssignment, practitioner: value || '' });
+                const selected = staffResults.find((member) => member.practitioner_id === value);
+                setSelectedPractitioner(selected || null);
+                setSearchTerm('');
+              }}
+              onInputChange={setSearchTerm}
+              placeholder={
+                selectedPractitioner
+                  ? `${selectedPractitioner.name || 'Unknown'}${selectedPractitioner.employee_id ? ` - ${selectedPractitioner.employee_id}` : ''}`
+                  : 'Search by name or employee ID...'
+              }
+              searchPlaceholder="Search by name or employee ID..."
+              emptyMessage={
+                searchTerm.length < 2
+                  ? 'Type at least 2 characters to search'
+                  : isSearching
+                    ? 'Searching...'
+                    : 'No staff found'
+              }
+              isLoading={isSearching}
+              className="font-mono text-sm"
+            />
+            <p className="text-[10px] text-muted-foreground">Search by name or employee ID</p>
+          </div>
+
+          <div className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
+            <Checkbox
+              id="is_primary"
+              checked={newAssignment.is_primary}
+              onCheckedChange={(checked) => setNewAssignment({ ...newAssignment, is_primary: checked })}
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="is_primary" className="text-sm font-medium cursor-pointer">
+                Primary assignment
+              </Label>
+              <p className="text-[10px] text-muted-foreground">This is the staff member's primary unit</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider">Effective From</Label>
+              <Input
+                type="date"
+                value={newAssignment.effective_from}
+                onChange={(e) => setNewAssignment({ ...newAssignment, effective_from: e.target.value })}
+                className="font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider">Effective Until</Label>
+              <Input
+                type="date"
+                value={newAssignment.effective_until}
+                onChange={(e) => setNewAssignment({ ...newAssignment, effective_until: e.target.value })}
+                className="font-mono"
+              />
+              <p className="text-[10px] text-muted-foreground">Optional</p>
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => setShowAddDialog(false)} className="font-mono text-xs">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAdd}
+            disabled={!newAssignment.assignment_type || !newAssignment.practitioner || createAssignment.isPending}
+            className="bg-sky-600 hover:bg-sky-700 text-white font-mono text-xs"
+          >
+            Add Assignment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditStaffAssignmentDialog({
+  dialogState,
+  assignmentState,
+  assignmentTypes,
+  updateAssignment,
+  handlers,
+}) {
+  const { showEditDialog, setShowEditDialog } = dialogState;
+  const { editingAssignment, setEditingAssignment } = assignmentState;
+  const { handleSaveEdit } = handlers;
+
+  return (
+    <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
+              <Pencil className="size-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <DialogTitle className="font-display text-xl">Edit Assignment</DialogTitle>
+              {editingAssignment && (
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {editingAssignment.practitioner_name}
+                  {editingAssignment.employee_id && ` • ${editingAssignment.employee_id}`}
+                </p>
+              )}
+            </div>
+          </div>
+        </DialogHeader>
+        {editingAssignment && (
+          <div className="space-y-5 py-4">
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider">Assignment Type</Label>
+              <Select
+                value={editingAssignment.assignment_type}
+                onValueChange={(value) => setEditingAssignment({ ...editingAssignment, assignment_type: value })}
+              >
+                <SelectTrigger className="font-mono text-sm">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {assignmentTypes.map((type) => (
+                    <SelectItem key={type.id} value={type.id.toString()}>
+                      {type.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
+              <Checkbox
+                id="edit_is_primary"
+                checked={editingAssignment.is_primary}
+                onCheckedChange={(checked) => setEditingAssignment({ ...editingAssignment, is_primary: checked })}
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="edit_is_primary" className="text-sm font-medium cursor-pointer">
+                  Primary assignment
+                </Label>
+                <p className="text-[10px] text-muted-foreground">This is the staff member's primary unit</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="font-mono text-xs uppercase tracking-wider">Effective From</Label>
+                <Input
+                  type="date"
+                  value={editingAssignment.effective_from}
+                  onChange={(e) => setEditingAssignment({ ...editingAssignment, effective_from: e.target.value })}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-mono text-xs uppercase tracking-wider">Effective Until</Label>
+                <Input
+                  type="date"
+                  value={editingAssignment.effective_until}
+                  onChange={(e) => setEditingAssignment({ ...editingAssignment, effective_until: e.target.value })}
+                  className="font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground">Optional</p>
+              </div>
+            </div>
+          </div>
+        )}
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => setShowEditDialog(false)} className="font-mono text-xs">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveEdit}
+            disabled={!editingAssignment?.assignment_type || updateAssignment.isPending}
+            className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs"
+          >
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * StaffPanel - Manages staff assignments for a clinical unit
  * Uses Chronicle Design System styling with sortable table
@@ -88,7 +565,7 @@ export function StaffPanel({ unitId }) {
   );
 }
 
-function StaffPanelContent({ unitId, listSearch, setListSearch, activeQuery }) {
+function useStaffPanelController({ unitId, listSearch, setListSearch, activeQuery }) {
   const AUTO_FETCH_LIMIT = 3;
   const navigate = useNavigate();
   const autoFetchAttemptsRef = useRef(0);
@@ -344,401 +821,174 @@ function StaffPanelContent({ unitId, listSearch, setListSearch, activeQuery }) {
 
   const showSkeleton = isLoading && staff.length === 0;
 
+  return {
+    activeQuery,
+    assignmentTypes,
+    countLabel,
+    createAssignment,
+    editingAssignment,
+    emptyDetail,
+    emptyTitle,
+    fetchNextPage,
+    handleAdd,
+    handleBulkDelete,
+    handleDelete,
+    handleEdit,
+    handleOpenStaff,
+    handleSaveEdit,
+    handleSelectAll,
+    handleSelectRow,
+    handleSort,
+    hasNextPage,
+    isFetchingNextPage,
+    isSearchActive,
+    isSearching,
+    listSearch,
+    newAssignment,
+    practitionerOptions,
+    resolvedTotalCount,
+    searchTerm,
+    selectedPractitioner,
+    selectedRows,
+    setListSearch,
+    setNewAssignment,
+    setSearchTerm,
+    setSelectedPractitioner,
+    setShowAddDialog,
+    setShowEditDialog,
+    setEditingAssignment,
+    showAddDialog,
+    showEditDialog,
+    showLoadMore,
+    showSkeleton,
+    sortDirection,
+    sortField,
+    sortedStaff,
+    staff,
+    staffResults,
+    totalCount,
+    updateAssignment,
+  };
+}
+
+function StaffPanelContentView({ controller }) {
+  const {
+    assignmentTypes,
+    countLabel,
+    createAssignment,
+    editingAssignment,
+    emptyDetail,
+    emptyTitle,
+    fetchNextPage,
+    handleAdd,
+    handleBulkDelete,
+    handleDelete,
+    handleEdit,
+    handleOpenStaff,
+    handleSaveEdit,
+    handleSelectAll,
+    handleSelectRow,
+    handleSort,
+    hasNextPage,
+    isFetchingNextPage,
+    isSearchActive,
+    isSearching,
+    listSearch,
+    newAssignment,
+    practitionerOptions,
+    resolvedTotalCount,
+    searchTerm,
+    selectedPractitioner,
+    selectedRows,
+    setListSearch,
+    setNewAssignment,
+    setSearchTerm,
+    setSelectedPractitioner,
+    setShowAddDialog,
+    setShowEditDialog,
+    setEditingAssignment,
+    showAddDialog,
+    showEditDialog,
+    showLoadMore,
+    showSkeleton,
+    sortDirection,
+    sortField,
+    sortedStaff,
+    staff,
+    staffResults,
+    totalCount,
+    updateAssignment,
+  } = controller;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Clinical Staff
-          </h3>
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            {countLabel}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {selectedRows.size > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleBulkDelete}
-              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20 font-mono text-xs"
-            >
-              <Trash2 className="size-4 mr-1.5" />
-              Remove ({selectedRows.size})
-            </Button>
-          )}
-          <Button
-            size="sm"
-            onClick={() => setShowAddDialog(true)}
-            className="bg-sky-600 hover:bg-sky-700 text-white font-mono text-xs"
-          >
-            <Plus className="size-4 mr-1.5" />
-            Add Staff
-          </Button>
-        </div>
-      </div>
+      <StaffPanelToolbar
+        countLabel={countLabel}
+        selectedCount={selectedRows.size}
+        onBulkDelete={handleBulkDelete}
+        onAddStaff={() => setShowAddDialog(true)}
+      />
 
-      <div className="flex items-center gap-3">
-        <Input
-          value={listSearch}
-          onChange={(event) => setListSearch(event.target.value)}
-          placeholder="Search by name or employee ID"
-          className="max-w-sm font-mono text-xs"
-        />
-        {isSearchActive && (
-          <span className="text-xs text-muted-foreground">
-            {totalCount == null
-              ? `Showing ${staff.length}`
-              : `Showing ${staff.length} of ${resolvedTotalCount}`}
-          </span>
-        )}
-      </div>
+      <StaffPanelSearch
+        listSearch={listSearch}
+        setListSearch={setListSearch}
+        isSearchActive={isSearchActive}
+        totalCount={totalCount}
+        staffCount={staff.length}
+        resolvedTotalCount={resolvedTotalCount}
+      />
 
       {showSkeleton ? (
-        <div className="rounded-lg border overflow-hidden">
-          <div className="h-10 bg-muted/30 border-b" />
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-11 w-full" />
-          ))}
-        </div>
+        <StaffPanelSkeleton />
       ) : staff.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted/50 mb-3">
-            <Users className="size-7 text-muted-foreground/50" />
-          </div>
-          <p className="text-sm text-muted-foreground">{emptyTitle}</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">{emptyDetail}</p>
-          {showLoadMore && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4 font-mono text-xs"
-              onClick={() => fetchNextPage()}
-              disabled={isFetchingNextPage}
-            >
-              Load more from parent
-            </Button>
-          )}
-        </div>
+        <StaffPanelEmptyState
+          emptyTitle={emptyTitle}
+          emptyDetail={emptyDetail}
+          showLoadMore={showLoadMore}
+          isFetchingNextPage={isFetchingNextPage}
+          onLoadMore={() => fetchNextPage()}
+        />
       ) : (
-        <div className="rounded-lg border overflow-hidden">
-          {/* Table Header */}
-          <div className="grid grid-cols-[32px_minmax(140px,1fr)_100px_80px_minmax(120px,1fr)_60px_90px_72px] gap-2 px-3 py-2 bg-muted/30 border-b">
-            <div className="flex items-center justify-center">
-              <Checkbox
-                checked={selectedRows.size === sortedStaff.length && sortedStaff.length > 0}
-                onCheckedChange={handleSelectAll}
-                aria-label="Select all"
-              />
-            </div>
-            <SortableHeader label="Name" field="practitioner_name" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
-            <SortableHeader label="Employee ID" field="employee_id" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
-            <SortableHeader label="Unit" field="unit_name" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
-            <SortableHeader label="Type" field="assignment_type_name" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
-            <SortableHeader label="FTE" field="fte_percentage" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} className="justify-center" />
-            <SortableHeader label="Effective" field="effective_from" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
-            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground text-center">Actions</div>
-          </div>
-          {/* Virtual Table Body */}
-          <VirtualList
-            items={sortedStaff}
-            itemHeight={44}
-            className="h-[50vh]"
-            onEndReached={() => {
-              if (hasNextPage && !isFetchingNextPage) {
-                fetchNextPage();
-              }
-            }}
-            renderItem={(member) => (
-              <div
-                key={member.id}
-                // oxlint-disable-next-line react-doctor/prefer-tag-over-role -- The row contains a nested checkbox, so a native button would create invalid interactive markup.
-                role="button"
-                tabIndex={0}
-                className={cn(
-                  "group grid grid-cols-[32px_minmax(140px,1fr)_100px_80px_minmax(120px,1fr)_60px_90px_72px] gap-2 items-center px-3 py-2 border-b border-border/40 last:border-0 hover:bg-muted/20 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70",
-                  selectedRows.has(member.id) && "bg-amber-50/50 dark:bg-amber-900/10"
-                )}
-                onClick={() => handleOpenStaff(member.staff_id)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    handleOpenStaff(member.staff_id);
-                  }
-                }}
-              >
-                <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selectedRows.has(member.id)}
-                    onCheckedChange={() => handleSelectRow(member.id, { stopPropagation: () => {} })}
-                    onClick={(e) => handleSelectRow(member.id, e)}
-                    aria-label={`Select ${member.practitioner_name}`}
-                  />
-                </div>
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-medium text-sm truncate">{member.practitioner_name}</span>
-                  {member.is_primary && (
-                    <Star className="size-3.5 text-amber-500 fill-amber-500 shrink-0" />
-                  )}
-                </div>
-                <div className="truncate">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {member.employee_id || '—'}
-                  </span>
-                </div>
-                <div className="truncate">
-                  {member.unit_name && (
-                    <span className={`inline-flex font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded truncate ${getHashColor(member.unit_name)}`}>
-                      {member.unit_name}
-                    </span>
-                  )}
-                </div>
-                <div className="truncate">
-                  <span className={`inline-flex font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded truncate ${getHashColor(member.assignment_type_name)}`}>
-                    {member.assignment_type_name}
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {member.fte_percentage}%
-                  </span>
-                </div>
-                <div>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {member.effective_from && format(new Date(member.effective_from), 'MMM d, yyyy')}
-                  </span>
-                </div>
-                <div className="flex items-center justify-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-                    onClick={(event) => handleEdit(member, event)}
-                  >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 opacity-0 group-hover:opacity-100 transition-opacity text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                    onClick={(event) => handleDelete(member.id, event)}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          />
-          {isFetchingNextPage && (
-            <div className="text-xs text-muted-foreground text-center py-2 border-t">Loading more…</div>
-          )}
-        </div>
+        <StaffAssignmentsTable
+          tableState={{ sortedStaff, selectedRows }}
+          sortState={{ sortField, sortDirection, handleSort, handleSelectAll, handleSelectRow }}
+          rowActions={{ handleOpenStaff, handleEdit, handleDelete }}
+          pagination={{ hasNextPage, isFetchingNextPage, fetchNextPage }}
+        />
       )}
 
-      {/* Add Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/30">
-                <Users className="size-5 text-sky-600 dark:text-sky-400" />
-              </div>
-              <DialogTitle className="font-display text-xl">Add Staff Assignment</DialogTitle>
-            </div>
-          </DialogHeader>
-          <div className="space-y-5 py-4">
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider">Assignment Type</Label>
-              <Select
-                value={newAssignment.assignment_type}
-                onValueChange={(value) => setNewAssignment({ ...newAssignment, assignment_type: value })}
-              >
-                <SelectTrigger className="font-mono text-sm">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent className="z-[200]">
-                  {assignmentTypes.map((type) => (
-                    <SelectItem key={type.id} value={type.id.toString()}>
-                      {type.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <AddStaffAssignmentDialog
+        dialogState={{ showAddDialog, setShowAddDialog }}
+        assignmentState={{
+          newAssignment,
+          setNewAssignment,
+          selectedPractitioner,
+          setSelectedPractitioner,
+        }}
+        optionsState={{
+          assignmentTypes,
+          practitionerOptions,
+          staffResults,
+          searchTerm,
+          setSearchTerm,
+          isSearching,
+          createAssignment,
+        }}
+        handlers={{ handleAdd }}
+      />
 
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider">Practitioner</Label>
-              <Combobox
-                options={practitionerOptions}
-                value={newAssignment.practitioner}
-                onChange={(value) => {
-                  setNewAssignment({ ...newAssignment, practitioner: value || '' });
-                  const selected = staffResults.find((member) => member.practitioner_id === value);
-                  setSelectedPractitioner(selected || null);
-                  setSearchTerm('');
-                }}
-                onInputChange={setSearchTerm}
-                placeholder={
-                  selectedPractitioner
-                    ? `${selectedPractitioner.name || 'Unknown'}${selectedPractitioner.employee_id ? ` - ${selectedPractitioner.employee_id}` : ''}`
-                    : 'Search by name or employee ID...'
-                }
-                searchPlaceholder="Search by name or employee ID..."
-                emptyMessage={
-                  searchTerm.length < 2
-                    ? 'Type at least 2 characters to search'
-                    : isSearching
-                      ? 'Searching...'
-                      : 'No staff found'
-                }
-                isLoading={isSearching}
-                className="font-mono text-sm"
-              />
-              <p className="text-[10px] text-muted-foreground">Search by name or employee ID</p>
-            </div>
-
-            <div className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
-              <Checkbox
-                id="is_primary"
-                checked={newAssignment.is_primary}
-                onCheckedChange={(checked) => setNewAssignment({ ...newAssignment, is_primary: checked })}
-              />
-              <div className="space-y-0.5">
-                <Label htmlFor="is_primary" className="text-sm font-medium cursor-pointer">
-                  Primary assignment
-                </Label>
-                <p className="text-[10px] text-muted-foreground">This is the staff member's primary unit</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider">Effective From</Label>
-                <Input
-                  type="date"
-                  value={newAssignment.effective_from}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, effective_from: e.target.value })}
-                  className="font-mono"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider">Effective Until</Label>
-                <Input
-                  type="date"
-                  value={newAssignment.effective_until}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, effective_until: e.target.value })}
-                  className="font-mono"
-                />
-                <p className="text-[10px] text-muted-foreground">Optional</p>
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setShowAddDialog(false)} className="font-mono text-xs">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAdd}
-              disabled={!newAssignment.assignment_type || !newAssignment.practitioner || createAssignment.isPending}
-              className="bg-sky-600 hover:bg-sky-700 text-white font-mono text-xs"
-            >
-              Add Assignment
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                <Pencil className="size-5 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <DialogTitle className="font-display text-xl">Edit Assignment</DialogTitle>
-                {editingAssignment && (
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {editingAssignment.practitioner_name}
-                    {editingAssignment.employee_id && ` • ${editingAssignment.employee_id}`}
-                  </p>
-                )}
-              </div>
-            </div>
-          </DialogHeader>
-          {editingAssignment && (
-            <div className="space-y-5 py-4">
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider">Assignment Type</Label>
-                <Select
-                  value={editingAssignment.assignment_type}
-                  onValueChange={(value) => setEditingAssignment({ ...editingAssignment, assignment_type: value })}
-                >
-                  <SelectTrigger className="font-mono text-sm">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {assignmentTypes.map((type) => (
-                      <SelectItem key={type.id} value={type.id.toString()}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
-                <Checkbox
-                  id="edit_is_primary"
-                  checked={editingAssignment.is_primary}
-                  onCheckedChange={(checked) => setEditingAssignment({ ...editingAssignment, is_primary: checked })}
-                />
-                <div className="space-y-0.5">
-                  <Label htmlFor="edit_is_primary" className="text-sm font-medium cursor-pointer">
-                    Primary assignment
-                  </Label>
-                  <p className="text-[10px] text-muted-foreground">This is the staff member's primary unit</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">Effective From</Label>
-                  <Input
-                    type="date"
-                    value={editingAssignment.effective_from}
-                    onChange={(e) => setEditingAssignment({ ...editingAssignment, effective_from: e.target.value })}
-                    className="font-mono"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">Effective Until</Label>
-                  <Input
-                    type="date"
-                    value={editingAssignment.effective_until}
-                    onChange={(e) => setEditingAssignment({ ...editingAssignment, effective_until: e.target.value })}
-                    className="font-mono"
-                  />
-                  <p className="text-[10px] text-muted-foreground">Optional</p>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setShowEditDialog(false)} className="font-mono text-xs">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveEdit}
-              disabled={!editingAssignment?.assignment_type || updateAssignment.isPending}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs"
-            >
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditStaffAssignmentDialog
+        dialogState={{ showEditDialog, setShowEditDialog }}
+        assignmentState={{ editingAssignment, setEditingAssignment }}
+        assignmentTypes={assignmentTypes}
+        updateAssignment={updateAssignment}
+        handlers={{ handleSaveEdit }}
+      />
     </div>
   );
+}
+
+function StaffPanelContent({ unitId, listSearch, setListSearch, activeQuery }) {
+  const controller = useStaffPanelController({ unitId, listSearch, setListSearch, activeQuery });
+  return <StaffPanelContentView controller={controller} />;
 }
