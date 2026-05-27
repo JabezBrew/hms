@@ -17,12 +17,11 @@ export function useChronicleVisitScope({
   navigate,
   pathname,
   rustV2ActiveAdmissionId,
-  rustV2Mode,
   search,
   visitParam,
 }) {
   const resolvedVisitScope = useMemo(() => resolveChronicleVisitScope({
-    requestedVisit: visitParam || (rustV2Mode ? CHRONICLE_ALL_VISITS : undefined),
+    requestedVisit: visitParam,
     activeEncounterId: activeEncounterId || activeEncounter?.id,
     encounters,
     areEncountersLoading,
@@ -31,7 +30,6 @@ export function useChronicleVisitScope({
     activeEncounterId,
     areEncountersLoading,
     encounters,
-    rustV2Mode,
     visitParam,
   ]);
 

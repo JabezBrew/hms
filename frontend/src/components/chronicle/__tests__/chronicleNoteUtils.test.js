@@ -5,6 +5,7 @@ import {
   getInitialExpandedNoteIds,
   hasEntryDetailContent,
   isInlineExpandableNoteEntry,
+  shouldDeferEncounterExpansionSeed,
 } from '../chronicleNoteUtils';
 
 describe('chronicleNoteUtils', () => {
@@ -42,6 +43,30 @@ describe('chronicleNoteUtils', () => {
     });
 
     expect([...expanded]).toEqual(['unlinked']);
+  });
+
+  it('defers default expansion while the active encounter group can still arrive', () => {
+    expect(shouldDeferEncounterExpansionSeed({
+      activeEncounterId: 'enc-active',
+      encounters: [{ encounter: { id: 'enc-old' } }],
+      hasNextPage: true,
+    })).toBe(true);
+  });
+
+  it('allows fallback expansion once the active encounter group is present', () => {
+    expect(shouldDeferEncounterExpansionSeed({
+      activeEncounterId: 'enc-active',
+      encounters: [{ encounter: { id: 'enc-active' } }],
+      hasNextPage: true,
+    })).toBe(false);
+  });
+
+  it('does not defer unlinked-only expansion when no active encounter is known', () => {
+    expect(shouldDeferEncounterExpansionSeed({
+      activeEncounterId: null,
+      encounters: [],
+      isTimelineLoading: true,
+    })).toBe(false);
   });
 
   it('auto-expands the newest detailed note on the all filter', () => {

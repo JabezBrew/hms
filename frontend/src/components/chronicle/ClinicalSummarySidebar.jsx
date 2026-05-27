@@ -53,7 +53,7 @@ const ClinicalSummarySidebar = ({
   return (
     <aside className={cn(
       "w-80 bg-background border-r border-border p-6 space-y-6",
-      "overflow-y-auto h-screen sticky top-0",
+      "overflow-y-auto lg:sticky lg:top-16 lg:max-h-[calc(100dvh-4rem)]",
       "chronicle-scrollbar",
       className
     )}>

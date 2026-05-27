@@ -535,7 +535,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
         params: expect.objectContaining({
           type: 'all',
           limit: 20,
-          encounterId: undefined,
+          encounterId: 'encounter-1',
         }),
         options: expect.objectContaining({
           enabled: true,
@@ -545,7 +545,22 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     )
   })
 
-  it('renders the Rust startup timeline when the disabled infinite query has no materialized pages', () => {
+  it('defaults Rust V2 Chronicle timeline scope to the current visit', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+
+    renderPage()
+
+    expect(timelineHookState.calls.at(-1)).toEqual(
+      expect.objectContaining({
+        params: expect.objectContaining({
+          encounterId: 'encounter-1',
+        }),
+      }),
+    )
+    expect(screen.getByText(/Focused on Current visit/)).toBeInTheDocument()
+  })
+
+  it('renders the Rust startup all-history timeline when the disabled infinite query has no materialized pages', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     timelineHookState.returnNoDataWhenDisabled = true
     chronicleStartupState.data = {
@@ -567,11 +582,14 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       },
     }
 
-    renderPage()
+    renderPage('/patients/patient-1?visit=all')
 
     expect(timelineHookState.calls.at(-1)).toEqual(
       expect.objectContaining({
         patientId: 'patient-1',
+        params: expect.objectContaining({
+          encounterId: undefined,
+        }),
         options: expect.objectContaining({
           enabled: false,
           initialPage: expect.objectContaining({

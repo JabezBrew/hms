@@ -206,7 +206,6 @@ function usePatientChroniclePageModel(defaultAction) {
     navigate,
     pathname,
     rustV2ActiveAdmissionId,
-    rustV2Mode,
     search,
     visitParam,
   });
@@ -281,6 +280,8 @@ function usePatientChroniclePageModel(defaultAction) {
     debouncedSearch,
     filteredEntries,
     groupedByEncounter,
+    hasNextPage,
+    isTimelineLoading,
     patientId: id,
     resolvedVisitScope,
   });

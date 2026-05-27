@@ -4,6 +4,7 @@ import {
   getInitialExpandedEncounterIds,
   getInitialExpandedNoteIds,
   normalizeExpansionId,
+  shouldDeferEncounterExpansionSeed,
 } from "@/components/chronicle/chronicleNoteUtils";
 
 export function useChronicleTimelineExpansion({
@@ -13,6 +14,8 @@ export function useChronicleTimelineExpansion({
   debouncedSearch,
   filteredEntries,
   groupedByEncounter,
+  hasNextPage,
+  isTimelineLoading,
   patientId,
   resolvedVisitScope,
 }) {
@@ -35,6 +38,15 @@ export function useChronicleTimelineExpansion({
     if (encounterGroupCount === 0 && unlinkedEntryCount === 0) {
       return;
     }
+    if (shouldDeferEncounterExpansionSeed({
+      encounters: encounterGroups,
+      activeEncounterId,
+      areEncountersLoading,
+      isTimelineLoading,
+      hasNextPage,
+    })) {
+      return;
+    }
     if (encounterExpansionSeedRef.current === expansionSeedKey) {
       return;
     }
@@ -52,6 +64,8 @@ export function useChronicleTimelineExpansion({
     encounterGroupCount,
     encounterGroups,
     expansionSeedKey,
+    hasNextPage,
+    isTimelineLoading,
     unlinkedEntries,
     unlinkedEntryCount,
   ]);

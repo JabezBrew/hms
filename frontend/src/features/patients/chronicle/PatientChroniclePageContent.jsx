@@ -69,9 +69,11 @@ function ChronicleSidebar({
         isAnySlideOverOpen && 'lg:hidden',
       )}
     >
-      <div className="w-80 border-r border-border bg-muted/20 p-6">
-        {!rustV2Mode && <ProblemListSidebar patientId={patientId} />}
-      </div>
+      {!rustV2Mode && (
+        <div className="w-80 border-r border-border bg-muted/20 p-6">
+          <ProblemListSidebar patientId={patientId} />
+        </div>
+      )}
       <ClinicalSummarySidebar
         patient={patient}
         problems={rustV2Mode ? problems : []}

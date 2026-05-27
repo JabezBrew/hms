@@ -75,6 +75,25 @@ export const getInitialExpandedEncounterIds = ({
   return expandedIds;
 };
 
+export const shouldDeferEncounterExpansionSeed = ({
+  encounters = [],
+  activeEncounterId = null,
+  areEncountersLoading = false,
+  isTimelineLoading = false,
+  hasNextPage = false,
+} = {}) => {
+  const normalizedActiveEncounterId = normalizeExpansionId(activeEncounterId);
+  if (!normalizedActiveEncounterId) {
+    return false;
+  }
+
+  const hasActiveEncounterGroup = encounters.some(({ encounter }) => (
+    normalizeExpansionId(encounter?.id) === normalizedActiveEncounterId
+  ));
+
+  return !hasActiveEncounterGroup && (areEncountersLoading || isTimelineLoading || hasNextPage);
+};
+
 export const getInitialExpandedNoteIds = ({
   entries = [],
   activeFilter = 'all',
