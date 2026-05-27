@@ -85,220 +85,62 @@ const SORT_OPTIONS = [
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
 
-/**
- * ItemsPage - Inventory items catalog page
- */
-export default function ItemsPage() {
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const itemMutationsAvailable = !isRustV2ApiMode();
+function InventoryItemActionsMenu({
+  item,
+  itemMutationsAvailable,
+  onViewItem,
+  onEditItem,
+  onCreateOrder,
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+        <Button variant="ghost" size="icon" className="size-8">
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onViewItem(item.id); }}>
+          <Eye className="size-4 mr-2" />
+          View Details
+        </DropdownMenuItem>
+        {itemMutationsAvailable && (
+          <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onEditItem(item.id); }}>
+            <Edit className="size-4 mr-2" />
+            Edit
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={(event) => {
+            event.stopPropagation();
+            onCreateOrder(item.id);
+          }}
+        >
+          <ShoppingCart className="size-4 mr-2" />
+          Create Order
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
-  // Filters from URL
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const tab = searchParams.get('status') || 'all';
-  const category = searchParams.get('category') || '';
-  const supplier = searchParams.get('supplier') || '';
-  const location = searchParams.get('location') || '';
-  const sortBy = searchParams.get('ordering') || '-updated_at';
-  const page = parseInt(searchParams.get('page') || '1', 10);
-  const pageSize = parseInt(searchParams.get('page_size') || '24', 10);
-
-  // Selection state for bulk actions
-  const [selectedItems, setSelectedItems] = useState(new Set());
-  const [selectAll, setSelectAll] = useState(false);
-
-  // Sheet state from URL
-  const action = searchParams.get('action');
-  const isCreateOpen = itemMutationsAvailable && action === 'create';
-
-  // Debounced search
-  const debouncedSearch = useDebounce(search, 300);
-
-  // Build query params
-  const queryParams = {
-    page,
-    page_size: pageSize,
-    ordering: sortBy,
-    ...(debouncedSearch && { search: debouncedSearch }),
-    ...(tab !== 'all' && { status: tab }),
-    ...(category && { category }),
-    ...(supplier && { supplier }),
-    ...(location && { location }),
-  };
-
-  // Fetch data
-  const {
-    data: itemsData,
-    isLoading,
-    error,
-    refetch,
-  } = useInventoryItems(queryParams);
-
-  const { data: categoriesData } = useInventoryCategories();
-  const { data: suppliersData } = useSuppliers();
-
-  const items = useMemo(() => itemsData?.results || [], [itemsData]);
-  const totalCount = itemsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / pageSize);
-
-  const categories = categoriesData?.results || categoriesData || [];
-  const suppliers = suppliersData?.results || suppliersData || [];
-
-  // Handle search input
-  const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-  };
-
-  // Update search params when debounced search changes
-  useEffect(() => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
-      } else {
-        params.delete('search');
-      }
-      params.set('page', '1');
-      return params;
-    });
-  }, [debouncedSearch, setSearchParams]);
-
-  // Handle tab change
-  const handleTabChange = (value) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (value !== 'all') {
-        params.set('status', value);
-      } else {
-        params.delete('status');
-      }
-      params.set('page', '1');
-      return params;
-    });
-    setSelectedItems(new Set());
-    setSelectAll(false);
-  };
-
-  // Handle filter changes
-  const handleCategoryChange = (value) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (value && value !== 'all') {
-        params.set('category', value);
-      } else {
-        params.delete('category');
-      }
-      params.set('page', '1');
-      return params;
-    });
-  };
-
-  const handleSupplierChange = (value) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (value && value !== 'all') {
-        params.set('supplier', value);
-      } else {
-        params.delete('supplier');
-      }
-      params.set('page', '1');
-      return params;
-    });
-  };
-
-  const handleSortChange = (value) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set('ordering', value);
-      return params;
-    });
-  };
-
-  const handlePageSizeChange = (value) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set('page_size', value);
-      params.set('page', '1');
-      return params;
-    });
-  };
-
-  const handlePageChange = (newPage) => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set('page', newPage.toString());
-      return params;
-    });
-  };
-
-  // Clear all filters
-  const clearFilters = () => {
-    setSearch('');
-    setSearchParams({ ordering: sortBy });
-    setSelectedItems(new Set());
-    setSelectAll(false);
-  };
-
-  const hasActiveFilters = debouncedSearch || tab !== 'all' || category || supplier || location;
-
-  // Selection handlers
-  const toggleItemSelection = useCallback((itemId) => {
-    setSelectedItems((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
-      return newSet;
-    });
-  }, []);
-
-  const handleSelectAll = useCallback(() => {
-    if (selectAll) {
-      setSelectedItems(new Set());
-    } else {
-      setSelectedItems(new Set(items.map((item) => item.id)));
-    }
-    setSelectAll(!selectAll);
-  }, [items, selectAll]);
-
-  // Bulk actions
-  const handleBulkReorder = () => {
-    const itemIds = Array.from(selectedItems).join(',');
-    navigate(`/inventory/requisitions?action=create&items=${itemIds}`);
-  };
-
-  // Navigate to item
-  const handleItemClick = useCallback((itemId) => {
-    navigate(`/inventory/items/${itemId}`);
-  }, [navigate]);
-
-  const handleEditItem = useCallback((itemId) => {
-    if (!itemMutationsAvailable) {
-      return;
-    }
-    navigate(`/inventory/items/${itemId}?action=edit`);
-  }, [itemMutationsAvailable, navigate]);
-
-  const handleCreateItem = () => {
-    if (!itemMutationsAvailable) {
-      return;
-    }
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set('action', 'create');
-      return params;
-    });
-  };
-
-  const itemColumns = useMemo(() => ([
+function createItemColumns({
+  selectAll,
+  selectedItems,
+  itemMutationsAvailable,
+  onSelectAll,
+  onToggleItemSelection,
+  onViewItem,
+  onEditItem,
+  onCreateOrder,
+}) {
+  return [
     {
       key: 'select',
       header: (
         <Checkbox
           checked={selectAll}
-          onCheckedChange={handleSelectAll}
+          onCheckedChange={onSelectAll}
           onClick={(event) => event.stopPropagation()}
         />
       ),
@@ -307,7 +149,7 @@ export default function ItemsPage() {
         <div onClick={(event) => event.stopPropagation()}>
           <Checkbox
             checked={selectedItems.has(item.id)}
-            onCheckedChange={() => toggleItemSelection(item.id)}
+            onCheckedChange={() => onToggleItemSelection(item.id)}
             onClick={(event) => event.stopPropagation()}
           />
         </div>
@@ -394,53 +236,646 @@ export default function ItemsPage() {
       header: '',
       width: '64px',
       render: (item) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-            <Button variant="ghost" size="icon" className="size-8">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleItemClick(item.id); }}>
-              <Eye className="size-4 mr-2" />
-              View Details
-            </DropdownMenuItem>
-            {itemMutationsAvailable && (
-              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditItem(item.id); }}>
-                <Edit className="size-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation();
-                navigate(`/inventory/requisitions?action=create&items=${item.id}`);
-              }}
-            >
-              <ShoppingCart className="size-4 mr-2" />
-              Create Order
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <InventoryItemActionsMenu
+          item={item}
+          itemMutationsAvailable={itemMutationsAvailable}
+          onViewItem={onViewItem}
+          onEditItem={onEditItem}
+          onCreateOrder={onCreateOrder}
+        />
       ),
     },
-  ]), [
+  ];
+}
+
+function ItemsLoadingState() {
+  return (
+    <PageState variant="loading" fullHeight={false} className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-5 w-32 mt-2" />
+        </div>
+        <Skeleton className="h-10 w-32" />
+      </div>
+
+      <Skeleton className="h-10 w-full max-w-md" />
+
+      <div className="flex gap-3">
+        <Skeleton className="h-10 flex-1 max-w-md" />
+        <Skeleton className="h-10 w-40" />
+        <Skeleton className="h-10 w-40" />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {[...Array(8)].map((_, i) => (
+          <InventoryItemCardSkeleton key={i} />
+        ))}
+      </div>
+    </PageState>
+  );
+}
+
+function ItemsHeader({
+  totalCount,
+  isLoading,
+  itemMutationsAvailable,
+  onRefresh,
+  onCreateItem,
+}) {
+  return (
+    <PageHeader
+      title="Inventory Items"
+      description={`${totalCount} item${totalCount !== 1 ? 's' : ''} in catalog`}
+      actions={(
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onRefresh}>
+            <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+          {itemMutationsAvailable && (
+            <Button onClick={onCreateItem}>
+              <Plus className="size-4 mr-2" />
+              Add Item
+            </Button>
+          )}
+        </div>
+      )}
+    />
+  );
+}
+
+function RustV2InventoryNotice() {
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      Inventory item creation and editing is not available in Rust V2 mode yet. Existing
+      item catalog review, stock levels, movement history, and requisition workflows remain
+      available.
+    </div>
+  );
+}
+
+function StatusTabs({ tab, onTabChange }) {
+  return (
+    <Tabs value={tab} onValueChange={onTabChange}>
+      <TabsList className="w-full sm:w-auto">
+        {TAB_OPTIONS.map((option) => (
+          <TabsTrigger key={option.value} value={option.value} className="font-mono text-xs">
+            {option.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function ItemsFilters({
+  search,
+  category,
+  supplier,
+  sortBy,
+  categories,
+  suppliers,
+  hasActiveFilters,
+  onSearchChange,
+  onCategoryChange,
+  onSupplierChange,
+  onSortChange,
+  onClearFilters,
+}) {
+  return (
+    <div className="flex flex-col lg:flex-row gap-3">
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name, SKU, or description..."
+          value={search}
+          onChange={onSearchChange}
+          className="pl-9 font-mono text-sm"
+        />
+      </div>
+
+      <Select value={category || 'all'} onValueChange={onCategoryChange}>
+        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+          <Filter className="size-4 mr-2 text-muted-foreground" />
+          <SelectValue placeholder="Category" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all" className="font-mono text-sm">
+            All Categories
+          </SelectItem>
+          {categories.map((cat) => (
+            <SelectItem key={cat.id} value={cat.id.toString()} className="font-mono text-sm">
+              {cat.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={supplier || 'all'} onValueChange={onSupplierChange}>
+        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+          <SelectValue placeholder="Supplier" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all" className="font-mono text-sm">
+            All Suppliers
+          </SelectItem>
+          {suppliers.map((sup) => (
+            <SelectItem key={sup.id} value={sup.id.toString()} className="font-mono text-sm">
+              {sup.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={sortBy} onValueChange={onSortChange}>
+        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+          <ArrowUpDown className="size-4 mr-2 text-muted-foreground" />
+          <SelectValue placeholder="Sort by" />
+        </SelectTrigger>
+        <SelectContent>
+          {SORT_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {hasActiveFilters && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClearFilters}
+          className="font-mono text-xs text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-4 mr-1" />
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ItemsBulkToolbar({
+  items,
+  selectedItems,
+  selectAll,
+  pageSize,
+  onSelectAll,
+  onBulkReorder,
+  onClearSelection,
+  onPageSizeChange,
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        {items.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="select-all"
+              checked={selectAll}
+              onCheckedChange={onSelectAll}
+            />
+            <label htmlFor="select-all" className="text-sm text-muted-foreground cursor-pointer">
+              Select all
+            </label>
+          </div>
+        )}
+
+        {selectedItems.size > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="font-mono text-xs">
+                {selectedItems.size} selected
+                <ChevronDown className="size-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={onBulkReorder} className="font-mono text-xs">
+                Create Requisition
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onClearSelection}
+                className="font-mono text-xs text-muted-foreground"
+              >
+                Clear Selection
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Select value={pageSize.toString()} onValueChange={onPageSizeChange}>
+          <SelectTrigger className="w-[100px] font-mono text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <SelectItem key={size} value={size.toString()} className="font-mono text-xs">
+                {size} / page
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+function ItemsDisplay({
+  items,
+  itemColumns,
+  selectedItems,
+  hasActiveFilters,
+  itemMutationsAvailable,
+  onItemClick,
+  onCreateItem,
+}) {
+  if (items.length > 0) {
+    return (
+      <div className="overflow-x-auto">
+        <VirtualizedTable
+          rows={items}
+          rowKey={(item) => item.id}
+          rowHeight={64}
+          columns={itemColumns}
+          onRowClick={(item) => onItemClick(item.id)}
+          rowClassName="hover:bg-muted/50"
+          getRowClassName={(item) => (selectedItems.has(item.id) ? 'bg-muted/30' : null)}
+          className="min-w-[960px]"
+          headerClassName="bg-muted/50 border-b border-border"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
+      <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+        <Package className="size-8 text-muted-foreground" />
+      </div>
+      <h3 className="font-display text-xl text-foreground mb-2">
+        No Items Found
+      </h3>
+      <p className="text-muted-foreground text-sm mb-4">
+        {hasActiveFilters
+          ? 'Try adjusting your filters'
+          : 'Add your first inventory item to get started'}
+      </p>
+      {!hasActiveFilters && itemMutationsAvailable && (
+        <Button onClick={onCreateItem} className="font-mono text-xs">
+          <Plus className="size-4 mr-2" />
+          Add Item
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ItemsPagination({ page, totalPages, totalCount, onPageChange }) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center justify-between pt-4 border-t border-border">
+      <p className="font-mono text-xs text-muted-foreground">
+        Page {page} of {totalPages} ({totalCount} items)
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+          className="font-mono text-xs"
+        >
+          <ChevronLeft className="size-4 mr-1" />
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+          className="font-mono text-xs"
+        >
+          Next
+          <ChevronRight className="size-4 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CreateItemSheet({ isOpen, onClose, onSuccess }) {
+  return (
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="sm:max-w-2xl overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-display text-2xl">Add Inventory Item</SheetTitle>
+          <SheetDescription>
+            Create a new item in your inventory catalog.
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          <InventoryItemForm
+            onSuccess={onSuccess}
+            onCancel={onClose}
+          />
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function useInventoryItemsUrlState({ onClearSelection }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get('search') || '');
+
+  const tab = searchParams.get('status') || 'all';
+  const category = searchParams.get('category') || '';
+  const supplier = searchParams.get('supplier') || '';
+  const location = searchParams.get('location') || '';
+  const sortBy = searchParams.get('ordering') || '-updated_at';
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '24', 10);
+  const debouncedSearch = useDebounce(search, 300);
+
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (debouncedSearch) {
+        params.set('search', debouncedSearch);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  }, [debouncedSearch, setSearchParams]);
+
+  const handleSearchChange = (event) => {
+    setSearch(event.target.value);
+  };
+
+  const handleTabChange = (value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value !== 'all') {
+        params.set('status', value);
+      } else {
+        params.delete('status');
+      }
+      params.set('page', '1');
+      return params;
+    });
+    onClearSelection();
+  };
+
+  const handleCategoryChange = (value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value && value !== 'all') {
+        params.set('category', value);
+      } else {
+        params.delete('category');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  };
+
+  const handleSupplierChange = (value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value && value !== 'all') {
+        params.set('supplier', value);
+      } else {
+        params.delete('supplier');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  };
+
+  const handleSortChange = (value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('ordering', value);
+      return params;
+    });
+  };
+
+  const handlePageSizeChange = (value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('page_size', value);
+      params.set('page', '1');
+      return params;
+    });
+  };
+
+  const handlePageChange = (newPage) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('page', newPage.toString());
+      return params;
+    });
+  };
+
+  const clearFilters = () => {
+    setSearch('');
+    setSearchParams({ ordering: sortBy });
+    onClearSelection();
+  };
+
+  const openCreateAction = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('action', 'create');
+      return params;
+    });
+  };
+
+  const closeAction = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('action');
+      return params;
+    });
+  };
+
+  return {
+    search,
+    tab,
+    category,
+    supplier,
+    location,
+    sortBy,
+    page,
+    pageSize,
+    debouncedSearch,
+    queryParams: {
+      page,
+      page_size: pageSize,
+      ordering: sortBy,
+      ...(debouncedSearch && { search: debouncedSearch }),
+      ...(tab !== 'all' && { status: tab }),
+      ...(category && { category }),
+      ...(supplier && { supplier }),
+      ...(location && { location }),
+    },
+    hasActiveFilters: debouncedSearch || tab !== 'all' || category || supplier || location,
+    isCreateAction: searchParams.get('action') === 'create',
+    handleSearchChange,
+    handleTabChange,
+    handleCategoryChange,
+    handleSupplierChange,
+    handleSortChange,
+    handlePageSizeChange,
+    handlePageChange,
+    clearFilters,
+    openCreateAction,
+    closeAction,
+  };
+}
+
+/**
+ * ItemsPage - Inventory items catalog page
+ */
+export default function ItemsPage() {
+  const navigate = useNavigate();
+  const itemMutationsAvailable = !isRustV2ApiMode();
+
+  // Selection state for bulk actions
+  const [selectedItems, setSelectedItems] = useState(new Set());
+  const [selectAll, setSelectAll] = useState(false);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedItems(new Set());
+    setSelectAll(false);
+  }, []);
+
+  const {
+    search,
+    tab,
+    category,
+    supplier,
+    sortBy,
+    page,
+    pageSize,
+    queryParams,
+    hasActiveFilters,
+    isCreateAction,
+    handleSearchChange,
+    handleTabChange,
+    handleCategoryChange,
+    handleSupplierChange,
+    handleSortChange,
+    handlePageSizeChange,
+    handlePageChange,
+    clearFilters,
+    openCreateAction,
+    closeAction,
+  } = useInventoryItemsUrlState({ onClearSelection: handleClearSelection });
+
+  const isCreateOpen = itemMutationsAvailable && isCreateAction;
+
+  // Fetch data
+  const {
+    data: itemsData,
+    isLoading,
+    error,
+    refetch,
+  } = useInventoryItems(queryParams);
+
+  const { data: categoriesData } = useInventoryCategories();
+  const { data: suppliersData } = useSuppliers();
+
+  const items = useMemo(() => itemsData?.results || [], [itemsData]);
+  const totalCount = itemsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  const categories = categoriesData?.results || categoriesData || [];
+  const suppliers = suppliersData?.results || suppliersData || [];
+
+  // Selection handlers
+  const toggleItemSelection = useCallback((itemId) => {
+    setSelectedItems((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    if (selectAll) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(items.map((item) => item.id)));
+    }
+    setSelectAll(!selectAll);
+  }, [items, selectAll]);
+
+  // Bulk actions
+  const handleBulkReorder = () => {
+    const itemIds = Array.from(selectedItems).join(',');
+    navigate(`/inventory/requisitions?action=create&items=${itemIds}`);
+  };
+
+  // Navigate to item
+  const handleItemClick = useCallback((itemId) => {
+    navigate(`/inventory/items/${itemId}`);
+  }, [navigate]);
+
+  const handleEditItem = useCallback((itemId) => {
+    if (!itemMutationsAvailable) {
+      return;
+    }
+    navigate(`/inventory/items/${itemId}?action=edit`);
+  }, [itemMutationsAvailable, navigate]);
+
+  const handleCreateItem = () => {
+    if (!itemMutationsAvailable) {
+      return;
+    }
+    openCreateAction();
+  };
+
+  const handleCreateOrder = useCallback((itemId) => {
+    navigate(`/inventory/requisitions?action=create&items=${itemId}`);
+  }, [navigate]);
+
+  const itemColumns = useMemo(() => createItemColumns({
+    selectAll,
+    selectedItems,
+    itemMutationsAvailable,
+    onSelectAll: handleSelectAll,
+    onToggleItemSelection: toggleItemSelection,
+    onViewItem: handleItemClick,
+    onEditItem: handleEditItem,
+    onCreateOrder: handleCreateOrder,
+  }), [
+    handleCreateOrder,
     handleSelectAll,
     handleItemClick,
     handleEditItem,
     itemMutationsAvailable,
-    navigate,
     selectAll,
     selectedItems,
     toggleItemSelection,
   ]);
 
   const handleCloseSheet = () => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.delete('action');
-      return params;
-    });
+    closeAction();
   };
 
   const handleCreateSuccess = () => {
@@ -450,35 +885,7 @@ export default function ItemsPage() {
 
   // Loading state (only show skeleton on initial load, not on refetches)
   if (isLoading && !itemsData) {
-    return (
-      <PageState variant="loading" fullHeight={false} className="space-y-6">
-        {/* Header skeleton */}
-        <div className="flex items-center justify-between">
-          <div>
-            <Skeleton className="h-9 w-48" />
-            <Skeleton className="h-5 w-32 mt-2" />
-          </div>
-          <Skeleton className="h-10 w-32" />
-        </div>
-
-        {/* Tabs skeleton */}
-        <Skeleton className="h-10 w-full max-w-md" />
-
-        {/* Filters skeleton */}
-        <div className="flex gap-3">
-          <Skeleton className="h-10 flex-1 max-w-md" />
-          <Skeleton className="h-10 w-40" />
-          <Skeleton className="h-10 w-40" />
-        </div>
-
-        {/* Grid skeleton */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(8)].map((_, i) => (
-            <InventoryItemCardSkeleton key={i} />
-          ))}
-        </div>
-      </PageState>
-    );
+    return <ItemsLoadingState />;
   }
 
   // Error state
@@ -495,270 +902,67 @@ export default function ItemsPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Inventory Items"
-        description={`${totalCount} item${totalCount !== 1 ? 's' : ''} in catalog`}
-        actions={(
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
-              Refresh
-            </Button>
-            {itemMutationsAvailable && (
-              <Button onClick={handleCreateItem}>
-                <Plus className="size-4 mr-2" />
-                Add Item
-              </Button>
-            )}
-          </div>
-        )}
+      <ItemsHeader
+        totalCount={totalCount}
+        isLoading={isLoading}
+        itemMutationsAvailable={itemMutationsAvailable}
+        onRefresh={refetch}
+        onCreateItem={handleCreateItem}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
-      {!itemMutationsAvailable && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Inventory item creation and editing is not available in Rust V2 mode yet. Existing
-          item catalog review, stock levels, movement history, and requisition workflows remain
-          available.
-        </div>
-      )}
+        {!itemMutationsAvailable && <RustV2InventoryNotice />}
 
-      {/* Tabs */}
-      <Tabs value={tab} onValueChange={handleTabChange}>
-        <TabsList className="w-full sm:w-auto">
-          {TAB_OPTIONS.map((option) => (
-            <TabsTrigger key={option.value} value={option.value} className="font-mono text-xs">
-              {option.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+        <StatusTabs tab={tab} onTabChange={handleTabChange} />
 
-      {/* Filters Row */}
-      <div className="flex flex-col lg:flex-row gap-3">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, SKU, or description..."
-            value={search}
-            onChange={handleSearchChange}
-            className="pl-9 font-mono text-sm"
-          />
-        </div>
+        <ItemsFilters
+          search={search}
+          category={category}
+          supplier={supplier}
+          sortBy={sortBy}
+          categories={categories}
+          suppliers={suppliers}
+          hasActiveFilters={hasActiveFilters}
+          onSearchChange={handleSearchChange}
+          onCategoryChange={handleCategoryChange}
+          onSupplierChange={handleSupplierChange}
+          onSortChange={handleSortChange}
+          onClearFilters={clearFilters}
+        />
 
-        {/* Category Filter */}
-        <Select value={category || 'all'} onValueChange={handleCategoryChange}>
-          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <Filter className="size-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="font-mono text-sm">
-              All Categories
-            </SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id.toString()} className="font-mono text-sm">
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <ItemsBulkToolbar
+          items={items}
+          selectedItems={selectedItems}
+          selectAll={selectAll}
+          pageSize={pageSize}
+          onSelectAll={handleSelectAll}
+          onBulkReorder={handleBulkReorder}
+          onClearSelection={handleClearSelection}
+          onPageSizeChange={handlePageSizeChange}
+        />
 
-        {/* Supplier Filter */}
-        <Select value={supplier || 'all'} onValueChange={handleSupplierChange}>
-          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <SelectValue placeholder="Supplier" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="font-mono text-sm">
-              All Suppliers
-            </SelectItem>
-            {suppliers.map((sup) => (
-              <SelectItem key={sup.id} value={sup.id.toString()} className="font-mono text-sm">
-                {sup.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <ItemsDisplay
+          items={items}
+          itemColumns={itemColumns}
+          selectedItems={selectedItems}
+          hasActiveFilters={hasActiveFilters}
+          itemMutationsAvailable={itemMutationsAvailable}
+          onItemClick={handleItemClick}
+          onCreateItem={handleCreateItem}
+        />
 
-        {/* Sort */}
-        <Select value={sortBy} onValueChange={handleSortChange}>
-          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <ArrowUpDown className="size-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Sort by" />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <ItemsPagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={handlePageChange}
+        />
 
-        {/* Clear Filters */}
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="font-mono text-xs text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4 mr-1" />
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {/* View Toggle & Bulk Actions Row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          {/* Select All */}
-          {items.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="select-all"
-                checked={selectAll}
-                onCheckedChange={handleSelectAll}
-              />
-              <label htmlFor="select-all" className="text-sm text-muted-foreground cursor-pointer">
-                Select all
-              </label>
-            </div>
-          )}
-
-          {/* Bulk Actions */}
-          {selectedItems.size > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="font-mono text-xs">
-                  {selectedItems.size} selected
-                  <ChevronDown className="size-4 ml-2" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={handleBulkReorder} className="font-mono text-xs">
-                  Create Requisition
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => {
-                    setSelectedItems(new Set());
-                    setSelectAll(false);
-                  }}
-                  className="font-mono text-xs text-muted-foreground"
-                >
-                  Clear Selection
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Page Size */}
-          <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
-            <SelectTrigger className="w-[100px] font-mono text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((size) => (
-                <SelectItem key={size} value={size.toString()} className="font-mono text-xs">
-                  {size} / page
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-        </div>
-      </div>
-
-      {/* Items Display */}
-      {items.length > 0 ? (
-        <div className="overflow-x-auto">
-          <VirtualizedTable
-            rows={items}
-            rowKey={(item) => item.id}
-            rowHeight={64}
-            columns={itemColumns}
-            onRowClick={(item) => handleItemClick(item.id)}
-            rowClassName="hover:bg-muted/50"
-            getRowClassName={(item) => (selectedItems.has(item.id) ? 'bg-muted/30' : null)}
-            className="min-w-[960px]"
-            headerClassName="bg-muted/50 border-b border-border"
-          />
-        </div>
-      ) : (
-        <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <Package className="size-8 text-muted-foreground" />
-          </div>
-          <h3 className="font-display text-xl text-foreground mb-2">
-            No Items Found
-          </h3>
-          <p className="text-muted-foreground text-sm mb-4">
-            {hasActiveFilters
-              ? 'Try adjusting your filters'
-              : 'Add your first inventory item to get started'}
-          </p>
-          {!hasActiveFilters && itemMutationsAvailable && (
-            <Button onClick={handleCreateItem} className="font-mono text-xs">
-              <Plus className="size-4 mr-2" />
-              Add Item
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t border-border">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {page} of {totalPages} ({totalCount} items)
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page <= 1}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="font-mono text-xs"
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Create Item Sheet */}
-      <Sheet open={isCreateOpen} onOpenChange={(open) => !open && handleCloseSheet()}>
-        <SheetContent className="sm:max-w-2xl overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="font-display text-2xl">Add Inventory Item</SheetTitle>
-            <SheetDescription>
-              Create a new item in your inventory catalog.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            <InventoryItemForm
-              onSuccess={handleCreateSuccess}
-              onCancel={handleCloseSheet}
-            />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
+        <CreateItemSheet
+          isOpen={isCreateOpen}
+          onClose={handleCloseSheet}
+          onSuccess={handleCreateSuccess}
+        />
       </div>
     </PageShell>
   );
