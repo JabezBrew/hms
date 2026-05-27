@@ -10,13 +10,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -70,7 +64,6 @@ import addMonths from 'date-fns/addMonths';
 import subMonths from 'date-fns/subMonths';
 import eachDayOfInterval from 'date-fns/eachDayOfInterval';
 import getDay from 'date-fns/getDay';
-import isSameDay from 'date-fns/isSameDay';
 
 import {
   useClinicalUnitsTree,
@@ -104,10 +97,39 @@ function parsePeriod(period) {
   return new Date(year, month - 1, 1);
 }
 
-/**
- * RosterBuilderPage - Main component
- */
+function getGroupedRosterUnits(rosterUnits) {
+  const departments = [];
+  const divisionsByParent = new Map();
+
+  rosterUnits.forEach((unit) => {
+    if (unit.unit_type_code === 'department') {
+      departments.push(unit);
+    } else if (unit.unit_type_code === 'division') {
+      const divisions = divisionsByParent.get(unit.parentId) || [];
+      divisions.push(unit);
+      divisionsByParent.set(unit.parentId, divisions);
+    }
+  });
+
+  const groupedUnits = [];
+  departments.forEach((department) => {
+    groupedUnits.push({ ...department, indent: 0 });
+    (divisionsByParent.get(department.id) || []).forEach((division) => {
+      groupedUnits.push({ ...division, indent: 1 });
+    });
+  });
+  return groupedUnits;
+}
+
 export default function RosterBuilderPage() {
+  const controller = useRosterBuilderController();
+  return <RosterBuilderLayout {...controller} />;
+}
+
+/**
+ * useRosterBuilderController - state, queries, mutations, and derived roster data.
+ */
+function useRosterBuilderController() {
   const [searchParams, setSearchParams] = useSearchParams();
   const departmentParam = searchParams.get('department');
   const periodParam = searchParams.get('period') || getCurrentPeriod();
@@ -417,7 +439,6 @@ export default function RosterBuilderPage() {
               if (conflictEntry) {
                 const teamName = teamById.get(entry.team)?.name || 'Team';
                 // Find duty type names for clearer message
-                const entryDutyName = dutyTypeById.get(entry.duty_type)?.name || 'duty';
                 const conflictDutyName = dutyTypeById.get(conflictEntry.duty_type)?.name || 'duty';
                 const conflictDateFormatted = format(new Date(conflictEntry.date), 'EEE d');
                 addViolation(entry, `${teamName} also assigned to ${conflictDutyName} on ${conflictDateFormatted}`);
@@ -653,542 +674,812 @@ export default function RosterBuilderPage() {
     ],
   });
 
+  return {
+    pageMeta,
+    selectedDepartment,
+    currentPeriod,
+    rosterUnits,
+    periodDate,
+    stats,
+    isLoading,
+    dutyTypes,
+    datesInPeriod,
+    violations,
+    teamById,
+    editingCell,
+    pendingTeamChange,
+    showClearConfirm,
+    showPublishWarningConfirm,
+    teams,
+    generateMutation,
+    clearMutation,
+    publishMutation,
+    updateMutation,
+    createMutation,
+    handleDepartmentChange,
+    goToPreviousPeriod,
+    goToNextPeriod,
+    handleGenerate,
+    handleDownload,
+    handlePublish,
+    handleClear,
+    doPublish,
+    setShowClearConfirm,
+    setShowPublishWarningConfirm,
+    setEditingCell,
+    setPendingTeamChange,
+    openCellEditor,
+    handleCellSave,
+    dutyTypeApplies,
+    getEntry,
+  };
+}
+
+function RosterBuilderLayout({
+  pageMeta,
+  selectedDepartment,
+  currentPeriod,
+  rosterUnits,
+  periodDate,
+  stats,
+  isLoading,
+  dutyTypes,
+  datesInPeriod,
+  violations,
+  teamById,
+  editingCell,
+  pendingTeamChange,
+  showClearConfirm,
+  showPublishWarningConfirm,
+  teams,
+  generateMutation,
+  clearMutation,
+  publishMutation,
+  updateMutation,
+  createMutation,
+  handleDepartmentChange,
+  goToPreviousPeriod,
+  goToNextPeriod,
+  handleGenerate,
+  handleDownload,
+  handlePublish,
+  handleClear,
+  doPublish,
+  setShowClearConfirm,
+  setShowPublishWarningConfirm,
+  setEditingCell,
+  setPendingTeamChange,
+  openCellEditor,
+  handleCellSave,
+  dutyTypeApplies,
+  getEntry,
+}) {
   return (
     <PageShell>
       {pageMeta}
-      <PageHeader
-        title="Roster Builder"
-        description="Generate, edit, and publish the duty roster."
-        actions={(
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/admin/organization/duty-roster">
-                <ArrowLeft className="size-4 mr-1" />
-                Back to Roster
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to={`/admin/organization/roster-setup${selectedDepartment ? `?department=${selectedDepartment}` : ''}`}>
-                <Settings className="size-4 mr-1" />
-                Setup
-              </Link>
-            </Button>
-          </div>
-        )}
-      />
+      <RosterBuilderHeader selectedDepartment={selectedDepartment} />
 
       <div className="container max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
 
-          {/* Controls */}
-          <Card className="mb-6 border-border">
-            <CardContent className="p-4 sm:pr-6">
-              <div className="flex flex-col md:flex-row md:items-end gap-4">
-                {/* Unit Selector (Departments & Divisions) */}
-                <div className="min-w-0 md:min-w-[200px]">
-	                  <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 block">
-	                    Department / Division
-	                  </span>
-	                  <Select value={selectedDepartment} onValueChange={handleDepartmentChange}>
-	                    <SelectTrigger aria-label="Department or division">
-                      <SelectValue placeholder="Select unit" />
-                    </SelectTrigger>
-                    <SelectContent className="z-[200]">
-                      {(() => {
-                        // Group divisions under their parent departments
-                        const departments = [];
-                        const divisionsByParent = new Map();
-                        rosterUnits.forEach((unit) => {
-                          if (unit.unit_type_code === 'department') {
-                            departments.push(unit);
-                          } else if (unit.unit_type_code === 'division') {
-                            const divisions = divisionsByParent.get(unit.parentId) || [];
-                            divisions.push(unit);
-                            divisionsByParent.set(unit.parentId, divisions);
-                          }
-                        });
-                        const groupedUnits = [];
-                        departments.forEach((dept) => {
-                          groupedUnits.push({ ...dept, indent: 0 });
-                          (divisionsByParent.get(dept.id) || []).forEach((div) => {
-                            groupedUnits.push({ ...div, indent: 1 });
-                          });
-                        });
-                        return groupedUnits.map((unit) => (
-                          <SelectItem key={unit.id} value={unit.id}>
-                            <span className={unit.indent ? 'pl-4' : ''}>
-                              {unit.name}
-                              {unit.unit_type_code === 'division' && (
-                                <span className="ml-2 text-xs text-muted-foreground">(Division)</span>
-                              )}
-                            </span>
-                          </SelectItem>
-                        ));
-                      })()}
-                    </SelectContent>
-                  </Select>
-                </div>
+          <RosterBuilderControls
+            selectedDepartment={selectedDepartment}
+            rosterUnits={rosterUnits}
+            currentPeriod={currentPeriod}
+            periodDate={periodDate}
+            stats={stats}
+            generateMutation={generateMutation}
+            clearMutation={clearMutation}
+            publishMutation={publishMutation}
+            handleDepartmentChange={handleDepartmentChange}
+            goToPreviousPeriod={goToPreviousPeriod}
+            goToNextPeriod={goToNextPeriod}
+            handleGenerate={handleGenerate}
+            handleDownload={handleDownload}
+            handlePublish={handlePublish}
+            setShowClearConfirm={setShowClearConfirm}
+          />
 
-                {/* Period Navigator */}
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" onClick={goToPreviousPeriod}>
-                    <ChevronLeft className="size-4" />
-                  </Button>
-                  <span className="font-heading font-medium w-36 text-center">
-                    {format(periodDate, 'MMMM yyyy')}
-                  </span>
-                  <Button variant="ghost" size="icon" onClick={goToNextPeriod}>
-                    <ChevronRight className="size-4" />
-                  </Button>
-                </div>
-
-                {/* Actions */}
-                <div className="ml-0 flex flex-wrap items-center gap-2 md:ml-auto">
-                  <Button
-                    variant="outline"
-                    onClick={handleGenerate}
-                    disabled={!selectedDepartment || generateMutation.isPending}
-                  >
-                    <RefreshCw
-                      className={cn('size-4 mr-1', generateMutation.isPending && 'animate-spin')}
-                    />
-                    Generate
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowClearConfirm(true)}
-                    disabled={!selectedDepartment || stats.draft === 0 || clearMutation.isPending}
-                    className="text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="size-4 mr-1" />
-                    Clear
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleDownload}
-                    disabled={!selectedDepartment || stats.total === 0}
-                  >
-                    <Download className="size-4 mr-1" />
-                    PDF
-                  </Button>
-                  <Button
-                    onClick={handlePublish}
-                    disabled={!selectedDepartment || stats.draft === 0 || publishMutation.isPending}
-                  >
-                    <Send className="size-4 mr-1" />
-                    Publish
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Stats */}
           {selectedDepartment && stats.total > 0 && (
-            <div className="flex flex-wrap gap-4 mb-6">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/30 border border-border">
-                <span className="text-xs font-mono text-muted-foreground">Total</span>
-                <Badge variant="outline" className="font-mono">
-                  {stats.total}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                <span className="text-xs font-mono text-amber-600 dark:text-amber-400">Draft</span>
-                <Badge variant="outline" className="font-mono bg-amber-500/10">
-                  {stats.draft}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400">Published</span>
-                <Badge variant="outline" className="font-mono bg-emerald-500/10">
-                  {stats.published}
-                </Badge>
-              </div>
-              {stats.overrides > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20">
-                  <span className="text-xs font-mono text-rose-600 dark:text-rose-400">Overrides</span>
-                  <Badge variant="outline" className="font-mono bg-rose-500/10">
-                    {stats.overrides}
-                  </Badge>
-                </div>
-              )}
-              {stats.errorCount > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20">
-                  <AlertCircle className="size-4 text-rose-500" />
-                  <span className="text-xs font-mono text-rose-600 dark:text-rose-400">Errors</span>
-                  <Badge variant="outline" className="font-mono bg-rose-500/10 text-rose-600">
-                    {stats.errorCount}
-                  </Badge>
-                </div>
-              )}
-              {stats.warningCount > 0 && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <AlertTriangle className="size-4 text-amber-500" />
-                  <span className="text-xs font-mono text-amber-600 dark:text-amber-400">Warnings</span>
-                  <Badge variant="outline" className="font-mono bg-amber-500/10 text-amber-600">
-                    {stats.warningCount}
-                  </Badge>
-                </div>
-              )}
-            </div>
+            <RosterStats stats={stats} />
           )}
 
-          {/* Roster Grid */}
-          {!selectedDepartment ? (
-            <Card className="border-border">
-              <CardContent className="p-8">
-                <EmptyState
-                  icon={CalendarClock}
-                  title="Select a unit"
-                  description="Choose a department or division to view and build its roster."
-                />
-              </CardContent>
-            </Card>
-          ) : isLoading ? (
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <div className="space-y-2">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : dutyTypes.length === 0 ? (
-            <Card className="border-border">
-              <CardContent className="p-8">
-                <EmptyState
-                  icon={AlertTriangle}
-                  title="No duty types configured"
-                  description="Set up duty types for this department before building the roster."
-                  action={
-                    <Button asChild>
-                      <Link to={`/admin/organization/roster-setup?department=${selectedDepartment}`}>
-                        Go to Setup
-                      </Link>
-                    </Button>
-                  }
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-border overflow-hidden">
-              <div className="overflow-auto max-h-[70vh]">
-                <table className="w-full border-collapse">
-                  <thead className="sticky top-0 z-20">
-                    <tr className="bg-muted">
-                      <th className="sticky left-0 z-30 bg-muted border-b border-r border-border px-3 py-2 text-left">
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                          Date
-                        </span>
-                      </th>
-                      {dutyTypes.map((dt) => (
-                        <th
-                          key={dt.id}
-                          className="bg-muted border-b border-border px-3 py-2 text-center min-w-[100px]"
-                        >
-                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                            {dt.name}
-                          </span>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {datesInPeriod.map((date, dateIndex) => {
-                      const dayOfWeek = getDay(date);
-                      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+          <RosterGridSection
+            selectedDepartment={selectedDepartment}
+            isLoading={isLoading}
+            dutyTypes={dutyTypes}
+            datesInPeriod={datesInPeriod}
+            violations={violations}
+            teamById={teamById}
+            dutyTypeApplies={dutyTypeApplies}
+            getEntry={getEntry}
+            openCellEditor={openCellEditor}
+          />
 
-                      return (
-                        <tr
-                          key={date.toISOString()}
-                          className={cn(
-                            'animate-chronicle-enter',
-                            isWeekend && 'bg-muted/20'
-                          )}
-                          style={{ animationDelay: `${dateIndex * 10}ms` }}
-                        >
-                          <td className="sticky left-0 z-10 bg-background border-b border-r border-border px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={cn(
-                                  'font-mono text-xs',
-                                  isWeekend && 'text-primary font-medium'
-                                )}
-                              >
-                                {DAYS_LABELS[dayOfWeek === 0 ? 6 : dayOfWeek - 1]}
-                              </span>
-                              <span className="font-heading text-sm">{format(date, 'd')}</span>
-                            </div>
-                          </td>
-                          {dutyTypes.map((dt) => {
-                            const applies = dutyTypeApplies(dt, date);
-                            const entry = getEntry(date, dt.id);
+          <RosterCellEditorDialog
+            editingCell={editingCell}
+            pendingTeamChange={pendingTeamChange}
+            teams={teams}
+            teamById={teamById}
+            updateMutation={updateMutation}
+            createMutation={createMutation}
+            setEditingCell={setEditingCell}
+            setPendingTeamChange={setPendingTeamChange}
+            handleCellSave={handleCellSave}
+          />
 
-                            if (!applies) {
-                              return (
-                                <td
-                                  key={dt.id}
-                                  className="border-b border-border px-2 py-1 text-center bg-muted/10"
-                                >
-                                  <span className="text-xs text-muted-foreground">-</span>
-                                </td>
-                              );
-                            }
+          <ClearRosterDialog
+            open={showClearConfirm}
+            onOpenChange={setShowClearConfirm}
+            stats={stats}
+            periodDate={periodDate}
+            clearMutation={clearMutation}
+            handleClear={handleClear}
+          />
 
-                            // Check for violations on this cell
-                            const cellKey = `${format(date, 'yyyy-MM-dd')}|${dt.id}`;
-                            const cellViolations = violations.get(cellKey);
-                            const hasErrors = cellViolations?.errors?.length > 0;
-                            const hasWarnings = cellViolations?.warnings?.length > 0;
-
-                            return (
-                              <td key={dt.id} className="border-b border-border px-2 py-1">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <button
-                                        type="button"
-                                        onClick={() => openCellEditor(date, dt)}
-                                        className={cn(
-                                          'w-full px-2 py-1.5 rounded text-xs font-mono transition-colors relative',
-                                          'hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/20',
-                                          hasErrors
-                                            ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500/50'
-                                            : hasWarnings
-                                            ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/50'
-                                            : entry
-                                            ? entry.is_override
-                                              ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                                              : entry.status === 'published'
-                                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                                              : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                            : 'text-muted-foreground'
-                                        )}
-                                      >
-                                        {entry ? teamById.get(entry.team)?.name || 'Unknown' : '—'}
-                                        {(hasErrors || hasWarnings) && (
-                                          <span className="absolute -top-1 -right-1">
-                                            <AlertCircle
-                                              className={cn(
-                                                'size-3.5',
-                                                hasErrors ? 'text-rose-500' : 'text-amber-500'
-                                              )}
-                                            />
-                                          </span>
-                                        )}
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="max-w-xs bg-popover text-popover-foreground">
-                                      {hasErrors || hasWarnings ? (
-                                        <div className="space-y-1.5">
-                                          {cellViolations.errors.map((v) => (
-                                            <p key={`error:${v.rule}:${v.message}`} className="text-xs font-medium text-rose-600 dark:text-rose-400">
-                                              {v.message}
-                                            </p>
-                                          ))}
-                                          {cellViolations.warnings.map((v) => (
-                                            <p key={`warning:${v.rule}:${v.message}`} className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                                              {v.message}
-                                            </p>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <p className="text-xs">
-                                          {entry
-                                            ? `${entry.status}${entry.is_override ? ' (override)' : ''}`
-                                            : 'Click to assign'}
-                                        </p>
-                                      )}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-
-          {/* Cell Editor Dialog */}
-          <Dialog
-            open={!!editingCell}
-            onOpenChange={() => {
-              setEditingCell(null);
-              setPendingTeamChange(null);
-            }}
-          >
-            <DialogContent className="sm:max-w-sm">
-              <DialogHeader>
-                <DialogTitle className="font-display text-xl">
-                  {editingCell?.dutyType?.name}
-                </DialogTitle>
-                <DialogDescription>
-                  {editingCell && format(editingCell.date, 'EEEE, MMMM d, yyyy')}
-                </DialogDescription>
-              </DialogHeader>
-
-              {/* Show confirmation if changing team */}
-              {pendingTeamChange ? (
-                <div className="space-y-4 py-2">
-                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
-                      Change team assignment?
-                    </p>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">From:</span>
-                        <span className="font-medium">
-                          {teamById.get(editingCell?.entry?.team)?.name || 'Unassigned'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">To:</span>
-                        <span className="font-medium text-primary">{pendingTeamChange.teamName}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setPendingTeamChange(null)}>
-                      Back
-                    </Button>
-                    <Button
-                      variant="default"
-                      onClick={() => {
-                        handleCellSave(pendingTeamChange.teamId);
-                        setPendingTeamChange(null);
-                      }}
-                      disabled={updateMutation.isPending || createMutation.isPending}
-                    >
-                      {(updateMutation.isPending || createMutation.isPending) ? 'Saving...' : 'Confirm Change'}
-                    </Button>
-                  </DialogFooter>
-                </div>
-              ) : (
-                <>
-                  {/* Show current assignment */}
-                  {editingCell?.entry?.team && (
-                    <div className="p-3 rounded-lg bg-muted/50 border border-border">
-                      <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1">
-                        Currently Assigned
-                      </div>
-                      <div className="font-heading font-medium">
-                        {teamById.get(editingCell.entry.team)?.name || 'Unknown'}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-3 py-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                      {editingCell?.entry?.team ? 'Change To' : 'Assign Team'}
-                    </label>
-                    <div className="grid gap-2">
-                      {teams.map((team) => (
-                        team.id !== editingCell?.entry?.team ? (
-                          <button
-                            key={team.id}
-                            type="button"
-                            onClick={() => {
-                              if (editingCell?.entry?.team) {
-                                // Existing entry - show confirmation
-                                setPendingTeamChange({ teamId: team.id, teamName: team.name });
-                              } else {
-                                // No existing entry - save directly
-                                handleCellSave(team.id);
-                              }
-                            }}
-                            className={cn(
-                              'w-full px-3 py-2 rounded-lg border text-left transition-colors',
-                              'hover:bg-primary/5 hover:border-primary/30 border-border'
-                            )}
-                          >
-                            <span className="font-heading font-medium text-sm">{team.name}</span>
-                            <span className="ml-2 font-mono text-xs text-muted-foreground">
-                              {team.code}
-                            </span>
-                          </button>
-                        ) : null
-                      ))}
-                    </div>
-                  </div>
-
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setEditingCell(null)}>
-                      Cancel
-                    </Button>
-                  </DialogFooter>
-                </>
-              )}
-            </DialogContent>
-          </Dialog>
-
-          {/* Clear Confirmation Dialog */}
-          <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="font-display text-xl text-destructive">
-                  Clear Draft Roster
-                </DialogTitle>
-                <DialogDescription>
-                  This will delete all <strong>{stats.draft}</strong> draft roster entries for{' '}
-                  <strong>{format(periodDate, 'MMMM yyyy')}</strong>. Published entries will not be
-                  affected.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="py-4">
-                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
-                    After clearing, you can regenerate the roster. The sequence will continue from
-                    the previous period's last entry.
-                  </p>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowClearConfirm(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleClear}
-                  disabled={clearMutation.isPending}
-                >
-                  {clearMutation.isPending ? 'Clearing...' : `Clear ${stats.draft} entries`}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Publish Warning Confirmation Dialog */}
-          <AlertDialog open={showPublishWarningConfirm} onOpenChange={setShowPublishWarningConfirm}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="font-display flex items-center gap-2">
-                  <AlertTriangle className="size-5 text-amber-500" />
-                  Validation Warnings
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  There are <strong>{stats.warningCount}</strong> validation warning(s) in this roster.
-                  Do you want to publish anyway?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={doPublish}
-                  disabled={publishMutation.isPending}
-                >
-                  {publishMutation.isPending ? 'Publishing...' : 'Publish Anyway'}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <PublishWarningDialog
+            open={showPublishWarningConfirm}
+            onOpenChange={setShowPublishWarningConfirm}
+            warningCount={stats.warningCount}
+            publishMutation={publishMutation}
+            doPublish={doPublish}
+          />
         </div>
       </PageShell>
+  );
+}
+
+function RosterBuilderHeader({ selectedDepartment }) {
+  return (
+    <PageHeader
+      title="Roster Builder"
+      description="Generate, edit, and publish the duty roster."
+      actions={(
+        <div className="flex flex-wrap gap-2">
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/admin/organization/duty-roster">
+              <ArrowLeft className="size-4 mr-1" />
+              Back to Roster
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/admin/organization/roster-setup${selectedDepartment ? `?department=${selectedDepartment}` : ''}`}>
+              <Settings className="size-4 mr-1" />
+              Setup
+            </Link>
+          </Button>
+        </div>
+      )}
+    />
+  );
+}
+
+function RosterBuilderControls({
+  selectedDepartment,
+  rosterUnits,
+  periodDate,
+  stats,
+  generateMutation,
+  clearMutation,
+  publishMutation,
+  handleDepartmentChange,
+  goToPreviousPeriod,
+  goToNextPeriod,
+  handleGenerate,
+  handleDownload,
+  handlePublish,
+  setShowClearConfirm,
+}) {
+  const groupedUnits = getGroupedRosterUnits(rosterUnits);
+
+  return (
+    <Card className="mb-6 border-border">
+      <CardContent className="p-4 sm:pr-6">
+        <div className="flex flex-col md:flex-row md:items-end gap-4">
+          <div className="min-w-0 md:min-w-[200px]">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5 block">
+              Department / Division
+            </span>
+            <Select value={selectedDepartment} onValueChange={handleDepartmentChange}>
+              <SelectTrigger aria-label="Department or division">
+                <SelectValue placeholder="Select unit" />
+              </SelectTrigger>
+              <SelectContent className="z-[200]">
+                {groupedUnits.map((unit) => (
+                  <SelectItem key={unit.id} value={unit.id}>
+                    <span className={unit.indent ? 'pl-4' : ''}>
+                      {unit.name}
+                      {unit.unit_type_code === 'division' && (
+                        <span className="ml-2 text-xs text-muted-foreground">(Division)</span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={goToPreviousPeriod}>
+              <ChevronLeft className="size-4" />
+            </Button>
+            <span className="font-heading font-medium w-36 text-center">
+              {format(periodDate, 'MMMM yyyy')}
+            </span>
+            <Button variant="ghost" size="icon" onClick={goToNextPeriod}>
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+
+          <div className="ml-0 flex flex-wrap items-center gap-2 md:ml-auto">
+            <Button
+              variant="outline"
+              onClick={handleGenerate}
+              disabled={!selectedDepartment || generateMutation.isPending}
+            >
+              <RefreshCw
+                className={cn('size-4 mr-1', generateMutation.isPending && 'animate-spin')}
+              />
+              Generate
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={!selectedDepartment || stats.draft === 0 || clearMutation.isPending}
+              className="text-destructive hover:text-destructive"
+            >
+              <Trash2 className="size-4 mr-1" />
+              Clear
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleDownload}
+              disabled={!selectedDepartment || stats.total === 0}
+            >
+              <Download className="size-4 mr-1" />
+              PDF
+            </Button>
+            <Button
+              onClick={handlePublish}
+              disabled={!selectedDepartment || stats.draft === 0 || publishMutation.isPending}
+            >
+              <Send className="size-4 mr-1" />
+              Publish
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RosterStats({ stats }) {
+  return (
+    <div className="flex flex-wrap gap-4 mb-6">
+      <RosterStatBadge label="Total" value={stats.total} tone="muted" />
+      <RosterStatBadge label="Draft" value={stats.draft} tone="amber" />
+      <RosterStatBadge label="Published" value={stats.published} tone="emerald" />
+      {stats.overrides > 0 && (
+        <RosterStatBadge label="Overrides" value={stats.overrides} tone="rose" />
+      )}
+      {stats.errorCount > 0 && (
+        <RosterStatBadge label="Errors" value={stats.errorCount} tone="rose" icon={AlertCircle} />
+      )}
+      {stats.warningCount > 0 && (
+        <RosterStatBadge label="Warnings" value={stats.warningCount} tone="amber" icon={AlertTriangle} />
+      )}
+    </div>
+  );
+}
+
+function RosterStatBadge({ label, value, tone, icon: Icon }) {
+  const toneClasses = {
+    muted: 'bg-muted/30 border-border text-muted-foreground',
+    amber: 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400',
+    emerald: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+    rose: 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400',
+  };
+
+  return (
+    <div className={cn('flex items-center gap-2 px-3 py-1.5 rounded-lg border', toneClasses[tone])}>
+      {Icon && <Icon className={cn('size-4', tone === 'rose' ? 'text-rose-500' : 'text-amber-500')} />}
+      <span className="text-xs font-mono">{label}</span>
+      <Badge variant="outline" className="font-mono bg-current/10">
+        {value}
+      </Badge>
+    </div>
+  );
+}
+
+function RosterGridSection({
+  selectedDepartment,
+  isLoading,
+  dutyTypes,
+  datesInPeriod,
+  violations,
+  teamById,
+  dutyTypeApplies,
+  getEntry,
+  openCellEditor,
+}) {
+  if (!selectedDepartment) {
+    return (
+      <Card className="border-border">
+        <CardContent className="p-8">
+          <EmptyState
+            icon={CalendarClock}
+            title="Select a unit"
+            description="Choose a department or division to view and build its roster."
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card className="border-border">
+        <CardContent className="p-4">
+          <div className="space-y-2">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (dutyTypes.length === 0) {
+    return (
+      <Card className="border-border">
+        <CardContent className="p-8">
+          <EmptyState
+            icon={AlertTriangle}
+            title="No duty types configured"
+            description="Set up duty types for this department before building the roster."
+            action={
+              <Button asChild>
+                <Link to={`/admin/organization/roster-setup?department=${selectedDepartment}`}>
+                  Go to Setup
+                </Link>
+              </Button>
+            }
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-border overflow-hidden">
+      <div className="overflow-auto max-h-[70vh]">
+        <table className="w-full border-collapse">
+          <RosterGridHeader dutyTypes={dutyTypes} />
+          <tbody>
+            {datesInPeriod.map((date, dateIndex) => (
+              <RosterGridRow
+                key={date.toISOString()}
+                date={date}
+                dateIndex={dateIndex}
+                dutyTypes={dutyTypes}
+                violations={violations}
+                teamById={teamById}
+                dutyTypeApplies={dutyTypeApplies}
+                getEntry={getEntry}
+                openCellEditor={openCellEditor}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function RosterGridHeader({ dutyTypes }) {
+  return (
+    <thead className="sticky top-0 z-20">
+      <tr className="bg-muted">
+        <th className="sticky left-0 z-30 bg-muted border-b border-r border-border px-3 py-2 text-left">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Date
+          </span>
+        </th>
+        {dutyTypes.map((dutyType) => (
+          <th
+            key={dutyType.id}
+            className="bg-muted border-b border-border px-3 py-2 text-center min-w-[100px]"
+          >
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              {dutyType.name}
+            </span>
+          </th>
+        ))}
+      </tr>
+    </thead>
+  );
+}
+
+function RosterGridRow({
+  date,
+  dateIndex,
+  dutyTypes,
+  violations,
+  teamById,
+  dutyTypeApplies,
+  getEntry,
+  openCellEditor,
+}) {
+  const dayOfWeek = getDay(date);
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+  return (
+    <tr
+      className={cn('animate-chronicle-enter', isWeekend && 'bg-muted/20')}
+      style={{ animationDelay: `${dateIndex * 10}ms` }}
+    >
+      <td className="sticky left-0 z-10 bg-background border-b border-r border-border px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className={cn('font-mono text-xs', isWeekend && 'text-primary font-medium')}>
+            {DAYS_LABELS[dayOfWeek === 0 ? 6 : dayOfWeek - 1]}
+          </span>
+          <span className="font-heading text-sm">{format(date, 'd')}</span>
+        </div>
+      </td>
+      {dutyTypes.map((dutyType) => (
+        <RosterGridCell
+          key={dutyType.id}
+          date={date}
+          dutyType={dutyType}
+          violations={violations}
+          teamById={teamById}
+          dutyTypeApplies={dutyTypeApplies}
+          getEntry={getEntry}
+          openCellEditor={openCellEditor}
+        />
+      ))}
+    </tr>
+  );
+}
+
+function RosterGridCell({
+  date,
+  dutyType,
+  violations,
+  teamById,
+  dutyTypeApplies,
+  getEntry,
+  openCellEditor,
+}) {
+  const applies = dutyTypeApplies(dutyType, date);
+  const entry = getEntry(date, dutyType.id);
+
+  if (!applies) {
+    return (
+      <td className="border-b border-border px-2 py-1 text-center bg-muted/10">
+        <span className="text-xs text-muted-foreground">-</span>
+      </td>
+    );
+  }
+
+  const cellKey = `${format(date, 'yyyy-MM-dd')}|${dutyType.id}`;
+  const cellViolations = violations.get(cellKey);
+  const hasErrors = cellViolations?.errors?.length > 0;
+  const hasWarnings = cellViolations?.warnings?.length > 0;
+
+  return (
+    <td className="border-b border-border px-2 py-1">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => openCellEditor(date, dutyType)}
+              className={cn(
+                'w-full px-2 py-1.5 rounded text-xs font-mono transition-colors relative',
+                'hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/20',
+                getRosterCellClass({ entry, hasErrors, hasWarnings })
+              )}
+            >
+              {entry ? teamById.get(entry.team)?.name || 'Unknown' : '—'}
+              {(hasErrors || hasWarnings) && (
+                <span className="absolute -top-1 -right-1">
+                  <AlertCircle
+                    className={cn('size-3.5', hasErrors ? 'text-rose-500' : 'text-amber-500')}
+                  />
+                </span>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs bg-popover text-popover-foreground">
+            <RosterCellTooltip
+              entry={entry}
+              cellViolations={cellViolations}
+              hasErrors={hasErrors}
+              hasWarnings={hasWarnings}
+            />
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </td>
+  );
+}
+
+function getRosterCellClass({ entry, hasErrors, hasWarnings }) {
+  if (hasErrors) return 'bg-rose-500/20 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500/50';
+  if (hasWarnings) return 'bg-amber-500/20 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/50';
+  if (!entry) return 'text-muted-foreground';
+  if (entry.is_override) return 'bg-rose-500/10 text-rose-700 dark:text-rose-300';
+  if (entry.status === 'published') return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  return 'bg-amber-500/10 text-amber-700 dark:text-amber-300';
+}
+
+function RosterCellTooltip({ entry, cellViolations, hasErrors, hasWarnings }) {
+  if (hasErrors || hasWarnings) {
+    return (
+      <div className="space-y-1.5">
+        {cellViolations.errors.map((violation) => (
+          <p key={`error:${violation.rule}:${violation.message}`} className="text-xs font-medium text-rose-600 dark:text-rose-400">
+            {violation.message}
+          </p>
+        ))}
+        {cellViolations.warnings.map((violation) => (
+          <p key={`warning:${violation.rule}:${violation.message}`} className="text-xs font-medium text-amber-600 dark:text-amber-400">
+            {violation.message}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-xs">
+      {entry ? `${entry.status}${entry.is_override ? ' (override)' : ''}` : 'Click to assign'}
+    </p>
+  );
+}
+
+function RosterCellEditorDialog({
+  editingCell,
+  pendingTeamChange,
+  teams,
+  teamById,
+  updateMutation,
+  createMutation,
+  setEditingCell,
+  setPendingTeamChange,
+  handleCellSave,
+}) {
+  const isSaving = updateMutation.isPending || createMutation.isPending;
+
+  return (
+    <Dialog
+      open={!!editingCell}
+      onOpenChange={() => {
+        setEditingCell(null);
+        setPendingTeamChange(null);
+      }}
+    >
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl">
+            {editingCell?.dutyType?.name}
+          </DialogTitle>
+          <DialogDescription>
+            {editingCell && format(editingCell.date, 'EEEE, MMMM d, yyyy')}
+          </DialogDescription>
+        </DialogHeader>
+
+        {pendingTeamChange ? (
+          <PendingTeamChangeConfirm
+            editingCell={editingCell}
+            pendingTeamChange={pendingTeamChange}
+            teamById={teamById}
+            isSaving={isSaving}
+            setPendingTeamChange={setPendingTeamChange}
+            handleCellSave={handleCellSave}
+          />
+        ) : (
+          <TeamAssignmentPicker
+            editingCell={editingCell}
+            teams={teams}
+            teamById={teamById}
+            setEditingCell={setEditingCell}
+            setPendingTeamChange={setPendingTeamChange}
+            handleCellSave={handleCellSave}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PendingTeamChangeConfirm({
+  editingCell,
+  pendingTeamChange,
+  teamById,
+  isSaving,
+  setPendingTeamChange,
+  handleCellSave,
+}) {
+  return (
+    <div className="space-y-4 py-2">
+      <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+        <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+          Change team assignment?
+        </p>
+        <div className="space-y-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">From:</span>
+            <span className="font-medium">
+              {teamById.get(editingCell?.entry?.team)?.name || 'Unassigned'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">To:</span>
+            <span className="font-medium text-primary">{pendingTeamChange.teamName}</span>
+          </div>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => setPendingTeamChange(null)}>
+          Back
+        </Button>
+        <Button
+          variant="default"
+          onClick={() => {
+            handleCellSave(pendingTeamChange.teamId);
+            setPendingTeamChange(null);
+          }}
+          disabled={isSaving}
+        >
+          {isSaving ? 'Saving...' : 'Confirm Change'}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
+function TeamAssignmentPicker({
+  editingCell,
+  teams,
+  teamById,
+  setEditingCell,
+  setPendingTeamChange,
+  handleCellSave,
+}) {
+  return (
+    <>
+      {editingCell?.entry?.team && (
+        <div className="p-3 rounded-lg bg-muted/50 border border-border">
+          <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-1">
+            Currently Assigned
+          </div>
+          <div className="font-heading font-medium">
+            {teamById.get(editingCell.entry.team)?.name || 'Unknown'}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3 py-2">
+        <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+          {editingCell?.entry?.team ? 'Change To' : 'Assign Team'}
+        </span>
+        <div className="grid gap-2">
+          {teams.map((team) => (
+            team.id !== editingCell?.entry?.team ? (
+              <button
+                key={team.id}
+                type="button"
+                onClick={() => {
+                  if (editingCell?.entry?.team) {
+                    setPendingTeamChange({ teamId: team.id, teamName: team.name });
+                  } else {
+                    handleCellSave(team.id);
+                  }
+                }}
+                className={cn(
+                  'w-full px-3 py-2 rounded-lg border text-left transition-colors',
+                  'hover:bg-primary/5 hover:border-primary/30 border-border'
+                )}
+              >
+                <span className="font-heading font-medium text-sm">{team.name}</span>
+                <span className="ml-2 font-mono text-xs text-muted-foreground">
+                  {team.code}
+                </span>
+              </button>
+            ) : null
+          ))}
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={() => setEditingCell(null)}>
+          Cancel
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+function ClearRosterDialog({
+  open,
+  onOpenChange,
+  stats,
+  periodDate,
+  clearMutation,
+  handleClear,
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl text-destructive">
+            Clear Draft Roster
+          </DialogTitle>
+          <DialogDescription>
+            This will delete all <strong>{stats.draft}</strong> draft roster entries for{' '}
+            <strong>{format(periodDate, 'MMMM yyyy')}</strong>. Published entries will not be
+            affected.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-4">
+          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              After clearing, you can regenerate the roster. The sequence will continue from
+              the previous period's last entry.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleClear}
+            disabled={clearMutation.isPending}
+          >
+            {clearMutation.isPending ? 'Clearing...' : `Clear ${stats.draft} entries`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PublishWarningDialog({
+  open,
+  onOpenChange,
+  warningCount,
+  publishMutation,
+  doPublish,
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="font-display flex items-center gap-2">
+            <AlertTriangle className="size-5 text-amber-500" />
+            Validation Warnings
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            There are <strong>{warningCount}</strong> validation warning(s) in this roster.
+            Do you want to publish anyway?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={doPublish}
+            disabled={publishMutation.isPending}
+          >
+            {publishMutation.isPending ? 'Publishing...' : 'Publish Anyway'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
