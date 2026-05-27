@@ -23,6 +23,17 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { useWards } from '@/features/wards/hooks/useWardQueries';
 import { useListFilters } from '@/shared/hooks/useListFilters';
 
+const WARD_TYPE_LABELS = {
+  general: 'General',
+  private: 'Private',
+  icu: 'ICU',
+  emergency: 'Emergency',
+  maternity: 'Maternity',
+  pediatric: 'Pediatric',
+  psychiatric: 'Psychiatric',
+  isolation: 'Isolation',
+};
+
 /**
  * WardsPage - Chronicle-style ward management dashboard
  *
@@ -78,18 +89,6 @@ export default function WardsPage() {
     );
   }, [wards, search]);
 
-  // Ward type display names
-  const wardTypeLabels = {
-    'general': 'General',
-    'private': 'Private',
-    'icu': 'ICU',
-    'emergency': 'Emergency',
-    'maternity': 'Maternity',
-    'pediatric': 'Pediatric',
-    'psychiatric': 'Psychiatric',
-    'isolation': 'Isolation',
-  };
-
   // Occupancy color based on rate
   const getOccupancyStyle = (rate) => {
     if (rate < 60) return { color: 'text-emerald-600', bg: 'bg-emerald-500', label: 'Low' };
@@ -117,7 +116,7 @@ export default function WardsPage() {
       width: '140px',
       render: (ward) => (
         <Badge variant="outline" className="text-xs">
-          {wardTypeLabels[ward.ward_type] || ward.ward_type || 'Ward'}
+          {WARD_TYPE_LABELS[ward.ward_type] || ward.ward_type || 'Ward'}
         </Badge>
       ),
     },
@@ -187,7 +186,7 @@ export default function WardsPage() {
         </Badge>
       ),
     },
-  ]), [wardTypeLabels]);
+  ]), []);
 
   // Loading state
   if (isLoading) {

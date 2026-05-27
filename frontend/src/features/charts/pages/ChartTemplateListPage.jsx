@@ -16,7 +16,7 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
-import { useState, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -90,7 +90,7 @@ const ChartTemplateListPage = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   // Filter templates by search
-  const templates = templatesData?.results || templatesData || [];
+  const templates = useMemo(() => templatesData?.results || templatesData || [], [templatesData]);
   const filteredTemplates = useMemo(() => {
     if (!searchQuery) return templates;
     const query = searchQuery.toLowerCase();
@@ -111,16 +111,16 @@ const ChartTemplateListPage = () => {
     navigate("/charts/builder");
   };
 
-  const handleEdit = (template) => {
+  const handleEdit = useCallback((template) => {
     if (!chartTemplateManagementAvailable) {
       toast.error("Chart template management is not available in Rust V2 mode yet.");
       return;
     }
 
     navigate(`/charts/builder/${template.id}`);
-  };
+  }, [chartTemplateManagementAvailable, navigate]);
 
-  const handleClone = async (template) => {
+  const handleClone = useCallback(async (template) => {
     if (!chartTemplateManagementAvailable) {
       toast.error("Chart template management is not available in Rust V2 mode yet.");
       return;
@@ -133,9 +133,9 @@ const ChartTemplateListPage = () => {
     } catch (err) {
       console.error("Failed to clone template:", err);
     }
-  };
+  }, [chartTemplateManagementAvailable, cloneMutation, navigate]);
 
-  const handleToggleActive = async (template) => {
+  const handleToggleActive = useCallback(async (template) => {
     if (!chartTemplateManagementAvailable) {
       toast.error("Chart template management is not available in Rust V2 mode yet.");
       return;
@@ -154,7 +154,7 @@ const ChartTemplateListPage = () => {
     } catch (err) {
       console.error("Failed to update template:", err);
     }
-  };
+  }, [chartTemplateManagementAvailable, updateMutation]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -278,7 +278,13 @@ const ChartTemplateListPage = () => {
         </DropdownMenu>
       ),
     },
-  ]).filter((column) => chartTemplateManagementAvailable || column.key !== "actions"), [categories, chartTemplateManagementAvailable]);
+  ]).filter((column) => chartTemplateManagementAvailable || column.key !== "actions"), [
+    categories,
+    chartTemplateManagementAvailable,
+    handleClone,
+    handleEdit,
+    handleToggleActive,
+  ]);
 
   if (!chartTemplateManagementAvailable) {
     return (

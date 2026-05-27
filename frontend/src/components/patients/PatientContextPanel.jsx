@@ -114,8 +114,8 @@ export default function PatientContextPanel({
     };
   }, [patientDetails, patientContext, patientName, patientMrn, showPharmacy, showReception]);
 
-  const insurances = insuranceData?.results || insuranceData || [];
-  const invoices = invoicesData?.results || invoicesData || [];
+  const insurances = useMemo(() => insuranceData?.results || insuranceData || [], [insuranceData]);
+  const invoices = useMemo(() => invoicesData?.results || invoicesData || [], [invoicesData]);
 
   const billingSummary = useMemo(() => {
     if (!invoices.length) {

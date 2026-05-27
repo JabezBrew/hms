@@ -136,27 +136,27 @@ export function useWorkflow(workflowType) {
   // Start workflow
   const startWorkflow = useCallback(async (data) => {
     return startMutation.mutateAsync(data);
-  }, []);
+  }, [startMutation]);
 
   // Update workflow step
   const updateStep = useCallback(async (stepData, nextStep, consultationFields) => {
     return updateStepMutation.mutateAsync({ stepData, nextStep, consultationFields });
-  }, []);
+  }, [updateStepMutation]);
 
   // Complete workflow
   const completeWorkflow = useCallback(async (finalData) => {
     return completeMutation.mutateAsync(finalData);
-  }, []);
+  }, [completeMutation]);
 
   // Save draft (auto-save)
   const saveDraft = useCallback(async (contextData) => {
     return saveDraftMutation.mutateAsync(contextData);
-  }, []);
+  }, [saveDraftMutation]);
 
   // Cancel workflow
   const cancelWorkflow = useCallback(async () => {
     return cancelMutation.mutateAsync();
-  }, []);
+  }, [cancelMutation]);
 
   return {
     workflow,
