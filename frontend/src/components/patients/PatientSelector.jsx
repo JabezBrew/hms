@@ -1,10 +1,8 @@
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
-import { useState, useEffect, useCallback, useId } from "react";
-import { toast } from "sonner";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useMemo, useState, useId } from "react";
+import { useSearchPatients } from '@/features/patients/hooks/usePatientQueries';
 import { normalizeApiResults } from "@/lib/utils";
-import { patientsApi } from '@/features/patients/api';
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -25,11 +23,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Select a patient" }) => {
   const [open, setOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [patients, setPatients] = useState([]);
   const listboxId = useId();
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const {
+    data: searchResults = [],
+    isFetching,
+    isError,
+    searchTerm,
+    setSearchTerm,
+  } = useSearchPatients();
+  const patients = useMemo(
+    () => normalizeApiResults(searchResults),
+    [searchResults]
+  );
 
   // Function to get patient initials for avatar
   const getInitials = (patient) => {
@@ -83,31 +88,6 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
     return null;
   };
 
-  // Function to search patients
-  const searchPatients = useCallback(async (query) => {
-    if (!query || query.length < 2) {
-      setPatients([]);
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const response = await patientsApi.searchPatients({ query });
-      setPatients(normalizeApiResults(response));
-    } catch (error) {
-      console.error("Error searching patients:", error);
-      toast.error("Failed to search patients");
-      setPatients([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Effect to search patients when query changes
-  useEffect(() => {
-    searchPatients(debouncedSearchQuery);
-  }, [debouncedSearchQuery, searchPatients]);
-
   // Handle patient selection
   const handleSelectPatient = (patient) => {
     if (onPatientSelect) {
@@ -152,11 +132,11 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
           <Command shouldFilter={false}>
             <CommandInput
               placeholder="Search patients..."
-              value={searchQuery}
-              onValueChange={setSearchQuery}
+              value={searchTerm}
+              onValueChange={setSearchTerm}
               className="h-9"
             />
-            {isLoading ? (
+            {isFetching ? (
               <CommandList id={listboxId}>
                 <CommandGroup>
                   {Array.from({ length: 3 }).map((_, index) => (
@@ -173,7 +153,9 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
             ) : (
               <CommandList id={listboxId}>
                 <CommandEmpty>
-                  {searchQuery.length < 2
+                  {isError
+                    ? "Failed to search patients"
+                    : searchTerm.length < 2
                     ? "Type at least 2 characters to search"
                     : "No patients found"}
                 </CommandEmpty>
