@@ -168,6 +168,8 @@ export function useUpdateProfile() {
  * Hook to change password
  */
 export function useChangePassword() {
+  // No cache invalidation: password change does not alter cached profile/session query payloads.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: settingsApi.changePassword,
   });

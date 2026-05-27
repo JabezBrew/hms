@@ -69,6 +69,8 @@ export function useOmniIntentPreview({
 }
 
 export function useOmniExecutePreview() {
+  // No cache invalidation: preview execution is intentionally transient and does not commit an omni action.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: ({ text, intent, context } = {}) =>
       aiAssistantApi.executeOmniPreview({ text, intent, context }),

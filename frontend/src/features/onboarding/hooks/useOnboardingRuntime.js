@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { keyWith } from '@/shared/lib/queryKeys'
 import { useAuth } from '@/lib/auth'
 import { onboardingApi } from '../api'
@@ -246,6 +246,7 @@ export function useOnboardingRuntime() {
   const { user } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const role = getRole(user)
   const enabled = Boolean(user?.id && role && SUPPORTED_ROLES.has(role))
 
@@ -277,7 +278,6 @@ export function useOnboardingRuntime() {
     const payload = progressQuery.data?.progress
     return Array.isArray(payload) ? payload : []
   }, [progressQuery.data])
-  const refetchProgress = progressQuery.refetch
 
   const progressByKey = useMemo(() => {
     return progressList.reduce((acc, snapshot) => {
@@ -293,17 +293,23 @@ export function useOnboardingRuntime() {
         flow_key: snapshot.flow_key,
         flow_version: snapshot.flow_version,
       })
-      void refetchProgress()
+      void queryClient.invalidateQueries({
+        queryKey: onboardingKeys.progress(role, flowKeyToken),
+      })
     },
   })
 
   const skipStep = useMutation({
     mutationFn: onboardingApi.skipStep,
     onSuccess: () => {
-      void refetchProgress()
+      void queryClient.invalidateQueries({
+        queryKey: onboardingKeys.progress(role, flowKeyToken),
+      })
     },
   })
 
+  // No cache invalidation: event ingestion is telemetry transport; progress is refreshed by step mutations above.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const ingestEvents = useMutation({
     mutationFn: onboardingApi.ingestEvents,
   })
@@ -315,10 +321,12 @@ export function useOnboardingRuntime() {
       }
       const result = await ingestEvents.mutateAsync(events)
       if (result?.updated?.length) {
-        await refetchProgress()
+        await queryClient.invalidateQueries({
+          queryKey: onboardingKeys.progress(role, flowKeyToken),
+        })
       }
     },
-    [enabled, ingestEvents, refetchProgress]
+    [enabled, flowKeyToken, ingestEvents, queryClient, role]
   )
 
   useEffect(() => {

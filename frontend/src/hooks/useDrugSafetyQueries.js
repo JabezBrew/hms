@@ -24,6 +24,8 @@ export const drugSafetyKeys = {
  * @returns {Object} Mutation result
  */
 export function useSafetyCheck() {
+  // No cache invalidation: prescription safety checks are stateless evaluations returned directly to the caller.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: (data) => drugSafetyApi.checkPrescriptionSafety(data),
   });

@@ -216,6 +216,8 @@ export function evaluateLintGate({
 }
 
 export function useAINoteDraft() {
+  // No cache invalidation: this mutation returns a transient AI draft preview and does not persist clinical note data.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: ({
       patientId,
@@ -235,6 +237,8 @@ export function useAINoteDraft() {
 }
 
 export function useAINoteLint() {
+  // No cache invalidation: linting evaluates the local draft payload and does not update server-side note state.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: ({
       patientId,

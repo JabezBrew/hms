@@ -41,6 +41,8 @@ export function formatCopilotCitation(citation) {
 }
 
 export function useChronicleCopilotSummary() {
+  // No cache invalidation: summaries are transient generated responses and do not mutate chronicle data.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: ({
       patientId,
@@ -58,6 +60,8 @@ export function useChronicleCopilotSummary() {
 }
 
 export function useChronicleCopilotAsk() {
+  // No cache invalidation: Q&A returns a transient answer and does not persist patient state.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   return useMutation({
     mutationFn: ({
       patientId,
