@@ -18,15 +18,13 @@ import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
-  patientKeys,
   usePatient,
   usePatientChronicleStartup,
-  usePatientChronicleTimeline,
 } from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
+import { flattenTimelinePages, getTimelineTotalCount } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
@@ -51,6 +49,7 @@ import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWork
 import { ProblemListSidebar } from "@/features/problems";
 import { normalizeExpansionId } from "@/components/chronicle/chronicleNoteUtils";
 import { useChronicleBreakGlassAccess } from "@/features/patients/chronicle/useChronicleBreakGlassAccess";
+import { useChronicleTimelineData } from "@/features/patients/chronicle/useChronicleTimelineData";
 import { useChronicleTimelineExpansion } from "@/features/patients/chronicle/useChronicleTimelineExpansion";
 import { useChronicleVisitScope } from "@/features/patients/chronicle/useChronicleVisitScope";
 import { useChronicleWorkspaceRouting } from "@/features/patients/chronicle/useChronicleWorkspaceRouting";
@@ -234,25 +233,6 @@ function normalizeLabResultsForSidebar(results) {
     }
     return normalizedResults;
   }, []);
-}
-
-function hasSeedableTimelinePage(page) {
-  return Array.isArray(page?.results) && page.results.length > 0;
-}
-
-function hasTimelinePageResults(data) {
-  return Array.isArray(data?.pages) && data.pages.some(hasSeedableTimelinePage);
-}
-
-function buildTimelineDataFromInitialPage(page) {
-  if (!hasSeedableTimelinePage(page)) {
-    return null;
-  }
-
-  return {
-    pages: [page],
-    pageParams: [null],
-  };
 }
 
 function getEncounterKind(encounter) {
@@ -2085,92 +2065,26 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return normalizeLabResultsForSidebar(shapedLabs);
   }, [chronicleContext?.lab_results, chronicleContext?.summaries?.labs]);
 
-  // Map filter to API type
-  // Fetch timeline with infinite scroll
-  // Uses id from URL params to start fetching immediately in parallel with patient data
-  const chronicleTimelineParams = useMemo(() => ({
-    type: CHRONICLE_TYPE_MAPPING[activeFilter] || 'all',
-    search: debouncedSearch,
-    limit: 20,
-    encounterId: selectedEncounterId || undefined,
-  }), [activeFilter, debouncedSearch, selectedEncounterId]);
-  const canSeedRustTimeline = rustV2Mode
-    && chronicleTimelineParams.type === 'all'
-    && !chronicleTimelineParams.search
-    && !chronicleTimelineParams.encounterId
-    && hasSeedableTimelinePage(chronicleContext?.timeline);
-  const rustTimelineQuery = usePatientChronicleTimeline(id, chronicleTimelineParams, {
-    enabled: !isWardRoundMode && rustV2Mode && canFetchClinical && !!resolvedVisitScope && !!chronicleContext && !canSeedRustTimeline,
-    initialPage: canSeedRustTimeline ? chronicleContext.timeline : undefined,
-  });
-  const legacyTimelineQuery = usePatientTimeline(id, {
-    type: chronicleTimelineParams.type,
-    search: chronicleTimelineParams.search,
-    pageSize: chronicleTimelineParams.limit,
-    encounterId: chronicleTimelineParams.encounterId,
-    enabled: !isWardRoundMode && !rustV2Mode && canFetchClinical && !!resolvedVisitScope,
-  });
-  const activeTimelineQuery = rustV2Mode ? rustTimelineQuery : legacyTimelineQuery;
   const {
-    data: timelineData,
     fetchNextPage,
     hasNextPage,
+    invalidateTimeline,
     isFetchingNextPage,
-    isLoading: isTimelineLoading,
-    refetch: refetchTimeline,
-  } = activeTimelineQuery;
-  const seededRustTimelineData = useMemo(
-    () => buildTimelineDataFromInitialPage(canSeedRustTimeline ? chronicleContext?.timeline : null),
-    [canSeedRustTimeline, chronicleContext?.timeline],
-  );
-  const timelineDisplayData = useMemo(() => {
-    if (seededRustTimelineData && !hasTimelinePageResults(timelineData)) {
-      return seededRustTimelineData;
-    }
-
-    return timelineData;
-  }, [seededRustTimelineData, timelineData]);
-
-  useEffect(() => {
-    if (!id || !seededRustTimelineData) {
-      return;
-    }
-
-    queryClient.setQueryData(
-      patientKeys.chronicleTimeline(id, chronicleTimelineParams),
-      (current) => {
-        if (Array.isArray(current?.pages) && current.pages.length > 1) {
-          return current;
-        }
-        return seededRustTimelineData;
-      },
-    );
-  }, [chronicleTimelineParams, id, queryClient, seededRustTimelineData]);
-
-  // Invalidate timeline cache helper
-  const invalidateTimeline = useInvalidateTimeline();
-
-  // Infinite scroll ref
-  const loadMoreRef = useRef(null);
-
-  // Set up intersection observer for infinite scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (loadMoreRef.current) {
-      // react-doctor-disable-next-line react-doctor/no-pass-live-state-to-parent -- IntersectionObserver observes a DOM sentinel; no React parent callback or lifted state is involved.
-      observer.observe(loadMoreRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    isTimelineLoading,
+    loadMoreRef,
+    refetchTimeline,
+    timelineDisplayData,
+  } = useChronicleTimelineData({
+    activeFilter,
+    canFetchClinical,
+    chronicleContext,
+    debouncedSearch,
+    isWardRoundMode,
+    patientId: id,
+    resolvedVisitScope,
+    rustV2Mode,
+    selectedEncounterId,
+  });
 
   // Use allergies from clinical summary hook (already parsed from patient data)
   // The hook handles parsing from string/array formats
