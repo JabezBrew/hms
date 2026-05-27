@@ -10,7 +10,7 @@
  * - Error handling
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MedicationAdministration } from '../MedicationAdministration'
@@ -157,8 +157,9 @@ describe('MedicationAdministration', () => {
     it('renders refresh button', () => {
       renderMedicationAdministration()
 
-      // Should have a refresh button
-      expect(screen.getByRole('button', { name: '' })).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: /Refresh medication administration record/i })
+      ).toBeInTheDocument()
     })
   })
 
