@@ -146,10 +146,13 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
 
   const teamOptions = useMemo(() => {
     if (!unitId) return [];
-    return flatUnits
-      .filter((u) => u.unit_type_code === 'team')
-      .filter((u) => isDescendant(parentMap, u.id, unitId))
-      .map((u) => ({ id: String(u.id), name: u.name, code: u.code }));
+    const options = [];
+    for (const unit of flatUnits) {
+      if (unit.unit_type_code === 'team' && isDescendant(parentMap, unit.id, unitId)) {
+        options.push({ id: String(unit.id), name: unit.name, code: unit.code });
+      }
+    }
+    return options;
   }, [flatUnits, parentMap, unitId]);
 
   const [step, setStep] = useState(0);

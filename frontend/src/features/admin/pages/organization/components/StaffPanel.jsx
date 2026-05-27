@@ -170,12 +170,15 @@ export function StaffPanel({ unitId }) {
     : `${resolvedTotalCount} total`;
   const assignmentTypes = Array.isArray(assignmentTypesData) ? assignmentTypesData : [];
   const staffResults = normalizeApiResults(staffSearchResults);
-  const practitionerOptions = staffResults
-    .filter((member) => member.practitioner_id)
-    .map((member) => ({
-      value: member.practitioner_id,
-      label: `${member.name || 'Unknown'}${member.employee_id ? ` - ${member.employee_id}` : ''}`,
-    }));
+  const practitionerOptions = [];
+  for (const member of staffResults) {
+    if (member.practitioner_id) {
+      practitionerOptions.push({
+        value: member.practitioner_id,
+        label: `${member.name || 'Unknown'}${member.employee_id ? ` - ${member.employee_id}` : ''}`,
+      });
+    }
+  }
 
   const handleSort = useCallback((field) => {
     if (sortField === field) {

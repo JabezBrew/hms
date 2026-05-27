@@ -500,16 +500,23 @@ export default function DutyRosterPage() {
                 <SelectItem value="all">All units</SelectItem>
                 {(() => {
                   // Group divisions under their parent departments
-                  const departments = rosterUnits.filter((u) => u.unit_type_code === 'department');
-                  const divisions = rosterUnits.filter((u) => u.unit_type_code === 'division');
+                  const departments = [];
+                  const divisionsByParent = new Map();
+                  rosterUnits.forEach((unit) => {
+                    if (unit.unit_type_code === 'department') {
+                      departments.push(unit);
+                    } else if (unit.unit_type_code === 'division') {
+                      const divisions = divisionsByParent.get(unit.parentId) || [];
+                      divisions.push(unit);
+                      divisionsByParent.set(unit.parentId, divisions);
+                    }
+                  });
                   const groupedUnits = [];
                   departments.forEach((dept) => {
                     groupedUnits.push({ ...dept, indent: 0 });
-                    divisions
-                      .filter((div) => div.parentId === dept.id)
-                      .forEach((div) => {
-                        groupedUnits.push({ ...div, indent: 1 });
-                      });
+                    (divisionsByParent.get(dept.id) || []).forEach((div) => {
+                      groupedUnits.push({ ...div, indent: 1 });
+                    });
                   });
                   return groupedUnits.map((unit) => (
                     <SelectItem key={unit.id} value={unit.id}>

@@ -67,15 +67,18 @@ const StaffForm = ({ onSuccess }) => {
     is_active: true,
   });
 
-  const departmentOptions = useMemo(() => (
-    (Array.isArray(departmentUnits) ? departmentUnits : [])
-      .filter((unit) => typeof unit?.id === 'string' && typeof unit?.name === 'string' && unit.name.trim())
-      .map((unit) => ({
-        id: unit.id,
-        name: unit.name.trim(),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  ), [departmentUnits]);
+  const departmentOptions = useMemo(() => {
+    const options = [];
+    for (const unit of (Array.isArray(departmentUnits) ? departmentUnits : [])) {
+      if (typeof unit?.id === 'string' && typeof unit?.name === 'string' && unit.name.trim()) {
+        options.push({
+          id: unit.id,
+          name: unit.name.trim(),
+        });
+      }
+    }
+    return options.sort((a, b) => a.name.localeCompare(b.name));
+  }, [departmentUnits]);
 
   const departmentNameById = useMemo(
     () => new Map(departmentOptions.map((department) => [department.id, department.name])),

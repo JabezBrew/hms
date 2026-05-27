@@ -123,19 +123,26 @@ function UnitSelector({ value, onChange, units, isLoading }) {
   }
 
   // Group by type and organize divisions under their parent department
-  const departments = units.filter((u) => u.unit_type_code === 'department');
-  const divisions = units.filter((u) => u.unit_type_code === 'division');
+  const departments = [];
+  const divisionsByParent = new Map();
+  units.forEach((unit) => {
+    if (unit.unit_type_code === 'department') {
+      departments.push(unit);
+    } else if (unit.unit_type_code === 'division') {
+      const divisions = divisionsByParent.get(unit.parentId) || [];
+      divisions.push(unit);
+      divisionsByParent.set(unit.parentId, divisions);
+    }
+  });
 
   // Build grouped structure
   const groupedUnits = [];
   departments.forEach((dept) => {
     groupedUnits.push({ ...dept, indent: 0 });
     // Add divisions under this department
-    divisions
-      .filter((div) => div.parentId === dept.id)
-      .forEach((div) => {
-        groupedUnits.push({ ...div, indent: 1, parentName: dept.name });
-      });
+    (divisionsByParent.get(dept.id) || []).forEach((div) => {
+      groupedUnits.push({ ...div, indent: 1, parentName: dept.name });
+    });
   });
 
   return (
@@ -443,12 +450,12 @@ function DutyTypesPanel({ departmentId }) {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1 flex-wrap">
-                    {DAYS_OF_WEEK.filter((d) =>
-                      (dt.applicable_days || []).includes(d.value)
-                    ).map((d) => (
-                      <Badge key={d.value} variant="outline" className="text-[9px] px-1.5">
-                        {d.label}
-                      </Badge>
+                    {DAYS_OF_WEEK.map((d) => (
+                      (dt.applicable_days || []).includes(d.value) ? (
+                        <Badge key={d.value} variant="outline" className="text-[9px] px-1.5">
+                          {d.label}
+                        </Badge>
+                      ) : null
                     ))}
                   </div>
                 </TableCell>

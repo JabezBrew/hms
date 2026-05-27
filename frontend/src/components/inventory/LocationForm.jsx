@@ -203,13 +203,13 @@ export function LocationForm({ location, onSuccess, onCancel }) {
                   </FormControl>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
-                    {locations
-                      .filter((loc) => loc.id !== location?.id)
-                      .map((loc) => (
+                    {locations.map((loc) => (
+                      loc.id !== location?.id ? (
                         <SelectItem key={loc.id} value={loc.id.toString()}>
                           {loc.name}
                         </SelectItem>
-                      ))}
+                      ) : null
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormDescription>Assign to a parent location for hierarchy</FormDescription>

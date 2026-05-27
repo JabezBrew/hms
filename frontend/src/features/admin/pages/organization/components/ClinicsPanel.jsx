@@ -105,16 +105,32 @@ export function ClinicsPanel({ unitId, unitType }) {
 
   const clinicDutyTypesByClinicId = useMemo(() => {
     const map = new Map();
-    dutyTypes
-      .filter((dt) => dt?.category === 'clinic' && dt?.clinic)
-      .forEach((dt) => {
+    for (const dt of dutyTypes) {
+      if (dt?.category === 'clinic' && dt?.clinic) {
         const key = String(dt.clinic);
         const list = map.get(key) || [];
         list.push(dt);
         map.set(key, list);
-      });
+      }
+    }
     return map;
   }, [dutyTypes]);
+
+  const clinicDutyTypeOptions = useMemo(() => {
+    const options = [];
+    const currentClinicId = String(linkClinic?.id || '');
+    for (const dt of dutyTypes) {
+      if (dt?.category !== 'clinic') {
+        continue;
+      }
+      const linkedClinicId = dt?.clinic ? String(dt.clinic) : null;
+      options.push({
+        dutyType: dt,
+        isTaken: Boolean(linkedClinicId) && linkedClinicId !== currentClinicId,
+      });
+    }
+    return options;
+  }, [dutyTypes, linkClinic?.id]);
 
   const openForm = (clinic = null) => {
     if (clinic) {
@@ -593,11 +609,7 @@ export function ClinicsPanel({ unitId, unitType }) {
 	                  <SelectValue placeholder="Select duty type" />
 	                </SelectTrigger>
 	                <SelectContent className="z-[200]">
-	                  {dutyTypes
-	                    .filter((dt) => dt?.category === 'clinic')
-	                    .map((dt) => {
-	                      const linkedClinicId = dt?.clinic ? String(dt.clinic) : null;
-	                      const isTaken = Boolean(linkedClinicId) && linkedClinicId !== String(linkClinic?.id || '');
+	                  {clinicDutyTypeOptions.map(({ dutyType: dt, isTaken }) => {
 	                      return (
 	                        <SelectItem
 	                          key={dt.id}

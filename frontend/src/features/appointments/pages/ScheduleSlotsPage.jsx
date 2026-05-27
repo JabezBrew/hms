@@ -57,18 +57,20 @@ const ScheduleSlotsPage = () => {
 
     // Process the slots data
     const slots = slotsData && slotsData.entry && Array.isArray(slotsData.entry)
-        ? slotsData.entry
-            .filter(entry => entry.resource && entry.resource.resourceType === 'Slot')
-            .map(entry => {
+        ? slotsData.entry.reduce((result, entry) => {
+            if (!entry.resource || entry.resource.resourceType !== 'Slot') {
+                return result;
+            }
                 const slot = entry.resource;
-                return {
+            result.push({
                     id: slot.id,
                     start: slot.start,
                     end: slot.end,
                     status: slot.status,
                     scheduleReference: slot.schedule?.reference,
-                };
-            })
+            });
+            return result;
+        }, [])
         : [];
 
     // Use React Query to fetch practitioner details

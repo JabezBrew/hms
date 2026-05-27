@@ -54,11 +54,13 @@ self.addEventListener('activate', (event) => {
       caches.keys(),
       self.clients.claim(),
     ])
-    await Promise.all(
-      keys
-        .filter((key) => key.startsWith(HMS_STATIC_CACHE_PREFIX) && key !== HMS_STATIC_CACHE_NAME)
-        .map((key) => caches.delete(key))
-    )
+    const staleCacheDeletes = []
+    for (const key of keys) {
+      if (key.startsWith(HMS_STATIC_CACHE_PREFIX) && key !== HMS_STATIC_CACHE_NAME) {
+        staleCacheDeletes.push(caches.delete(key))
+      }
+    }
+    await Promise.all(staleCacheDeletes)
   })())
 })
 
