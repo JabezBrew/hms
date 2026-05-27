@@ -58,33 +58,11 @@ export default function MFAStatus() {
   }
 
   if (isError) {
-    return (
-      <div className="text-center py-6 bg-muted/30 border border-border rounded-xl">
-        <p className="text-muted-foreground mb-3 text-sm">Failed to load MFA status</p>
-        <Button variant="outline" size="sm" onClick={() => refetch()} className="font-mono text-xs">
-          <RefreshCw className="size-4 mr-2" />
-          Retry
-        </Button>
-      </div>
-    );
+    return <MfaErrorState onRetry={() => refetch()} />;
   }
 
   if (mfaStatus?.rust_v2_unsupported) {
-    return (
-      <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-muted/30">
-        <div className="p-2.5 rounded-lg shrink-0 bg-muted border border-border">
-          <ShieldOff className="size-5 text-muted-foreground" />
-        </div>
-        <div>
-          <p className="font-display text-sm font-medium text-foreground">
-            MFA Management Unavailable
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            This Rust V2 build has not exposed account MFA management yet.
-          </p>
-        </div>
-      </div>
-    );
+    return <MfaUnsupportedState />;
   }
 
   const hasTotp = Boolean(mfaStatus?.totp_enrolled);
@@ -217,230 +195,420 @@ export default function MFAStatus() {
 
   return (
     <div className="space-y-5">
-      <div className={cn(
-        'flex items-start gap-4 p-4 rounded-xl border',
-        hasMfa
-          ? 'bg-emerald-500/5 border-emerald-500/20'
-          : 'bg-amber-500/5 border-amber-500/20'
-      )}>
-        <div className={cn(
-          'p-2.5 rounded-lg shrink-0',
-          hasMfa
-            ? 'bg-emerald-500/10 border border-emerald-500/20'
-            : 'bg-amber-500/10 border border-amber-500/20'
-        )}>
-          {hasMfa ? (
-            <ShieldCheck className="size-5 text-emerald-400" />
-          ) : (
-            <ShieldOff className="size-5 text-amber-400" />
-          )}
-        </div>
-        <div>
-          <p className={cn(
-            'font-display text-sm font-medium',
-            hasMfa ? 'text-emerald-400' : 'text-amber-400'
-          )}>
-            {hasMfa ? 'MFA Enabled' : 'MFA Not Configured'}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {hasMfa
-              ? 'Manage and rotate your authenticator and passkey methods here.'
-              : 'Configure at least one MFA method to secure your account.'}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <MethodRow
-          icon={Smartphone}
-          title="Authenticator App (TOTP)"
-          active={hasTotp}
-          description={hasTotp ? 'Configured and active' : 'Not configured'}
-          action={(
-            <Button
-              type="button"
-              variant={hasTotp ? 'outline' : 'default'}
-              size="sm"
-              className="font-mono text-xs"
-              onClick={handleTotpStart}
-              disabled={isBusy}
-            >
-              {totpSecret ? 'Restart Setup' : hasTotp ? 'Set Up New App' : 'Set Up App'}
-            </Button>
-          )}
-        />
-
-        {totpSecret && (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-mono uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                  Secret Key
-                </p>
-                <p className="text-sm font-mono break-all mt-1 text-foreground">{totpSecret}</p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="font-mono text-xs"
-                onClick={handleCopySecret}
-              >
-                {copiedSecret ? <Check className="size-3 mr-1" /> : <Copy className="size-3 mr-1" />}
-                {copiedSecret ? 'Copied' : 'Copy'}
-              </Button>
-            </div>
-
-            {totpOtpAuthUrl && (
-              <p className="text-xs text-muted-foreground">
-                Add this key to your authenticator app, then enter a 6-digit code below.
-              </p>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
-              <div className="space-y-2">
-                <Label htmlFor="settings-totp-code" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                  Verification Code
-                </Label>
-                <Input
-                  id="settings-totp-code"
-                  inputMode="numeric"
-                  maxLength={6}
-                  placeholder="000000"
-                  value={totpCode}
-                  onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))}
-                  disabled={isBusy}
-                  className="font-mono text-center tracking-[0.35em]"
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={handleTotpConfirm}
-                disabled={isBusy || totpCode.length < 6}
-                className="font-mono text-xs"
-              >
-                Confirm App
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <MethodRow
-          icon={Key}
-          title="Security Key / Passkey"
-          active={hasWebAuthn}
-          description={hasWebAuthn ? 'Configured and active' : 'Not configured'}
-          action={(
-            webauthnAvailable ? (
-              <Button
-                type="button"
-                variant={hasWebAuthn ? 'outline' : 'default'}
-                size="sm"
-                className="font-mono text-xs"
-                onClick={handleWebAuthnRegister}
-                disabled={isBusy}
-              >
-                {hasWebAuthn ? 'Add Passkey' : 'Set Up Passkey'}
-              </Button>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-mono uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                <AlertCircle className="size-3" />
-                Unsupported Device
-              </span>
-            )
-          )}
-        />
-
-        <MethodRow
-          icon={KeyRound}
-          title="Recovery Codes"
-          active={recoveryCodesRemaining > 0}
-          description={hasMfa ? `${recoveryCodesRemaining} codes currently available` : 'Configure MFA first'}
-          action={(
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs"
-              onClick={handleRecoveryGenerate}
-              disabled={isBusy || !hasMfa || !recoveryPassword}
-            >
-              {recoveryCodesRemaining > 0 ? 'Regenerate Codes' : 'Generate Codes'}
-            </Button>
-          )}
-        />
-
-        {hasMfa && (
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <Label htmlFor="settings-recovery-password" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              Current Password
-            </Label>
-            <Input
-              id="settings-recovery-password"
-              type="password"
-              autoComplete="current-password"
-              value={recoveryPassword}
-              onChange={(event) => setRecoveryPassword(event.target.value)}
-              disabled={isBusy}
-              className="mt-2"
-            />
-          </div>
-        )}
-
-        {recoveryCodes.length > 0 && (
-          <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-mono uppercase tracking-wider text-rose-700 dark:text-rose-300">
-                  Store These Recovery Codes Safely
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  These codes are shown only once. Save them before leaving this page.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="font-mono text-xs"
-                  onClick={handleCopyRecoveryCodes}
-                >
-                  {copiedRecoveryCodes ? <Check className="size-3 mr-1" /> : <Copy className="size-3 mr-1" />}
-                  {copiedRecoveryCodes ? 'Copied' : 'Copy'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="font-mono text-xs"
-                  onClick={() => setShowRecoveryCodes((prev) => !prev)}
-                >
-                  {showRecoveryCodes ? 'Hide' : 'Show'}
-                </Button>
-              </div>
-            </div>
-
-            {showRecoveryCodes && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {recoveryCodes.map((code, index) => (
-                  <div
-                    key={code}
-                    className="rounded border border-border bg-card/70 px-3 py-2 font-mono text-xs text-foreground"
-                  >
-                    {index + 1}. {code}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
+      <MfaStatusBanner hasMfa={hasMfa} />
+      <MfaMethodControls
+        actions={{
+          confirmTotp: handleTotpConfirm,
+          copyRecoveryCodes: handleCopyRecoveryCodes,
+          copySecret: handleCopySecret,
+          generateRecoveryCodes: handleRecoveryGenerate,
+          registerWebAuthn: handleWebAuthnRegister,
+          setRecoveryPassword,
+          setShowRecoveryCodes,
+          setTotpCode,
+          startTotp: handleTotpStart,
+        }}
+        recovery={{
+          copied: copiedRecoveryCodes,
+          codes: recoveryCodes,
+          password: recoveryPassword,
+          remaining: recoveryCodesRemaining,
+          showCodes: showRecoveryCodes,
+        }}
+        status={{
+          hasMfa,
+          hasTotp,
+          hasWebAuthn,
+          isBusy,
+          webauthnAvailable,
+        }}
+        totp={{
+          code: totpCode,
+          copiedSecret,
+          otpAuthUrl: totpOtpAuthUrl,
+          secret: totpSecret,
+        }}
+      />
       <p className="text-[11px] text-muted-foreground/70 font-mono">
         Recommended: keep at least one authenticator method and one passkey configured.
       </p>
     </div>
+  );
+}
+
+function MfaErrorState({ onRetry }) {
+  return (
+    <div className="text-center py-6 bg-muted/30 border border-border rounded-xl">
+      <p className="text-muted-foreground mb-3 text-sm">Failed to load MFA status</p>
+      <Button variant="outline" size="sm" onClick={onRetry} className="font-mono text-xs">
+        <RefreshCw className="size-4 mr-2" />
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+function MfaUnsupportedState() {
+  return (
+    <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-muted/30">
+      <div className="p-2.5 rounded-lg shrink-0 bg-muted border border-border">
+        <ShieldOff className="size-5 text-muted-foreground" />
+      </div>
+      <div>
+        <p className="font-display text-sm font-medium text-foreground">
+          MFA Management Unavailable
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          This Rust V2 build has not exposed account MFA management yet.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function MfaStatusBanner({ hasMfa }) {
+  return (
+    <div className={cn(
+      'flex items-start gap-4 p-4 rounded-xl border',
+      hasMfa
+        ? 'bg-emerald-500/5 border-emerald-500/20'
+        : 'bg-amber-500/5 border-amber-500/20'
+    )}>
+      <div className={cn(
+        'p-2.5 rounded-lg shrink-0',
+        hasMfa
+          ? 'bg-emerald-500/10 border border-emerald-500/20'
+          : 'bg-amber-500/10 border border-amber-500/20'
+      )}>
+        {hasMfa ? (
+          <ShieldCheck className="size-5 text-emerald-400" />
+        ) : (
+          <ShieldOff className="size-5 text-amber-400" />
+        )}
+      </div>
+      <div>
+        <p className={cn(
+          'font-display text-sm font-medium',
+          hasMfa ? 'text-emerald-400' : 'text-amber-400'
+        )}>
+          {hasMfa ? 'MFA Enabled' : 'MFA Not Configured'}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {hasMfa
+            ? 'Manage and rotate your authenticator and passkey methods here.'
+            : 'Configure at least one MFA method to secure your account.'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function MfaMethodControls({
+  actions,
+  recovery,
+  status,
+  totp,
+}) {
+  return (
+    <div className="space-y-3">
+      <TotpMethodSection
+        copiedSecret={totp.copiedSecret}
+        hasTotp={status.hasTotp}
+        isBusy={status.isBusy}
+        onCopySecret={actions.copySecret}
+        onTotpCodeChange={actions.setTotpCode}
+        onTotpConfirm={actions.confirmTotp}
+        onTotpStart={actions.startTotp}
+        totpCode={totp.code}
+        totpOtpAuthUrl={totp.otpAuthUrl}
+        totpSecret={totp.secret}
+      />
+      <WebAuthnMethodRow
+        hasWebAuthn={status.hasWebAuthn}
+        isBusy={status.isBusy}
+        onWebAuthnRegister={actions.registerWebAuthn}
+        webauthnAvailable={status.webauthnAvailable}
+      />
+      <RecoveryMethodRow
+        hasMfa={status.hasMfa}
+        isBusy={status.isBusy}
+        onRecoveryGenerate={actions.generateRecoveryCodes}
+        recoveryCodesRemaining={recovery.remaining}
+        recoveryPassword={recovery.password}
+      />
+      {status.hasMfa && (
+        <RecoveryPasswordPanel
+          disabled={status.isBusy}
+          onPasswordChange={actions.setRecoveryPassword}
+          password={recovery.password}
+        />
+      )}
+      {recovery.codes.length > 0 && (
+        <RecoveryCodesPanel
+          copiedRecoveryCodes={recovery.copied}
+          onCopyRecoveryCodes={actions.copyRecoveryCodes}
+          onShowRecoveryCodesChange={actions.setShowRecoveryCodes}
+          recoveryCodes={recovery.codes}
+          showRecoveryCodes={recovery.showCodes}
+        />
+      )}
+    </div>
+  );
+}
+
+function TotpMethodSection({
+  copiedSecret,
+  hasTotp,
+  isBusy,
+  onCopySecret,
+  onTotpCodeChange,
+  onTotpConfirm,
+  onTotpStart,
+  totpCode,
+  totpOtpAuthUrl,
+  totpSecret,
+}) {
+  return (
+    <>
+      <MethodRow
+        icon={Smartphone}
+        title="Authenticator App (TOTP)"
+        active={hasTotp}
+        description={hasTotp ? 'Configured and active' : 'Not configured'}
+        action={(
+          <Button
+            type="button"
+            variant={hasTotp ? 'outline' : 'default'}
+            size="sm"
+            className="font-mono text-xs"
+            onClick={onTotpStart}
+            disabled={isBusy}
+          >
+            {totpSecret ? 'Restart Setup' : hasTotp ? 'Set Up New App' : 'Set Up App'}
+          </Button>
+        )}
+      />
+      {totpSecret && (
+        <TotpSetupPanel
+          copiedSecret={copiedSecret}
+          isBusy={isBusy}
+          onCopySecret={onCopySecret}
+          onTotpCodeChange={onTotpCodeChange}
+          onTotpConfirm={onTotpConfirm}
+          totpCode={totpCode}
+          totpOtpAuthUrl={totpOtpAuthUrl}
+          totpSecret={totpSecret}
+        />
+      )}
+    </>
+  );
+}
+
+function TotpSetupPanel({
+  copiedSecret,
+  isBusy,
+  onCopySecret,
+  onTotpCodeChange,
+  onTotpConfirm,
+  totpCode,
+  totpOtpAuthUrl,
+  totpSecret,
+}) {
+  return (
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-mono uppercase tracking-wider text-amber-700 dark:text-amber-300">
+            Secret Key
+          </p>
+          <p className="text-sm font-mono break-all mt-1 text-foreground">{totpSecret}</p>
+        </div>
+        <CopyStateButton copied={copiedSecret} onClick={onCopySecret} />
+      </div>
+
+      {totpOtpAuthUrl && (
+        <p className="text-xs text-muted-foreground">
+          Add this key to your authenticator app, then enter a 6-digit code below.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+        <div className="space-y-2">
+          <Label htmlFor="settings-totp-code" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            Verification Code
+          </Label>
+          <Input
+            id="settings-totp-code"
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="000000"
+            value={totpCode}
+            onChange={(event) => onTotpCodeChange(event.target.value.replace(/\D/g, ''))}
+            disabled={isBusy}
+            className="font-mono text-center tracking-[0.35em]"
+          />
+        </div>
+        <Button
+          type="button"
+          onClick={onTotpConfirm}
+          disabled={isBusy || totpCode.length < 6}
+          className="font-mono text-xs"
+        >
+          Confirm App
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function WebAuthnMethodRow({ hasWebAuthn, isBusy, onWebAuthnRegister, webauthnAvailable }) {
+  return (
+    <MethodRow
+      icon={Key}
+      title="Security Key / Passkey"
+      active={hasWebAuthn}
+      description={hasWebAuthn ? 'Configured and active' : 'Not configured'}
+      action={(
+        webauthnAvailable ? (
+          <Button
+            type="button"
+            variant={hasWebAuthn ? 'outline' : 'default'}
+            size="sm"
+            className="font-mono text-xs"
+            onClick={onWebAuthnRegister}
+            disabled={isBusy}
+          >
+            {hasWebAuthn ? 'Add Passkey' : 'Set Up Passkey'}
+          </Button>
+        ) : (
+          <UnsupportedDeviceBadge />
+        )
+      )}
+    />
+  );
+}
+
+function UnsupportedDeviceBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-mono uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
+      <AlertCircle className="size-3" />
+      Unsupported Device
+    </span>
+  );
+}
+
+function RecoveryMethodRow({
+  hasMfa,
+  isBusy,
+  onRecoveryGenerate,
+  recoveryCodesRemaining,
+  recoveryPassword,
+}) {
+  return (
+    <MethodRow
+      icon={KeyRound}
+      title="Recovery Codes"
+      active={recoveryCodesRemaining > 0}
+      description={hasMfa ? `${recoveryCodesRemaining} codes currently available` : 'Configure MFA first'}
+      action={(
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="font-mono text-xs"
+          onClick={onRecoveryGenerate}
+          disabled={isBusy || !hasMfa || !recoveryPassword}
+        >
+          {recoveryCodesRemaining > 0 ? 'Regenerate Codes' : 'Generate Codes'}
+        </Button>
+      )}
+    />
+  );
+}
+
+function RecoveryPasswordPanel({ disabled, onPasswordChange, password }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-3">
+      <Label htmlFor="settings-recovery-password" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        Current Password
+      </Label>
+      <Input
+        id="settings-recovery-password"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={(event) => onPasswordChange(event.target.value)}
+        disabled={disabled}
+        className="mt-2"
+      />
+    </div>
+  );
+}
+
+function RecoveryCodesPanel({
+  copiedRecoveryCodes,
+  onCopyRecoveryCodes,
+  onShowRecoveryCodesChange,
+  recoveryCodes,
+  showRecoveryCodes,
+}) {
+  return (
+    <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-mono uppercase tracking-wider text-rose-700 dark:text-rose-300">
+            Store These Recovery Codes Safely
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            These codes are shown only once. Save them before leaving this page.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <CopyStateButton copied={copiedRecoveryCodes} onClick={onCopyRecoveryCodes} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={() => onShowRecoveryCodesChange((prev) => !prev)}
+          >
+            {showRecoveryCodes ? 'Hide' : 'Show'}
+          </Button>
+        </div>
+      </div>
+
+      {showRecoveryCodes && <RecoveryCodeGrid recoveryCodes={recoveryCodes} />}
+    </div>
+  );
+}
+
+function RecoveryCodeGrid({ recoveryCodes }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {recoveryCodes.map((code, index) => (
+        <div
+          key={code}
+          className="rounded border border-border bg-card/70 px-3 py-2 font-mono text-xs text-foreground"
+        >
+          {index + 1}. {code}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CopyStateButton({ copied, onClick }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="font-mono text-xs"
+      onClick={onClick}
+    >
+      {copied ? <Check className="size-3 mr-1" /> : <Copy className="size-3 mr-1" />}
+      {copied ? 'Copied' : 'Copy'}
+    </Button>
   );
 }
 
