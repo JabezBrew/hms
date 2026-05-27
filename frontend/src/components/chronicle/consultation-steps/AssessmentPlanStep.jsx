@@ -124,5 +124,4 @@ const AssessmentPlanStep = ({ formData, onChange, contextData, validationErrors,
   );
 };
 
-export default AssessmentPlanStep;
 export { AssessmentPlanStep };

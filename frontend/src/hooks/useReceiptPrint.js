@@ -498,4 +498,3 @@ export function useReceiptPrint() {
   };
 }
 
-export default useReceiptPrint;

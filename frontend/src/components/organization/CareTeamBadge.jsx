@@ -110,4 +110,3 @@ export function CareTeamList({
   );
 }
 
-export default CareTeamBadge;

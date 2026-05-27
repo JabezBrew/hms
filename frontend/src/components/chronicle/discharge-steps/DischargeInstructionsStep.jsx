@@ -109,5 +109,4 @@ const DischargeInstructionsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, 
   );
 };
 
-export default DischargeInstructionsStep;
 export { DischargeInstructionsStep };

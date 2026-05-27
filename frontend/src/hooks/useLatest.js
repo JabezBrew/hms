@@ -31,4 +31,3 @@ export function useLatest(value) {
   return ref;
 }
 
-export default useLatest;

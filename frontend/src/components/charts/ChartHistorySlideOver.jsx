@@ -392,5 +392,4 @@ const ChartHistorySlideOver = ({
   );
 };
 
-export default ChartHistorySlideOver;
 export { ChartHistorySlideOver };

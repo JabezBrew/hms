@@ -291,4 +291,3 @@ const ChartDataGrid = ({
 };
 
 export { ChartDataGrid };
-export default ChartDataGrid;

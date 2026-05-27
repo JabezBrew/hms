@@ -135,4 +135,3 @@ export function PatientReviewStep({ formData, onChange, contextData, validationE
   );
 }
 
-export default PatientReviewStep;

@@ -255,4 +255,3 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
   );
 }
 
-export default DocumentationStep;

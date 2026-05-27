@@ -321,4 +321,3 @@ export function GRNForm({ onSuccess, onCancel, initialPOId }) {
   );
 }
 
-export default GRNForm;

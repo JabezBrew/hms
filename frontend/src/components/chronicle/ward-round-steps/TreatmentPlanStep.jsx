@@ -557,4 +557,3 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
   );
 }
 
-export default TreatmentPlanStep;

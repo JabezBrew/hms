@@ -93,5 +93,4 @@ const DischargeSummaryStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, valid
   );
 };
 
-export default DischargeSummaryStep;
 export { DischargeSummaryStep };

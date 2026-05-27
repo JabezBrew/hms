@@ -104,5 +104,4 @@ const HistoryExamStep = ({ formData, onChange, contextData, validationErrors }) 
   );
 };
 
-export default HistoryExamStep;
 export { HistoryExamStep };

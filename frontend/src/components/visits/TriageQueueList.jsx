@@ -214,4 +214,3 @@ export function TriageQueueList({
   );
 }
 
-export default TriageQueueList;

@@ -766,4 +766,3 @@ const CriticalRangeConfig = ({ config, updateConfig }) => (
 );
 
 export { ChartFieldEditor };
-export default ChartFieldEditor;

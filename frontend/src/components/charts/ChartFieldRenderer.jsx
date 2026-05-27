@@ -618,4 +618,3 @@ const BodyMapField = ({ field, value, onChange, disabled }) => {
 };
 
 export { ChartFieldRenderer };
-export default ChartFieldRenderer;

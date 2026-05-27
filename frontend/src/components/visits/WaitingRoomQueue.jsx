@@ -261,4 +261,3 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
   );
 }
 
-export default WaitingRoomQueue;

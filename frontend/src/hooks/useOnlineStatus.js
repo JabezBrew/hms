@@ -112,4 +112,3 @@ export function useOnlineStatusWithReconnect() {
   };
 }
 
-export default useOnlineStatus;

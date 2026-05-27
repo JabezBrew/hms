@@ -405,4 +405,3 @@ const LabResultEntrySlideOver = ({
 };
 
 export { LabResultEntrySlideOver };
-export default LabResultEntrySlideOver;

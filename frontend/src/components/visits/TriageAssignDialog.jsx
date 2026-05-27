@@ -350,4 +350,3 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
   );
 }
 
-export default TriageAssignDialog;

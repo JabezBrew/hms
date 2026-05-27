@@ -41,4 +41,3 @@ export function VisitStatusBadge({
   );
 }
 
-export default VisitStatusBadge;

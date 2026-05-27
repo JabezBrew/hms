@@ -191,4 +191,3 @@ export function UnitSelector({
   );
 }
 
-export default UnitSelector;

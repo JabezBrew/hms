@@ -274,4 +274,3 @@ const ChartTemplateCard = ({
 };
 
 export { ChartTemplateCard };
-export default ChartTemplateCard;

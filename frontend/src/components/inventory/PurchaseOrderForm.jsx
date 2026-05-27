@@ -345,4 +345,3 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
   );
 }
 
-export default PurchaseOrderForm;

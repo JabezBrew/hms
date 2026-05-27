@@ -60,4 +60,3 @@ export function LazyChartTrendGraph(props) {
   );
 }
 
-export default LazyChartTrendGraph;

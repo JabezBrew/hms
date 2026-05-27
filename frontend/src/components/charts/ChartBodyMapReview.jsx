@@ -93,4 +93,3 @@ const ChartBodyMapReview = ({
 };
 
 export { ChartBodyMapReview };
-export default ChartBodyMapReview;

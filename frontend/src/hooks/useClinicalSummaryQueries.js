@@ -377,4 +377,3 @@ export function useClinicalSummary(patientId, patientData = null, options = {}) 
   };
 }
 
-export default useClinicalSummary;

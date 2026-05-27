@@ -219,5 +219,4 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
   );
 };
 
-export default PatientReviewStep;
 export { PatientReviewStep };

@@ -199,5 +199,4 @@ const DischargePlanningStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, cont
   );
 };
 
-export default DischargePlanningStep;
 export { DischargePlanningStep };

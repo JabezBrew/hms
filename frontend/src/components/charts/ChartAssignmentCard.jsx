@@ -269,4 +269,3 @@ const ChartAssignmentCard = ({
 };
 
 export { ChartAssignmentCard };
-export default ChartAssignmentCard;

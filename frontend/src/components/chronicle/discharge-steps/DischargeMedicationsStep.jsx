@@ -177,5 +177,4 @@ const DischargeMedicationsStep = ({ formData = DEFAULT_EMPTY_OBJECT, onChange, v
   );
 };
 
-export default DischargeMedicationsStep;
 export { DischargeMedicationsStep };

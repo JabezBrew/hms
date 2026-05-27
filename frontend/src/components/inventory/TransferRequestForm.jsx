@@ -271,4 +271,3 @@ export function TransferRequestForm({ onSuccess, onCancel, initialToLocation }) 
   );
 }
 
-export default TransferRequestForm;

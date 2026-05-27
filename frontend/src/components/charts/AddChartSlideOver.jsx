@@ -432,4 +432,3 @@ function AddChartSlideOverContent({
 }
 
 export { AddChartSlideOver };
-export default AddChartSlideOver;

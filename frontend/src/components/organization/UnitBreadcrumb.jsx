@@ -107,4 +107,3 @@ export function UnitBreadcrumb({
   );
 }
 
-export default UnitBreadcrumb;

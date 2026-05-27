@@ -655,4 +655,3 @@ export function ClinicsPanel({ unitId, unitType }) {
   );
 }
 
-export default ClinicsPanel;

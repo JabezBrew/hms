@@ -195,4 +195,3 @@ export function TriageAssessmentDialog({ open, onClose, entry, onSuccess }) {
   );
 }
 
-export default TriageAssessmentDialog;

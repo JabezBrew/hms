@@ -103,4 +103,3 @@ export function useSidebarState(options = {}) {
   }), [isOpen, setOpen, toggle, closeAll, openAll, getCollapsibleProps, openStates]);
 }
 
-export default useSidebarState;
