@@ -2,7 +2,7 @@
  * StationsTab - Manage department stations
  * Chronicle Design System styling
  */
-import { useId, useState, useEffect } from 'react';
+import { useId, useReducer, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,66 +47,81 @@ import { SELECT_ALL } from './constants';
 import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
-export function StationsTab() {
-  const fieldId = useId();
-  const { isLoading: unitsLoading, departments, unitById } = useUnitOptions();
-  const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
-  const [showInactive, setShowInactive] = useState(false);
-  const [editingStation, setEditingStation] = useState(null);
-  const [showForm, setShowForm] = useState(false);
-
-  const departmentFilter = selectedDepartment === SELECT_ALL ? undefined : selectedDepartment;
-
-  const { data: stationsData, isLoading } = useDepartmentStations({
-    department: departmentFilter,
-    include_inactive: showInactive ? 'true' : undefined,
-  });
-  const stations = toList(stationsData);
-
-  const createStation = useCreateDepartmentStation();
-  const updateStation = useUpdateDepartmentStation();
-  const deleteStation = useDeleteDepartmentStation();
-
-  const [formState, setFormState] = useState({
+function createBlankStationForm(department = '') {
+  return {
     name: '',
     code: '',
-    department: '',
+    department,
     display_order: 0,
     is_active: true,
-  });
-
-  useEffect(() => {
-    if (!showForm) {
-      setEditingStation(null);
-      setFormState({
-        name: '',
-        code: '',
-        department: departmentFilter || '',
-        display_order: 0,
-        is_active: true,
-      });
-    }
-  }, [showForm, selectedDepartment]);
-
-  const openForm = (station) => {
-    if (station) {
-      setEditingStation(station);
-      setFormState({
-        name: station.name || '',
-        code: station.code || '',
-        department: toValue(station.department),
-        display_order: station.display_order ?? 0,
-        is_active: station.is_active ?? true,
-      });
-    } else {
-      setEditingStation(null);
-      setFormState((prev) => ({
-        ...prev,
-        department: selectedDepartment || prev.department,
-      }));
-    }
-    setShowForm(true);
   };
+}
+
+function createStationFormState({ station, department }) {
+  if (!station) {
+    return createBlankStationForm(department);
+  }
+  return {
+    name: station.name || '',
+    code: station.code || '',
+    department: toValue(station.department),
+    display_order: station.display_order ?? 0,
+    is_active: station.is_active ?? true,
+  };
+}
+
+function stationFormReducer(state, action) {
+  if (action.type === 'field') {
+    return { ...state, [action.name]: action.value };
+  }
+  return state;
+}
+
+function StationFormDialog({
+  createStation,
+  departments,
+  editingStation,
+  onOpenChange,
+  open,
+  selectedDepartment,
+  updateStation,
+}) {
+  const department = selectedDepartment === SELECT_ALL ? '' : selectedDepartment;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <StationFormContent
+          key={editingStation ? editingStation.id : `new-${department || 'all'}`}
+          createStation={createStation}
+          departments={departments}
+          editingStation={editingStation}
+          initialDepartment={department}
+          onClose={() => onOpenChange(false)}
+          updateStation={updateStation}
+        />
+      ) : null}
+    </Dialog>
+  );
+}
+
+function StationFormContent({
+  createStation,
+  departments,
+  editingStation,
+  initialDepartment,
+  onClose,
+  updateStation,
+}) {
+  const fieldId = useId();
+  const [formState, dispatchForm] = useReducer(
+    stationFormReducer,
+    { station: editingStation, department: initialDepartment },
+    createStationFormState,
+  );
+
+  const updateField = (name) => (value) => dispatchForm({ type: 'field', name, value });
+  const updateInputField = (name) => (event) => updateField(name)(event.target.value);
 
   const handleSubmit = async () => {
     try {
@@ -128,9 +143,119 @@ export function StationsTab() {
         await createStation.mutateAsync(payload);
         toast.success('Station created.');
       }
-      setShowForm(false);
+      onClose();
     } catch (error) {
       toast.error(error.message || 'Failed to save station.');
+    }
+  };
+
+  return (
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle className="font-display text-xl">
+          {editingStation ? 'Edit Station' : 'Add Station'}
+        </DialogTitle>
+        <DialogDescription>
+          Stations are physical locations tied to team roster entries.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        <FieldRow>
+          <InlineField label="Name">
+            <Input
+              value={formState.name}
+              onChange={updateInputField('name')}
+            />
+          </InlineField>
+          <InlineField label="Code">
+            <Input
+              value={formState.code}
+              onChange={(event) => updateField('code')(event.target.value.toUpperCase())}
+              className="font-mono"
+            />
+          </InlineField>
+        </FieldRow>
+        <InlineField label="Department">
+          <Select
+            value={formState.department}
+            onValueChange={updateField('department')}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select department" />
+            </SelectTrigger>
+            <SelectContent className="z-[200]">
+              {departments.map((dept) => (
+                <SelectItem key={dept.id} value={dept.id}>
+                  {dept.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </InlineField>
+        <FieldRow>
+          <InlineField label="Display Order">
+            <Input
+              type="number"
+              min="0"
+              value={formState.display_order}
+              onChange={updateInputField('display_order')}
+              className="font-mono"
+            />
+          </InlineField>
+          <InlineField label="Status">
+            <div className="pt-2">
+              <label htmlFor={`${fieldId}-station-active`} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  id={`${fieldId}-station-active`}
+                  checked={formState.is_active}
+                  onCheckedChange={(value) => updateField('is_active')(Boolean(value))}
+                />
+                <span className="text-sm">Active</span>
+              </label>
+            </div>
+          </InlineField>
+        </FieldRow>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          disabled={createStation.isPending || updateStation.isPending}
+        >
+          {editingStation ? 'Save Changes' : 'Create Station'}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+export function StationsTab() {
+  const { isLoading: unitsLoading, departments, unitById } = useUnitOptions();
+  const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
+  const [showInactive, setShowInactive] = useState(false);
+  const [formDialog, setFormDialog] = useState({ open: false, editingStation: null });
+
+  const departmentFilter = selectedDepartment === SELECT_ALL ? undefined : selectedDepartment;
+
+  const { data: stationsData, isLoading } = useDepartmentStations({
+    department: departmentFilter,
+    include_inactive: showInactive ? 'true' : undefined,
+  });
+  const stations = toList(stationsData);
+
+  const createStation = useCreateDepartmentStation();
+  const updateStation = useUpdateDepartmentStation();
+  const deleteStation = useDeleteDepartmentStation();
+
+  const openForm = (station) => {
+    setFormDialog({ open: true, editingStation: station || null });
+  };
+
+  const handleFormOpenChange = (open) => {
+    if (!open) {
+      setFormDialog({ open: false, editingStation: null });
     }
   };
 
@@ -254,87 +379,15 @@ export function StationsTab() {
         </CardContent>
       </Card>
 
-      {/* Form Dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">
-              {editingStation ? 'Edit Station' : 'Add Station'}
-            </DialogTitle>
-            <DialogDescription>
-              Stations are physical locations tied to team roster entries.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <FieldRow>
-              <InlineField label="Name">
-                <Input
-                  value={formState.name}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, name: e.target.value }))}
-                />
-              </InlineField>
-              <InlineField label="Code">
-                <Input
-                  value={formState.code}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                  className="font-mono"
-                />
-              </InlineField>
-            </FieldRow>
-            <InlineField label="Department">
-              <Select
-                value={formState.department}
-                onValueChange={(value) => setFormState((prev) => ({ ...prev, department: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select department" />
-                </SelectTrigger>
-                <SelectContent className="z-[200]">
-                  {departments.map((dept) => (
-                    <SelectItem key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </InlineField>
-            <FieldRow>
-              <InlineField label="Display Order">
-                <Input
-                  type="number"
-                  min="0"
-                  value={formState.display_order}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, display_order: e.target.value }))}
-                  className="font-mono"
-                />
-              </InlineField>
-              <InlineField label="Status">
-                <div className="pt-2">
-                  <label htmlFor={`${fieldId}-station-active`} className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      id={`${fieldId}-station-active`}
-                      checked={formState.is_active}
-                      onCheckedChange={(value) => setFormState((prev) => ({ ...prev, is_active: Boolean(value) }))}
-                    />
-                    <span className="text-sm">Active</span>
-                  </label>
-                </div>
-              </InlineField>
-            </FieldRow>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={createStation.isPending || updateStation.isPending}
-            >
-              {editingStation ? 'Save Changes' : 'Create Station'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <StationFormDialog
+        createStation={createStation}
+        departments={departments}
+        editingStation={formDialog.editingStation}
+        onOpenChange={handleFormOpenChange}
+        open={formDialog.open}
+        selectedDepartment={selectedDepartment}
+        updateStation={updateStation}
+      />
     </div>
   );
 }
