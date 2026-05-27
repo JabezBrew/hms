@@ -1,11 +1,10 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Send from 'lucide-react/dist/esm/icons/send.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
-import User from 'lucide-react/dist/esm/icons/user.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,37 +35,64 @@ import { toast } from "sonner";
  * - Immediate submission workflow
  * - Chronicle design system styling
  */
-const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) => {
-  // Get patient and encounter IDs
-  const patientId = patient?.local_data?.id || patient?.id;
-  const encounterId = encounter?.local_data?.id || encounter?.id;
-
-  // Form state
-  const [formData, setFormData] = useState({
+function createReferralFormDraft() {
+  return {
     department: "",
     specialty: "",
     urgency: "routine",
     reason: "",
-  });
+  };
+}
+
+const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) => {
+  // Get patient and encounter IDs
+  const patientId = patient?.local_data?.id || patient?.id;
+  const encounterId = encounter?.local_data?.id || encounter?.id;
+  const contentKey = `${patientId || "no-patient"}:${encounterId || "no-encounter"}`;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="referral-form-title"
+      className={cn(
+        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
+        "transform transition-transform duration-300 ease-in-out",
+        "flex flex-col shadow-2xl",
+        open ? "translate-x-0" : "translate-x-full"
+      )}
+    >
+      {open ? (
+        <ReferralFormContent
+          key={contentKey}
+          onClose={onClose}
+          patient={patient}
+          encounter={encounter}
+          patientId={patientId}
+          encounterId={encounterId}
+          onReferralCreated={onReferralCreated}
+        />
+      ) : null}
+    </div>
+  );
+};
+
+function ReferralFormContent({
+  onClose,
+  patient,
+  encounter,
+  patientId,
+  encounterId,
+  onReferralCreated,
+}) {
+  // Form state
+  const [formData, setFormData] = useState(createReferralFormDraft);
 
   const [errors, setErrors] = useState({});
 
   // API mutations
   const createReferral = useCreateReferral();
   const submitReferral = useSubmitReferral();
-
-  // Reset form when panel closes
-  useEffect(() => {
-    if (!open) {
-      setFormData({
-        department: "",
-        specialty: "",
-        urgency: "routine",
-        reason: "",
-      });
-      setErrors({});
-    }
-  }, [open]);
 
   // Department options
   const departments = [
@@ -186,17 +212,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
     : patient?.name || 'Patient';
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="referral-form-title"
-      className={cn(
-        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
-        "transform transition-transform duration-300 ease-in-out",
-        "flex flex-col shadow-2xl",
-        open ? "translate-x-0" : "translate-x-full"
-      )}
-    >
+    <>
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
@@ -297,33 +313,25 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
               </Label>
               <div className="space-y-2">
                 {Object.entries(urgencyConfig).map(([key, config]) => (
-                  <div
+                  <label
                     key={key}
-                    role="radio"
-                    aria-checked={formData.urgency === key}
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFormData((prev) => ({ ...prev, urgency: key })); } }}
                     className={cn(
                       "border-2 rounded-lg p-4 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                       formData.urgency === key
                         ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
                         : "border-border hover:border-muted-foreground/50"
                     )}
-                    onClick={() =>
-                      setFormData((prev) => ({ ...prev, urgency: key }))
-                    }
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-3">
                         <input
                           type="radio"
+                          name="referral-urgency"
                           checked={formData.urgency === key}
                           onChange={() =>
                             setFormData((prev) => ({ ...prev, urgency: key }))
                           }
                           className="mt-1"
-                          aria-hidden="true"
-                          tabIndex={-1}
                         />
                         <div>
                           <div className="flex items-center gap-2 mb-1">
@@ -335,7 +343,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </label>
                 ))}
               </div>
               {errors.urgency && (
@@ -406,8 +414,8 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
           )}
         </Button>
       </footer>
-    </div>
+    </>
   );
-};
+}
 
 export default ReferralForm;
