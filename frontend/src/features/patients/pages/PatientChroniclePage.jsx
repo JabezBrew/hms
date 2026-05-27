@@ -25,9 +25,9 @@ import {
 } from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { timelineKeys, usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
-import { encounterKeys, usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
+import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { cn } from "@/lib/utils";
@@ -46,11 +46,11 @@ import ClinicalSummarySidebar from "@/components/chronicle/ClinicalSummarySideba
 import TimelineEntry from "@/components/chronicle/TimelineEntry";
 import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
 import { usePatientInsurance } from "@/features/billing/hooks";
-import { patientsApi } from '@/features/patients/api';
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
 import { ProblemListSidebar } from "@/features/problems";
 import { normalizeExpansionId } from "@/components/chronicle/chronicleNoteUtils";
+import { useChronicleBreakGlassAccess } from "@/features/patients/chronicle/useChronicleBreakGlassAccess";
 import { useChronicleTimelineExpansion } from "@/features/patients/chronicle/useChronicleTimelineExpansion";
 import { useChronicleWorkspaceRouting } from "@/features/patients/chronicle/useChronicleWorkspaceRouting";
 import {
@@ -1683,10 +1683,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const canUseStandaloneClinicalWorkflows = !rustV2Mode;
   const canUseAiAssistant = !rustV2Mode;
 
-  const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
-  const [breakGlassReason, setBreakGlassReason] = useState('');
-  const [breakGlassExpiresAt, setBreakGlassExpiresAt] = useState(null);
-
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
@@ -2576,61 +2572,30 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
   }, [activeEncounter, patient, rustV2ActiveAdmissionId, openChronicleWorkspace]);
 
-  const userRole = user?.role || user?.user_type;
-  const canRequestBreakGlass = !rustV2Mode && ['admin', 'doctor', 'nurse'].includes(userRole);
-  // Access denied if patient loaded but user lacks clinical access
-  const accessDenied = rustV2Mode
-    ? !isLoading && startupError?.status === 403
-    : patient && !isLoading && patient?.access?.clinical === false;
   const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
   const gateError = contextError && contextError?.status !== 403 ? contextError : error;
-
-  const breakGlassMutation = useMutation({
-    mutationFn: (payload) => patientsApi.requestBreakGlass(id, payload),
-    onSuccess: (data) => {
-      const expiresAt = data?.break_glass?.expires_at || null;
-      setBreakGlassExpiresAt(expiresAt);
-      setBreakGlassReason('');
-      setBreakGlassOpen(false);
-
-      const expiresLabel = expiresAt
-        ? new Date(expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : null;
-      toast.success("Break-glass access granted", {
-        description: expiresLabel ? `Access expires at ${expiresLabel}.` : "Access expires automatically.",
-      });
-
-      // Refetch patient to update access flags, then clinical data will load
-      queryClient.invalidateQueries({ queryKey: patientKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: patientKeys.chronicleStartup(id) });
-      queryClient.invalidateQueries({ queryKey: timelineKeys.list(id) });
-      queryClient.invalidateQueries({ queryKey: encounterKeys.forPatient(id) });
-      refetchPatient();
-      refetchContext();
-      refetchTimeline();
-      refetchEncounters();
-    },
-    onError: (err) => {
-      toast.error("Break-glass request failed", {
-        description: err?.message || "Please try again.",
-      });
-    },
+  const {
+    accessDenied,
+    breakGlassExpiresAt,
+    breakGlassReason,
+    canRequestBreakGlass,
+    isBreakGlassOpen,
+    isSubmittingBreakGlass,
+    setBreakGlassOpen,
+    setBreakGlassReason,
+    submitBreakGlass,
+  } = useChronicleBreakGlassAccess({
+    patient,
+    patientId: id,
+    isLoading,
+    refetchContext,
+    refetchEncounters,
+    refetchPatient,
+    refetchTimeline,
+    rustV2Mode,
+    startupError,
+    user,
   });
-
-  const handleBreakGlassSubmit = useCallback(() => {
-    if (rustV2Mode) {
-      toast.error('Break-glass access is not available in Rust V2 mode.');
-      return;
-    }
-
-    if (!breakGlassReason.trim()) {
-      return;
-    }
-    breakGlassMutation.mutate({
-      reason: breakGlassReason.trim(),
-      scope: 'clinical',
-    });
-  }, [breakGlassReason, breakGlassMutation, rustV2Mode]);
 
   // ============================================
   // Loading state
@@ -2643,14 +2608,14 @@ const PatientChroniclePage = ({ defaultAction }) => {
         breakGlassReason={breakGlassReason}
         canRequestBreakGlass={canRequestBreakGlass}
         isBreakGlassOpen={isBreakGlassOpen}
-        isSubmitting={breakGlassMutation.isPending}
+        isSubmitting={isSubmittingBreakGlass}
         pageMeta={pageMeta}
         patient={patient}
         patientName={patientName}
         rustV2Mode={rustV2Mode}
         onBreakGlassOpenChange={setBreakGlassOpen}
         onBreakGlassReasonChange={setBreakGlassReason}
-        onBreakGlassSubmit={handleBreakGlassSubmit}
+        onBreakGlassSubmit={submitBreakGlass}
       />
     );
   }
