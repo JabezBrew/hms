@@ -287,15 +287,13 @@ export function BedAssignment({
                 </p>
               </div>
             ) : (
-              <div role="listbox" aria-label="Available beds" className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
+              <div aria-label="Available beds" className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
                 {availableBeds.map(bed => (
-                  <div
+                  <button
+                    type="button"
                     key={bed.id}
-                    role="option"
-                    aria-selected={selectedBedId === bed.id}
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBedSelect(bed); } }}
-                    className={`h-24 border-2 rounded-md p-2 flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${getStatusColor(bed.status)} ${selectedBedId === bed.id ? 'ring-2 ring-primary' : ''}`}
+                    aria-pressed={selectedBedId === bed.id}
+                    className={`h-24 border-2 rounded-md p-2 flex flex-col justify-between text-left cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${getStatusColor(bed.status)} ${selectedBedId === bed.id ? 'ring-2 ring-primary' : ''}`}
                     onClick={() => onBedSelect(bed)}
                   >
                     <div className="flex justify-between items-start">
@@ -307,7 +305,7 @@ export function BedAssignment({
                     <div className="text-xs">
                       ${bed.total_rate}/night
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
