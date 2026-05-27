@@ -39,6 +39,369 @@ import { useDebounce } from '@/hooks/use-debounce';
 
 const ORDERS_PAGE_SIZE = 24;
 
+const LAB_ORDER_STATUS_OPTIONS = [
+  { value: "all", label: "All Statuses" },
+  { value: "draft", label: "Draft" },
+  { value: "ordered", label: "Ordered" },
+  { value: "collected", label: "Collected" },
+  { value: "received", label: "Received" },
+  { value: "processing", label: "Processing" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const LAB_ORDER_PRIORITY_OPTIONS = [
+  { value: "all", label: "All Priorities" },
+  { value: "routine", label: "Routine" },
+  { value: "urgent", label: "Urgent" },
+  { value: "stat", label: "STAT" },
+];
+
+const LAB_ORDER_COLUMNS = [
+  {
+    key: "order",
+    header: "Order",
+    width: "200px",
+    render: (order) => (
+      <div className="min-w-0">
+        <p className="font-mono text-sm font-medium text-primary">{order.order_number}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {formatLabOrderDate(order.ordered_at || order.created_at)}
+        </p>
+      </div>
+    ),
+  },
+  {
+    key: "patient",
+    header: "Patient",
+    width: "220px",
+    render: (order) => (
+      <div className="min-w-0">
+        <p className="truncate font-medium text-foreground">{order.patient_name || "Unknown Patient"}</p>
+        <p className="font-mono text-xs text-muted-foreground">MRN: {order.patient_mrn || "-"}</p>
+      </div>
+    ),
+  },
+  {
+    key: "provider",
+    header: "Ordering Provider",
+    width: "200px",
+    render: (order) => (
+      <span className="truncate text-sm text-muted-foreground">
+        {order.ordering_provider_name || "Unknown"}
+      </span>
+    ),
+  },
+  {
+    key: "tests",
+    header: "Tests",
+    width: "120px",
+    headerClassName: "text-center",
+    cellClassName: "text-center",
+    render: (order) => `${order.test_count || 0}`,
+  },
+  {
+    key: "priority",
+    header: "Priority",
+    width: "120px",
+    render: (order) => {
+      const priorityConfig = getLabOrderPriorityConfig(order.priority);
+      return (
+        <Badge variant="outline" className={cn("text-xs", priorityConfig.className)}>
+          {priorityConfig.label}
+        </Badge>
+      );
+    },
+  },
+  {
+    key: "status",
+    header: "Status",
+    width: "140px",
+    render: (order) => {
+      const statusConfig = getLabOrderStatusConfig(order.status);
+      return (
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className={cn("text-xs", statusConfig.className)}>
+            {order.status_display || statusConfig.label}
+          </Badge>
+          {order.has_critical_results ? (
+            <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700 text-xs">
+              Critical
+            </Badge>
+          ) : null}
+        </div>
+      );
+    },
+  },
+  {
+    key: "notes",
+    header: "Notes",
+    width: "180px",
+    render: (order) => (
+      <span className="truncate text-sm text-muted-foreground">
+        {order.fasting_required ? "Fasting required" : "No special prep"}
+      </span>
+    ),
+  },
+];
+
+function getLabOrderStatusConfig(status) {
+  const configs = {
+    draft: { label: "Draft", className: "border-stone-300 bg-stone-100 text-stone-700" },
+    ordered: { label: "Ordered", className: "border-sky-300 bg-sky-100 text-sky-700" },
+    collected: { label: "Collected", className: "border-amber-300 bg-amber-100 text-amber-700" },
+    received: { label: "Received", className: "border-violet-300 bg-violet-100 text-violet-700" },
+    processing: { label: "Processing", className: "border-indigo-300 bg-indigo-100 text-indigo-700" },
+    completed: { label: "Completed", className: "border-emerald-300 bg-emerald-100 text-emerald-700" },
+    cancelled: { label: "Cancelled", className: "border-rose-300 bg-rose-100 text-rose-700" },
+  };
+  return configs[status] || configs.draft;
+}
+
+function getLabOrderPriorityConfig(priority) {
+  const configs = {
+    routine: { label: "Routine", className: "border-stone-300 bg-stone-100 text-stone-600" },
+    urgent: { label: "Urgent", className: "border-amber-300 bg-amber-100 text-amber-700" },
+    stat: { label: "STAT", className: "border-rose-300 bg-rose-100 text-rose-700 font-semibold" },
+  };
+  return configs[priority] || configs.routine;
+}
+
+function formatLabOrderDate(dateString) {
+  if (!dateString) return "-";
+  try {
+    return format(new Date(dateString), "MMM d, yyyy h:mm a");
+  } catch {
+    return "-";
+  }
+}
+
+function useLabOrderStats(orders, totalCount) {
+  return useMemo(() => {
+    const pending = orders.filter((order) =>
+      ["ordered", "collected", "received"].includes(order.status)
+    );
+    const processing = orders.filter((order) => order.status === "processing");
+    const completed = orders.filter((order) => order.status === "completed");
+    const critical = orders.filter((order) => order.has_critical_results);
+
+    return {
+      total: totalCount,
+      visible: orders.length,
+      pending: pending.length,
+      processing: processing.length,
+      completed: completed.length,
+      critical: critical.length,
+    };
+  }, [orders, totalCount]);
+}
+
+function useLabOrderMetrics(stats) {
+  return useMemo(() => ([
+    { title: "Total Orders", label: "Total Orders", value: stats.total, icon: TestTube2, color: "sky" },
+    { title: "Visible", label: "Visible", value: stats.visible, icon: UserRound, color: "sky" },
+    { title: "Pending Page", label: "Pending Page", value: stats.pending, icon: Clock, color: "amber" },
+    { title: "Completed Page", label: "Completed Page", value: stats.completed, icon: CheckCircle2, color: "emerald" },
+  ]), [stats]);
+}
+
+function LabOrdersHeader({ isDoctor, isFetching, metrics, onRefresh, stats }) {
+  return (
+    <PageHeader
+      title="Lab Orders"
+      description={(
+        <span>
+          {isDoctor
+            ? "Records view of lab orders you've placed — track status, results, and cancel if needed."
+            : "Records view of all lab orders. For active specimen collection, processing, and result entry, use the Worklist."}
+          <span className="ml-2 text-muted-foreground">
+            {stats.total} {isDoctor ? "matching orders placed by you" : "matching orders"}
+            {stats.total !== stats.visible ? (
+              <span className="ml-1">
+                (showing {stats.visible} on this page)
+              </span>
+            ) : null}
+          </span>
+          {stats.critical > 0 ? (
+            <span className="text-rose-600 ml-2">
+              ({stats.critical} critical on this page)
+            </span>
+          ) : null}
+        </span>
+      )}
+      actions={(
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRefresh}
+          className="flex items-center gap-2"
+          disabled={isFetching}
+        >
+          <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
+          Refresh
+        </Button>
+      )}
+    >
+      <LabMetricGrid metrics={metrics} className="mt-4 sm:mt-6" />
+    </PageHeader>
+  );
+}
+
+function LabOrdersFilters({
+  hasActiveFilters,
+  isLabStaff,
+  onClearFilters,
+  onDoctorFilterChange,
+  onPriorityFilterChange,
+  onSearchChange,
+  onStatusFilterChange,
+  practitioners,
+  priorityFilter,
+  searchQuery,
+  selectedDoctorFilter,
+  statusFilter,
+}) {
+  return (
+    <LabToolbar>
+      <div className="flex flex-col gap-3">
+        <LabSearchField
+          id="lab-orders-search"
+          placeholder="Search by order number, patient name, or MRN..."
+          value={searchQuery}
+          onChange={onSearchChange}
+        />
+
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {isLabStaff ? (
+            <Select value={selectedDoctorFilter} onValueChange={onDoctorFilterChange}>
+              <SelectTrigger className="w-full font-mono text-sm sm:w-[200px]">
+                <div className="flex items-center gap-2">
+                  <UserRound className="size-4 text-muted-foreground" />
+                  <SelectValue placeholder="Ordering Doctor" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Doctors</SelectItem>
+                {practitioners.map((doc) => (
+                  <SelectItem key={doc.id} value={doc.id}>
+                    {doc.name || `Dr. ${doc.staff?.user?.last_name || "Unknown"}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+
+          <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+            <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              {LAB_ORDER_STATUS_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={priorityFilter} onValueChange={onPriorityFilterChange}>
+            <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              {LAB_ORDER_PRIORITY_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {hasActiveFilters ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearFilters}
+              className="font-mono text-xs text-muted-foreground"
+            >
+              <X className="size-4 mr-1" />
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </LabToolbar>
+  );
+}
+
+function LabOrdersContent({
+  hasActiveFilters,
+  isDoctor,
+  isLoading,
+  onClearFilters,
+  onOrderClick,
+  orders,
+}) {
+  return (
+    <main className="p-4 sm:p-6">
+      {isLoading ? (
+        <LabTableSkeleton rows={6} />
+      ) : orders.length === 0 ? (
+        <LabEmptyState
+          icon={TestTube2}
+          title="No orders found"
+          description={
+            hasActiveFilters
+              ? "Try adjusting your filters to see more orders."
+              : isDoctor
+                ? "You haven't placed any lab orders yet."
+                : "No lab orders have been placed yet."
+          }
+          action={hasActiveFilters ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClearFilters}
+              className="font-mono text-xs"
+            >
+              Clear Filters
+            </Button>
+          ) : null}
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={orders}
+            rowKey={(order) => order.id}
+            rowHeight={68}
+            columns={LAB_ORDER_COLUMNS}
+            onRowClick={onOrderClick}
+            rowClassName="hover:bg-muted/30"
+            className={cn(labTableClassName, "min-w-[1180px]")}
+            headerClassName={labTableHeaderClassName}
+          />
+        </div>
+      )}
+    </main>
+  );
+}
+
+function LabOrdersPagination({ onPageChange, page, totalCount }) {
+  if (totalCount <= ORDERS_PAGE_SIZE) return null;
+
+  return (
+    <div className="px-4 sm:px-6 pb-6">
+      <TablePagination
+        currentPage={page}
+        totalCount={totalCount}
+        pageSize={ORDERS_PAGE_SIZE}
+        onPageChange={onPageChange}
+        itemLabel="orders"
+      />
+    </div>
+  );
+}
+
 /**
  * LabOrdersPage - Lab orders list for clinicians
  *
@@ -133,31 +496,8 @@ export default function LabOrdersPage() {
   }, [ordersData]);
   const totalCount = ordersData?.count || 0;
 
-  // Calculate page-local stats
-  const stats = useMemo(() => {
-    const pending = orders.filter((o) =>
-      ["ordered", "collected", "received"].includes(o.status)
-    );
-    const processing = orders.filter((o) => o.status === "processing");
-    const completed = orders.filter((o) => o.status === "completed");
-    const critical = orders.filter((o) => o.has_critical_results);
-
-    return {
-      total: totalCount,
-      visible: orders.length,
-      pending: pending.length,
-      processing: processing.length,
-      completed: completed.length,
-      critical: critical.length,
-    };
-  }, [orders, totalCount]);
-
-  const metrics = useMemo(() => ([
-    { title: "Total Orders", label: "Total Orders", value: stats.total, icon: TestTube2, color: "sky" },
-    { title: "Visible", label: "Visible", value: stats.visible, icon: UserRound, color: "sky" },
-    { title: "Pending Page", label: "Pending Page", value: stats.pending, icon: Clock, color: "amber" },
-    { title: "Completed Page", label: "Completed Page", value: stats.completed, icon: CheckCircle2, color: "emerald" },
-  ]), [stats]);
+  const stats = useLabOrderStats(orders, totalCount);
+  const metrics = useLabOrderMetrics(stats);
 
   // Event handlers
   const handleSearchChange = (event) => {
@@ -208,310 +548,46 @@ export default function LabOrdersPage() {
     priorityFilter !== "all" ||
     selectedDoctorFilter !== "all";
 
-  // Status options
-  const statusOptions = [
-    { value: "all", label: "All Statuses" },
-    { value: "draft", label: "Draft" },
-    { value: "ordered", label: "Ordered" },
-    { value: "collected", label: "Collected" },
-    { value: "received", label: "Received" },
-    { value: "processing", label: "Processing" },
-    { value: "completed", label: "Completed" },
-    { value: "cancelled", label: "Cancelled" },
-  ];
-
-  // Priority options
-  const priorityOptions = [
-    { value: "all", label: "All Priorities" },
-    { value: "routine", label: "Routine" },
-    { value: "urgent", label: "Urgent" },
-    { value: "stat", label: "STAT" },
-  ];
-
-  const getStatusConfig = (status) => {
-    const configs = {
-      draft: { label: "Draft", className: "border-stone-300 bg-stone-100 text-stone-700" },
-      ordered: { label: "Ordered", className: "border-sky-300 bg-sky-100 text-sky-700" },
-      collected: { label: "Collected", className: "border-amber-300 bg-amber-100 text-amber-700" },
-      received: { label: "Received", className: "border-violet-300 bg-violet-100 text-violet-700" },
-      processing: { label: "Processing", className: "border-indigo-300 bg-indigo-100 text-indigo-700" },
-      completed: { label: "Completed", className: "border-emerald-300 bg-emerald-100 text-emerald-700" },
-      cancelled: { label: "Cancelled", className: "border-rose-300 bg-rose-100 text-rose-700" },
-    };
-    return configs[status] || configs.draft;
-  };
-
-  const getPriorityConfig = (priority) => {
-    const configs = {
-      routine: { label: "Routine", className: "border-stone-300 bg-stone-100 text-stone-600" },
-      urgent: { label: "Urgent", className: "border-amber-300 bg-amber-100 text-amber-700" },
-      stat: { label: "STAT", className: "border-rose-300 bg-rose-100 text-rose-700 font-semibold" },
-    };
-    return configs[priority] || configs.routine;
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    try {
-      return format(new Date(dateString), "MMM d, yyyy h:mm a");
-    } catch {
-      return "-";
-    }
-  };
-
-  const orderColumns = useMemo(() => ([
-    {
-      key: "order",
-      header: "Order",
-      width: "200px",
-      render: (order) => (
-        <div className="min-w-0">
-          <p className="font-mono text-sm font-medium text-primary">{order.order_number}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {formatDate(order.ordered_at || order.created_at)}
-          </p>
-        </div>
-      ),
-    },
-    {
-      key: "patient",
-      header: "Patient",
-      width: "220px",
-      render: (order) => (
-        <div className="min-w-0">
-          <p className="truncate font-medium text-foreground">{order.patient_name || "Unknown Patient"}</p>
-          <p className="font-mono text-xs text-muted-foreground">MRN: {order.patient_mrn || "-"}</p>
-        </div>
-      ),
-    },
-    {
-      key: "provider",
-      header: "Ordering Provider",
-      width: "200px",
-      render: (order) => (
-        <span className="truncate text-sm text-muted-foreground">
-          {order.ordering_provider_name || "Unknown"}
-        </span>
-      ),
-    },
-    {
-      key: "tests",
-      header: "Tests",
-      width: "120px",
-      headerClassName: "text-center",
-      cellClassName: "text-center",
-      render: (order) => `${order.test_count || 0}`,
-    },
-    {
-      key: "priority",
-      header: "Priority",
-      width: "120px",
-      render: (order) => {
-        const priorityConfig = getPriorityConfig(order.priority);
-        return (
-          <Badge variant="outline" className={cn("text-xs", priorityConfig.className)}>
-            {priorityConfig.label}
-          </Badge>
-        );
-      },
-    },
-    {
-      key: "status",
-      header: "Status",
-      width: "140px",
-      render: (order) => {
-        const statusConfig = getStatusConfig(order.status);
-        return (
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={cn("text-xs", statusConfig.className)}>
-              {order.status_display || statusConfig.label}
-            </Badge>
-            {order.has_critical_results && (
-              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700 text-xs">
-                Critical
-              </Badge>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: "notes",
-      header: "Notes",
-      width: "180px",
-      render: (order) => (
-        <span className="truncate text-sm text-muted-foreground">
-          {order.fasting_required ? "Fasting required" : "No special prep"}
-        </span>
-      ),
-    },
-  ]), []);
-
   return (
     <PageShell>
-      <PageHeader
-        title="Lab Orders"
-        description={(
-          <span>
-            {isDoctor
-              ? "Records view of lab orders you've placed — track status, results, and cancel if needed."
-              : "Records view of all lab orders. For active specimen collection, processing, and result entry, use the Worklist."}
-            <span className="ml-2 text-muted-foreground">
-              {stats.total} {isDoctor ? "matching orders placed by you" : "matching orders"}
-              {stats.total !== stats.visible && (
-                <span className="ml-1">
-                  (showing {stats.visible} on this page)
-                </span>
-              )}
-            </span>
-            {stats.critical > 0 && (
-              <span className="text-rose-600 ml-2">
-                ({stats.critical} critical on this page)
-              </span>
-            )}
-          </span>
-        )}
-        actions={(
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            className="flex items-center gap-2"
-            disabled={isFetching}
-          >
-            <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
-            Refresh
-          </Button>
-        )}
-      >
-        <LabMetricGrid metrics={metrics} className="mt-4 sm:mt-6" />
-      </PageHeader>
+      <LabOrdersHeader
+        isDoctor={isDoctor}
+        isFetching={isFetching}
+        metrics={metrics}
+        onRefresh={refetch}
+        stats={stats}
+      />
 
-      <LabToolbar>
-        <div className="flex flex-col gap-3">
-          <LabSearchField
-            id="lab-orders-search"
-            placeholder="Search by order number, patient name, or MRN..."
-            value={searchQuery}
-            onChange={handleSearchChange}
-          />
+      <LabOrdersFilters
+        hasActiveFilters={hasActiveFilters}
+        isLabStaff={isLabStaff}
+        onClearFilters={handleClearFilters}
+        onDoctorFilterChange={handleDoctorFilterChange}
+        onPriorityFilterChange={handlePriorityFilterChange}
+        onSearchChange={handleSearchChange}
+        onStatusFilterChange={handleStatusFilterChange}
+        practitioners={practitioners}
+        priorityFilter={priorityFilter}
+        searchQuery={searchQuery}
+        selectedDoctorFilter={selectedDoctorFilter}
+        statusFilter={statusFilter}
+      />
 
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {isLabStaff && (
-              <Select value={selectedDoctorFilter} onValueChange={handleDoctorFilterChange}>
-                <SelectTrigger className="w-full font-mono text-sm sm:w-[200px]">
-                  <div className="flex items-center gap-2">
-                    <UserRound className="size-4 text-muted-foreground" />
-                    <SelectValue placeholder="Ordering Doctor" />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Doctors</SelectItem>
-                  {practitioners.map((doc) => (
-                    <SelectItem key={doc.id} value={doc.id}>
-                      {doc.name || `Dr. ${doc.staff?.user?.last_name || "Unknown"}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+      <LabOrdersContent
+        hasActiveFilters={hasActiveFilters}
+        isDoctor={isDoctor}
+        isLoading={isLoading}
+        onClearFilters={handleClearFilters}
+        onOrderClick={handleOrderClick}
+        orders={orders}
+      />
 
-            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
-              <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <LabOrdersPagination
+        onPageChange={setPage}
+        page={page}
+        totalCount={totalCount}
+      />
 
-            <Select value={priorityFilter} onValueChange={handlePriorityFilterChange}>
-              <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                {priorityOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleClearFilters}
-                className="font-mono text-xs text-muted-foreground"
-              >
-                <X className="size-4 mr-1" />
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
-      </LabToolbar>
-
-      {/* Content */}
-      <main className="p-4 sm:p-6">
-        {isLoading ? (
-          <LabTableSkeleton rows={6} />
-        ) : orders.length === 0 ? (
-          <LabEmptyState
-            icon={TestTube2}
-            title="No orders found"
-            description={
-              hasActiveFilters
-                ? "Try adjusting your filters to see more orders."
-                : isDoctor
-                  ? "You haven't placed any lab orders yet."
-                  : "No lab orders have been placed yet."
-            }
-            action={hasActiveFilters ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleClearFilters}
-                className="font-mono text-xs"
-              >
-                Clear Filters
-              </Button>
-            ) : null}
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <VirtualizedTable
-              rows={orders}
-              rowKey={(order) => order.id}
-              rowHeight={68}
-              columns={orderColumns}
-              onRowClick={(order) => handleOrderClick(order)}
-              rowClassName="hover:bg-muted/30"
-              className={cn(labTableClassName, "min-w-[1180px]")}
-              headerClassName={labTableHeaderClassName}
-            />
-          </div>
-        )}
-      </main>
-
-      {totalCount > ORDERS_PAGE_SIZE && (
-        <div className="px-4 sm:px-6 pb-6">
-          <TablePagination
-            currentPage={page}
-            totalCount={totalCount}
-            pageSize={ORDERS_PAGE_SIZE}
-            onPageChange={setPage}
-            itemLabel="orders"
-          />
-        </div>
-      )}
-
-      {/* Order Detail Slide-over */}
       <LabOrderDetailSlideOver
         open={slideOverOpen}
         onClose={handleSlideOverClose}
