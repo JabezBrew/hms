@@ -60,6 +60,472 @@ const TEMPLATE_HEADERS = [
   'effective_until',
 ];
 
+function MappingStatusBadge({ isActive }) {
+  return (
+    <span className={cn(
+      'font-mono text-xs px-2 py-1 rounded',
+      isActive ? 'badge-chronicle-emerald' : 'bg-muted text-muted-foreground'
+    )}>
+      {isActive ? 'Active' : 'Inactive'}
+    </span>
+  );
+}
+
+function createMappingColumns({ mappingMutationsAvailable, onEditMapping }) {
+  return [
+    {
+      key: 'service',
+      header: 'Service',
+      width: '420px',
+      render: (row) => (
+        <div>
+          <p className="text-foreground font-medium">
+            {row.service_name || '—'}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground">
+            {row.service_code || '—'} → {row.external_code || '—'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'effective',
+      header: 'Effective',
+      width: '220px',
+      render: (row) => (
+        <div>
+          <p className="font-mono text-xs text-foreground">
+            From {row.effective_from}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground">
+            Until {row.effective_until || '—'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '120px',
+      render: (row) => <MappingStatusBadge isActive={row.is_active} />,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: '140px',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (row) => (
+        mappingMutationsAvailable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={() => onEditMapping(row)}
+          >
+            <Pencil className="size-3 mr-2" />
+            Edit
+          </Button>
+        ) : null
+      ),
+    },
+  ];
+}
+
+function NhisMappingsHeader({
+  mappingMutationsAvailable,
+  onDownloadTemplate,
+  onNewMapping,
+  onRefresh,
+  payerId,
+}) {
+  return (
+    <PageHeader
+      title={(
+        <span className="flex items-center gap-3">
+          <span className="p-3 rounded-xl bg-primary/10">
+            <Link2 className="size-6 text-primary" />
+          </span>
+          NHIS Service Mappings
+        </span>
+      )}
+      description="Map internal billable services to NHIS codes (effective-dated)"
+      actions={(
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={onDownloadTemplate}
+          >
+            <Download className="size-4 mr-2" />
+            CSV Template
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={onRefresh}
+          >
+            <RefreshCw className="size-4 mr-2" />
+            Refresh
+          </Button>
+          {mappingMutationsAvailable && (
+            <Button
+              size="sm"
+              className="font-mono text-xs"
+              disabled={!payerId}
+              onClick={onNewMapping}
+            >
+              <Plus className="size-4 mr-2" />
+              New Mapping
+            </Button>
+          )}
+        </div>
+      )}
+    />
+  );
+}
+
+function NhisMappingsReadOnlyNotice({ mappingMutationsAvailable }) {
+  if (mappingMutationsAvailable) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+      NHIS mapping editing and import are not available in Rust V2 mode yet. Existing
+      mapping views remain read-only until mapping mutation and import contracts are implemented.
+    </section>
+  );
+}
+
+function NhisImportJobSummary({ importJob, importSummary }) {
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3">
+      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Current Job</p>
+      {!importJob && (
+        <p className="mt-2 text-sm text-muted-foreground">No import job started yet.</p>
+      )}
+      {importJob && (
+        <div className="mt-2 space-y-1">
+          <p className="font-mono text-xs text-foreground">Status: {importJob.status}</p>
+          <p className="font-mono text-xs text-muted-foreground">File: {importJob.file_name || '—'}</p>
+          <p className="font-mono text-xs text-muted-foreground">
+            Rows: {importSummary.rows_total ?? '—'} | Valid: {importSummary.rows_valid ?? '—'}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground">
+            Would create: {importSummary.would_create_mappings ?? '—'} | Would update: {importSummary.would_update_mappings ?? '—'}
+          </p>
+          <p className={cn(
+            'font-mono text-xs',
+            Number(importSummary.errors || 0) > 0 ? 'text-rose-600' : 'text-muted-foreground'
+          )}>
+            Errors: {importSummary.errors ?? 0} | Warnings: {importSummary.warnings ?? 0}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NhisImportIssues({ importIssues }) {
+  if (!importIssues.length) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border bg-background p-3">
+      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Preview Issues (first 20)</p>
+      <div className="mt-2 space-y-1">
+        {importIssues.slice(0, 20).map((issue) => (
+          <div key={`${issue.row || 'row'}-${issue.field || 'field'}-${issue.message}`} className="flex items-start gap-2">
+            <span className={cn(
+              'mt-0.5 inline-flex rounded px-1.5 py-0.5 font-mono text-[10px]',
+              issue.severity === 'error' ? 'badge-chronicle-rose' : 'badge-chronicle-amber'
+            )}>
+              {issue.severity}
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {issue.row ? `Row ${issue.row}: ` : ''}
+              {issue.field ? `${issue.field}: ` : ''}
+              {issue.message}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NhisBulkImportPanel({
+  activeImportJobId,
+  applyImportJobMutation,
+  createImportJobMutation,
+  importJob,
+  importJobQuery,
+  importIssues,
+  importSummary,
+  mappingMutationsAvailable,
+  onApplyImport,
+  onFileChange,
+  onStartImportPreview,
+  seedServices,
+  servicesQuery,
+  codesQuery,
+  setSeedServices,
+}) {
+  if (!mappingMutationsAvailable) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-xl border bg-card p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-heading text-sm text-foreground">Bulk Import (Preview then Apply)</p>
+          <p className="text-xs text-muted-foreground">
+            Upload a CSV or XLSX to upsert NHIS mappings by internal <span className="font-mono">service_code</span>.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Switch checked={seedServices} onCheckedChange={setSeedServices} />
+            <span className="font-mono text-xs text-muted-foreground">Seed missing services</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={() => {
+              importJobQuery.refetch();
+              codesQuery.refetch();
+              servicesQuery.refetch();
+            }}
+            disabled={!activeImportJobId}
+          >
+            <RefreshCw className="size-4 mr-2" />
+            Refresh Job
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="lg:col-span-2 space-y-2">
+          <Label className="font-mono text-xs uppercase tracking-wider">File (CSV/XLSX)</Label>
+          <Input
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="font-mono text-sm"
+            onChange={onFileChange}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              className="font-mono text-xs"
+              onClick={onStartImportPreview}
+              disabled={createImportJobMutation.isPending}
+            >
+              <Upload className="size-4 mr-2" />
+              Preview Import
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="font-mono text-xs"
+              onClick={onApplyImport}
+              disabled={
+                !importJob ||
+                importJob.status !== 'preview_ready' ||
+                Number(importSummary.errors || 0) > 0 ||
+                applyImportJobMutation.isPending
+              }
+            >
+              Apply Import
+            </Button>
+            {importJob?.status === 'preview_ready' && Number(importSummary.errors || 0) > 0 && (
+              <span className="font-mono text-xs text-rose-600">
+                Fix preview errors before applying.
+              </span>
+            )}
+          </div>
+        </div>
+
+        <NhisImportJobSummary importJob={importJob} importSummary={importSummary} />
+      </div>
+
+      <NhisImportIssues importIssues={importIssues} />
+    </section>
+  );
+}
+
+function NhisMappingFilters({
+  nhisProviders,
+  payerId,
+  search,
+  selectedServiceName,
+  setSearch,
+  setSelectedPayer,
+}) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="space-y-2">
+        <Label className="font-mono text-xs uppercase tracking-wider">NHIS Payer</Label>
+        <Select
+          value={payerId}
+          onValueChange={(value) => setSelectedPayer(value)}
+        >
+          <SelectTrigger className="font-mono text-sm">
+            <SelectValue placeholder="Select NHIS payer" />
+          </SelectTrigger>
+          <SelectContent>
+            {nhisProviders.map((provider) => (
+              <SelectItem key={provider.id} value={provider.id} className="font-mono text-sm">
+                {provider.name} ({provider.code})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {!nhisProviders.length ? (
+          <p className="text-xs text-muted-foreground">
+            Create an insurance provider with `payer_type=nhis` first.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="lg:col-span-2">
+        <div className="relative w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search mappings (service name/code, external code)"
+            className="pl-9 font-mono text-sm"
+          />
+        </div>
+        {selectedServiceName ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Selected: {selectedServiceName}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function NhisMappingDialog({
+  createMutation,
+  dialog,
+  form,
+  onDialogChange,
+  onSaveMapping,
+  services,
+  serviceById,
+  setForm,
+  updateMutation,
+}) {
+  return (
+    <Dialog open={dialog.open} onOpenChange={onDialogChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-display">
+            {dialog.mode === 'create' ? 'New NHIS Mapping' : 'Edit NHIS Mapping'}
+          </DialogTitle>
+          <DialogDescription>
+            Effective dates are required. Use future dates for planned tariff revisions.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider">Service</Label>
+            <Select value={form.service} onValueChange={(value) => setForm((prev) => ({ ...prev, service: value }))}>
+              <SelectTrigger className="font-mono text-sm">
+                <SelectValue placeholder="Select a service" />
+              </SelectTrigger>
+              <SelectContent>
+                {services.map((service) => (
+                  <SelectItem key={service.id} value={service.id} className="font-mono text-sm">
+                    {service.code} · {service.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.service && serviceById.get(form.service) ? (
+              <p className="text-xs text-muted-foreground">
+                Selected: {serviceById.get(form.service).name}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider">NHIS External Code</Label>
+            <Input
+              value={form.external_code}
+              onChange={(event) => setForm((prev) => ({ ...prev, external_code: event.target.value }))}
+              className="font-mono"
+              placeholder="e.g. NHIS12345"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider">Effective From</Label>
+              <Input
+                type="date"
+                value={form.effective_from}
+                onChange={(event) => setForm((prev) => ({ ...prev, effective_from: event.target.value }))}
+                className="font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider">Effective Until (optional)</Label>
+              <Input
+                type="date"
+                value={form.effective_until}
+                onChange={(event) => setForm((prev) => ({ ...prev, effective_until: event.target.value }))}
+                className="font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 p-3">
+            <div>
+              <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">Status</p>
+              <p className="text-sm text-foreground">{form.is_active ? 'Active' : 'Inactive'}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="font-mono text-xs"
+              onClick={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
+            >
+              Toggle
+            </Button>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="font-mono text-xs"
+            onClick={() => onDialogChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="font-mono text-xs"
+            disabled={createMutation.isPending || updateMutation.isPending}
+            onClick={onSaveMapping}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function NhisServiceMappingsPage() {
   const [search, setSearch] = useState('');
   const mappingMutationsAvailable = !isRustV2ApiMode();
@@ -68,7 +534,7 @@ export default function NhisServiceMappingsPage() {
   const providersQuery = useInsuranceProviders({ page_size: 200 });
   const allProviders = normalizeResults(providersQuery.data).results;
   const nhisProviders = useMemo(
-    () => allProviders.filter((p) => p?.payer_type === 'nhis'),
+    () => allProviders.filter((provider) => provider?.payer_type === 'nhis'),
     [allProviders]
   );
 
@@ -140,18 +606,18 @@ export default function NhisServiceMappingsPage() {
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'nhis-service-mapping-template.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'nhis-service-mapping-template.csv';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
     URL.revokeObjectURL(url);
   };
 
   const serviceById = useMemo(() => {
     const map = new Map();
-    for (const s of services) map.set(s.id, s);
+    for (const service of services) map.set(service.id, service);
     return map;
   }, [services]);
 
@@ -173,8 +639,8 @@ export default function NhisServiceMappingsPage() {
       });
       setActiveImportJobId(job.id);
       toast.success('Import preview started');
-    } catch (e) {
-      toast.error(e.message || 'Failed to start import preview');
+    } catch (error) {
+      toast.error(error.message || 'Failed to start import preview');
     }
   };
 
@@ -183,85 +649,80 @@ export default function NhisServiceMappingsPage() {
     try {
       await applyImportJobMutation.mutateAsync({ id: importJob.id, data: { force: false } });
       toast.success('Apply started');
-    } catch (e) {
-      toast.error(e.message || 'Failed to apply import');
+    } catch (error) {
+      toast.error(error.message || 'Failed to apply import');
     }
   };
 
-  const columns = useMemo(() => ([
-    {
-      key: 'service',
-      header: 'Service',
-      width: '420px',
-      render: (row) => (
-        <div>
-          <p className="text-foreground font-medium">
-            {row.service_name || '—'}
-          </p>
-          <p className="font-mono text-xs text-muted-foreground">
-            {row.service_code || '—'} → {row.external_code || '—'}
-          </p>
-        </div>
-      ),
-    },
-    {
-      key: 'effective',
-      header: 'Effective',
-      width: '220px',
-      render: (row) => (
-        <div>
-          <p className="font-mono text-xs text-foreground">
-            From {row.effective_from}
-          </p>
-          <p className="font-mono text-xs text-muted-foreground">
-            Until {row.effective_until || '—'}
-          </p>
-        </div>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      width: '120px',
-      render: (row) => (
-        <span className={cn(
-          'font-mono text-xs px-2 py-1 rounded',
-          row.is_active ? 'badge-chronicle-emerald' : 'bg-muted text-muted-foreground'
-        )}>
-          {row.is_active ? 'Active' : 'Inactive'}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: 'Actions',
-      width: '140px',
-      headerClassName: 'text-right',
-      cellClassName: 'text-right',
-      render: (row) => (
-        mappingMutationsAvailable ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono text-xs"
-            onClick={() => {
-              setForm({
-                service: row.service || '',
-                external_code: row.external_code || '',
-                effective_from: row.effective_from || '',
-                effective_until: row.effective_until || '',
-                is_active: !!row.is_active,
-              });
-              setDialog({ open: true, mode: 'edit', row });
-            }}
-          >
-            <Pencil className="size-3 mr-2" />
-            Edit
-          </Button>
-        ) : null
-      ),
-    },
-  ]), [mappingMutationsAvailable]);
+  const openNewMappingDialog = () => {
+    setForm({
+      service: '',
+      external_code: '',
+      effective_from: '',
+      effective_until: '',
+      is_active: true,
+    });
+    setDialog({ open: true, mode: 'create', row: null });
+  };
+
+  const openEditMappingDialog = (row) => {
+    setForm({
+      service: row.service || '',
+      external_code: row.external_code || '',
+      effective_from: row.effective_from || '',
+      effective_until: row.effective_until || '',
+      is_active: !!row.is_active,
+    });
+    setDialog({ open: true, mode: 'edit', row });
+  };
+
+  const handleDialogChange = (open) => {
+    setDialog((prev) => ({ ...prev, open }));
+  };
+
+  const saveMapping = async () => {
+    if (!payerId) {
+      toast.error('Select an NHIS payer first');
+      return;
+    }
+    if (!form.service) {
+      toast.error('Service is required');
+      return;
+    }
+    if (!form.external_code.trim()) {
+      toast.error('External code is required');
+      return;
+    }
+    if (!form.effective_from) {
+      toast.error('Effective from date is required');
+      return;
+    }
+    try {
+      const payload = {
+        payer: payerId,
+        service: form.service,
+        external_code: form.external_code.trim(),
+        effective_from: form.effective_from,
+        effective_until: form.effective_until || null,
+        is_active: form.is_active,
+      };
+      if (dialog.mode === 'create') {
+        await createMutation.mutateAsync(payload);
+        toast.success('Mapping created');
+      } else {
+        await updateMutation.mutateAsync({ id: dialog.row.id, data: payload });
+        toast.success('Mapping updated');
+      }
+      setDialog({ open: false, mode: 'create', row: null });
+    } catch (error) {
+      toast.error(error.message || 'Failed to save mapping');
+    }
+  };
+
+  const columns = useMemo(() => createMappingColumns({
+    mappingMutationsAvailable,
+    onEditMapping: openEditMappingDialog,
+  }), [mappingMutationsAvailable]);
 
   if (isLoading && !providersQuery.data && !servicesQuery.data && !codesQuery.data) {
     return <PageState variant="loading" />;
@@ -280,228 +741,43 @@ export default function NhisServiceMappingsPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title={(
-          <span className="flex items-center gap-3">
-            <span className="p-3 rounded-xl bg-primary/10">
-              <Link2 className="size-6 text-primary" />
-            </span>
-            NHIS Service Mappings
-          </span>
-        )}
-        description="Map internal billable services to NHIS codes (effective-dated)"
-        actions={(
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs"
-              onClick={downloadTemplate}
-            >
-              <Download className="size-4 mr-2" />
-              CSV Template
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs"
-              onClick={handleRefresh}
-            >
-              <RefreshCw className="size-4 mr-2" />
-              Refresh
-            </Button>
-            {mappingMutationsAvailable && (
-              <Button
-                size="sm"
-                className="font-mono text-xs"
-                disabled={!payerId}
-                onClick={() => {
-                  setForm({
-                    service: '',
-                    external_code: '',
-                    effective_from: '',
-                    effective_until: '',
-                    is_active: true,
-                  });
-                  setDialog({ open: true, mode: 'create', row: null });
-                }}
-              >
-                <Plus className="size-4 mr-2" />
-                New Mapping
-              </Button>
-            )}
-          </div>
-        )}
+      <NhisMappingsHeader
+        mappingMutationsAvailable={mappingMutationsAvailable}
+        onDownloadTemplate={downloadTemplate}
+        onNewMapping={openNewMappingDialog}
+        onRefresh={handleRefresh}
+        payerId={payerId}
       />
 
       <main className="p-4 sm:p-6 space-y-3">
-        {!mappingMutationsAvailable && (
-          <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-            NHIS mapping editing and import are not available in Rust V2 mode yet. Existing
-            mapping views remain read-only until mapping mutation and import contracts are implemented.
-          </section>
-        )}
+        <NhisMappingsReadOnlyNotice mappingMutationsAvailable={mappingMutationsAvailable} />
 
-        {mappingMutationsAvailable && (
-          <section className="rounded-xl border bg-card p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-heading text-sm text-foreground">Bulk Import (Preview then Apply)</p>
-                <p className="text-xs text-muted-foreground">
-                  Upload a CSV or XLSX to upsert NHIS mappings by internal <span className="font-mono">service_code</span>.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2">
-                  <Switch checked={seedServices} onCheckedChange={setSeedServices} />
-                  <span className="font-mono text-xs text-muted-foreground">Seed missing services</span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="font-mono text-xs"
-                  onClick={() => {
-                    importJobQuery.refetch();
-                    codesQuery.refetch();
-                    servicesQuery.refetch();
-                  }}
-                  disabled={!activeImportJobId}
-                >
-                  <RefreshCw className="size-4 mr-2" />
-                  Refresh Job
-                </Button>
-              </div>
-            </div>
+        <NhisBulkImportPanel
+          activeImportJobId={activeImportJobId}
+          applyImportJobMutation={applyImportJobMutation}
+          codesQuery={codesQuery}
+          createImportJobMutation={createImportJobMutation}
+          importIssues={importIssues}
+          importJob={importJob}
+          importJobQuery={importJobQuery}
+          importSummary={importSummary}
+          mappingMutationsAvailable={mappingMutationsAvailable}
+          onApplyImport={applyImport}
+          onFileChange={(event) => { importFileRef.current = event.target.files?.[0] || null; }}
+          onStartImportPreview={startImportPreview}
+          seedServices={seedServices}
+          servicesQuery={servicesQuery}
+          setSeedServices={setSeedServices}
+        />
 
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
-              <div className="lg:col-span-2 space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider">File (CSV/XLSX)</Label>
-                <Input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  className="font-mono text-sm"
-                  onChange={(e) => { importFileRef.current = e.target.files?.[0] || null; }}
-                />
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    className="font-mono text-xs"
-                    onClick={startImportPreview}
-                    disabled={createImportJobMutation.isPending}
-                  >
-                    <Upload className="size-4 mr-2" />
-                    Preview Import
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="font-mono text-xs"
-                    onClick={applyImport}
-                    disabled={
-                      !importJob ||
-                      importJob.status !== 'preview_ready' ||
-                      Number(importSummary.errors || 0) > 0 ||
-                      applyImportJobMutation.isPending
-                    }
-                  >
-                    Apply Import
-                  </Button>
-                  {importJob?.status === 'preview_ready' && Number(importSummary.errors || 0) > 0 && (
-                    <span className="font-mono text-xs text-rose-600">
-                      Fix preview errors before applying.
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-lg border bg-muted/30 p-3">
-                <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Current Job</p>
-                {!importJob && (
-                  <p className="mt-2 text-sm text-muted-foreground">No import job started yet.</p>
-                )}
-                {importJob && (
-                  <div className="mt-2 space-y-1">
-                    <p className="font-mono text-xs text-foreground">Status: {importJob.status}</p>
-                    <p className="font-mono text-xs text-muted-foreground">File: {importJob.file_name || '—'}</p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      Rows: {importSummary.rows_total ?? '—'} | Valid: {importSummary.rows_valid ?? '—'}
-                    </p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      Would create: {importSummary.would_create_mappings ?? '—'} | Would update: {importSummary.would_update_mappings ?? '—'}
-                    </p>
-                    <p className={cn(
-                      'font-mono text-xs',
-                      Number(importSummary.errors || 0) > 0 ? 'text-rose-600' : 'text-muted-foreground'
-                    )}>
-                      Errors: {importSummary.errors ?? 0} | Warnings: {importSummary.warnings ?? 0}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {importJob && importIssues.length > 0 && (
-              <div className="mt-4 rounded-lg border bg-background p-3">
-                <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Preview Issues (first 20)</p>
-                <div className="mt-2 space-y-1">
-                  {importIssues.slice(0, 20).map((it) => (
-                    <div key={`${it.row || 'row'}-${it.field || 'field'}-${it.message}`} className="flex items-start gap-2">
-                      <span className={cn(
-                        'mt-0.5 inline-flex rounded px-1.5 py-0.5 font-mono text-[10px]',
-                        it.severity === 'error' ? 'badge-chronicle-rose' : 'badge-chronicle-amber'
-                      )}>
-                        {it.severity}
-                      </span>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {it.row ? `Row ${it.row}: ` : ''}
-                        {it.field ? `${it.field}: ` : ''}
-                        {it.message}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider">NHIS Payer</Label>
-            <Select
-              value={payerId}
-              onValueChange={(val) => setSelectedPayer(val)}
-            >
-              <SelectTrigger className="font-mono text-sm">
-                <SelectValue placeholder="Select NHIS payer" />
-              </SelectTrigger>
-              <SelectContent>
-                {nhisProviders.map((p) => (
-                  <SelectItem key={p.id} value={p.id} className="font-mono text-sm">
-                    {p.name} ({p.code})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!nhisProviders.length ? (
-              <p className="text-xs text-muted-foreground">
-                Create an insurance provider with `payer_type=nhis` first.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="lg:col-span-2">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search mappings (service name/code, external code)"
-                className="pl-9 font-mono text-sm"
-              />
-            </div>
-          </div>
-        </div>
+        <NhisMappingFilters
+          nhisProviders={nhisProviders}
+          payerId={payerId}
+          search={search}
+          selectedServiceName=""
+          setSearch={setSearch}
+          setSelectedPayer={setSelectedPayer}
+        />
 
         <VirtualizedTable
           columns={columns}
@@ -511,141 +787,17 @@ export default function NhisServiceMappingsPage() {
         />
       </main>
 
-      <Dialog open={dialog.open} onOpenChange={(open) => setDialog((p) => ({ ...p, open }))}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display">
-              {dialog.mode === 'create' ? 'New NHIS Mapping' : 'Edit NHIS Mapping'}
-            </DialogTitle>
-            <DialogDescription>
-              Effective dates are required. Use future dates for planned tariff revisions.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider">Service</Label>
-              <Select value={form.service} onValueChange={(val) => setForm((p) => ({ ...p, service: val }))}>
-                <SelectTrigger className="font-mono text-sm">
-                  <SelectValue placeholder="Select a service" />
-                </SelectTrigger>
-                <SelectContent>
-                  {services.map((s) => (
-                    <SelectItem key={s.id} value={s.id} className="font-mono text-sm">
-                      {s.code} · {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {form.service && serviceById.get(form.service) ? (
-                <p className="text-xs text-muted-foreground">
-                  Selected: {serviceById.get(form.service).name}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider">NHIS External Code</Label>
-              <Input
-                value={form.external_code}
-                onChange={(e) => setForm((p) => ({ ...p, external_code: e.target.value }))}
-                className="font-mono"
-                placeholder="e.g. NHIS12345"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider">Effective From</Label>
-                <Input
-                  type="date"
-                  value={form.effective_from}
-                  onChange={(e) => setForm((p) => ({ ...p, effective_from: e.target.value }))}
-                  className="font-mono"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider">Effective Until (optional)</Label>
-                <Input
-                  type="date"
-                  value={form.effective_until}
-                  onChange={(e) => setForm((p) => ({ ...p, effective_until: e.target.value }))}
-                  className="font-mono"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 p-3">
-              <div>
-                <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">Status</p>
-                <p className="text-sm text-foreground">{form.is_active ? 'Active' : 'Inactive'}</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="font-mono text-xs"
-                onClick={() => setForm((p) => ({ ...p, is_active: !p.is_active }))}
-              >
-                Toggle
-              </Button>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="font-mono text-xs"
-              onClick={() => setDialog({ open: false, mode: 'create', row: null })}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="font-mono text-xs"
-              disabled={createMutation.isPending || updateMutation.isPending}
-              onClick={async () => {
-                if (!payerId) {
-                  toast.error('Select an NHIS payer first');
-                  return;
-                }
-                if (!form.service) {
-                  toast.error('Service is required');
-                  return;
-                }
-                if (!form.external_code.trim()) {
-                  toast.error('External code is required');
-                  return;
-                }
-                if (!form.effective_from) {
-                  toast.error('Effective from date is required');
-                  return;
-                }
-                try {
-                  const payload = {
-                    payer: payerId,
-                    service: form.service,
-                    external_code: form.external_code.trim(),
-                    effective_from: form.effective_from,
-                    effective_until: form.effective_until || null,
-                    is_active: form.is_active,
-                  };
-                  if (dialog.mode === 'create') {
-                    await createMutation.mutateAsync(payload);
-                    toast.success('Mapping created');
-                  } else {
-                    await updateMutation.mutateAsync({ id: dialog.row.id, data: payload });
-                    toast.success('Mapping updated');
-                  }
-                  setDialog({ open: false, mode: 'create', row: null });
-                } catch (err) {
-                  toast.error(err.message || 'Failed to save mapping');
-                }
-              }}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NhisMappingDialog
+        createMutation={createMutation}
+        dialog={dialog}
+        form={form}
+        onDialogChange={handleDialogChange}
+        onSaveMapping={saveMapping}
+        services={services}
+        serviceById={serviceById}
+        setForm={setForm}
+        updateMutation={updateMutation}
+      />
     </PageShell>
   );
 }
