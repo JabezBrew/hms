@@ -185,6 +185,78 @@ function pickActivePattern(patterns, requestedPattern) {
   return patterns.some((pattern) => pattern.id === requestedPattern) ? requestedPattern : SELECT_ALL;
 }
 
+function RosterPatternSlotGrid({
+  cycleLength,
+  dayOffsets,
+  dutyTypes,
+  selectedPattern,
+  selectedPlan,
+  slotByKey,
+  unitById,
+  onCreateSlot,
+  onEditSlot,
+}) {
+  if (!selectedPlan || !selectedPattern || dutyTypes.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="border-b border-border px-4 py-2.5 bg-muted/30">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+          Grid Editor - {cycleLength} Day Cycle
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="font-mono text-[10px] uppercase">Duty Type</TableHead>
+              {dayOffsets.map((offset) => (
+                <TableHead key={offset} className="text-center font-mono text-[10px] uppercase">
+                  Day {offset}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {dutyTypes.map((dutyType) => (
+              <TableRow key={dutyType.id}>
+                <TableCell className="font-heading font-medium text-sm">{dutyType.name}</TableCell>
+                {dayOffsets.map((offset) => {
+                  const slot = slotByKey.get(`${dutyType.id}-${offset}`);
+                  const teamName = slot ? unitById.get(slot.team)?.name : null;
+                  return (
+                    <TableCell key={`${dutyType.id}-${offset}`} className="text-center p-2">
+                      {slot ? (
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium">{formatRosterName(teamName)}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">
+                            {slot.start_time || slot.end_time
+                              ? `${formatRosterTime(slot.start_time)} - ${formatRosterTime(slot.end_time)}`
+                              : 'All day'}
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => onEditSlot(slot)}>
+                            Edit
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => onCreateSlot(offset, dutyType.id)}>
+                          Add
+                        </Button>
+                      )}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 export function RosterPatternSlotsTab() {
   const { isLoading: unitsLoading, departments, getTeamOptions, unitById } = useUnitOptions();
   const [filters, dispatchFilters] = useReducer(filtersReducer, INITIAL_FILTERS);
@@ -469,78 +541,6 @@ export function RosterPatternSlotsTab() {
         onFieldChange={updateFormField}
         onSubmit={handleSubmit}
       />
-    </div>
-  );
-}
-
-function RosterPatternSlotGrid({
-  cycleLength,
-  dayOffsets,
-  dutyTypes,
-  selectedPattern,
-  selectedPlan,
-  slotByKey,
-  unitById,
-  onCreateSlot,
-  onEditSlot,
-}) {
-  if (!selectedPlan || !selectedPattern || dutyTypes.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <div className="border-b border-border px-4 py-2.5 bg-muted/30">
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-          Grid Editor - {cycleLength} Day Cycle
-        </span>
-      </div>
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="font-mono text-[10px] uppercase">Duty Type</TableHead>
-              {dayOffsets.map((offset) => (
-                <TableHead key={offset} className="text-center font-mono text-[10px] uppercase">
-                  Day {offset}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {dutyTypes.map((dutyType) => (
-              <TableRow key={dutyType.id}>
-                <TableCell className="font-heading font-medium text-sm">{dutyType.name}</TableCell>
-                {dayOffsets.map((offset) => {
-                  const slot = slotByKey.get(`${dutyType.id}-${offset}`);
-                  const teamName = slot ? unitById.get(slot.team)?.name : null;
-                  return (
-                    <TableCell key={`${dutyType.id}-${offset}`} className="text-center p-2">
-                      {slot ? (
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">{formatRosterName(teamName)}</div>
-                          <div className="text-[10px] text-muted-foreground font-mono">
-                            {slot.start_time || slot.end_time
-                              ? `${formatRosterTime(slot.start_time)} - ${formatRosterTime(slot.end_time)}`
-                              : 'All day'}
-                          </div>
-                          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => onEditSlot(slot)}>
-                            Edit
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => onCreateSlot(offset, dutyType.id)}>
-                          Add
-                        </Button>
-                      )}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
     </div>
   );
 }
