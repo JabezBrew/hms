@@ -30,7 +30,6 @@ import { timelineKeys, usePatientTimeline, flattenTimelinePages, getTimelineTota
 import { encounterKeys, usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
-import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,16 +55,12 @@ import {
   getInitialExpandedNoteIds,
   normalizeExpansionId,
 } from "@/components/chronicle/chronicleNoteUtils";
-import {
-  chronicleWorkspaceIds,
-  prefetchChronicleWorkspaceResources,
-} from "@/features/patients/chronicle/workspaceRegistry";
+import { useChronicleWorkspaceRouting } from "@/features/patients/chronicle/useChronicleWorkspaceRouting";
 import {
   buildChronicleSearch,
   CHRONICLE_ALL_VISITS,
   CHRONICLE_VISIT_PARAM,
   resolveChronicleVisitScope,
-  stripTransientChronicleParams,
 } from "@/features/patients/chronicle/visitScopeUtils";
 import { emitOnboardingEvent } from "@/features/onboarding";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
@@ -1666,7 +1661,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const { user, loading: authLoading } = useAuth();
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
-  const prefetchedActionsRef = useRef(new Set());
   const openedPatientChartsRef = useRef(new Set());
   const lastFilterEventRef = useRef(null);
   const encounterExpansionSeedRef = useRef(null);
@@ -1682,8 +1676,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Edit note state - holds note ID and data for editing existing notes
   const [editNoteData, setEditNoteData] = useState(null);
-  const [requestedDischargeAdmissionId, setRequestedDischargeAdmissionId] = useState(null);
+  const [requestedDischargeAdmission, setRequestedDischargeAdmission] = useState(null);
   const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
+  const requestedDischargeAdmissionId = requestedDischargeAdmission?.patientId === id
+    ? requestedDischargeAdmission.admissionId
+    : null;
+  const setRequestedDischargeAdmissionId = useCallback((admissionId) => {
+    setRequestedDischargeAdmission(admissionId
+      ? { patientId: id, admissionId: String(admissionId) }
+      : null);
+  }, [id]);
   const rustV2Mode = isRustV2ApiMode();
   const canUseStandaloneClinicalWorkflows = !rustV2Mode;
   const canUseAiAssistant = !rustV2Mode;
@@ -1698,16 +1700,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const admissionParam = searchParams.get('admission');
   const visitParam = searchParams.get(CHRONICLE_VISIT_PARAM);
   const chronicleModeParam = searchParams.get('mode');
+  const wardRoundParam = searchParams.get('wardRound');
+  const consultationParam = searchParams.get('consultation');
   const isWardRoundMode = chronicleModeParam === 'ward-round' || defaultAction === 'ward_round';
-  const clearQueryParams = useCallback(() => {
-    const nextSearch = stripTransientChronicleParams(search);
-    if (nextSearch !== search) {
-      navigate({ pathname, search: nextSearch }, { replace: true });
-    }
-  }, [navigate, pathname, search]);
-
-  // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
   const [trendReviewTab, setTrendReviewTab] = useState('vitals');
 
   const {
@@ -1782,27 +1777,20 @@ const PatientChroniclePage = ({ defaultAction }) => {
     rustV2ActiveAdmission?.ward_name,
     rustV2ActiveAdmissionId,
   ]);
-  const prefetchWorkspaceForOpen = useCallback((workspaceId) => {
-    prefetchChronicleWorkspaceResources(workspaceId, { patientLocalId, queryClient });
-  }, [patientLocalId, queryClient]);
-
-  // Auto-open slide-over based on action query param or defaultAction prop
-  const wardRoundParam = searchParams.get('wardRound');
-  const consultationParam = searchParams.get('consultation');
-  const openChronicleWorkspace = useCallback((workspaceId) => {
-    prefetchWorkspaceForOpen(workspaceId);
-    slideOvers.open(workspaceId);
-  }, [prefetchWorkspaceForOpen, slideOvers]);
-  const openWardRoundMode = useCallback(() => {
-    const nextSearchParams = new URLSearchParams(search);
-    nextSearchParams.set('mode', 'ward-round');
-    nextSearchParams.delete('action');
-    nextSearchParams.delete('wardRound');
-    navigate({
-      pathname: `/patients/${id}`,
-      search: `?${nextSearchParams.toString()}`,
-    });
-  }, [id, navigate, search]);
+  const {
+    clearQueryParams,
+    openChronicleWorkspace,
+    openWardRoundMode,
+    prefetchActionResources,
+    slideOvers,
+  } = useChronicleWorkspaceRouting({
+    id,
+    navigate,
+    patientLocalId,
+    pathname,
+    queryClient,
+    search,
+  });
 
   useEffect(() => {
     // react-doctor-disable-next-line react-doctor/no-event-handler -- Route/default action params are external navigation commands; this effect is the boundary that opens the matching Chronicle workspace once patient context is available.
@@ -1865,15 +1853,17 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
   }, [
     actionParam,
-    defaultAction,
-    wardRoundParam,
-    consultationParam,
     admissionParam,
-    patient,
     canUseStandaloneClinicalWorkflows,
+    clearQueryParams,
+    consultationParam,
+    defaultAction,
     openChronicleWorkspace,
     openWardRoundMode,
-    clearQueryParams,
+    patient,
+    setRequestedDischargeAdmissionId,
+    setRequestedTreatmentSheetAdmissionId,
+    wardRoundParam,
   ]);
 
   // Debounce search input
@@ -2099,11 +2089,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
       patient_id: patientLocalId,
     });
   }, [activeFilter, patientLocalId]);
-
-  useEffect(() => {
-    prefetchedActionsRef.current = new Set();
-    setRequestedDischargeAdmissionId(null);
-  }, [id]);
 
   // Use chronicle context data directly - no more legacy fallback needed
   const medications = useMemo(
@@ -2388,17 +2373,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     ]);
   }, [id, invalidateTimeline, refetchContext, refetchPatient, refetchStartup, refetchTimeline, rustV2Mode]);
 
-  const prefetchActionResources = useCallback((action) => {
-    if (!action) return;
-
-    const actionToken = `${action}:${patientLocalId || 'none'}`;
-    if (prefetchedActionsRef.current.has(actionToken)) {
-      return;
-    }
-    prefetchedActionsRef.current.add(actionToken);
-    prefetchChronicleWorkspaceResources(action, { patientLocalId, queryClient });
-  }, [patientLocalId, queryClient]);
-
   // Slide-over handlers - using the centralized hook
   const handleAskChronicle = useCallback(() => {
     if (!canUseAiAssistant) {
@@ -2450,7 +2424,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return;
     }
     openChronicleWorkspace('discharge');
-  }, [patient, activeEncounter, rustV2ActiveAdmissionId, canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
+  }, [patient, activeEncounter, rustV2ActiveAdmissionId, canUseStandaloneClinicalWorkflows, openChronicleWorkspace, setRequestedDischargeAdmissionId]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -2458,7 +2432,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     setCopyForwardData(null); // Clear copy forward data when closing
     setEditNoteData(null); // Clear edit note data when closing
     setRequestedDischargeAdmissionId(null);
-  }, [slideOvers]);
+  }, [setRequestedDischargeAdmissionId, slideOvers]);
 
   // Created handlers - refresh data and close
   const handleNoteCreated = useCallback(() => {
@@ -2535,7 +2509,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     refreshData();
     slideOvers.close();
     setRequestedDischargeAdmissionId(null);
-  }, [refreshData, slideOvers]);
+  }, [refreshData, setRequestedDischargeAdmissionId, slideOvers]);
 
   const handleViewMedicationHistory = useCallback(() => {
     openChronicleWorkspace('medicationHistory');
