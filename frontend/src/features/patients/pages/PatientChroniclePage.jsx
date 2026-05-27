@@ -15,19 +15,11 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useMemo, useCallback, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import {
-  usePatient,
-  usePatientChronicleStartup,
-} from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
-import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { flattenTimelinePages, getTimelineTotalCount } from "@/hooks/useTimelineQueries";
-import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
-// useClinicalSummary removed - context endpoint now provides all sidebar data
-import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,12 +35,15 @@ import PatientIdentityHero from "@/components/chronicle/PatientIdentityHero";
 import ClinicalSummarySidebar from "@/components/chronicle/ClinicalSummarySidebar";
 import TimelineEntry from "@/components/chronicle/TimelineEntry";
 import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
-import { usePatientInsurance } from "@/features/billing/hooks";
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
 import { ProblemListSidebar } from "@/features/problems";
 import { normalizeExpansionId } from "@/components/chronicle/chronicleNoteUtils";
+import { getEncounterKind } from "@/features/patients/chronicle/chronicleEncounterUtils";
 import { useChronicleBreakGlassAccess } from "@/features/patients/chronicle/useChronicleBreakGlassAccess";
+import { useChronicleOnboardingEvents } from "@/features/patients/chronicle/useChronicleOnboardingEvents";
+import { useChroniclePatientRecord } from "@/features/patients/chronicle/useChroniclePatientRecord";
+import { useChronicleRouteState } from "@/features/patients/chronicle/useChronicleRouteState";
 import { useChronicleTimelineData } from "@/features/patients/chronicle/useChronicleTimelineData";
 import { useChronicleTimelineExpansion } from "@/features/patients/chronicle/useChronicleTimelineExpansion";
 import { useChronicleVisitScope } from "@/features/patients/chronicle/useChronicleVisitScope";
@@ -56,14 +51,9 @@ import { useChronicleWorkspaceRouting } from "@/features/patients/chronicle/useC
 import { useChronicleWorkspaceActions } from "@/features/patients/chronicle/useChronicleWorkspaceActions";
 import {
   CHRONICLE_ALL_VISITS,
-  CHRONICLE_VISIT_PARAM,
 } from "@/features/patients/chronicle/visitScopeUtils";
-import { emitOnboardingEvent } from "@/features/onboarding";
-import { usePageMeta } from "@/shared/hooks/usePageMeta";
-import { resolvePatientDisplayName } from "@/features/patients/utils/resolvePatientDisplayName";
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
-
 import { useDebounce } from "@/hooks/use-debounce";
 
 const WardRoundMode = lazy(() => import('@/features/patients/chronicle/ward-round/WardRoundMode'))
@@ -228,11 +218,6 @@ function normalizeLabResultsForSidebar(results) {
   }, []);
 }
 
-function getEncounterKind(encounter) {
-  const encounterType = encounter?.encounter_type || encounter?.type;
-  return typeof encounterType === 'string' ? encounterType.toLowerCase() : null;
-}
-
 function getEntryTimestamp(entry) {
   return entry?.timestamp
     || entry?.occurred_at
@@ -391,6 +376,109 @@ function compactLabDetail(lab) {
       ? new Date(lab.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : null,
   ].filter(hasDisplayValue).join(' • ');
+}
+
+function resolveDischargeCaseAdmissionId({
+  activeEncounter,
+  patient,
+  requestedDischargeAdmissionId,
+  rustV2ActiveAdmissionId,
+}) {
+  return requestedDischargeAdmissionId
+    || patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || rustV2ActiveAdmissionId
+    || activeEncounter?.admission_id
+    || null;
+}
+
+function useChronicleSidebarData({ chronicleContext, patient }) {
+  const copilotPatientName = useMemo(() => {
+    const details = patient?.local_data || patient;
+    if (!details) return 'Patient';
+
+    const userDetails = details.user_details;
+    if (!userDetails) {
+      return details.name || 'Patient';
+    }
+
+    const fullName = `${userDetails.first_name || ''} ${userDetails.last_name || ''}`.trim();
+    return fullName || details.name || 'Patient';
+  }, [patient]);
+  const medications = useMemo(
+    () => chronicleContext?.active_medications || chronicleContext?.summaries?.medications || [],
+    [chronicleContext?.active_medications, chronicleContext?.summaries?.medications],
+  );
+  const latestVitals = chronicleContext?.latest_vitals;
+  const recentVitals = useMemo(() => (
+    normalizeLatestVitalsForSidebar(latestVitals)
+  ), [latestVitals]);
+  const labResults = useMemo(() => {
+    const shapedLabs = chronicleContext?.lab_results || chronicleContext?.summaries?.labs || [];
+    return normalizeLabResultsForSidebar(shapedLabs);
+  }, [chronicleContext?.lab_results, chronicleContext?.summaries?.labs]);
+
+  return {
+    allergies: chronicleContext?.allergies || chronicleContext?.summaries?.allergies || [],
+    copilotPatientName,
+    labResults,
+    latestVitals,
+    medications,
+    problemSummaries: chronicleContext?.problems || chronicleContext?.summaries?.problems || [],
+    recentVitals,
+  };
+}
+
+function useChronicleWardBoardAccess({
+  chronicleActiveAdmission,
+  deploymentCapabilities,
+  id,
+  navigate,
+  patient,
+  patientLocalId,
+  rustV2ActiveAdmissionId,
+}) {
+  const enabledFeatures = deploymentCapabilities?.features;
+  const hasWardBoardContext = Boolean(
+    patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || rustV2ActiveAdmissionId
+    || chronicleActiveAdmission
+  );
+  const canOpenWardBoard = hasWardBoardContext
+    && enabledFeatures?.ward_task_board === true
+    && enabledFeatures?.patient_chronicle === true
+    && enabledFeatures?.wards === true
+    && enabledFeatures?.inpatient_admissions === true
+    && enabledFeatures?.nursing_workflows === true;
+  const wardBoardHref = useMemo(() => {
+    const boardPatientId = patientLocalId || id;
+    return boardPatientId
+      ? `/ward-board?patient=${encodeURIComponent(boardPatientId)}`
+      : '/ward-board';
+  }, [id, patientLocalId]);
+  const handleOpenWardBoard = useCallback(() => {
+    navigate(wardBoardHref);
+  }, [navigate, wardBoardHref]);
+
+  return {
+    canOpenWardBoard,
+    handleOpenWardBoard,
+  };
+}
+
+function useChronicleTimelineState({
+  hasNextPage,
+  isFetchingNextPage,
+  isTimelineLoading,
+  isVisitScopePending,
+}) {
+  return useMemo(() => ({
+    hasNextPage,
+    isFetchingNextPage,
+    isTimelineLoading,
+    isVisitScopePending,
+  }), [hasNextPage, isFetchingNextPage, isTimelineLoading, isVisitScopePending]);
 }
 
 function useChronicleTimelineViewModel({
@@ -1613,124 +1701,252 @@ function WardRoundChronicleMode({
   );
 }
 
-/**
- * PatientChroniclePage - Magazine-style patient health record view
- *
- * Layout:
- * - Hero header with patient identity
- * - Two-column layout: Clinical Summary | Timeline Chronicle
- * - Timeline with filterable entries
- *
- * @param {string} defaultAction - Optional action to trigger on mount (e.g., 'ward_round')
- */
-const PatientChroniclePage = ({ defaultAction }) => {
+function PatientChroniclePageContent({
+  activeEncounter,
+  activeFilter,
+  allergies,
+  chronicleActiveAdmission,
+  chronicleContext,
+  chronicleTimelineState,
+  dischargeState,
+  encounters,
+  fetchNextPage,
+  filteredEntries,
+  groupedByEncounter,
+  handleClearTimelineSearch,
+  handleOpenWardBoard,
+  handleStartWardRound,
+  handleVisitScopeChange,
+  handleViewAllHistory,
+  handleViewCurrentVisit,
+  isAnySlideOverOpen,
+  labResults,
+  latestVitals,
+  loadMoreRef,
+  medications,
+  pageMeta,
+  patientForChronicle,
+  patientId,
+  patientInsurance,
+  patientLocalId,
+  prefetchActionResources,
+  problemSummaries,
+  recentVitals,
+  refetchTimeline,
+  searchInput,
+  selectedEncounter,
+  setActiveFilter,
+  setSearchInput,
+  slideOvers,
+  timelineExpansion,
+  modeState,
+  totalCount,
+  user,
+  visitScopeOptions,
+  visitState,
+  workspaceActions,
+}) {
+  const {
+    handleAddNote,
+    handleAskChronicle,
+    handleCopyNote,
+    handleEditNote,
+    handleManageInsurance,
+    handleOrderLabs,
+    handlePrescribe,
+    handlePrintSummary,
+    handleReceiveRecord,
+    handleRecordFluids,
+    handleRecordVitals,
+    handleRequestConsult,
+    handleScheduleFollowUp,
+    handleShareRecord,
+    handleStartDischarge,
+    handleViewMedicationHistory,
+    handleViewTreatmentSheet,
+    handleViewTrends,
+    refreshData,
+    workspaceContext,
+  } = workspaceActions;
+  const {
+    canOpenWardBoard,
+    canUseAiAssistant,
+    canUseStandaloneClinicalWorkflows,
+    isCopilotSlideOverOpen,
+    isWardRoundMode,
+    rustV2Mode,
+  } = modeState;
+  const {
+    canViewDischargeCase,
+    dischargeCaseAdmissionId,
+  } = dischargeState;
+  const {
+    collapseAll,
+    expandAll,
+    expandedEncounters,
+    expandedNoteIds,
+    toggleEncounter,
+    toggleNoteExpanded,
+  } = timelineExpansion;
+
+  return (
+    <>
+      {pageMeta}
+      <div className="min-h-screen max-w-full overflow-x-hidden bg-background">
+        <PatientIdentityHero
+          patient={patientForChronicle}
+          allergies={allergies}
+          onActionIntent={rustV2Mode ? undefined : prefetchActionResources}
+          onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
+          onAddNote={handleAddNote}
+          onRecordVitals={handleRecordVitals}
+          onPrescribe={handlePrescribe}
+          onOrderLabs={handleOrderLabs}
+          onRequestConsult={handleRequestConsult}
+          onShareRecord={handleShareRecord}
+          onReceiveRecord={handleReceiveRecord}
+          onScheduleFollowUp={handleScheduleFollowUp}
+          onViewTreatmentSheet={handleViewTreatmentSheet}
+          onViewMedicationHistory={handleViewMedicationHistory}
+          onRecordFluids={handleRecordFluids}
+          onStartWardRound={handleStartWardRound}
+          onStartDischarge={canUseStandaloneClinicalWorkflows ? handleStartDischarge : undefined}
+          onManageInsurance={handleManageInsurance}
+          onPrintSummary={handlePrintSummary}
+          insurance={patientInsurance}
+          activeAdmission={chronicleActiveAdmission}
+        />
+
+        <WardBoardQuickAction
+          canOpenWardBoard={canOpenWardBoard}
+          onOpenWardBoard={handleOpenWardBoard}
+        />
+
+        <ChronicleDischargeClearance
+          admissionId={dischargeCaseAdmissionId}
+          canViewDischargeCase={canViewDischargeCase}
+        />
+
+        <div className={cn(
+          "flex min-w-0 max-w-full overflow-x-hidden transition-all duration-300",
+          isCopilotSlideOverOpen
+            ? "lg:mr-[34rem]"
+            : isAnySlideOverOpen && "lg:mr-[50%]"
+        )}>
+          <ChronicleSidebar
+            activeEncounter={activeEncounter}
+            allergies={allergies}
+            isAnySlideOverOpen={isAnySlideOverOpen}
+            labResults={labResults}
+            medications={medications}
+            patient={patientForChronicle}
+            patientId={patientId}
+            problems={problemSummaries}
+            recentVitals={recentVitals}
+            rustV2Mode={rustV2Mode}
+            onViewVitalsTrends={() => handleViewTrends('vitals')}
+            onViewFluidTrends={() => handleViewTrends('fluids')}
+          />
+          <main className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
+            {isWardRoundMode ? (
+              <WardRoundChronicleMode
+                activeEncounter={activeEncounter}
+                admission={chronicleActiveAdmission}
+                chronicleContext={chronicleContext}
+                labResults={labResults}
+                latestVitals={latestVitals}
+                medications={medications}
+                patient={patientForChronicle}
+                patientId={patientLocalId || patientId}
+                onCommitted={refreshData}
+              />
+            ) : (
+              <ChronicleTimelinePanel
+                activeEncounter={activeEncounter}
+                activeFilter={activeFilter}
+                encounterCount={encounters?.length || 0}
+                expandedEncounters={expandedEncounters}
+                expandedNoteIds={expandedNoteIds}
+                filteredEntries={filteredEntries}
+                groupedByEncounter={groupedByEncounter}
+                loadMoreRef={loadMoreRef}
+                searchInput={searchInput}
+                selectedEncounter={selectedEncounter}
+                timelineState={chronicleTimelineState}
+                totalCount={totalCount}
+                userId={user?.id}
+                visitState={visitState}
+                visitScopeOptions={visitScopeOptions}
+                onClearSearch={handleClearTimelineSearch}
+                onCollapseAll={collapseAll}
+                onCopyNote={handleCopyNote}
+                onEditNote={handleEditNote}
+                onExpandAll={expandAll}
+                onFetchNextPage={fetchNextPage}
+                onFilterChange={setActiveFilter}
+                onNoteUpdated={refetchTimeline}
+                onRecordFluids={handleRecordFluids}
+                onRefresh={refetchTimeline}
+                onSearchInputChange={setSearchInput}
+                onToggleEncounter={toggleEncounter}
+                onToggleNoteExpanded={toggleNoteExpanded}
+                onViewAllHistory={handleViewAllHistory}
+                onViewCurrentVisit={handleViewCurrentVisit}
+                onViewMedicationHistory={handleViewMedicationHistory}
+                onVisitScopeChange={handleVisitScopeChange}
+              />
+            )}
+          </main>
+
+          <ChronicleWorkspaceHost
+            activeWorkspace={slideOvers.activeSlideOver}
+            workspaceContext={workspaceContext}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function usePatientChroniclePageModel(defaultAction) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const { user, loading: authLoading } = useAuth();
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
-  const openedPatientChartsRef = useRef(new Set());
-  const lastFilterEventRef = useRef(null);
-  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
-  const [requestedDischargeAdmission, setRequestedDischargeAdmission] = useState(null);
-  const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
-  const requestedDischargeAdmissionId = requestedDischargeAdmission?.patientId === id
-    ? requestedDischargeAdmission.admissionId
-    : null;
-  const setRequestedDischargeAdmissionId = useCallback((admissionId) => {
-    setRequestedDischargeAdmission(admissionId
-      ? { patientId: id, admissionId: String(admissionId) }
-      : null);
-  }, [id]);
   const rustV2Mode = isRustV2ApiMode();
   const canUseStandaloneClinicalWorkflows = !rustV2Mode;
   const canUseAiAssistant = !rustV2Mode;
 
-  // Check for action query params (e.g., from referral inbox)
-  const actionParam = searchParams.get('action');
-  const referralIdParam = searchParams.get('referral_id');
-  const admissionParam = searchParams.get('admission');
-  const visitParam = searchParams.get(CHRONICLE_VISIT_PARAM);
-  const chronicleModeParam = searchParams.get('mode');
-  const wardRoundParam = searchParams.get('wardRound');
-  const consultationParam = searchParams.get('consultation');
-  const isWardRoundMode = chronicleModeParam === 'ward-round' || defaultAction === 'ward_round';
-
   const {
-    data: chronicleStartup,
-    isLoading: isStartupLoading,
-    error: startupError,
-    refetch: refetchStartup,
-  } = usePatientChronicleStartup(id, {}, {
-    enabled: rustV2Mode,
-  });
-
-  // Fetch patient data (includes access flags for conditional fetching)
-  const {
-    data: legacyPatient,
-    isLoading: isPatientLoading,
-    error: patientError,
-    refetch: refetchPatient,
-  } = usePatient(id, {
-    enabled: !rustV2Mode,
-  });
-  const patient = rustV2Mode ? chronicleStartup?.patient : legacyPatient;
-  const isLoading = rustV2Mode ? isStartupLoading : isPatientLoading;
-  const error = rustV2Mode ? startupError : patientError;
-  const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
-  const patientPath = id ? `/patients/${id}` : '/patients';
-  const pageMeta = usePageMeta({
-    title: patientName ? `${patientName} | Hospital Management System` : 'Patient | Hospital Management System',
-    breadcrumbs: [
-      { label: 'Patients', path: '/patients' },
-      { label: patientName || 'Patient', path: patientPath },
-    ],
-  });
-
-  // Check if user has clinical access (from patient endpoint response).
-  // Rust V2 enforces Chronicle access through the shaped startup read.
-  const hasClinicalAccess = rustV2Mode
-    ? startupError?.status !== 403
-    : patient?.access?.clinical === true;
-  const patientLocalId = patient?.local_data?.id || patient?.id || id;
-  const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
-  const rustV2ActiveAdmission = rustV2Mode
-    ? chronicleStartup?.active_admission || chronicleStartup?.active_context?.admission || null
-    : null;
-  const rustV2ActiveAdmissionId = rustV2Mode
-    ? rustV2ActiveAdmission?.admission_id || rustV2ActiveAdmission?.id || null
-    : null;
-  const patientForChronicle = useMemo(() => {
-    if (!patient || !rustV2ActiveAdmissionId) {
-      return patient;
-    }
-
-    const localData = patient.local_data || {};
-    return {
-      ...patient,
-      current_admission_id: patient.current_admission_id || rustV2ActiveAdmissionId,
-      current_ward_id: patient.current_ward_id || rustV2ActiveAdmission?.ward_id || null,
-      current_ward: patient.current_ward || rustV2ActiveAdmission?.ward_name || null,
-      current_bed: patient.current_bed || rustV2ActiveAdmission?.bed_code || rustV2ActiveAdmission?.bed_number || null,
-      local_data: {
-        ...localData,
-        current_admission_id: localData.current_admission_id || rustV2ActiveAdmissionId,
-        current_ward_id: localData.current_ward_id || rustV2ActiveAdmission?.ward_id || null,
-        current_ward: localData.current_ward || rustV2ActiveAdmission?.ward_name || null,
-        current_bed: localData.current_bed || rustV2ActiveAdmission?.bed_code || rustV2ActiveAdmission?.bed_number || null,
-      },
-    };
-  }, [
+    activeEncounter,
+    areEncountersLoading,
+    canFetchClinical,
+    chronicleActiveAdmission,
+    chronicleContext,
+    contextError,
+    encounters,
+    error,
+    hasClinicalAccess,
+    isContextLoading,
+    isLoading,
+    pageMeta,
     patient,
-    rustV2ActiveAdmission?.bed_code,
-    rustV2ActiveAdmission?.bed_number,
-    rustV2ActiveAdmission?.ward_id,
-    rustV2ActiveAdmission?.ward_name,
+    patientForChronicle,
+    patientIdentityId,
+    patientInsurance,
+    patientLocalId,
+    patientName,
+    refetchContext,
+    refetchEncounters,
+    refetchPatient,
+    refetchStartup,
     rustV2ActiveAdmissionId,
-  ]);
+    startupError,
+  } = useChroniclePatientRecord({ id, rustV2Mode });
   const {
     clearQueryParams,
     openChronicleWorkspace,
@@ -1746,211 +1962,43 @@ const PatientChroniclePage = ({ defaultAction }) => {
     search,
   });
 
-  useEffect(() => {
-    // react-doctor-disable-next-line react-doctor/no-event-handler -- Route/default action params are external navigation commands; this effect is the boundary that opens the matching Chronicle workspace once patient context is available.
-    const action = actionParam || defaultAction;
-    if (action === 'add_note') {
-      openChronicleWorkspace('note');
-      // Clear the query params after opening
-      if (actionParam) clearQueryParams();
-    } else if (action === 'ward_round' || wardRoundParam === 'true') {
-      if (actionParam || wardRoundParam) {
-        openWardRoundMode();
-      }
-    } else if (action === 'consultation' || consultationParam === 'true') {
-      openChronicleWorkspace('consultation');
-      // Clear the query params after opening
-      if (actionParam || consultationParam) clearQueryParams();
-    } else if (action === 'discharge') {
-      const admissionId = admissionParam
-        || patient?.local_data?.current_admission_id
-        || patient?.current_admission_id;
-
-      if (!admissionId) {
-        if (!patient && !admissionParam) {
-          return;
-        }
-        toast.error('No active admission found for this patient');
-        if (actionParam || admissionParam) clearQueryParams();
-        return;
-      }
-
-      // oxlint-disable-next-line react-doctor/no-adjust-state-on-prop-change -- Preserve the route-requested admission after transient query params are cleared while the discharge workspace remains open.
-      setRequestedDischargeAdmissionId(String(admissionId));
-      if (!canUseStandaloneClinicalWorkflows) {
-        if (actionParam || admissionParam) clearQueryParams();
-        return;
-      }
-      openChronicleWorkspace('discharge');
-      if (actionParam || admissionParam) clearQueryParams();
-    } else if (action === 'add_prescription') {
-      openChronicleWorkspace('prescription');
-      if (actionParam) clearQueryParams();
-    } else if (action === 'treatment_sheet') {
-      const admissionId = admissionParam
-        || patient?.local_data?.current_admission_id
-        || patient?.current_admission_id;
-
-      if (!admissionId) {
-        if (!patient && !admissionParam) {
-          return;
-        }
-        toast.error('No active admission found for this patient');
-        if (actionParam || admissionParam) clearQueryParams();
-        return;
-      }
-
-      // oxlint-disable-next-line react-doctor/no-adjust-state-on-prop-change -- Preserve the route-requested admission after transient query params are cleared while the treatment sheet workspace remains open.
-      setRequestedTreatmentSheetAdmissionId(String(admissionId));
-      openChronicleWorkspace('treatmentSheet');
-      if (actionParam || admissionParam) clearQueryParams();
-    }
-  }, [
-    actionParam,
-    admissionParam,
+  const {
+    isWardRoundMode,
+    referralIdParam,
+    requestedDischargeAdmissionId,
+    requestedTreatmentSheetAdmissionId,
+    setRequestedDischargeAdmissionId,
+    setRequestedTreatmentSheetAdmissionId,
+    visitParam,
+  } = useChronicleRouteState({
     canUseStandaloneClinicalWorkflows,
     clearQueryParams,
-    consultationParam,
     defaultAction,
+    id,
     openChronicleWorkspace,
     openWardRoundMode,
     patient,
-    setRequestedDischargeAdmissionId,
-    setRequestedTreatmentSheetAdmissionId,
-    wardRoundParam,
-  ]);
+    search,
+  });
 
-  // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
 
-  // Check if any slide-over is open (for timeline compression)
   const isAnySlideOverOpen = slideOvers.activeSlideOver !== null;
   const isCopilotSlideOverOpen = slideOvers.isOpen('copilot');
 
-  // ====== TIER 1: Chronicle Context (optimized single-call) ======
-  // Only fetch if user has clinical access - prevents wasted 403 requests
-  const {
-    data: legacyChronicleContext,
-    isLoading: isLegacyContextLoading,
-    error: legacyContextError,
-    refetch: refetchLegacyContext,
-  } = useChronicleContext(id, {
-    enabled: !rustV2Mode && hasClinicalAccess,
-  });
-
-  const chronicleContext = rustV2Mode ? chronicleStartup : legacyChronicleContext;
-  const isContextLoading = rustV2Mode ? false : isLegacyContextLoading;
-  const contextError = rustV2Mode ? startupError : legacyContextError;
-  const refetchContext = rustV2Mode ? refetchStartup : refetchLegacyContext;
-
-  const canFetchClinical = hasClinicalAccess;
   const canViewDischargeCase = !rustV2Mode && DISCHARGE_CASE_ROLES.has(user?.user_type);
-
-  // Fetch patient encounters for grouping
   const {
-    data: legacyEncounters,
-    isLoading: areLegacyEncountersLoading,
-    refetch: refetchEncounters,
-  } = usePatientEncounters(id, {
-    enabled: !rustV2Mode && canFetchClinical,
+    canOpenWardBoard,
+    handleOpenWardBoard,
+  } = useChronicleWardBoardAccess({
+    chronicleActiveAdmission,
+    deploymentCapabilities,
+    id,
+    navigate,
+    patient,
+    patientLocalId,
+    rustV2ActiveAdmissionId,
   });
-  const rustV2Encounters = useMemo(
-    () => {
-      const encountersById = new Map();
-
-      if (Array.isArray(chronicleContext?.encounters)) {
-        chronicleContext.encounters.forEach((encounter) => {
-          if (encounter?.id !== null && encounter?.id !== undefined) {
-            encountersById.set(String(encounter.id), encounter);
-          }
-        });
-      }
-
-      if (chronicleContext?.active_encounter?.id !== null && chronicleContext?.active_encounter?.id !== undefined) {
-        encountersById.set(String(chronicleContext.active_encounter.id), chronicleContext.active_encounter);
-      }
-
-      return Array.from(encountersById.values());
-    },
-    [chronicleContext?.active_encounter, chronicleContext?.encounters],
-  );
-  const encounters = rustV2Mode ? rustV2Encounters : legacyEncounters;
-  const areEncountersLoading = rustV2Mode ? false : areLegacyEncountersLoading;
-
-  // Fetch patient insurance (only if user has clinical access)
-  const { data: insuranceData } = usePatientInsurance(id, {}, {
-    enabled: !rustV2Mode && hasClinicalAccess,
-  });
-  const patientInsurance = insuranceData?.results || insuranceData || [];
-
-  // Find the active encounter (in-progress inpatient admission takes priority)
-  const activeEncounter = useMemo(() => {
-    if (!encounters || encounters.length === 0) return null;
-    const activeOutpatientVisitStatuses = new Set([
-      'checked_in',
-      'waiting',
-      'called',
-      'in_progress',
-      'on_hold',
-      'ready_checkout',
-    ]);
-
-    const activeInpatient = encounters.find((encounter) => (
-      encounter.status === 'in-progress'
-      && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(encounter))
-    ));
-
-    if (activeInpatient) {
-      return activeInpatient;
-    }
-
-    const activeAny = encounters.find((encounter) => encounter.status === 'in-progress');
-    if (activeAny) {
-      return activeAny;
-    }
-
-    return encounters.find((encounter) => (
-      (getEncounterKind(encounter) || 'outpatient') === 'outpatient'
-      && encounter.status === 'planned'
-      && activeOutpatientVisitStatuses.has(encounter.outpatient_visit_status)
-    )) || null;
-  }, [encounters]);
-
-  const chronicleActiveAdmission = useMemo(() => {
-    if (rustV2ActiveAdmission) {
-      return rustV2ActiveAdmission;
-    }
-    if (
-      activeEncounter
-      && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(activeEncounter))
-    ) {
-      return activeEncounter;
-    }
-    return null;
-  }, [activeEncounter, rustV2ActiveAdmission]);
-
-  const enabledFeatures = deploymentCapabilities?.features;
-  const hasWardBoardContext = Boolean(
-    patient?.local_data?.current_admission_id
-    || patient?.current_admission_id
-    || rustV2ActiveAdmissionId
-    || chronicleActiveAdmission
-  );
-  const canOpenWardBoard = hasWardBoardContext
-    && enabledFeatures?.ward_task_board === true
-    && enabledFeatures?.patient_chronicle === true
-    && enabledFeatures?.wards === true
-    && enabledFeatures?.inpatient_admissions === true
-    && enabledFeatures?.nursing_workflows === true;
-  const wardBoardHref = useMemo(() => {
-    const boardPatientId = patientLocalId || id;
-    return boardPatientId
-      ? `/ward-board?patient=${encodeURIComponent(boardPatientId)}`
-      : '/ward-board';
-  }, [id, patientLocalId]);
-  const handleOpenWardBoard = useCallback(() => {
-    navigate(wardBoardHref);
-  }, [navigate, wardBoardHref]);
 
   const {
     chartContextAdmissionId,
@@ -1989,67 +2037,21 @@ const PatientChroniclePage = ({ defaultAction }) => {
     navigate({ pathname, search: visitScopeRedirectSearch }, { replace: true });
   }, [navigate, pathname, visitScopeRedirectSearch]);
 
-  // Get patient ID for clinical queries - use URL id directly to enable parallel loading
-  // The URL id is the patient UUID which works for all clinical endpoints
-  const copilotPatientName = useMemo(() => {
-    const details = patient?.local_data || patient;
-    if (!details) return 'Patient';
+  useChronicleOnboardingEvents({
+    activeFilter,
+    hasClinicalAccess,
+    patientLocalId,
+  });
 
-    const userDetails = details.user_details;
-    if (!userDetails) {
-      return details.name || 'Patient';
-    }
-
-    const fullName = `${userDetails.first_name || ''} ${userDetails.last_name || ''}`.trim();
-    return fullName || details.name || 'Patient';
-  }, [patient]);
-
-  useEffect(() => {
-    if (!hasClinicalAccess || !patientLocalId) {
-      return;
-    }
-    if (openedPatientChartsRef.current.has(patientLocalId)) {
-      return;
-    }
-    openedPatientChartsRef.current.add(patientLocalId);
-    emitOnboardingEvent('patients.chart_opened', {
-      success: true,
-      patient_id: patientLocalId,
-    });
-  }, [hasClinicalAccess, patientLocalId]);
-
-  useEffect(() => {
-    if (!patientLocalId) {
-      return;
-    }
-    const token = `${patientLocalId}:${activeFilter}`;
-    if (lastFilterEventRef.current === token) {
-      return;
-    }
-    lastFilterEventRef.current = token;
-    emitOnboardingEvent('chronicle.filter_changed', {
-      filter: activeFilter,
-      patient_id: patientLocalId,
-    });
-  }, [activeFilter, patientLocalId]);
-
-  // Use chronicle context data directly - no more legacy fallback needed
-  const medications = useMemo(
-    () => chronicleContext?.active_medications || chronicleContext?.summaries?.medications || [],
-    [chronicleContext?.active_medications, chronicleContext?.summaries?.medications],
-  );
-  const parsedAllergies = chronicleContext?.allergies || chronicleContext?.summaries?.allergies || [];
-
-  // Get latest vitals from context
-  const latestVitals = chronicleContext?.latest_vitals;
-  const recentVitals = useMemo(() => (
-    normalizeLatestVitalsForSidebar(latestVitals)
-  ), [latestVitals]);
-
-  const labResults = useMemo(() => {
-    const shapedLabs = chronicleContext?.lab_results || chronicleContext?.summaries?.labs || [];
-    return normalizeLabResultsForSidebar(shapedLabs);
-  }, [chronicleContext?.lab_results, chronicleContext?.summaries?.labs]);
+  const {
+    allergies,
+    copilotPatientName,
+    labResults,
+    latestVitals,
+    medications,
+    problemSummaries,
+    recentVitals,
+  } = useChronicleSidebarData({ chronicleContext, patient });
 
   const {
     fetchNextPage,
@@ -2072,10 +2074,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     selectedEncounterId,
   });
 
-  // Use allergies from clinical summary hook (already parsed from patient data)
-  // The hook handles parsing from string/array formats
-  const allergies = parsedAllergies;
-  const problemSummaries = chronicleContext?.problems || chronicleContext?.summaries?.problems || [];
   const {
     filteredEntries,
     groupedByEncounter,
@@ -2094,14 +2092,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     timelineDisplayData,
   });
 
-  const {
-    collapseAll,
-    expandAll,
-    expandedEncounters,
-    expandedNoteIds,
-    toggleEncounter,
-    toggleNoteExpanded,
-  } = useChronicleTimelineExpansion({
+  const timelineExpansion = useChronicleTimelineExpansion({
     activeEncounterId: activeEncounter?.id,
     activeFilter,
     areEncountersLoading,
@@ -2115,28 +2106,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const handleStartWardRound = useCallback(() => {
     openWardRoundMode();
   }, [openWardRoundMode]);
-  const {
-    handleAddNote,
-    handleAskChronicle,
-    handleCopyNote,
-    handleEditNote,
-    handleManageInsurance,
-    handleOrderLabs,
-    handlePrescribe,
-    handlePrintSummary,
-    handleReceiveRecord,
-    handleRecordFluids,
-    handleRecordVitals,
-    handleRequestConsult,
-    handleScheduleFollowUp,
-    handleShareRecord,
-    handleStartDischarge,
-    handleViewMedicationHistory,
-    handleViewTreatmentSheet,
-    handleViewTrends,
-    refreshData,
-    workspaceContext,
-  } = useChronicleWorkspaceActions({
+  const workspaceActions = useChronicleWorkspaceActions({
     activeEncounter,
     activeFilter,
     canUseAiAssistant,
@@ -2170,31 +2140,27 @@ const PatientChroniclePage = ({ defaultAction }) => {
     slideOvers,
   });
 
-  const dischargeCaseAdmissionId = useMemo(() => (
-    requestedDischargeAdmissionId
-    || patient?.local_data?.current_admission_id
-    || patient?.current_admission_id
-    || rustV2ActiveAdmissionId
-    || activeEncounter?.admission_id
-    || null
-  ), [
-    activeEncounter?.admission_id,
-    patient?.current_admission_id,
-    patient?.local_data?.current_admission_id,
+  const dischargeCaseAdmissionId = resolveDischargeCaseAdmissionId({
+    activeEncounter,
+    patient,
     requestedDischargeAdmissionId,
     rustV2ActiveAdmissionId,
-  ]);
+  });
 
   const handleClearTimelineSearch = useCallback(() => {
     setSearchInput('');
   }, []);
+  const handleRetryGate = useCallback(() => {
+    refetchPatient();
+    refetchContext();
+  }, [refetchContext, refetchPatient]);
 
-  const chronicleTimelineState = useMemo(() => ({
+  const chronicleTimelineState = useChronicleTimelineState({
     hasNextPage,
     isFetchingNextPage,
     isTimelineLoading,
     isVisitScopePending,
-  }), [hasNextPage, isFetchingNextPage, isTimelineLoading, isVisitScopePending]);
+  });
 
   const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
   const gateError = contextError && contextError?.status !== 403 ? contextError : error;
@@ -2221,174 +2187,114 @@ const PatientChroniclePage = ({ defaultAction }) => {
     user,
   });
 
-  // ============================================
-  // Loading state
-  // ============================================
+  return {
+    accessDenied,
+    accessDeniedProps: {
+      breakGlassExpiresAt,
+      breakGlassReason,
+      canRequestBreakGlass,
+      isBreakGlassOpen,
+      isSubmitting: isSubmittingBreakGlass,
+      pageMeta,
+      patient,
+      patientName,
+      rustV2Mode,
+      onBreakGlassOpenChange: setBreakGlassOpen,
+      onBreakGlassReasonChange: setBreakGlassReason,
+      onBreakGlassSubmit: submitBreakGlass,
+    },
+    contentProps: {
+      activeEncounter,
+      activeFilter,
+      allergies,
+      chronicleActiveAdmission,
+      chronicleContext,
+      chronicleTimelineState,
+      dischargeState: { canViewDischargeCase, dischargeCaseAdmissionId },
+      encounters,
+      fetchNextPage,
+      filteredEntries,
+      groupedByEncounter,
+      handleClearTimelineSearch,
+      handleOpenWardBoard,
+      handleStartWardRound,
+      handleViewAllHistory,
+      handleViewCurrentVisit,
+      handleVisitScopeChange,
+      isAnySlideOverOpen,
+      labResults,
+      latestVitals,
+      loadMoreRef,
+      medications,
+      modeState: {
+        canOpenWardBoard,
+        canUseAiAssistant,
+        canUseStandaloneClinicalWorkflows,
+        isCopilotSlideOverOpen,
+        isWardRoundMode,
+        rustV2Mode,
+      },
+      pageMeta,
+      patientForChronicle,
+      patientId: id,
+      patientInsurance,
+      patientLocalId,
+      prefetchActionResources,
+      problemSummaries,
+      recentVitals,
+      refetchTimeline,
+      searchInput,
+      selectedEncounter,
+      setActiveFilter,
+      setSearchInput,
+      slideOvers,
+      timelineExpansion,
+      totalCount,
+      user,
+      visitScopeOptions,
+      visitState: chronicleVisitState,
+      workspaceActions,
+    },
+    errorProps: {
+      gateError,
+      pageMeta,
+      onRetry: handleRetryGate,
+    },
+    isGateError: hasGateError,
+    isGateLoading: isLoading || isContextLoading || authLoading,
+    pageMeta,
+  };
+}
+
+/**
+ * PatientChroniclePage - Magazine-style patient health record view
+ *
+ * @param {string} defaultAction - Optional action to trigger on mount (e.g., 'ward_round')
+ */
+const PatientChroniclePage = ({ defaultAction }) => {
+  const {
+    accessDenied,
+    accessDeniedProps,
+    contentProps,
+    errorProps,
+    isGateError,
+    isGateLoading,
+    pageMeta,
+  } = usePatientChroniclePageModel(defaultAction);
 
   if (accessDenied) {
-    return (
-      <ChronicleAccessDeniedState
-        breakGlassExpiresAt={breakGlassExpiresAt}
-        breakGlassReason={breakGlassReason}
-        canRequestBreakGlass={canRequestBreakGlass}
-        isBreakGlassOpen={isBreakGlassOpen}
-        isSubmitting={isSubmittingBreakGlass}
-        pageMeta={pageMeta}
-        patient={patient}
-        patientName={patientName}
-        rustV2Mode={rustV2Mode}
-        onBreakGlassOpenChange={setBreakGlassOpen}
-        onBreakGlassReasonChange={setBreakGlassReason}
-        onBreakGlassSubmit={submitBreakGlass}
-      />
-    );
+    return <ChronicleAccessDeniedState {...accessDeniedProps} />;
   }
 
-  if (isLoading || isContextLoading || authLoading) {
+  if (isGateLoading) {
     return <ChronicleLoadingState pageMeta={pageMeta} />;
   }
 
-  // ============================================
-  // Error state
-  // ============================================
-
-  if (hasGateError) {
-    return (
-      <ChronicleErrorState
-        gateError={gateError}
-        pageMeta={pageMeta}
-        onRetry={() => {
-          refetchPatient();
-          refetchContext();
-        }}
-      />
-    );
+  if (isGateError) {
+    return <ChronicleErrorState {...errorProps} />;
   }
 
-  // ============================================
-  // Render
-  // ============================================
-
-  return (
-    <>
-      {pageMeta}
-      <div className="min-h-screen max-w-full overflow-x-hidden bg-background">
-        {/* Patient Identity Hero */}
-        <PatientIdentityHero
-          patient={patientForChronicle}
-          allergies={allergies}
-          onActionIntent={rustV2Mode ? undefined : prefetchActionResources}
-          onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
-          onAddNote={handleAddNote}
-          onRecordVitals={handleRecordVitals}
-          onPrescribe={handlePrescribe}
-          onOrderLabs={handleOrderLabs}
-          onRequestConsult={handleRequestConsult}
-          onShareRecord={handleShareRecord}
-          onReceiveRecord={handleReceiveRecord}
-          onScheduleFollowUp={handleScheduleFollowUp}
-          onViewTreatmentSheet={handleViewTreatmentSheet}
-          onViewMedicationHistory={handleViewMedicationHistory}
-          onRecordFluids={handleRecordFluids}
-          onStartWardRound={handleStartWardRound}
-          onStartDischarge={canUseStandaloneClinicalWorkflows ? handleStartDischarge : undefined}
-          onManageInsurance={handleManageInsurance}
-          onPrintSummary={handlePrintSummary}
-          insurance={patientInsurance}
-          activeAdmission={chronicleActiveAdmission}
-        />
-
-        <WardBoardQuickAction
-          canOpenWardBoard={canOpenWardBoard}
-          onOpenWardBoard={handleOpenWardBoard}
-        />
-
-        <ChronicleDischargeClearance
-          admissionId={dischargeCaseAdmissionId}
-          canViewDischargeCase={canViewDischargeCase}
-        />
-
-        {/* Main Content: Sidebar + Timeline */}
-        <div className={cn(
-          "flex min-w-0 max-w-full overflow-x-hidden transition-all duration-300",
-          isCopilotSlideOverOpen
-            ? "lg:mr-[34rem]"
-            : isAnySlideOverOpen && "lg:mr-[50%]"
-        )}>
-          <ChronicleSidebar
-            activeEncounter={activeEncounter}
-            allergies={allergies}
-            isAnySlideOverOpen={isAnySlideOverOpen}
-            labResults={labResults}
-            medications={medications}
-            patient={patientForChronicle}
-            patientId={id}
-            problems={problemSummaries}
-            recentVitals={recentVitals}
-            rustV2Mode={rustV2Mode}
-            onViewVitalsTrends={() => handleViewTrends('vitals')}
-            onViewFluidTrends={() => handleViewTrends('fluids')}
-          />
-          {/* Timeline Chronicle or single-page Chronicle mode */}
-          <main className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
-          {isWardRoundMode ? (
-            <WardRoundChronicleMode
-              activeEncounter={activeEncounter}
-              admission={chronicleActiveAdmission}
-              chronicleContext={chronicleContext}
-              labResults={labResults}
-              latestVitals={latestVitals}
-              medications={medications}
-              patient={patientForChronicle}
-              patientId={patientLocalId || id}
-              onCommitted={refreshData}
-            />
-          ) : (
-          <ChronicleTimelinePanel
-            activeEncounter={activeEncounter}
-            activeFilter={activeFilter}
-            encounterCount={encounters?.length || 0}
-            expandedEncounters={expandedEncounters}
-            expandedNoteIds={expandedNoteIds}
-            filteredEntries={filteredEntries}
-            groupedByEncounter={groupedByEncounter}
-            loadMoreRef={loadMoreRef}
-            searchInput={searchInput}
-            selectedEncounter={selectedEncounter}
-            timelineState={chronicleTimelineState}
-            totalCount={totalCount}
-            userId={user?.id}
-            visitState={chronicleVisitState}
-            visitScopeOptions={visitScopeOptions}
-            onClearSearch={handleClearTimelineSearch}
-            onCollapseAll={collapseAll}
-            onCopyNote={handleCopyNote}
-            onEditNote={handleEditNote}
-            onExpandAll={expandAll}
-            onFetchNextPage={fetchNextPage}
-            onFilterChange={setActiveFilter}
-            onNoteUpdated={refetchTimeline}
-            onRecordFluids={handleRecordFluids}
-            onRefresh={refetchTimeline}
-            onSearchInputChange={setSearchInput}
-            onToggleEncounter={toggleEncounter}
-            onToggleNoteExpanded={toggleNoteExpanded}
-            onViewAllHistory={handleViewAllHistory}
-            onViewCurrentVisit={handleViewCurrentVisit}
-            onViewMedicationHistory={handleViewMedicationHistory}
-            onVisitScopeChange={handleVisitScopeChange}
-          />
-          )}
-          </main>
-
-          <ChronicleWorkspaceHost
-            activeWorkspace={slideOvers.activeSlideOver}
-            workspaceContext={workspaceContext}
-          />
-        </div>
-      </div>
-    </>
-  );
+  return <PatientChroniclePageContent {...contentProps} />;
 };
 
 export default PatientChroniclePage;
