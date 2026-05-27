@@ -2,7 +2,7 @@
  * RosterPatternsTab - Manage roster patterns
  * Chronicle Design System styling
  */
-import { useId, useState, useEffect } from 'react';
+import { useId, useMemo, useReducer } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,19 +48,309 @@ import { SELECT_ALL } from './constants';
 import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
-export function RosterPatternsTab() {
+const INITIAL_PAGE_STATE = {
+  selectedDepartment: SELECT_ALL,
+  requestedPlan: '',
+  showInactive: false,
+  dialog: {
+    isOpen: false,
+    pattern: null,
+  },
+};
+
+const INITIAL_PATTERN_FORM = {
+  plan: '',
+  name: '',
+  display_order: 0,
+  is_active: true,
+};
+
+function pageReducer(state, action) {
+  switch (action.type) {
+    case 'select-department':
+      return {
+        ...state,
+        selectedDepartment: action.value,
+        requestedPlan: '',
+      };
+    case 'select-plan':
+      return {
+        ...state,
+        requestedPlan: action.value,
+      };
+    case 'toggle-inactive':
+      return {
+        ...state,
+        showInactive: !state.showInactive,
+      };
+    case 'open-create':
+      return {
+        ...state,
+        dialog: {
+          isOpen: true,
+          pattern: null,
+        },
+      };
+    case 'open-edit':
+      return {
+        ...state,
+        dialog: {
+          isOpen: true,
+          pattern: action.pattern,
+        },
+      };
+    case 'close-dialog':
+      return {
+        ...state,
+        dialog: {
+          isOpen: false,
+          pattern: null,
+        },
+      };
+    default:
+      return state;
+  }
+}
+
+function formReducer(state, action) {
+  switch (action.type) {
+    case 'field':
+      return {
+        ...state,
+        [action.field]: action.value,
+      };
+    default:
+      return state;
+  }
+}
+
+function pickActivePlan(plans, requestedPlan) {
+  if (!plans.length) return '';
+  return plans.some((plan) => plan.id === requestedPlan) ? requestedPlan : plans[0].id;
+}
+
+function buildPatternForm(pattern, fallbackPlan) {
+  if (!pattern) {
+    return {
+      ...INITIAL_PATTERN_FORM,
+      plan: fallbackPlan || '',
+    };
+  }
+
+  return {
+    plan: toValue(pattern.plan),
+    name: pattern.name || '',
+    display_order: pattern.display_order ?? 0,
+    is_active: pattern.is_active ?? true,
+  };
+}
+
+function RosterPatternFilters({
+  departments,
+  plans,
+  selectedDepartment,
+  selectedPlan,
+  onDepartmentChange,
+  onPlanChange,
+}) {
+  return (
+    <FieldRow>
+      <InlineField label="Filter by Department">
+        <Select value={selectedDepartment} onValueChange={onDepartmentChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="All departments" />
+          </SelectTrigger>
+          <SelectContent className="z-[200]">
+            <SelectItem value={SELECT_ALL}>All departments</SelectItem>
+            {departments.map((dept) => (
+              <SelectItem key={dept.id} value={dept.id}>
+                {dept.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </InlineField>
+      <InlineField label="Roster Plan">
+        <Select value={selectedPlan} onValueChange={onPlanChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select roster plan" />
+          </SelectTrigger>
+          <SelectContent className="z-[200]">
+            {plans.map((plan) => (
+              <SelectItem key={plan.id} value={plan.id}>
+                {plan.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </InlineField>
+    </FieldRow>
+  );
+}
+
+function RosterPatternsTable({ patterns, planNameById, onEditPattern, onDeletePattern }) {
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="font-mono text-[10px] uppercase tracking-wider">Pattern</TableHead>
+            <TableHead className="font-mono text-[10px] uppercase tracking-wider">Plan</TableHead>
+            <TableHead className="font-mono text-[10px] uppercase tracking-wider">Order</TableHead>
+            <TableHead className="font-mono text-[10px] uppercase tracking-wider">Status</TableHead>
+            <TableHead className="font-mono text-[10px] uppercase tracking-wider text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {patterns.map((pattern, index) => (
+            <TableRow
+              key={pattern.id}
+              className="animate-chronicle-enter"
+              style={{ animationDelay: `${index * 30}ms` }}
+            >
+              <TableCell className="font-heading font-medium">{pattern.name}</TableCell>
+              <TableCell className="text-sm">
+                {formatRosterName(planNameById.get(pattern.plan))}
+              </TableCell>
+              <TableCell className="font-mono text-xs">{pattern.display_order ?? 0}</TableCell>
+              <TableCell>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'text-[10px] font-mono',
+                    pattern.is_active
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                      : 'bg-muted text-muted-foreground'
+                  )}
+                >
+                  {pattern.is_active ? 'Active' : 'Inactive'}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => onEditPattern(pattern)}>
+                    Edit
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => onDeletePattern(pattern)}>
+                    Delete
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function PatternFormDialog({
+  pattern,
+  plans,
+  fallbackPlan,
+  isPending,
+  onClose,
+  onSubmit,
+}) {
   const fieldId = useId();
+  const [formState, dispatchForm] = useReducer(
+    formReducer,
+    { pattern, fallbackPlan },
+    ({ pattern: initialPattern, fallbackPlan: initialPlan }) => buildPatternForm(initialPattern, initialPlan)
+  );
+
+  const updateField = (field, value) => {
+    dispatchForm({ type: 'field', field, value });
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => {
+      if (!open) onClose();
+    }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl">
+            {pattern ? 'Edit Pattern' : 'Add Pattern'}
+          </DialogTitle>
+          <DialogDescription>
+            Patterns group cycle slots within a roster plan.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <InlineField label="Roster Plan">
+            <Select
+              value={formState.plan}
+              onValueChange={(value) => updateField('plan', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select roster plan" />
+              </SelectTrigger>
+              <SelectContent className="z-[200]">
+                {plans.map((plan) => (
+                  <SelectItem key={plan.id} value={plan.id}>
+                    {plan.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </InlineField>
+          <FieldRow>
+            <InlineField label="Pattern Name">
+              <Input
+                value={formState.name}
+                onChange={(event) => updateField('name', event.target.value)}
+              />
+            </InlineField>
+            <InlineField label="Display Order">
+              <Input
+                type="number"
+                min="0"
+                value={formState.display_order}
+                onChange={(event) => updateField('display_order', event.target.value)}
+                className="font-mono"
+              />
+            </InlineField>
+          </FieldRow>
+          <InlineField label="Status">
+            <div className="pt-2">
+              <label htmlFor={`${fieldId}-pattern-active`} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  id={`${fieldId}-pattern-active`}
+                  checked={formState.is_active}
+                  onCheckedChange={(value) => updateField('is_active', Boolean(value))}
+                />
+                <span className="text-sm">Active</span>
+              </label>
+            </div>
+          </InlineField>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onSubmit(formState, pattern)}
+            disabled={isPending}
+          >
+            {pattern ? 'Save Changes' : 'Create Pattern'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function RosterPatternsTab() {
   const { isLoading: unitsLoading, departments } = useUnitOptions();
-  const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
-  const [selectedPlan, setSelectedPlan] = useState('');
-  const [showInactive, setShowInactive] = useState(false);
-  const [editingPattern, setEditingPattern] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [pageState, dispatchPage] = useReducer(pageReducer, INITIAL_PAGE_STATE);
+  const { selectedDepartment, requestedPlan, showInactive, dialog } = pageState;
 
   const departmentFilter = selectedDepartment === SELECT_ALL ? undefined : selectedDepartment;
 
   const { data: plansData } = useDepartmentRosterPlans({ department: departmentFilter });
   const plans = toList(plansData);
+  const selectedPlan = pickActivePlan(plans, requestedPlan);
+  const planNameById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan.name])), [plans]);
 
   const { data: patternsData, isLoading } = useDepartmentRosterPatterns({
     plan: selectedPlan || undefined,
@@ -72,55 +362,11 @@ export function RosterPatternsTab() {
   const updatePattern = useUpdateDepartmentRosterPattern();
   const deletePattern = useDeleteDepartmentRosterPattern();
 
-  const [formState, setFormState] = useState({
-    plan: '',
-    name: '',
-    display_order: 0,
-    is_active: true,
-  });
-
-  useEffect(() => {
-    if (!showForm) {
-      setEditingPattern(null);
-      setFormState({
-        plan: selectedPlan || '',
-        name: '',
-        display_order: 0,
-        is_active: true,
-      });
-    }
-  }, [showForm, selectedPlan]);
-
-  useEffect(() => {
-    if (!plans.length) {
-      setSelectedPlan('');
-      return;
-    }
-    if (!selectedPlan || !plans.some((plan) => plan.id === selectedPlan)) {
-      setSelectedPlan(plans[0].id);
-    }
-  }, [plans, selectedPlan]);
-
   const openForm = (pattern) => {
-    if (pattern) {
-      setEditingPattern(pattern);
-      setFormState({
-        plan: toValue(pattern.plan),
-        name: pattern.name || '',
-        display_order: pattern.display_order ?? 0,
-        is_active: pattern.is_active ?? true,
-      });
-    } else {
-      setEditingPattern(null);
-      setFormState((prev) => ({
-        ...prev,
-        plan: selectedPlan || prev.plan,
-      }));
-    }
-    setShowForm(true);
+    dispatchPage(pattern ? { type: 'open-edit', pattern } : { type: 'open-create' });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (formState, pattern) => {
     try {
       const payload = {
         plan: formState.plan,
@@ -132,14 +378,14 @@ export function RosterPatternsTab() {
         toast.error('Plan and name are required.');
         return;
       }
-      if (editingPattern) {
-        await updatePattern.mutateAsync({ id: editingPattern.id, data: payload });
+      if (pattern) {
+        await updatePattern.mutateAsync({ id: pattern.id, data: payload });
         toast.success('Pattern updated.');
       } else {
         await createPattern.mutateAsync(payload);
         toast.success('Pattern created.');
       }
-      setShowForm(false);
+      dispatchPage({ type: 'close-dialog' });
     } catch (error) {
       toast.error(error.message || 'Failed to save pattern.');
     }
@@ -164,7 +410,7 @@ export function RosterPatternsTab() {
           <>
             <Button
               variant="outline"
-              onClick={() => setShowInactive((prev) => !prev)}
+              onClick={() => dispatchPage({ type: 'toggle-inactive' })}
               className="font-mono text-xs"
             >
               {showInactive ? 'Hide Inactive' : 'Show Inactive'}
@@ -179,37 +425,14 @@ export function RosterPatternsTab() {
 
       <Card className="border-border">
         <CardContent className="p-4 space-y-4">
-          <FieldRow>
-            <InlineField label="Filter by Department">
-              <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All departments" />
-                </SelectTrigger>
-                <SelectContent className="z-[200]">
-                  <SelectItem value={SELECT_ALL}>All departments</SelectItem>
-                  {departments.map((dept) => (
-                    <SelectItem key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </InlineField>
-            <InlineField label="Roster Plan">
-              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select roster plan" />
-                </SelectTrigger>
-                <SelectContent className="z-[200]">
-                  {plans.map((plan) => (
-                    <SelectItem key={plan.id} value={plan.id}>
-                      {plan.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </InlineField>
-          </FieldRow>
+          <RosterPatternFilters
+            departments={departments}
+            plans={plans}
+            selectedDepartment={selectedDepartment}
+            selectedPlan={selectedPlan}
+            onDepartmentChange={(value) => dispatchPage({ type: 'select-department', value })}
+            onPlanChange={(value) => dispatchPage({ type: 'select-plan', value })}
+          />
 
           {unitsLoading || isLoading ? (
             <div className="space-y-3">
@@ -224,133 +447,27 @@ export function RosterPatternsTab() {
               description="Add a pattern to group cycle slots within a plan."
             />
           ) : (
-            <div className="rounded-lg border border-border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="font-mono text-[10px] uppercase tracking-wider">Pattern</TableHead>
-                    <TableHead className="font-mono text-[10px] uppercase tracking-wider">Plan</TableHead>
-                    <TableHead className="font-mono text-[10px] uppercase tracking-wider">Order</TableHead>
-                    <TableHead className="font-mono text-[10px] uppercase tracking-wider">Status</TableHead>
-                    <TableHead className="font-mono text-[10px] uppercase tracking-wider text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {patterns.map((pattern, index) => (
-                    <TableRow
-                      key={pattern.id}
-                      className="animate-chronicle-enter"
-                      style={{ animationDelay: `${index * 30}ms` }}
-                    >
-                      <TableCell className="font-heading font-medium">{pattern.name}</TableCell>
-                      <TableCell className="text-sm">
-                        {formatRosterName(plans.find((plan) => plan.id === pattern.plan)?.name)}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{pattern.display_order ?? 0}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            'text-[10px] font-mono',
-                            pattern.is_active
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                              : 'bg-muted text-muted-foreground'
-                          )}
-                        >
-                          {pattern.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openForm(pattern)}>
-                            Edit
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(pattern)}>
-                            Delete
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <RosterPatternsTable
+              patterns={patterns}
+              planNameById={planNameById}
+              onEditPattern={openForm}
+              onDeletePattern={handleDelete}
+            />
           )}
         </CardContent>
       </Card>
 
-      {/* Form Dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">
-              {editingPattern ? 'Edit Pattern' : 'Add Pattern'}
-            </DialogTitle>
-            <DialogDescription>
-              Patterns group cycle slots within a roster plan.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <InlineField label="Roster Plan">
-              <Select
-                value={formState.plan}
-                onValueChange={(value) => setFormState((prev) => ({ ...prev, plan: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select roster plan" />
-                </SelectTrigger>
-                <SelectContent className="z-[200]">
-                  {plans.map((plan) => (
-                    <SelectItem key={plan.id} value={plan.id}>
-                      {plan.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </InlineField>
-            <FieldRow>
-              <InlineField label="Pattern Name">
-                <Input
-                  value={formState.name}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, name: e.target.value }))}
-                />
-              </InlineField>
-              <InlineField label="Display Order">
-                <Input
-                  type="number"
-                  min="0"
-                  value={formState.display_order}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, display_order: e.target.value }))}
-                  className="font-mono"
-                />
-              </InlineField>
-            </FieldRow>
-            <InlineField label="Status">
-              <div className="pt-2">
-                <label htmlFor={`${fieldId}-pattern-active`} className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    id={`${fieldId}-pattern-active`}
-                    checked={formState.is_active}
-                    onCheckedChange={(value) => setFormState((prev) => ({ ...prev, is_active: Boolean(value) }))}
-                  />
-                  <span className="text-sm">Active</span>
-                </label>
-              </div>
-            </InlineField>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={createPattern.isPending || updatePattern.isPending}
-            >
-              {editingPattern ? 'Save Changes' : 'Create Pattern'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {dialog.isOpen ? (
+        <PatternFormDialog
+          key={dialog.pattern?.id || `new-${selectedPlan || 'none'}`}
+          pattern={dialog.pattern}
+          plans={plans}
+          fallbackPlan={selectedPlan}
+          isPending={createPattern.isPending || updatePattern.isPending}
+          onClose={() => dispatchPage({ type: 'close-dialog' })}
+          onSubmit={handleSubmit}
+        />
+      ) : null}
     </div>
   );
 }
