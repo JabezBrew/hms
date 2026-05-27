@@ -23,6 +23,44 @@ import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
+function buildMyPatientRows(myPatientsData, searchQuery) {
+  const entries = normalizeApiResults(myPatientsData);
+  if (!entries.length) return [];
+
+  let patientList = entries.map(entry => ({
+    ...entry.patient_details,
+    _listEntryId: entry.id,
+    _isPinned: entry.is_pinned,
+    _listNotes: entry.notes,
+    _addedAt: entry.added_at,
+  }));
+
+  patientList.sort((a, b) => {
+    if (a._isPinned && !b._isPinned) return -1;
+    if (!a._isPinned && b._isPinned) return 1;
+    return new Date(b._addedAt) - new Date(a._addedAt);
+  });
+
+  if (searchQuery.trim()) {
+    const query = searchQuery.toLowerCase();
+    patientList = patientList.filter((patient) => {
+      const name = getDisplayName(patient).toLowerCase();
+      const mrn = (patient.medical_record_number || '').toLowerCase();
+      return name.includes(query) || mrn.includes(query);
+    });
+  }
+
+  return patientList;
+}
+
+function buildMyPatientStats(myPatientsData) {
+  const entries = normalizeApiResults(myPatientsData);
+  return {
+    total: entries.length,
+    pinned: entries.filter(entry => entry.is_pinned).length,
+  };
+}
+
 /**
  * MyPatientsPage - Dedicated page for user's personal patient list
  *
@@ -56,47 +94,11 @@ const MyPatientsPage = () => {
   const { mutate: removeFromMyPatients } = useRemoveFromMyPatients();
   const { mutate: togglePin } = useToggleMyPatientPin();
 
-  // Process patient list
-  const patients = useMemo(() => {
-    const entries = normalizeApiResults(myPatientsData);
-    if (!entries.length) return [];
-
-    // Transform entries to include metadata
-    let patientList = entries.map(entry => ({
-      ...entry.patient_details,
-      _listEntryId: entry.id,
-      _isPinned: entry.is_pinned,
-      _listNotes: entry.notes,
-      _addedAt: entry.added_at,
-    }));
-
-    // Sort: pinned first, then by added date
-    patientList.sort((a, b) => {
-      if (a._isPinned && !b._isPinned) return -1;
-      if (!a._isPinned && b._isPinned) return 1;
-      return new Date(b._addedAt) - new Date(a._addedAt);
-    });
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      patientList = patientList.filter(p => {
-        const name = getDisplayName(p).toLowerCase();
-        const mrn = (p.medical_record_number || '').toLowerCase();
-        return name.includes(query) || mrn.includes(query);
-      });
-    }
-
-    return patientList;
-  }, [myPatientsData, searchQuery]);
-
-  // Stats
-  const stats = useMemo(() => {
-    const entries = normalizeApiResults(myPatientsData);
-    const total = entries.length;
-    const pinned = entries.filter(e => e.is_pinned).length;
-    return { total, pinned };
-  }, [myPatientsData]);
+  const patients = useMemo(
+    () => buildMyPatientRows(myPatientsData, searchQuery),
+    [myPatientsData, searchQuery]
+  );
+  const stats = useMemo(() => buildMyPatientStats(myPatientsData), [myPatientsData]);
 
   // Event handlers
   const handleSearchChange = (e) => {
@@ -133,7 +135,65 @@ const MyPatientsPage = () => {
     navigate('/patients');
   };
 
-  const myPatientColumns = useMemo(() => {
+  const myPatientColumns = useMyPatientColumns({
+    handleRemoveFromMyPatients,
+    handleStartConsultation,
+    handleStartRound,
+    handleTogglePin,
+    rustV2Mode,
+  });
+
+  return (
+    <PageShell>
+      {pageMeta}
+      <MyPatientsHeader
+        rustV2Mode={rustV2Mode}
+        searchQuery={searchQuery}
+        stats={stats}
+        onAddPatient={handleAddPatient}
+        onClearSearch={handleClearSearch}
+        onRefresh={refetch}
+        onSearchChange={handleSearchChange}
+      />
+
+      {/* Patient List */}
+      <main className="p-4 sm:p-6">
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : patients.length === 0 ? (
+          <EmptyState hasSearch={!!searchQuery} onClear={handleClearSearch} />
+        ) : (
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={patients}
+              rowKey={(patient, index) => patient._listEntryId || patient.id || index}
+              rowHeight={68}
+              columns={myPatientColumns}
+              onRowClick={(patient) => {
+                const patientId = patient?.id || patient?.patient_profile || patient?.local_data?.id;
+                if (patientId) {
+                  navigate(`/patients/${patientId}`);
+                }
+              }}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1140px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
+        )}
+      </main>
+    </PageShell>
+  );
+};
+
+function useMyPatientColumns({
+  handleRemoveFromMyPatients,
+  handleStartConsultation,
+  handleStartRound,
+  handleTogglePin,
+  rustV2Mode,
+}) {
+  return useMemo(() => {
     const columns = [];
 
     if (!rustV2Mode) {
@@ -212,44 +272,13 @@ const MyPatientsPage = () => {
       header: "",
       width: rustV2Mode ? "160px" : "240px",
       render: (patient) => (
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleStartRound(patient);
-            }}
-          >
-            Round
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleStartConsultation(patient);
-            }}
-          >
-            Consult
-          </Button>
-          {!rustV2Mode && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-xs text-destructive"
-              onClick={(event) => {
-                event.stopPropagation();
-                const patientId = patient?.id || patient?.patient_profile;
-                handleRemoveFromMyPatients(patientId);
-              }}
-            >
-              Remove
-            </Button>
-          )}
-        </div>
+        <MyPatientRowActions
+          patient={patient}
+          rustV2Mode={rustV2Mode}
+          onRemove={handleRemoveFromMyPatients}
+          onStartConsultation={handleStartConsultation}
+          onStartRound={handleStartRound}
+        />
       ),
     });
 
@@ -261,118 +290,166 @@ const MyPatientsPage = () => {
     handleTogglePin,
     rustV2Mode,
   ]);
+}
 
+function MyPatientRowActions({
+  patient,
+  rustV2Mode,
+  onRemove,
+  onStartConsultation,
+  onStartRound,
+}) {
   return (
-    <PageShell>
-      {pageMeta}
-      <PageHeader
-        title="My Patients"
-        description={`${stats.total} patients${!rustV2Mode && stats.pinned > 0 ? ` · ${stats.pinned} pinned` : ''}`}
-        size="md"
-        actions={(
-          <Button
-            onClick={handleAddPatient}
-            variant="outline"
-            size="sm"
-            className="font-mono text-xs w-full sm:w-auto"
-          >
-            <Plus className="size-4 mr-2" />
-            {rustV2Mode ? 'Open Registry' : 'Add from Registry'}
-          </Button>
+    <div className="flex items-center justify-end gap-2">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 px-2 text-xs"
+        onClick={(event) => {
+          event.stopPropagation();
+          onStartRound(patient);
+        }}
+      >
+        Round
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 px-2 text-xs"
+        onClick={(event) => {
+          event.stopPropagation();
+          onStartConsultation(patient);
+        }}
+      >
+        Consult
+      </Button>
+      {!rustV2Mode && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-xs text-destructive"
+          onClick={(event) => {
+            event.stopPropagation();
+            const patientId = patient?.id || patient?.patient_profile;
+            onRemove(patientId);
+          }}
+        >
+          Remove
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function MyPatientsHeader({
+  rustV2Mode,
+  searchQuery,
+  stats,
+  onAddPatient,
+  onClearSearch,
+  onRefresh,
+  onSearchChange,
+}) {
+  return (
+    <PageHeader
+      title="My Patients"
+      description={`${stats.total} patients${!rustV2Mode && stats.pinned > 0 ? ` · ${stats.pinned} pinned` : ''}`}
+      size="md"
+      actions={(
+        <Button
+          onClick={onAddPatient}
+          variant="outline"
+          size="sm"
+          className="font-mono text-xs w-full sm:w-auto"
+        >
+          <Plus className="size-4 mr-2" />
+          {rustV2Mode ? 'Open Registry' : 'Add from Registry'}
+        </Button>
+      )}
+    >
+      <MyPatientsTabs />
+      <MyPatientsSearch
+        searchQuery={searchQuery}
+        onClearSearch={onClearSearch}
+        onRefresh={onRefresh}
+        onSearchChange={onSearchChange}
+      />
+    </PageHeader>
+  );
+}
+
+function MyPatientsTabs() {
+  return (
+    <div className="flex items-center gap-1 mt-4 bg-muted rounded-lg p-1 w-fit">
+      <NavLink
+        to="/patients"
+        end
+        className={({ isActive }) => cn(
+          "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
+          isActive
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
         )}
       >
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-1 mt-4 bg-muted rounded-lg p-1 w-fit">
-          <NavLink
-            to="/patients"
-            end
-            className={({ isActive }) => cn(
-              "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
-              isActive
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Users className="size-4" />
-            All Patients
-          </NavLink>
-          <NavLink
-            to="/patients/my-patients"
-            className={({ isActive }) => cn(
-              "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
-              isActive
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Star className="size-4" />
-            My Patients
-          </NavLink>
-        </div>
-
-        {/* Search and Controls */}
-        <div className="flex flex-col gap-3 mt-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Filter your patients..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              className="pl-10 pr-10 font-mono text-sm bg-background"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => refetch()}
-              className="shrink-0 size-9"
-            >
-              <RefreshCw className="size-4" />
-            </Button>
-          </div>
-        </div>
-      </PageHeader>
-
-      {/* Patient List */}
-      <main className="p-4 sm:p-6">
-        {isLoading ? (
-          <LoadingSkeleton />
-        ) : patients.length === 0 ? (
-          <EmptyState hasSearch={!!searchQuery} onClear={handleClearSearch} />
-        ) : (
-          <div className="overflow-x-auto">
-            <VirtualizedTable
-              rows={patients}
-              rowKey={(patient, index) => patient._listEntryId || patient.id || index}
-              rowHeight={68}
-              columns={myPatientColumns}
-              onRowClick={(patient) => {
-                const patientId = patient?.id || patient?.patient_profile || patient?.local_data?.id;
-                if (patientId) {
-                  navigate(`/patients/${patientId}`);
-                }
-              }}
-              rowClassName="hover:bg-muted/30"
-              className="min-w-[1140px]"
-              headerClassName="bg-muted/50 border-b border-border"
-            />
-          </div>
+        <Users className="size-4" />
+        All Patients
+      </NavLink>
+      <NavLink
+        to="/patients/my-patients"
+        className={({ isActive }) => cn(
+          "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
+          isActive
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
         )}
-      </main>
-    </PageShell>
+      >
+        <Star className="size-4" />
+        My Patients
+      </NavLink>
+    </div>
   );
-};
+}
+
+function MyPatientsSearch({
+  searchQuery,
+  onClearSearch,
+  onRefresh,
+  onSearchChange,
+}) {
+  return (
+    <div className="flex flex-col gap-3 mt-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Filter your patients..."
+          value={searchQuery}
+          onChange={onSearchChange}
+          className="pl-10 pr-10 font-mono text-sm bg-background"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={onClearSearch}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onRefresh()}
+          className="shrink-0 size-9"
+        >
+          <RefreshCw className="size-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * LoadingSkeleton
