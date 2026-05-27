@@ -92,7 +92,7 @@ export default function ChronicleCopilotPanel({
   }, [response])
 
   const runSummary = useCallback(
-    async ({ focus = 'handoff', selectedTimeWindow = timeWindow } = {}) => {
+    async ({ focus = 'handoff', selectedTimeWindow } = {}) => {
       if (!patientId) return
 
       try {
@@ -107,11 +107,11 @@ export default function ChronicleCopilotPanel({
         toast.error(error?.message || 'Unable to generate chronicle summary.')
       }
     },
-    [encounterId, patientId, summarizeMutation, timeWindow]
+    [encounterId, patientId, summarizeMutation]
   )
 
   const runAsk = useCallback(
-    async ({ text, selectedTimeWindow = timeWindow } = {}) => {
+    async ({ text, selectedTimeWindow } = {}) => {
       if (!patientId) return
       const normalizedQuestion = String(text || '').trim()
       if (!normalizedQuestion) return
@@ -128,7 +128,7 @@ export default function ChronicleCopilotPanel({
         toast.error(error?.message || 'Unable to ask chronicle copilot.')
       }
     },
-    [askMutation, encounterId, patientId, timeWindow]
+    [askMutation, encounterId, patientId]
   )
 
   const handleQuickPrompt = useCallback(
@@ -145,9 +145,9 @@ export default function ChronicleCopilotPanel({
   const handleAskSubmit = useCallback(async () => {
     const normalized = String(question || '').trim()
     if (!normalized) return
-    await runAsk({ text: normalized })
+    await runAsk({ text: normalized, selectedTimeWindow: timeWindow })
     setQuestion('')
-  }, [question, runAsk])
+  }, [question, runAsk, timeWindow])
 
   const headingContent = showHeading ? (
     <>

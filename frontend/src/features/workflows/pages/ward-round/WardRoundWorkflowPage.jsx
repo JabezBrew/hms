@@ -2,7 +2,7 @@ import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import Save from 'lucide-react/dist/esm/icons/save.js';
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
 import { WorkflowWizard, WorkflowProgress } from '@/components/workflow';
@@ -34,7 +34,6 @@ export default function WardRoundWorkflowPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
-  const [workflowData, setWorkflowData] = useState(null);
   const moduleGate = useDashboardModuleGates();
   const workflowEnabled = moduleGate.wardsEnabled && moduleGate.patientChronicleEnabled;
 
@@ -42,6 +41,7 @@ export default function WardRoundWorkflowPage() {
     enabled: workflowEnabled,
   });
   const { startWardRound, updateWardRoundStep, completeWardRound } = useWardRoundWorkflow();
+  const workflowData = startWardRound.data;
 
   // Workflow definition (matching backend)
   const workflowDef = {
@@ -75,27 +75,35 @@ export default function WardRoundWorkflowPage() {
     ],
   };
 
-  // Initialize workflow on mount
-  useEffect(() => {
-    if (workflowEnabled && !workflowId && patientId && admissionId) {
-      handleStartWorkflow();
-    }
-  }, [patientId, admissionId, workflowId, workflowEnabled]);
-
-  const handleStartWorkflow = async () => {
+  const handleStartWorkflow = useCallback(async () => {
     try {
-      const result = await startWardRound.mutateAsync({
+      await startWardRound.mutateAsync({
         patientId,
         admissionId,
         initialData: {},
       });
-      setWorkflowData(result);
       toast.success('Ward round started');
     } catch (error) {
       toast.error('Failed to start ward round');
       console.error(error);
     }
-  };
+  }, [admissionId, patientId, startWardRound]);
+
+  const activeWorkflowId = workflowId || workflowData?.workflow?.id;
+
+  // Initialize workflow on mount
+  useEffect(() => {
+    if (workflowEnabled && !activeWorkflowId && !startWardRound.isPending && patientId && admissionId) {
+      handleStartWorkflow();
+    }
+  }, [
+    activeWorkflowId,
+    admissionId,
+    handleStartWorkflow,
+    patientId,
+    startWardRound.isPending,
+    workflowEnabled,
+  ]);
 
   const handleStepDataChange = (data) => {
     setFormData((prev) => ({ ...prev, ...data }));

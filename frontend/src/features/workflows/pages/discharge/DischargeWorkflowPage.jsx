@@ -1,7 +1,7 @@
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
 import { WorkflowProgress, WorkflowStepRenderer } from '@/components/workflow';
@@ -28,7 +28,6 @@ export default function DischargeWorkflowPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
-  const [workflowData, setWorkflowData] = useState(null);
   const moduleGate = useDashboardModuleGates();
   const workflowEnabled = moduleGate.dischargeWorkflowsEnabled && moduleGate.patientChronicleEnabled;
 
@@ -36,6 +35,7 @@ export default function DischargeWorkflowPage() {
     enabled: workflowEnabled,
   });
   const { startDischarge, updateDischargeStep, completeDischarge } = useDischargeWorkflow();
+  const workflowData = startDischarge.data;
 
   const workflowDef = {
     name: 'Medical Discharge',
@@ -68,26 +68,34 @@ export default function DischargeWorkflowPage() {
     ],
   };
 
-  useEffect(() => {
-    if (workflowEnabled && !workflowId && patientId && admissionId) {
-      handleStartWorkflow();
-    }
-  }, [patientId, admissionId, workflowId, workflowEnabled]);
-
-  const handleStartWorkflow = async () => {
+  const handleStartWorkflow = useCallback(async () => {
     try {
-      const result = await startDischarge.mutateAsync({
+      await startDischarge.mutateAsync({
         patientId,
         admissionId,
         initialData: {},
       });
-      setWorkflowData(result);
       toast.success('Medical discharge started');
     } catch (error) {
       toast.error('Failed to start medical discharge');
       console.error(error);
     }
-  };
+  }, [admissionId, patientId, startDischarge]);
+
+  const activeWorkflowId = workflowId || workflowData?.workflow?.id;
+
+  useEffect(() => {
+    if (workflowEnabled && !activeWorkflowId && !startDischarge.isPending && patientId && admissionId) {
+      handleStartWorkflow();
+    }
+  }, [
+    activeWorkflowId,
+    admissionId,
+    handleStartWorkflow,
+    patientId,
+    startDischarge.isPending,
+    workflowEnabled,
+  ]);
 
   const handleStepDataChange = (data) => {
     setFormData((prev) => ({ ...prev, ...data }));
