@@ -462,29 +462,22 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
 
   const colors = colorClasses[color];
 
-  const handleKeyDown = (e) => {
-    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault();
-      onClick();
-    }
-  };
-
+  const CardElement = onClick ? 'button' : 'div';
   const interactiveProps = onClick
     ? {
+        type: 'button',
         onClick,
-        onKeyDown: handleKeyDown,
-        tabIndex: 0,
-        role: 'button',
         'aria-pressed': active,
         'aria-label': `Filter by ${label}: ${value}`,
       }
     : {};
 
   return (
-    <div
+    <CardElement
       {...interactiveProps}
       className={cn(
-        "rounded-xl p-4 border border-border/50 transition-all",
+        "rounded-xl p-4 border border-border/50 transition-all text-left",
+        onClick && "w-full bg-transparent",
         onClick && "cursor-pointer hover:border-border hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         active && colors.active
       )}
@@ -502,7 +495,7 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
           </p>
         </div>
       </div>
-    </div>
+    </CardElement>
   );
 }
 

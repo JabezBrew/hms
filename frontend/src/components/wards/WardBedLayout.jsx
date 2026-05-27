@@ -23,12 +23,6 @@ import VirtualizedList from '@/components/ui/VirtualizedList';
 
 import { useWardSections } from '@/features/wards/hooks/useWardQueries';
 
-function handleKeyboardActivation(event, onActivate) {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  event.preventDefault();
-  onActivate();
-}
-
 /**
  * WardBedLayout - Chronicle-style bed visualization
  *
@@ -326,13 +320,11 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                   <TooltipProvider>
                     <Tooltip delayDuration={200}>
                       <TooltipTrigger asChild>
-                        <div
+                        <button
+                          type="button"
                           onClick={() => onBedClick(bed.id)}
-                          onKeyDown={(event) => handleKeyboardActivation(event, () => onBedClick(bed.id))}
-                          role="button"
-                          tabIndex={0}
                           className={cn(
-                            "relative rounded-xl border-2 p-4 cursor-pointer transition-all duration-200",
+                            "relative w-full rounded-xl border-2 p-4 text-left cursor-pointer transition-all duration-200",
                             "hover:shadow-lg hover:-translate-y-0.5",
                             config.bgClass,
                             config.borderClass
@@ -375,7 +367,7 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                               </p>
                             </div>
                           )}
-                        </div>
+                        </button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="max-w-xs p-0">
                         <BedTooltip
@@ -440,13 +432,11 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                 const patientInfo = getPatientInfo(bed.id);
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     onClick={() => onBedClick(bed.id)}
-                    onKeyDown={(event) => handleKeyboardActivation(event, () => onBedClick(bed.id))}
-                    role="button"
-                    tabIndex={0}
                     className={cn(
-                      "flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all",
+                      "flex w-full items-center gap-4 p-4 rounded-xl border text-left cursor-pointer transition-all",
                       "hover:shadow-md hover:border-border",
                       "bg-card/50 border-border/50"
                     )}
@@ -516,7 +506,7 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                     )}
 
                     <ChevronRight className="size-5 text-muted-foreground shrink-0" />
-                  </div>
+                  </button>
                 );
               }}
             />

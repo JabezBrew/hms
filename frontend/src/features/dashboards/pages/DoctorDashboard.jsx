@@ -473,24 +473,20 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
  * CompletedCard - Completed appointment card (muted)
  */
 function CompletedCard({ appointment, index, onViewPatient }) {
+  const CardElement = onViewPatient ? 'button' : 'div';
   const interactiveProps = onViewPatient
     ? {
+        type: 'button',
         onClick: onViewPatient,
-        onKeyDown: (event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          event.preventDefault();
-          onViewPatient();
-        },
-        role: 'button',
-        tabIndex: 0,
         'aria-label': `View patient ${appointment.patient_name}`,
       }
     : {};
 
   return (
-    <div
+    <CardElement
       className={cn(
-        "bg-card/30 border border-border rounded-xl p-4 opacity-60",
+        "bg-card/30 border border-border rounded-xl p-4 opacity-60 text-left",
+        onViewPatient && "w-full",
         onViewPatient && "hover:opacity-80 transition-opacity cursor-pointer",
         "animate-chronicle-enter"
       )}
@@ -511,7 +507,7 @@ function CompletedCard({ appointment, index, onViewPatient }) {
         </div>
         <span className="badge-chronicle-emerald">Completed</span>
       </div>
-    </div>
+    </CardElement>
   );
 }
 
