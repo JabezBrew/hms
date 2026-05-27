@@ -327,6 +327,8 @@ function ReferralFormContent({
                         <input
                           type="radio"
                           name="referral-urgency"
+                          value={key}
+                          aria-label={config.label}
                           checked={formData.urgency === key}
                           onChange={() =>
                             setFormData((prev) => ({ ...prev, urgency: key }))

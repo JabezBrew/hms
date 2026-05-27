@@ -9,7 +9,7 @@
  *
  * This keeps the user in a single flow instead of bouncing between Clinic and Roster UIs.
  */
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -106,6 +106,69 @@ function isDescendant(parentMap, nodeId, ancestorId) {
   return false;
 }
 
+function getInitialMode(existingClinic) {
+  return String(existingClinic?.booking_mode || '') === 'practitioner_direct' ? 'practitioner' : 'team';
+}
+
+function getDefaultClinic(initialMode) {
+  return {
+    code: '',
+    name: '',
+    description: '',
+    accepts_walk_ins: true,
+    waitlist_enabled: true,
+    assignment_timing: initialMode === 'team' ? 'check_in' : 'booking',
+    overbook_percent: 0,
+    overbook_hard_cap: 0,
+  };
+}
+
+function getInitialClinic(existingClinic, initialMode) {
+  if (!existingClinic?.id) return getDefaultClinic(initialMode);
+  return {
+    code: existingClinic.code || '',
+    name: existingClinic.name || '',
+    description: existingClinic.description || '',
+    accepts_walk_ins: existingClinic.accepts_walk_ins ?? true,
+    waitlist_enabled: existingClinic.waitlist_enabled ?? true,
+    assignment_timing: existingClinic.assignment_timing || (initialMode === 'team' ? 'check_in' : 'booking'),
+    overbook_percent: existingClinic.overbook_percent || 0,
+    overbook_hard_cap: existingClinic.overbook_hard_cap || 0,
+  };
+}
+
+function getDefaultTemplate() {
+  return {
+    day_of_week: 4,
+    start_time: '10:00',
+    end_time: '14:00',
+    slot_duration_minutes: 30,
+    max_patients_per_slot: 1,
+    breaks: [],
+  };
+}
+
+function getDutyTypeTemplate(dutyType) {
+  if (!dutyType) return null;
+  return {
+    day_of_week: Array.isArray(dutyType.applicable_days) && dutyType.applicable_days.length
+      ? Number(dutyType.applicable_days[0])
+      : 4,
+    start_time: String(dutyType.start_time || '10:00').slice(0, 5),
+    end_time: String(dutyType.end_time || '14:00').slice(0, 5),
+    slot_duration_minutes: Number(dutyType.slot_duration_minutes || 30),
+    max_patients_per_slot: Number(dutyType.max_patients_per_slot || 1),
+    breaks: Array.isArray(dutyType.breaks) ? dutyType.breaks : [],
+  };
+}
+
+function getSequentialTeamSequence(rotationRule) {
+  if (rotationRule?.rule_type === 'sequential' && Array.isArray(rotationRule.team_sequence)) {
+    return rotationRule.team_sequence.map(String);
+  }
+  return [];
+}
+
 function StepPill({ active, children }) {
   return (
     <span
@@ -120,7 +183,34 @@ function StepPill({ active, children }) {
 }
 
 export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, unitType, existingClinic = null }) {
+  const canHaveClinics = unitType === 'department' || unitType === 'division';
+  if (!canHaveClinics) return null;
+
+  const contentKey = [
+    unitId || 'no-unit',
+    unitType || 'no-unit-type',
+    existingClinic?.id || 'new-clinic',
+    existingClinic?.booking_mode || 'new-booking-mode',
+  ].join(':');
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <ClinicRosterWizardDialogContent
+          key={contentKey}
+          onOpenChange={onOpenChange}
+          unitId={unitId}
+          unitType={unitType}
+          existingClinic={existingClinic}
+        />
+      ) : null}
+    </Dialog>
+  );
+}
+
+function ClinicRosterWizardDialogContent({ onOpenChange, unitId, unitType, existingClinic = null }) {
   const fieldId = useId();
+  const open = true;
   const canHaveClinics = unitType === 'department' || unitType === 'division';
   const isEditClinic = Boolean(existingClinic?.id);
 
@@ -156,42 +246,72 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
   }, [flatUnits, parentMap, unitId]);
 
   const [step, setStep] = useState(0);
-  const [mode, setMode] = useState('team'); // 'team' | 'practitioner'
+  const initialMode = getInitialMode(existingClinic);
+  const [modeOverride, setModeOverride] = useState(null);
 
-  const requiredBookingMode = mode === 'team' ? 'clinic_pool' : 'practitioner_direct';
-  const requiredAssignmentTiming = requiredBookingMode === 'clinic_pool' ? 'check_in' : 'booking';
-  const [existingClinicBookingMode, setExistingClinicBookingMode] = useState(null);
-  const effectiveExistingBookingMode = isEditClinic
-    ? String(existingClinicBookingMode || existingClinic?.booking_mode || requiredBookingMode)
-    : requiredBookingMode;
-  const supportedExistingClinic = !isEditClinic || effectiveExistingBookingMode === requiredBookingMode;
+  const [convertedBookingMode, setConvertedBookingMode] = useState(null);
 
-  const [clinic, setClinic] = useState({
-    code: '',
-    name: '',
-    description: '',
-    accepts_walk_ins: true,
-    waitlist_enabled: true,
-    assignment_timing: 'check_in',
-    overbook_percent: 0,
-    overbook_hard_cap: 0,
-  });
+  const [clinic, setClinic] = useState(() => getInitialClinic(existingClinic, initialMode));
 
-  const [template, setTemplate] = useState({
-    day_of_week: 4, // Friday default
-    start_time: '10:00',
-    end_time: '14:00',
-    slot_duration_minutes: 30,
-    max_patients_per_slot: 1,
-    breaks: [],
-  });
+  const [templateDraft, setTemplateDraft] = useState(getDefaultTemplate);
 
-  const [teamSequence, setTeamSequence] = useState([]);
   const [teamToAdd, setTeamToAdd] = useState('');
 
   const [staffQuery, setStaffQuery] = useState('');
   const [practitionerSequence, setPractitionerSequence] = useState([]); // [{id,name,employeeId}]
   const [selectedPractitionerId, setSelectedPractitionerId] = useState('');
+
+  const today = useMemo(() => toIsoDate(new Date()), []);
+  const defaultTo = useMemo(() => toIsoDate(addDays(new Date(), 56)), []);
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(defaultTo);
+  const [publishNow, setPublishNow] = useState(true);
+
+  const existingClinicDutyTypes = useMemo(() => {
+    if (!isEditClinic) return [];
+    return dutyTypes.filter((dt) => dt?.category === 'clinic' && String(dt?.clinic) === String(existingClinic?.id));
+  }, [dutyTypes, existingClinic, isEditClinic]);
+  const [dutyTypeChoiceId, setDutyTypeChoiceId] = useState('');
+  const effectiveDutyTypeChoiceId = dutyTypeChoiceId || String(existingClinicDutyTypes[0]?.id || '');
+  const selectedExistingDutyType = useMemo(() => {
+    if (!isEditClinic) return null;
+    if (existingClinicDutyTypes.length === 1) return existingClinicDutyTypes[0];
+    if (existingClinicDutyTypes.length > 1 && effectiveDutyTypeChoiceId) {
+      return existingClinicDutyTypes.find((dt) => String(dt.id) === String(effectiveDutyTypeChoiceId)) || null;
+    }
+    return null;
+  }, [isEditClinic, existingClinicDutyTypes, effectiveDutyTypeChoiceId]);
+
+  const rotationRulesQuery = useRotationRules(
+    unitId,
+    selectedExistingDutyType ? { duty_type: selectedExistingDutyType.id, is_active: true } : {},
+    { enabled: open && canHaveClinics && Boolean(unitId) && Boolean(selectedExistingDutyType?.id) }
+  );
+  const existingRotationRules = useMemo(() => {
+    const payload = rotationRulesQuery.data;
+    return Array.isArray(payload) ? payload : (payload?.results || []);
+  }, [rotationRulesQuery.data]);
+  const existingRotationRule = existingRotationRules[0] || null;
+  const defaultTeamSequence = useMemo(() => getSequentialTeamSequence(existingRotationRule), [existingRotationRule]);
+  const [teamSequenceOverride, setTeamSequenceOverride] = useState(null);
+  const teamSequence = teamSequenceOverride ?? defaultTeamSequence;
+  const setTeamSequence = (updater) => {
+    setTeamSequenceOverride((prev) => {
+      const current = prev ?? defaultTeamSequence;
+      return typeof updater === 'function' ? updater(current) : updater;
+    });
+  };
+
+  const mode = modeOverride ?? (defaultTeamSequence.length > 0 ? 'team' : initialMode);
+  const setMode = (nextMode) => setModeOverride(nextMode);
+  const requiredBookingMode = mode === 'team' ? 'clinic_pool' : 'practitioner_direct';
+  const requiredAssignmentTiming = requiredBookingMode === 'clinic_pool' ? 'check_in' : 'booking';
+  const effectiveExistingBookingMode = isEditClinic
+    ? String(convertedBookingMode || existingClinic?.booking_mode || requiredBookingMode)
+    : requiredBookingMode;
+  const supportedExistingClinic = !isEditClinic || effectiveExistingBookingMode === requiredBookingMode;
+  const dutyTypeTemplate = useMemo(() => getDutyTypeTemplate(selectedExistingDutyType), [selectedExistingDutyType]);
+  const template = dutyTypeTemplate || templateDraft;
 
   const staffSearch = useQuery({
     queryKey: wizardKeys.unitStaffSearch(unitId, staffQuery),
@@ -215,37 +335,6 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
     });
     return map;
   }, [staffResults]);
-
-  const today = useMemo(() => toIsoDate(new Date()), []);
-  const defaultTo = useMemo(() => toIsoDate(addDays(new Date(), 56)), []);
-  const [dateFrom, setDateFrom] = useState(today);
-  const [dateTo, setDateTo] = useState(defaultTo);
-  const [publishNow, setPublishNow] = useState(true);
-
-  const existingClinicDutyTypes = useMemo(() => {
-    if (!isEditClinic) return [];
-    return dutyTypes.filter((dt) => dt?.category === 'clinic' && String(dt?.clinic) === String(existingClinic?.id));
-  }, [dutyTypes, existingClinic, isEditClinic]);
-  const [dutyTypeChoiceId, setDutyTypeChoiceId] = useState('');
-  const selectedExistingDutyType = useMemo(() => {
-    if (!isEditClinic) return null;
-    if (existingClinicDutyTypes.length === 1) return existingClinicDutyTypes[0];
-    if (existingClinicDutyTypes.length > 1 && dutyTypeChoiceId) {
-      return existingClinicDutyTypes.find((dt) => String(dt.id) === String(dutyTypeChoiceId)) || null;
-    }
-    return null;
-  }, [isEditClinic, existingClinicDutyTypes, dutyTypeChoiceId]);
-
-  const rotationRulesQuery = useRotationRules(
-    unitId,
-    selectedExistingDutyType ? { duty_type: selectedExistingDutyType.id, is_active: true } : {},
-    { enabled: open && canHaveClinics && Boolean(unitId) && Boolean(selectedExistingDutyType?.id) }
-  );
-  const existingRotationRules = useMemo(() => {
-    const payload = rotationRulesQuery.data;
-    return Array.isArray(payload) ? payload : (payload?.results || []);
-  }, [rotationRulesQuery.data]);
-  const existingRotationRule = existingRotationRules[0] || null;
 
   const previewDates = useMemo(
     () => enumerateWeekdayDates(dateFrom, dateTo, Number(template.day_of_week)),
@@ -276,102 +365,6 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
     || bulkRoster.isPending
     || publishRoster.isPending
   );
-
-  useEffect(() => {
-    if (!open) return;
-    setStep(0);
-    const initialMode = (
-      isEditClinic && String(existingClinic?.booking_mode || '') === 'practitioner_direct'
-        ? 'practitioner'
-        : 'team'
-    );
-    setMode(initialMode);
-    setTeamSequence([]);
-    setTeamToAdd('');
-    setStaffQuery('');
-    setPractitionerSequence([]);
-    setSelectedPractitionerId('');
-    setPublishNow(true);
-    setDutyTypeChoiceId('');
-    setDateFrom(today);
-    setDateTo(defaultTo);
-    setTemplate({
-      day_of_week: 4,
-      start_time: '10:00',
-      end_time: '14:00',
-      slot_duration_minutes: 30,
-      max_patients_per_slot: 1,
-      breaks: [],
-    });
-    if (isEditClinic) {
-      setExistingClinicBookingMode(String(existingClinic?.booking_mode || ''));
-      setClinic((prev) => ({
-        ...prev,
-        code: existingClinic.code || '',
-        name: existingClinic.name || '',
-        description: existingClinic.description || '',
-        accepts_walk_ins: existingClinic.accepts_walk_ins ?? true,
-        waitlist_enabled: existingClinic.waitlist_enabled ?? true,
-        assignment_timing: existingClinic.assignment_timing || (initialMode === 'team' ? 'check_in' : 'booking'),
-        overbook_percent: existingClinic.overbook_percent || 0,
-        overbook_hard_cap: existingClinic.overbook_hard_cap || 0,
-      }));
-    } else {
-      setExistingClinicBookingMode(null);
-      setClinic({
-        code: '',
-        name: '',
-        description: '',
-        accepts_walk_ins: true,
-        waitlist_enabled: true,
-        assignment_timing: initialMode === 'team' ? 'check_in' : 'booking',
-        overbook_percent: 0,
-        overbook_hard_cap: 0,
-      });
-    }
-  }, [open, isEditClinic, existingClinic, today, defaultTo]);
-
-  // When rostering an existing clinic with an existing duty type, lock template to that duty type.
-  useEffect(() => {
-    if (!open) return;
-    if (!isEditClinic) return;
-    if (!selectedExistingDutyType && existingClinicDutyTypes.length > 1 && !dutyTypeChoiceId) {
-      setDutyTypeChoiceId(String(existingClinicDutyTypes[0]?.id || ''));
-      return;
-    }
-    if (!selectedExistingDutyType) return;
-
-    const dow = Array.isArray(selectedExistingDutyType.applicable_days) && selectedExistingDutyType.applicable_days.length
-      ? Number(selectedExistingDutyType.applicable_days[0])
-      : 4;
-
-    setTemplate({
-      day_of_week: dow,
-      start_time: String(selectedExistingDutyType.start_time || '10:00').slice(0, 5),
-      end_time: String(selectedExistingDutyType.end_time || '14:00').slice(0, 5),
-      slot_duration_minutes: Number(selectedExistingDutyType.slot_duration_minutes || 30),
-      max_patients_per_slot: Number(selectedExistingDutyType.max_patients_per_slot || 1),
-      breaks: Array.isArray(selectedExistingDutyType.breaks) ? selectedExistingDutyType.breaks : [],
-    });
-
-    if (existingRotationRule?.rule_type === 'sequential' && Array.isArray(existingRotationRule.team_sequence)) {
-      setMode('team');
-      setTeamSequence(existingRotationRule.team_sequence.map(String));
-    }
-  }, [
-    open,
-    isEditClinic,
-    selectedExistingDutyType,
-    existingRotationRule,
-    existingClinicDutyTypes,
-    dutyTypeChoiceId,
-  ]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (isEditClinic) return;
-    setClinic((p) => ({ ...p, assignment_timing: requiredAssignmentTiming }));
-  }, [open, isEditClinic, requiredAssignmentTiming]);
 
   const canNext = useMemo(() => {
     if (!canHaveClinics || !unitId) return false;
@@ -440,7 +433,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
           assignment_timing: requiredAssignmentTiming,
         },
       });
-      setExistingClinicBookingMode(requiredBookingMode);
+      setConvertedBookingMode(requiredBookingMode);
       toast.success(`Updated clinic booking mode to ${requiredBookingMode}.`);
     } catch (error) {
       const message = error.response?.data?.detail || error.message || 'Failed to update clinic booking mode.';
@@ -565,7 +558,6 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
   ];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
@@ -728,7 +720,14 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                       <label htmlFor={`${fieldId}-template-choice`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                         Select template
                       </label>
-                      <Select value={dutyTypeChoiceId} onValueChange={setDutyTypeChoiceId}>
+                      <Select
+                        value={effectiveDutyTypeChoiceId}
+                        onValueChange={(value) => {
+                          setDutyTypeChoiceId(value);
+                          setTeamSequenceOverride(null);
+                          setModeOverride(null);
+                        }}
+                      >
                         <SelectTrigger id={`${fieldId}-template-choice`} className="font-mono">
                           <SelectValue placeholder="Select duty type template" />
                         </SelectTrigger>
@@ -782,7 +781,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                       </label>
                       <Select
                         value={String(template.day_of_week)}
-                        onValueChange={(v) => setTemplate((p) => ({ ...p, day_of_week: Number(v) }))}
+                        onValueChange={(v) => setTemplateDraft((p) => ({ ...p, day_of_week: Number(v) }))}
                       >
                         <SelectTrigger id={`${fieldId}-template-day`} className="font-mono">
                           <SelectValue placeholder="Select day" />
@@ -804,7 +803,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                         id={`${fieldId}-template-start`}
                         type="time"
                         value={template.start_time}
-                        onChange={(e) => setTemplate((p) => ({ ...p, start_time: e.target.value }))}
+                        onChange={(e) => setTemplateDraft((p) => ({ ...p, start_time: e.target.value }))}
                         className="font-mono"
                       />
                     </div>
@@ -816,7 +815,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                         id={`${fieldId}-template-end`}
                         type="time"
                         value={template.end_time}
-                        onChange={(e) => setTemplate((p) => ({ ...p, end_time: e.target.value }))}
+                        onChange={(e) => setTemplateDraft((p) => ({ ...p, end_time: e.target.value }))}
                         className="font-mono"
                       />
                     </div>
@@ -833,7 +832,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                         min="5"
                         max="480"
                         value={template.slot_duration_minutes}
-                        onChange={(e) => setTemplate((p) => ({ ...p, slot_duration_minutes: Number(e.target.value) }))}
+                        onChange={(e) => setTemplateDraft((p) => ({ ...p, slot_duration_minutes: Number(e.target.value) }))}
                         className="font-mono"
                       />
                     </div>
@@ -847,7 +846,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                         min="1"
                         max="20"
                         value={template.max_patients_per_slot}
-                        onChange={(e) => setTemplate((p) => ({ ...p, max_patients_per_slot: Number(e.target.value) }))}
+                        onChange={(e) => setTemplateDraft((p) => ({ ...p, max_patients_per_slot: Number(e.target.value) }))}
                         className="font-mono"
                       />
                     </div>
@@ -1094,6 +1093,5 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
           </div>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
   );
 }
