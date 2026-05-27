@@ -2,7 +2,7 @@
  * TeamRosterPlansTab - Manage team roster plans
  * Chronicle Design System styling
  */
-import { useState, useEffect } from 'react';
+import { useReducer, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,28 +48,9 @@ import { DUTY_STATUS_OPTIONS, STATUS_BADGE_CLASSES, SELECT_ALL, SELECT_NONE } fr
 import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
-export function TeamRosterPlansTab() {
-  const { isLoading: unitsLoading, teams, unitById } = useUnitOptions();
-  const [selectedTeam, setSelectedTeam] = useState(SELECT_ALL);
-  const [showForm, setShowForm] = useState(false);
-  const [editingPlan, setEditingPlan] = useState(null);
-
-  const teamFilter = selectedTeam === SELECT_ALL ? undefined : selectedTeam;
-
-  const { data: teamPlansData, isLoading } = useTeamRosterPlans({
-    team: teamFilter,
-  });
-  const plans = toList(teamPlansData);
-
-  const { data: departmentPlansData } = useDepartmentRosterPlans();
-  const departmentPlans = toList(departmentPlansData);
-
-  const createPlan = useCreateTeamRosterPlan();
-  const updatePlan = useUpdateTeamRosterPlan();
-  const deletePlan = useDeleteTeamRosterPlan();
-
-  const [formState, setFormState] = useState({
-    team: '',
+function createBlankTeamPlanForm(team = '') {
+  return {
+    team,
     department_plan: '',
     name: '',
     effective_from: '',
@@ -77,46 +58,79 @@ export function TeamRosterPlansTab() {
     status: 'draft',
     version: 1,
     notes: '',
-  });
-
-  useEffect(() => {
-    if (!showForm) {
-      setEditingPlan(null);
-      setFormState({
-        team: teamFilter || '',
-        department_plan: '',
-        name: '',
-        effective_from: '',
-        effective_until: '',
-        status: 'draft',
-        version: 1,
-        notes: '',
-      });
-    }
-  }, [showForm, selectedTeam]);
-
-  const openForm = (plan) => {
-    if (plan) {
-      setEditingPlan(plan);
-      setFormState({
-        team: toValue(plan.team),
-        department_plan: toValue(plan.department_plan),
-        name: plan.name || '',
-        effective_from: safeDate(plan.effective_from),
-        effective_until: plan.effective_until ? safeDate(plan.effective_until) : '',
-        status: plan.status || 'draft',
-        version: plan.version ?? 1,
-        notes: plan.notes || '',
-      });
-    } else {
-      setEditingPlan(null);
-      setFormState((prev) => ({
-        ...prev,
-        team: selectedTeam || prev.team,
-      }));
-    }
-    setShowForm(true);
   };
+}
+
+function createTeamPlanFormState({ plan, team }) {
+  if (!plan) {
+    return createBlankTeamPlanForm(team);
+  }
+  return {
+    team: toValue(plan.team),
+    department_plan: toValue(plan.department_plan),
+    name: plan.name || '',
+    effective_from: safeDate(plan.effective_from),
+    effective_until: plan.effective_until ? safeDate(plan.effective_until) : '',
+    status: plan.status || 'draft',
+    version: plan.version ?? 1,
+    notes: plan.notes || '',
+  };
+}
+
+function teamPlanFormReducer(state, action) {
+  if (action.type === 'field') {
+    return { ...state, [action.name]: action.value };
+  }
+  return state;
+}
+
+function TeamPlanFormDialog({
+  createPlan,
+  departmentPlans,
+  editingPlan,
+  onOpenChange,
+  open,
+  selectedTeam,
+  teams,
+  updatePlan,
+}) {
+  const team = selectedTeam === SELECT_ALL ? '' : selectedTeam;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <TeamPlanFormContent
+          key={editingPlan ? editingPlan.id : `new-${team || 'all'}`}
+          createPlan={createPlan}
+          departmentPlans={departmentPlans}
+          editingPlan={editingPlan}
+          initialTeam={team}
+          onClose={() => onOpenChange(false)}
+          teams={teams}
+          updatePlan={updatePlan}
+        />
+      ) : null}
+    </Dialog>
+  );
+}
+
+function TeamPlanFormContent({
+  createPlan,
+  departmentPlans,
+  editingPlan,
+  initialTeam,
+  onClose,
+  teams,
+  updatePlan,
+}) {
+  const [formState, dispatchForm] = useReducer(
+    teamPlanFormReducer,
+    { plan: editingPlan, team: initialTeam },
+    createTeamPlanFormState,
+  );
+
+  const updateField = (name) => (value) => dispatchForm({ type: 'field', name, value });
+  const updateInputField = (name) => (event) => updateField(name)(event.target.value);
 
   const handleSubmit = async () => {
     try {
@@ -141,9 +155,102 @@ export function TeamRosterPlansTab() {
         await createPlan.mutateAsync(payload);
         toast.success('Team plan created.');
       }
-      setShowForm(false);
+      onClose();
     } catch (error) {
       toast.error(error.message || 'Failed to save team plan.');
+    }
+  };
+
+  return (
+    <DialogContent className="sm:max-w-xl">
+      <DialogHeader>
+        <DialogTitle className="font-display text-xl">{editingPlan ? 'Edit Team Plan' : 'Add Team Plan'}</DialogTitle>
+        <DialogDescription>Team plans optionally align to a department roster plan.</DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        <InlineField label="Team">
+          <Select value={formState.team} onValueChange={updateField('team')}>
+            <SelectTrigger><SelectValue placeholder="Select team" /></SelectTrigger>
+            <SelectContent className="z-[200]">
+              {teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </InlineField>
+        <InlineField label="Department Plan (Optional)">
+          <Select value={formState.department_plan} onValueChange={updateField('department_plan')}>
+            <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+            <SelectContent className="z-[200]">
+              <SelectItem value={SELECT_NONE}>None</SelectItem>
+              {departmentPlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </InlineField>
+        <FieldRow>
+          <InlineField label="Plan Name">
+            <Input value={formState.name} onChange={updateInputField('name')} />
+          </InlineField>
+          <InlineField label="Status">
+            <Select value={formState.status} onValueChange={updateField('status')}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent className="z-[200]">
+                {DUTY_STATUS_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </InlineField>
+        </FieldRow>
+        <FieldRow>
+          <InlineField label="Effective From">
+            <Input type="date" value={formState.effective_from} onChange={updateInputField('effective_from')} className="font-mono" />
+          </InlineField>
+          <InlineField label="Effective Until (Optional)">
+            <Input type="date" value={formState.effective_until} onChange={updateInputField('effective_until')} className="font-mono" />
+          </InlineField>
+        </FieldRow>
+        <FieldRow>
+          <InlineField label="Version">
+            <Input type="number" min="1" value={formState.version} onChange={updateInputField('version')} className="font-mono" />
+          </InlineField>
+          <InlineField label="Notes (Optional)">
+            <Textarea value={formState.notes} onChange={updateInputField('notes')} rows={2} />
+          </InlineField>
+        </FieldRow>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSubmit} disabled={createPlan.isPending || updatePlan.isPending}>
+          {editingPlan ? 'Save Changes' : 'Create Plan'}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+export function TeamRosterPlansTab() {
+  const { isLoading: unitsLoading, teams, unitById } = useUnitOptions();
+  const [selectedTeam, setSelectedTeam] = useState(SELECT_ALL);
+  const [formDialog, setFormDialog] = useState({ open: false, editingPlan: null });
+
+  const teamFilter = selectedTeam === SELECT_ALL ? undefined : selectedTeam;
+
+  const { data: teamPlansData, isLoading } = useTeamRosterPlans({
+    team: teamFilter,
+  });
+  const plans = toList(teamPlansData);
+
+  const { data: departmentPlansData } = useDepartmentRosterPlans();
+  const departmentPlans = toList(departmentPlansData);
+
+  const createPlan = useCreateTeamRosterPlan();
+  const updatePlan = useUpdateTeamRosterPlan();
+  const deletePlan = useDeleteTeamRosterPlan();
+
+  const openForm = (plan) => {
+    setFormDialog({ open: true, editingPlan: plan || null });
+  };
+
+  const handleFormOpenChange = (open) => {
+    if (!open) {
+      setFormDialog({ open: false, editingPlan: null });
     }
   };
 
@@ -244,69 +351,16 @@ export function TeamRosterPlansTab() {
         </CardContent>
       </Card>
 
-      {/* Form Dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">{editingPlan ? 'Edit Team Plan' : 'Add Team Plan'}</DialogTitle>
-            <DialogDescription>Team plans optionally align to a department roster plan.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <InlineField label="Team">
-              <Select value={formState.team} onValueChange={(v) => setFormState((p) => ({ ...p, team: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select team" /></SelectTrigger>
-                <SelectContent className="z-[200]">
-                  {teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </InlineField>
-            <InlineField label="Department Plan (Optional)">
-              <Select value={formState.department_plan} onValueChange={(v) => setFormState((p) => ({ ...p, department_plan: v }))}>
-                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent className="z-[200]">
-                  <SelectItem value={SELECT_NONE}>None</SelectItem>
-                  {departmentPlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </InlineField>
-            <FieldRow>
-              <InlineField label="Plan Name">
-                <Input value={formState.name} onChange={(e) => setFormState((p) => ({ ...p, name: e.target.value }))} />
-              </InlineField>
-              <InlineField label="Status">
-                <Select value={formState.status} onValueChange={(v) => setFormState((p) => ({ ...p, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {DUTY_STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-            </FieldRow>
-            <FieldRow>
-              <InlineField label="Effective From">
-                <Input type="date" value={formState.effective_from} onChange={(e) => setFormState((p) => ({ ...p, effective_from: e.target.value }))} className="font-mono" />
-              </InlineField>
-              <InlineField label="Effective Until (Optional)">
-                <Input type="date" value={formState.effective_until} onChange={(e) => setFormState((p) => ({ ...p, effective_until: e.target.value }))} className="font-mono" />
-              </InlineField>
-            </FieldRow>
-            <FieldRow>
-              <InlineField label="Version">
-                <Input type="number" min="1" value={formState.version} onChange={(e) => setFormState((p) => ({ ...p, version: e.target.value }))} className="font-mono" />
-              </InlineField>
-              <InlineField label="Notes (Optional)">
-                <Textarea value={formState.notes} onChange={(e) => setFormState((p) => ({ ...p, notes: e.target.value }))} rows={2} />
-              </InlineField>
-            </FieldRow>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createPlan.isPending || updatePlan.isPending}>
-              {editingPlan ? 'Save Changes' : 'Create Plan'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TeamPlanFormDialog
+        createPlan={createPlan}
+        departmentPlans={departmentPlans}
+        editingPlan={formDialog.editingPlan}
+        onOpenChange={handleFormOpenChange}
+        open={formDialog.open}
+        selectedTeam={selectedTeam}
+        teams={teams}
+        updatePlan={updatePlan}
+      />
     </div>
   );
 }
