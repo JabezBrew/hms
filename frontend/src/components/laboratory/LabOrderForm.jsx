@@ -46,6 +46,24 @@ const STEPS = [
 
 const TOTAL_STEPS = STEPS.length;
 
+const PRIORITY_CONFIG = {
+  routine: {
+    label: "Routine",
+    color: "bg-muted text-muted-foreground",
+    description: "Standard turnaround time",
+  },
+  urgent: {
+    label: "Urgent",
+    color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
+    description: "Expedited processing",
+  },
+  stat: {
+    label: "STAT",
+    color: "bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400",
+    description: "Immediate processing required",
+  },
+};
+
 const INITIAL_FORM_DATA = {
   priority: "routine",
   clinical_notes: "",
@@ -143,6 +161,732 @@ const fuzzyMatch = (item, query) => {
 
   return searchTerms.every(term => searchableText.includes(term));
 };
+
+const getPatientDisplayName = (patient) => {
+  if (patient?.local_data?.user_details) {
+    return `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim();
+  }
+
+  if (patient?.local_data?.first_name) {
+    return `${patient.local_data.first_name} ${patient.local_data.last_name || ''}`.trim();
+  }
+
+  return patient?.name || 'Patient';
+};
+
+function LabOrderHeader({ patientName, onClose }) {
+  return (
+    <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
+          <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="lab-order-title" className="font-display text-xl text-foreground">
+            Order Labs
+          </h2>
+          <p className="font-mono text-xs text-muted-foreground mt-0.5">
+            {patientName}
+          </p>
+        </div>
+      </div>
+
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={onClose}
+        className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+      >
+        <X className="size-4 mr-1.5" aria-hidden="true" />
+        Close
+      </Button>
+    </header>
+  );
+}
+
+function LabOrderProgress({ currentStep, onStepClick }) {
+  return (
+    <div className="bg-card border-b border-border px-6 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-mono text-xs text-muted-foreground">
+          Step {currentStep} of {TOTAL_STEPS}
+        </span>
+      </div>
+      <WorkflowSteps
+        steps={STEPS}
+        currentStep={currentStep}
+        onStepClick={onStepClick}
+      />
+    </div>
+  );
+}
+
+function LabOrderFooter({
+  createOrder,
+  currentStep,
+  onBack,
+  onClose,
+  onNext,
+  onSubmit,
+  submitOrder,
+}) {
+  const isSubmitting = createOrder.isPending || submitOrder.isPending;
+  return (
+    <footer className="border-t border-border bg-card px-6 py-3">
+      <WorkflowKeyboardHints totalSteps={TOTAL_STEPS} className="mb-3" />
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {currentStep > 1 && (
+            <Button variant="outline" size="sm" onClick={onBack} className="font-mono text-xs">
+              <ChevronLeft className="size-3.5 mr-1" />
+              Back
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
+            Cancel
+          </Button>
+          {currentStep < TOTAL_STEPS ? (
+            <Button size="sm" onClick={onNext} className="font-mono text-xs">
+              Next
+              <ChevronRight className="size-3.5 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={onSubmit}
+              disabled={isSubmitting}
+              className="bg-sky-600 hover:bg-sky-700 font-mono text-xs"
+            >
+              {isSubmitting ? (
+                "Submitting..."
+              ) : (
+                <>
+                  <Check className="size-3.5 mr-1.5" />
+                  Submit Order
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function LabOrderTestSelectionStep({
+  activeCategory,
+  categories,
+  errors,
+  filteredPanels,
+  filteredTests,
+  formData,
+  hasSearchQuery,
+  panelsLoading,
+  searchQuery,
+  testsLoading,
+  totalResults,
+  onCategoryChange,
+  onPanelToggle,
+  onSearchQueryChange,
+  onTestToggle,
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
+        <Label htmlFor="lab-test-search" className="sr-only">Search tests and panels</Label>
+        <Input
+          id="lab-test-search"
+          placeholder="Search by name or abbreviation (TSH, CBC, LFTs...)"
+          value={searchQuery}
+          onChange={(event) => onSearchQueryChange(event.target.value)}
+          className="pl-10"
+          autoFocus
+        />
+      </div>
+
+      {errors.tests && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertDescription>{errors.tests}</AlertDescription>
+        </Alert>
+      )}
+
+      <LabOrderSelectionSummary formData={formData} />
+
+      {hasSearchQuery ? (
+        <LabOrderSearchResults
+          filteredPanels={filteredPanels}
+          filteredTests={filteredTests}
+          formData={formData}
+          panelsLoading={panelsLoading}
+          searchQuery={searchQuery}
+          testsLoading={testsLoading}
+          totalResults={totalResults}
+          onPanelToggle={onPanelToggle}
+          onTestToggle={onTestToggle}
+        />
+      ) : (
+        <LabOrderBrowseCatalog
+          activeCategory={activeCategory}
+          categories={categories}
+          filteredPanels={filteredPanels}
+          filteredTests={filteredTests}
+          formData={formData}
+          panelsLoading={panelsLoading}
+          testsLoading={testsLoading}
+          onCategoryChange={onCategoryChange}
+          onPanelToggle={onPanelToggle}
+          onTestToggle={onTestToggle}
+        />
+      )}
+    </div>
+  );
+}
+
+function LabOrderSelectionSummary({ formData }) {
+  const hasSelectedItems = formData.selected_tests.length > 0 || formData.selected_panels.length > 0;
+  if (!hasSelectedItems) return null;
+
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+      <Check className="size-4 text-emerald-600" />
+      <span>
+        {formData.selected_panels.length > 0 && (
+          <span className="font-medium">{formData.selected_panels.length} panel{formData.selected_panels.length !== 1 ? 's' : ''}</span>
+        )}
+        {formData.selected_panels.length > 0 && formData.selected_tests.length > 0 && ' and '}
+        {formData.selected_tests.length > 0 && (
+          <span className="font-medium">{formData.selected_tests.length} test{formData.selected_tests.length !== 1 ? 's' : ''}</span>
+        )}
+        {' '}selected
+      </span>
+    </div>
+  );
+}
+
+function LabOrderSearchResults({
+  filteredPanels,
+  filteredTests,
+  formData,
+  panelsLoading,
+  searchQuery,
+  testsLoading,
+  totalResults,
+  onPanelToggle,
+  onTestToggle,
+}) {
+  return (
+    <div className="space-y-4">
+      <div aria-live="polite" aria-atomic="true" className="text-sm text-muted-foreground">
+        Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{searchQuery}"
+      </div>
+
+      {testsLoading || panelsLoading ? (
+        <div className="text-center py-8 text-muted-foreground">
+          Searching…
+        </div>
+      ) : totalResults === 0 ? (
+        <LabOrderNoSearchResults />
+      ) : (
+        <div className="space-y-3">
+          {filteredPanels.length > 0 && (
+            <LabOrderCatalogGroup
+              icon={Package}
+              title={`Panels (${filteredPanels.length})`}
+            >
+              {filteredPanels.map((panel) => (
+                <LabOrderCatalogCard
+                  key={panel.id}
+                  item={panel}
+                  itemType="panel"
+                  selected={formData.selected_panels.includes(panel.id)}
+                  showPanelBadge
+                  onToggle={() => onPanelToggle(panel.id)}
+                />
+              ))}
+            </LabOrderCatalogGroup>
+          )}
+
+          {filteredTests.length > 0 && (
+            <LabOrderCatalogGroup
+              icon={TestTube2}
+              title={`Individual Tests (${filteredTests.length})`}
+            >
+              {filteredTests.slice(0, 20).map((test) => (
+                <LabOrderCatalogCard
+                  key={test.id}
+                  item={test}
+                  itemType="test"
+                  selected={formData.selected_tests.includes(test.id)}
+                  onToggle={() => onTestToggle(test.id)}
+                />
+              ))}
+              {filteredTests.length > 20 && (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  Showing first 20 of {filteredTests.length} tests. Refine your search for more specific results.
+                </p>
+              )}
+            </LabOrderCatalogGroup>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LabOrderNoSearchResults() {
+  return (
+    <div className="text-center py-8 text-muted-foreground">
+      <Search className="size-8 mx-auto mb-2 opacity-50" />
+      <p>No tests or panels found</p>
+      <p className="text-xs mt-1">Try different keywords or abbreviations (e.g., TSH, CBC, LFTs)</p>
+    </div>
+  );
+}
+
+function LabOrderBrowseCatalog({
+  activeCategory,
+  categories,
+  filteredPanels,
+  filteredTests,
+  formData,
+  panelsLoading,
+  testsLoading,
+  onCategoryChange,
+  onPanelToggle,
+  onTestToggle,
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          variant={activeCategory === "all" ? "default" : "outline"}
+          size="sm"
+          onClick={() => onCategoryChange("all")}
+        >
+          All
+        </Button>
+        {categories.map((category) => (
+          <Button
+            key={category}
+            variant={activeCategory === category ? "default" : "outline"}
+            size="sm"
+            onClick={() => onCategoryChange(category)}
+            className="capitalize"
+          >
+            {category}
+          </Button>
+        ))}
+      </div>
+
+      <Tabs defaultValue="panels" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="panels">
+            <Package className="size-4 mr-2" />
+            Panels ({filteredPanels.length})
+          </TabsTrigger>
+          <TabsTrigger value="tests">
+            <TestTube2 className="size-4 mr-2" />
+            Tests ({filteredTests.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="panels" className="space-y-3 mt-4">
+          {panelsLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Loading panels…
+            </div>
+          ) : filteredPanels.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No panels available
+            </div>
+          ) : (
+            filteredPanels.map((panel) => (
+              <LabOrderCatalogCard
+                key={panel.id}
+                item={panel}
+                itemType="panel"
+                selected={formData.selected_panels.includes(panel.id)}
+                showDescription
+                onToggle={() => onPanelToggle(panel.id)}
+              />
+            ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="tests" className="space-y-3 mt-4">
+          {testsLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Loading tests…
+            </div>
+          ) : filteredTests.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No tests available
+            </div>
+          ) : (
+            filteredTests.map((test) => (
+              <LabOrderCatalogCard
+                key={test.id}
+                item={test}
+                itemType="test"
+                selected={formData.selected_tests.includes(test.id)}
+                showSpecimen
+                onToggle={() => onTestToggle(test.id)}
+              />
+            ))
+          )}
+        </TabsContent>
+      </Tabs>
+    </>
+  );
+}
+
+function LabOrderCatalogGroup({ children, icon: Icon, title }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-xs font-mono uppercase text-muted-foreground">
+        <Icon className="size-3" />
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function LabOrderCatalogCard({
+  item,
+  itemType,
+  selected,
+  showDescription = false,
+  showPanelBadge = false,
+  showSpecimen = false,
+  onToggle,
+}) {
+  const isPanel = itemType === "panel";
+  const ariaLabel = isPanel
+    ? `${item.name} panel, ${item.test_count || 0} tests, $${Number(item.price || 0).toFixed(2)}`
+    : `${item.name}, ${item.category}, $${Number(item.price || 0).toFixed(2)}`;
+
+  return (
+    <label
+      className={cn(
+        "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
+        selected
+          ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+          : "hover:border-muted-foreground/50"
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggle}
+        aria-label={ariaLabel}
+        className="peer sr-only"
+      />
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
+                selected && "border-primary bg-primary text-primary-foreground"
+              )}
+            >
+              {selected && <Check className="size-3.5" />}
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">{item.name}</CardTitle>
+                {isPanel && showPanelBadge && (
+                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                    Panel
+                  </Badge>
+                )}
+                {!isPanel && (
+                  <Badge variant="outline" className="text-xs capitalize">
+                    {item.category}
+                  </Badge>
+                )}
+              </div>
+              <CardDescription className="text-xs font-mono mt-1">
+                {isPanel ? (
+                  <>{item.code} • {item.test_count || 0} tests</>
+                ) : (
+                  <>
+                    {item.loinc_code && `LOINC: ${item.loinc_code}`}
+                    {item.loinc_code && item.tat_hours && ' • '}
+                    {item.tat_hours && `${item.tat_hours}h TAT`}
+                  </>
+                )}
+              </CardDescription>
+            </div>
+          </div>
+          <div className="text-sm font-semibold text-foreground">
+            ${Number(item.price || 0).toFixed(2)}
+          </div>
+        </div>
+      </CardHeader>
+      {showDescription && item.description && (
+        <CardContent className="pt-0">
+          <p className="text-sm text-muted-foreground">
+            {item.description}
+          </p>
+        </CardContent>
+      )}
+      {showSpecimen && item.specimen_type && (
+        <CardContent className="pt-0">
+          <div className="text-xs text-muted-foreground">
+            <span className="font-medium">Specimen:</span>{" "}
+            {item.specimen_type}
+          </div>
+        </CardContent>
+      )}
+    </label>
+  );
+}
+
+function LabOrderDetailsStep({
+  errors,
+  formData,
+  selectedPanelsList,
+  selectedTestsList,
+  onFieldChange,
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Label htmlFor="priority">Priority *</Label>
+        <Select
+          value={formData.priority}
+          onValueChange={(value) => onFieldChange("priority", value)}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="z-[200]">
+            {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
+              <SelectItem key={key} value={key}>
+                <div className="flex items-center gap-2">
+                  <Badge className={config.color}>{config.label}</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {config.description}
+                  </span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="indication">Clinical Indication *</Label>
+        <Textarea
+          id="indication"
+          placeholder="Why is this test being ordered? (e.g., 'Rule out anemia', 'Monitor diabetes', 'Chest pain workup')"
+          value={formData.indication}
+          onChange={(event) => onFieldChange("indication", event.target.value)}
+          className={cn(
+            "min-h-[80px]",
+            errors.indication && "border-rose-500"
+          )}
+        />
+        {errors.indication && (
+          <p className="text-sm text-rose-600">{errors.indication}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="clinical_notes">Additional Clinical Notes</Label>
+        <Textarea
+          id="clinical_notes"
+          placeholder="Any additional information for the lab (optional)"
+          value={formData.clinical_notes}
+          onChange={(event) => onFieldChange("clinical_notes", event.target.value)}
+          className="min-h-[100px]"
+        />
+      </div>
+
+      <SelectedLabItemsPreview
+        selectedPanelsList={selectedPanelsList}
+        selectedTestsList={selectedTestsList}
+      />
+    </div>
+  );
+}
+
+function SelectedLabItemsPreview({ selectedPanelsList, selectedTestsList }) {
+  return (
+    <div className="bg-muted border border-border rounded-lg p-4">
+      <h3 className="font-heading font-semibold text-foreground mb-3">
+        Selected Items
+      </h3>
+      <div className="space-y-2">
+        {selectedPanelsList.length > 0 && (
+          <SelectedLabItemGroup
+            icon={Package}
+            title="Panels:"
+            items={selectedPanelsList}
+          />
+        )}
+        {selectedTestsList.length > 0 && (
+          <SelectedLabItemGroup
+            icon={TestTube2}
+            title="Individual Tests:"
+            items={selectedTestsList}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SelectedLabItemGroup({ icon: Icon, items, title }) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-foreground mb-2">
+        {title}
+      </p>
+      <div className="space-y-1">
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="text-sm text-muted-foreground flex items-center gap-2"
+          >
+            <Icon className="size-3" />
+            {item.name}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LabOrderReviewStep({ formData, selectedPanelsList, selectedTestsList }) {
+  return (
+    <div className="space-y-6">
+      <Alert>
+        <AlertCircle className="size-4" />
+        <AlertDescription>
+          Please review the order details before submitting. The order will
+          be immediately submitted to the laboratory.
+        </AlertDescription>
+      </Alert>
+
+      <div className="bg-card border border-border rounded-lg p-4">
+        <h3 className="font-heading font-semibold text-foreground mb-3">
+          Order Priority
+        </h3>
+        <Badge className={PRIORITY_CONFIG[formData.priority].color}>
+          {PRIORITY_CONFIG[formData.priority].label}
+        </Badge>
+      </div>
+
+      <LabOrderReviewItems
+        selectedPanelsList={selectedPanelsList}
+        selectedTestsList={selectedTestsList}
+      />
+      <LabOrderClinicalDetailsReview formData={formData} />
+    </div>
+  );
+}
+
+function LabOrderReviewItems({ selectedPanelsList, selectedTestsList }) {
+  const total = (
+    selectedPanelsList.reduce((sum, panel) => sum + Number(panel.price || 0), 0) +
+    selectedTestsList.reduce((sum, test) => sum + Number(test.price || 0), 0)
+  );
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h3 className="font-heading font-semibold text-foreground mb-3">
+        Tests & Panels
+      </h3>
+      <div className="space-y-4">
+        {selectedPanelsList.length > 0 && (
+          <ReviewLineItemGroup
+            icon={Package}
+            title="Panels:"
+            items={selectedPanelsList}
+          />
+        )}
+        {selectedTestsList.length > 0 && (
+          <ReviewLineItemGroup
+            icon={TestTube2}
+            title="Individual Tests:"
+            items={selectedTestsList}
+          />
+        )}
+        <div className="pt-2 border-t border-border">
+          <div className="flex items-center justify-between font-semibold text-foreground">
+            <span>Total</span>
+            <span>${total.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewLineItemGroup({ icon: Icon, items, title }) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-foreground mb-2">
+        {title}
+      </p>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <Icon className="size-4 text-muted-foreground" />
+              <span className="text-foreground">{item.name}</span>
+            </div>
+            <span className="font-semibold text-foreground">
+              ${Number(item.price || 0).toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LabOrderClinicalDetailsReview({ formData }) {
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h3 className="font-heading font-semibold text-foreground mb-3">
+        Clinical Details
+      </h3>
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">
+            Indication:
+          </p>
+          <p className="text-sm text-foreground mt-1">
+            {formData.indication}
+          </p>
+        </div>
+        {formData.clinical_notes && (
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">
+              Additional Notes:
+            </p>
+            <p className="text-sm text-foreground mt-1">
+              {formData.clinical_notes}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * LabOrderForm - Multi-step wizard for creating lab orders
@@ -387,31 +1131,7 @@ const LabOrderFormContent = ({
     return { tests: selectedTests, panels: selectedPanels };
   }, [formData.selected_panels, formData.selected_tests, panels, tests]);
 
-  // Priority config
-  const priorityConfig = {
-    routine: {
-      label: "Routine",
-      color: "bg-muted text-muted-foreground",
-      description: "Standard turnaround time",
-    },
-    urgent: {
-      label: "Urgent",
-      color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
-      description: "Expedited processing",
-    },
-    stat: {
-      label: "STAT",
-      color: "bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400",
-      description: "Immediate processing required",
-    },
-  };
-
-  // Get patient display name
-  const patientName = patient?.local_data?.user_details
-    ? `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim()
-    : patient?.local_data?.first_name
-    ? `${patient.local_data.first_name} ${patient.local_data.last_name || ''}`.trim()
-    : patient?.name || 'Patient';
+  const patientName = getPatientDisplayName(patient);
 
   return (
     <dialog
@@ -424,703 +1144,59 @@ const LabOrderFormContent = ({
         open ? "translate-x-0" : "translate-x-full"
       )}
     >
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
-          </div>
-          <div>
-            <h2 id="lab-order-title" className="font-display text-xl text-foreground">
-              Order Labs
-            </h2>
-            <p className="font-mono text-xs text-muted-foreground mt-0.5">
-              {patientName}
-            </p>
-          </div>
-        </div>
-
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={onClose}
-          className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
-        >
-          <X className="size-4 mr-1.5" aria-hidden="true" />
-          Close
-        </Button>
-      </header>
-
-      {/* Progress Indicator */}
-      <div className="bg-card border-b border-border px-6 py-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-mono text-xs text-muted-foreground">
-          Step {currentStep} of {TOTAL_STEPS}
-          </span>
-        </div>
-        <WorkflowSteps
-          steps={STEPS}
-          currentStep={currentStep}
-          onStepClick={goToStep}
-        />
-      </div>
+      <LabOrderHeader patientName={patientName} onClose={onClose} />
+      <LabOrderProgress currentStep={currentStep} onStepClick={goToStep} />
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Test Selection */}
           {currentStep === 1 && (
-            <div className="space-y-4">
-              {/* Search */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
-                <Label htmlFor="lab-test-search" className="sr-only">Search tests and panels</Label>
-                <Input
-                  id="lab-test-search"
-                  placeholder="Search by name or abbreviation (TSH, CBC, LFTs...)"
-                  value={searchQuery}
-                  onChange={(e) => dispatch({ type: "set_search_query", searchQuery: e.target.value })}
-                  className="pl-10"
-                  autoFocus
-                />
-              </div>
-
-              {errors.tests && (
-                <Alert variant="destructive">
-                  <AlertCircle className="size-4" />
-                  <AlertDescription>{errors.tests}</AlertDescription>
-                </Alert>
-              )}
-
-              {/* Selection summary */}
-              {(formData.selected_tests.length > 0 || formData.selected_panels.length > 0) && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
-                  <Check className="size-4 text-emerald-600" />
-                  <span>
-                    {formData.selected_panels.length > 0 && (
-                      <span className="font-medium">{formData.selected_panels.length} panel{formData.selected_panels.length !== 1 ? 's' : ''}</span>
-                    )}
-                    {formData.selected_panels.length > 0 && formData.selected_tests.length > 0 && ' and '}
-                    {formData.selected_tests.length > 0 && (
-                      <span className="font-medium">{formData.selected_tests.length} test{formData.selected_tests.length !== 1 ? 's' : ''}</span>
-                    )}
-                    {' '}selected
-                  </span>
-                </div>
-              )}
-
-              {/* Combined Search Results or Tabbed Browse */}
-              {hasSearchQuery ? (
-                // Combined search results view
-                <div className="space-y-4">
-                  <div aria-live="polite" aria-atomic="true" className="text-sm text-muted-foreground">
-                    Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{searchQuery}"
-                  </div>
-
-                  {testsLoading || panelsLoading ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      Searching…
-                    </div>
-                  ) : totalResults === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Search className="size-8 mx-auto mb-2 opacity-50" />
-                      <p>No tests or panels found</p>
-                      <p className="text-xs mt-1">Try different keywords or abbreviations (e.g., TSH, CBC, LFTs)</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {/* Panels first */}
-                      {filteredPanels.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-xs font-mono uppercase text-muted-foreground">
-                            <Package className="size-3" />
-                            Panels ({filteredPanels.length})
-                          </div>
-                          {filteredPanels.map((panel) => (
-                            <label
-                              key={panel.id}
-                              className={cn(
-                                "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
-                                formData.selected_panels.includes(panel.id)
-                                  ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                                  : "hover:border-muted-foreground/50"
-                              )}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.selected_panels.includes(panel.id)}
-                                onChange={() => handlePanelToggle(panel.id)}
-                                aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
-                                className="peer sr-only"
-                              />
-                              <CardHeader className="py-3">
-                                <div className="flex items-start justify-between">
-                                  <div className="flex items-start gap-3">
-                                    <span
-                                      aria-hidden="true"
-                                      className={cn(
-                                        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
-                                        formData.selected_panels.includes(panel.id) && "border-primary bg-primary text-primary-foreground"
-                                      )}
-                                    >
-                                      {formData.selected_panels.includes(panel.id) && <Check className="size-3.5" />}
-                                    </span>
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <CardTitle className="text-base">{panel.name}</CardTitle>
-                                        <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                                          Panel
-                                        </Badge>
-                                      </div>
-                                      <CardDescription className="text-xs font-mono mt-1">
-                                        {panel.code} • {panel.test_count || 0} tests
-                                      </CardDescription>
-                                    </div>
-                                  </div>
-                                  <div className="text-sm font-semibold text-foreground">
-                                    ${Number(panel.price || 0).toFixed(2)}
-                                  </div>
-                                </div>
-                              </CardHeader>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Tests */}
-                      {filteredTests.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-xs font-mono uppercase text-muted-foreground">
-                            <TestTube2 className="size-3" />
-                            Individual Tests ({filteredTests.length})
-                          </div>
-                          {filteredTests.slice(0, 20).map((test) => (
-                            <label
-                              key={test.id}
-                              className={cn(
-                                "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
-                                formData.selected_tests.includes(test.id)
-                                  ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                                  : "hover:border-muted-foreground/50"
-                              )}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.selected_tests.includes(test.id)}
-                                onChange={() => handleTestToggle(test.id)}
-                                aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
-                                className="peer sr-only"
-                              />
-                              <CardHeader className="py-3">
-                                <div className="flex items-start justify-between">
-                                  <div className="flex items-start gap-3">
-                                    <span
-                                      aria-hidden="true"
-                                      className={cn(
-                                        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
-                                        formData.selected_tests.includes(test.id) && "border-primary bg-primary text-primary-foreground"
-                                      )}
-                                    >
-                                      {formData.selected_tests.includes(test.id) && <Check className="size-3.5" />}
-                                    </span>
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <CardTitle className="text-base">{test.name}</CardTitle>
-                                        <Badge variant="outline" className="text-xs capitalize">
-                                          {test.category}
-                                        </Badge>
-                                      </div>
-                                      <CardDescription className="text-xs font-mono mt-1">
-                                        {test.loinc_code && `LOINC: ${test.loinc_code}`}
-                                        {test.loinc_code && test.tat_hours && ' • '}
-                                        {test.tat_hours && `${test.tat_hours}h TAT`}
-                                      </CardDescription>
-                                    </div>
-                                  </div>
-                                  <div className="text-sm font-semibold text-foreground">
-                                    ${Number(test.price || 0).toFixed(2)}
-                                  </div>
-                                </div>
-                              </CardHeader>
-                            </label>
-                          ))}
-                          {filteredTests.length > 20 && (
-                            <p className="text-xs text-muted-foreground text-center py-2">
-                              Showing first 20 of {filteredTests.length} tests. Refine your search for more specific results.
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                // Tabbed browse view (no search)
-                <>
-                  {/* Category Filter */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button
-                      variant={activeCategory === "all" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => dispatch({ type: "set_active_category", activeCategory: "all" })}
-                    >
-                      All
-                    </Button>
-                    {categories.map((category) => (
-                      <Button
-                        key={category}
-                        variant={activeCategory === category ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => dispatch({ type: "set_active_category", activeCategory: category })}
-                        className="capitalize"
-                      >
-                        {category}
-                      </Button>
-                    ))}
-                  </div>
-
-                  {/* Tabs */}
-                  <Tabs defaultValue="panels" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="panels">
-                        <Package className="size-4 mr-2" />
-                        Panels ({filteredPanels.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="tests">
-                        <TestTube2 className="size-4 mr-2" />
-                        Tests ({filteredTests.length})
-                      </TabsTrigger>
-                    </TabsList>
-
-                    {/* Panels Tab */}
-                    <TabsContent value="panels" className="space-y-3 mt-4">
-                      {panelsLoading ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          Loading panels…
-                        </div>
-                      ) : filteredPanels.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          No panels available
-                        </div>
-                      ) : (
-                        filteredPanels.map((panel) => (
-                          <label
-                            key={panel.id}
-                            className={cn(
-                              "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
-                              formData.selected_panels.includes(panel.id)
-                                ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                                : "hover:border-muted-foreground/50"
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.selected_panels.includes(panel.id)}
-                              onChange={() => handlePanelToggle(panel.id)}
-                              aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
-                              className="peer sr-only"
-                            />
-                            <CardHeader className="pb-3">
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-start gap-3">
-                                  <span
-                                    aria-hidden="true"
-                                    className={cn(
-                                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
-                                      formData.selected_panels.includes(panel.id) && "border-primary bg-primary text-primary-foreground"
-                                    )}
-                                  >
-                                    {formData.selected_panels.includes(panel.id) && <Check className="size-3.5" />}
-                                  </span>
-                                  <div>
-                                    <CardTitle className="text-base">
-                                      {panel.name}
-                                    </CardTitle>
-                                    <CardDescription className="text-xs font-mono mt-1">
-                                      {panel.code} • {panel.test_count || 0} tests
-                                    </CardDescription>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-sm font-semibold text-foreground">
-                                    ${Number(panel.price || 0).toFixed(2)}
-                                  </div>
-                                </div>
-                              </div>
-                            </CardHeader>
-                            {panel.description && (
-                              <CardContent className="pt-0">
-                                <p className="text-sm text-muted-foreground">
-                                  {panel.description}
-                                </p>
-                              </CardContent>
-                            )}
-                          </label>
-                        ))
-                      )}
-                    </TabsContent>
-
-                    {/* Individual Tests Tab */}
-                    <TabsContent value="tests" className="space-y-3 mt-4">
-                      {testsLoading ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          Loading tests…
-                        </div>
-                      ) : filteredTests.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          No tests available
-                        </div>
-                      ) : (
-                        filteredTests.map((test) => (
-                          <label
-                            key={test.id}
-                            className={cn(
-                              "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
-                              formData.selected_tests.includes(test.id)
-                                ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                                : "hover:border-muted-foreground/50"
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.selected_tests.includes(test.id)}
-                              onChange={() => handleTestToggle(test.id)}
-                              aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
-                              className="peer sr-only"
-                            />
-                            <CardHeader className="pb-3">
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-start gap-3">
-                                  <span
-                                    aria-hidden="true"
-                                    className={cn(
-                                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
-                                      formData.selected_tests.includes(test.id) && "border-primary bg-primary text-primary-foreground"
-                                    )}
-                                  >
-                                    {formData.selected_tests.includes(test.id) && <Check className="size-3.5" />}
-                                  </span>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <CardTitle className="text-base">
-                                        {test.name}
-                                      </CardTitle>
-                                      <Badge
-                                        variant="outline"
-                                        className="text-xs capitalize"
-                                      >
-                                        {test.category}
-                                      </Badge>
-                                    </div>
-                                    <CardDescription className="text-xs font-mono mt-1">
-                                      {test.loinc_code && `LOINC: ${test.loinc_code}`}
-                                      {test.loinc_code && test.tat_hours && ' • '}
-                                      {test.tat_hours && `${test.tat_hours}h TAT`}
-                                    </CardDescription>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-sm font-semibold text-foreground">
-                                    ${Number(test.price || 0).toFixed(2)}
-                                  </div>
-                                </div>
-                              </div>
-                            </CardHeader>
-                            {test.specimen_type && (
-                              <CardContent className="pt-0">
-                                <div className="text-xs text-muted-foreground">
-                                  <span className="font-medium">Specimen:</span>{" "}
-                                  {test.specimen_type}
-                                </div>
-                              </CardContent>
-                            )}
-                          </label>
-                        ))
-                      )}
-                    </TabsContent>
-                  </Tabs>
-                </>
-              )}
-            </div>
+            <LabOrderTestSelectionStep
+              activeCategory={activeCategory}
+              categories={categories}
+              errors={errors}
+              filteredPanels={filteredPanels}
+              filteredTests={filteredTests}
+              formData={formData}
+              hasSearchQuery={hasSearchQuery}
+              panelsLoading={panelsLoading}
+              searchQuery={searchQuery}
+              testsLoading={testsLoading}
+              totalResults={totalResults}
+              onCategoryChange={(activeCategory) => dispatch({ type: "set_active_category", activeCategory })}
+              onPanelToggle={handlePanelToggle}
+              onSearchQueryChange={(searchQuery) => dispatch({ type: "set_search_query", searchQuery })}
+              onTestToggle={handleTestToggle}
+            />
           )}
 
-          {/* Step 2: Clinical Details */}
           {currentStep === 2 && (
-            <div className="space-y-6">
-              {/* Priority */}
-              <div className="space-y-2">
-                <Label htmlFor="priority">Priority *</Label>
-                <Select
-                  value={formData.priority}
-                  onValueChange={(value) =>
-                    dispatch({ type: "set_field", field: "priority", value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {Object.entries(priorityConfig).map(([key, config]) => (
-                      <SelectItem key={key} value={key}>
-                        <div className="flex items-center gap-2">
-                          <Badge className={config.color}>{config.label}</Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {config.description}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Indication */}
-              <div className="space-y-2">
-                <Label htmlFor="indication">Clinical Indication *</Label>
-                <Textarea
-                  id="indication"
-                  placeholder="Why is this test being ordered? (e.g., 'Rule out anemia', 'Monitor diabetes', 'Chest pain workup')"
-                  value={formData.indication}
-                  onChange={(e) =>
-                    dispatch({ type: "set_field", field: "indication", value: e.target.value })
-                  }
-                  className={cn(
-                    "min-h-[80px]",
-                    errors.indication && "border-rose-500"
-                  )}
-                />
-                {errors.indication && (
-                  <p className="text-sm text-rose-600">{errors.indication}</p>
-                )}
-              </div>
-
-              {/* Clinical Notes */}
-              <div className="space-y-2">
-                <Label htmlFor="clinical_notes">Additional Clinical Notes</Label>
-                <Textarea
-                  id="clinical_notes"
-                  placeholder="Any additional information for the lab (optional)"
-                  value={formData.clinical_notes}
-                  onChange={(e) =>
-                    dispatch({ type: "set_field", field: "clinical_notes", value: e.target.value })
-                  }
-                  className="min-h-[100px]"
-                />
-              </div>
-
-              {/* Selected Items Preview */}
-              <div className="bg-muted border border-border rounded-lg p-4">
-                <h3 className="font-heading font-semibold text-foreground mb-3">
-                  Selected Items
-                </h3>
-                <div className="space-y-2">
-                  {selectedPanelsList.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-foreground mb-2">
-                        Panels:
-                      </p>
-                      <div className="space-y-1">
-                        {selectedPanelsList.map((panel) => (
-                          <div
-                            key={panel.id}
-                            className="text-sm text-muted-foreground flex items-center gap-2"
-                          >
-                            <Package className="size-3" />
-                            {panel.name}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {selectedTestsList.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-foreground mb-2">
-                        Individual Tests:
-                      </p>
-                      <div className="space-y-1">
-                        {selectedTestsList.map((test) => (
-                          <div
-                            key={test.id}
-                            className="text-sm text-muted-foreground flex items-center gap-2"
-                          >
-                            <TestTube2 className="size-3" />
-                            {test.name}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <LabOrderDetailsStep
+              errors={errors}
+              formData={formData}
+              selectedPanelsList={selectedPanelsList}
+              selectedTestsList={selectedTestsList}
+              onFieldChange={(field, value) => dispatch({ type: "set_field", field, value })}
+            />
           )}
 
-          {/* Step 3: Review */}
           {currentStep === 3 && (
-            <div className="space-y-6">
-              <Alert>
-                <AlertCircle className="size-4" />
-                <AlertDescription>
-                  Please review the order details before submitting. The order will
-                  be immediately submitted to the laboratory.
-                </AlertDescription>
-              </Alert>
-
-              {/* Priority */}
-              <div className="bg-card border border-border rounded-lg p-4">
-                <h3 className="font-heading font-semibold text-foreground mb-3">
-                  Order Priority
-                </h3>
-                <Badge className={priorityConfig[formData.priority].color}>
-                  {priorityConfig[formData.priority].label}
-                </Badge>
-              </div>
-
-              {/* Tests and Panels */}
-              <div className="bg-card border border-border rounded-lg p-4">
-                <h3 className="font-heading font-semibold text-foreground mb-3">
-                  Tests & Panels
-                </h3>
-                <div className="space-y-4">
-                  {selectedPanelsList.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-foreground mb-2">
-                        Panels:
-                      </p>
-                      <div className="space-y-2">
-                        {selectedPanelsList.map((panel) => (
-                          <div
-                            key={panel.id}
-                            className="flex items-center justify-between text-sm"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Package className="size-4 text-muted-foreground" />
-                              <span className="text-foreground">{panel.name}</span>
-                            </div>
-                            <span className="font-semibold text-foreground">
-                              ${Number(panel.price || 0).toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {selectedTestsList.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-foreground mb-2">
-                        Individual Tests:
-                      </p>
-                      <div className="space-y-2">
-                        {selectedTestsList.map((test) => (
-                          <div
-                            key={test.id}
-                            className="flex items-center justify-between text-sm"
-                          >
-                            <div className="flex items-center gap-2">
-                              <TestTube2 className="size-4 text-muted-foreground" />
-                              <span className="text-foreground">{test.name}</span>
-                            </div>
-                            <span className="font-semibold text-foreground">
-                              ${Number(test.price || 0).toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="pt-2 border-t border-border">
-                    <div className="flex items-center justify-between font-semibold text-foreground">
-                      <span>Total</span>
-                      <span>
-                        $
-                        {(
-                          selectedPanelsList.reduce(
-                            (sum, panel) => sum + Number(panel.price || 0),
-                            0
-                          ) +
-                          selectedTestsList.reduce(
-                            (sum, test) => sum + Number(test.price || 0),
-                            0
-                          )
-                        ).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Clinical Details */}
-              <div className="bg-card border border-border rounded-lg p-4">
-                <h3 className="font-heading font-semibold text-foreground mb-3">
-                  Clinical Details
-                </h3>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Indication:
-                    </p>
-                    <p className="text-sm text-foreground mt-1">
-                      {formData.indication}
-                    </p>
-                  </div>
-                  {formData.clinical_notes && (
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Additional Notes:
-                      </p>
-                      <p className="text-sm text-foreground mt-1">
-                        {formData.clinical_notes}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <LabOrderReviewStep
+              formData={formData}
+              selectedPanelsList={selectedPanelsList}
+              selectedTestsList={selectedTestsList}
+            />
           )}
         </div>
 
-        {/* Footer */}
-        <footer className="border-t border-border bg-card px-6 py-3">
-          {/* Keyboard shortcuts hint */}
-          <WorkflowKeyboardHints totalSteps={TOTAL_STEPS} className="mb-3" />
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {currentStep > 1 && (
-                <Button variant="outline" size="sm" onClick={handleBack} className="font-mono text-xs">
-                  <ChevronLeft className="size-3.5 mr-1" />
-                  Back
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
-                Cancel
-              </Button>
-              {currentStep < TOTAL_STEPS ? (
-                <Button size="sm" onClick={handleNext} className="font-mono text-xs">
-                  Next
-                  <ChevronRight className="size-3.5 ml-1" />
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  onClick={handleSubmit}
-                  disabled={createOrder.isPending || submitOrder.isPending}
-                  className="bg-sky-600 hover:bg-sky-700 font-mono text-xs"
-                >
-                  {createOrder.isPending || submitOrder.isPending ? (
-                    "Submitting..."
-                  ) : (
-                    <>
-                      <Check className="size-3.5 mr-1.5" />
-                      Submit Order
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-          </div>
-        </footer>
+        <LabOrderFooter
+          createOrder={createOrder}
+          currentStep={currentStep}
+          onBack={handleBack}
+          onClose={onClose}
+          onNext={handleNext}
+          onSubmit={handleSubmit}
+          submitOrder={submitOrder}
+        />
     </dialog>
   );
 };
