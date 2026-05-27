@@ -46,6 +46,439 @@ const unitSchema = z.object({
   operates_24_hours: z.boolean().default(false),
 });
 
+function getUnitDefaultValues(unit) {
+  return {
+    code: unit?.code || '',
+    name: unit?.name || '',
+    short_name: unit?.short_name || '',
+    description: unit?.description || '',
+    unit_type: unit?.unit_type?.toString() || '',
+    unit_category: unit?.unit_category || 'clinical',
+    staffing_mode: unit?.staffing_mode || 'clinical_only',
+    ward_assignment_policy: unit?.ward_assignment_policy || 'flexible',
+    location: unit?.location || '',
+    floor: unit?.floor || '',
+    building: unit?.building || '',
+    phone: unit?.phone || '',
+    email: unit?.email || '',
+    is_active: unit?.is_active ?? true,
+    accepts_admissions: unit?.accepts_admissions ?? true,
+    accepts_referrals: unit?.accepts_referrals ?? true,
+    has_own_budget: unit?.has_own_budget ?? false,
+    operates_24_hours: unit?.operates_24_hours ?? false,
+  };
+}
+
+function cleanUnitPayload(data) {
+  const cleanedData = {};
+  Object.keys(data).forEach((key) => {
+    const value = data[key];
+    if (value !== '' && value !== null && value !== undefined) {
+      cleanedData[key] = value;
+    }
+  });
+  return cleanedData;
+}
+
+function FormSection({ title, children }) {
+  return (
+    <section className="space-y-4">
+      <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function UnitClassificationFields({
+  form,
+  availableTypes,
+  isOpsOnlyCategory,
+  onUnitTypeChange,
+  onUnitCategoryChange,
+  onStaffingModeChange,
+}) {
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name="unit_type"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider">Unit Type *</FormLabel>
+            <Select value={field.value} onValueChange={(value) => onUnitTypeChange(value, field.onChange)}>
+              <FormControl>
+                <SelectTrigger className="font-mono text-sm">
+                  <SelectValue placeholder="Select unit type" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent className="z-[200]">
+                {availableTypes.map((type) => (
+                  <SelectItem key={type.id} value={type.id.toString()}>
+                    {type.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="unit_category"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider">Unit Category *</FormLabel>
+            <Select value={field.value} onValueChange={(value) => onUnitCategoryChange(value, field.onChange)}>
+              <FormControl>
+                <SelectTrigger className="font-mono text-sm">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent className="z-[200]">
+                <SelectItem value="clinical">Clinical (Patient-Facing)</SelectItem>
+                <SelectItem value="ancillary">Ancillary (Support Services)</SelectItem>
+                <SelectItem value="ops_only">Operations Only</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription className="text-[10px] text-muted-foreground">
+              Clinical units see patients; Ancillary units support clinical work (Lab, Radiology)
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="staffing_mode"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider">Staffing Mode *</FormLabel>
+            <Select value={field.value} onValueChange={(value) => onStaffingModeChange(value, field.onChange)}>
+              <FormControl>
+                <SelectTrigger className="font-mono text-sm">
+                  <SelectValue placeholder="Select staffing mode" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent className="z-[200]">
+                <SelectItem value="clinical_only">Clinical (Practitioner Only)</SelectItem>
+                <SelectItem value="mixed">Mixed (Clinical + Operations)</SelectItem>
+                <SelectItem value="ops_only">Operations (Non-Clinical Only)</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription className="text-[10px] text-muted-foreground">
+              Defaults to mixed for facility/department/division; not inherited from parent units
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {!isOpsOnlyCategory && (
+        <FormField
+          control={form.control}
+          name="ward_assignment_policy"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider">Ward Assignment Policy</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger className="font-mono text-sm">
+                    <SelectValue placeholder="Select policy" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent className="z-[200]">
+                  <SelectItem value="flexible">Flexible - Patient stays with admitting team</SelectItem>
+                  <SelectItem value="strict">Strict - Patient transfers to ward&apos;s team</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormDescription className="text-[10px] text-muted-foreground">
+                Controls team handoff when patient is placed in a ward owned by a different team
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
+    </>
+  );
+}
+
+function UnitIdentityFields({ form }) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="code"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider">Code *</FormLabel>
+              <FormControl>
+                <Input placeholder="SURG" className="font-mono" {...field} />
+              </FormControl>
+              <FormDescription className="text-[10px] text-muted-foreground">Short identifier</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="short_name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider">Short Name</FormLabel>
+              <FormControl>
+                <Input placeholder="Surgery" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <FormField
+        control={form.control}
+        name="name"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider">Full Name *</FormLabel>
+            <FormControl>
+              <Input placeholder="Surgery Department" className="font-display" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider">Description</FormLabel>
+            <FormControl>
+              <Textarea
+                placeholder="Description of the unit..."
+                className="resize-none text-sm"
+                rows={3}
+                {...field}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  );
+}
+
+function UnitBasicInfoSection({
+  form,
+  availableTypes,
+  isOpsOnlyCategory,
+  onUnitTypeChange,
+  onUnitCategoryChange,
+  onStaffingModeChange,
+}) {
+  return (
+    <FormSection title="Basic Information">
+      <UnitClassificationFields
+        form={form}
+        availableTypes={availableTypes}
+        isOpsOnlyCategory={isOpsOnlyCategory}
+        onUnitTypeChange={onUnitTypeChange}
+        onUnitCategoryChange={onUnitCategoryChange}
+        onStaffingModeChange={onStaffingModeChange}
+      />
+      <UnitIdentityFields form={form} />
+    </FormSection>
+  );
+}
+
+function UnitLocationSection({ form }) {
+  return (
+    <FormSection title="Location">
+      <div className="grid grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="building"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider">Building</FormLabel>
+              <FormControl>
+                <Input placeholder="Main Building" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="floor"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider">Floor</FormLabel>
+              <FormControl>
+                <Input placeholder="3rd Floor" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <FormField
+        control={form.control}
+        name="location"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider">Location Details</FormLabel>
+            <FormControl>
+              <Input placeholder="Wing A, Room 301" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </FormSection>
+  );
+}
+
+function UnitContactSection({ form }) {
+  return (
+    <FormSection title="Contact">
+      <div className="grid grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="phone"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider">Phone</FormLabel>
+              <FormControl>
+                <Input placeholder="+1 234 567 8900" className="font-mono" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider">Email</FormLabel>
+              <FormControl>
+                <Input type="email" placeholder="unit@hospital.com" className="font-mono" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+    </FormSection>
+  );
+}
+
+function CapabilityCheckboxField({ form, name, label, description, className }) {
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className={className}>
+          <FormControl>
+            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+          </FormControl>
+          <div className="space-y-0.5">
+            <FormLabel className="text-sm font-medium">{label}</FormLabel>
+            <FormDescription className="text-[10px]">{description}</FormDescription>
+          </div>
+        </FormItem>
+      )}
+    />
+  );
+}
+
+function UnitCapabilitiesSection({ form, isOpsOnlyCategory }) {
+  const checkboxClassName = "flex items-center gap-3 gap-y-0 rounded-lg border p-3";
+
+  return (
+    <FormSection title="Capabilities">
+      <div className="grid grid-cols-2 gap-4">
+        <CapabilityCheckboxField
+          form={form}
+          name="is_active"
+          label="Active"
+          description="Unit is operational"
+          className={checkboxClassName}
+        />
+
+        {!isOpsOnlyCategory && (
+          <CapabilityCheckboxField
+            form={form}
+            name="accepts_admissions"
+            label="Accepts Admissions"
+            description="Can be primary team"
+            className={checkboxClassName}
+          />
+        )}
+
+        {!isOpsOnlyCategory && (
+          <CapabilityCheckboxField
+            form={form}
+            name="accepts_referrals"
+            label="Accepts Referrals"
+            description="Can receive consults"
+            className={checkboxClassName}
+          />
+        )}
+
+        <CapabilityCheckboxField
+          form={form}
+          name="has_own_budget"
+          label="Has Own Budget"
+          description="Separate cost center"
+          className={checkboxClassName}
+        />
+
+        <CapabilityCheckboxField
+          form={form}
+          name="operates_24_hours"
+          label="24/7 Operations"
+          description="Unit operates around the clock"
+          className={`${checkboxClassName} col-span-2`}
+        />
+      </div>
+    </FormSection>
+  );
+}
+
+function UnitFormActions({ unit, onCancel, isLoading }) {
+  return (
+    <div className="flex justify-end gap-3 pt-4 border-t">
+      <Button type="button" variant="outline" onClick={onCancel} className="font-mono text-xs">
+        Cancel
+      </Button>
+      <Button
+        type="submit"
+        disabled={isLoading}
+        className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs"
+      >
+        {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
+        {unit ? 'Update Unit' : 'Create Unit'}
+      </Button>
+    </div>
+  );
+}
+
 /**
  * UnitForm - Form for creating/editing clinical units
  * Uses Chronicle Design System styling
@@ -83,26 +516,7 @@ function UnitFormContent({ unit, parentUnit, unitTypesData, onSubmit, onCancel, 
 
   const form = useForm({
     resolver: zodResolver(unitSchema),
-    defaultValues: {
-      code: unit?.code || '',
-      name: unit?.name || '',
-      short_name: unit?.short_name || '',
-      description: unit?.description || '',
-      unit_type: unit?.unit_type?.toString() || '',
-      unit_category: unit?.unit_category || 'clinical',
-      staffing_mode: unit?.staffing_mode || 'clinical_only',
-      ward_assignment_policy: unit?.ward_assignment_policy || 'flexible',
-      location: unit?.location || '',
-      floor: unit?.floor || '',
-      building: unit?.building || '',
-      phone: unit?.phone || '',
-      email: unit?.email || '',
-      is_active: unit?.is_active ?? true,
-      accepts_admissions: unit?.accepts_admissions ?? true,
-      accepts_referrals: unit?.accepts_referrals ?? true,
-      has_own_budget: unit?.has_own_budget ?? false,
-      operates_24_hours: unit?.operates_24_hours ?? false,
-    },
+    defaultValues: getUnitDefaultValues(unit),
   });
 
   const selectedUnitCategory = form.watch('unit_category');
@@ -145,394 +559,33 @@ function UnitFormContent({ unit, parentUnit, unitTypesData, onSubmit, onCancel, 
     }
   };
 
-  const handleSubmit = (data) => {
-    // Remove empty/null values - don't send them to API
-    const cleanedData = {};
-    Object.keys(data).forEach((key) => {
-      const value = data[key];
-      if (value !== '' && value !== null && value !== undefined) {
-        cleanedData[key] = value;
-      }
-    });
-    onSubmit(cleanedData);
-  };
+  const handleSubmit = (data) => onSubmit(cleanUnitPayload(data));
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
-        {/* Basic Info Section */}
-        <section className="space-y-4">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Basic Information
-          </h3>
-
-          <FormField
-            control={form.control}
-            name="unit_type"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-wider">Unit Type *</FormLabel>
-                <Select value={field.value} onValueChange={(value) => handleUnitTypeChange(value, field.onChange)}>
-                  <FormControl>
-                    <SelectTrigger className="font-mono text-sm">
-                      <SelectValue placeholder="Select unit type" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="z-[200]">
-                    {availableTypes.map((type) => (
-                      <SelectItem key={type.id} value={type.id.toString()}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="unit_category"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-wider">Unit Category *</FormLabel>
-                <Select value={field.value} onValueChange={(value) => handleUnitCategoryChange(value, field.onChange)}>
-                  <FormControl>
-                    <SelectTrigger className="font-mono text-sm">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="z-[200]">
-                    <SelectItem value="clinical">Clinical (Patient-Facing)</SelectItem>
-                    <SelectItem value="ancillary">Ancillary (Support Services)</SelectItem>
-                    <SelectItem value="ops_only">Operations Only</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormDescription className="text-[10px] text-muted-foreground">
-                  Clinical units see patients; Ancillary units support clinical work (Lab, Radiology)
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="staffing_mode"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-wider">Staffing Mode *</FormLabel>
-                <Select value={field.value} onValueChange={(value) => handleStaffingModeChange(value, field.onChange)}>
-                  <FormControl>
-                    <SelectTrigger className="font-mono text-sm">
-                      <SelectValue placeholder="Select staffing mode" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="z-[200]">
-                    <SelectItem value="clinical_only">Clinical (Practitioner Only)</SelectItem>
-                    <SelectItem value="mixed">Mixed (Clinical + Operations)</SelectItem>
-                    <SelectItem value="ops_only">Operations (Non-Clinical Only)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormDescription className="text-[10px] text-muted-foreground">
-                  Defaults to mixed for facility/department/division; not inherited from parent units
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {!isOpsOnlyCategory && (
-            <FormField
-              control={form.control}
-              name="ward_assignment_policy"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Ward Assignment Policy</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="font-mono text-sm">
-                        <SelectValue placeholder="Select policy" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="z-[200]">
-                      <SelectItem value="flexible">Flexible - Patient stays with admitting team</SelectItem>
-                      <SelectItem value="strict">Strict - Patient transfers to ward&apos;s team</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription className="text-[10px] text-muted-foreground">
-                    Controls team handoff when patient is placed in a ward owned by a different team
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Code *</FormLabel>
-                  <FormControl>
-                    <Input placeholder="SURG" className="font-mono" {...field} />
-                  </FormControl>
-                  <FormDescription className="text-[10px] text-muted-foreground">Short identifier</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="short_name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Short Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Surgery" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-wider">Full Name *</FormLabel>
-                <FormControl>
-                  <Input placeholder="Surgery Department" className="font-display" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="description"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-wider">Description</FormLabel>
-                <FormControl>
-                  <Textarea
-                    placeholder="Description of the unit..."
-                    className="resize-none text-sm"
-                    rows={3}
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </section>
+        <UnitBasicInfoSection
+          form={form}
+          availableTypes={availableTypes}
+          isOpsOnlyCategory={isOpsOnlyCategory}
+          onUnitTypeChange={handleUnitTypeChange}
+          onUnitCategoryChange={handleUnitCategoryChange}
+          onStaffingModeChange={handleStaffingModeChange}
+        />
 
         <div className="divider-gradient" />
 
-        {/* Location Section */}
-        <section className="space-y-4">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Location
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="building"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Building</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Main Building" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="floor"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Floor</FormLabel>
-                  <FormControl>
-                    <Input placeholder="3rd Floor" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          <FormField
-            control={form.control}
-            name="location"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="font-mono text-xs uppercase tracking-wider">Location Details</FormLabel>
-                <FormControl>
-                  <Input placeholder="Wing A, Room 301" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </section>
+        <UnitLocationSection form={form} />
 
         <div className="divider-gradient" />
 
-        {/* Contact Section */}
-        <section className="space-y-4">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Contact
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="phone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Phone</FormLabel>
-                  <FormControl>
-                    <Input placeholder="+1 234 567 8900" className="font-mono" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-mono text-xs uppercase tracking-wider">Email</FormLabel>
-                  <FormControl>
-                    <Input type="email" placeholder="unit@hospital.com" className="font-mono" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        </section>
+        <UnitContactSection form={form} />
 
         <div className="divider-gradient" />
 
-        {/* Capabilities Section */}
-        <section className="space-y-4">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Capabilities
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="is_active"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-sm font-medium">Active</FormLabel>
-                    <FormDescription className="text-[10px]">Unit is operational</FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
+        <UnitCapabilitiesSection form={form} isOpsOnlyCategory={isOpsOnlyCategory} />
 
-            {!isOpsOnlyCategory && (
-              <FormField
-                control={form.control}
-                name="accepts_admissions"
-                render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-sm font-medium">Accepts Admissions</FormLabel>
-                      <FormDescription className="text-[10px]">Can be primary team</FormDescription>
-                    </div>
-                  </FormItem>
-                )}
-              />
-            )}
-
-            {!isOpsOnlyCategory && (
-              <FormField
-                control={form.control}
-                name="accepts_referrals"
-                render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-sm font-medium">Accepts Referrals</FormLabel>
-                      <FormDescription className="text-[10px]">Can receive consults</FormDescription>
-                    </div>
-                  </FormItem>
-                )}
-              />
-            )}
-
-            <FormField
-              control={form.control}
-              name="has_own_budget"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-sm font-medium">Has Own Budget</FormLabel>
-                    <FormDescription className="text-[10px]">Separate cost center</FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="operates_24_hours"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-3 gap-y-0 rounded-lg border p-3 col-span-2">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-sm font-medium">24/7 Operations</FormLabel>
-                    <FormDescription className="text-[10px]">Unit operates around the clock</FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
-          </div>
-        </section>
-
-        {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <Button type="button" variant="outline" onClick={onCancel} className="font-mono text-xs">
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={isLoading}
-            className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs"
-          >
-            {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
-            {unit ? 'Update Unit' : 'Create Unit'}
-          </Button>
-        </div>
+        <UnitFormActions unit={unit} onCancel={onCancel} isLoading={isLoading} />
       </form>
     </Form>
   );
