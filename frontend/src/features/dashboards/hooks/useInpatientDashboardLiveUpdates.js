@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { InpatientDashboardWebSocket } from '@/lib/websocket';
 import { dashboardKeys } from '@/hooks/useDashboardQueries';
 import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
+import { useDashboardWebSocketToken } from './useDashboardWebSocketToken';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -19,46 +20,10 @@ export function useInpatientDashboardLiveUpdates(options = {}) {
   const wsRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
-  const [wsToken, setWsToken] = useState(null);
 
   const userRole = String(user?.role || '').toLowerCase();
   const shouldConnect = enabled && isAuthenticated && INPATIENT_ROLES.has(userRole) && Boolean(facilityCode);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    if (!shouldConnect) {
-      setWsToken(null);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    const existingToken = getAccessToken?.();
-    if (existingToken) {
-      setWsToken(existingToken);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    (async () => {
-      try {
-        const refreshed = await refreshAccessToken?.();
-        if (isMounted) {
-          setWsToken(refreshed || null);
-        }
-      } catch {
-        if (isMounted) {
-          setWsToken(null);
-        }
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [shouldConnect, getAccessToken, refreshAccessToken]);
+  const [wsToken, setWsToken] = useDashboardWebSocketToken({ shouldConnect, getAccessToken, refreshAccessToken });
 
   useEffect(() => {
     if (!shouldConnect || !wsToken) {
@@ -135,7 +100,7 @@ export function useInpatientDashboardLiveUpdates(options = {}) {
       wsRef.current = null;
       setIsConnected(false);
     };
-  }, [shouldConnect, wsToken, facilityCode, queryClient, refreshAccessToken]);
+  }, [shouldConnect, wsToken, facilityCode, queryClient, refreshAccessToken, setWsToken]);
 
   return {
     isConnected,

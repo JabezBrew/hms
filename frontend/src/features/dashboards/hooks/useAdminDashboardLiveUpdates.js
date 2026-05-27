@@ -5,6 +5,7 @@ import { AdminDashboardWebSocket } from '@/lib/websocket';
 import { dashboardKeys } from '@/hooks/useDashboardQueries';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
+import { useDashboardWebSocketToken } from './useDashboardWebSocketToken';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -22,7 +23,6 @@ export function useAdminDashboardLiveUpdates(options = {}) {
   const wsRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
-  const [wsToken, setWsToken] = useState(null);
 
   const shouldConnect = (
     enabled
@@ -31,42 +31,7 @@ export function useAdminDashboardLiveUpdates(options = {}) {
     && resolveRole(user) === 'admin'
     && Boolean(facilityCode)
   );
-
-  useEffect(() => {
-    let isMounted = true;
-
-    if (!shouldConnect) {
-      setWsToken(null);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    const existingToken = getAccessToken?.();
-    if (existingToken) {
-      setWsToken(existingToken);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    (async () => {
-      try {
-        const refreshed = await refreshAccessToken?.();
-        if (isMounted) {
-          setWsToken(refreshed || null);
-        }
-      } catch {
-        if (isMounted) {
-          setWsToken(null);
-        }
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [shouldConnect, getAccessToken, refreshAccessToken]);
+  const [wsToken, setWsToken] = useDashboardWebSocketToken({ shouldConnect, getAccessToken, refreshAccessToken });
 
   useEffect(() => {
     if (!shouldConnect || !wsToken) {
@@ -149,7 +114,7 @@ export function useAdminDashboardLiveUpdates(options = {}) {
       wsRef.current = null;
       setIsConnected(false);
     };
-  }, [shouldConnect, wsToken, facilityCode, queryClient, refreshAccessToken]);
+  }, [shouldConnect, wsToken, facilityCode, queryClient, refreshAccessToken, setWsToken]);
 
   return {
     isConnected,

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { NurseDashboardWebSocket } from '@/lib/websocket';
 import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
+import { useDashboardWebSocketToken } from './useDashboardWebSocketToken';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -25,47 +26,11 @@ export function useNurseDashboardLiveUpdates(options = {}) {
   const wsRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
-  const [wsToken, setWsToken] = useState(null);
 
   const normalizedWardScope = normalizeWardScope(wardScope);
   const userRole = String(user?.role || '').toLowerCase();
   const shouldConnect = enabled && isAuthenticated && NURSE_ROLES.has(userRole) && Boolean(facilityCode);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    if (!shouldConnect) {
-      setWsToken(null);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    const existingToken = getAccessToken?.();
-    if (existingToken) {
-      setWsToken(existingToken);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    (async () => {
-      try {
-        const refreshed = await refreshAccessToken?.();
-        if (isMounted) {
-          setWsToken(refreshed || null);
-        }
-      } catch {
-        if (isMounted) {
-          setWsToken(null);
-        }
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [shouldConnect, getAccessToken, refreshAccessToken]);
+  const [wsToken, setWsToken] = useDashboardWebSocketToken({ shouldConnect, getAccessToken, refreshAccessToken });
 
   useEffect(() => {
     if (!shouldConnect || !wsToken) {
@@ -152,6 +117,7 @@ export function useNurseDashboardLiveUpdates(options = {}) {
     normalizedWardScope,
     queryClient,
     refreshAccessToken,
+    setWsToken,
   ]);
 
   return {
