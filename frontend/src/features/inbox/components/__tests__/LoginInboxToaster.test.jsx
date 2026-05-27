@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('sonner', () => {
@@ -149,7 +149,9 @@ describe('LoginInboxToaster', () => {
     renderToaster();
 
     const opts = toast.warning.mock.calls[0][1];
-    opts.action.onClick();
+    act(() => {
+      opts.action.onClick();
+    });
 
     expect(mutate).toHaveBeenCalledWith('abc');
   });

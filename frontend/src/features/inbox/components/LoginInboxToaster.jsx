@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -31,7 +31,11 @@ export default function LoginInboxToaster() {
   const navigate = useNavigate();
   const markRead = useMarkInboxRead();
 
-  const [armed] = useState(() => (isAuthenticated ? consumePendingFlag() : false));
+  const armedRef = useRef(null);
+  if (armedRef.current === null) {
+    armedRef.current = isAuthenticated ? consumePendingFlag() : false;
+  }
+  const armed = armedRef.current;
 
   const { data } = useInboxItems(
     { status: 'unread', page_size: 20 },
