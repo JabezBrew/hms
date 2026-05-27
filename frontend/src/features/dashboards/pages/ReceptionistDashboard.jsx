@@ -352,13 +352,11 @@ export default function ReceptionistDashboard() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {todaysAppointments.map((appointment) => (
-                <div
+                <button
+                  type="button"
                   key={appointment.id}
-                  tabIndex={0}
-                  role="button"
                   aria-label={`View appointment for ${appointment.patient_name}`}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/appointments/${appointment.id}`); } }}
-                  className="rounded-xl border border-border bg-card p-4 hover:border-primary/30 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="w-full text-left rounded-xl border border-border bg-card p-4 hover:border-primary/30 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   onClick={() => navigate(`/appointments/${appointment.id}`)}
                 >
                   <div className="flex items-start justify-between mb-2">
@@ -391,7 +389,7 @@ export default function ReceptionistDashboard() {
                       {appointment.practitioner_name}
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}

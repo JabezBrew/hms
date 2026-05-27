@@ -139,23 +139,16 @@ function ChronicleTaskList({ tasks, filter, onSelectTask }) {
   return (
     <div className="space-y-2">
       {filteredTasks.map((task, index) => (
-        <div
+        <button
+          type="button"
           key={task.id}
           className={cn(
-            "group relative bg-card/50 border border-border rounded-xl p-4",
+            "group relative w-full text-left bg-card/50 border border-border rounded-xl p-4",
             "hover:border-primary/30 hover:bg-card transition-all cursor-pointer",
             "animate-chronicle-enter"
           )}
           style={{ animationDelay: `${index * 50}ms` }}
           onClick={() => onSelectTask(task)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              onSelectTask(task);
-            }
-          }}
-          role="button"
-          tabIndex={0}
         >
           <div className="flex items-center gap-3">
             <div className="size-10 rounded-full bg-background border shadow-sm flex items-center justify-center">
@@ -177,7 +170,7 @@ function ChronicleTaskList({ tasks, filter, onSelectTask }) {
             </div>
             <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -460,26 +453,18 @@ function ChronicleAppointmentCard({ appointment, index, onClick }) {
   };
 
   const statusConfig = getStatusConfig(status);
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onClick();
-    }
-  };
 
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        "group relative bg-card/50 border border-border rounded-xl p-5",
+        "group relative w-full text-left bg-card/50 border border-border rounded-xl p-5",
         "hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]",
         "transition-all duration-300 cursor-pointer",
         "animate-chronicle-enter"
       )}
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={onClick}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
     >
       {statusConfig.ribbon && <div className={cn("status-ribbon", statusConfig.ribbon)} />}
 
@@ -514,7 +499,7 @@ function ChronicleAppointmentCard({ appointment, index, onClick }) {
         {/* Hover Action */}
         <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
-    </div>
+    </button>
   );
 }
 

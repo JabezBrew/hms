@@ -409,19 +409,12 @@ export default function PurchaseOrderDetailPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {(po.grns || po.goods_received_notes || []).map((grn, index) => (
-	                  <div
-	                    key={grn.id || index}
-	                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
-	                    onClick={() => navigate(`/inventory/grns/${grn.id}`)}
-	                    onKeyDown={(event) => {
-	                      if (event.key === 'Enter' || event.key === ' ') {
-	                        event.preventDefault();
-	                        navigate(`/inventory/grns/${grn.id}`);
-	                      }
-	                    }}
-	                    role="button"
-	                    tabIndex={0}
-	                  >
+                  <button
+                    type="button"
+                    key={grn.id || index}
+                    className="flex w-full items-center justify-between p-3 bg-muted/30 rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/inventory/grns/${grn.id}`)}
+                  >
                     <div className="flex items-center gap-3">
                       <Package className="size-4 text-muted-foreground" />
                       <div>
@@ -436,7 +429,7 @@ export default function PurchaseOrderDetailPage() {
                     <Badge variant="outline" className="text-xs">
                       {grn.status}
                     </Badge>
-                  </div>
+                  </button>
                 ))}
               </CardContent>
             </Card>

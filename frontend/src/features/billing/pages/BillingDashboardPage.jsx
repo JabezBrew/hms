@@ -553,24 +553,16 @@ function InvoiceRow({ invoice, index, onClick }) {
   };
 
   const badge = getStatusBadge(invoice.status);
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onClick();
-    }
-  };
 
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        "px-6 py-4 hover:bg-muted/30 cursor-pointer transition-colors",
+        "w-full px-6 py-4 text-left hover:bg-muted/30 cursor-pointer transition-colors",
         "animate-chronicle-enter"
       )}
       style={{ animationDelay: `${(index + 4) * 50}ms` }}
       onClick={onClick}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
     >
       <div className="flex items-center justify-between">
         <div className="min-w-0 flex-1">
@@ -598,7 +590,7 @@ function InvoiceRow({ invoice, index, onClick }) {
           )}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 

@@ -84,9 +84,8 @@ export function BoardSummaryDrawer({ open, onOpenChange, summary, patients = DEF
   if (!open) return null;
 
   return (
-    <div
+    <aside
       className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card shadow-xl"
-      role="complementary"
       aria-label="Board summary"
     >
       <div className="flex h-11 items-center justify-between gap-4 border-b border-border/60 px-4">
@@ -144,6 +143,6 @@ export function BoardSummaryDrawer({ open, onOpenChange, summary, patients = DEF
           </p>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

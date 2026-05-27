@@ -340,26 +340,17 @@ function ClaimCard({ claim, index, onClick }) {
 
   const badge = getStatusBadge(claim.status);
   const StatusIcon = badge.icon;
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onClick();
-    }
-  };
-
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        'group relative bg-card border border-border rounded-xl p-4 sm:p-5',
+        'group relative w-full text-left bg-card border border-border rounded-xl p-4 sm:p-5',
         'hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]',
         'transition-all duration-300 cursor-pointer',
         'animate-chronicle-enter'
       )}
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={onClick}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -419,7 +410,7 @@ function ClaimCard({ claim, index, onClick }) {
           <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
