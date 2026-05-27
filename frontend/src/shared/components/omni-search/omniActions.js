@@ -10,7 +10,7 @@ export function getOmniActionsForRole(role) {
   return OMNI_ACTIONS.filter((action) => roleAllowed(action.roles, r))
 }
 
-export const OMNI_ACTIONS = Object.freeze([
+const OMNI_ACTIONS = Object.freeze([
   {
     id: 'patients.register',
     label: 'Register patient',
@@ -61,4 +61,3 @@ export const OMNI_ACTIONS = Object.freeze([
     run: ({ navigate }) => navigate('/settings'),
   },
 ])
-

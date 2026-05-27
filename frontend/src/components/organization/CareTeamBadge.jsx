@@ -9,8 +9,6 @@ import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 
-const DEFAULT_EMPTY_ARRAY = [];
-
 const ROLE_CONFIG = {
   primary: {
     label: 'Primary',
@@ -73,40 +71,3 @@ export function CareTeamBadge({
     </Badge>
   );
 }
-
-/**
- * CareTeamList - Shows a list of care team assignments for an admission.
- */
-export function CareTeamList({
-  primaryTeam = null,
-  consultingTeams = DEFAULT_EMPTY_ARRAY,
-  showLabels = true,
-  className,
-}) {
-  if (!primaryTeam && consultingTeams.length === 0) {
-    return (
-      <div className={cn('text-sm text-muted-foreground', className)}>
-        No care teams assigned
-      </div>
-    );
-  }
-
-  return (
-    <div className={cn('flex flex-wrap gap-2', className)}>
-      {primaryTeam && (
-        <CareTeamBadge
-          teamRole="primary"
-          teamName={showLabels ? `${primaryTeam.name} (Primary)` : primaryTeam.name}
-        />
-      )}
-      {consultingTeams.map((assignment) => (
-        <CareTeamBadge
-          key={assignment.id}
-          teamRole={assignment.role}
-          teamName={assignment.team?.name || assignment.team_name}
-        />
-      ))}
-    </div>
-  );
-}
-

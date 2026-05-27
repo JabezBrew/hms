@@ -1,9 +1,9 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useState, useEffect } from 'react';
 import { safeStorage } from '@/lib/safe-storage';
 
 const ViewModeContext = createContext(undefined);
 
-export const VIEW_MODES = {
+const VIEW_MODES = {
   DOCUMENTATION: 'documentation',
   REVIEW: 'review',
   MONITORING: 'monitoring',
@@ -33,12 +33,4 @@ export function ViewModeProvider({ children }) {
       {children}
     </ViewModeContext.Provider>
   );
-}
-
-export function useViewMode() {
-  const context = useContext(ViewModeContext);
-  if (context === undefined) {
-    throw new Error('useViewMode must be used within a ViewModeProvider');
-  }
-  return context;
 }

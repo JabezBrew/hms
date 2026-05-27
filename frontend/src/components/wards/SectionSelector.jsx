@@ -13,7 +13,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
 
 /**
  * SectionSelector - Dropdown for selecting ward sections
@@ -44,22 +43,6 @@ export function SectionSelector({
         return <Users className="size-3" />;
       default:
         return null;
-    }
-  };
-
-  // Get color for accommodation tier
-  const getTierColor = (tier) => {
-    switch (tier) {
-      case 'vip':
-        return 'text-amber-600 bg-amber-50 border-amber-200';
-      case 'private':
-        return 'text-sky-600 bg-sky-50 border-sky-200';
-      case 'semi_private':
-        return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-      case 'open':
-        return 'text-stone-600 bg-stone-50 border-stone-200';
-      default:
-        return 'text-stone-600 bg-stone-50 border-stone-200';
     }
   };
 
@@ -147,42 +130,5 @@ export function SectionSelector({
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-/**
- * SectionBadge - Display section info as a badge
- */
-export function SectionBadge({ section, className }) {
-  if (!section) return null;
-
-  const getTierColor = (tier) => {
-    switch (tier) {
-      case 'vip':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'private':
-        return 'bg-sky-50 text-sky-700 border-sky-200';
-      case 'semi_private':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'open':
-        return 'bg-stone-50 text-stone-700 border-stone-200';
-      default:
-        return 'bg-stone-50 text-stone-700 border-stone-200';
-    }
-  };
-
-  return (
-    <Badge
-      variant="outline"
-      className={cn(
-        'font-normal',
-        getTierColor(section.accommodation_tier),
-        className
-      )}
-    >
-      {section.name}
-      {section.gender_restriction === 'male_only' && ' (Male)'}
-      {section.gender_restriction === 'female_only' && ' (Female)'}
-    </Badge>
   );
 }

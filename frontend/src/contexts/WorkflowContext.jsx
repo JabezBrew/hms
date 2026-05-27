@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useState } from 'react';
 
 const WorkflowContext = createContext(undefined);
 
@@ -19,12 +19,4 @@ export function WorkflowProvider({ children }) {
       {children}
     </WorkflowContext.Provider>
   );
-}
-
-export function useWorkflowContext() {
-  const context = useContext(WorkflowContext);
-  if (context === undefined) {
-    throw new Error('useWorkflowContext must be used within a WorkflowProvider');
-  }
-  return context;
 }

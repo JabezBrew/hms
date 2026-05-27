@@ -81,31 +81,3 @@ export function useReadOnlyMode() {
   }
   return context;
 }
-
-/**
- * Higher-order component that disables a component in read-only mode.
- *
- * @example
- * const SaveButton = withReadOnlyGuard(Button, {
- *   disabledMessage: "Cannot save while off-site"
- * });
- */
-export function withReadOnlyGuard(WrappedComponent, options = {}) {
-  const { disabledMessage = "Read-only mode" } = options;
-
-  return function ReadOnlyGuardedComponent(props) {
-    const { isReadOnly, readonlyMessage } = useReadOnlyMode();
-
-    if (isReadOnly) {
-      return (
-        <WrappedComponent
-          {...props}
-          disabled
-          title={disabledMessage || readonlyMessage}
-        />
-      );
-    }
-
-    return <WrappedComponent {...props} />;
-  };
-}

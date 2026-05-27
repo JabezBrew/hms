@@ -68,11 +68,3 @@ const STATUS_CONFIG = {
 export function getVisitStatusConfig(status) {
   return STATUS_CONFIG[status] || STATUS_CONFIG.checked_in;
 }
-
-export function getVisitStatusColor(status) {
-  return STATUS_CONFIG[status]?.color || 'muted';
-}
-
-export function getVisitStatusLabel(status) {
-  return STATUS_CONFIG[status]?.label || status;
-}

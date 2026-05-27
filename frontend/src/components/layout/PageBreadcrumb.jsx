@@ -63,7 +63,7 @@ export function BreadcrumbProvider({ children }) {
 }
 
 // Hook to use breadcrumb context
-export function useBreadcrumb() {
+function useBreadcrumb() {
   const context = useContext(BreadcrumbContext);
   if (!context) {
     throw new Error('useBreadcrumb must be used within a BreadcrumbProvider');

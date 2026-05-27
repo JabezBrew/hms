@@ -10,7 +10,7 @@
  * - Custom: any configuration your facility uses
  */
 
-export const SHIFT_CONFIG = {
+const SHIFT_CONFIG = {
   shifts: [
     {
       value: 'day',

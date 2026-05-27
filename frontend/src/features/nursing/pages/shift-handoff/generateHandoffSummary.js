@@ -7,7 +7,7 @@ import format from 'date-fns/format';
  * @param {number} alertsCount - Number of active alerts
  * @returns {string} - Formatted patient condition text
  */
-export function generatePatientCondition(patient, vitals, alertsCount = 0) {
+function generatePatientCondition(patient, vitals, alertsCount = 0) {
   const lines = [];
   const timestamp = format(new Date(), 'h:mm a');
 
@@ -58,7 +58,7 @@ export function generatePatientCondition(patient, vitals, alertsCount = 0) {
  * @param {Array} medicationsDue - Medications due soon
  * @returns {string} - Formatted pending tasks text
  */
-export function generatePendingTasks(tasks = [], medicationsDue = []) {
+function generatePendingTasks(tasks = [], medicationsDue = []) {
   const lines = [];
   const timestamp = format(new Date(), 'h:mm a');
 
@@ -111,7 +111,7 @@ export function generatePendingTasks(tasks = [], medicationsDue = []) {
  * @param {Array} alerts - Active nursing alerts
  * @returns {string} - Formatted ongoing issues text
  */
-export function generateOngoingIssues(alerts = []) {
+function generateOngoingIssues(alerts = []) {
   // Filter to unacknowledged alerts only
   const activeAlerts = alerts.filter(a => !a.acknowledged && !a.resolved);
 
@@ -146,7 +146,7 @@ export function generateOngoingIssues(alerts = []) {
  * @param {Array} medEvents - Recent medication events (administered, held, refused, etc.)
  * @returns {string} - Formatted medication changes text
  */
-export function generateMedicationChanges(medEvents = []) {
+function generateMedicationChanges(medEvents = []) {
   // Filter to notable events (held, refused, missed, PRN given)
   const notableEvents = medEvents.filter(event =>
     event.status === 'held' ||

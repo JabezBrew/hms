@@ -1,6 +1,6 @@
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
-export function createRustV2WorkflowUnsupportedError(workflowName = 'Workflow') {
+function createRustV2WorkflowUnsupportedError(workflowName = 'Workflow') {
   return new Error(
     `${workflowName} is unavailable in Rust V2 mode: no generated /api/v2 workflow contract exists.`,
   );
