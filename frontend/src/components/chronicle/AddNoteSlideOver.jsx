@@ -691,8 +691,11 @@ const AddNoteSlideOver = ({
 
                 {lintIssues.length > 0 && (
                   <div className="space-y-2">
-                    {lintIssues.slice(0, 6).map((issue, idx) => (
-                      <div key={`${issue.section_key || issue.section}-${idx}`} className="rounded-md border border-border/70 bg-background p-2">
+                    {lintIssues.slice(0, 6).map((issue) => (
+                      <div
+                        key={`${issue.section_key || issue.section || 'general'}:${issue.severity}:${issue.message}`}
+                        className="rounded-md border border-border/70 bg-background p-2"
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
                             {issue.severity} • {issue.section || issue.section_key}

@@ -880,36 +880,40 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
                   {watchedStructure.length === 0 ? (
                     <p className="font-mono text-xs text-muted-foreground">No sections configured.</p>
                   ) : (
-                    watchedStructure.map((section, index) => (
-                      <div
-                        key={`${section.section || 'section'}-${index}`}
-                        className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3"
-                      >
-                        <div>
-                          <p className="font-mono text-sm text-foreground">
-                            {section.section || `Section ${index + 1}`}
-                          </p>
-                          <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                            {section.type}
-                            {section.type === 'observation' && section.observation_type
-                              ? ` · ${section.observation_type}`
-                              : ''}
-                          </p>
+                    fields.map((field, index) => {
+                      const section = watchedStructure[index] || field;
+
+                      return (
+                        <div
+                          key={field.id}
+                          className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3"
+                        >
+                          <div>
+                            <p className="font-mono text-sm text-foreground">
+                              {section.section || `Section ${index + 1}`}
+                            </p>
+                            <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
+                              {section.type}
+                              {section.type === 'observation' && section.observation_type
+                                ? ` · ${section.observation_type}`
+                                : ''}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {section.default_text?.trim() ? (
+                              <span className="font-mono text-[10px] text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
+                                Starter text
+                              </span>
+                            ) : null}
+                            {section.required ? (
+                              <span className="font-mono text-[10px] text-rose-600 bg-rose-500/10 px-2 py-1 rounded">
+                                Required
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {section.default_text?.trim() ? (
-                            <span className="font-mono text-[10px] text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
-                              Starter text
-                            </span>
-                          ) : null}
-                          {section.required ? (
-                            <span className="font-mono text-[10px] text-rose-600 bg-rose-500/10 px-2 py-1 rounded">
-                              Required
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>

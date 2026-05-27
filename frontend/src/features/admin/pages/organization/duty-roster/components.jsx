@@ -135,11 +135,11 @@ export const ImportPreviewTable = ({ rows, columns, caption }) => (
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((row, index) => (
-              <TableRow key={`${row.line || index}-${index}`}>
+            rows.map((row) => (
+              <TableRow key={row.line}>
                 {columns.map((col) => (
                   <TableCell
-                    key={`${row.line || index}-${col}`}
+                    key={`${row.line}-${col}`}
                     className="text-xs font-mono py-2"
                   >
                     {row[col] ?? '—'}

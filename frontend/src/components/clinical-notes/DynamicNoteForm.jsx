@@ -178,7 +178,7 @@ const DynamicNoteForm = ({
               const observationType = getObservationType(section);
 
               return (
-              <div key={`${sectionName}-${index}`} className="space-y-2">
+              <div key={sectionName} className="space-y-2">
                 <h3 className="text-lg font-medium">{sectionName}</h3>
                 <Separator />
 

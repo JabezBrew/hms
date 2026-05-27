@@ -64,7 +64,7 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
           </SelectTrigger>
           <SelectContent>
             {months.map((month, index) => (
-              <SelectItem key={index} value={index.toString()}>
+              <SelectItem key={month} value={index.toString()}>
                 {month}
               </SelectItem>
             ))}

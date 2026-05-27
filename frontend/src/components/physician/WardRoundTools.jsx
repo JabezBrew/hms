@@ -567,8 +567,8 @@ export function WardRoundTools({ patient }) {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {lab.results.map((result, index) => (
-                            <TableRow key={index}>
+                          {lab.results.map((result) => (
+                            <TableRow key={result.name}>
                               <TableCell>{result.name}</TableCell>
                               <TableCell className={result.abnormal ? 'text-red-600 font-medium' : ''}>
                                 {result.value}

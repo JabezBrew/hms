@@ -980,13 +980,13 @@ export default function RosterBuilderPage() {
                                     <TooltipContent className="max-w-xs bg-popover text-popover-foreground">
                                       {hasErrors || hasWarnings ? (
                                         <div className="space-y-1.5">
-                                          {cellViolations.errors.map((v, i) => (
-                                            <p key={`e-${i}`} className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                                          {cellViolations.errors.map((v) => (
+                                            <p key={`error:${v.rule}:${v.message}`} className="text-xs font-medium text-rose-600 dark:text-rose-400">
                                               {v.message}
                                             </p>
                                           ))}
-                                          {cellViolations.warnings.map((v, i) => (
-                                            <p key={`w-${i}`} className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                          {cellViolations.warnings.map((v) => (
+                                            <p key={`warning:${v.rule}:${v.message}`} className="text-xs font-medium text-amber-600 dark:text-amber-400">
                                               {v.message}
                                             </p>
                                           ))}

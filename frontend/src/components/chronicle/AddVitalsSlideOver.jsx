@@ -234,8 +234,8 @@ const AddVitalsSlideOver = ({
             <AlertDescription>
               <span className="font-semibold">Critical Values Detected:</span>
               <ul className="list-disc list-inside mt-1">
-                {criticalWarnings.map((warning, i) => (
-                  <li key={i} className="text-sm">{warning}</li>
+                {criticalWarnings.map((warning) => (
+                  <li key={warning} className="text-sm">{warning}</li>
                 ))}
               </ul>
             </AlertDescription>
