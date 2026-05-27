@@ -17,7 +17,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useNavigate } from "react-router-dom"
-import { useOmniSearch } from '@/shared/components/omni-search/OmniSearchProvider'
+import { useOmniSearch } from '@/shared/components/omni-search/OmniSearchContext'
 
 import NotificationCenter from "./NotificationCenter"
 

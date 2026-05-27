@@ -5,6 +5,7 @@ import { safeStorage } from '@/lib/safe-storage'
 import { useAuth } from '@/lib/auth'
 
 import { OmniSearchDialog } from './OmniSearchDialog'
+import { OmniSearchContext } from './OmniSearchContext'
 import {
   getStaticPathLabelMapForRole,
   getStaticPathSetForRole,
@@ -33,8 +34,6 @@ function normalizeRecentPages(value) {
   }
   return out
 }
-
-const OmniSearchContext = React.createContext(null)
 
 export function OmniSearchProvider({ children }) {
   const { user } = useAuth()
@@ -98,12 +97,3 @@ export function OmniSearchProvider({ children }) {
     </OmniSearchContext.Provider>
   )
 }
-
-export function useOmniSearch() {
-  const ctx = React.useContext(OmniSearchContext)
-  if (!ctx) {
-    throw new Error('useOmniSearch must be used within an OmniSearchProvider')
-  }
-  return ctx
-}
-

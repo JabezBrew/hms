@@ -49,7 +49,7 @@ import {
 import { useOmniSearchResults } from '@/shared/hooks/useOmniSearchResults'
 import { toast } from 'sonner'
 
-import { useOmniSearch } from './OmniSearchProvider'
+import { useOmniSearch } from './OmniSearchContext'
 import { getOmniActionsForRole } from './omniActions'
 import { getStaticPagesForRole, getStaticPathSetForRole } from './pageIndex'
 
