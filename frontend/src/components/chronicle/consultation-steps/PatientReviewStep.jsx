@@ -131,9 +131,9 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {prepData.alerts.map((alert, index) => (
+              {prepData.alerts.map((alert) => (
                 <div
-                  key={index}
+                  key={alert}
                   className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-900/10 rounded text-sm"
                 >
                   <AlertTriangle className="size-3 text-amber-600 mt-0.5 shrink-0" />
@@ -156,8 +156,8 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
           </CardHeader>
           <CardContent>
             <ul className="space-y-1 text-sm">
-              {prepData.active_problems.map((problem, index) => (
-                <li key={index} className="flex items-start gap-2">
+              {prepData.active_problems.map((problem) => (
+                <li key={problem} className="flex items-start gap-2">
                   <span className="text-muted-foreground">-</span>
                   <span>{problem}</span>
                 </li>
@@ -178,8 +178,8 @@ const PatientReviewStep = ({ formData, onChange, contextData }) => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {prepData.current_medications.map((med, index) => (
-                <div key={index} className="p-2 border rounded text-sm">
+              {prepData.current_medications.map((med) => (
+                <div key={`${med.name}-${med.dose || 'no-dose'}`} className="p-2 border rounded text-sm">
                   <p className="font-medium">{med.name}</p>
                   {med.dose && <p className="text-muted-foreground text-xs">{med.dose}</p>}
                 </div>

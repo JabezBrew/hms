@@ -150,8 +150,8 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
               <h4 className="text-sm font-medium mb-2">Allergies</h4>
               {patientInfo.allergies.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {patientInfo.allergies.map((allergy, idx) => (
-                    <Badge key={idx} variant="destructive">
+                  {patientInfo.allergies.map((allergy) => (
+                    <Badge key={allergy} variant="destructive">
                       {allergy}
                     </Badge>
                   ))}
@@ -168,8 +168,8 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
               <h4 className="text-sm font-medium mb-2">Active problems</h4>
               {patientInfo.activeProblems.length > 0 ? (
                 <ul className="space-y-1">
-                  {patientInfo.activeProblems.map((problem, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-sm">
+                  {patientInfo.activeProblems.map((problem) => (
+                    <li key={problem} className="flex items-start gap-2 text-sm">
                       <span className="text-muted-foreground">•</span>
                       <span>{problem}</span>
                     </li>
@@ -297,8 +297,8 @@ export function ReviewModeLayout({ encounter, formatDate, getStatusBadge, clinic
                     </tr>
                   </thead>
                   <tbody>
-                    {recentResults.map((result, idx) => (
-                      <tr key={idx} className="border-b">
+                    {recentResults.map((result) => (
+                      <tr key={`${result.test}-${result.date}`} className="border-b">
                         <td className="py-2">{result.test}</td>
                         <td className="py-2">
                           {result.value}

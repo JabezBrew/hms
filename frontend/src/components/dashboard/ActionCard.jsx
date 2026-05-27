@@ -108,9 +108,9 @@ export default function ActionCard({
         {/* Badges */}
         {badges.length > 0 && (
           <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-end sm:items-start shrink-0">
-            {badges.map((badge, index) => (
+            {badges.map((badge) => (
               <Badge
-                key={index}
+                key={`${badge.text}-${badge.color || 'amber'}`}
                 className={cn(
                   `badge-chronicle-${badge.color || 'amber'}`,
                   'text-[10px] sm:text-xs uppercase'
@@ -133,8 +133,8 @@ export default function ActionCard({
       {/* Metadata grid */}
       {metadata.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-6 mb-4">
-          {metadata.map((item, index) => (
-            <div key={index} className="space-y-1">
+          {metadata.map((item) => (
+            <div key={`${item.label}-${item.value}`} className="space-y-1">
               <div className="flex items-center gap-1.5">
                 {item.icon && <item.icon className="size-3 text-muted-foreground" aria-hidden="true" />}
                 <span className="font-mono text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-wide">
@@ -152,9 +152,9 @@ export default function ActionCard({
       {/* Actions */}
       {actions.length > 0 && (
         <div className="flex flex-col sm:flex-row gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-          {actions.map((action, index) => (
+          {actions.map((action) => (
             <Button
-              key={index}
+              key={action.label}
               variant={action.variant || 'outline'}
               size="sm"
               className={cn('flex-1 sm:flex-none', action.className)}

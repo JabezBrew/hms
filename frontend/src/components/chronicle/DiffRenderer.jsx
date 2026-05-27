@@ -23,6 +23,24 @@ const formatLabel = (str) => {
     .replace(WORD_START_REGEX, (c) => c.toUpperCase());
 };
 
+const getDisplayValue = (item) => (typeof item === "object" ? JSON.stringify(item) : String(item));
+
+const withOccurrenceKeys = (items) => {
+  const seen = new Map();
+
+  return items.map((item) => {
+    const display = getDisplayValue(item);
+    const occurrence = seen.get(display) || 0;
+    seen.set(display, occurrence + 1);
+
+    return {
+      item,
+      key: occurrence === 0 ? display : `${display}#${occurrence}`,
+      display,
+    };
+  });
+};
+
 /**
  * DiffRenderer - Renders a field-by-field diff between two note versions
  *
@@ -246,14 +264,26 @@ const ValueDiff = ({ oldValue, newValue, status }) => {
  */
 const TextDiff = ({ oldText, newText }) => {
   const diff = diffWords(String(oldText || ""), String(newText || ""));
+  let oldOffset = 0;
+  let newOffset = 0;
 
   return (
     <p className="whitespace-pre-wrap leading-relaxed">
-      {diff.map((part, index) => {
+      {diff.map((part) => {
+        const oldStart = oldOffset;
+        const newStart = newOffset;
+        if (!part.added) {
+          oldOffset += part.value.length;
+        }
+        if (!part.removed) {
+          newOffset += part.value.length;
+        }
+        const key = `${part.added ? "add" : part.removed ? "remove" : "same"}-${oldStart}-${newStart}-${part.value}`;
+
         if (part.added) {
           return (
             <span
-              key={index}
+              key={key}
               className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-0.5 rounded"
             >
               {part.value}
@@ -263,14 +293,14 @@ const TextDiff = ({ oldText, newText }) => {
         if (part.removed) {
           return (
             <span
-              key={index}
+              key={key}
               className="bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 line-through px-0.5 rounded"
             >
               {part.value}
             </span>
           );
         }
-        return <span key={index}>{part.value}</span>;
+        return <span key={key}>{part.value}</span>;
       })}
     </p>
   );
@@ -284,16 +314,8 @@ const ArrayDiff = ({ oldArray, newArray }) => {
   // Memoize the diff computation to avoid redundant JSON.stringify calls
   const { added, removed, unchanged } = useMemo(() => {
     // Pre-serialize items once - each item gets its key computed only once
-    const oldItems = oldArray.map((item) => ({
-      item,
-      key: JSON.stringify(item),
-      display: typeof item === "object" ? JSON.stringify(item) : String(item),
-    }));
-    const newItems = newArray.map((item) => ({
-      item,
-      key: JSON.stringify(item),
-      display: typeof item === "object" ? JSON.stringify(item) : String(item),
-    }));
+    const oldItems = withOccurrenceKeys(oldArray);
+    const newItems = withOccurrenceKeys(newArray);
 
     // Build Sets for O(1) lookups
     const oldKeySet = new Set(oldItems.map((i) => i.key));
@@ -308,26 +330,26 @@ const ArrayDiff = ({ oldArray, newArray }) => {
 
   return (
     <ul className="space-y-1">
-      {removed.map((i, idx) => (
+      {removed.map((i) => (
         <li
-          key={`removed-${idx}`}
+          key={`removed-${i.key}`}
           className="flex items-start gap-2 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 px-2 py-1 rounded line-through"
         >
           <Minus className="size-3 mt-1 flex-shrink-0" />
           <span>{i.display}</span>
         </li>
       ))}
-      {added.map((i, idx) => (
+      {added.map((i) => (
         <li
-          key={`added-${idx}`}
+          key={`added-${i.key}`}
           className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 px-2 py-1 rounded"
         >
           <Plus className="size-3 mt-1 flex-shrink-0" />
           <span>{i.display}</span>
         </li>
       ))}
-      {unchanged.map((i, idx) => (
-        <li key={`unchanged-${idx}`} className="flex items-start gap-2 text-muted-foreground px-2 py-1">
+      {unchanged.map((i) => (
+        <li key={`unchanged-${i.key}`} className="flex items-start gap-2 text-muted-foreground px-2 py-1">
           <span className="w-3" />
           <span>{i.display}</span>
         </li>
@@ -364,13 +386,13 @@ const AddedValue = ({ value }) => {
   if (type === "array") {
     return (
       <ul className="space-y-1">
-        {value.map((item, i) => (
+        {withOccurrenceKeys(value).map((item) => (
           <li
-            key={i}
+            key={item.key}
             className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 px-2 py-1 rounded"
           >
             <Plus className="size-3 mt-1 flex-shrink-0" />
-            <span>{typeof item === "object" ? JSON.stringify(item) : String(item)}</span>
+            <span>{item.display}</span>
           </li>
         ))}
       </ul>
@@ -411,13 +433,13 @@ const RemovedValue = ({ value }) => {
   if (type === "array") {
     return (
       <ul className="space-y-1">
-        {value.map((item, i) => (
+        {withOccurrenceKeys(value).map((item) => (
           <li
-            key={i}
+            key={item.key}
             className="flex items-start gap-2 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 line-through px-2 py-1 rounded"
           >
             <Minus className="size-3 mt-1 flex-shrink-0" />
-            <span>{typeof item === "object" ? JSON.stringify(item) : String(item)}</span>
+            <span>{item.display}</span>
           </li>
         ))}
       </ul>
@@ -454,9 +476,9 @@ const UnchangedValue = ({ value }) => {
   if (type === "array") {
     return (
       <ul className="list-disc list-inside text-muted-foreground">
-        {value.map((item, i) => (
-          <li key={i}>
-            {typeof item === "object" ? JSON.stringify(item) : String(item)}
+        {withOccurrenceKeys(value).map((item) => (
+          <li key={item.key}>
+            {item.display}
           </li>
         ))}
       </ul>

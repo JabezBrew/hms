@@ -43,8 +43,8 @@ function OrdersSummary({ orders }) {
             Medications ({medications.length})
           </div>
           <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
-            {medications.map((med, i) => (
-              <li key={i}>
+            {medications.map((med) => (
+              <li key={`${med.medication_name}-${med.dosage}-${med.route}-${med.frequency}`}>
                 {med.medication_name} {med.dosage} {med.route} {med.frequency}
               </li>
             ))}
@@ -59,8 +59,8 @@ function OrdersSummary({ orders }) {
             Labs ({labs.length})
           </div>
           <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
-            {labs.map((lab, i) => (
-              <li key={i} className="flex items-center gap-2">
+            {labs.map((lab) => (
+              <li key={`${lab.test_name}-${lab.urgency || 'routine'}`} className="flex items-center gap-2">
                 {lab.test_name}
                 {lab.urgency === 'stat' && (
                   <Badge variant="destructive" className="text-[10px] h-4">STAT</Badge>
@@ -78,8 +78,8 @@ function OrdersSummary({ orders }) {
             Nursing Orders ({nursing.length})
           </div>
           <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
-            {nursing.map((order, i) => (
-              <li key={i}>{order.order_text}</li>
+            {nursing.map((order) => (
+              <li key={order.order_text}>{order.order_text}</li>
             ))}
           </ul>
         </div>

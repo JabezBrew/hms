@@ -28,6 +28,11 @@ const formatCurrency = (value) => {
   return USD_CURRENCY_FORMATTER.format(value);
 };
 
+const getChartColor = (index) => {
+  const colors = getChartColors();
+  return colors[index % colors.length];
+};
+
 export function OccupancyTrendsPanel({ occupancyData, utilizationData, wards, selectedWard }) {
   return (
     <div className="space-y-6">
@@ -62,7 +67,7 @@ export function OccupancyTrendsPanel({ occupancyData, utilizationData, wards, se
                         key={ward.id}
                         type="monotone"
                         dataKey={ward.name}
-                        stroke={getChartColors()[index % getChartColors().length]}
+                        stroke={getChartColor(index)}
                         strokeWidth={1.5}
                         dot={{ r: 2 }}
                         activeDot={{ r: 4 }}
@@ -100,7 +105,7 @@ export function OccupancyTrendsPanel({ occupancyData, utilizationData, wards, se
                   <Tooltip formatter={(value) => [`${value}%`, 'Occupancy Rate']} />
                   <Bar dataKey="occupancy_rate" fill="#1976D2" name="Occupancy Rate">
                     {utilizationData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={getChartColors()[index % getChartColors().length]} />
+                      <Cell key={entry.ward} fill={getChartColor(index)} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -205,7 +210,7 @@ export function LengthOfStayPanel({ lengthOfStayData, utilizationData }) {
                   <Tooltip formatter={(value) => [`${value} days`, 'Average LOS']} />
                   <Bar dataKey="avg_los" fill="#00ACC1" name="Average Length of Stay (days)">
                     {utilizationData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={getChartColors()[index % getChartColors().length]} />
+                      <Cell key={entry.ward} fill={getChartColor(index)} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -307,7 +312,7 @@ export function UtilizationPanel({ utilizationData }) {
                   <Tooltip formatter={(value) => [formatCurrency(value), 'Revenue']} />
                   <Bar dataKey="revenue" fill="#43A047" name="Revenue">
                     {utilizationData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={getChartColors()[index % getChartColors().length]} />
+                      <Cell key={entry.ward} fill={getChartColor(index)} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -333,7 +338,7 @@ export function UtilizationPanel({ utilizationData }) {
                   <Tooltip />
                   <Bar dataKey="turnover_rate" fill="#FFA000" name="Turnover Rate">
                     {utilizationData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={getChartColors()[index % getChartColors().length]} />
+                      <Cell key={entry.ward} fill={getChartColor(index)} />
                     ))}
                   </Bar>
                 </BarChart>

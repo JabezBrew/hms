@@ -397,9 +397,9 @@ export function OrderEntry({ patient }) {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-2">
-                    {commonMedications.map((med, index) => (
+                    {commonMedications.map((med) => (
                       <Button
-                        key={index}
+                        key={`${med.name}-${med.dose}`}
                         variant="outline"
                         className="justify-start"
                         onClick={() => handleQuickMedication(med)}
@@ -533,9 +533,9 @@ export function OrderEntry({ patient }) {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-2">
-                    {commonLabTests.map((test, index) => (
+                    {commonLabTests.map((test) => (
                       <Button
-                        key={index}
+                        key={`${test.name}-${test.specimen}`}
                         variant="outline"
                         className="justify-start"
                         onClick={() => handleQuickLabTest(test)}
@@ -678,9 +678,9 @@ export function OrderEntry({ patient }) {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-2">
-                    {commonImagingStudies.map((study, index) => (
+                    {commonImagingStudies.map((study) => (
                       <Button
-                        key={index}
+                        key={`${study.name}-${study.bodyPart}`}
                         variant="outline"
                         className="justify-start"
                         onClick={() => handleQuickImagingStudy(study)}
