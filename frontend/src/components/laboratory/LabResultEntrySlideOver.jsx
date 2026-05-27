@@ -500,7 +500,7 @@ const LabResultEntrySlideOverContent = ({
       aria-hidden={!open}
       aria-labelledby="result-entry-title"
       className={cn(
-        "fixed inset-y-0 right-0 z-[100] w-full lg:w-2/3 xl:w-1/2 bg-background border-l border-border",
+        "fixed inset-y-0 left-auto right-0 z-[100] w-full lg:w-2/3 xl:w-1/2 bg-background border-l border-border",
         "m-0 max-h-none max-w-none p-0",
         "transform transition-transform duration-300 ease-in-out",
         "flex flex-col shadow-2xl",

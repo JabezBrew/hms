@@ -51,7 +51,7 @@ export function SlideOver({ open, onClose, title, header, children, className })
                 aria-labelledby="slideover-title"
                 tabIndex={-1}
                 className={cn(
-                    "fixed inset-y-0 right-0 z-50 m-0 h-auto max-h-none w-full max-w-none p-0 sm:w-[500px] bg-background border-0 border-l shadow-lg transform transition-transform duration-300 ease-in-out focus:outline-none",
+                    "fixed inset-y-0 left-auto right-0 z-50 m-0 h-auto max-h-none w-full max-w-none p-0 sm:w-[500px] bg-background border-0 border-l shadow-lg transform transition-transform duration-300 ease-in-out focus:outline-none",
                     open ? "translate-x-0" : "translate-x-full",
                     className
                 )}

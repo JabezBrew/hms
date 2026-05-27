@@ -303,7 +303,7 @@ const ReferralForm = ({ open, onClose, patient, encounter, onReferralCreated }) 
       open={open}
       aria-labelledby="referral-form-title"
       className={cn(
-        "fixed inset-y-0 right-0 z-[100] m-0 h-auto max-h-none w-full max-w-none p-0 lg:w-1/2 bg-background border-0 border-l border-border",
+        "fixed inset-y-0 left-auto right-0 z-[100] m-0 h-auto max-h-none w-full max-w-none p-0 lg:w-1/2 bg-background border-0 border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
         "flex flex-col shadow-2xl",
         open ? "translate-x-0" : "translate-x-full"
