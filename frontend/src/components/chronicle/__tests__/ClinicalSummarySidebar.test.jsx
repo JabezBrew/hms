@@ -25,6 +25,18 @@ function sectionByHeading(container, heading) {
 }
 
 describe('ClinicalSummarySidebar', () => {
+  it('renders as a page-stretching column instead of a viewport-clipped scroller', () => {
+    const { container } = render(
+      <ClinicalSummarySidebar patient={{ id: 'patient-1' }} />,
+    );
+
+    const sidebar = container.querySelector('aside');
+
+    expect(sidebar).toHaveClass('flex-1');
+    expect(sidebar).not.toHaveClass('overflow-y-auto');
+    expect(sidebar).not.toHaveClass('sticky');
+  });
+
   it('renders vital signs in Recent Vitals and lab results in Recent Labs', () => {
     const { container } = render(
       <ClinicalSummarySidebar

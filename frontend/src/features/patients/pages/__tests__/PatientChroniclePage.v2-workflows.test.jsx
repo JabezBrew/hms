@@ -657,6 +657,53 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(screen.queryByText('Unknown date')).not.toBeInTheDocument()
   })
 
+  it('orders all-history visit groups with the current visit first', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    chronicleStartupState.data = {
+      ...chronicleStartupState.data,
+      encounters: [
+        {
+          id: 'encounter-1',
+          admission_id: 'admission-1',
+          encounter_type: 'inpatient',
+          status: 'in-progress',
+          started_at: '2026-05-20T08:00:00Z',
+        },
+        {
+          id: 'encounter-2',
+          encounter_type: 'outpatient',
+          status: 'completed',
+          started_at: '2026-06-01T09:00:00Z',
+        },
+      ],
+    }
+    timelineHookState.entries = [
+      {
+        id: 'old-note',
+        type: 'progress_note',
+        entry_type: 'note',
+        encounter_id: 'encounter-2',
+        title: 'Older visit note',
+        timestamp: '2026-06-01T09:30:00Z',
+        data: { assessment: 'Previous outpatient review' },
+      },
+      {
+        id: 'current-note',
+        type: 'progress_note',
+        entry_type: 'note',
+        encounter_id: 'encounter-1',
+        title: 'Current visit note',
+        timestamp: '2026-05-20T09:00:00Z',
+        data: { assessment: 'Current admission review' },
+      },
+    ]
+
+    renderPage('/patients/patient-1?visit=all')
+
+    const pageText = document.body.textContent
+    expect(pageText.indexOf('Inpatient Admission')).toBeLessThan(pageText.indexOf('Outpatient Visit'))
+  })
+
   it('does not expose unsupported break-glass access in Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = null

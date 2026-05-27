@@ -316,7 +316,14 @@ export function useChronicleTimelineViewModel({
       });
     });
 
+    const normalizedActiveEncounterId = normalizeExpansionId(activeEncounter?.id);
     groups.encounters.sort((a, b) => {
+      const aIsActive = normalizeExpansionId(a.encounter?.id) === normalizedActiveEncounterId;
+      const bIsActive = normalizeExpansionId(b.encounter?.id) === normalizedActiveEncounterId;
+      if (aIsActive !== bIsActive) {
+        return aIsActive ? -1 : 1;
+      }
+
       const dateA = toTimestampMs(a.encounter.start_time || getEntryTimestamp(a.entries[0])) || 0;
       const dateB = toTimestampMs(b.encounter.start_time || getEntryTimestamp(b.entries[0])) || 0;
       return dateB - dateA;
@@ -325,7 +332,7 @@ export function useChronicleTimelineViewModel({
     groups.unlinked = sortEntriesByTimestampDesc(groups.unlinked);
 
     return groups;
-  }, [filteredEntries, encounters]);
+  }, [activeEncounter?.id, filteredEntries, encounters]);
 
   const totalCount = useMemo(() => getTimelineTotalCount(timelineDisplayData), [timelineDisplayData]);
 

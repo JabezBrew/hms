@@ -45,6 +45,16 @@ describe('chronicleNoteUtils', () => {
     expect([...expanded]).toEqual(['unlinked']);
   });
 
+  it('keeps unlinked entries collapsed when a current visit is known', () => {
+    const expanded = getInitialExpandedEncounterIds({
+      activeEncounterId: 'enc-active',
+      encounters: [],
+      unlinkedEntries: [{ id: 'legacy-note' }],
+    });
+
+    expect([...expanded]).toEqual([]);
+  });
+
   it('defers default expansion while the active encounter group can still arrive', () => {
     expect(shouldDeferEncounterExpansionSeed({
       activeEncounterId: 'enc-active',

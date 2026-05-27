@@ -55,7 +55,7 @@ export const getInitialExpandedEncounterIds = ({
   const normalizedActiveEncounterId = normalizeExpansionId(activeEncounterId);
 
   if (encounters.length === 0) {
-    if (unlinkedEntries.length > 0) {
+    if (!normalizedActiveEncounterId && unlinkedEntries.length > 0) {
       expandedIds.add('unlinked');
     }
     return expandedIds;
