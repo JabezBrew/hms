@@ -53,6 +53,273 @@ const formatCurrency = (amount) => {
   return GHS_CURRENCY_FORMATTER.format(amount || 0);
 };
 
+function PatientContextHeader({ headerName, headerMrn, onClose }) {
+  return (
+    <DialogHeader className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-primary/10 text-primary">
+          <User className="size-5" />
+        </div>
+        <div>
+          <DialogTitle className="font-display text-xl text-foreground">
+            Patient Context
+          </DialogTitle>
+          <DialogDescription className="font-mono text-xs text-muted-foreground">
+            {headerName}
+            {headerMrn ? ` · ${headerMrn}` : ""}
+          </DialogDescription>
+        </div>
+      </div>
+      <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
+        <X className="size-4" />
+      </Button>
+    </DialogHeader>
+  );
+}
+
+function DemographicsSection({ demographics, headerName, headerMrn }) {
+  return (
+    <section className="rounded-xl border border-border/70 bg-card/70 p-4">
+      <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+        Demographics
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p className="text-muted-foreground text-xs">MRN</p>
+          <p className="text-foreground font-mono">{headerMrn || "-"}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground text-xs">Name</p>
+          <p className="text-foreground">{headerName}</p>
+        </div>
+        {demographics?.dob !== undefined && (
+          <div>
+            <p className="text-muted-foreground text-xs">DOB</p>
+            <p className="text-foreground">{formatDate(demographics.dob)}</p>
+          </div>
+        )}
+        {demographics?.gender !== undefined && (
+          <div>
+            <p className="text-muted-foreground text-xs">Gender</p>
+            <p className="text-foreground">{demographics.gender || "-"}</p>
+          </div>
+        )}
+        {demographics?.ward && (
+          <div className="col-span-2">
+            <Badge variant="outline" className="font-mono text-[10px]">
+              {demographics.ward}
+            </Badge>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PharmacyContextSections({ patientContext, clinicalOpen, onClinicalOpenChange }) {
+  return (
+    <>
+      <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="size-4 text-rose-600" />
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Allergies
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(patientContext?.allergies || []).length > 0 ? (
+            patientContext.allergies.map((allergy, index) => (
+              <span
+                key={`${allergy}-${index}`}
+                className="badge-chronicle-rose text-[10px]"
+              >
+                {allergy}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-muted-foreground">No allergies recorded</span>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border/70 bg-card/70 p-4">
+        <Collapsible open={clinicalOpen} onOpenChange={onClinicalOpenChange}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="size-4 text-muted-foreground" />
+              <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                Clinical Context
+              </p>
+            </div>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="font-mono text-xs">
+                <ChevronDown className={cn("size-3 mr-1 transition-transform", clinicalOpen && "rotate-180")} />
+                {clinicalOpen ? "Hide" : "Expand"}
+              </Button>
+            </CollapsibleTrigger>
+          </div>
+          <CollapsibleContent className="mt-4 space-y-4">
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Problems</p>
+              {(patientContext?.problems || []).length > 0 ? (
+                <ul className="space-y-1 text-sm">
+                  {patientContext.problems.map((problem, index) => (
+                    <li key={`${problem}-${index}`} className="text-foreground">
+                      {problem}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="text-xs text-muted-foreground">No active problems</span>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Other Active Medications</p>
+              {(patientContext?.medications || []).length > 0 ? (
+                <ul className="space-y-1 text-sm">
+                  {patientContext.medications.map((med, index) => (
+                    <li key={`${med}-${index}`} className="text-foreground">
+                      {med}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="text-xs text-muted-foreground">No additional medications</span>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </section>
+    </>
+  );
+}
+
+function BillingContextSections({ billingSummary, insuranceLoading, insurances, invoicesLoading, invoices }) {
+  return (
+    <>
+      <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Shield className="size-4 text-emerald-600" />
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Insurance
+          </p>
+        </div>
+        {insuranceLoading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : insurances.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No insurance on file</p>
+        ) : (
+          <div className="space-y-2 text-sm">
+            {insurances.slice(0, 3).map((insurance) => (
+              <div key={insurance.id} className="flex items-center justify-between">
+                <span className="text-foreground">
+                  {insurance.plan_name || "Insurance Plan"}
+                </span>
+                <Badge variant="outline" className="text-[10px]">
+                  {insurance.coverage_percentage || 0}%
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <FileText className="size-4 text-primary" />
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Billing Summary
+          </p>
+        </div>
+        {invoicesLoading ? (
+          <Skeleton className="h-20 w-full" />
+        ) : invoices.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No invoices found</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Outstanding</span>
+              <span className="font-mono text-foreground">
+                {formatCurrency(billingSummary.outstanding)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{billingSummary.pendingCount} pending</span>
+            </div>
+            <div className="divide-y divide-border/60">
+              {billingSummary.recent.map((invoice) => (
+                <div key={invoice.id} className="flex items-center justify-between py-2 text-xs">
+                  <span className="font-mono text-primary">
+                    {invoice.invoice_number}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {formatCurrency(
+                      invoice.balance_due > 0 ? invoice.balance_due : invoice.total_amount
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function AppointmentSummarySection({ title, icon: Icon, loading, emptyMessage, appointments }) {
+  return (
+    <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Icon className="size-4 text-primary" />
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          {title}
+        </p>
+      </div>
+      {loading ? (
+        <Skeleton className="h-20 w-full" />
+      ) : appointments.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{emptyMessage}</p>
+      ) : (
+        <div className="space-y-2 text-sm">
+          {appointments.map((appointment) => (
+            <div key={appointment.id} className="flex items-center justify-between">
+              <span className="text-foreground">
+                {appointment.appointmentType?.coding?.[0]?.display || "Appointment"}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {formatDateTime(appointment.start)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReceptionContextSections({ appointmentSummary, appointmentsLoading }) {
+  return (
+    <>
+      <AppointmentSummarySection
+        title="Upcoming / Active"
+        icon={Calendar}
+        loading={appointmentsLoading}
+        emptyMessage="No upcoming appointments"
+        appointments={appointmentSummary.upcoming}
+      />
+
+      <AppointmentSummarySection
+        title="Appointment History"
+        icon={FileText}
+        loading={appointmentsLoading}
+        emptyMessage="No appointment history"
+        appointments={appointmentSummary.history}
+      />
+    </>
+  );
+}
+
 export default function PatientContextPanel({
   open,
   onClose,
@@ -170,264 +437,33 @@ export default function PatientContextPanel({
       if (!nextOpen) onClose();
     }}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto p-0">
-        <DialogHeader className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary">
-              <User className="size-5" />
-            </div>
-            <div>
-              <DialogTitle className="font-display text-xl text-foreground">
-                Patient Context
-              </DialogTitle>
-              <DialogDescription className="font-mono text-xs text-muted-foreground">
-                {headerName}
-                {headerMrn ? ` · ${headerMrn}` : ""}
-              </DialogDescription>
-            </div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
-            <X className="size-4" />
-          </Button>
-        </DialogHeader>
+        <PatientContextHeader headerName={headerName} headerMrn={headerMrn} onClose={onClose} />
         <div className="p-6 space-y-6">
-        <section className="rounded-xl border border-border/70 bg-card/70 p-4">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Demographics
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-muted-foreground text-xs">MRN</p>
-              <p className="text-foreground font-mono">{headerMrn || "-"}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Name</p>
-              <p className="text-foreground">{headerName}</p>
-            </div>
-            {demographics?.dob !== undefined && (
-              <div>
-                <p className="text-muted-foreground text-xs">DOB</p>
-                <p className="text-foreground">{formatDate(demographics.dob)}</p>
-              </div>
-            )}
-            {demographics?.gender !== undefined && (
-              <div>
-                <p className="text-muted-foreground text-xs">Gender</p>
-                <p className="text-foreground">{demographics.gender || "-"}</p>
-              </div>
-            )}
-            {demographics?.ward && (
-              <div className="col-span-2">
-                <Badge variant="outline" className="font-mono text-[10px]">
-                  {demographics.ward}
-                </Badge>
-              </div>
-            )}
-          </div>
-        </section>
+        <DemographicsSection demographics={demographics} headerName={headerName} headerMrn={headerMrn} />
 
         {showPharmacy && (
-          <>
-            <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="size-4 text-rose-600" />
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Allergies
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(patientContext?.allergies || []).length > 0 ? (
-                  patientContext.allergies.map((allergy, index) => (
-                    <span
-                      key={`${allergy}-${index}`}
-                      className="badge-chronicle-rose text-[10px]"
-                    >
-                      {allergy}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs text-muted-foreground">No allergies recorded</span>
-                )}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-border/70 bg-card/70 p-4">
-              <Collapsible open={clinicalOpen} onOpenChange={setClinicalOpen}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList className="size-4 text-muted-foreground" />
-                    <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      Clinical Context
-                    </p>
-                  </div>
-                  <CollapsibleTrigger asChild>
-                    <Button variant="ghost" size="sm" className="font-mono text-xs">
-                      <ChevronDown className={cn("size-3 mr-1 transition-transform", clinicalOpen && "rotate-180")} />
-                      {clinicalOpen ? "Hide" : "Expand"}
-                    </Button>
-                  </CollapsibleTrigger>
-                </div>
-                <CollapsibleContent className="mt-4 space-y-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2">Problems</p>
-                    {(patientContext?.problems || []).length > 0 ? (
-                      <ul className="space-y-1 text-sm">
-                        {patientContext.problems.map((problem, index) => (
-                          <li key={`${problem}-${index}`} className="text-foreground">
-                            {problem}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">No active problems</span>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2">Other Active Medications</p>
-                    {(patientContext?.medications || []).length > 0 ? (
-                      <ul className="space-y-1 text-sm">
-                        {patientContext.medications.map((med, index) => (
-                          <li key={`${med}-${index}`} className="text-foreground">
-                            {med}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">No additional medications</span>
-                    )}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </section>
-          </>
+          <PharmacyContextSections
+            patientContext={patientContext}
+            clinicalOpen={clinicalOpen}
+            onClinicalOpenChange={setClinicalOpen}
+          />
         )}
 
         {showBilling && (
-          <>
-            <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Shield className="size-4 text-emerald-600" />
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Insurance
-                </p>
-              </div>
-              {insuranceLoading ? (
-                <Skeleton className="h-16 w-full" />
-              ) : insurances.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No insurance on file</p>
-              ) : (
-                <div className="space-y-2 text-sm">
-                  {insurances.slice(0, 3).map((insurance) => (
-                    <div key={insurance.id} className="flex items-center justify-between">
-                      <span className="text-foreground">
-                        {insurance.plan_name || "Insurance Plan"}
-                      </span>
-                      <Badge variant="outline" className="text-[10px]">
-                        {insurance.coverage_percentage || 0}%
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <FileText className="size-4 text-primary" />
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Billing Summary
-                </p>
-              </div>
-              {invoicesLoading ? (
-                <Skeleton className="h-20 w-full" />
-              ) : invoices.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No invoices found</p>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Outstanding</span>
-                    <span className="font-mono text-foreground">
-                      {formatCurrency(billingSummary.outstanding)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{billingSummary.pendingCount} pending</span>
-                  </div>
-                  <div className="divide-y divide-border/60">
-                    {billingSummary.recent.map((invoice) => (
-                      <div key={invoice.id} className="flex items-center justify-between py-2 text-xs">
-                        <span className="font-mono text-primary">
-                          {invoice.invoice_number}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {formatCurrency(
-                            invoice.balance_due > 0 ? invoice.balance_due : invoice.total_amount
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </section>
-          </>
+          <BillingContextSections
+            billingSummary={billingSummary}
+            insuranceLoading={insuranceLoading}
+            insurances={insurances}
+            invoicesLoading={invoicesLoading}
+            invoices={invoices}
+          />
         )}
 
         {showReception && (
-          <>
-            <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="size-4 text-primary" />
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Upcoming / Active
-                </p>
-              </div>
-              {appointmentsLoading ? (
-                <Skeleton className="h-20 w-full" />
-              ) : appointmentSummary.upcoming.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No upcoming appointments</p>
-              ) : (
-                <div className="space-y-2 text-sm">
-                  {appointmentSummary.upcoming.map((appointment) => (
-                    <div key={appointment.id} className="flex items-center justify-between">
-                      <span className="text-foreground">
-                        {appointment.appointmentType?.coding?.[0]?.display || "Appointment"}
-                      </span>
-                      <span className="text-muted-foreground text-xs">
-                        {formatDateTime(appointment.start)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <FileText className="size-4 text-muted-foreground" />
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Appointment History
-                </p>
-              </div>
-              {appointmentsLoading ? (
-                <Skeleton className="h-20 w-full" />
-              ) : appointmentSummary.history.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No appointment history</p>
-              ) : (
-                <div className="space-y-2 text-sm">
-                  {appointmentSummary.history.map((appointment) => (
-                    <div key={appointment.id} className="flex items-center justify-between">
-                      <span className="text-foreground">
-                        {appointment.appointmentType?.coding?.[0]?.display || "Appointment"}
-                      </span>
-                      <span className="text-muted-foreground text-xs">
-                        {formatDateTime(appointment.start)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
+          <ReceptionContextSections
+            appointmentSummary={appointmentSummary}
+            appointmentsLoading={appointmentsLoading}
+          />
         )}
         </div>
       </DialogContent>
