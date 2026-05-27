@@ -1224,18 +1224,12 @@ export function useDeleteChartEntry() {
  * Hook for managing chart entry form state with calculated fields
  */
 export function useChartEntryForm(template) {
-  const [formData, setFormData] = React.useState({});
-
-  // Initialize form with default values
-  React.useEffect(() => {
-    if (template?.fields) {
-      const defaults = {};
-      template.fields.forEach((field) => {
-        defaults[field.field_key] = field.config?.default ?? null;
-      });
-      setFormData(defaults);
-    }
-  }, [template]);
+  const defaultFormData = React.useMemo(() => buildChartEntryDefaults(template), [template]);
+  const [draft, setDraft] = React.useState(() => ({
+    template,
+    formData: defaultFormData,
+  }));
+  const formData = draft.template === template ? draft.formData : defaultFormData;
 
   // Calculate computed fields when dependencies change
   const computedData = React.useMemo(() => {
@@ -1263,20 +1257,20 @@ export function useChartEntryForm(template) {
   }, [formData, template]);
 
   const updateField = (fieldKey, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [fieldKey]: value,
+    setDraft((prev) => ({
+      template,
+      formData: {
+        ...(prev.template === template ? prev.formData : defaultFormData),
+        [fieldKey]: value,
+      },
     }));
   };
 
   const resetForm = () => {
-    if (template?.fields) {
-      const defaults = {};
-      template.fields.forEach((field) => {
-        defaults[field.field_key] = field.config?.default ?? null;
-      });
-      setFormData(defaults);
-    }
+    setDraft({
+      template,
+      formData: defaultFormData,
+    });
   };
 
   return {
@@ -1285,6 +1279,15 @@ export function useChartEntryForm(template) {
     resetForm,
     rawData: formData,
   };
+}
+
+function buildChartEntryDefaults(template) {
+  if (!template?.fields) return {};
+
+  return template.fields.reduce((defaults, field) => {
+    defaults[field.field_key] = field.config?.default ?? null;
+    return defaults;
+  }, {});
 }
 
 /**
