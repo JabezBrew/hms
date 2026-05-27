@@ -70,6 +70,19 @@ function createInsuranceDraft(insurance, defaultPatient) {
   };
 }
 
+function getSelectedPatientName(selectedPatient) {
+  if (selectedPatient?.name) {
+    return selectedPatient.name;
+  }
+
+  if (selectedPatient?.local_data?.user_details) {
+    const { first_name: firstName, last_name: lastName } = selectedPatient.local_data.user_details;
+    return `${firstName} ${lastName}`;
+  }
+
+  return 'Selected Patient';
+}
+
 /**
  * PatientInsuranceFormSlideOver - Slide-over panel for creating/editing patient insurance
  *
@@ -97,6 +110,334 @@ export default function PatientInsuranceFormSlideOver({
       insurance={insurance}
       defaultPatient={defaultPatient}
     />
+  );
+}
+
+function InsuranceFormHeader({ isEditing, onClose }) {
+  return (
+    <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
+          <Shield className="size-5 text-[oklch(0.70_0.15_230)]" />
+        </div>
+        <div>
+          <h2 className="font-display text-xl text-foreground">
+            {isEditing ? 'Edit Insurance' : 'Add Patient Insurance'}
+          </h2>
+          <p className="font-mono text-xs text-muted-foreground">
+            {isEditing ? 'Update insurance details' : 'Link insurance to patient'}
+          </p>
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onClose}
+        className="font-mono text-xs"
+      >
+        <X className="size-4" />
+      </Button>
+    </header>
+  );
+}
+
+function PatientSelectionField({
+  error,
+  isFixedPatient,
+  selectedPatient,
+  onPatientSelect,
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-xs uppercase tracking-wider">
+        Patient <span className="text-destructive">*</span>
+      </Label>
+      {isFixedPatient ? (
+        <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg border border-border">
+          <Shield className="size-4 text-muted-foreground" />
+          <span className="text-foreground font-medium">
+            {getSelectedPatientName(selectedPatient)}
+          </span>
+        </div>
+      ) : (
+        <PatientSelector
+          selectedPatient={selectedPatient}
+          onPatientSelect={onPatientSelect}
+          placeholder="Select a patient"
+        />
+      )}
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
+    </div>
+  );
+}
+
+function InsuranceProviderField({
+  providers,
+  selectedProviderId,
+  onProviderChange,
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-xs uppercase tracking-wider">
+        Insurance Provider <span className="text-destructive">*</span>
+      </Label>
+      <Select
+        value={selectedProviderId}
+        onValueChange={onProviderChange}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Select provider" />
+        </SelectTrigger>
+        <SelectContent className="z-[200]">
+          {providers.map((provider) => (
+            <SelectItem key={provider.id} value={provider.id} className="font-mono text-sm">
+              {provider.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function InsurancePlanField({
+  error,
+  planId,
+  plans,
+  selectedProviderId,
+  onPlanChange,
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-xs uppercase tracking-wider">
+        Insurance Plan <span className="text-destructive">*</span>
+      </Label>
+      <Select
+        value={planId}
+        onValueChange={onPlanChange}
+        disabled={!selectedProviderId}
+      >
+        <SelectTrigger className={cn(error && 'border-destructive')}>
+          <SelectValue placeholder={selectedProviderId ? 'Select plan' : 'Select provider first'} />
+        </SelectTrigger>
+        <SelectContent className="z-[200]">
+          {plans.map((plan) => (
+            <SelectItem key={plan.id} value={plan.id} className="font-mono text-sm">
+              <div className="flex flex-col">
+                <span>{plan.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {plan.coverage_percentage}% coverage
+                </span>
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
+    </div>
+  );
+}
+
+function PolicyNumberField({ error, value, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="policy_number" className="font-mono text-xs uppercase tracking-wider">
+        Policy Number <span className="text-destructive">*</span>
+      </Label>
+      <Input
+        id="policy_number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn('font-mono', error && 'border-destructive')}
+        placeholder="e.g., POL-12345678"
+      />
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
+    </div>
+  );
+}
+
+function ValidityPeriodField({
+  errors,
+  validFrom,
+  validUntil,
+  onValidFromChange,
+  onValidUntilChange,
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-xs uppercase tracking-wider">
+        Validity Period <span className="text-destructive">*</span>
+      </Label>
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <DatePicker
+            date={validFrom}
+            setDate={onValidFromChange}
+            placeholder="Start date"
+            className={cn('w-full font-mono', errors.valid_from && 'border-destructive')}
+          />
+        </div>
+        <span className="text-muted-foreground text-sm">to</span>
+        <div className="flex-1">
+          <DatePicker
+            date={validUntil}
+            setDate={onValidUntilChange}
+            placeholder="No expiry"
+            className={cn('w-full font-mono', errors.valid_until && 'border-destructive')}
+          />
+        </div>
+      </div>
+      {errors.valid_from && (
+        <p className="text-xs text-destructive">{errors.valid_from}</p>
+      )}
+      {errors.valid_until && (
+        <p className="text-xs text-destructive">{errors.valid_until}</p>
+      )}
+      <p className="text-xs text-muted-foreground">Leave end date blank for no expiry</p>
+    </div>
+  );
+}
+
+function ActiveStatusField({ checked, onCheckedChange }) {
+  return (
+    <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+      <div>
+        <Label htmlFor="is_active" className="text-sm font-medium cursor-pointer">
+          Active Status
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Inactive insurance won't be available for billing
+        </p>
+      </div>
+      <Switch
+        id="is_active"
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+      />
+    </div>
+  );
+}
+
+function InsuranceNotesField({ value, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="notes" className="font-mono text-xs uppercase tracking-wider">
+        Notes
+      </Label>
+      <Textarea
+        id="notes"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Any additional notes..."
+        rows={3}
+      />
+    </div>
+  );
+}
+
+function InsuranceFormFields({
+  defaultPatient,
+  errors,
+  formData,
+  isEditing,
+  plans,
+  providers,
+  selectedPatient,
+  selectedProviderId,
+  validFrom,
+  validUntil,
+  onFieldChange,
+  onPatientSelect,
+  onProviderChange,
+  onValidFromChange,
+  onValidUntilChange,
+}) {
+  return (
+    <>
+      <PatientSelectionField
+        error={errors.patient}
+        isFixedPatient={Boolean(isEditing || defaultPatient)}
+        selectedPatient={selectedPatient}
+        onPatientSelect={onPatientSelect}
+      />
+
+      <InsuranceProviderField
+        providers={providers}
+        selectedProviderId={selectedProviderId}
+        onProviderChange={onProviderChange}
+      />
+
+      <InsurancePlanField
+        error={errors.plan}
+        planId={formData.plan}
+        plans={plans}
+        selectedProviderId={selectedProviderId}
+        onPlanChange={(value) => onFieldChange('plan', value)}
+      />
+
+      <PolicyNumberField
+        error={errors.policy_number}
+        value={formData.policy_number}
+        onChange={(value) => onFieldChange('policy_number', value)}
+      />
+
+      <ValidityPeriodField
+        errors={errors}
+        validFrom={validFrom}
+        validUntil={validUntil}
+        onValidFromChange={onValidFromChange}
+        onValidUntilChange={onValidUntilChange}
+      />
+
+      <ActiveStatusField
+        checked={formData.is_active}
+        onCheckedChange={(checked) => onFieldChange('is_active', checked)}
+      />
+
+      <InsuranceNotesField
+        value={formData.notes}
+        onChange={(value) => onFieldChange('notes', value)}
+      />
+    </>
+  );
+}
+
+function InsuranceFormFooter({ isEditing, isPending, onClose }) {
+  return (
+    <footer className="border-t border-border bg-card px-6 py-4 flex items-center justify-between">
+      <Button
+        variant="outline"
+        onClick={onClose}
+        disabled={isPending}
+        className="font-mono text-xs"
+      >
+        Cancel
+      </Button>
+      <Button
+        type="submit"
+        form={INSURANCE_FORM_ID}
+        disabled={isPending}
+        className="font-mono text-xs"
+      >
+        {isPending ? (
+          <>
+            <Loader2 className="size-4 mr-2 animate-spin" />
+            {isEditing ? 'Updating...' : 'Creating...'}
+          </>
+        ) : (
+          <>
+            <Shield className="size-4 mr-2" />
+            {isEditing ? 'Update Insurance' : 'Add Insurance'}
+          </>
+        )}
+      </Button>
+    </footer>
   );
 }
 
@@ -215,226 +556,36 @@ function PatientInsuranceFormContent({
         open ? 'translate-x-0' : 'translate-x-full'
       )}
     >
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
-            <Shield className="size-5 text-[oklch(0.70_0.15_230)]" />
-          </div>
-          <div>
-            <h2 className="font-display text-xl text-foreground">
-              {isEditing ? 'Edit Insurance' : 'Add Patient Insurance'}
-            </h2>
-            <p className="font-mono text-xs text-muted-foreground">
-              {isEditing ? 'Update insurance details' : 'Link insurance to patient'}
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          className="font-mono text-xs"
-        >
-          <X className="size-4" />
-        </Button>
-      </header>
+      <InsuranceFormHeader isEditing={isEditing} onClose={onClose} />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <form id={INSURANCE_FORM_ID} onSubmit={handleSubmit} className="space-y-5">
-          {/* Patient Selection */}
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider">
-              Patient <span className="text-destructive">*</span>
-            </Label>
-            {(isEditing || defaultPatient) ? (
-              <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg border border-border">
-                <Shield className="size-4 text-muted-foreground" />
-                <span className="text-foreground font-medium">
-                  {selectedPatient?.name ||
-                   (selectedPatient?.local_data?.user_details
-                     ? `${selectedPatient.local_data.user_details.first_name} ${selectedPatient.local_data.user_details.last_name}`
-                     : 'Selected Patient')}
-                </span>
-              </div>
-            ) : (
-              <PatientSelector
-                selectedPatient={selectedPatient}
-                onPatientSelect={handlePatientSelect}
-                placeholder="Select a patient"
-              />
-            )}
-            {errors.patient && (
-              <p className="text-xs text-destructive">{errors.patient}</p>
-            )}
-          </div>
-
-          {/* Insurance Provider */}
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider">
-              Insurance Provider <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={selectedProviderId}
-              onValueChange={handleProviderChange}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent className="z-[200]">
-                {providers.map((provider) => (
-                  <SelectItem key={provider.id} value={provider.id} className="font-mono text-sm">
-                    {provider.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Insurance Plan */}
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider">
-              Insurance Plan <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={formData.plan}
-              onValueChange={(value) => handleChange('plan', value)}
-              disabled={!selectedProviderId}
-            >
-              <SelectTrigger className={cn(errors.plan && 'border-destructive')}>
-                <SelectValue placeholder={selectedProviderId ? 'Select plan' : 'Select provider first'} />
-              </SelectTrigger>
-              <SelectContent className="z-[200]">
-                {plans.map((plan) => (
-                  <SelectItem key={plan.id} value={plan.id} className="font-mono text-sm">
-                    <div className="flex flex-col">
-                      <span>{plan.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {plan.coverage_percentage}% coverage
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.plan && (
-              <p className="text-xs text-destructive">{errors.plan}</p>
-            )}
-          </div>
-
-          {/* Policy Number */}
-          <div className="space-y-2">
-            <Label htmlFor="policy_number" className="font-mono text-xs uppercase tracking-wider">
-              Policy Number <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="policy_number"
-              value={formData.policy_number}
-              onChange={(e) => handleChange('policy_number', e.target.value)}
-              className={cn('font-mono', errors.policy_number && 'border-destructive')}
-              placeholder="e.g., POL-12345678"
-            />
-            {errors.policy_number && (
-              <p className="text-xs text-destructive">{errors.policy_number}</p>
-            )}
-          </div>
-
-          {/* Validity Period */}
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider">
-              Validity Period <span className="text-destructive">*</span>
-            </Label>
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <DatePicker
-                  date={validFrom}
-                  setDate={setValidFrom}
-                  placeholder="Start date"
-                  className={cn('w-full font-mono', errors.valid_from && 'border-destructive')}
-                />
-              </div>
-              <span className="text-muted-foreground text-sm">to</span>
-              <div className="flex-1">
-                <DatePicker
-                  date={validUntil}
-                  setDate={setValidUntil}
-                  placeholder="No expiry"
-                  className={cn('w-full font-mono', errors.valid_until && 'border-destructive')}
-                />
-              </div>
-            </div>
-            {errors.valid_from && (
-              <p className="text-xs text-destructive">{errors.valid_from}</p>
-            )}
-            {errors.valid_until && (
-              <p className="text-xs text-destructive">{errors.valid_until}</p>
-            )}
-            <p className="text-xs text-muted-foreground">Leave end date blank for no expiry</p>
-          </div>
-
-          {/* Active Status */}
-          <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
-            <div>
-              <Label htmlFor="is_active" className="text-sm font-medium cursor-pointer">
-                Active Status
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Inactive insurance won't be available for billing
-              </p>
-            </div>
-            <Switch
-              id="is_active"
-              checked={formData.is_active}
-              onCheckedChange={(checked) => handleChange('is_active', checked)}
-            />
-          </div>
-
-          {/* Notes */}
-          <div className="space-y-2">
-            <Label htmlFor="notes" className="font-mono text-xs uppercase tracking-wider">
-              Notes
-            </Label>
-            <Textarea
-              id="notes"
-              value={formData.notes}
-              onChange={(e) => handleChange('notes', e.target.value)}
-              placeholder="Any additional notes..."
-              rows={3}
-            />
-          </div>
+          <InsuranceFormFields
+            defaultPatient={defaultPatient}
+            errors={errors}
+            formData={formData}
+            isEditing={isEditing}
+            plans={plans}
+            providers={providers}
+            selectedPatient={selectedPatient}
+            selectedProviderId={selectedProviderId}
+            validFrom={validFrom}
+            validUntil={validUntil}
+            onFieldChange={handleChange}
+            onPatientSelect={handlePatientSelect}
+            onProviderChange={handleProviderChange}
+            onValidFromChange={setValidFrom}
+            onValidUntilChange={setValidUntil}
+          />
         </form>
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-border bg-card px-6 py-4 flex items-center justify-between">
-        <Button
-          variant="outline"
-          onClick={onClose}
-          disabled={isPending}
-          className="font-mono text-xs"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          form={INSURANCE_FORM_ID}
-          disabled={isPending}
-          className="font-mono text-xs"
-        >
-          {isPending ? (
-            <>
-              <Loader2 className="size-4 mr-2 animate-spin" />
-              {isEditing ? 'Updating...' : 'Creating...'}
-            </>
-          ) : (
-            <>
-              <Shield className="size-4 mr-2" />
-              {isEditing ? 'Update Insurance' : 'Add Insurance'}
-            </>
-          )}
-        </Button>
-      </footer>
+      <InsuranceFormFooter
+        isEditing={isEditing}
+        isPending={isPending}
+        onClose={onClose}
+      />
     </div>
   );
 }
