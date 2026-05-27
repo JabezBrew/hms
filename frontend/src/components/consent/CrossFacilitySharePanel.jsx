@@ -261,255 +261,442 @@ function CrossFacilitySharePanelContent({ onClose, patient, patientIdentityId })
         "translate-x-0"
       )}
     >
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-100 text-amber-700">
-            <Shield className="size-5" />
-          </div>
-          <div>
-            <h2 className="font-display text-xl text-foreground">Cross-Facility Share</h2>
-            <p className="font-mono text-xs text-muted-foreground mt-0.5">
-              {patientName}
-            </p>
-          </div>
-        </div>
-        <Button variant="ghost" size="icon" onClick={onClose}>
-          <X className="size-4" />
-        </Button>
-      </header>
+      <SharePanelHeader patientName={patientName} onClose={onClose} />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {identityMissing && (
-          <Card className="border border-rose-200 bg-rose-50">
-            <CardContent className="p-4 text-sm text-rose-700">
-              {rustV2Mode
-                ? "Patient record id is missing. Open a valid patient before sharing records."
-                : "MPI identity is missing for this patient. Create the patient identity before sharing records."}
-            </CardContent>
-          </Card>
+          <MissingIdentityNotice rustV2Mode={rustV2Mode} />
         )}
-        <Card className="border border-border">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="font-heading text-sm text-muted-foreground">Workflow step</p>
-                <p className="font-display text-lg text-foreground">{currentStep.title}</p>
-              </div>
-              <Badge variant="secondary" className="font-mono text-xs">
-                Step {safeStepIndex + 1} of {workflowSteps.length}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">{currentStep.description}</p>
-          </CardContent>
-        </Card>
-
-        <div className="flex items-center gap-3">
-          {workflowSteps.map((step, index) => {
-            const StepIcon = step.icon;
-            const isActive = index === safeStepIndex;
-            const isDone = index < safeStepIndex;
-            return (
-              <div
-                key={step.id}
-                className={cn(
-                  "flex items-center gap-2 rounded-full px-3 py-1.5 border text-xs font-mono",
-                  isActive && "border-amber-400 text-amber-700 bg-amber-50",
-                  isDone && "border-emerald-400 text-emerald-700 bg-emerald-50",
-                  !isActive && !isDone && "border-border text-muted-foreground"
-                )}
-              >
-                <StepIcon className="size-3.5" />
-                {step.title}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase text-muted-foreground">
-              Target Facility Code
-            </Label>
-            <div className="relative">
-              <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input
-                value={targetFacilityCode}
-                onChange={(event) => updateShareField("targetFacilityCode", event.target.value.toUpperCase())}
-                placeholder="E.g. REGIONAL-01"
-                className="pl-9 font-mono"
-              />
-            </div>
-          </div>
-
-          {currentStep.id === "referral" && (
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase text-muted-foreground">
-                Referral Reason Code
-              </Label>
-              <Input
-                value={reasonCode}
-                onChange={(event) => updateShareField("reasonCode", event.target.value)}
-                placeholder="E.g. CARDIO, TRANSFER"
-                className="font-mono"
-              />
-            </div>
-          )}
-
-          {currentStep.id === "consent" && (
-            <>
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase text-muted-foreground">
-                  Consent Summary
-                </Label>
-                <Textarea
-                  value={consentReason}
-                  onChange={(event) => updateShareField("consentReason", event.target.value)}
-                  placeholder="Document the patient consent discussion..."
-                  className="min-h-[120px]"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase text-muted-foreground">
-                  Expiration (days)
-                </Label>
-                <Input
-                  value={expiresInDays}
-                  onChange={(event) => updateShareField("expiresInDays", event.target.value)}
-                  placeholder="Leave blank for no expiration"
-                  className="font-mono"
-                />
-              </div>
-            </>
-          )}
-
-          {currentStep.id === "token" && (
-            <div className="space-y-3">
-              <Label className="font-mono text-xs uppercase text-muted-foreground">
-                Access Token
-              </Label>
-              <div className="rounded-lg border border-border bg-muted/50 p-3 font-mono text-xs break-all">
-                {issuedToken || "Issue a token to share with the receiving facility."}
-              </div>
-              {issuedToken && (
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={handleCopyToken} className="font-mono text-xs">
-                    <ClipboardCopy className="size-3.5 mr-2" />
-                    Copy Token
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleIssueToken}
-                    className="font-mono text-xs"
-                    disabled={tokenMutation.isPending}
-                  >
-                    Re-issue Token
-                  </Button>
-                </div>
-              )}
-
-              <div className="border-t border-border pt-3 space-y-3">
-                <Label className="font-mono text-xs uppercase text-muted-foreground">
-                  Export Bundle
-                </Label>
-                {exportJob ? (
-                  <div className="space-y-2 text-xs text-muted-foreground">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono">Job ID</span>
-                      <span className="font-mono text-foreground">{exportJob.id}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono">Status</span>
-                      <Badge variant="secondary" className="font-mono text-xs">
-                        {exportJob.status}
-                      </Badge>
-                    </div>
-                    {exportJob.expires_at && (
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono">Expires</span>
-                        <span className="font-mono">
-                          {new Date(exportJob.expires_at).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCopyExportId}
-                      className="font-mono text-xs"
-                    >
-                      <ClipboardCopy className="size-3.5 mr-2" />
-                      Copy Export ID
-                    </Button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Queue a record export bundle after issuing the token.
-                  </p>
-                )}
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Share the token and export job ID with the receiving facility to retrieve the bundle.
-              </p>
-            </div>
-          )}
-        </div>
+        <WorkflowStepSummary
+          currentStep={currentStep}
+          safeStepIndex={safeStepIndex}
+          workflowSteps={workflowSteps}
+        />
+        <WorkflowStepPills safeStepIndex={safeStepIndex} workflowSteps={workflowSteps} />
+        <ShareStepFields
+          consentReason={consentReason}
+          currentStepId={currentStep.id}
+          expiresInDays={expiresInDays}
+          exportJob={exportJob}
+          issuedToken={issuedToken}
+          onCopyExportId={handleCopyExportId}
+          onCopyToken={handleCopyToken}
+          onIssueToken={handleIssueToken}
+          onUpdateField={updateShareField}
+          reasonCode={reasonCode}
+          targetFacilityCode={targetFacilityCode}
+          tokenPending={tokenMutation.isPending}
+        />
       </div>
 
-      <footer className="border-t border-border p-4 flex items-center justify-between">
-        <Button variant="ghost" onClick={onClose} className="font-mono text-xs">
-          Cancel
-        </Button>
-        <div className="flex items-center gap-2">
-          {safeStepIndex > 0 && (
-            <Button
-              variant="outline"
-              onClick={() => dispatchShare({ type: "back" })}
-              className="font-mono text-xs"
-            >
-              Back
-            </Button>
-          )}
-
-          {currentStep.id === "referral" && (
-            <Button
-              onClick={handleCreateReferral}
-              className="font-mono text-xs"
-              disabled={identityMissing || referralMutation.isPending}
-            >
-              {referralMutation.isPending ? "Sending..." : "Send Referral"}
-            </Button>
-          )}
-
-          {currentStep.id === "consent" && (
-            <Button
-              onClick={handleGrantConsent}
-              className="font-mono text-xs"
-              disabled={identityMissing || consentMutation.isPending}
-            >
-              {consentMutation.isPending ? "Saving..." : "Grant Consent"}
-            </Button>
-          )}
-
-          {currentStep.id === "token" && (
-            <Button
-              onClick={issuedToken ? handleCreateExport : handleIssueToken}
-              className="font-mono text-xs"
-              disabled={tokenMutation.isPending || exportMutation.isPending || identityMissing}
-            >
-              {tokenMutation.isPending
-                ? "Issuing..."
-                : exportMutation.isPending
-                ? "Queueing..."
-                : issuedToken
-                ? "Queue Export Bundle"
-                : "Issue Token"}
-            </Button>
-          )}
-        </div>
-      </footer>
+      <SharePanelFooter
+        consentPending={consentMutation.isPending}
+        currentStepId={currentStep.id}
+        exportPending={exportMutation.isPending}
+        identityMissing={identityMissing}
+        issuedToken={issuedToken}
+        onBack={() => dispatchShare({ type: "back" })}
+        onClose={onClose}
+        onCreateExport={handleCreateExport}
+        onCreateReferral={handleCreateReferral}
+        onGrantConsent={handleGrantConsent}
+        onIssueToken={handleIssueToken}
+        referralPending={referralMutation.isPending}
+        safeStepIndex={safeStepIndex}
+        tokenPending={tokenMutation.isPending}
+      />
     </div>
+  );
+}
+
+function SharePanelHeader({ patientName, onClose }) {
+  return (
+    <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-amber-100 text-amber-700">
+          <Shield className="size-5" />
+        </div>
+        <div>
+          <h2 className="font-display text-xl text-foreground">Cross-Facility Share</h2>
+          <p className="font-mono text-xs text-muted-foreground mt-0.5">
+            {patientName}
+          </p>
+        </div>
+      </div>
+      <Button variant="ghost" size="icon" onClick={onClose}>
+        <X className="size-4" />
+      </Button>
+    </header>
+  );
+}
+
+function MissingIdentityNotice({ rustV2Mode }) {
+  return (
+    <Card className="border border-rose-200 bg-rose-50">
+      <CardContent className="p-4 text-sm text-rose-700">
+        {rustV2Mode
+          ? "Patient record id is missing. Open a valid patient before sharing records."
+          : "MPI identity is missing for this patient. Create the patient identity before sharing records."}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkflowStepSummary({ currentStep, safeStepIndex, workflowSteps }) {
+  return (
+    <Card className="border border-border">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="font-heading text-sm text-muted-foreground">Workflow step</p>
+            <p className="font-display text-lg text-foreground">{currentStep.title}</p>
+          </div>
+          <Badge variant="secondary" className="font-mono text-xs">
+            Step {safeStepIndex + 1} of {workflowSteps.length}
+          </Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">{currentStep.description}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkflowStepPills({ safeStepIndex, workflowSteps }) {
+  return (
+    <div className="flex items-center gap-3">
+      {workflowSteps.map((step, index) => {
+        const StepIcon = step.icon;
+        const isActive = index === safeStepIndex;
+        const isDone = index < safeStepIndex;
+        return (
+          <div
+            key={step.id}
+            className={cn(
+              "flex items-center gap-2 rounded-full px-3 py-1.5 border text-xs font-mono",
+              isActive && "border-amber-400 text-amber-700 bg-amber-50",
+              isDone && "border-emerald-400 text-emerald-700 bg-emerald-50",
+              !isActive && !isDone && "border-border text-muted-foreground"
+            )}
+          >
+            <StepIcon className="size-3.5" />
+            {step.title}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ShareStepFields({
+  consentReason,
+  currentStepId,
+  expiresInDays,
+  exportJob,
+  issuedToken,
+  onCopyExportId,
+  onCopyToken,
+  onIssueToken,
+  onUpdateField,
+  reasonCode,
+  targetFacilityCode,
+  tokenPending,
+}) {
+  return (
+    <div className="space-y-6">
+      <TargetFacilityField
+        onChange={(value) => onUpdateField("targetFacilityCode", value)}
+        value={targetFacilityCode}
+      />
+
+      {currentStepId === "referral" && (
+        <ReferralReasonField
+          onChange={(value) => onUpdateField("reasonCode", value)}
+          value={reasonCode}
+        />
+      )}
+
+      {currentStepId === "consent" && (
+        <ConsentGrantFields
+          consentReason={consentReason}
+          expiresInDays={expiresInDays}
+          onUpdateField={onUpdateField}
+        />
+      )}
+
+      {currentStepId === "token" && (
+        <TokenSharePanel
+          exportJob={exportJob}
+          issuedToken={issuedToken}
+          onCopyExportId={onCopyExportId}
+          onCopyToken={onCopyToken}
+          onIssueToken={onIssueToken}
+          tokenPending={tokenPending}
+        />
+      )}
+    </div>
+  );
+}
+
+function TargetFacilityField({ value, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-xs uppercase text-muted-foreground">
+        Target Facility Code
+      </Label>
+      <div className="relative">
+        <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+        <Input
+          value={value}
+          onChange={(event) => onChange(event.target.value.toUpperCase())}
+          placeholder="E.g. REGIONAL-01"
+          className="pl-9 font-mono"
+        />
+      </div>
+    </div>
+  );
+}
+
+function ReferralReasonField({ value, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-xs uppercase text-muted-foreground">
+        Referral Reason Code
+      </Label>
+      <Input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="E.g. CARDIO, TRANSFER"
+        className="font-mono"
+      />
+    </div>
+  );
+}
+
+function ConsentGrantFields({ consentReason, expiresInDays, onUpdateField }) {
+  return (
+    <>
+      <div className="space-y-2">
+        <Label className="font-mono text-xs uppercase text-muted-foreground">
+          Consent Summary
+        </Label>
+        <Textarea
+          value={consentReason}
+          onChange={(event) => onUpdateField("consentReason", event.target.value)}
+          placeholder="Document the patient consent discussion..."
+          className="min-h-[120px]"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label className="font-mono text-xs uppercase text-muted-foreground">
+          Expiration (days)
+        </Label>
+        <Input
+          value={expiresInDays}
+          onChange={(event) => onUpdateField("expiresInDays", event.target.value)}
+          placeholder="Leave blank for no expiration"
+          className="font-mono"
+        />
+      </div>
+    </>
+  );
+}
+
+function TokenSharePanel({
+  exportJob,
+  issuedToken,
+  onCopyExportId,
+  onCopyToken,
+  onIssueToken,
+  tokenPending,
+}) {
+  return (
+    <div className="space-y-3">
+      <Label className="font-mono text-xs uppercase text-muted-foreground">
+        Access Token
+      </Label>
+      <div className="rounded-lg border border-border bg-muted/50 p-3 font-mono text-xs break-all">
+        {issuedToken || "Issue a token to share with the receiving facility."}
+      </div>
+      {issuedToken && (
+        <TokenActions
+          onCopyToken={onCopyToken}
+          onIssueToken={onIssueToken}
+          tokenPending={tokenPending}
+        />
+      )}
+
+      <ExportBundlePanel exportJob={exportJob} onCopyExportId={onCopyExportId} />
+
+      <p className="text-xs text-muted-foreground">
+        Share the token and export job ID with the receiving facility to retrieve the bundle.
+      </p>
+    </div>
+  );
+}
+
+function TokenActions({ onCopyToken, onIssueToken, tokenPending }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" onClick={onCopyToken} className="font-mono text-xs">
+        <ClipboardCopy className="size-3.5 mr-2" />
+        Copy Token
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onIssueToken}
+        className="font-mono text-xs"
+        disabled={tokenPending}
+      >
+        Re-issue Token
+      </Button>
+    </div>
+  );
+}
+
+function ExportBundlePanel({ exportJob, onCopyExportId }) {
+  return (
+    <div className="border-t border-border pt-3 space-y-3">
+      <Label className="font-mono text-xs uppercase text-muted-foreground">
+        Export Bundle
+      </Label>
+      {exportJob ? (
+        <ExportJobDetails exportJob={exportJob} onCopyExportId={onCopyExportId} />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Queue a record export bundle after issuing the token.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ExportJobDetails({ exportJob, onCopyExportId }) {
+  return (
+    <div className="space-y-2 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between">
+        <span className="font-mono">Job ID</span>
+        <span className="font-mono text-foreground">{exportJob.id}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="font-mono">Status</span>
+        <Badge variant="secondary" className="font-mono text-xs">
+          {exportJob.status}
+        </Badge>
+      </div>
+      {exportJob.expires_at && (
+        <div className="flex items-center justify-between">
+          <span className="font-mono">Expires</span>
+          <span className="font-mono">
+            {new Date(exportJob.expires_at).toLocaleString()}
+          </span>
+        </div>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onCopyExportId}
+        className="font-mono text-xs"
+      >
+        <ClipboardCopy className="size-3.5 mr-2" />
+        Copy Export ID
+      </Button>
+    </div>
+  );
+}
+
+function SharePanelFooter({
+  consentPending,
+  currentStepId,
+  exportPending,
+  identityMissing,
+  issuedToken,
+  onBack,
+  onClose,
+  onCreateExport,
+  onCreateReferral,
+  onGrantConsent,
+  onIssueToken,
+  referralPending,
+  safeStepIndex,
+  tokenPending,
+}) {
+  return (
+    <footer className="border-t border-border p-4 flex items-center justify-between">
+      <Button variant="ghost" onClick={onClose} className="font-mono text-xs">
+        Cancel
+      </Button>
+      <div className="flex items-center gap-2">
+        {safeStepIndex > 0 && (
+          <Button
+            variant="outline"
+            onClick={onBack}
+            className="font-mono text-xs"
+          >
+            Back
+          </Button>
+        )}
+
+        {currentStepId === "referral" && (
+          <Button
+            onClick={onCreateReferral}
+            className="font-mono text-xs"
+            disabled={identityMissing || referralPending}
+          >
+            {referralPending ? "Sending..." : "Send Referral"}
+          </Button>
+        )}
+
+        {currentStepId === "consent" && (
+          <Button
+            onClick={onGrantConsent}
+            className="font-mono text-xs"
+            disabled={identityMissing || consentPending}
+          >
+            {consentPending ? "Saving..." : "Grant Consent"}
+          </Button>
+        )}
+
+        {currentStepId === "token" && (
+          <TokenStepAction
+            exportPending={exportPending}
+            identityMissing={identityMissing}
+            issuedToken={issuedToken}
+            onCreateExport={onCreateExport}
+            onIssueToken={onIssueToken}
+            tokenPending={tokenPending}
+          />
+        )}
+      </div>
+    </footer>
+  );
+}
+
+function TokenStepAction({
+  exportPending,
+  identityMissing,
+  issuedToken,
+  onCreateExport,
+  onIssueToken,
+  tokenPending,
+}) {
+  let buttonLabel = "Issue Token";
+  if (tokenPending) {
+    buttonLabel = "Issuing...";
+  } else if (exportPending) {
+    buttonLabel = "Queueing...";
+  } else if (issuedToken) {
+    buttonLabel = "Queue Export Bundle";
+  }
+
+  return (
+    <Button
+      onClick={issuedToken ? onCreateExport : onIssueToken}
+      className="font-mono text-xs"
+      disabled={tokenPending || exportPending || identityMissing}
+    >
+      {buttonLabel}
+    </Button>
   );
 }
 
