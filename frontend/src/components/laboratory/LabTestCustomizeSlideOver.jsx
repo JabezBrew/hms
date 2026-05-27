@@ -7,21 +7,13 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js';
 import Info from 'lucide-react/dist/esm/icons/info.js';
-import { useState, useEffect } from "react";
+import { useMemo, useReducer } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import {
@@ -35,6 +27,187 @@ const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
 });
+
+const POPULATION_LABELS = {
+  adult_male: "Adult Male",
+  adult_female: "Adult Female",
+  adult: "Adult",
+  pediatric: "Pediatric",
+  child: "Child",
+  infant: "Infant",
+  elderly: "Elderly",
+  pregnant: "Pregnant",
+};
+
+const createInitialFormData = (item) => ({
+  price: item.price || "",
+  tat_hours: item.tat_hours || "",
+  is_active: item.is_active !== false,
+  reference_ranges: item.reference_ranges || {},
+});
+
+const formatReferenceRangesForEditing = (item, isPanel) => {
+  if (!item.reference_ranges || isPanel) return "";
+
+  return Object.entries(item.reference_ranges)
+    .map(([key, value]) => {
+      if (typeof value === "object") {
+        return `${key}: ${value.min || ""}-${value.max || ""} ${value.unit || ""}`;
+      }
+      return `${key}: ${value}`;
+    })
+    .join("\n");
+};
+
+const createInitialState = (item, isPanel) => ({
+  formData: createInitialFormData(item),
+  errors: {},
+  referenceRangeText: formatReferenceRangesForEditing(item, isPanel),
+});
+
+const formReducer = (state, action) => {
+  switch (action.type) {
+    case "field_changed": {
+      const { field, value } = action;
+      const nextErrors = { ...state.errors };
+      delete nextErrors[field];
+
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          [field]: value,
+        },
+        errors: nextErrors,
+      };
+    }
+    case "reference_ranges_changed":
+      return {
+        ...state,
+        referenceRangeText: action.value,
+      };
+    case "validated":
+      return {
+        ...state,
+        errors: action.errors,
+      };
+    default:
+      return state;
+  }
+};
+
+const validateFormData = (formData) => {
+  const newErrors = {};
+
+  if (formData.price && isNaN(parseFloat(formData.price))) {
+    newErrors.price = "Price must be a valid number";
+  }
+
+  if (formData.price && parseFloat(formData.price) < 0) {
+    newErrors.price = "Price cannot be negative";
+  }
+
+  if (formData.tat_hours && isNaN(parseInt(formData.tat_hours))) {
+    newErrors.tat_hours = "TAT must be a valid number";
+  }
+
+  if (formData.tat_hours && parseInt(formData.tat_hours) < 1) {
+    newErrors.tat_hours = "TAT must be at least 1 hour";
+  }
+
+  return newErrors;
+};
+
+const parseReferenceRanges = (text) => {
+  if (!text || !text.trim()) return { parsed: {}, errors: [], valid: true };
+
+  const ranges = {};
+  const errors = [];
+  const lines = text.split("\n").filter((l) => l.trim());
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const colonIndex = line.indexOf(":");
+
+    if (colonIndex === -1) {
+      errors.push({ line: i + 1, message: "Missing colon separator" });
+      continue;
+    }
+
+    const key = line.substring(0, colonIndex).trim();
+    const value = line.substring(colonIndex + 1).trim();
+
+    if (!key) {
+      errors.push({ line: i + 1, message: "Missing population name" });
+      continue;
+    }
+
+    if (!value) {
+      errors.push({ line: i + 1, message: "Missing value" });
+      continue;
+    }
+
+    const rangeMatch = value.match(/^([\d.]+)?\s*[-–]\s*([\d.]+)?\s*(.*)$/);
+    if (rangeMatch) {
+      const min = rangeMatch[1] ? parseFloat(rangeMatch[1]) : null;
+      const max = rangeMatch[2] ? parseFloat(rangeMatch[2]) : null;
+      const unit = rangeMatch[3]?.trim() || "";
+
+      if (min !== null && isNaN(min)) {
+        errors.push({ line: i + 1, message: "Invalid minimum value" });
+        continue;
+      }
+      if (max !== null && isNaN(max)) {
+        errors.push({ line: i + 1, message: "Invalid maximum value" });
+        continue;
+      }
+
+      ranges[key] = { min, max, unit };
+      continue;
+    }
+
+    const openEndedMatch = value.match(/^([<>])\s*([\d.]+)\s*(.*)$/);
+    if (openEndedMatch) {
+      const operator = openEndedMatch[1];
+      const num = parseFloat(openEndedMatch[2]);
+      const unit = openEndedMatch[3]?.trim() || "";
+
+      if (isNaN(num)) {
+        errors.push({ line: i + 1, message: "Invalid numeric value" });
+        continue;
+      }
+
+      ranges[key] = {
+        min: operator === ">" ? num : null,
+        max: operator === "<" ? num : null,
+        unit,
+      };
+      continue;
+    }
+
+    ranges[key] = value;
+  }
+
+  return {
+    parsed: ranges,
+    errors,
+    valid: errors.length === 0,
+  };
+};
+
+const formatPrice = (price) => {
+  if (!price && price !== 0) return "Not set";
+  return USD_CURRENCY_FORMATTER.format(price);
+};
+
+const getCustomizeKey = (item, type) => [
+  type,
+  item.id,
+  item.price ?? "",
+  item.tat_hours ?? "",
+  item.is_active !== false,
+  JSON.stringify(item.reference_ranges || {}),
+].join(":");
 
 /**
  * LabTestCustomizeSlideOver - Chronicle-styled slide-over for customizing lab tests
@@ -63,193 +236,53 @@ const LabTestCustomizeSlideOver = ({
   const customizeMutation = isPanel ? customizePanel : customizeTest;
   const resetMutation = isPanel ? resetPanel : resetTest;
 
-  // Form state
-  const [formData, setFormData] = useState({
-    price: "",
-    tat_hours: "",
-    is_active: true,
-    reference_ranges: {},
-  });
+  if (!item) return null;
 
-  const [errors, setErrors] = useState({});
+  return (
+    <LabTestCustomizeSlideOverContent
+      key={getCustomizeKey(item, type)}
+      open={open}
+      onClose={onClose}
+      item={item}
+      isPanel={isPanel}
+      onSuccess={onSuccess}
+      customizeMutation={customizeMutation}
+      resetMutation={resetMutation}
+    />
+  );
+};
 
-  // Reference range editing state (for tests only)
-  const [referenceRangeText, setReferenceRangeText] = useState("");
-
-  // Initialize form when item changes
-  useEffect(() => {
-    if (item) {
-      setFormData({
-        price: item.price || "",
-        tat_hours: item.tat_hours || "",
-        is_active: item.is_active !== false,
-        reference_ranges: item.reference_ranges || {},
-      });
-
-      // Convert reference ranges to editable text format
-      if (item.reference_ranges && !isPanel) {
-        const rangeText = Object.entries(item.reference_ranges)
-          .map(([key, value]) => {
-            if (typeof value === "object") {
-              return `${key}: ${value.min || ""}-${value.max || ""} ${value.unit || ""}`;
-            }
-            return `${key}: ${value}`;
-          })
-          .join("\n");
-        setReferenceRangeText(rangeText);
-      } else {
-        setReferenceRangeText("");
-      }
-
-      setErrors({});
-    }
-  }, [item, isPanel]);
+const LabTestCustomizeSlideOverContent = ({
+  open,
+  onClose,
+  item,
+  isPanel,
+  onSuccess,
+  customizeMutation,
+  resetMutation,
+}) => {
+  const [{ formData, errors, referenceRangeText }, dispatch] = useReducer(
+    formReducer,
+    item,
+    (initialItem) => createInitialState(initialItem, isPanel)
+  );
 
   // Handle input change
   const handleChange = (field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-
-    // Clear error for this field
-    if (errors[field]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
-  };
-
-  // Validate form
-  const validate = () => {
-    const newErrors = {};
-
-    if (formData.price && isNaN(parseFloat(formData.price))) {
-      newErrors.price = "Price must be a valid number";
-    }
-
-    if (formData.price && parseFloat(formData.price) < 0) {
-      newErrors.price = "Price cannot be negative";
-    }
-
-    if (formData.tat_hours && isNaN(parseInt(formData.tat_hours))) {
-      newErrors.tat_hours = "TAT must be a valid number";
-    }
-
-    if (formData.tat_hours && parseInt(formData.tat_hours) < 1) {
-      newErrors.tat_hours = "TAT must be at least 1 hour";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // Parse reference ranges from text with improved handling
-  const parseReferenceRanges = (text = referenceRangeText) => {
-    if (!text || !text.trim()) return { parsed: {}, errors: [], valid: true };
-
-    const ranges = {};
-    const errors = [];
-    const lines = text.split("\n").filter((l) => l.trim());
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const colonIndex = line.indexOf(":");
-
-      if (colonIndex === -1) {
-        errors.push({ line: i + 1, message: "Missing colon separator" });
-        continue;
-      }
-
-      const key = line.substring(0, colonIndex).trim();
-      const value = line.substring(colonIndex + 1).trim();
-
-      if (!key) {
-        errors.push({ line: i + 1, message: "Missing population name" });
-        continue;
-      }
-
-      if (!value) {
-        errors.push({ line: i + 1, message: "Missing value" });
-        continue;
-      }
-
-      // Try different formats:
-      // 1. Range format: "4.5-11.0 K/uL" or "4.5 - 11.0 K/uL"
-      // 2. Open-ended: ">5.0 K/uL" or "<10 K/uL"
-      // 3. Single value with unit: "7.0 pH"
-
-      // Range format with optional spaces
-      const rangeMatch = value.match(/^([\d.]+)?\s*[-–]\s*([\d.]+)?\s*(.*)$/);
-      if (rangeMatch) {
-        const min = rangeMatch[1] ? parseFloat(rangeMatch[1]) : null;
-        const max = rangeMatch[2] ? parseFloat(rangeMatch[2]) : null;
-        const unit = rangeMatch[3]?.trim() || "";
-
-        if (min !== null && isNaN(min)) {
-          errors.push({ line: i + 1, message: "Invalid minimum value" });
-          continue;
-        }
-        if (max !== null && isNaN(max)) {
-          errors.push({ line: i + 1, message: "Invalid maximum value" });
-          continue;
-        }
-
-        ranges[key] = { min, max, unit };
-        continue;
-      }
-
-      // Open-ended format: >5.0 or <10
-      const openEndedMatch = value.match(/^([<>])\s*([\d.]+)\s*(.*)$/);
-      if (openEndedMatch) {
-        const operator = openEndedMatch[1];
-        const num = parseFloat(openEndedMatch[2]);
-        const unit = openEndedMatch[3]?.trim() || "";
-
-        if (isNaN(num)) {
-          errors.push({ line: i + 1, message: "Invalid numeric value" });
-          continue;
-        }
-
-        ranges[key] = {
-          min: operator === ">" ? num : null,
-          max: operator === "<" ? num : null,
-          unit,
-        };
-        continue;
-      }
-
-      // Fallback: store as plain string
-      ranges[key] = value;
-    }
-
-    return {
-      parsed: ranges,
-      errors,
-      valid: errors.length === 0,
-    };
+    dispatch({ type: "field_changed", field, value });
   };
 
   // Get live preview of parsed ranges
-  const parsedPreview = parseReferenceRanges();
-
-  // Population labels for display
-  const populationLabels = {
-    adult_male: "Adult Male",
-    adult_female: "Adult Female",
-    adult: "Adult",
-    pediatric: "Pediatric",
-    child: "Child",
-    infant: "Infant",
-    elderly: "Elderly",
-    pregnant: "Pregnant",
-  };
+  const parsedPreview = useMemo(
+    () => parseReferenceRanges(referenceRangeText),
+    [referenceRangeText]
+  );
 
   // Handle submit
   const handleSubmit = async () => {
-    if (!validate()) return;
+    const newErrors = validateFormData(formData);
+    dispatch({ type: "validated", errors: newErrors });
+    if (Object.keys(newErrors).length > 0) return;
 
     const data = {};
 
@@ -266,7 +299,7 @@ const LabTestCustomizeSlideOver = ({
 
     // Parse and include reference ranges for tests
     if (!isPanel && referenceRangeText.trim()) {
-      const result = parseReferenceRanges();
+      const result = parseReferenceRanges(referenceRangeText);
       if (!result.valid) {
         toast.error("Invalid reference ranges format", {
           description: result.errors.map(e => `Line ${e.line}: ${e.message}`).join(", "),
@@ -313,14 +346,6 @@ const LabTestCustomizeSlideOver = ({
 
   // Get system default values for comparison
   const systemDefaults = item?.system_defaults || {};
-
-  // Format price for display
-  const formatPrice = (price) => {
-    if (!price && price !== 0) return "Not set";
-    return USD_CURRENCY_FORMATTER.format(price);
-  };
-
-  if (!item) return null;
 
   return (
     <div
@@ -454,7 +479,12 @@ adult_male: 4.5-5.5 M/uL
 adult_female: 4.0-5.0 M/uL
 pediatric: 3.8-5.2 M/uL`}
                 value={referenceRangeText}
-                onChange={(e) => setReferenceRangeText(e.target.value)}
+                onChange={(e) =>
+                  dispatch({
+                    type: "reference_ranges_changed",
+                    value: e.target.value,
+                  })
+                }
                 className={cn(
                   "font-mono min-h-[120px] text-sm",
                   !parsedPreview.valid && "border-amber-500"
@@ -524,7 +554,7 @@ pediatric: 3.8-5.2 M/uL`}
                           className="flex items-center justify-between py-1 px-2 bg-background/50 rounded text-xs"
                         >
                           <span className="font-medium text-foreground">
-                            {populationLabels[key] || key}
+                            {POPULATION_LABELS[key] || key}
                           </span>
                           <span className="font-mono text-muted-foreground">
                             {typeof value === "object"

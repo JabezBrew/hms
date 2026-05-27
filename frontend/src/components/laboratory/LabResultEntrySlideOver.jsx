@@ -6,7 +6,7 @@ import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ArrowDown from 'lucide-react/dist/esm/icons/arrow-down.js';
 import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,73 @@ import { Progress } from "@/components/ui/progress";
 
 import { toast } from "sonner";
 import { useBulkCreateLabResults } from "@/features/laboratory/hooks";
+
+const FLAG_CONFIGS = {
+  normal: { label: "Normal", className: "bg-emerald-100 text-emerald-700 border-emerald-300" },
+  low: { label: "Low", className: "bg-amber-100 text-amber-700 border-amber-300", icon: ArrowDown },
+  high: { label: "High", className: "bg-amber-100 text-amber-700 border-amber-300", icon: ArrowUp },
+  critical_low: { label: "Critical Low", className: "bg-rose-100 text-rose-700 border-rose-300", icon: ArrowDown },
+  critical_high: { label: "Critical High", className: "bg-rose-100 text-rose-700 border-rose-300", icon: ArrowUp },
+};
+
+const calculateFlag = (value, refLow, refHigh) => {
+  if (!value || value.trim() === "") return null;
+
+  const numValue = parseFloat(value);
+  if (isNaN(numValue)) return null;
+
+  // Critical thresholds (50% outside range)
+  if (refLow !== null && numValue < refLow * 0.5) return "critical_low";
+  if (refHigh !== null && numValue > refHigh * 1.5) return "critical_high";
+
+  // Abnormal thresholds
+  if (refLow !== null && numValue < refLow) return "low";
+  if (refHigh !== null && numValue > refHigh) return "high";
+
+  return "normal";
+};
+
+const createInitialResults = (order) => {
+  if (!order?.order_tests) return [];
+
+  return order.order_tests.reduce((pendingResults, orderTest) => {
+    const refRanges = orderTest.test?.reference_ranges || {};
+    const defaultPopulation = refRanges.adult_male || refRanges.adult || Object.values(refRanges)[0] || {};
+
+    const result = {
+      order_test_id: orderTest.id,
+      test_name: orderTest.test?.name || orderTest.test?.short_name || "Unknown",
+      test_code: orderTest.test?.code || "",
+      value: "",
+      unit: defaultPopulation.unit || orderTest.test?.unit || "",
+      reference_low: defaultPopulation.low || defaultPopulation.min || null,
+      reference_high: defaultPopulation.high || defaultPopulation.max || null,
+      flag: null,
+      hasExistingResult: orderTest.result != null,
+    };
+
+    if (!result.hasExistingResult) {
+      pendingResults.push(result);
+    }
+
+    return pendingResults;
+  }, []);
+};
+
+const getResultEntryKey = (order) => {
+  if (!order) return "no-order";
+
+  const testsKey = (order.order_tests || [])
+    .map((orderTest) => [
+      orderTest.id,
+      orderTest.result != null,
+      orderTest.test?.unit || "",
+      JSON.stringify(orderTest.test?.reference_ranges || {}),
+    ].join(":"))
+    .join("|");
+
+  return `${order.id}:${testsKey}`;
+};
 
 /**
  * LabResultEntrySlideOver - Chronicle-styled slide-over for bulk lab result entry
@@ -34,72 +101,47 @@ const LabResultEntrySlideOver = ({
   specimen,
   onSuccess,
 }) => {
+  const bulkCreateMutation = useBulkCreateLabResults();
+
+  return (
+    <LabResultEntrySlideOverContent
+      key={getResultEntryKey(order)}
+      open={open}
+      onClose={onClose}
+      order={order}
+      specimen={specimen}
+      onSuccess={onSuccess}
+      bulkCreateMutation={bulkCreateMutation}
+    />
+  );
+};
+
+const LabResultEntrySlideOverContent = ({
+  open,
+  onClose,
+  order,
+  specimen,
+  onSuccess,
+  bulkCreateMutation,
+}) => {
   // State for test results
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState(() => createInitialResults(order));
   const [focusedIndex, setFocusedIndex] = useState(0);
   const inputRefs = useRef([]);
 
-  // Mutation
-  const bulkCreateMutation = useBulkCreateLabResults();
-
-  // Initialize results from order tests
-  useEffect(() => {
-    if (order?.order_tests && open) {
-      const initialResults = order.order_tests.reduce((pendingResults, orderTest) => {
-        // Parse reference ranges from test catalog
-        const refRanges = orderTest.test?.reference_ranges || {};
-        // Default to adult_male or first available population
-        const defaultPopulation = refRanges.adult_male || refRanges.adult || Object.values(refRanges)[0] || {};
-
-        const result = {
-          order_test_id: orderTest.id,
-          test_name: orderTest.test?.name || orderTest.test?.short_name || "Unknown",
-          test_code: orderTest.test?.code || "",
-          value: "",
-          unit: defaultPopulation.unit || orderTest.test?.unit || "",
-          reference_low: defaultPopulation.low || defaultPopulation.min || null,
-          reference_high: defaultPopulation.high || defaultPopulation.max || null,
-          flag: null,
-          hasExistingResult: orderTest.result != null,
-        };
-        if (!result.hasExistingResult) {
-          pendingResults.push(result);
-        }
-        return pendingResults;
-      }, []); // Only show tests without existing results
-
-      setResults(initialResults);
-      setFocusedIndex(0);
-    }
-  }, [order, open]);
-
-  // Calculate flag based on value and reference range
-  const calculateFlag = useCallback((value, refLow, refHigh) => {
-    if (!value || value.trim() === "") return null;
-
-    const numValue = parseFloat(value);
-    if (isNaN(numValue)) return null;
-
-    // Critical thresholds (50% outside range)
-    if (refLow !== null && numValue < refLow * 0.5) return "critical_low";
-    if (refHigh !== null && numValue > refHigh * 1.5) return "critical_high";
-
-    // Abnormal thresholds
-    if (refLow !== null && numValue < refLow) return "low";
-    if (refHigh !== null && numValue > refHigh) return "high";
-
-    return "normal";
-  }, []);
-
   // Update a result value
   const handleValueChange = (index, value) => {
-    setResults((prev) => {
-      const updated = [...prev];
-      const result = updated[index];
-      result.value = value;
-      result.flag = calculateFlag(value, result.reference_low, result.reference_high);
-      return updated;
-    });
+    setResults((prev) =>
+      prev.map((result, resultIndex) =>
+        resultIndex === index
+          ? {
+              ...result,
+              value,
+              flag: calculateFlag(value, result.reference_low, result.reference_high),
+            }
+          : result
+      )
+    );
   };
 
   // Handle Enter key - move to next row
@@ -126,21 +168,22 @@ const LabResultEntrySlideOver = ({
     }
   };
 
+  const validResults = useMemo(
+    () => results.filter((r) => r.value && r.value.trim() !== ""),
+    [results]
+  );
+  const criticalResults = useMemo(
+    () => results.filter((r) => r.flag === "critical_low" || r.flag === "critical_high"),
+    [results]
+  );
+
   // Calculate progress
-  const enteredCount = results.filter((r) => r.value && r.value.trim() !== "").length;
+  const enteredCount = validResults.length;
   const totalCount = results.length;
   const progressPercent = totalCount > 0 ? (enteredCount / totalCount) * 100 : 0;
 
-  // Check for critical values
-  const criticalResults = results.filter(
-    (r) => r.flag === "critical_low" || r.flag === "critical_high"
-  );
-
   // Handle save
   const handleSave = async () => {
-    // Validate - at least one result entered
-    const validResults = results.filter((r) => r.value && r.value.trim() !== "");
-
     if (validResults.length === 0) {
       toast.error("No results to save", {
         description: "Enter at least one result value before saving",
@@ -184,27 +227,17 @@ const LabResultEntrySlideOver = ({
     }
   };
 
-  // Get flag display
-  const getFlagDisplay = (flag) => {
-    const configs = {
-      normal: { label: "Normal", className: "bg-emerald-100 text-emerald-700 border-emerald-300" },
-      low: { label: "Low", className: "bg-amber-100 text-amber-700 border-amber-300", icon: ArrowDown },
-      high: { label: "High", className: "bg-amber-100 text-amber-700 border-amber-300", icon: ArrowUp },
-      critical_low: { label: "Critical Low", className: "bg-rose-100 text-rose-700 border-rose-300", icon: ArrowDown },
-      critical_high: { label: "Critical High", className: "bg-rose-100 text-rose-700 border-rose-300", icon: ArrowUp },
-    };
-    return configs[flag] || null;
-  };
-
   const isSubmitting = bulkCreateMutation.isPending;
 
   return (
-    <div
-      role="dialog"
+    <dialog
+      open
       aria-modal="true"
+      aria-hidden={!open}
       aria-labelledby="result-entry-title"
       className={cn(
         "fixed inset-y-0 right-0 z-[100] w-full lg:w-2/3 xl:w-1/2 bg-background border-l border-border",
+        "m-0 max-h-none max-w-none p-0",
         "transform transition-transform duration-300 ease-in-out",
         "flex flex-col shadow-2xl",
         open ? "translate-x-0" : "translate-x-full"
@@ -279,7 +312,7 @@ const LabResultEntrySlideOver = ({
             {/* Table Body */}
             <div className="divide-y divide-border">
               {results.map((result, index) => {
-                const flagConfig = getFlagDisplay(result.flag);
+                const flagConfig = FLAG_CONFIGS[result.flag] || null;
                 const isActive = focusedIndex === index;
 
                 return (
@@ -400,7 +433,7 @@ const LabResultEntrySlideOver = ({
           </div>
         </div>
       </footer>
-    </div>
+    </dialog>
   );
 };
 
