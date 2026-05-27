@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, handleApiError } from '@/lib/api-client';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
-import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { keyWith } from '@/shared/lib/queryKeys';
 import { authApi } from '@/shared/api/auth';
 
 /**
@@ -117,23 +117,9 @@ const settingsApi = {
       throw new Error(handleApiError(error, 'Failed to confirm TOTP setup'));
     }
   },
-
-  mfaRecoveryGenerate: async () => {
-    try {
-      return await authApi.mfaRecoveryGenerate();
-    } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to generate recovery codes'));
-    }
-  },
 };
 
-/**
- * Query key factory for settings
- */
-const settingsKeyFactory = createKeyFactory('settings');
-
-export const settingsKeys = {
-  all: settingsKeyFactory.all,
+const settingsKeys = {
   profile: () => keyWith('settings', 'profile'),
   sessions: () => keyWith('settings', 'sessions'),
   mfaStatus: () => keyWith('settings', 'mfaStatus'),
@@ -247,20 +233,6 @@ export function useMfaTotpConfirm() {
 
   return useMutation({
     mutationFn: settingsApi.mfaTotpConfirm,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: settingsKeys.mfaStatus() });
-    },
-  });
-}
-
-/**
- * Hook to generate or rotate recovery codes.
- */
-export function useMfaRecoveryGenerate() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: settingsApi.mfaRecoveryGenerate,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: settingsKeys.mfaStatus() });
     },

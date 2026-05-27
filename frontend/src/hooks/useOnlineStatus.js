@@ -27,14 +27,6 @@ const onlineStatusStore = {
     return ONLINE_SERVER_SNAPSHOT; // Assume online during SSR
   },
 
-  getIsOnlineSnapshot() {
-    return this.snapshot.isOnline;
-  },
-
-  getIsOnlineServerSnapshot() {
-    return true;
-  },
-
   setOnlineStatus(isOnline) {
     if (this.snapshot.isOnline === isOnline) {
       return;
@@ -68,32 +60,10 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * useOnlineStatus - Hook for tracking online/offline status
- *
- * Uses a shared singleton store to avoid duplicate event listeners.
- * All components using this hook share the same underlying listener.
- *
- * @returns {boolean} - Whether the browser is online
- *
- * @example
- * function ConnectionStatus() {
- *   const isOnline = useOnlineStatus();
- *   return <div>{isOnline ? 'Online' : 'Offline'}</div>;
- * }
- */
-export function useOnlineStatus() {
-  return useSyncExternalStore(
-    (callback) => onlineStatusStore.subscribe(callback),
-    () => onlineStatusStore.getIsOnlineSnapshot(),
-    () => onlineStatusStore.getIsOnlineServerSnapshot()
-  );
-}
-
-/**
  * useOnlineStatusWithReconnect - Hook that tracks online status and reconnection events
  *
- * Extends useOnlineStatus to also track when the connection is restored,
- * useful for showing "back online" notifications.
+ * Tracks the shared online snapshot and when the connection is restored,
+ * which is useful for showing "back online" notifications.
  *
  * @returns {Object} - { isOnline, wasOffline, showReconnected, clearReconnected }
  *

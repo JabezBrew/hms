@@ -8,7 +8,7 @@ import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import CircleDot from 'lucide-react/dist/esm/icons/circle-dot.js';
 import { useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,9 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { PageHeader } from '@/shared/components/page/PageHeader';
-import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
-import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import {
   Tooltip,
   TooltipContent,
@@ -145,7 +143,7 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
 }
 
 // Day cell showing dose indicators
-function DayDoses({ dayData, medication, date, isToday, onAdminister }) {
+function DayDoses({ dayData, medication, date, onAdminister }) {
   if (!dayData) return <span className="text-slate-300">-</span>;
 
   const { doses, doses_given, doses_required } = dayData;
@@ -238,7 +236,6 @@ function MedicationRow({ medication, dateHeaders, onAdminister }) {
               dayData={medication.days?.[header.date]}
               medication={medication}
               date={header.date}
-              isToday={header.is_today}
               onAdminister={onAdminister}
             />
           </div>
@@ -526,25 +523,5 @@ function TreatmentSheetActions({
         </Button>
       </div>
     </div>
-  );
-}
-
-export default function TreatmentSheetPage() {
-  const [searchParams] = useSearchParams();
-  const admissionId = searchParams.get('admission');
-
-  const pageMeta = usePageMeta({
-    title: 'Medication Administration Record | HMS',
-    breadcrumbs: [
-      { label: 'Nursing', href: '/dashboards/nurse' },
-      { label: 'Medication Administration Record' },
-    ],
-  });
-
-  return (
-    <PageShell>
-      {pageMeta}
-      <TreatmentSheetContent admissionId={admissionId} />
-    </PageShell>
   );
 }
