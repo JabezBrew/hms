@@ -176,6 +176,747 @@ const getInitialStructure = (initialTemplate) => {
   return [];
 };
 
+function TemplateBuilderSteps({ currentStep, onGoToStep }) {
+  return (
+    <div className="p-4 sm:px-6 border-b border-border bg-muted/30">
+      <div className="flex items-center justify-center gap-1 sm:gap-2">
+        {STEPS.map((step, index) => {
+          const StepIcon = step.icon;
+          const isActive = currentStep === step.id;
+          const isCompleted = currentStep > step.id;
+          const isConnectorCompleted = currentStep >= step.id;
+
+          return (
+            <div key={step.id} className="flex items-center">
+              {index > 0 ? (
+                <div
+                  className={cn(
+                    'h-px w-6 sm:w-10 mx-1 sm:mx-2',
+                    isConnectorCompleted ? 'bg-amber-500' : 'bg-border',
+                  )}
+                />
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  void onGoToStep(step.id);
+                }}
+                className={cn(
+                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg transition-all',
+                  isActive ? 'bg-amber-100 dark:bg-amber-900/30' : 'hover:bg-muted',
+                )}
+              >
+                <span
+                  className={cn(
+                    'size-6 rounded-full flex items-center justify-center text-[10px] font-mono',
+                    isCompleted || isActive
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {isCompleted ? <Check className="size-3.5" /> : step.id}
+                </span>
+                <span
+                  className={cn(
+                    'hidden sm:inline font-mono text-xs',
+                    isActive ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {step.name}
+                </span>
+                <StepIcon className="sm:hidden size-3.5 text-muted-foreground" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TemplateBasicsStep({ errors, register, setValue, watch }) {
+  return (
+    <section className="space-y-5 animate-chronicle-enter">
+      <div>
+        <h2 className="font-display text-xl text-foreground">Template Basics</h2>
+        <p className="font-mono text-xs text-muted-foreground mt-1">
+          Define identity and workflow intent for this note template.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="title" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Template Title *
+        </Label>
+        <Input
+          id="title"
+          {...register('title', { required: true })}
+          placeholder="e.g., SOAP Note, Nursing Shift Note"
+          className="font-mono"
+        />
+        {errors.title ? <p className="text-xs text-rose-600">Template title is required.</p> : null}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="description" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Description
+        </Label>
+        <Textarea
+          id="description"
+          {...register('description')}
+          placeholder="Describe when this template should be used."
+          rows={3}
+          className="font-mono text-sm resize-none"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <TemplateCategorySelect setValue={setValue} watch={watch} />
+        <TemplateIconSelect setValue={setValue} watch={watch} />
+        <TemplateModeSelect setValue={setValue} watch={watch} />
+      </div>
+
+      <div className="space-y-2 max-w-sm">
+        <Label htmlFor="estimated_steps" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Estimated Steps
+        </Label>
+        <Input
+          id="estimated_steps"
+          type="number"
+          min="1"
+          max="10"
+          className="font-mono"
+          {...register('estimated_steps', {
+            valueAsNumber: true,
+            required: true,
+            min: 1,
+            max: 10,
+          })}
+        />
+        {errors.estimated_steps ? (
+          <p className="text-xs text-rose-600">Estimated steps must be between 1 and 10.</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function TemplateCategorySelect({ setValue, watch }) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Category
+      </Label>
+      <Select
+        value={watch('category')}
+        onValueChange={(value) => setValue('category', value, { shouldDirty: true })}
+      >
+        <SelectTrigger className="font-mono">
+          <SelectValue placeholder="Select category" />
+        </SelectTrigger>
+        <SelectContent>
+          {CATEGORY_OPTIONS.map((option) => {
+            const Icon = option.icon;
+            return (
+              <SelectItem key={option.value} value={option.value} className="font-mono">
+                <div className="flex items-center gap-2">
+                  <Icon className="size-4" />
+                  <span>{option.label}</span>
+                </div>
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function TemplateIconSelect({ setValue, watch }) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Icon
+      </Label>
+      <Select
+        value={watch('icon')}
+        onValueChange={(value) => setValue('icon', value, { shouldDirty: true })}
+      >
+        <SelectTrigger className="font-mono">
+          <SelectValue placeholder="Select icon" />
+        </SelectTrigger>
+        <SelectContent>
+          {ICON_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function TemplateModeSelect({ setValue, watch }) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Template Mode
+      </Label>
+      <Select
+        value={watch('template_mode')}
+        onValueChange={(value) => setValue('template_mode', value, { shouldDirty: true })}
+      >
+        <SelectTrigger className="font-mono">
+          <SelectValue placeholder="Select mode" />
+        </SelectTrigger>
+        <SelectContent>
+          {TEMPLATE_MODE_OPTIONS.map((modeOption) => (
+            <SelectItem key={modeOption.value} value={modeOption.value} className="font-mono">
+              {modeOption.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function TemplateAccessStep({ errors, register, setValue, visibility, watch }) {
+  return (
+    <section className="space-y-5 animate-chronicle-enter">
+      <div>
+        <h2 className="font-display text-xl text-foreground">Visibility & Status</h2>
+        <p className="font-mono text-xs text-muted-foreground mt-1">
+          Control who can discover and apply this template.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {VISIBILITY_OPTIONS.map((option) => (
+          <VisibilityOptionButton
+            key={option.value}
+            option={option}
+            selected={visibility === option.value}
+            onSelect={() => setValue('visibility', option.value, { shouldDirty: true })}
+          />
+        ))}
+      </div>
+
+      {visibility === 'department' ? (
+        <div className="space-y-2 max-w-md">
+          <Label htmlFor="department" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Department *
+          </Label>
+          <Input
+            id="department"
+            {...register('department', {
+              validate: (value) => {
+                if (watch('visibility') !== 'department') {
+                  return true;
+                }
+                return Boolean(value?.trim());
+              },
+            })}
+            placeholder="e.g., Cardiology, Emergency, Nursing"
+            className="font-mono"
+          />
+          {errors.department ? (
+            <p className="text-xs text-rose-600">Department is required for department visibility.</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card/50">
+        <div>
+          <p className="font-mono text-sm text-foreground">Active Template</p>
+          <p className="font-mono text-[11px] text-muted-foreground mt-1">
+            Inactive templates are hidden from routine template selection.
+          </p>
+        </div>
+        <Switch
+          id="is_active"
+          checked={Boolean(watch('is_active'))}
+          onCheckedChange={(checked) => setValue('is_active', checked, { shouldDirty: true })}
+        />
+      </div>
+    </section>
+  );
+}
+
+function VisibilityOptionButton({ option, selected, onSelect }) {
+  const Icon = option.icon;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'p-4 rounded-xl border text-left transition-all',
+        selected
+          ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+          : 'border-border hover:border-primary/30',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            'mt-0.5 p-1.5 rounded-md',
+            selected ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground',
+          )}
+        >
+          <Icon className="size-3.5" />
+        </span>
+        <div>
+          <p className="font-mono text-sm text-foreground">{option.label}</p>
+          <p className="font-mono text-[11px] text-muted-foreground mt-1">{option.description}</p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function TemplateStructureStep({
+  addSection,
+  applyQuickStart,
+  errors,
+  fields,
+  move,
+  register,
+  remove,
+  setValue,
+  watch,
+}) {
+  return (
+    <section className="space-y-5 animate-chronicle-enter">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-display text-xl text-foreground">Template Structure</h2>
+          <p className="font-mono text-xs text-muted-foreground mt-1">
+            Build the section flow clinicians will complete at bedside.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+          onClick={addSection}
+        >
+          <PlusCircle className="size-3.5 mr-1.5" />
+          Add Section
+        </Button>
+      </div>
+
+      <QuickStartPanel onApplyQuickStart={applyQuickStart} />
+
+      {fields.length === 0 ? (
+        <TemplateStructureEmptyState />
+      ) : (
+        <div className="space-y-3">
+          {fields.map((field, index) => (
+            <TemplateSectionCard
+              key={field.id}
+              errors={errors}
+              fieldsLength={fields.length}
+              index={index}
+              move={move}
+              register={register}
+              remove={remove}
+              setValue={setValue}
+              watch={watch}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function QuickStartPanel({ onApplyQuickStart }) {
+  return (
+    <div className="rounded-xl border border-border p-4 bg-muted/20">
+      <div className="flex items-center gap-2 mb-3">
+        <Sparkles className="size-4 text-amber-600" />
+        <p className="font-mono text-xs text-foreground">Quick Start</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {QUICK_STARTS.map((template) => (
+          <Button
+            key={template.value}
+            type="button"
+            variant="outline"
+            size="sm"
+            className="font-mono text-[11px]"
+            onClick={() => onApplyQuickStart(template.value)}
+          >
+            {template.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TemplateStructureEmptyState() {
+  return (
+    <div className="text-center py-12 rounded-xl border border-dashed border-border">
+      <ListOrdered className="size-10 mx-auto text-muted-foreground opacity-60" />
+      <p className="font-mono text-sm text-muted-foreground mt-3">No sections added yet.</p>
+      <p className="font-mono text-[11px] text-muted-foreground mt-1">
+        Add a section or apply a quick start template.
+      </p>
+    </div>
+  );
+}
+
+function TemplateSectionCard({
+  errors,
+  fieldsLength,
+  index,
+  move,
+  register,
+  remove,
+  setValue,
+  watch,
+}) {
+  const currentType = watch(`structure.${index}.type`) || 'text';
+  const isObservation = currentType === 'observation';
+
+  return (
+    <div className="relative rounded-xl border border-border bg-card/60 p-4 sm:p-5">
+      <TemplateSectionActions
+        fieldsLength={fieldsLength}
+        index={index}
+        move={move}
+        remove={remove}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label
+            htmlFor={`structure.${index}.section`}
+            className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+          >
+            Section Name *
+          </Label>
+          <Input
+            id={`structure.${index}.section`}
+            {...register(`structure.${index}.section`, { required: true })}
+            placeholder="e.g., Chief Complaint, Examination"
+            className="font-mono"
+          />
+          {errors.structure?.[index]?.section ? (
+            <p className="text-xs text-rose-600">Section name is required.</p>
+          ) : null}
+        </div>
+
+        <TemplateSectionTypeSelect
+          currentType={currentType}
+          index={index}
+          setValue={setValue}
+        />
+
+        {isObservation ? (
+          <TemplateObservationTypeSelect
+            index={index}
+            setValue={setValue}
+            watch={watch}
+          />
+        ) : null}
+
+        <div className="space-y-2 md:col-span-2">
+          <Label
+            htmlFor={`structure.${index}.default_text`}
+            className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+          >
+            Starter Text
+          </Label>
+          <Textarea
+            id={`structure.${index}.default_text`}
+            {...register(`structure.${index}.default_text`)}
+            rows={3}
+            placeholder="Optional default wording. Supports placeholders like {{patient_name}}, {{age}}, {{today}}."
+            className="font-mono text-xs resize-none"
+          />
+        </div>
+
+        <TemplateRequiredToggle index={index} setValue={setValue} watch={watch} />
+      </div>
+    </div>
+  );
+}
+
+function TemplateSectionActions({ fieldsLength, index, move, remove }) {
+  return (
+    <div className="absolute top-3 right-3 flex items-center gap-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        onClick={() => move(index, Math.max(index - 1, 0))}
+        disabled={index === 0}
+      >
+        <MoveUp className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        onClick={() => move(index, Math.min(index + 1, fieldsLength - 1))}
+        disabled={index === fieldsLength - 1}
+      >
+        <MoveDown className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7 text-rose-500 hover:text-rose-600"
+        onClick={() => remove(index)}
+      >
+        <Trash2 className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+function TemplateSectionTypeSelect({ currentType, index, setValue }) {
+  return (
+    <div className="space-y-2">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Section Type
+      </Label>
+      <Select
+        value={currentType}
+        onValueChange={(value) => {
+          setValue(`structure.${index}.type`, value, { shouldDirty: true });
+          if (value !== 'observation') {
+            setValue(`structure.${index}.observation_type`, '', { shouldDirty: true });
+          }
+        }}
+      >
+        <SelectTrigger className="font-mono">
+          <SelectValue placeholder="Select type" />
+        </SelectTrigger>
+        <SelectContent>
+          {SECTION_TYPES.map((typeOption) => (
+            <SelectItem key={typeOption.value} value={typeOption.value} className="font-mono">
+              {typeOption.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function TemplateObservationTypeSelect({ index, setValue, watch }) {
+  return (
+    <div className="space-y-2 md:col-span-2">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Observation Type
+      </Label>
+      <Select
+        value={watch(`structure.${index}.observation_type`) || undefined}
+        onValueChange={(value) =>
+          setValue(`structure.${index}.observation_type`, value, { shouldDirty: true })
+        }
+      >
+        <SelectTrigger className="font-mono">
+          <SelectValue placeholder="Select observation type" />
+        </SelectTrigger>
+        <SelectContent>
+          {OBSERVATION_TYPES.map((observationOption) => (
+            <SelectItem
+              key={observationOption.value}
+              value={observationOption.value}
+              className="font-mono"
+            >
+              {observationOption.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function TemplateRequiredToggle({ index, setValue, watch }) {
+  return (
+    <div className="md:col-span-2 flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3">
+      <div>
+        <p className="font-mono text-xs text-foreground">Required Section</p>
+        <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
+          Clinicians must complete this section before signing.
+        </p>
+      </div>
+      <Switch
+        checked={Boolean(watch(`structure.${index}.required`))}
+        onCheckedChange={(checked) =>
+          setValue(`structure.${index}.required`, checked, { shouldDirty: true })
+        }
+      />
+    </div>
+  );
+}
+
+function TemplateReviewStep({ categoryLabel, fields, visibility, watchedStructure, watch }) {
+  return (
+    <section className="space-y-5 animate-chronicle-enter">
+      <div>
+        <h2 className="font-display text-xl text-foreground">Review Template</h2>
+        <p className="font-mono text-xs text-muted-foreground mt-1">
+          Final check before saving this chronicle workflow.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-border bg-card/60 p-4">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Title</p>
+          <p className="font-display text-lg text-foreground mt-1">{watch('title') || 'Untitled Template'}</p>
+          <p className="font-mono text-xs text-muted-foreground mt-2">Category: {categoryLabel}</p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card/60 p-4">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Access</p>
+          <p className="font-mono text-sm text-foreground mt-1">{visibility || 'private'}</p>
+          <p className="font-mono text-xs text-muted-foreground mt-2">
+            {watch('is_active') ? 'Active and selectable' : 'Inactive after save'}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground mt-2">
+            Mode: {watch('template_mode') || 'structured'}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border overflow-hidden">
+        <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+          <div>
+            <p className="font-mono text-xs text-foreground">Sections</p>
+            <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+              {watchedStructure.length} section{watchedStructure.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-[10px] font-mono">
+            <CircleDot className="size-3" />
+            {watch('estimated_steps') || 0} steps
+          </span>
+        </div>
+
+        <div className="p-3 sm:p-4 space-y-2">
+          {watchedStructure.length === 0 ? (
+            <p className="font-mono text-xs text-muted-foreground">No sections configured.</p>
+          ) : (
+            fields.map((field, index) => {
+              const section = watchedStructure[index] || field;
+
+              return (
+                <TemplateReviewSectionRow
+                  key={field.id}
+                  index={index}
+                  section={section}
+                />
+              );
+            })
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TemplateReviewSectionRow({ index, section }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3">
+      <div>
+        <p className="font-mono text-sm text-foreground">
+          {section.section || `Section ${index + 1}`}
+        </p>
+        <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
+          {section.type}
+          {section.type === 'observation' && section.observation_type
+            ? ` · ${section.observation_type}`
+            : ''}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {section.default_text?.trim() ? (
+          <span className="font-mono text-[10px] text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
+            Starter text
+          </span>
+        ) : null}
+        {section.required ? (
+          <span className="font-mono text-[10px] text-rose-600 bg-rose-500/10 px-2 py-1 rounded">
+            Required
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TemplateBuilderFooter({
+  currentStep,
+  initialTemplate,
+  isDirty,
+  isSaving,
+  onNext,
+  onPrevious,
+}) {
+  return (
+    <div className="p-4 sm:px-6 border-t border-border bg-card">
+      <div className="flex items-center justify-between">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onPrevious}
+          disabled={currentStep === 1}
+          className="font-mono text-xs"
+        >
+          <ChevronLeft className="size-3.5 mr-1" />
+          Previous
+        </Button>
+
+        <div className="flex items-center gap-2">
+          {isDirty ? <span className="font-mono text-[10px] text-muted-foreground hidden sm:inline">Unsaved changes</span> : null}
+          {currentStep < STEPS.length ? (
+            <Button
+              type="button"
+              size="sm"
+              className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+              onClick={onNext}
+            >
+              Next
+              <ChevronRight className="size-3.5 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isSaving}
+              className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <Check className="size-3.5 mr-1.5" />
+                  {initialTemplate ? 'Update Template' : 'Create Template'}
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -361,615 +1102,62 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
 
   return (
     <div className="border border-border rounded-2xl bg-card overflow-hidden">
-      <div className="p-4 sm:px-6 border-b border-border bg-muted/30">
-        <div className="flex items-center justify-center gap-1 sm:gap-2">
-          {STEPS.map((step, index) => {
-            const StepIcon = step.icon;
-            const isActive = currentStep === step.id;
-            const isCompleted = currentStep > step.id;
-            const isConnectorCompleted = currentStep >= step.id;
-
-            return (
-              <div key={step.id} className="flex items-center">
-                {index > 0 ? (
-                  <div
-                    className={cn(
-                      'h-px w-6 sm:w-10 mx-1 sm:mx-2',
-                      isConnectorCompleted ? 'bg-amber-500' : 'bg-border',
-                    )}
-                  />
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    void goToStep(step.id);
-                  }}
-                  className={cn(
-                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg transition-all',
-                    isActive ? 'bg-amber-100 dark:bg-amber-900/30' : 'hover:bg-muted',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'size-6 rounded-full flex items-center justify-center text-[10px] font-mono',
-                      isCompleted || isActive
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {isCompleted ? <Check className="size-3.5" /> : step.id}
-                  </span>
-                  <span
-                    className={cn(
-                      'hidden sm:inline font-mono text-xs',
-                      isActive ? 'text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    {step.name}
-                  </span>
-                  <StepIcon className="sm:hidden size-3.5 text-muted-foreground" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <TemplateBuilderSteps currentStep={currentStep} onGoToStep={goToStep} />
 
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="p-4 sm:p-6 space-y-6 min-h-[420px]">
           {currentStep === 1 ? (
-            <section className="space-y-5 animate-chronicle-enter">
-              <div>
-                <h2 className="font-display text-xl text-foreground">Template Basics</h2>
-                <p className="font-mono text-xs text-muted-foreground mt-1">
-                  Define identity and workflow intent for this note template.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="title" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Template Title *
-                </Label>
-                <Input
-                  id="title"
-                  {...register('title', { required: true })}
-                  placeholder="e.g., SOAP Note, Nursing Shift Note"
-                  className="font-mono"
-                />
-                {errors.title ? <p className="text-xs text-rose-600">Template title is required.</p> : null}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Description
-                </Label>
-                <Textarea
-                  id="description"
-                  {...register('description')}
-                  placeholder="Describe when this template should be used."
-                  rows={3}
-                  className="font-mono text-sm resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Category
-                  </Label>
-                  <Select
-                    value={watch('category')}
-                    onValueChange={(value) => setValue('category', value, { shouldDirty: true })}
-                  >
-                    <SelectTrigger className="font-mono">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CATEGORY_OPTIONS.map((option) => {
-                        const Icon = option.icon;
-                        return (
-                          <SelectItem key={option.value} value={option.value} className="font-mono">
-                            <div className="flex items-center gap-2">
-                              <Icon className="size-4" />
-                              <span>{option.label}</span>
-                            </div>
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Icon
-                  </Label>
-                  <Select
-                    value={watch('icon')}
-                    onValueChange={(value) => setValue('icon', value, { shouldDirty: true })}
-                  >
-                    <SelectTrigger className="font-mono">
-                      <SelectValue placeholder="Select icon" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ICON_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value} className="font-mono">
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Template Mode
-                  </Label>
-                  <Select
-                    value={watch('template_mode')}
-                    onValueChange={(value) => setValue('template_mode', value, { shouldDirty: true })}
-                  >
-                    <SelectTrigger className="font-mono">
-                      <SelectValue placeholder="Select mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TEMPLATE_MODE_OPTIONS.map((modeOption) => (
-                        <SelectItem key={modeOption.value} value={modeOption.value} className="font-mono">
-                          {modeOption.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2 max-w-sm">
-                <Label htmlFor="estimated_steps" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Estimated Steps
-                </Label>
-                <Input
-                  id="estimated_steps"
-                  type="number"
-                  min="1"
-                  max="10"
-                  className="font-mono"
-                  {...register('estimated_steps', {
-                    valueAsNumber: true,
-                    required: true,
-                    min: 1,
-                    max: 10,
-                  })}
-                />
-                {errors.estimated_steps ? (
-                  <p className="text-xs text-rose-600">Estimated steps must be between 1 and 10.</p>
-                ) : null}
-              </div>
-            </section>
+            <TemplateBasicsStep
+              errors={errors}
+              register={register}
+              setValue={setValue}
+              watch={watch}
+            />
           ) : null}
 
           {currentStep === 2 ? (
-            <section className="space-y-5 animate-chronicle-enter">
-              <div>
-                <h2 className="font-display text-xl text-foreground">Visibility & Status</h2>
-                <p className="font-mono text-xs text-muted-foreground mt-1">
-                  Control who can discover and apply this template.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {VISIBILITY_OPTIONS.map((option) => {
-                  const Icon = option.icon;
-                  const isSelected = visibility === option.value;
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setValue('visibility', option.value, { shouldDirty: true })}
-                      className={cn(
-                        'p-4 rounded-xl border text-left transition-all',
-                        isSelected
-                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
-                          : 'border-border hover:border-primary/30',
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span
-                          className={cn(
-                            'mt-0.5 p-1.5 rounded-md',
-                            isSelected ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground',
-                          )}
-                        >
-                          <Icon className="size-3.5" />
-                        </span>
-                        <div>
-                          <p className="font-mono text-sm text-foreground">{option.label}</p>
-                          <p className="font-mono text-[11px] text-muted-foreground mt-1">{option.description}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {visibility === 'department' ? (
-                <div className="space-y-2 max-w-md">
-                  <Label htmlFor="department" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Department *
-                  </Label>
-                  <Input
-                    id="department"
-                    {...register('department', {
-                      validate: (value) => {
-                        if (watch('visibility') !== 'department') {
-                          return true;
-                        }
-                        return Boolean(value?.trim());
-                      },
-                    })}
-                    placeholder="e.g., Cardiology, Emergency, Nursing"
-                    className="font-mono"
-                  />
-                  {errors.department ? (
-                    <p className="text-xs text-rose-600">Department is required for department visibility.</p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card/50">
-                <div>
-                  <p className="font-mono text-sm text-foreground">Active Template</p>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">
-                    Inactive templates are hidden from routine template selection.
-                  </p>
-                </div>
-                <Switch
-                  id="is_active"
-                  checked={Boolean(watch('is_active'))}
-                  onCheckedChange={(checked) => setValue('is_active', checked, { shouldDirty: true })}
-                />
-              </div>
-            </section>
+            <TemplateAccessStep
+              errors={errors}
+              register={register}
+              setValue={setValue}
+              visibility={visibility}
+              watch={watch}
+            />
           ) : null}
 
           {currentStep === 3 ? (
-            <section className="space-y-5 animate-chronicle-enter">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="font-display text-xl text-foreground">Template Structure</h2>
-                  <p className="font-mono text-xs text-muted-foreground mt-1">
-                    Build the section flow clinicians will complete at bedside.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
-                  onClick={addSection}
-                >
-                  <PlusCircle className="size-3.5 mr-1.5" />
-                  Add Section
-                </Button>
-              </div>
-
-              <div className="rounded-xl border border-border p-4 bg-muted/20">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="size-4 text-amber-600" />
-                  <p className="font-mono text-xs text-foreground">Quick Start</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {QUICK_STARTS.map((template) => (
-                    <Button
-                      key={template.value}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="font-mono text-[11px]"
-                      onClick={() => applyQuickStart(template.value)}
-                    >
-                      {template.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {fields.length === 0 ? (
-                <div className="text-center py-12 rounded-xl border border-dashed border-border">
-                  <ListOrdered className="size-10 mx-auto text-muted-foreground opacity-60" />
-                  <p className="font-mono text-sm text-muted-foreground mt-3">No sections added yet.</p>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">
-                    Add a section or apply a quick start template.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {fields.map((field, index) => {
-                    const currentType = watch(`structure.${index}.type`) || 'text';
-                    const isObservation = currentType === 'observation';
-
-                    return (
-                      <div key={field.id} className="relative rounded-xl border border-border bg-card/60 p-4 sm:p-5">
-                        <div className="absolute top-3 right-3 flex items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7"
-                            onClick={() => move(index, Math.max(index - 1, 0))}
-                            disabled={index === 0}
-                          >
-                            <MoveUp className="size-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7"
-                            onClick={() => move(index, Math.min(index + 1, fields.length - 1))}
-                            disabled={index === fields.length - 1}
-                          >
-                            <MoveDown className="size-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-rose-500 hover:text-rose-600"
-                            onClick={() => remove(index)}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label
-                              htmlFor={`structure.${index}.section`}
-                              className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
-                            >
-                              Section Name *
-                            </Label>
-                            <Input
-                              id={`structure.${index}.section`}
-                              {...register(`structure.${index}.section`, { required: true })}
-                              placeholder="e.g., Chief Complaint, Examination"
-                              className="font-mono"
-                            />
-                            {errors.structure?.[index]?.section ? (
-                              <p className="text-xs text-rose-600">Section name is required.</p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                              Section Type
-                            </Label>
-                            <Select
-                              value={currentType}
-                              onValueChange={(value) => {
-                                setValue(`structure.${index}.type`, value, { shouldDirty: true });
-                                if (value !== 'observation') {
-                                  setValue(`structure.${index}.observation_type`, '', { shouldDirty: true });
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="font-mono">
-                                <SelectValue placeholder="Select type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {SECTION_TYPES.map((typeOption) => (
-                                  <SelectItem key={typeOption.value} value={typeOption.value} className="font-mono">
-                                    {typeOption.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {isObservation ? (
-                            <div className="space-y-2 md:col-span-2">
-                              <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                                Observation Type
-                              </Label>
-                              <Select
-                                value={watch(`structure.${index}.observation_type`) || undefined}
-                                onValueChange={(value) =>
-                                  setValue(`structure.${index}.observation_type`, value, { shouldDirty: true })
-                                }
-                              >
-                                <SelectTrigger className="font-mono">
-                                  <SelectValue placeholder="Select observation type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {OBSERVATION_TYPES.map((observationOption) => (
-                                    <SelectItem
-                                      key={observationOption.value}
-                                      value={observationOption.value}
-                                      className="font-mono"
-                                    >
-                                      {observationOption.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          ) : null}
-
-                          <div className="space-y-2 md:col-span-2">
-                            <Label
-                              htmlFor={`structure.${index}.default_text`}
-                              className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
-                            >
-                              Starter Text
-                            </Label>
-                            <Textarea
-                              id={`structure.${index}.default_text`}
-                              {...register(`structure.${index}.default_text`)}
-                              rows={3}
-                              placeholder="Optional default wording. Supports placeholders like {{patient_name}}, {{age}}, {{today}}."
-                              className="font-mono text-xs resize-none"
-                            />
-                          </div>
-
-                          <div className="md:col-span-2 flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3">
-                            <div>
-                              <p className="font-mono text-xs text-foreground">Required Section</p>
-                              <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                                Clinicians must complete this section before signing.
-                              </p>
-                            </div>
-                            <Switch
-                              checked={Boolean(watch(`structure.${index}.required`))}
-                              onCheckedChange={(checked) =>
-                                setValue(`structure.${index}.required`, checked, { shouldDirty: true })
-                              }
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+            <TemplateStructureStep
+              addSection={addSection}
+              applyQuickStart={applyQuickStart}
+              errors={errors}
+              fields={fields}
+              move={move}
+              register={register}
+              remove={remove}
+              setValue={setValue}
+              watch={watch}
+            />
           ) : null}
 
           {currentStep === 4 ? (
-            <section className="space-y-5 animate-chronicle-enter">
-              <div>
-                <h2 className="font-display text-xl text-foreground">Review Template</h2>
-                <p className="font-mono text-xs text-muted-foreground mt-1">
-                  Final check before saving this chronicle workflow.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="rounded-xl border border-border bg-card/60 p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Title</p>
-                  <p className="font-display text-lg text-foreground mt-1">{watch('title') || 'Untitled Template'}</p>
-                  <p className="font-mono text-xs text-muted-foreground mt-2">Category: {categoryLabel}</p>
-                </div>
-
-                <div className="rounded-xl border border-border bg-card/60 p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Access</p>
-                  <p className="font-mono text-sm text-foreground mt-1">{visibility || 'private'}</p>
-                  <p className="font-mono text-xs text-muted-foreground mt-2">
-                    {watch('is_active') ? 'Active and selectable' : 'Inactive after save'}
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground mt-2">
-                    Mode: {watch('template_mode') || 'structured'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border overflow-hidden">
-                <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
-                  <div>
-                    <p className="font-mono text-xs text-foreground">Sections</p>
-                    <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
-                      {watchedStructure.length} section{watchedStructure.length !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-[10px] font-mono">
-                    <CircleDot className="size-3" />
-                    {watch('estimated_steps') || 0} steps
-                  </span>
-                </div>
-
-                <div className="p-3 sm:p-4 space-y-2">
-                  {watchedStructure.length === 0 ? (
-                    <p className="font-mono text-xs text-muted-foreground">No sections configured.</p>
-                  ) : (
-                    fields.map((field, index) => {
-                      const section = watchedStructure[index] || field;
-
-                      return (
-                        <div
-                          key={field.id}
-                          className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3"
-                        >
-                          <div>
-                            <p className="font-mono text-sm text-foreground">
-                              {section.section || `Section ${index + 1}`}
-                            </p>
-                            <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                              {section.type}
-                              {section.type === 'observation' && section.observation_type
-                                ? ` · ${section.observation_type}`
-                                : ''}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {section.default_text?.trim() ? (
-                              <span className="font-mono text-[10px] text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
-                                Starter text
-                              </span>
-                            ) : null}
-                            {section.required ? (
-                              <span className="font-mono text-[10px] text-rose-600 bg-rose-500/10 px-2 py-1 rounded">
-                                Required
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </section>
+            <TemplateReviewStep
+              categoryLabel={categoryLabel}
+              fields={fields}
+              visibility={visibility}
+              watchedStructure={watchedStructure}
+              watch={watch}
+            />
           ) : null}
         </div>
 
-        <div className="p-4 sm:px-6 border-t border-border bg-card">
-          <div className="flex items-center justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={previousStep}
-              disabled={currentStep === 1}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-3.5 mr-1" />
-              Previous
-            </Button>
-
-            <div className="flex items-center gap-2">
-              {isDirty ? <span className="font-mono text-[10px] text-muted-foreground hidden sm:inline">Unsaved changes</span> : null}
-              {currentStep < STEPS.length ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
-                  onClick={nextStep}
-                >
-                  Next
-                  <ChevronRight className="size-3.5 ml-1" />
-                </Button>
-              ) : (
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={isSaving}
-                  className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                      Saving…
-                    </>
-                  ) : (
-                    <>
-                      <Check className="size-3.5 mr-1.5" />
-                      {initialTemplate ? 'Update Template' : 'Create Template'}
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+        <TemplateBuilderFooter
+          currentStep={currentStep}
+          initialTemplate={initialTemplate}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          onNext={nextStep}
+          onPrevious={previousStep}
+        />
       </form>
     </div>
   );
