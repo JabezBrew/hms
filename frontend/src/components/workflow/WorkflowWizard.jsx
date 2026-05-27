@@ -3,7 +3,7 @@ import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import Save from 'lucide-react/dist/esm/icons/save.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useReducer } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -11,7 +11,16 @@ import { WorkflowProgress } from './WorkflowProgress';
 
 const DEFAULT_EMPTY_OBJECT = {};
 
-import { cn } from '@/lib/utils';
+function activeStepReducer(step, action) {
+  switch (action.type) {
+    case 'go-to':
+      return action.step;
+    case 'previous':
+      return Math.max(1, step - 1);
+    default:
+      return step;
+  }
+}
 
 /**
  * WorkflowWizard Component
@@ -40,7 +49,7 @@ export function WorkflowWizard({
   autoSave = true,
   patient,
 }) {
-  const [activeStep, setActiveStep] = useState(currentStep);
+  const [activeStep, dispatchActiveStep] = useReducer(activeStepReducer, currentStep);
   const [stepData, setStepData] = useState({});
   const [errors, setErrors] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -94,7 +103,7 @@ export function WorkflowWizard({
 
       // Move to next step if not last
       if (activeStep < definition.totalSteps) {
-        setActiveStep(nextStep);
+        dispatchActiveStep({ type: 'go-to', step: nextStep });
         setErrors(null);
       }
     } catch (error) {
@@ -107,7 +116,7 @@ export function WorkflowWizard({
   // Navigate to previous step
   const handlePrevious = () => {
     if (activeStep > 1) {
-      setActiveStep((step) => step - 1);
+      dispatchActiveStep({ type: 'previous' });
       setErrors(null);
     }
   };
