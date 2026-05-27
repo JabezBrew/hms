@@ -2,7 +2,7 @@
  * RosterPatternSlotsTab - Manage roster pattern slots
  * Chronicle Design System styling
  */
-import { useId, useState, useEffect, useMemo } from 'react';
+import { useId, useMemo, useReducer } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,28 +51,160 @@ import { DUTY_CONTEXT_OPTIONS, DUTY_ROLE_OPTIONS, DEFAULT_CYCLE_LENGTH, SELECT_A
 import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
-export function RosterPatternSlotsTab() {
-  const fieldId = useId();
-  const { isLoading: unitsLoading, departments, getTeamOptions, unitById } = useUnitOptions();
-  const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
-  const [selectedPlan, setSelectedPlan] = useState('');
-  const [selectedPattern, setSelectedPattern] = useState(SELECT_ALL);
-  const [showInactive, setShowInactive] = useState(false);
-  const [editingSlot, setEditingSlot] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+const INITIAL_FILTERS = {
+  department: SELECT_ALL,
+  plan: '',
+  pattern: SELECT_ALL,
+  showInactive: false,
+};
 
+const INITIAL_FORM_STATE = {
+  plan: '',
+  pattern: '',
+  day_offset: 0,
+  duty_type: '',
+  team: '',
+  context_override: '',
+  role_override: '',
+  start_time: '',
+  end_time: '',
+  is_active: true,
+};
+
+const INITIAL_DIALOG_STATE = {
+  isOpen: false,
+  editingSlot: null,
+  form: INITIAL_FORM_STATE,
+};
+
+function filtersReducer(state, action) {
+  switch (action.type) {
+    case 'set-department':
+      return {
+        ...state,
+        department: action.value,
+        plan: '',
+        pattern: SELECT_ALL,
+      };
+    case 'set-plan':
+      return {
+        ...state,
+        plan: action.value,
+        pattern: SELECT_ALL,
+      };
+    case 'set-pattern':
+      return {
+        ...state,
+        pattern: action.value,
+      };
+    case 'toggle-inactive':
+      return {
+        ...state,
+        showInactive: !state.showInactive,
+      };
+    default:
+      return state;
+  }
+}
+
+function dialogReducer(state, action) {
+  switch (action.type) {
+    case 'open-create':
+      return {
+        isOpen: true,
+        editingSlot: null,
+        form: buildSlotForm({
+          plan: action.plan,
+          pattern: action.pattern,
+          dayOffset: action.dayOffset,
+          dutyType: action.dutyType,
+        }),
+      };
+    case 'open-edit':
+      return {
+        isOpen: true,
+        editingSlot: action.slot,
+        form: buildSlotFormFromSlot(action.slot, action.fallbackPlan),
+      };
+    case 'update-field':
+      return {
+        ...state,
+        form: {
+          ...state.form,
+          [action.field]: action.value,
+        },
+      };
+    case 'close':
+      return {
+        ...state,
+        isOpen: false,
+      };
+    default:
+      return state;
+  }
+}
+
+function buildSlotForm({
+  plan = '',
+  pattern = '',
+  dayOffset = 0,
+  dutyType = '',
+} = {}) {
+  return {
+    ...INITIAL_FORM_STATE,
+    plan: plan || '',
+    pattern: pattern || '',
+    day_offset: dayOffset,
+    duty_type: dutyType,
+  };
+}
+
+function buildSlotFormFromSlot(slot, fallbackPlan) {
+  return {
+    plan: toValue(fallbackPlan || slot.plan),
+    pattern: toValue(slot.pattern),
+    day_offset: slot.day_offset ?? 0,
+    duty_type: toValue(slot.duty_type),
+    team: toValue(slot.team),
+    context_override: slot.context_override || '',
+    role_override: slot.role_override || '',
+    start_time: slot.start_time ? slot.start_time.slice(0, 5) : '',
+    end_time: slot.end_time ? slot.end_time.slice(0, 5) : '',
+    is_active: slot.is_active ?? true,
+  };
+}
+
+function pickActivePlan(plans, requestedPlan) {
+  if (!plans.length) return '';
+  return plans.some((plan) => plan.id === requestedPlan) ? requestedPlan : plans[0].id;
+}
+
+function pickActivePattern(patterns, requestedPattern) {
+  if (!patterns.length) return '';
+  if (requestedPattern === SELECT_ALL) return SELECT_ALL;
+  return patterns.some((pattern) => pattern.id === requestedPattern) ? requestedPattern : SELECT_ALL;
+}
+
+export function RosterPatternSlotsTab() {
+  const { isLoading: unitsLoading, departments, getTeamOptions, unitById } = useUnitOptions();
+  const [filters, dispatchFilters] = useReducer(filtersReducer, INITIAL_FILTERS);
+  const [dialogState, dispatchDialog] = useReducer(dialogReducer, INITIAL_DIALOG_STATE);
+
+  const { department: selectedDepartment, plan: requestedPlan, pattern: requestedPattern, showInactive } = filters;
+  const { isOpen: showForm, editingSlot, form: formState } = dialogState;
   const departmentFilter = selectedDepartment === SELECT_ALL ? undefined : selectedDepartment;
-  const patternFilter = selectedPattern === SELECT_ALL ? undefined : selectedPattern;
 
   const { data: plansData } = useDepartmentRosterPlans({ department: departmentFilter });
   const plans = toList(plansData);
+  const selectedPlan = pickActivePlan(plans, requestedPlan);
 
   const { data: patternsData } = useDepartmentRosterPatterns({
     plan: selectedPlan || undefined,
     include_inactive: showInactive ? 'true' : undefined,
   });
-  const patternFilterValue = patternFilter;
   const patterns = toList(patternsData);
+  const selectedPattern = pickActivePattern(patterns, requestedPattern);
+  const patternFilterValue = selectedPattern && selectedPattern !== SELECT_ALL ? selectedPattern : undefined;
   const patternById = useMemo(() => new Map(patterns.map((p) => [p.id, p])), [patterns]);
 
   const { data: dutyTypesData } = useDepartmentDutyTypes({
@@ -92,89 +224,19 @@ export function RosterPatternSlotsTab() {
   const updateSlot = useUpdateRosterPatternSlot();
   const deleteSlot = useDeleteRosterPatternSlot();
 
-  const [formState, setFormState] = useState({
-    plan: '',
-    pattern: '',
-    day_offset: 0,
-    duty_type: '',
-    team: '',
-    context_override: '',
-    role_override: '',
-    start_time: '',
-    end_time: '',
-    is_active: true,
-  });
-
-  useEffect(() => {
-    if (!showForm) {
-      setEditingSlot(null);
-      setFormState({
-        plan: selectedPlan || '',
-        pattern: patternFilterValue || '',
-        day_offset: 0,
-        duty_type: '',
-        team: '',
-        context_override: '',
-        role_override: '',
-        start_time: '',
-        end_time: '',
-        is_active: true,
-      });
-    }
-  }, [showForm, selectedPlan, selectedPattern]);
-
-  useEffect(() => {
-    if (!plans.length) {
-      setSelectedPlan('');
-      setSelectedPattern('');
-      return;
-    }
-    if (!selectedPlan || !plans.some((p) => p.id === selectedPlan)) {
-      setSelectedPlan(plans[0].id);
-    }
-  }, [plans, selectedPlan]);
-
-  useEffect(() => {
-    if (!patterns.length) {
-      setSelectedPattern('');
-      return;
-    }
-    if (selectedPattern !== SELECT_ALL && !patterns.some((p) => p.id === selectedPattern)) {
-      setSelectedPattern(SELECT_ALL);
-    }
-  }, [patterns, selectedPattern]);
-
   const openForm = async (slot) => {
     if (slot) {
       try {
         const result = await rosterPatternSlotsApi.get(slot.id);
         const payload = result?.data || result;
-        setEditingSlot(payload);
-        setFormState({
-          plan: toValue(selectedPlan || payload.plan),
-          pattern: toValue(payload.pattern),
-          day_offset: payload.day_offset ?? 0,
-          duty_type: toValue(payload.duty_type),
-          team: toValue(payload.team),
-          context_override: payload.context_override || '',
-          role_override: payload.role_override || '',
-          start_time: payload.start_time ? payload.start_time.slice(0, 5) : '',
-          end_time: payload.end_time ? payload.end_time.slice(0, 5) : '',
-          is_active: payload.is_active ?? true,
-        });
+        dispatchDialog({ type: 'open-edit', slot: payload, fallbackPlan: selectedPlan });
       } catch (error) {
         toast.error(error.message || 'Failed to load pattern slot.');
         return;
       }
     } else {
-      setEditingSlot(null);
-      setFormState((prev) => ({
-        ...prev,
-        plan: selectedPlan || prev.plan,
-        pattern: patternFilterValue || prev.pattern,
-      }));
+      dispatchDialog({ type: 'open-create', plan: selectedPlan, pattern: patternFilterValue });
     }
-    setShowForm(true);
   };
 
   const handleSubmit = async () => {
@@ -209,7 +271,7 @@ export function RosterPatternSlotsTab() {
         await createSlot.mutateAsync(payload);
         toast.success('Pattern slot created.');
       }
-      setShowForm(false);
+      dispatchDialog({ type: 'close' });
     } catch (error) {
       toast.error(error.message || 'Failed to save pattern slot.');
     }
@@ -239,20 +301,23 @@ export function RosterPatternSlotsTab() {
   }, [slots]);
 
   const openGridCreate = (dayOffset, dutyTypeId) => {
-    setEditingSlot(null);
-    setFormState({
+    dispatchDialog({
+      type: 'open-create',
       plan: selectedPlan || '',
       pattern: patternFilterValue || '',
-      day_offset: dayOffset,
-      duty_type: dutyTypeId,
-      team: '',
-      context_override: '',
-      role_override: '',
-      start_time: '',
-      end_time: '',
-      is_active: true,
+      dayOffset,
+      dutyType: dutyTypeId,
     });
-    setShowForm(true);
+  };
+
+  const updateFormField = (field, value) => {
+    dispatchDialog({ type: 'update-field', field, value });
+  };
+
+  const handleDialogOpenChange = (open) => {
+    if (!open) {
+      dispatchDialog({ type: 'close' });
+    }
   };
 
   return (
@@ -264,7 +329,7 @@ export function RosterPatternSlotsTab() {
           <>
             <Button
               variant="outline"
-              onClick={() => setShowInactive((prev) => !prev)}
+              onClick={() => dispatchFilters({ type: 'toggle-inactive' })}
               className="font-mono text-xs"
             >
               {showInactive ? 'Hide Inactive' : 'Show Inactive'}
@@ -281,7 +346,7 @@ export function RosterPatternSlotsTab() {
         <CardContent className="p-4 space-y-4">
           <FieldRow>
             <InlineField label="Department">
-              <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+              <Select value={selectedDepartment} onValueChange={(value) => dispatchFilters({ type: 'set-department', value })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
@@ -294,7 +359,7 @@ export function RosterPatternSlotsTab() {
               </Select>
             </InlineField>
             <InlineField label="Roster Plan">
-              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
+              <Select value={selectedPlan} onValueChange={(value) => dispatchFilters({ type: 'set-plan', value })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select plan" />
                 </SelectTrigger>
@@ -307,7 +372,7 @@ export function RosterPatternSlotsTab() {
             </InlineField>
           </FieldRow>
           <InlineField label="Pattern">
-            <Select value={selectedPattern} onValueChange={setSelectedPattern}>
+            <Select value={selectedPattern} onValueChange={(value) => dispatchFilters({ type: 'set-pattern', value })}>
               <SelectTrigger>
                 <SelectValue placeholder="All patterns" />
               </SelectTrigger>
@@ -320,62 +385,17 @@ export function RosterPatternSlotsTab() {
             </Select>
           </InlineField>
 
-          {/* Grid Editor */}
-          {selectedPlan && selectedPattern && dutyTypes.length > 0 && (
-            <div className="rounded-lg border border-border overflow-hidden">
-              <div className="border-b border-border px-4 py-2.5 bg-muted/30">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  Grid Editor - {cycleLength} Day Cycle
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="font-mono text-[10px] uppercase">Duty Type</TableHead>
-                      {dayOffsets.map((offset) => (
-                        <TableHead key={offset} className="text-center font-mono text-[10px] uppercase">
-                          Day {offset}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {dutyTypes.map((dt) => (
-                      <TableRow key={dt.id}>
-                        <TableCell className="font-heading font-medium text-sm">{dt.name}</TableCell>
-                        {dayOffsets.map((offset) => {
-                          const slot = slotByKey.get(`${dt.id}-${offset}`);
-                          const teamName = slot ? unitById.get(slot.team)?.name : null;
-                          return (
-                            <TableCell key={`${dt.id}-${offset}`} className="text-center p-2">
-                              {slot ? (
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium">{formatRosterName(teamName)}</div>
-                                  <div className="text-[10px] text-muted-foreground font-mono">
-                                    {slot.start_time || slot.end_time
-                                      ? `${formatRosterTime(slot.start_time)} - ${formatRosterTime(slot.end_time)}`
-                                      : 'All day'}
-                                  </div>
-                                  <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => openForm(slot)}>
-                                    Edit
-                                  </Button>
-                                </div>
-                              ) : (
-                                <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => openGridCreate(offset, dt.id)}>
-                                  Add
-                                </Button>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
+          <RosterPatternSlotGrid
+            cycleLength={cycleLength}
+            dayOffsets={dayOffsets}
+            dutyTypes={dutyTypes}
+            selectedPattern={selectedPattern}
+            selectedPlan={selectedPlan}
+            slotByKey={slotByKey}
+            unitById={unitById}
+            onCreateSlot={openGridCreate}
+            onEditSlot={openForm}
+          />
 
           {unitsLoading || isLoading ? (
             <div className="space-y-3">
@@ -435,99 +455,204 @@ export function RosterPatternSlotsTab() {
         </CardContent>
       </Card>
 
-      {/* Form Dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">{editingSlot ? 'Edit Pattern Slot' : 'Add Pattern Slot'}</DialogTitle>
-            <DialogDescription>Slots define which team covers a duty type for each cycle day.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <FieldRow>
-              <InlineField label="Roster Plan">
-                <Select value={formState.plan} onValueChange={(v) => setFormState((p) => ({ ...p, plan: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-              <InlineField label="Pattern">
-                <Select value={formState.pattern} onValueChange={(v) => setFormState((p) => ({ ...p, pattern: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Default" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    <SelectItem value={SELECT_DEFAULT}>Default</SelectItem>
-                    {patterns.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-            </FieldRow>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <InlineField label="Day Offset">
-                <Input type="number" min="0" value={formState.day_offset} onChange={(e) => setFormState((p) => ({ ...p, day_offset: e.target.value }))} className="font-mono" />
-              </InlineField>
-              <InlineField label="Duty Type">
-                <Select value={formState.duty_type} onValueChange={(v) => setFormState((p) => ({ ...p, duty_type: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {dutyTypes.map((dt) => <SelectItem key={dt.id} value={dt.id}>{dt.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-              <InlineField label="Team">
-                <Select value={formState.team} onValueChange={(v) => setFormState((p) => ({ ...p, team: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {teamOptions.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-            </div>
-            <FieldRow>
-              <InlineField label="Role Override">
-                <Select value={formState.role_override} onValueChange={(v) => setFormState((p) => ({ ...p, role_override: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Default role" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    <SelectItem value={SELECT_DEFAULT}>Default</SelectItem>
-                    {DUTY_ROLE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-              <InlineField label="Context Override">
-                <Select value={formState.context_override} onValueChange={(v) => setFormState((p) => ({ ...p, context_override: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Default context" /></SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    <SelectItem value={SELECT_DEFAULT}>Default</SelectItem>
-                    {DUTY_CONTEXT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </InlineField>
-            </FieldRow>
-            <FieldRow>
-              <InlineField label="Start Time">
-                <Input type="time" value={formState.start_time} onChange={(e) => setFormState((p) => ({ ...p, start_time: e.target.value }))} className="font-mono" />
-              </InlineField>
-              <InlineField label="End Time">
-                <Input type="time" value={formState.end_time} onChange={(e) => setFormState((p) => ({ ...p, end_time: e.target.value }))} className="font-mono" />
-              </InlineField>
-            </FieldRow>
-            <InlineField label="Status">
-              <div className="pt-2">
-                <label htmlFor={`${fieldId}-slot-active`} className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox id={`${fieldId}-slot-active`} checked={formState.is_active} onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))} />
-                  <span className="text-sm">Active</span>
-                </label>
-              </div>
+      <RosterPatternSlotDialog
+        isOpen={showForm}
+        onOpenChange={handleDialogOpenChange}
+        editingSlot={editingSlot}
+        formState={formState}
+        plans={plans}
+        patterns={patterns}
+        dutyTypes={dutyTypes}
+        teamOptions={teamOptions}
+        isSaving={createSlot.isPending || updateSlot.isPending}
+        onCancel={() => dispatchDialog({ type: 'close' })}
+        onFieldChange={updateFormField}
+        onSubmit={handleSubmit}
+      />
+    </div>
+  );
+}
+
+function RosterPatternSlotGrid({
+  cycleLength,
+  dayOffsets,
+  dutyTypes,
+  selectedPattern,
+  selectedPlan,
+  slotByKey,
+  unitById,
+  onCreateSlot,
+  onEditSlot,
+}) {
+  if (!selectedPlan || !selectedPattern || dutyTypes.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="border-b border-border px-4 py-2.5 bg-muted/30">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+          Grid Editor - {cycleLength} Day Cycle
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="font-mono text-[10px] uppercase">Duty Type</TableHead>
+              {dayOffsets.map((offset) => (
+                <TableHead key={offset} className="text-center font-mono text-[10px] uppercase">
+                  Day {offset}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {dutyTypes.map((dutyType) => (
+              <TableRow key={dutyType.id}>
+                <TableCell className="font-heading font-medium text-sm">{dutyType.name}</TableCell>
+                {dayOffsets.map((offset) => {
+                  const slot = slotByKey.get(`${dutyType.id}-${offset}`);
+                  const teamName = slot ? unitById.get(slot.team)?.name : null;
+                  return (
+                    <TableCell key={`${dutyType.id}-${offset}`} className="text-center p-2">
+                      {slot ? (
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium">{formatRosterName(teamName)}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">
+                            {slot.start_time || slot.end_time
+                              ? `${formatRosterTime(slot.start_time)} - ${formatRosterTime(slot.end_time)}`
+                              : 'All day'}
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => onEditSlot(slot)}>
+                            Edit
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => onCreateSlot(offset, dutyType.id)}>
+                          Add
+                        </Button>
+                      )}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function RosterPatternSlotDialog({
+  isOpen,
+  onOpenChange,
+  editingSlot,
+  formState,
+  plans,
+  patterns,
+  dutyTypes,
+  teamOptions,
+  isSaving,
+  onCancel,
+  onFieldChange,
+  onSubmit,
+}) {
+  const fieldId = useId();
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl">{editingSlot ? 'Edit Pattern Slot' : 'Add Pattern Slot'}</DialogTitle>
+          <DialogDescription>Slots define which team covers a duty type for each cycle day.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <FieldRow>
+            <InlineField label="Roster Plan">
+              <Select value={formState.plan} onValueChange={(value) => onFieldChange('plan', value)}>
+                <SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </InlineField>
+            <InlineField label="Pattern">
+              <Select value={formState.pattern} onValueChange={(value) => onFieldChange('pattern', value)}>
+                <SelectTrigger><SelectValue placeholder="Default" /></SelectTrigger>
+                <SelectContent className="z-[200]">
+                  <SelectItem value={SELECT_DEFAULT}>Default</SelectItem>
+                  {patterns.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </InlineField>
+          </FieldRow>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <InlineField label="Day Offset">
+              <Input type="number" min="0" value={formState.day_offset} onChange={(event) => onFieldChange('day_offset', event.target.value)} className="font-mono" />
+            </InlineField>
+            <InlineField label="Duty Type">
+              <Select value={formState.duty_type} onValueChange={(value) => onFieldChange('duty_type', value)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {dutyTypes.map((dt) => <SelectItem key={dt.id} value={dt.id}>{dt.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </InlineField>
+            <InlineField label="Team">
+              <Select value={formState.team} onValueChange={(value) => onFieldChange('team', value)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {teamOptions.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </InlineField>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createSlot.isPending || updateSlot.isPending}>
-              {editingSlot ? 'Save Changes' : 'Create Slot'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          <FieldRow>
+            <InlineField label="Role Override">
+              <Select value={formState.role_override} onValueChange={(value) => onFieldChange('role_override', value)}>
+                <SelectTrigger><SelectValue placeholder="Default role" /></SelectTrigger>
+                <SelectContent className="z-[200]">
+                  <SelectItem value={SELECT_DEFAULT}>Default</SelectItem>
+                  {DUTY_ROLE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </InlineField>
+            <InlineField label="Context Override">
+              <Select value={formState.context_override} onValueChange={(value) => onFieldChange('context_override', value)}>
+                <SelectTrigger><SelectValue placeholder="Default context" /></SelectTrigger>
+                <SelectContent className="z-[200]">
+                  <SelectItem value={SELECT_DEFAULT}>Default</SelectItem>
+                  {DUTY_CONTEXT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </InlineField>
+          </FieldRow>
+          <FieldRow>
+            <InlineField label="Start Time">
+              <Input type="time" value={formState.start_time} onChange={(event) => onFieldChange('start_time', event.target.value)} className="font-mono" />
+            </InlineField>
+            <InlineField label="End Time">
+              <Input type="time" value={formState.end_time} onChange={(event) => onFieldChange('end_time', event.target.value)} className="font-mono" />
+            </InlineField>
+          </FieldRow>
+          <InlineField label="Status">
+            <div className="pt-2">
+              <label htmlFor={`${fieldId}-slot-active`} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox id={`${fieldId}-slot-active`} checked={formState.is_active} onCheckedChange={(value) => onFieldChange('is_active', Boolean(value))} />
+                <span className="text-sm">Active</span>
+              </label>
+            </div>
+          </InlineField>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button onClick={onSubmit} disabled={isSaving}>
+            {editingSlot ? 'Save Changes' : 'Create Slot'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
