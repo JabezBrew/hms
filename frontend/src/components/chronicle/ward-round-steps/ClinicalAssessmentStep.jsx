@@ -4,7 +4,7 @@ import Heart from 'lucide-react/dist/esm/icons/heart.js';
 import Wind from 'lucide-react/dist/esm/icons/wind.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -38,6 +38,8 @@ const SPO2_DOMAIN = [85, 100];
 const SPO2_REFERENCE_LINES = [
   { value: 92, color: '#ef4444', label: 'Low' },
 ];
+
+const EMPTY_FORM_DATA = Object.freeze({});
 
 /**
  * Prepare chart data from vitals array
@@ -151,12 +153,7 @@ function LatestVitalsCard({ vitals }) {
  * - Vitals reviewed confirmation
  * - Examination findings
  */
-export function ClinicalAssessmentStep({ formData, onChange, contextData, validationErrors, patientId }) {
-  const [localData, setLocalData] = useState({
-    examination_findings: formData?.examination_findings || '',
-    vitals_reviewed: formData?.vitals_reviewed || false,
-  });
-
+export function ClinicalAssessmentStep({ formData = EMPTY_FORM_DATA, onChange, validationErrors, patientId }) {
   // Fetch vital signs
   const { data: vitals, isLoading: vitalsLoading } = useVitalSigns({
     patient: patientId,
@@ -167,26 +164,13 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
     enabled: !!patientId,
   });
 
-  // Sync with parent when local data changes
-  useEffect(() => {
-    onChange(localData);
-  }, [localData, onChange]);
-
-  // Update local data from props if they change externally
-  useEffect(() => {
-    if (formData) {
-      setLocalData(prev => ({
-        examination_findings: formData.examination_findings ?? prev.examination_findings,
-        vitals_reviewed: formData.vitals_reviewed ?? prev.vitals_reviewed,
-      }));
-    }
-  }, [formData?.examination_findings, formData?.vitals_reviewed]);
+  const examinationFindings = formData.examination_findings || '';
+  const vitalsReviewed = formData.vitals_reviewed || false;
 
   const handleChange = (field, value) => {
-    setLocalData(prev => ({
-      ...prev,
+    onChange({
       [field]: value,
-    }));
+    });
   };
 
   const chartData = useMemo(() => prepareChartData(vitals), [vitals]);
@@ -297,8 +281,8 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
       <div className="flex items-start gap-x-3 p-4 rounded-lg border bg-muted/30">
         <Checkbox
           id="vitals_reviewed"
-          checked={localData.vitals_reviewed}
-          onCheckedChange={(checked) => handleChange('vitals_reviewed', checked)}
+          checked={vitalsReviewed}
+          onCheckedChange={(checked) => handleChange('vitals_reviewed', checked === true)}
           className="mt-0.5"
         />
         <div className="space-y-1">
@@ -324,7 +308,7 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
         </Label>
         <Textarea
           id="examination_findings"
-          value={localData.examination_findings}
+          value={examinationFindings}
           onChange={(e) => handleChange('examination_findings', e.target.value)}
           placeholder="Document physical examination findings...&#10;&#10;General appearance, cardiovascular, respiratory, abdominal, neurological, etc."
           rows={8}

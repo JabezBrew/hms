@@ -5,7 +5,6 @@ import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Info from 'lucide-react/dist/esm/icons/info.js';
-import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -16,6 +15,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 
 import format from 'date-fns/format';
+
+const EMPTY_FORM_DATA = Object.freeze({});
+const MIN_ESTIMATED_DISCHARGE_DATE = format(new Date(), 'yyyy-MM-dd');
 
 /**
  * OrdersSummary - Display summary of all orders to be placed
@@ -96,34 +98,15 @@ function OrdersSummary({ orders }) {
  * - Discharge planning
  * - Confirming orders
  */
-export function DocumentationStep({ formData, onChange, contextData, validationErrors, allFormData }) {
-  const [localData, setLocalData] = useState({
-    progress_note: formData?.progress_note || '',
-    estimated_discharge: formData?.estimated_discharge || '',
-    discharge_planning_needed: formData?.discharge_planning_needed || false,
-  });
-
-  // Sync with parent when local data changes
-  useEffect(() => {
-    onChange(localData);
-  }, [localData, onChange]);
-
-  // Update local data from props if they change externally
-  useEffect(() => {
-    if (formData) {
-      setLocalData(prev => ({
-        progress_note: formData.progress_note ?? prev.progress_note,
-        estimated_discharge: formData.estimated_discharge ?? prev.estimated_discharge,
-        discharge_planning_needed: formData.discharge_planning_needed ?? prev.discharge_planning_needed,
-      }));
-    }
-  }, [formData?.progress_note, formData?.estimated_discharge, formData?.discharge_planning_needed]);
+export function DocumentationStep({ formData = EMPTY_FORM_DATA, onChange, validationErrors, allFormData }) {
+  const progressNote = formData.progress_note || '';
+  const estimatedDischarge = formData.estimated_discharge || '';
+  const dischargePlanningNeeded = formData.discharge_planning_needed || false;
 
   const handleChange = (field, value) => {
-    setLocalData(prev => ({
-      ...prev,
+    onChange({
       [field]: value,
-    }));
+    });
   };
 
   // Get orders from the plan step
@@ -149,7 +132,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
         <CardContent>
           <Textarea
             id="progress_note"
-            value={localData.progress_note}
+            value={progressNote}
             onChange={(e) => handleChange('progress_note', e.target.value)}
             placeholder="Ward round progress note..."
             rows={16}
@@ -181,17 +164,17 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
               <Input
                 id="estimated_discharge"
                 type="date"
-                value={localData.estimated_discharge}
+                value={estimatedDischarge}
                 onChange={(e) => handleChange('estimated_discharge', e.target.value)}
-                min={format(new Date(), 'yyyy-MM-dd')}
+                min={MIN_ESTIMATED_DISCHARGE_DATE}
               />
             </div>
 
             <div className="flex items-center gap-x-3 sm:pt-7">
               <Checkbox
                 id="discharge_planning_needed"
-                checked={localData.discharge_planning_needed}
-                onCheckedChange={(checked) => handleChange('discharge_planning_needed', checked)}
+                checked={dischargePlanningNeeded}
+                onCheckedChange={(checked) => handleChange('discharge_planning_needed', checked === true)}
               />
               <Label
                 htmlFor="discharge_planning_needed"
@@ -202,7 +185,7 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
             </div>
           </div>
 
-          {localData.discharge_planning_needed && (
+          {dischargePlanningNeeded && (
             <Alert>
               <Info className="size-4" />
               <AlertDescription>
@@ -242,10 +225,10 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
           <ul className="mt-2 ml-4 list-disc text-sm space-y-1">
             <li>Create a progress note in the patient's chart</li>
             {totalOrders > 0 && <li>Submit {totalOrders} order{totalOrders !== 1 ? 's' : ''}</li>}
-            {localData.estimated_discharge && (
-              <li>Set estimated discharge to {format(new Date(localData.estimated_discharge), 'MMM d, yyyy')}</li>
+            {estimatedDischarge && (
+              <li>Set estimated discharge to {format(new Date(estimatedDischarge), 'MMM d, yyyy')}</li>
             )}
-            {localData.discharge_planning_needed && (
+            {dischargePlanningNeeded && (
               <li>Flag patient for discharge planning</li>
             )}
           </ul>
@@ -254,4 +237,3 @@ export function DocumentationStep({ formData, onChange, contextData, validationE
     </div>
   );
 }
-

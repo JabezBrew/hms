@@ -6,7 +6,7 @@ import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -55,6 +55,8 @@ const COMMON_LABS = [
   { name: 'Urinalysis', code: 'UA' },
   { name: 'Blood Culture', code: 'BCX' },
 ];
+
+const EMPTY_FORM_DATA = Object.freeze({});
 
 /**
  * AddMedicationDialog - Quick medication order entry
@@ -264,61 +266,44 @@ function OrdersList({ orders, onRemove, type }) {
  * - Plan notes
  * - Inline orders (medications, labs, nursing)
  */
-export function TreatmentPlanStep({ formData, onChange, contextData, validationErrors }) {
-  const [localData, setLocalData] = useState({
-    assessment: formData?.assessment || '',
-    plan_notes: formData?.plan_notes || '',
-    orders_placed: formData?.orders_placed || {
-      medications: [],
-      labs: [],
-      nursing: [],
-    },
-  });
-
+export function TreatmentPlanStep({ formData = EMPTY_FORM_DATA, onChange, validationErrors }) {
   const [medicationDialogOpen, setMedicationDialogOpen] = useState(false);
   const [nursingOrderText, setNursingOrderText] = useState('');
 
-  // Sync with parent when local data changes
-  useEffect(() => {
-    onChange(localData);
-  }, [localData, onChange]);
-
-  // Update local data from props if they change externally
-  useEffect(() => {
-    if (formData) {
-      setLocalData(prev => ({
-        assessment: formData.assessment ?? prev.assessment,
-        plan_notes: formData.plan_notes ?? prev.plan_notes,
-        orders_placed: formData.orders_placed ?? prev.orders_placed,
-      }));
-    }
-  }, [formData?.assessment, formData?.plan_notes, formData?.orders_placed]);
+  const assessment = formData.assessment || '';
+  const planNotes = formData.plan_notes || '';
+  const ordersPlaced = formData.orders_placed || {};
+  const medications = ordersPlaced.medications || [];
+  const labs = ordersPlaced.labs || [];
+  const nursingOrders = ordersPlaced.nursing || [];
 
   const handleChange = (field, value) => {
-    setLocalData(prev => ({
-      ...prev,
+    onChange({
       [field]: value,
-    }));
+    });
+  };
+
+  const updateOrders = (nextOrders) => {
+    onChange({
+      orders_placed: {
+        medications,
+        labs,
+        nursing: nursingOrders,
+        ...nextOrders,
+      },
+    });
   };
 
   const handleAddMedication = (medication) => {
-    setLocalData(prev => ({
-      ...prev,
-      orders_placed: {
-        ...prev.orders_placed,
-        medications: [...(prev.orders_placed?.medications || []), medication],
-      },
-    }));
+    updateOrders({
+      medications: [...medications, medication],
+    });
   };
 
   const handleRemoveMedication = (index) => {
-    setLocalData(prev => ({
-      ...prev,
-      orders_placed: {
-        ...prev.orders_placed,
-        medications: prev.orders_placed.medications.filter((_, i) => i !== index),
-      },
-    }));
+    updateOrders({
+      medications: medications.filter((_, i) => i !== index),
+    });
   };
 
   const handleAddLab = (lab, urgency = 'routine') => {
@@ -327,51 +312,32 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
       test_code: lab.code,
       urgency,
     };
-    setLocalData(prev => ({
-      ...prev,
-      orders_placed: {
-        ...prev.orders_placed,
-        labs: [...(prev.orders_placed?.labs || []), labOrder],
-      },
-    }));
+    updateOrders({
+      labs: [...labs, labOrder],
+    });
   };
 
   const handleRemoveLab = (index) => {
-    setLocalData(prev => ({
-      ...prev,
-      orders_placed: {
-        ...prev.orders_placed,
-        labs: prev.orders_placed.labs.filter((_, i) => i !== index),
-      },
-    }));
+    updateOrders({
+      labs: labs.filter((_, i) => i !== index),
+    });
   };
 
   const handleAddNursingOrder = () => {
     if (!nursingOrderText.trim()) return;
-    setLocalData(prev => ({
-      ...prev,
-      orders_placed: {
-        ...prev.orders_placed,
-        nursing: [...(prev.orders_placed?.nursing || []), { order_text: nursingOrderText.trim() }],
-      },
-    }));
+    updateOrders({
+      nursing: [...nursingOrders, { order_text: nursingOrderText.trim() }],
+    });
     setNursingOrderText('');
   };
 
   const handleRemoveNursingOrder = (index) => {
-    setLocalData(prev => ({
-      ...prev,
-      orders_placed: {
-        ...prev.orders_placed,
-        nursing: prev.orders_placed.nursing.filter((_, i) => i !== index),
-      },
-    }));
+    updateOrders({
+      nursing: nursingOrders.filter((_, i) => i !== index),
+    });
   };
 
-  const totalOrders =
-    (localData.orders_placed?.medications?.length || 0) +
-    (localData.orders_placed?.labs?.length || 0) +
-    (localData.orders_placed?.nursing?.length || 0);
+  const totalOrders = medications.length + labs.length + nursingOrders.length;
 
   return (
     <div className="space-y-6">
@@ -382,7 +348,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
         </Label>
         <Textarea
           id="assessment"
-          value={localData.assessment}
+          value={assessment}
           onChange={(e) => handleChange('assessment', e.target.value)}
           placeholder="Clinical assessment and diagnosis...&#10;&#10;Include working diagnosis, differential diagnoses, and clinical reasoning."
           rows={6}
@@ -400,7 +366,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
         </Label>
         <Textarea
           id="plan_notes"
-          value={localData.plan_notes}
+          value={planNotes}
           onChange={(e) => handleChange('plan_notes', e.target.value)}
           placeholder="Treatment plan and rationale...&#10;&#10;Include changes to treatment, monitoring requirements, and goals."
           rows={6}
@@ -433,27 +399,27 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
               <TabsTrigger value="medications" className="flex items-center gap-1">
                 <Pill className="size-3.5" />
                 Meds
-                {localData.orders_placed?.medications?.length > 0 && (
+                {medications.length > 0 && (
                   <Badge variant="secondary" className="ml-1 size-5 p-0 justify-center">
-                    {localData.orders_placed.medications.length}
+                    {medications.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="labs" className="flex items-center gap-1">
                 <FlaskConical className="size-3.5" />
                 Labs
-                {localData.orders_placed?.labs?.length > 0 && (
+                {labs.length > 0 && (
                   <Badge variant="secondary" className="ml-1 size-5 p-0 justify-center">
-                    {localData.orders_placed.labs.length}
+                    {labs.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="nursing" className="flex items-center gap-1">
                 <Stethoscope className="size-3.5" />
                 Nursing
-                {localData.orders_placed?.nursing?.length > 0 && (
+                {nursingOrders.length > 0 && (
                   <Badge variant="secondary" className="ml-1 size-5 p-0 justify-center">
-                    {localData.orders_placed.nursing.length}
+                    {nursingOrders.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -462,7 +428,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
             {/* Medications Tab */}
             <TabsContent value="medications" className="space-y-4 mt-4">
               <OrdersList
-                orders={localData.orders_placed?.medications}
+                orders={medications}
                 onRemove={handleRemoveMedication}
                 type="medications"
               />
@@ -480,7 +446,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
             {/* Labs Tab */}
             <TabsContent value="labs" className="space-y-4 mt-4">
               <OrdersList
-                orders={localData.orders_placed?.labs}
+                orders={labs}
                 onRemove={handleRemoveLab}
                 type="labs"
               />
@@ -494,7 +460,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
                       size="sm"
                       onClick={() => handleAddLab(lab)}
                       className="text-xs"
-                      disabled={localData.orders_placed?.labs?.some(l => l.test_code === lab.code)}
+                      disabled={labs.some(l => l.test_code === lab.code)}
                     >
                       <Plus className="size-3 mr-1" />
                       {lab.code}
@@ -507,7 +473,7 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
             {/* Nursing Tab */}
             <TabsContent value="nursing" className="space-y-4 mt-4">
               <OrdersList
-                orders={localData.orders_placed?.nursing}
+                orders={nursingOrders}
                 onRemove={handleRemoveNursingOrder}
                 type="nursing"
               />
@@ -556,4 +522,3 @@ export function TreatmentPlanStep({ formData, onChange, contextData, validationE
     </div>
   );
 }
-

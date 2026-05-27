@@ -2,14 +2,14 @@ import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
-import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 
 import format from 'date-fns/format';
-import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+
+const EMPTY_FORM_DATA = Object.freeze({});
 
 /**
  * PatientReviewStep - Step 1 of Ward Round Workflow
@@ -18,32 +18,14 @@ import formatDistanceToNow from 'date-fns/formatDistanceToNow';
  * - Overnight events
  * - Nursing concerns
  */
-export function PatientReviewStep({ formData, onChange, contextData, validationErrors }) {
-  const [localData, setLocalData] = useState({
-    overnight_events: formData?.overnight_events || '',
-    nursing_concerns: formData?.nursing_concerns || '',
-  });
-
-  // Sync with parent when local data changes
-  useEffect(() => {
-    onChange(localData);
-  }, [localData, onChange]);
-
-  // Update local data from props if they change externally
-  useEffect(() => {
-    if (formData) {
-      setLocalData(prev => ({
-        overnight_events: formData.overnight_events ?? prev.overnight_events,
-        nursing_concerns: formData.nursing_concerns ?? prev.nursing_concerns,
-      }));
-    }
-  }, [formData?.overnight_events, formData?.nursing_concerns]);
+export function PatientReviewStep({ formData = EMPTY_FORM_DATA, onChange, contextData }) {
+  const overnightEvents = formData.overnight_events || '';
+  const nursingConcerns = formData.nursing_concerns || '';
 
   const handleChange = (field, value) => {
-    setLocalData(prev => ({
-      ...prev,
+    onChange({
       [field]: value,
-    }));
+    });
   };
 
   const prepData = contextData?.prep_data || {};
@@ -103,7 +85,7 @@ export function PatientReviewStep({ formData, onChange, contextData, validationE
         </Label>
         <Textarea
           id="overnight_events"
-          value={localData.overnight_events}
+          value={overnightEvents}
           onChange={(e) => handleChange('overnight_events', e.target.value)}
           placeholder="Document any significant overnight events, changes in condition, or incidents..."
           rows={5}
@@ -121,7 +103,7 @@ export function PatientReviewStep({ formData, onChange, contextData, validationE
         </Label>
         <Textarea
           id="nursing_concerns"
-          value={localData.nursing_concerns}
+          value={nursingConcerns}
           onChange={(e) => handleChange('nursing_concerns', e.target.value)}
           placeholder="Note any concerns raised by nursing staff during handoff..."
           rows={5}
@@ -134,4 +116,3 @@ export function PatientReviewStep({ formData, onChange, contextData, validationE
     </div>
   );
 }
-
