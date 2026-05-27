@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
@@ -93,17 +93,48 @@ export default function TrendReviewSlideOver({
   allHistory = false,
   initialTab = 'vitals',
 }) {
+  if (!open) {
+    return null;
+  }
+
   const patientId = getPatientId(patient);
-  const patientName = getPatientName(patient);
   const showFluidTab = allHistory || Boolean(admissionId);
   const resolvedInitialTab = showFluidTab ? initialTab : 'vitals';
-  const [activeTab, setActiveTab] = useState(resolvedInitialTab);
+  const scopeKey = [
+    patientId || 'patient',
+    encounterId || 'no-encounter',
+    admissionId || 'no-admission',
+    allHistory ? 'all-history' : 'scoped',
+    resolvedInitialTab,
+  ].join(':');
 
-  useEffect(() => {
-    if (open) {
-      setActiveTab(resolvedInitialTab);
-    }
-  }, [open, resolvedInitialTab]);
+  return (
+    <TrendReviewSlideOverContent
+      key={scopeKey}
+      admissionId={admissionId}
+      allHistory={allHistory}
+      encounterId={encounterId}
+      initialTab={resolvedInitialTab}
+      onClose={onClose}
+      patient={patient}
+      patientId={patientId}
+      showFluidTab={showFluidTab}
+    />
+  );
+}
+
+function TrendReviewSlideOverContent({
+  admissionId,
+  allHistory,
+  encounterId,
+  initialTab,
+  onClose,
+  patient,
+  patientId,
+  showFluidTab,
+}) {
+  const patientName = getPatientName(patient);
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const vitalsFilters = useMemo(() => {
     if (allHistory) {
@@ -129,14 +160,14 @@ export default function TrendReviewSlideOver({
     data: vitalsData = [],
     isLoading: vitalsLoading,
   } = useVitalSignsTrends(patientId, vitalsFilters, {
-    enabled: open && !!patientId,
+    enabled: !!patientId,
   });
 
   const {
     data: fluidTrendData = [],
     isLoading: fluidLoading,
   } = useFluidBalanceTrends(patientId, fluidFilters, {
-    enabled: open && !!patientId && (allHistory || !!admissionId),
+    enabled: !!patientId && (allHistory || !!admissionId),
   });
 
   const formattedVitals = useMemo(() => (
@@ -203,7 +234,7 @@ export default function TrendReviewSlideOver({
       className={cn(
         'fixed inset-y-0 right-0 z-[100] w-full border-l border-border bg-background shadow-2xl transition-transform duration-300 ease-in-out lg:w-1/2',
         'flex flex-col',
-        open ? 'translate-x-0' : 'translate-x-full',
+        'translate-x-0',
       )}
     >
       <header className="border-b border-border bg-card px-6 py-4">
