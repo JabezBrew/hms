@@ -1,5 +1,5 @@
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useReducer } from 'react';
 import { useAuth } from '@/lib/auth';
 import { getAuthValue } from '@/lib/auth-storage';
 import {
@@ -13,6 +13,35 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+const initialWarningState = {
+  showWarning: false,
+  timeLeft: 0,
+  timeoutType: 'inactivity',
+};
+
+function warningReducer(state, action) {
+  switch (action.type) {
+    case 'show':
+      return {
+        showWarning: true,
+        timeoutType: action.timeoutType,
+        timeLeft: action.timeLeft,
+      };
+    case 'update_time_left':
+      return {
+        ...state,
+        timeLeft: action.timeLeft,
+      };
+    case 'hide':
+      return {
+        ...state,
+        showWarning: false,
+      };
+    default:
+      return state;
+  }
+}
+
 /**
  * SessionTimeoutWarning component
  * Warns users before their session expires and offers to extend it
@@ -20,9 +49,10 @@ import {
  */
 export function SessionTimeoutWarning() {
   const { isAuthenticated, logout, isSessionValid } = useAuth();
-  const [showWarning, setShowWarning] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [timeoutType, setTimeoutType] = useState('inactivity'); // 'inactivity' or 'absolute'
+  const [{ showWarning, timeLeft, timeoutType }, dispatchWarning] = useReducer(
+    warningReducer,
+    initialWarningState
+  );
 
   // Session timeout configuration (in milliseconds)
   const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
@@ -50,14 +80,14 @@ export function SessionTimeoutWarning() {
     }
     lastActivityUpdateRef.current = now;
     lastActivityRef.current = now;
-    setShowWarning(false);
+    dispatchWarning({ type: 'hide' });
   }, [showWarning]);
   updateActivityRef.current = updateActivity;
 
   // Handle user extending session
   const handleExtendSession = useCallback(() => {
     updateActivity();
-    setShowWarning(false);
+    dispatchWarning({ type: 'hide' });
   }, [updateActivity]);
 
   // Handle session timeout - notify backend to revoke the session
@@ -66,7 +96,7 @@ export function SessionTimeoutWarning() {
       return;
     }
     timeoutHandledRef.current = true;
-    setShowWarning(false);
+    dispatchWarning({ type: 'hide' });
     // Try to notify backend even if token may be expired - backend logout
     // endpoint allows unauthenticated calls and will use the refresh cookie
     void logout(false);
@@ -112,21 +142,23 @@ export function SessionTimeoutWarning() {
 
       // Check if approaching absolute timeout
       if (totalSessionTime >= ABSOLUTE_SESSION_TIMEOUT - WARNING_TIME && !showWarning) {
-        setTimeoutType('absolute');
-        setShowWarning(true);
         const remaining = ABSOLUTE_SESSION_TIMEOUT - totalSessionTime;
-        setTimeLeft(Math.floor(remaining / 1000));
+        dispatchWarning({
+          type: 'show',
+          timeoutType: 'absolute',
+          timeLeft: Math.floor(remaining / 1000),
+        });
         return;
       }
 
       // Check inactivity timeout
       if (timeSinceActivity >= INACTIVITY_TIMEOUT - WARNING_TIME && timeSinceActivity < INACTIVITY_TIMEOUT) {
-        if (!showWarning || timeoutType !== 'inactivity') {
-          setTimeoutType('inactivity');
-          setShowWarning(true);
-        }
         const remaining = INACTIVITY_TIMEOUT - timeSinceActivity;
-        setTimeLeft(Math.floor(remaining / 1000));
+        dispatchWarning({
+          type: 'show',
+          timeoutType: 'inactivity',
+          timeLeft: Math.floor(remaining / 1000),
+        });
       }
 
       // Logout if inactivity timeout exceeded
@@ -169,7 +201,7 @@ export function SessionTimeoutWarning() {
       }
 
       if (remaining > 0) {
-        setTimeLeft(Math.floor(remaining / 1000));
+        dispatchWarning({ type: 'update_time_left', timeLeft: Math.floor(remaining / 1000) });
       } else {
         handleTimeout();
       }
@@ -201,7 +233,14 @@ export function SessionTimeoutWarning() {
   const warningMessage = getWarningMessage();
 
   return (
-    <AlertDialog open={showWarning} onOpenChange={setShowWarning}>
+    <AlertDialog
+      open={showWarning}
+      onOpenChange={(open) => {
+        if (!open) {
+          dispatchWarning({ type: 'hide' });
+        }
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900">
