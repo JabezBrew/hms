@@ -51,6 +51,394 @@ function getInitialPanelForm() {
   };
 }
 
+const CATEGORIES = [
+  { value: "hematology", label: "Hematology" },
+  { value: "chemistry", label: "Chemistry" },
+  { value: "microbiology", label: "Microbiology" },
+  { value: "immunology", label: "Immunology" },
+  { value: "urinalysis", label: "Urinalysis" },
+  { value: "coagulation", label: "Coagulation" },
+  { value: "serology", label: "Serology" },
+  { value: "molecular", label: "Molecular/PCR" },
+  { value: "pathology", label: "Pathology" },
+  { value: "toxicology", label: "Toxicology" },
+  { value: "endocrine", label: "Endocrine" },
+  { value: "cardiac", label: "Cardiac Markers" },
+  { value: "other", label: "Other" },
+];
+
+const SPECIMEN_TYPES = [
+  { value: "blood", label: "Blood" },
+  { value: "serum", label: "Serum" },
+  { value: "plasma", label: "Plasma" },
+  { value: "urine", label: "Urine" },
+  { value: "stool", label: "Stool" },
+  { value: "csf", label: "CSF (Cerebrospinal Fluid)" },
+  { value: "swab", label: "Swab" },
+  { value: "tissue", label: "Tissue" },
+  { value: "sputum", label: "Sputum" },
+  { value: "other", label: "Other" },
+];
+
+function FieldError({ message, className }) {
+  if (!message) {
+    return null;
+  }
+
+  return <p className={cn("text-xs text-red-500", className)}>{message}</p>;
+}
+
+function FieldLabel({ children, icon }) {
+  return (
+    <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+      {icon}
+      {children}
+    </Label>
+  );
+}
+
+function TextInputField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  error,
+  description,
+  type,
+  step,
+  min,
+  icon,
+}) {
+  return (
+    <div className="space-y-2">
+      <FieldLabel icon={icon}>{label}</FieldLabel>
+      <Input
+        type={type}
+        step={step}
+        min={min}
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={cn("font-mono", error && "border-red-500")}
+      />
+      <FieldError message={error} />
+      {description ? (
+        <p className="text-xs text-muted-foreground">{description}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function TextareaField({ label, value, onChange, placeholder }) {
+  return (
+    <div className="space-y-2">
+      <FieldLabel>{label}</FieldLabel>
+      <Textarea
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="font-mono min-h-[80px]"
+      />
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, placeholder, options, error }) {
+  return (
+    <div className="space-y-2">
+      <FieldLabel>{label}</FieldLabel>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className={cn("font-mono", error && "border-red-500")}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent className="z-[200]">
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FieldError message={error} />
+    </div>
+  );
+}
+
+function ActiveStatusField({ checked, onCheckedChange, entityLabel }) {
+  return (
+    <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
+      <div>
+        <Label className="font-mono text-sm font-medium">
+          Active Status
+        </Label>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Inactive {entityLabel}s won't appear in lab order forms
+        </p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function PanelTestOption({ test, isSelected, onToggle }) {
+  return (
+    <label
+      className={cn(
+        "flex items-center gap-3 p-3 border-b border-border/50 last:border-0",
+        "hover:bg-muted/30 cursor-pointer",
+        isSelected && "bg-amber-50 dark:bg-amber-900/20"
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={onToggle}
+        aria-label={`Include ${test.name} in this panel`}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex size-4 shrink-0 items-center justify-center rounded border border-input shadow-xs transition-colors",
+          isSelected && "border-primary bg-primary text-primary-foreground"
+        )}
+      >
+        {isSelected && <Check className="size-3.5" />}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-sm truncate">{test.name}</p>
+        <p className="font-mono text-xs text-muted-foreground">
+          {test.loinc_code || test.category}
+        </p>
+      </div>
+    </label>
+  );
+}
+
+function PanelTestSelector({ tests, selectedTestIds, error, onToggleTest }) {
+  return (
+    <div className="space-y-2">
+      <FieldLabel>Select Tests *</FieldLabel>
+      <FieldError message={error} className="mb-2" />
+      <div className="border border-border rounded-lg max-h-[300px] overflow-y-auto">
+        {tests.length === 0 ? (
+          <div className="p-4 text-center text-muted-foreground text-sm">
+            No tests available. Create some tests first.
+          </div>
+        ) : (
+          tests.map((test) => (
+            <PanelTestOption
+              key={test.id}
+              test={test}
+              isSelected={selectedTestIds.includes(test.id)}
+              onToggle={() => onToggleTest(test.id)}
+            />
+          ))
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {selectedTestIds.length} test(s) selected
+      </p>
+    </div>
+  );
+}
+
+function PanelForm({ form, errors, tests, onChange, onToggleTest }) {
+  return (
+    <div className="space-y-6">
+      <TextInputField
+        label="Panel Name *"
+        placeholder="e.g., Complete Metabolic Panel"
+        value={form.name}
+        onChange={(value) => onChange("name", value)}
+        error={errors.name}
+      />
+      <TextInputField
+        label="Panel Code"
+        placeholder="e.g., CMP"
+        value={form.code}
+        onChange={(value) => onChange("code", value)}
+      />
+      <TextareaField
+        label="Description"
+        placeholder="Brief description of the panel..."
+        value={form.description}
+        onChange={(value) => onChange("description", value)}
+      />
+      <TextInputField
+        label="Price"
+        type="number"
+        step="0.01"
+        min="0"
+        placeholder="Enter price"
+        value={form.price}
+        onChange={(value) => onChange("price", value)}
+        error={errors.price}
+        icon={<DollarSign className="size-3.5 text-sky-600" />}
+      />
+      <PanelTestSelector
+        tests={tests}
+        selectedTestIds={form.tests}
+        error={errors.tests}
+        onToggleTest={onToggleTest}
+      />
+      <ActiveStatusField
+        checked={form.is_active}
+        onCheckedChange={(checked) => onChange("is_active", checked)}
+        entityLabel="panel"
+      />
+    </div>
+  );
+}
+
+function TestForm({ form, errors, onChange }) {
+  return (
+    <div className="space-y-6">
+      <TextInputField
+        label="Test Name *"
+        placeholder="e.g., Complete Blood Count"
+        value={form.name}
+        onChange={(value) => onChange("name", value)}
+        error={errors.name}
+      />
+      <TextInputField
+        label="LOINC Code"
+        placeholder="e.g., 58410-2"
+        value={form.loinc_code}
+        onChange={(value) => onChange("loinc_code", value)}
+        description="Optional standardized code for interoperability"
+      />
+      <div className="grid grid-cols-2 gap-4">
+        <SelectField
+          label="Category *"
+          value={form.category}
+          onChange={(value) => onChange("category", value)}
+          placeholder="Select category"
+          options={CATEGORIES}
+          error={errors.category}
+        />
+        <SelectField
+          label="Specimen Type"
+          value={form.specimen_type}
+          onChange={(value) => onChange("specimen_type", value)}
+          placeholder="Select specimen"
+          options={SPECIMEN_TYPES}
+        />
+      </div>
+      <TextareaField
+        label="Description"
+        placeholder="Brief description of the test..."
+        value={form.description}
+        onChange={(value) => onChange("description", value)}
+      />
+      <div className="grid grid-cols-2 gap-4">
+        <TextInputField
+          label="Price"
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="Enter price"
+          value={form.price}
+          onChange={(value) => onChange("price", value)}
+          error={errors.price}
+          icon={<DollarSign className="size-3.5 text-sky-600" />}
+        />
+        <TextInputField
+          label="TAT (hours)"
+          type="number"
+          min="1"
+          placeholder="Turnaround time"
+          value={form.tat_hours}
+          onChange={(value) => onChange("tat_hours", value)}
+          error={errors.tat_hours}
+          icon={<Clock className="size-3.5 text-sky-600" />}
+        />
+      </div>
+      <ActiveStatusField
+        checked={form.is_active}
+        onCheckedChange={(checked) => onChange("is_active", checked)}
+        entityLabel="test"
+      />
+    </div>
+  );
+}
+
+function AddLabTestHeader({ isPanel, onClose }) {
+  return (
+    <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            "p-2 rounded-lg",
+            isPanel
+              ? "bg-amber-100 dark:bg-amber-900/30"
+              : "bg-sky-100 dark:bg-sky-900/30"
+          )}
+        >
+          {isPanel ? (
+            <FlaskConical className="size-5 text-amber-600 dark:text-amber-400" />
+          ) : (
+            <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" />
+          )}
+        </div>
+        <div>
+          <h2 className="font-display text-xl text-foreground">
+            Add New {isPanel ? "Panel" : "Test"}
+          </h2>
+          <p className="font-mono text-xs text-muted-foreground mt-0.5">
+            Create a custom {isPanel ? "panel" : "test"} for your facility
+          </p>
+        </div>
+      </div>
+
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={onClose}
+        className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+      >
+        <X className="size-4 mr-1.5" />
+        Close
+      </Button>
+    </header>
+  );
+}
+
+function AddLabTestFooter({ isPanel, isPending, onClose, onSubmit }) {
+  return (
+    <footer className="px-6 py-4 border-t border-border bg-card">
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onClose}
+          className="font-mono text-xs"
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onClick={onSubmit}
+          disabled={isPending}
+          className="font-mono text-xs"
+        >
+          {isPending ? (
+            <>
+              <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+              Creating…
+            </>
+          ) : (
+            <>
+              <Check className="size-3.5 mr-1.5" />
+              Create {isPanel ? "Panel" : "Test"}
+            </>
+          )}
+        </Button>
+      </div>
+    </footer>
+  );
+}
+
 /**
  * AddLabTestSlideOver - Chronicle-styled slide-over for adding new lab tests or panels
  *
@@ -101,37 +489,6 @@ function AddLabTestSlideOverContent({
   const [panelForm, setPanelForm] = useState(getInitialPanelForm);
 
   const [errors, setErrors] = useState({});
-
-  // Categories
-  const categories = [
-    { value: "hematology", label: "Hematology" },
-    { value: "chemistry", label: "Chemistry" },
-    { value: "microbiology", label: "Microbiology" },
-    { value: "immunology", label: "Immunology" },
-    { value: "urinalysis", label: "Urinalysis" },
-    { value: "coagulation", label: "Coagulation" },
-    { value: "serology", label: "Serology" },
-    { value: "molecular", label: "Molecular/PCR" },
-    { value: "pathology", label: "Pathology" },
-    { value: "toxicology", label: "Toxicology" },
-    { value: "endocrine", label: "Endocrine" },
-    { value: "cardiac", label: "Cardiac Markers" },
-    { value: "other", label: "Other" },
-  ];
-
-  // Specimen types
-  const specimenTypes = [
-    { value: "blood", label: "Blood" },
-    { value: "serum", label: "Serum" },
-    { value: "plasma", label: "Plasma" },
-    { value: "urine", label: "Urine" },
-    { value: "stool", label: "Stool" },
-    { value: "csf", label: "CSF (Cerebrospinal Fluid)" },
-    { value: "swab", label: "Swab" },
-    { value: "tissue", label: "Tissue" },
-    { value: "sputum", label: "Sputum" },
-    { value: "other", label: "Other" },
-  ];
 
   // Handle test form change
   const handleTestChange = (field, value) => {
@@ -231,7 +588,6 @@ function AddLabTestSlideOverContent({
         onSuccess?.();
         onClose();
       } catch (err) {
-        console.error("Failed to create panel:", err);
         toast.error(err.message || "Failed to create panel");
       }
     } else {
@@ -254,7 +610,6 @@ function AddLabTestSlideOverContent({
         onSuccess?.();
         onClose();
       } catch (err) {
-        console.error("Failed to create test:", err);
         toast.error(err.message || "Failed to create test");
       }
     }
@@ -271,371 +626,30 @@ function AddLabTestSlideOverContent({
         "translate-x-0"
       )}
     >
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              "p-2 rounded-lg",
-              isPanel
-                ? "bg-amber-100 dark:bg-amber-900/30"
-                : "bg-sky-100 dark:bg-sky-900/30"
-            )}
-          >
-            {isPanel ? (
-              <FlaskConical className="size-5 text-amber-600 dark:text-amber-400" />
-            ) : (
-              <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" />
-            )}
-          </div>
-          <div>
-            <h2 className="font-display text-xl text-foreground">
-              Add New {isPanel ? "Panel" : "Test"}
-            </h2>
-            <p className="font-mono text-xs text-muted-foreground mt-0.5">
-              Create a custom {isPanel ? "panel" : "test"} for your facility
-            </p>
-          </div>
-        </div>
-
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={onClose}
-          className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
-        >
-          <X className="size-4 mr-1.5" />
-          Close
-        </Button>
-      </header>
-
-      {/* Content */}
+      <AddLabTestHeader isPanel={isPanel} onClose={onClose} />
       <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
         {isPanel ? (
-          // Panel Form
-          <div className="space-y-6">
-            {/* Panel Name */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Panel Name *
-              </Label>
-              <Input
-                placeholder="e.g., Complete Metabolic Panel"
-                value={panelForm.name}
-                onChange={(e) => handlePanelChange("name", e.target.value)}
-                className={cn("font-mono", errors.name && "border-red-500")}
-              />
-              {errors.name && (
-                <p className="text-xs text-red-500">{errors.name}</p>
-              )}
-            </div>
-
-            {/* Panel Code */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Panel Code
-              </Label>
-              <Input
-                placeholder="e.g., CMP"
-                value={panelForm.code}
-                onChange={(e) => handlePanelChange("code", e.target.value)}
-                className="font-mono"
-              />
-            </div>
-
-            {/* Description */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Description
-              </Label>
-              <Textarea
-                placeholder="Brief description of the panel..."
-                value={panelForm.description}
-                onChange={(e) => handlePanelChange("description", e.target.value)}
-                className="font-mono min-h-[80px]"
-              />
-            </div>
-
-            {/* Price */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <DollarSign className="size-3.5 text-sky-600" />
-                Price
-              </Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Enter price"
-                value={panelForm.price}
-                onChange={(e) => handlePanelChange("price", e.target.value)}
-                className={cn("font-mono", errors.price && "border-red-500")}
-              />
-              {errors.price && (
-                <p className="text-xs text-red-500">{errors.price}</p>
-              )}
-            </div>
-
-            {/* Select Tests */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Select Tests *
-              </Label>
-              {errors.tests && (
-                <p className="text-xs text-red-500 mb-2">{errors.tests}</p>
-              )}
-              <div className="border border-border rounded-lg max-h-[300px] overflow-y-auto">
-                {tests.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground text-sm">
-                    No tests available. Create some tests first.
-                  </div>
-                ) : (
-                  tests.map((test) => {
-                    const isSelected = panelForm.tests.includes(test.id);
-
-                    return (
-                      <label
-                        key={test.id}
-                        className={cn(
-                          "flex items-center gap-3 p-3 border-b border-border/50 last:border-0",
-                          "hover:bg-muted/30 cursor-pointer",
-                          isSelected && "bg-amber-50 dark:bg-amber-900/20"
-                        )}
-                      >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => handleTestToggle(test.id)}
-                        aria-label={`Include ${test.name} in this panel`}
-                        className="peer sr-only"
-                      />
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          "flex size-4 shrink-0 items-center justify-center rounded border border-input shadow-xs transition-colors",
-                          isSelected && "border-primary bg-primary text-primary-foreground"
-                        )}
-                      >
-                        {isSelected && <Check className="size-3.5" />}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{test.name}</p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {test.loinc_code || test.category}
-                        </p>
-                      </div>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {panelForm.tests.length} test(s) selected
-              </p>
-            </div>
-
-            {/* Active Status */}
-            <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
-              <div>
-                <Label className="font-mono text-sm font-medium">
-                  Active Status
-                </Label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Inactive panels won't appear in lab order forms
-                </p>
-              </div>
-              <Switch
-                checked={panelForm.is_active}
-                onCheckedChange={(checked) => handlePanelChange("is_active", checked)}
-              />
-            </div>
-          </div>
+          <PanelForm
+            form={panelForm}
+            errors={errors}
+            tests={tests}
+            onChange={handlePanelChange}
+            onToggleTest={handleTestToggle}
+          />
         ) : (
-          // Test Form
-          <div className="space-y-6">
-            {/* Test Name */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Test Name *
-              </Label>
-              <Input
-                placeholder="e.g., Complete Blood Count"
-                value={testForm.name}
-                onChange={(e) => handleTestChange("name", e.target.value)}
-                className={cn("font-mono", errors.name && "border-red-500")}
-              />
-              {errors.name && (
-                <p className="text-xs text-red-500">{errors.name}</p>
-              )}
-            </div>
-
-            {/* LOINC Code */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                LOINC Code
-              </Label>
-              <Input
-                placeholder="e.g., 58410-2"
-                value={testForm.loinc_code}
-                onChange={(e) => handleTestChange("loinc_code", e.target.value)}
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Optional standardized code for interoperability
-              </p>
-            </div>
-
-            {/* Category and Specimen Type */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                  Category *
-                </Label>
-                <Select
-                  value={testForm.category}
-                  onValueChange={(value) => handleTestChange("category", value)}
-                >
-                  <SelectTrigger className={cn("font-mono", errors.category && "border-red-500")}>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.value} value={cat.value}>
-                        {cat.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.category && (
-                  <p className="text-xs text-red-500">{errors.category}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                  Specimen Type
-                </Label>
-                <Select
-                  value={testForm.specimen_type}
-                  onValueChange={(value) => handleTestChange("specimen_type", value)}
-                >
-                  <SelectTrigger className="font-mono">
-                    <SelectValue placeholder="Select specimen" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    {specimenTypes.map((spec) => (
-                      <SelectItem key={spec.value} value={spec.value}>
-                        {spec.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Description */}
-            <div className="space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Description
-              </Label>
-              <Textarea
-                placeholder="Brief description of the test..."
-                value={testForm.description}
-                onChange={(e) => handleTestChange("description", e.target.value)}
-                className="font-mono min-h-[80px]"
-              />
-            </div>
-
-            {/* Price and TAT */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <DollarSign className="size-3.5 text-sky-600" />
-                  Price
-                </Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="Enter price"
-                  value={testForm.price}
-                  onChange={(e) => handleTestChange("price", e.target.value)}
-                  className={cn("font-mono", errors.price && "border-red-500")}
-                />
-                {errors.price && (
-                  <p className="text-xs text-red-500">{errors.price}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Clock className="size-3.5 text-sky-600" />
-                  TAT (hours)
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  placeholder="Turnaround time"
-                  value={testForm.tat_hours}
-                  onChange={(e) => handleTestChange("tat_hours", e.target.value)}
-                  className={cn("font-mono", errors.tat_hours && "border-red-500")}
-                />
-                {errors.tat_hours && (
-                  <p className="text-xs text-red-500">{errors.tat_hours}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Active Status */}
-            <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
-              <div>
-                <Label className="font-mono text-sm font-medium">
-                  Active Status
-                </Label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Inactive tests won't appear in lab order forms
-                </p>
-              </div>
-              <Switch
-                checked={testForm.is_active}
-                onCheckedChange={(checked) => handleTestChange("is_active", checked)}
-              />
-            </div>
-          </div>
+          <TestForm
+            form={testForm}
+            errors={errors}
+            onChange={handleTestChange}
+          />
         )}
       </div>
-
-      {/* Footer */}
-      <footer className="px-6 py-4 border-t border-border bg-card">
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-            className="font-mono text-xs"
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={isPending}
-            className="font-mono text-xs"
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                Creating…
-              </>
-            ) : (
-              <>
-                <Check className="size-3.5 mr-1.5" />
-                Create {isPanel ? "Panel" : "Test"}
-              </>
-            )}
-          </Button>
-        </div>
-      </footer>
+      <AddLabTestFooter
+        isPanel={isPanel}
+        isPending={isPending}
+        onClose={onClose}
+        onSubmit={handleSubmit}
+      />
     </div>
   );
 };
