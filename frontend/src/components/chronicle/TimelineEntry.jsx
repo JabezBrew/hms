@@ -1,15 +1,3 @@
-/* oxlint-disable react-doctor/no-render-in-render -- Local content helpers are pure JSX branches without hooks; splitting this clinical timeline card needs a dedicated component pass. */
-/* oxlint-disable react-doctor/no-render-in-render -- Local content helpers are pure JSX branches without hooks; splitting this clinical timeline card needs a dedicated component pass. */
-import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import Pill from 'lucide-react/dist/esm/icons/pill.js';
-import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
-import Activity from 'lucide-react/dist/esm/icons/activity.js';
-import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
-import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
-import Expand from 'lucide-react/dist/esm/icons/expand.js';
-import Send from 'lucide-react/dist/esm/icons/send.js';
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
@@ -17,8 +5,6 @@ import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import PauseCircle from 'lucide-react/dist/esm/icons/circle-pause.js';
 import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import Copy from 'lucide-react/dist/esm/icons/copy.js';
-import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -36,10 +22,17 @@ import {
   isInlineExpandableNoteEntry,
   normalizeExpansionId,
 } from "./chronicleNoteUtils";
+import TimelineEntryFrame from "./TimelineEntryFrame";
+import {
+  buildCopyNoteEntry,
+  buildEditNotePayload,
+  getTimelineEntryConfig,
+  getTimelineEntryTimestamp,
+  isCopyableTimelineNote,
+  isEditableTimelineNote,
+} from "./timelineEntryFrameUtils";
 
-const NoteDetailModal = lazy(() => import("./NoteDetailModal"));
 const PrescriptionActionsDialog = lazy(() => import("./PrescriptionActionsDialog"));
-const CopyNoteModal = lazy(() => import("./CopyNoteModal"));
 const ChronicleNoteBody = lazy(() => import("./ChronicleNoteBody"));
 
 /**
@@ -69,203 +62,14 @@ const TimelineEntry = ({
   isNoteExpanded,
   onToggleNoteExpanded,
 }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [isFallbackNoteExpanded, setIsFallbackNoteExpanded] = useState(false);
 
   // Only play the enter animation on initial mount, not on re-mounts
   const hasAnimatedRef = useRef(false);
   useEffect(() => { hasAnimatedRef.current = true; }, []);
 
-  // ============================================
-  // Entry type configuration
-  // ============================================
-
-  const entryConfig = {
-    progress_note: {
-      icon: FileText,
-      label: 'Progress Note',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    soap_note: {
-      icon: FileText,
-      label: 'SOAP Note',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    vitals: {
-      icon: Activity,
-      label: 'Vitals',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    medication: {
-      icon: Pill,
-      label: 'Medication',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    prescription: {
-      icon: Pill,
-      label: 'Prescription',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    lab_result: {
-      icon: TestTube,
-      label: 'Lab Result',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    order: {
-      icon: ClipboardList,
-      label: 'Order',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    consult: {
-      icon: Stethoscope,
-      label: 'Consultation',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    consult_note: {
-      icon: Stethoscope,
-      label: 'Consult Note',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    },
-    admission: {
-      icon: UserPlus,
-      label: 'Admission',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    admission_note: {
-      icon: UserPlus,
-      label: 'Admission Note',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    discharge: {
-      icon: LogOut,
-      label: 'Discharge',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    discharge_note: {
-      icon: LogOut,
-      label: 'Discharge Note',
-      color: 'emerald',
-      nodeClass: 'timeline-node-emerald'
-    },
-    nursing_note: {
-      icon: FileText,
-      label: 'Nursing Note',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    procedure: {
-      icon: Activity,
-      label: 'Procedure',
-      color: 'rose',
-      nodeClass: 'timeline-node-rose'
-    },
-    referral: {
-      icon: Send,
-      label: 'Referral',
-      color: 'sky',
-      nodeClass: 'timeline-node-sky'
-    },
-    chart: {
-      icon: ClipboardList,
-      label: 'Chart',
-      color: 'amber',
-      nodeClass: 'timeline-node-amber'
-    }
-  };
-
-  const config = entryConfig[entry.type] || entryConfig.progress_note;
-  const Icon = config.icon;
-  const entryTimestamp = entry.timestamp
-    || entry.occurred_at
-    || entry.recorded_at
-    || entry.measured_at
-    || entry.created_at
-    || entry.updated_at
-    || entry.data?.timestamp
-    || entry.data?.recorded_at
-    || entry.data?.measured_at
-    || entry.data?.created_at
-    || entry.data?.updated_at
-    || null;
-
-  // ============================================
-  // Time formatting
-  // ============================================
-
-  const formatTime = (timestamp) => {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch {
-      return '';
-    }
-  };
-
-  const formatRelativeTime = (timestamp) => {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-
-      if (diffMins < 1) return 'just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays === 1) return 'yesterday';
-      if (diffDays < 7) return `${diffDays}d ago`;
-
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return '';
-    }
-  };
-
-  // ============================================
-  // Badge color mapping
-  // ============================================
-
-  const getBadgeClass = (color) => {
-    const badges = {
-      amber: 'badge-chronicle-amber',
-      emerald: 'badge-chronicle-emerald',
-      rose: 'badge-chronicle-rose',
-      sky: 'badge-chronicle-sky'
-    };
-    return badges[color] || badges.amber;
-  };
-
-  // ============================================
-  // Check if entry has viewable detail content
-  // ============================================
-
+  const config = getTimelineEntryConfig(entry.type);
+  const entryTimestamp = getTimelineEntryTimestamp(entry);
   const hasDetailContent = hasEntryDetailContent(entry);
   const canInlineExpand = isInlineExpandableNoteEntry(entry);
   const noteBodyId = normalizeExpansionId(entry?.id)
@@ -274,72 +78,20 @@ const TimelineEntry = ({
   const noteExpanded = typeof isNoteExpanded === 'boolean'
     ? isNoteExpanded
     : isFallbackNoteExpanded;
-  const copyNoteEntry = useMemo(() => ({
-    id: entry.id,
-    template: entry.template,
-    template_id: entry.template_id,
-    template_title: entry.template_title || entry.title || config.label,
-    data: entry.data,
-  }), [config.label, entry.data, entry.id, entry.template, entry.template_id, entry.template_title, entry.title]);
-
-  // ============================================
-  // Check if entry is a copyable clinical note
-  // ============================================
-
-  const isCopyableNote = () => {
-    // Note types that can be copied
-    const copyableTypes = [
-      'progress_note', 'soap_note', 'nursing_note', 'admission_note',
-      'discharge_note', 'consult_note', 'procedure'
-    ];
-    // Must have an id and be a note type with data
-    return copyableTypes.includes(entry.type) &&
-           entry.id &&
-           entry.data &&
-           typeof entry.data === 'object';
+  const canCopyNote = isCopyableTimelineNote(entry);
+  const canEditNote = Boolean(onEditNote) && isEditableTimelineNote(entry, currentUserId);
+  const actionCapabilities = {
+    canCopyNote,
+    canEditNote,
+    canInlineExpand,
+    hasDetailContent,
   };
-
-  // ============================================
-  // Check if entry is an editable clinical note
-  // ============================================
-
-  const isEditableNote = () => {
-    // Note types that can be edited (same as copyable)
-    const editableTypes = [
-      'progress_note', 'soap_note', 'nursing_note', 'admission_note',
-      'discharge_note', 'consult_note', 'procedure'
-    ];
-    // Must have an id, template info, and be a note type with data
-    const isEditableType = editableTypes.includes(entry.type) &&
-           entry.id &&
-           entry.template &&
-           entry.data &&
-           typeof entry.data === 'object';
-
-    if (!isEditableType) return false;
-
-    // Only the author can edit their own notes
-    // Compare current user ID with the entry's author_id
-    if (!currentUserId || !entry.author_id) return false;
-
-    return String(currentUserId) === String(entry.author_id);
-  };
-
-  // ============================================
-  // Handle edit note click
-  // ============================================
+  const copyNoteEntry = canCopyNote ? buildCopyNoteEntry(entry, config.label) : null;
 
   const handleEditClick = () => {
     if (!onEditNote) return;
 
-    onEditNote({
-      noteId: entry.id,
-      template: entry.template,
-      templateId: entry.template?.id || entry.template_id,
-      templateTitle: entry.template?.title || entry.template_title || entry.title,
-      data: entry.data,
-      title: entry.title,
-    });
+    onEditNote(buildEditNotePayload(entry));
   };
 
   const handleToggleNoteExpanded = () => {
@@ -355,183 +107,61 @@ const TimelineEntry = ({
     setIsFallbackNoteExpanded((previous) => !previous);
   };
 
-  // ============================================
-  // Render content based on entry type
-  // ============================================
-
-  const renderContent = () => {
-    switch (entry.type) {
-      case 'vitals':
-        return <VitalsContent vitals={entry.data} />;
-      case 'lab_result':
-        return <LabResultContent result={entry.data} />;
-      case 'medication':
-      case 'prescription':
-        return <MedicationContent medication={entry.data} entry={entry} />;
-      case 'referral':
-        return <ReferralContent referral={entry.data} />;
-      case 'chart':
-        return <ChartSummaryContent entry={entry} />;
-      default:
-        if (canInlineExpand && noteExpanded) {
-          return (
-            <ExpandedNoteContent
-              entry={entry}
-              noteBodyId={noteBodyId}
-            />
-          );
-        }
-        // Generic note preview
-        return <NotePreview entry={entry} />;
-    }
-  };
-
-  // ============================================
-  // Render
-  // ============================================
-
   return (
-    <article
-      className={cn(
-        "relative min-w-0 max-w-full pl-5 pb-8 last:pb-0 sm:pl-8",
-        !hasAnimatedRef.current && "animate-chronicle-enter",
-        className
-      )}
-      style={!hasAnimatedRef.current ? { animationDelay: `${index * 50}ms` } : undefined}
+    <TimelineEntryFrame
+      capabilities={actionCapabilities}
+      className={className}
+      config={config}
+      copyNoteEntry={copyNoteEntry}
+      currentUserId={currentUserId}
+      entry={entry}
+      entryTimestamp={entryTimestamp}
+      hasAnimated={hasAnimatedRef.current}
+      index={index}
+      isRecent={isRecent}
+      noteBodyId={noteBodyId}
+      noteExpanded={noteExpanded}
+      onCopyNote={onCopyNote}
+      onEditClick={handleEditClick}
+      onEditNote={onEditNote}
+      onNoteUpdated={onNoteUpdated}
+      onToggleNoteExpanded={handleToggleNoteExpanded}
     >
-      {/* Timeline spine */}
-      <div className="timeline-spine" />
-
-      {/* Timeline node */}
-      <div className={cn(
-        "timeline-node",
-        config.nodeClass,
-        isRecent && "animate-node-pulse"
-      )} />
-
-      {/* Entry content */}
-      <div className={cn(
-        "min-w-0 max-w-full overflow-hidden bg-card/30 rounded-xl border border-border/50 p-4 sm:p-5",
-        "hover:border-border transition-colors group"
-      )}>
-        {/* Meta line */}
-        <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-            <time className="min-w-0 [overflow-wrap:anywhere] font-mono text-xs text-primary">
-              {formatTime(entryTimestamp)}
-            </time>
-            <span className={getBadgeClass(config.color)}>
-              <Icon className="size-3 mr-1 inline" />
-              {config.label}
-            </span>
-            {/* Edited indicator with last edited time */}
-            {entry.has_edits && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                <Pencil className="size-2.5" />
-                Edited
-                {entry.updated_at && (
-                  <span className="text-amber-500/70 ml-1">
-                    · {formatRelativeTime(entry.updated_at)}
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-          {entry.author && (
-            <span className="min-w-0 [overflow-wrap:anywhere] font-mono text-xs text-muted-foreground sm:text-right">
-              {entry.author}
-            </span>
-          )}
-        </div>
-
-        {/* Content */}
-        {/* react-doctor-disable-next-line react-doctor/no-render-in-render -- This is a pure entry-type content switch, not a nested component definition. */}
-        {renderContent()}
-
-        {/* Action buttons */}
-        {(hasDetailContent || isCopyableNote() || isEditableNote() || canInlineExpand) && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-            {canInlineExpand && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="font-mono text-xs text-primary p-0 h-auto hover:bg-transparent"
-                onClick={handleToggleNoteExpanded}
-                aria-controls={noteBodyId}
-                aria-expanded={noteExpanded}
-              >
-                {noteExpanded ? (
-                  <ChevronUp className="size-3 mr-1" />
-                ) : (
-                  <ChevronDown className="size-3 mr-1" />
-                )}
-                {noteExpanded ? 'Collapse note' : 'Open note'}
-              </Button>
-            )}
-            {hasDetailContent && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="font-mono text-xs text-primary p-0 h-auto hover:bg-transparent"
-                onClick={() => setIsModalOpen(true)}
-              >
-                <Expand className="size-3 mr-1" />
-                {canInlineExpand ? 'Focus view' : 'View details'}
-              </Button>
-            )}
-            {isEditableNote() && onEditNote && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="font-mono text-xs text-muted-foreground p-0 h-auto hover:bg-transparent hover:text-primary"
-                onClick={handleEditClick}
-              >
-                <Pencil className="size-3 mr-1" />
-                Edit
-              </Button>
-            )}
-            {isCopyableNote() && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="font-mono text-xs text-muted-foreground p-0 h-auto hover:bg-transparent hover:text-primary"
-                onClick={() => setIsCopyModalOpen(true)}
-              >
-                <Copy className="size-3 mr-1" />
-                Copy note
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Note detail modal */}
-      {isModalOpen && (
-        <Suspense fallback={null}>
-          <NoteDetailModal
-            open={isModalOpen}
-            onOpenChange={setIsModalOpen}
-            entry={entry}
-            currentUserId={currentUserId}
-            onEditNote={onEditNote}
-            onNoteUpdated={onNoteUpdated}
-          />
-        </Suspense>
-      )}
-
-      {/* Copy note modal */}
-      {isCopyableNote() && isCopyModalOpen && (
-        <Suspense fallback={null}>
-          <CopyNoteModal
-            open={isCopyModalOpen}
-            onOpenChange={setIsCopyModalOpen}
-	            noteEntry={copyNoteEntry}
-            onCopyConfirm={onCopyNote}
-          />
-        </Suspense>
-      )}
-    </article>
+      <TimelineEntryContent
+        canInlineExpand={canInlineExpand}
+        entry={entry}
+        noteBodyId={noteBodyId}
+        noteExpanded={noteExpanded}
+      />
+    </TimelineEntryFrame>
   );
+};
+
+const TimelineEntryContent = ({ entry, canInlineExpand, noteExpanded, noteBodyId }) => {
+  switch (entry.type) {
+    case 'vitals':
+      return <VitalsContent vitals={entry.data} />;
+    case 'lab_result':
+      return <LabResultContent result={entry.data} />;
+    case 'medication':
+    case 'prescription':
+      return <MedicationContent medication={entry.data} entry={entry} />;
+    case 'referral':
+      return <ReferralContent referral={entry.data} />;
+    case 'chart':
+      return <ChartSummaryContent entry={entry} />;
+    default:
+      if (canInlineExpand && noteExpanded) {
+        return (
+          <ExpandedNoteContent
+            entry={entry}
+            noteBodyId={noteBodyId}
+          />
+        );
+      }
+
+      return <NotePreview entry={entry} />;
+  }
 };
 
 /**
