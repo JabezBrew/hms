@@ -536,6 +536,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
           task_type: 'observation',
           due_at: '2026-05-12T11:00:00.000Z',
           assigned_to_user_id: 'user-1',
+          title: 'Check post-op observations',
+          instruction: 'Check post-op observations',
         }),
       }),
     );

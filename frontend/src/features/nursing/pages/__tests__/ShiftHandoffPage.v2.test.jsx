@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getHandoffNurseOptions } from '../ShiftHandoffPage';
+import { getHandoffNurseOptions } from '../shift-handoff/handoffNurseOptions';
 
 describe('ShiftHandoffPage Rust V2 staff fallback', () => {
   it('uses active staff directory users when ward-specific assignments are unavailable', () => {
