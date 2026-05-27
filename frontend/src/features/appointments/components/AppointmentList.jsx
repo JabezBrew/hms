@@ -1,1 +1,1 @@
-export { default } from '@/components/appointments/AppointmentList';
+export { default } from './appointment-list/AppointmentList';
