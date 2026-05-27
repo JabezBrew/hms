@@ -5,7 +5,7 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,30 @@ import {
 } from "@/features/laboratory/hooks";
 import { Checkbox } from "@/components/ui/checkbox";
 
+function getInitialTestForm() {
+  return {
+    name: "",
+    loinc_code: "",
+    category: "chemistry",
+    description: "",
+    specimen_type: "blood",
+    price: "",
+    tat_hours: "",
+    is_active: true,
+  };
+}
+
+function getInitialPanelForm() {
+  return {
+    name: "",
+    code: "",
+    description: "",
+    price: "",
+    is_active: true,
+    tests: [],
+  };
+}
+
 /**
  * AddLabTestSlideOver - Chronicle-styled slide-over for adding new lab tests or panels
  *
@@ -42,6 +66,25 @@ const AddLabTestSlideOver = ({
   type = "test", // 'test' or 'panel'
   onSuccess,
 }) => {
+  return (
+    <>
+      {open ? (
+        <AddLabTestSlideOverContent
+          key={type}
+          type={type}
+          onClose={onClose}
+          onSuccess={onSuccess}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function AddLabTestSlideOverContent({
+  type = "test",
+  onClose,
+  onSuccess,
+}) {
   const isPanel = type === "panel";
 
   // Mutations
@@ -49,30 +92,14 @@ const AddLabTestSlideOver = ({
   const createPanel = useCreateLabPanel();
 
   // Get tests for panel creation
-  const { data: testsData } = useLabTests({ enabled: open, page_size: 500 });
+  const { data: testsData } = useLabTests({ enabled: isPanel, page_size: 500 });
   const tests = Array.isArray(testsData) ? testsData : (testsData?.results || []);
 
   // Form state for test
-  const [testForm, setTestForm] = useState({
-    name: "",
-    loinc_code: "",
-    category: "chemistry",
-    description: "",
-    specimen_type: "blood",
-    price: "",
-    tat_hours: "",
-    is_active: true,
-  });
+  const [testForm, setTestForm] = useState(getInitialTestForm);
 
   // Form state for panel
-  const [panelForm, setPanelForm] = useState({
-    name: "",
-    code: "",
-    description: "",
-    price: "",
-    is_active: true,
-    tests: [],
-  });
+  const [panelForm, setPanelForm] = useState(getInitialPanelForm);
 
   const [errors, setErrors] = useState({});
 
@@ -106,31 +133,6 @@ const AddLabTestSlideOver = ({
     { value: "sputum", label: "Sputum" },
     { value: "other", label: "Other" },
   ];
-
-  // Reset form when panel closes or type changes
-  useEffect(() => {
-    if (!open) {
-      setTestForm({
-        name: "",
-        loinc_code: "",
-        category: "chemistry",
-        description: "",
-        specimen_type: "blood",
-        price: "",
-        tat_hours: "",
-        is_active: true,
-      });
-      setPanelForm({
-        name: "",
-        code: "",
-        description: "",
-        price: "",
-        is_active: true,
-        tests: [],
-      });
-      setErrors({});
-    }
-  }, [open, type]);
 
   // Handle test form change
   const handleTestChange = (field, value) => {
@@ -267,7 +269,7 @@ const AddLabTestSlideOver = ({
         "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
         "flex flex-col shadow-2xl",
-        open ? "translate-x-0" : "translate-x-full"
+        "translate-x-0"
       )}
     >
       {/* Header */}

@@ -12,7 +12,7 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Info from 'lucide-react/dist/esm/icons/info.js';
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,10 +45,47 @@ const AddChartSlideOver = ({
   allHistory = false,
   onChartAssigned,
 }) => {
+  const patientId = patient?.local_data?.id || patient?.id || 'unknown-patient';
+  const encounterId = encounter?.id || 'no-encounter';
+  const admissionId = admission?.id || 'no-admission';
+  const contentKey = `${patientId}:${encounterId}:${admissionId}:${allHistory ? 'all' : 'scoped'}`;
+
+  return (
+    <div
+      className={cn(
+        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
+        "transform transition-transform duration-300 ease-in-out",
+        "flex flex-col shadow-2xl",
+        open ? "translate-x-0" : "translate-x-full"
+      )}
+    >
+      {open ? (
+        <AddChartSlideOverContent
+          key={contentKey}
+          onClose={onClose}
+          patient={patient}
+          encounter={encounter}
+          admission={admission}
+          allHistory={allHistory}
+          onChartAssigned={onChartAssigned}
+        />
+      ) : null}
+    </div>
+  );
+};
+
+function AddChartSlideOverContent({
+  onClose,
+  patient,
+  encounter,
+  admission,
+  allHistory = false,
+  onChartAssigned,
+}) {
   // Fetch templates and options (lazy - only when slide-over is open)
-  const { data: templatesData, isLoading: templatesLoading } = useChartTemplates({ is_active: true, enabled: open });
-  const { data: categories = [] } = useChartCategories({ enabled: open });
-  const { data: intervals = [] } = useChartIntervals({ enabled: open });
+  const { data: templatesData, isLoading: templatesLoading } = useChartTemplates({ is_active: true, enabled: true });
+  const { data: categories = [] } = useChartCategories({ enabled: true });
+  const { data: intervals = [] } = useChartIntervals({ enabled: true });
   const createMutation = useCreateChartAssignment();
 
   // Form state
@@ -61,21 +98,6 @@ const AddChartSlideOver = ({
     reason: '',
     instructions: '',
   });
-
-  // Reset when panel closes
-  useEffect(() => {
-    if (!open) {
-      setStep(1);
-      setSearchQuery('');
-      setCategoryFilter('');
-      setSelectedTemplate(null);
-      setFormData({
-        monitoring_interval: '',
-        reason: '',
-        instructions: '',
-      });
-    }
-  }, [open]);
 
   // Get patient info
   const patientId = patient?.local_data?.id || patient?.id;
@@ -150,14 +172,7 @@ const AddChartSlideOver = ({
   };
 
   return (
-    <div
-      className={cn(
-        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
-        "transform transition-transform duration-300 ease-in-out",
-        "flex flex-col shadow-2xl",
-        open ? "translate-x-0" : "translate-x-full"
-      )}
-    >
+    <>
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
@@ -412,9 +427,9 @@ const AddChartSlideOver = ({
           </div>
         </div>
       </footer>
-    </div>
+    </>
   );
-};
+}
 
 export { AddChartSlideOver };
 export default AddChartSlideOver;
