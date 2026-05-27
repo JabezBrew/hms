@@ -123,6 +123,244 @@ function formatDate(value) {
   }
 }
 
+function WardStockLocationFields({ control, locationsLoading, wardStores, fulfillingLocations }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <FormField
+        control={control}
+        name="requesting_location"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Ward Store</FormLabel>
+            <Select onValueChange={field.onChange} value={field.value} disabled={locationsLoading}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={locationsLoading ? 'Loading stores...' : 'Select ward store'} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {wardStores.map((location) => (
+                  <SelectItem key={location.id} value={location.id}>
+                    {location.name} ({location.code})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormDescription>Only ward stores can create ward stock requests.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={control}
+        name="fulfilling_location"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Fulfilling Store</FormLabel>
+            <Select onValueChange={field.onChange} value={field.value} disabled={locationsLoading}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={locationsLoading ? 'Loading stores...' : 'Select source store'} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {fulfillingLocations.map((location) => (
+                  <SelectItem key={location.id} value={location.id}>
+                    {location.name} ({location.code})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  );
+}
+
+function WardStockRequestDetailsFields({ control }) {
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        <FormField
+          control={control}
+          name="priority"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Priority</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {PRIORITIES.map((priority) => (
+                    <SelectItem key={priority.value} value={priority.value}>
+                      {priority.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={control}
+          name="date_required"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Required By</FormLabel>
+              <FormControl>
+                <Input type="date" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <FormField
+        control={control}
+        name="justification"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Reason</FormLabel>
+            <FormControl>
+              <Textarea placeholder="Ward stock replenishment, emergency top-up, routine stock issue..." {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  );
+}
+
+function WardStockItemsFieldArray({ control, fields, inventoryItems, itemsLoading, onAppend, onRemove }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <FormLabel>Items</FormLabel>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onAppend}
+        >
+          <Plus className="mr-2 size-4" />
+          Add Item
+        </Button>
+      </div>
+
+      {fields.map((field, index) => (
+        <div key={field.id} className="grid gap-3 rounded-lg border bg-card/40 p-3 md:grid-cols-[1fr_120px_1fr_auto]">
+          <FormField
+            control={control}
+            name={`items.${index}.item`}
+            render={({ field }) => (
+              <FormItem>
+                <Select onValueChange={field.onChange} value={field.value} disabled={itemsLoading}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder={itemsLoading ? 'Loading items...' : 'Select item'} />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {inventoryItems.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name} ({item.sku})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name={`items.${index}.quantity_requested`}
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <Input type="number" min="1" placeholder="Qty" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name={`items.${index}.notes`}
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <Input placeholder="Notes (optional)" {...field} />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-destructive"
+            onClick={() => onRemove(index)}
+            disabled={fields.length === 1}
+            aria-label="Remove item"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WardStockNotesField({ control }) {
+  return (
+    <FormField
+      control={control}
+      name="notes"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Notes</FormLabel>
+          <FormControl>
+            <Textarea placeholder="Optional handling notes for inventory staff." {...field} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+function WardStockRequestFormFooter({ isSubmitting, onCancel }) {
+  return (
+    <DialogFooter>
+      <Button type="button" variant="outline" onClick={onCancel}>
+        Cancel
+      </Button>
+      <Button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? (
+          <Loader2 className="mr-2 size-4 animate-spin" />
+        ) : (
+          <Send className="mr-2 size-4" />
+        )}
+        Submit Request
+      </Button>
+    </DialogFooter>
+  );
+}
+
 function WardStockRequestForm({ open, onOpenChange }) {
   const { data: locationsData, isLoading: locationsLoading } = useStorageLocations({
     page_size: 200,
@@ -210,221 +448,30 @@ function WardStockRequestForm({ open, onOpenChange }) {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="requesting_location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Ward Store</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={locationsLoading}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={locationsLoading ? 'Loading stores...' : 'Select ward store'} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {wardStores.map((location) => (
-                          <SelectItem key={location.id} value={location.id}>
-                            {location.name} ({location.code})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>Only ward stores can create ward stock requests.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="fulfilling_location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fulfilling Store</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={locationsLoading}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={locationsLoading ? 'Loading stores...' : 'Select source store'} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {fulfillingLocations.map((location) => (
-                          <SelectItem key={location.id} value={location.id}>
-                            {location.name} ({location.code})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Priority</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {PRIORITIES.map((priority) => (
-                          <SelectItem key={priority.value} value={priority.value}>
-                            {priority.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="date_required"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Required By</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
+            <WardStockLocationFields
               control={form.control}
-              name="justification"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Reason</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Ward stock replenishment, emergency top-up, routine stock issue..." {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              locationsLoading={locationsLoading}
+              wardStores={wardStores}
+              fulfillingLocations={fulfillingLocations}
             />
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <FormLabel>Items</FormLabel>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => append({ item: '', quantity_requested: 1, notes: '' })}
-                >
-                  <Plus className="mr-2 size-4" />
-                  Add Item
-                </Button>
-              </div>
+            <WardStockRequestDetailsFields control={form.control} />
 
-              {fields.map((field, index) => (
-                <div key={field.id} className="grid gap-3 rounded-lg border bg-card/40 p-3 md:grid-cols-[1fr_120px_1fr_auto]">
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.item`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={itemsLoading}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={itemsLoading ? 'Loading items...' : 'Select item'} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {inventoryItems.map((item) => (
-                              <SelectItem key={item.id} value={item.id}>
-                                {item.name} ({item.sku})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.quantity_requested`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input type="number" min="1" placeholder="Qty" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.notes`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input placeholder="Notes (optional)" {...field} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive"
-                    onClick={() => remove(index)}
-                    disabled={fields.length === 1}
-                    aria-label="Remove item"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <FormField
+            <WardStockItemsFieldArray
               control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Notes</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Optional handling notes for inventory staff." {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              fields={fields}
+              inventoryItems={inventoryItems}
+              itemsLoading={itemsLoading}
+              onAppend={() => append({ item: '', quantity_requested: 1, notes: '' })}
+              onRemove={remove}
             />
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 size-4" />
-                )}
-                Submit Request
-              </Button>
-            </DialogFooter>
+            <WardStockNotesField control={form.control} />
+
+            <WardStockRequestFormFooter
+              isSubmitting={isSubmitting}
+              onCancel={() => onOpenChange(false)}
+            />
           </form>
         </Form>
       </DialogContent>
