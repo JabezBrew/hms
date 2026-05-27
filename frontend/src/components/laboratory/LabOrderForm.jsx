@@ -4,10 +4,9 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo, useReducer } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +39,112 @@ import {
 import { emitOnboardingEvent } from "@/features/onboarding";
 import { toast } from "sonner";
 
+const STEPS = [
+  { id: 'select_tests', title: 'Select Tests' },
+  { id: 'details', title: 'Details' },
+  { id: 'review', title: 'Review' },
+];
+
+const TOTAL_STEPS = STEPS.length;
+
+const INITIAL_FORM_DATA = {
+  priority: "routine",
+  clinical_notes: "",
+  indication: "",
+  selected_tests: [],
+  selected_panels: [],
+};
+
+const INITIAL_FORM_STATE = {
+  currentStep: 1,
+  formData: INITIAL_FORM_DATA,
+  searchQuery: "",
+  activeCategory: "all",
+  errors: {},
+};
+
+const labOrderFormReducer = (state, action) => {
+  switch (action.type) {
+    case "set_step":
+      return {
+        ...state,
+        currentStep: Math.min(Math.max(action.step, 1), TOTAL_STEPS),
+      };
+    case "next_step":
+      return {
+        ...state,
+        currentStep: Math.min(state.currentStep + 1, TOTAL_STEPS),
+      };
+    case "previous_step":
+      return {
+        ...state,
+        currentStep: Math.max(state.currentStep - 1, 1),
+      };
+    case "set_field":
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          [action.field]: action.value,
+        },
+      };
+    case "toggle_test":
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          selected_tests: state.formData.selected_tests.includes(action.testId)
+            ? state.formData.selected_tests.filter((id) => id !== action.testId)
+            : [...state.formData.selected_tests, action.testId],
+        },
+      };
+    case "toggle_panel":
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          selected_panels: state.formData.selected_panels.includes(action.panelId)
+            ? state.formData.selected_panels.filter((id) => id !== action.panelId)
+            : [...state.formData.selected_panels, action.panelId],
+        },
+      };
+    case "set_search_query":
+      return {
+        ...state,
+        searchQuery: action.searchQuery,
+      };
+    case "set_active_category":
+      return {
+        ...state,
+        activeCategory: action.activeCategory,
+      };
+    case "set_errors":
+      return {
+        ...state,
+        errors: action.errors,
+      };
+    default:
+      return state;
+  }
+};
+
+const fuzzyMatch = (item, query) => {
+  if (!query.trim()) return true;
+
+  const searchTerms = query.toLowerCase().trim().split(/\s+/);
+  const searchableText = [
+    item.name,
+    item.code,
+    item.short_name,
+    item.loinc_code,
+    item.description,
+    item.category,
+    item.specimen_type,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return searchTerms.every(term => searchableText.includes(term));
+};
+
 /**
  * LabOrderForm - Multi-step wizard for creating lab orders
  *
@@ -55,30 +160,33 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
   // Get patient and encounter IDs
   const patientId = patient?.local_data?.id || patient?.id;
   const encounterId = encounter?.local_data?.id || encounter?.id;
+  const formScopeKey = open
+    ? `${patientId || 'unknown-patient'}:${encounterId || 'no-encounter'}`
+    : 'closed';
 
-  // Workflow steps configuration
-  const steps = [
-    { id: 'select_tests', title: 'Select Tests' },
-    { id: 'details', title: 'Details' },
-    { id: 'review', title: 'Review' },
-  ];
-  const totalSteps = steps.length;
+  return (
+    <LabOrderFormContent
+      key={formScopeKey}
+      open={open}
+      onClose={onClose}
+      patient={patient}
+      patientId={patientId}
+      encounterId={encounterId}
+      onOrderCreated={onOrderCreated}
+    />
+  );
+};
 
-  // Step state
-  const [currentStep, setCurrentStep] = useState(1);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    priority: "routine",
-    clinical_notes: "",
-    indication: "",
-    selected_tests: [],
-    selected_panels: [],
-  });
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState("all");
-  const [errors, setErrors] = useState({});
+const LabOrderFormContent = ({
+  open,
+  onClose,
+  patient,
+  patientId,
+  encounterId,
+  onOrderCreated,
+}) => {
+  const [state, dispatch] = useReducer(labOrderFormReducer, INITIAL_FORM_STATE);
+  const { currentStep, formData, searchQuery, activeCategory, errors } = state;
 
   // TODO: Switch to backend search when catalog grows beyond ~500 items
   // Currently using frontend fuzzy search for instant results with small catalog
@@ -98,46 +206,15 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
   const createOrder = useCreateLabOrder();
   const submitOrder = useSubmitLabOrder();
 
-  // Reset form when panel closes
-  useEffect(() => {
-    if (!open) {
-      setFormData({
-        priority: "routine",
-        clinical_notes: "",
-        indication: "",
-        selected_tests: [],
-        selected_panels: [],
-      });
-      setCurrentStep(1);
-      setErrors({});
-      setSearchQuery("");
-      setActiveCategory("all");
-    }
-  }, [open]);
-
   // Normalize data - API returns array directly, not { results: [...] }
-  const tests = Array.isArray(testsData) ? testsData : (testsData?.results || []);
-  const panels = Array.isArray(panelsData) ? panelsData : (panelsData?.results || []);
-
-  // Fuzzy search function - matches if all search terms appear in searchable text
-  // Handles abbreviations naturally (TSH matches "Thyroid Stimulating Hormone" if TSH is in code/short_name)
-  const fuzzyMatch = (item, query) => {
-    if (!query.trim()) return true;
-
-    const searchTerms = query.toLowerCase().trim().split(/\s+/);
-    const searchableText = [
-      item.name,
-      item.code,
-      item.short_name,
-      item.loinc_code,
-      item.description,
-      item.category,
-      item.specimen_type,
-    ].filter(Boolean).join(' ').toLowerCase();
-
-    // All terms must match somewhere in the searchable text
-    return searchTerms.every(term => searchableText.includes(term));
-  };
+  const tests = useMemo(
+    () => (Array.isArray(testsData) ? testsData : (testsData?.results || [])),
+    [testsData]
+  );
+  const panels = useMemo(
+    () => (Array.isArray(panelsData) ? panelsData : (panelsData?.results || [])),
+    [panelsData]
+  );
 
   // Filter tests by search query, category, and active status
   const filteredTests = useMemo(() => {
@@ -159,36 +236,31 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
   }, [panels, searchQuery]);
 
   // Get test categories for the category filter buttons
-  const categories = tests.length > 0
-    ? [...new Set(tests.flatMap((test) => (test.category ? [test.category] : [])))]
-    : [];
+  const categories = useMemo(
+    () => (
+      tests.length > 0
+        ? [...new Set(tests.flatMap((test) => (test.category ? [test.category] : [])))]
+        : []
+    ),
+    [tests]
+  );
 
   // Check if we have search results to show combined view
   const hasSearchQuery = searchQuery.trim().length > 0;
   const totalResults = filteredTests.length + filteredPanels.length;
 
   // Handle test selection
-  const handleTestToggle = (testId) => {
-    setFormData((prev) => ({
-      ...prev,
-      selected_tests: prev.selected_tests.includes(testId)
-        ? prev.selected_tests.filter((id) => id !== testId)
-        : [...prev.selected_tests, testId],
-    }));
-  };
+  const handleTestToggle = useCallback((testId) => {
+    dispatch({ type: "toggle_test", testId });
+  }, []);
 
   // Handle panel selection
-  const handlePanelToggle = (panelId) => {
-    setFormData((prev) => ({
-      ...prev,
-      selected_panels: prev.selected_panels.includes(panelId)
-        ? prev.selected_panels.filter((id) => id !== panelId)
-        : [...prev.selected_panels, panelId],
-    }));
-  };
+  const handlePanelToggle = useCallback((panelId) => {
+    dispatch({ type: "toggle_panel", panelId });
+  }, []);
 
   // Validation
-  const validateStep = (step) => {
+  const validateStep = useCallback((step) => {
     const newErrors = {};
 
     if (step === 1) {
@@ -206,31 +278,31 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
       }
     }
 
-    setErrors(newErrors);
+    dispatch({ type: "set_errors", errors: newErrors });
     return Object.keys(newErrors).length === 0;
-  };
+  }, [formData.indication, formData.selected_panels.length, formData.selected_tests.length]);
 
   // Handle next step
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, 3));
+      dispatch({ type: "next_step" });
     }
-  };
+  }, [currentStep, validateStep]);
 
   // Handle previous step
   const handleBack = useCallback(() => {
-    setCurrentStep((prev) => Math.max(prev - 1, 1));
+    dispatch({ type: "previous_step" });
   }, []);
 
   // Handle jump to specific step
   const goToStep = useCallback((stepNumber) => {
-    if (stepNumber >= 1 && stepNumber <= totalSteps && stepNumber !== currentStep) {
-      setCurrentStep(stepNumber);
+    if (stepNumber >= 1 && stepNumber <= TOTAL_STEPS && stepNumber !== currentStep) {
+      dispatch({ type: "set_step", step: stepNumber });
     }
-  }, [currentStep, totalSteps]);
+  }, [currentStep]);
 
   // Handle submit
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     // Validate all steps before submitting
     if (!validateStep(1) || !validateStep(2)) return;
 
@@ -277,22 +349,35 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
         description: error.message || "Please try again",
       });
     }
-  };
+  }, [
+    createOrder,
+    encounterId,
+    formData.clinical_notes,
+    formData.indication,
+    formData.priority,
+    formData.selected_panels,
+    formData.selected_tests,
+    onClose,
+    onOrderCreated,
+    patientId,
+    submitOrder,
+    validateStep,
+  ]);
 
   // Keyboard navigation for workflow
   useWorkflowKeyboard({
     enabled: open,
     currentStep,
-    totalSteps,
+    totalSteps: TOTAL_STEPS,
     onNextStep: handleNext,
     onPrevStep: handleBack,
     onGoToStep: goToStep,
-    onComplete: currentStep === totalSteps ? handleSubmit : undefined,
+    onComplete: currentStep === TOTAL_STEPS ? handleSubmit : undefined,
     onClose,
   });
 
   // Get selected items summary
-  const getSelectedSummary = () => {
+  const { tests: selectedTestsList, panels: selectedPanelsList } = useMemo(() => {
     const selectedTests = tests.filter((test) =>
       formData.selected_tests.includes(test.id)
     );
@@ -301,10 +386,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
     );
 
     return { tests: selectedTests, panels: selectedPanels };
-  };
-
-  const { tests: selectedTestsList, panels: selectedPanelsList } =
-    getSelectedSummary();
+  }, [formData.selected_panels, formData.selected_tests, panels, tests]);
 
   // Priority config
   const priorityConfig = {
@@ -375,11 +457,11 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
       <div className="bg-card border-b border-border px-6 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="font-mono text-xs text-muted-foreground">
-            Step {currentStep} of {totalSteps}
+          Step {currentStep} of {TOTAL_STEPS}
           </span>
         </div>
         <WorkflowSteps
-          steps={steps}
+          steps={STEPS}
           currentStep={currentStep}
           onStepClick={goToStep}
         />
@@ -398,7 +480,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                   id="lab-test-search"
                   placeholder="Search by name or abbreviation (TSH, CBC, LFTs...)"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => dispatch({ type: "set_search_query", searchQuery: e.target.value })}
                   className="pl-10"
                   autoFocus
                 />
@@ -571,7 +653,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                     <Button
                       variant={activeCategory === "all" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => setActiveCategory("all")}
+                      onClick={() => dispatch({ type: "set_active_category", activeCategory: "all" })}
                     >
                       All
                     </Button>
@@ -580,7 +662,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                         key={category}
                         variant={activeCategory === category ? "default" : "outline"}
                         size="sm"
-                        onClick={() => setActiveCategory(category)}
+                        onClick={() => dispatch({ type: "set_active_category", activeCategory: category })}
                         className="capitalize"
                       >
                         {category}
@@ -752,7 +834,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                 <Select
                   value={formData.priority}
                   onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, priority: value }))
+                    dispatch({ type: "set_field", field: "priority", value })
                   }
                 >
                   <SelectTrigger>
@@ -781,10 +863,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                   placeholder="Why is this test being ordered? (e.g., 'Rule out anemia', 'Monitor diabetes', 'Chest pain workup')"
                   value={formData.indication}
                   onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      indication: e.target.value,
-                    }))
+                    dispatch({ type: "set_field", field: "indication", value: e.target.value })
                   }
                   className={cn(
                     "min-h-[80px]",
@@ -804,10 +883,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
                   placeholder="Any additional information for the lab (optional)"
                   value={formData.clinical_notes}
                   onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      clinical_notes: e.target.value,
-                    }))
+                    dispatch({ type: "set_field", field: "clinical_notes", value: e.target.value })
                   }
                   className="min-h-[100px]"
                 />
@@ -987,7 +1063,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
         {/* Footer */}
         <footer className="border-t border-border bg-card px-6 py-3">
           {/* Keyboard shortcuts hint */}
-          <WorkflowKeyboardHints totalSteps={totalSteps} className="mb-3" />
+          <WorkflowKeyboardHints totalSteps={TOTAL_STEPS} className="mb-3" />
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1002,7 +1078,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
               <Button variant="ghost" size="sm" onClick={onClose} className="font-mono text-xs">
                 Cancel
               </Button>
-              {currentStep < totalSteps ? (
+              {currentStep < TOTAL_STEPS ? (
                 <Button size="sm" onClick={handleNext} className="font-mono text-xs">
                   Next
                   <ChevronRight className="size-3.5 ml-1" />
