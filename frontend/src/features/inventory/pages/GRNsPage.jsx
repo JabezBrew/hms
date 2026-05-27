@@ -57,45 +57,13 @@ const STATUS_TABS = [
 /**
  * GRNsPage - Goods Received Notes list page
  */
-export default function GRNsPage() {
-  const navigate = useNavigate();
+function useGRNFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const grnRejectionAvailable = !isRustV2ApiMode();
-
-  // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const status = searchParams.get('status') || 'all';
   const page = parseInt(searchParams.get('page') || '1', 10);
-
-  // Debounced search
   const debouncedSearch = useDebounce(search, 300);
 
-  // Build query params
-  const queryParams = {
-    page,
-    page_size: 20,
-    ...(debouncedSearch && { search: debouncedSearch }),
-    ...(status !== 'all' && { status }),
-  };
-
-  // Fetch data
-  const {
-    data: grnsData,
-    isLoading,
-    error,
-    refetch,
-  } = useGRNs(queryParams);
-
-  const grns = grnsData?.results || [];
-  const totalCount = grnsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
-
-  // Handle search input
-  const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-  };
-
-  // Update search params when debounced search changes
   useEffect(() => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
@@ -109,7 +77,6 @@ export default function GRNsPage() {
     });
   }, [debouncedSearch, setSearchParams]);
 
-  // Handle tab change
   const handleTabChange = (value) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
@@ -137,39 +104,133 @@ export default function GRNsPage() {
     setSearchParams({});
   };
 
-  const hasActiveFilters = debouncedSearch || status !== 'all';
+  const queryParams = useMemo(() => ({
+    page,
+    page_size: 20,
+    ...(debouncedSearch && { search: debouncedSearch }),
+    ...(status !== 'all' && { status }),
+  }), [debouncedSearch, page, status]);
 
-  // Navigate handlers
-  const handleGRNClick = useCallback((grnId) => {
-    navigate(`/inventory/grns/${grnId}`);
-  }, [navigate]);
-
-  const handleInspect = useCallback((grnId) => {
-    navigate(`/inventory/grns/${grnId}?action=inspect`);
-  }, [navigate]);
-
-  const handleAccept = useCallback((grnId) => {
-    navigate(`/inventory/grns/${grnId}?action=accept`);
-  }, [navigate]);
-
-  const handleReject = useCallback((grnId) => {
-    navigate(`/inventory/grns/${grnId}?action=reject`);
-  }, [navigate]);
-
-  // Sheet state from URL
-  const action = searchParams.get('action');
-  const isCreateOpen = action === 'create';
-  const initialPOId = searchParams.get('po') || '';
-
-  const handleCreateGRN = () => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set('action', 'create');
-      return params;
-    });
+  return {
+    search,
+    status,
+    page,
+    queryParams,
+    hasActiveFilters: Boolean(debouncedSearch || status !== 'all'),
+    handleSearchChange: (event) => setSearch(event.target.value),
+    handleTabChange,
+    handlePageChange,
+    clearFilters,
   };
+}
 
-  const grnColumns = useMemo(() => ([
+function GRNsLoadingState() {
+  return (
+    <PageState variant="loading" fullHeight={false} className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <Skeleton className="h-9 w-56" />
+          <Skeleton className="h-5 w-32 mt-2" />
+        </div>
+        <Skeleton className="h-10 w-32" />
+      </div>
+      <Skeleton className="h-10 w-full max-w-xl" />
+      <div className="flex gap-3">
+        <Skeleton className="h-10 flex-1 max-w-md" />
+      </div>
+      <div className="space-y-3">
+        {[...Array(6)].map((_, i) => (
+          <GRNCardSkeleton key={i} />
+        ))}
+      </div>
+    </PageState>
+  );
+}
+
+function GRNsHeader({ totalCount, isLoading, onRefresh, onCreateGRN }) {
+  return (
+    <PageHeader
+      title="Goods Received Notes"
+      description={`${totalCount} GRN${totalCount !== 1 ? 's' : ''}`}
+      actions={(
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onRefresh}>
+            <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Button onClick={onCreateGRN}>
+            <Plus className="size-4 mr-2" />
+            New GRN
+          </Button>
+        </div>
+      )}
+    />
+  );
+}
+
+function RustV2GRNNotice({ grnRejectionAvailable }) {
+  if (grnRejectionAvailable) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      GRN rejection is not available in Rust V2 mode yet. GRN creation, inspection, and
+      acceptance remain available through generated /api/v2 contracts.
+    </div>
+  );
+}
+
+function GRNStatusTabs({ status, onTabChange }) {
+  return (
+    <Tabs value={status} onValueChange={onTabChange}>
+      <TabsList className="w-full sm:w-auto overflow-x-auto">
+        {STATUS_TABS.map((tab) => (
+          <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
+            {tab.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function GRNFilters({ search, hasActiveFilters, onSearchChange, onClearFilters }) {
+  return (
+    <div className="flex flex-col lg:flex-row gap-3">
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by GRN or PO number..."
+          value={search}
+          onChange={onSearchChange}
+          className="pl-9 font-mono text-sm"
+        />
+      </div>
+
+      {hasActiveFilters && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClearFilters}
+          className="font-mono text-xs text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-4 mr-1" />
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function createGRNColumns({
+  grnRejectionAvailable,
+  onOpenGRN,
+  onInspectGRN,
+  onAcceptGRN,
+  onRejectGRN,
+}) {
+  return [
     {
       key: 'number',
       header: 'GRN #',
@@ -285,33 +346,39 @@ export default function GRNsPage() {
         const canReject = grnRejectionAvailable && (
           grn.status === 'inspecting' || grn.status === 'pending_inspection'
         );
+        const grnNumber = grn.grn_number || grn.number || 'GRN';
 
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-              <Button variant="ghost" size="sm" className="size-8 p-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="size-8 p-0"
+                aria-label={`Actions for ${grnNumber}`}
+              >
                 <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleGRNClick(grn.id); }}>
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onOpenGRN(grn.id); }}>
                 <Eye className="size-4 mr-2" />
                 View Details
               </DropdownMenuItem>
               {canInspect && (
-                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleInspect(grn.id); }}>
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onInspectGRN(grn.id); }}>
                   <ClipboardCheck className="size-4 mr-2" />
                   Start Inspection
                 </DropdownMenuItem>
               )}
               {canAccept && (
-                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleAccept(grn.id); }}>
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onAcceptGRN(grn.id); }}>
                   <Check className="size-4 mr-2" />
                   Accept
                 </DropdownMenuItem>
               )}
               {canReject && (
-                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleReject(grn.id); }}>
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onRejectGRN(grn.id); }}>
                   <X className="size-4 mr-2" />
                   Reject
                 </DropdownMenuItem>
@@ -321,13 +388,161 @@ export default function GRNsPage() {
         );
       },
     },
-  ]), [
-    handleAccept,
-    handleGRNClick,
-    handleInspect,
-    handleReject,
-    grnRejectionAvailable,
-  ]);
+  ];
+}
+
+function GRNsTable({ grns, columns, hasActiveFilters, onOpenGRN, onCreateGRN }) {
+  if (grns.length === 0) {
+    return (
+      <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
+        <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+          <Package className="size-8 text-muted-foreground" />
+        </div>
+        <h3 className="font-display text-xl text-foreground mb-2">
+          No GRNs Found
+        </h3>
+        <p className="text-muted-foreground text-sm mb-4">
+          {hasActiveFilters
+            ? 'Try adjusting your filters'
+            : 'Create a GRN when goods are received'}
+        </p>
+        {!hasActiveFilters && (
+          <Button onClick={onCreateGRN} className="font-mono text-xs">
+            <Plus className="size-4 mr-2" />
+            New GRN
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <VirtualizedTable
+        rows={grns}
+        rowKey={(grn) => grn.id}
+        rowHeight={64}
+        columns={columns}
+        onRowClick={(grn) => onOpenGRN(grn.id)}
+        rowClassName="hover:bg-muted/30"
+        className="min-w-[980px]"
+        headerClassName="bg-muted/50 border-b border-border"
+      />
+    </div>
+  );
+}
+
+function GRNsPagination({ page, totalPages, totalCount, onPageChange }) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center justify-between pt-4 border-t border-border">
+      <p className="font-mono text-xs text-muted-foreground">
+        Page {page} of {totalPages} ({totalCount} GRNs)
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+          className="font-mono text-xs"
+        >
+          <ChevronLeft className="size-4 mr-1" />
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+          className="font-mono text-xs"
+        >
+          Next
+          <ChevronRight className="size-4 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CreateGRNSheet({ isOpen, initialPOId, onClose, onCreateSuccess }) {
+  return (
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="sm:max-w-2xl overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-display text-2xl">New Goods Received Note</SheetTitle>
+          <SheetDescription>
+            Record received goods into your inventory.
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          <GRNForm
+            initialPOId={initialPOId}
+            onSuccess={onCreateSuccess}
+            onCancel={onClose}
+          />
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export default function GRNsPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const grnRejectionAvailable = !isRustV2ApiMode();
+  const {
+    search,
+    status,
+    page,
+    queryParams,
+    hasActiveFilters,
+    handleSearchChange,
+    handleTabChange,
+    handlePageChange,
+    clearFilters,
+  } = useGRNFilters();
+
+  const {
+    data: grnsData,
+    isLoading,
+    error,
+    refetch,
+  } = useGRNs(queryParams);
+
+  const grns = grnsData?.results || [];
+  const totalCount = grnsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / 20);
+  const action = searchParams.get('action');
+  const isCreateOpen = action === 'create';
+  const initialPOId = searchParams.get('po') || '';
+
+  const handleGRNClick = useCallback((grnId) => {
+    navigate(`/inventory/grns/${grnId}`);
+  }, [navigate]);
+
+  const handleInspect = useCallback((grnId) => {
+    navigate(`/inventory/grns/${grnId}?action=inspect`);
+  }, [navigate]);
+
+  const handleAccept = useCallback((grnId) => {
+    navigate(`/inventory/grns/${grnId}?action=accept`);
+  }, [navigate]);
+
+  const handleReject = useCallback((grnId) => {
+    navigate(`/inventory/grns/${grnId}?action=reject`);
+  }, [navigate]);
+
+  const handleCreateGRN = () => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('action', 'create');
+      return params;
+    });
+  };
 
   const handleCloseSheet = () => {
     setSearchParams((prev) => {
@@ -343,31 +558,24 @@ export default function GRNsPage() {
     refetch();
   };
 
-  // Loading state (only show skeleton on initial load, not on refetches)
+  const grnColumns = useMemo(() => createGRNColumns({
+    grnRejectionAvailable,
+    onOpenGRN: handleGRNClick,
+    onInspectGRN: handleInspect,
+    onAcceptGRN: handleAccept,
+    onRejectGRN: handleReject,
+  }), [
+    grnRejectionAvailable,
+    handleAccept,
+    handleGRNClick,
+    handleInspect,
+    handleReject,
+  ]);
+
   if (isLoading && !grnsData) {
-    return (
-      <PageState variant="loading" fullHeight={false} className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <Skeleton className="h-9 w-56" />
-            <Skeleton className="h-5 w-32 mt-2" />
-          </div>
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <Skeleton className="h-10 w-full max-w-xl" />
-        <div className="flex gap-3">
-          <Skeleton className="h-10 flex-1 max-w-md" />
-        </div>
-        <div className="space-y-3">
-          {[...Array(6)].map((_, i) => (
-            <GRNCardSkeleton key={i} />
-          ))}
-        </div>
-      </PageState>
-    );
+    return <GRNsLoadingState />;
   }
 
-  // Error state
   if (error) {
     return (
       <PageState
@@ -381,154 +589,46 @@ export default function GRNsPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Goods Received Notes"
-        description={`${totalCount} GRN${totalCount !== 1 ? 's' : ''}`}
-        actions={(
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
-              Refresh
-            </Button>
-            <Button onClick={handleCreateGRN}>
-              <Plus className="size-4 mr-2" />
-              New GRN
-            </Button>
-          </div>
-        )}
+      <GRNsHeader
+        totalCount={totalCount}
+        isLoading={isLoading}
+        onRefresh={refetch}
+        onCreateGRN={handleCreateGRN}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
-      {!grnRejectionAvailable && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          GRN rejection is not available in Rust V2 mode yet. GRN creation, inspection, and
-          acceptance remain available through generated /api/v2 contracts.
-        </div>
-      )}
+        <RustV2GRNNotice grnRejectionAvailable={grnRejectionAvailable} />
 
-      {/* Status Tabs */}
-      <Tabs value={status} onValueChange={handleTabChange}>
-        <TabsList className="w-full sm:w-auto overflow-x-auto">
-          {STATUS_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+        <GRNStatusTabs status={status} onTabChange={handleTabChange} />
 
-      {/* Filters Row */}
-      <div className="flex flex-col lg:flex-row gap-3">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by GRN or PO number..."
-            value={search}
-            onChange={handleSearchChange}
-            className="pl-9 font-mono text-sm"
-          />
-        </div>
+        <GRNFilters
+          search={search}
+          hasActiveFilters={hasActiveFilters}
+          onSearchChange={handleSearchChange}
+          onClearFilters={clearFilters}
+        />
 
-        {/* Clear Filters */}
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="font-mono text-xs text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4 mr-1" />
-            Clear
-          </Button>
-        )}
-      </div>
+        <GRNsTable
+          grns={grns}
+          columns={grnColumns}
+          hasActiveFilters={hasActiveFilters}
+          onOpenGRN={handleGRNClick}
+          onCreateGRN={handleCreateGRN}
+        />
 
-      {/* GRNs Display */}
-      {grns.length > 0 ? (
-        <div className="overflow-x-auto">
-          <VirtualizedTable
-            rows={grns}
-            rowKey={(grn) => grn.id}
-            rowHeight={64}
-            columns={grnColumns}
-            onRowClick={(grn) => handleGRNClick(grn.id)}
-            rowClassName="hover:bg-muted/30"
-            className="min-w-[980px]"
-            headerClassName="bg-muted/50 border-b border-border"
-          />
-        </div>
-      ) : (
-        <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <Package className="size-8 text-muted-foreground" />
-          </div>
-          <h3 className="font-display text-xl text-foreground mb-2">
-            No GRNs Found
-          </h3>
-          <p className="text-muted-foreground text-sm mb-4">
-            {hasActiveFilters
-              ? 'Try adjusting your filters'
-              : 'Create a GRN when goods are received'}
-          </p>
-          {!hasActiveFilters && (
-            <Button onClick={handleCreateGRN} className="font-mono text-xs">
-              <Plus className="size-4 mr-2" />
-              New GRN
-            </Button>
-          )}
-        </div>
-      )}
+        <GRNsPagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={handlePageChange}
+        />
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t border-border">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {page} of {totalPages} ({totalCount} GRNs)
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page <= 1}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="font-mono text-xs"
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Create GRN Sheet */}
-      <Sheet open={isCreateOpen} onOpenChange={(open) => !open && handleCloseSheet()}>
-        <SheetContent className="sm:max-w-2xl overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="font-display text-2xl">New Goods Received Note</SheetTitle>
-            <SheetDescription>
-              Record received goods into your inventory.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            <GRNForm
-              initialPOId={initialPOId}
-              onSuccess={handleCreateSuccess}
-              onCancel={handleCloseSheet}
-            />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
+        <CreateGRNSheet
+          isOpen={isCreateOpen}
+          initialPOId={initialPOId}
+          onClose={handleCloseSheet}
+          onCreateSuccess={handleCreateSuccess}
+        />
       </div>
     </PageShell>
   );
