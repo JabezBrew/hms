@@ -3,7 +3,7 @@ import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
-import { useState, useEffect } from 'react'
+import { useEffect, useReducer } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
 import { Button } from '../ui/button'
@@ -13,41 +13,75 @@ import { Alert, AlertDescription } from '../ui/alert'
 import { notifications } from '../../lib/notifications'
 import { passwordMeetsPolicy, passwordPolicyErrorMessage } from '../../lib/password-policy'
 
+const initialResetConfirmState = {
+  isValidating: true,
+  isTokenValid: false,
+  userEmail: '',
+  password: '',
+  passwordConfirm: '',
+  showPassword: false,
+  isSubmitting: false,
+  isSuccess: false,
+  error: null,
+}
+
+function resetConfirmReducer(state, action) {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.patch }
+    default:
+      return state
+  }
+}
+
 export function ResetPasswordConfirmForm() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const token = searchParams.get('token')
 
-  const [isValidating, setIsValidating] = useState(true)
-  const [isTokenValid, setIsTokenValid] = useState(false)
-  const [userEmail, setUserEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [passwordConfirm, setPasswordConfirm] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isSuccess, setIsSuccess] = useState(false)
-  const [error, setError] = useState(null)
+  const [state, dispatch] = useReducer(resetConfirmReducer, initialResetConfirmState)
+  const {
+    isValidating,
+    isTokenValid,
+    userEmail,
+    password,
+    passwordConfirm,
+    showPassword,
+    isSubmitting,
+    isSuccess,
+    error,
+  } = state
 
   useEffect(() => {
     const validateToken = async () => {
       if (!token) {
-        setIsValidating(false)
-        setError('No reset token provided.')
+        dispatch({
+          type: 'patch',
+          patch: { isValidating: false, error: 'No reset token provided.' },
+        })
         return
       }
 
       try {
         const response = await authApi.validateResetToken(token)
         if (response.valid) {
-          setIsTokenValid(true)
-          setUserEmail(response.email)
+          dispatch({
+            type: 'patch',
+            patch: { isTokenValid: true, userEmail: response.email },
+          })
         } else {
-          setError(response.detail || 'Invalid or expired reset token.')
+          dispatch({
+            type: 'patch',
+            patch: { error: response.detail || 'Invalid or expired reset token.' },
+          })
         }
-      } catch (err) {
-        setError('Failed to validate token. Please request a new reset link.')
+      } catch {
+        dispatch({
+          type: 'patch',
+          patch: { error: 'Failed to validate token. Please request a new reset link.' },
+        })
       } finally {
-        setIsValidating(false)
+        dispatch({ type: 'patch', patch: { isValidating: false } })
       }
     }
 
@@ -56,30 +90,33 @@ export function ResetPasswordConfirmForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError(null)
+    dispatch({ type: 'patch', patch: { error: null } })
 
     if (password !== passwordConfirm) {
-      setError('Passwords do not match.')
+      dispatch({ type: 'patch', patch: { error: 'Passwords do not match.' } })
       return
     }
 
     if (!passwordMeetsPolicy(password)) {
-      setError(passwordPolicyErrorMessage())
+      dispatch({ type: 'patch', patch: { error: passwordPolicyErrorMessage() } })
       return
     }
 
-    setIsSubmitting(true)
+    dispatch({ type: 'patch', patch: { isSubmitting: true } })
 
     try {
       await authApi.resetPassword(token, password, passwordConfirm)
-      setIsSuccess(true)
+      dispatch({ type: 'patch', patch: { isSuccess: true } })
       notifications.success('Password reset successfully!')
 
       setTimeout(() => navigate('/login'), 3000)
     } catch (err) {
-      setError(err.message || 'Failed to reset password.')
+      dispatch({
+        type: 'patch',
+        patch: { error: err.message || 'Failed to reset password.' },
+      })
     } finally {
-      setIsSubmitting(false)
+      dispatch({ type: 'patch', patch: { isSubmitting: false } })
     }
   }
 
@@ -137,7 +174,7 @@ export function ResetPasswordConfirmForm() {
               id="password"
               type={showPassword ? 'text' : 'password'}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => dispatch({ type: 'patch', patch: { password: e.target.value } })}
               required
               minLength={8}
               disabled={isSubmitting}
@@ -145,7 +182,7 @@ export function ResetPasswordConfirmForm() {
             />
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
+              onClick={() => dispatch({ type: 'patch', patch: { showPassword: !showPassword } })}
               aria-label={showPassword ? "Hide password" : "Show password"}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
@@ -160,7 +197,7 @@ export function ResetPasswordConfirmForm() {
             id="passwordConfirm"
             type={showPassword ? 'text' : 'password'}
             value={passwordConfirm}
-            onChange={(e) => setPasswordConfirm(e.target.value)}
+            onChange={(e) => dispatch({ type: 'patch', patch: { passwordConfirm: e.target.value } })}
             required
             minLength={8}
             disabled={isSubmitting}

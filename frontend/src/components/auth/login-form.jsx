@@ -2,7 +2,7 @@ import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
 import { useNavigate } from 'react-router-dom';
-import { useRef, useState } from "react";
+import { useReducer, useRef } from "react";
 
 import { useAuth } from "../../lib/auth.jsx"
 import { isRustV2ApiMode } from "../../lib/api/v2/runtime"
@@ -13,12 +13,28 @@ import { notifications } from "../../lib/notifications"
 import { getDefaultFacilityCode, isMultiFacilityModeEnabled } from "../../lib/runtime-config"
 import { MFAChallenge } from "./MFAChallenge"
 
+function createInitialLoginFormState() {
+  return {
+    email: "",
+    password: "",
+    facilityCode: getDefaultFacilityCode() || "",
+    showPassword: false,
+    isLoading: false,
+  }
+}
+
+function loginFormReducer(state, action) {
+  switch (action.type) {
+    case "patch":
+      return { ...state, ...action.patch }
+    default:
+      return state
+  }
+}
+
 export function LoginForm() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [facilityCode, setFacilityCode] = useState(() => getDefaultFacilityCode() || "")
-  const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [state, dispatch] = useReducer(loginFormReducer, null, createInitialLoginFormState)
+  const { email, password, facilityCode, showPassword, isLoading } = state
   const isSubmittingRef = useRef(false)
   const { login, mfaSession } = useAuth()
   const navigate = useNavigate();
@@ -34,7 +50,7 @@ export function LoginForm() {
       return;
     }
     isSubmittingRef.current = true;
-    setIsLoading(true);
+    dispatch({ type: "patch", patch: { isLoading: true } })
 
     try {
       const normalizedFacilityCode = facilityCode.trim().toUpperCase()
@@ -50,7 +66,7 @@ export function LoginForm() {
       // Error is already handled in the auth provider
     } finally {
       isSubmittingRef.current = false;
-      setIsLoading(false);
+      dispatch({ type: "patch", patch: { isLoading: false } })
     }
   }
 
@@ -87,7 +103,7 @@ export function LoginForm() {
               autoCorrect="off"
               disabled={isLoading}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => dispatch({ type: "patch", patch: { email: e.target.value } })}
               required
               className="h-11"
             />
@@ -107,7 +123,7 @@ export function LoginForm() {
                 autoCorrect="off"
                 disabled={isLoading}
                 value={facilityCode}
-                onChange={(e) => setFacilityCode(e.target.value.toUpperCase())}
+                onChange={(e) => dispatch({ type: "patch", patch: { facilityCode: e.target.value.toUpperCase() } })}
                 required
                 className="h-11 font-mono uppercase"
               />
@@ -134,13 +150,13 @@ export function LoginForm() {
                 autoComplete="current-password"
                 disabled={isLoading}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => dispatch({ type: "patch", patch: { password: e.target.value } })}
                 className="h-11 pr-10"
                 required
               />
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
+                onClick={() => dispatch({ type: "patch", patch: { showPassword: !showPassword } })}
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
