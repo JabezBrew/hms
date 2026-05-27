@@ -1,6 +1,6 @@
 import Info from 'lucide-react/dist/esm/icons/info.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,34 +22,111 @@ export function BedAssignment({
   patientGender = null, // 'M' or 'F'
   showAdvancedFilters = false
 }) {
-  const [wards, setWards] = useState([]);
-  const [selectedWard, setSelectedWard] = useState(wardId);
-  const [loading, setLoading] = useState(!wardId); // Skip loading if ward is pre-selected
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const contentKey = wardId || 'unscoped';
+
+  return (
+    <BedAssignmentContent
+      key={contentKey}
+      onBedSelect={onBedSelect}
+      selectedBedId={selectedBedId}
+      wardId={wardId}
+      wardData={wardData}
+      patientGender={patientGender}
+      showAdvancedFilters={showAdvancedFilters}
+    />
+  );
+}
+
+const createInitialState = ({ wardId, wardData }) => ({
+  wards: wardData ? [wardData] : [],
+  selectedWard: wardId || null,
+  loading: !wardId,
+  searchLoading: false,
+  error: null,
+  selectedSection: null,
+  selectedAmenities: [],
+});
+
+function bedAssignmentReducer(state, action) {
+  switch (action.type) {
+    case 'initial-load-start':
+      return { ...state, loading: true, error: null };
+    case 'initial-load-success':
+      return {
+        ...state,
+        wards: action.wards,
+        selectedWard: state.selectedWard || action.wards[0]?.id || null,
+        loading: false,
+        error: null,
+      };
+    case 'use-prefetched-ward':
+      return {
+        ...state,
+        wards: action.ward ? [action.ward] : state.wards,
+        loading: false,
+        error: null,
+      };
+    case 'search-start':
+      return { ...state, searchLoading: true, error: null };
+    case 'search-success':
+      return { ...state, wards: action.wards, searchLoading: false };
+    case 'load-error':
+      return {
+        ...state,
+        loading: false,
+        searchLoading: false,
+        error: 'Failed to load wards. Please try again.',
+      };
+    case 'select-ward':
+      return { ...state, selectedWard: action.wardId };
+    case 'select-section':
+      return { ...state, selectedSection: action.sectionId };
+    case 'set-amenities':
+      return { ...state, selectedAmenities: action.amenities };
+    case 'clear-filters':
+      return { ...state, selectedSection: null, selectedAmenities: [] };
+    default:
+      return state;
+  }
+}
+
+function BedAssignmentContent({
+  onBedSelect,
+  selectedBedId,
+  wardId,
+  wardData,
+  patientGender,
+  showAdvancedFilters,
+}) {
+  const [state, dispatch] = useReducer(
+    bedAssignmentReducer,
+    { wardId, wardData },
+    createInitialState
+  );
+  const requestIdRef = useRef(0);
+  const { wards, selectedWard, loading, searchLoading, error, selectedSection, selectedAmenities } = state;
 
   // Track if ward was pre-selected (to determine if we need ward search)
   const isWardPreSelected = !!wardId;
 
-  // Advanced filters
-  const [selectedSection, setSelectedSection] = useState(null);
-  const [selectedAmenities, setSelectedAmenities] = useState([]);
-
   // Build filter params for available beds query
-  const filterParams = {
-    ward: selectedWard,
-    gender: patientGender, // Auto-filters by gender compatibility
-  };
+  const filterParams = useMemo(() => {
+    const params = {
+      ward: selectedWard,
+      gender: patientGender, // Auto-filters by gender compatibility
+    };
 
-  if (selectedSection) {
-    filterParams.section = selectedSection;
-  }
+    if (selectedSection) {
+      params.section = selectedSection;
+    }
 
-  if (selectedAmenities.length > 0) {
-    // Convert amenity IDs to codes if necessary
-    filterParams.amenities = selectedAmenities.join(',');
-  }
+    if (selectedAmenities.length > 0) {
+      // Convert amenity IDs to codes if necessary
+      params.amenities = selectedAmenities.join(',');
+    }
+
+    return params;
+  }, [patientGender, selectedAmenities, selectedSection, selectedWard]);
 
   // Use the available beds hook with gender filtering
   const {
@@ -60,68 +137,62 @@ export function BedAssignment({
     enabled: !!selectedWard,
   });
 
-  // Fetch wards with search functionality
-  // Skip initial fetch if ward is pre-selected (only fetch on search or ward change)
-  useEffect(() => {
-    const fetchWardsData = async () => {
-      // Skip fetching all wards if:
-      // 1. Ward is pre-selected AND
-      // 2. There's no search query (user hasn't started searching for a different ward)
-      if (isWardPreSelected && !searchQuery) {
-        // Use pre-fetched ward data if available
-        if (wardData) {
-          setWards([wardData]);
-        }
-        setLoading(false);
-        return;
-      }
+  const searchWards = useCallback((searchQuery) => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    dispatch({ type: 'search-start' });
 
-      try {
-        setSearchLoading(true);
-        const params = {};
-
-        // Add search parameter if there's a search query
-        if (searchQuery) {
-          params.search = searchQuery;
-        }
-
-        const data = await wardsApi.getWards(params);
-        // Ensure data is an array
+    wardsApi.getWards(searchQuery ? { search: searchQuery } : {})
+      .then((data) => {
+        if (requestIdRef.current !== requestId) return;
         const wardsArray = Array.isArray(data) ? data : [];
-        setWards(wardsArray);
+        dispatch({ type: 'search-success', wards: wardsArray });
+      })
+      .catch(() => {
+        if (requestIdRef.current !== requestId) return;
+        dispatch({ type: 'load-error' });
+      });
+  }, []);
 
-        // If no ward is selected and we have wards, select the first one
-        if (!selectedWard && wardsArray.length > 0 && !searchQuery) {
-          setSelectedWard(wardsArray[0].id);
-        }
+  useEffect(() => {
+    if (isWardPreSelected) {
+      dispatch({ type: 'use-prefetched-ward', ward: wardData });
+      return undefined;
+    }
 
-        setLoading(false);
-        setSearchLoading(false);
-      } catch (err) {
-        console.error('Error fetching wards:', err);
-        setError('Failed to load wards. Please try again.');
-        setLoading(false);
-        setSearchLoading(false);
-      }
+    let isCancelled = false;
+    dispatch({ type: 'initial-load-start' });
+
+    wardsApi.getWards({})
+      .then((data) => {
+        if (isCancelled) return;
+        const wardsArray = Array.isArray(data) ? data : [];
+        dispatch({ type: 'initial-load-success', wards: wardsArray });
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        dispatch({ type: 'load-error' });
+      });
+
+    return () => {
+      isCancelled = true;
     };
-
-    fetchWardsData();
-  }, [searchQuery, selectedWard, isWardPreSelected, wardData]);
+  }, [isWardPreSelected, wardData]);
 
   // Get ward options for search bar
-  const wardOptions = Array.isArray(wards) ? wards.map(ward => ({
+  const wardOptions = useMemo(() => wards.map(ward => ({
     label: `${ward.name} (${ward.available_beds_count} available) - ${ward.get_ward_type_display || ward.ward_type}`,
     value: ward.id
-  })) : [];
+  })), [wards]);
 
   // Handle ward change
   const handleWardChange = (wardId) => {
-    setSelectedWard(wardId);
+    dispatch({ type: 'select-ward', wardId });
   };
 
   // Handle search input change
   const handleSearchInputChange = (value) => {
-    setSearchQuery(value);
+    searchWards(value);
   };
 
   // Get status color for a bed
@@ -220,10 +291,10 @@ export function BedAssignment({
             {/* Section filter */}
 	            <div className="space-y-2">
 	              <span className="block text-sm font-medium">Section</span>
-	              <SectionSelector
+              <SectionSelector
                 wardId={selectedWard}
                 value={selectedSection}
-                onValueChange={setSelectedSection}
+                onValueChange={(sectionId) => dispatch({ type: 'select-section', sectionId })}
                 placeholder="All sections..."
               />
             </div>
@@ -233,7 +304,7 @@ export function BedAssignment({
 	              <span className="block text-sm font-medium">Required Amenities</span>
               <BedAmenityPicker
                 selectedAmenities={selectedAmenities}
-                onSelectionChange={setSelectedAmenities}
+                onSelectionChange={(amenities) => dispatch({ type: 'set-amenities', amenities })}
                 mode="filter"
               />
             </div>
@@ -243,10 +314,7 @@ export function BedAssignment({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setSelectedSection(null);
-                  setSelectedAmenities([]);
-                }}
+                onClick={() => dispatch({ type: 'clear-filters' })}
                 className="w-full"
               >
                 Clear Filters
