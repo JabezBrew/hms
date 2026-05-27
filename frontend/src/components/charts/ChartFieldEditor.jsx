@@ -20,7 +20,7 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +68,39 @@ const FIELD_TYPES = [
   { value: 'body_map', label: 'Body Map', icon: MapPinned, description: 'Structured body location selector' },
 ];
 
+const DEFAULT_FIELD_FORM_DATA = {
+  name: '',
+  field_key: '',
+  field_type: 'numeric',
+  is_required: false,
+  group_name: '',
+  help_text: '',
+  config: {},
+};
+
+function getFieldEditorFormData(field) {
+  if (!field) {
+    return DEFAULT_FIELD_FORM_DATA;
+  }
+
+  return {
+    name: field.name || '',
+    field_key: field.field_key || '',
+    field_type: field.field_type || 'numeric',
+    is_required: field.is_required || false,
+    group_name: field.group_name || '',
+    help_text: field.help_text || '',
+    config: field.config || {},
+  };
+}
+
+function getFieldEditorKey(open, field) {
+  if (!open) {
+    return 'closed';
+  }
+  return field?.id || field?.temp_id || 'new-field';
+}
+
 const ChartFieldEditor = ({
   open,
   onOpenChange,
@@ -76,43 +109,29 @@ const ChartFieldEditor = ({
   onSave,
   isSaving = false,
 }) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <ChartFieldEditorForm
+        key={getFieldEditorKey(open, field)}
+        existingFieldKeys={existingFieldKeys}
+        field={field}
+        isSaving={isSaving}
+        onOpenChange={onOpenChange}
+        onSave={onSave}
+      />
+    </Dialog>
+  );
+};
+
+const ChartFieldEditorForm = ({
+  field,
+  existingFieldKeys,
+  onOpenChange,
+  onSave,
+  isSaving,
+}) => {
   const isEditing = !!field?.id;
-
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    field_key: '',
-    field_type: 'numeric',
-    is_required: false,
-    group_name: '',
-    help_text: '',
-    config: {},
-  });
-
-  // Initialize form when field changes
-  useEffect(() => {
-    if (field) {
-      setFormData({
-        name: field.name || '',
-        field_key: field.field_key || '',
-        field_type: field.field_type || 'numeric',
-        is_required: field.is_required || false,
-        group_name: field.group_name || '',
-        help_text: field.help_text || '',
-        config: field.config || {},
-      });
-    } else {
-      setFormData({
-        name: '',
-        field_key: '',
-        field_type: 'numeric',
-        is_required: false,
-        group_name: '',
-        help_text: '',
-        config: {},
-      });
-    }
-  }, [field, open]);
+  const [formData, setFormData] = useState(() => getFieldEditorFormData(field));
 
   // Auto-generate field_key from name
   const handleNameChange = (name) => {
@@ -155,8 +174,7 @@ const ChartFieldEditor = ({
   const error = validateForm();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col z-[150]">
+    <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col z-[150]">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
             {isEditing ? 'Edit Field' : 'Add Field'}
@@ -378,8 +396,7 @@ const ChartFieldEditor = ({
             )}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 };
 
