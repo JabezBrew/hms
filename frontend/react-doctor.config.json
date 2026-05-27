@@ -1,0 +1,15 @@
+{
+  "ignore": {
+    "overrides": [
+      {
+        "files": [
+          "public/hms-static-sw.js",
+          "public/runtime-config.js"
+        ],
+        "rules": [
+          "deslop/unused-file"
+        ]
+      }
+    ]
+  }
+}

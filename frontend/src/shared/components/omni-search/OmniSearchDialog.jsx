@@ -384,10 +384,830 @@ function shouldConfirmPatientSelection(patient, { action, duplicateCount }) {
   return Boolean(action && patient?.match_reason && !['id_exact', 'id_prefix'].includes(patient.match_reason))
 }
 
-export function OmniSearchDialog() {
-  const inputRef = React.useRef(null)
-  const navigate = useNavigate()
+function NoResultsItem({ value, children }) {
+  return (
+    <CommandItem disabled value={value} className={COMMAND_ITEM_CLASSNAME}>
+      <span className="font-mono text-[10px] text-muted-foreground">{children}</span>
+    </CommandItem>
+  )
+}
 
+function PageCommandItem({ page, onSelectPage }) {
+  if (!page?.path) return null
+
+  return (
+    <CommandItem
+      key={`page:${page.path}`}
+      value={`${page.label || ''} ${page.path}`.trim()}
+      onSelect={() => onSelectPage(page.path)}
+      className={COMMAND_ITEM_CLASSNAME}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <LeadingIcon Icon={FileText} tone="sky" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-heading text-sm font-semibold text-foreground">
+            {page.label || page.path}
+          </div>
+          <div className="truncate font-mono text-[10px] text-muted-foreground">{page.path}</div>
+        </div>
+      </div>
+    </CommandItem>
+  )
+}
+
+function getPatientActionLabel(action) {
+  if (action === 'add_note') return 'Note'
+  if (action === 'add_prescription') return 'Rx'
+  if (action === 'ward_round') return 'Ward Round'
+  if (action === 'consultation') return 'Consult'
+  return null
+}
+
+function PatientCommandItem({ patient, action, patientNameCounts, onSelectPatient, onConfirmPatient }) {
+  const name = patient?.name || 'Patient'
+  const id = patient?.id
+  if (!id) return null
+
+  const destination = action ? `/patients/${id}?action=${action}` : `/patients/${id}`
+  const duplicateCount = getPatientDuplicateCount(patient, patientNameCounts)
+  const identityParts = buildPatientIdentityParts(patient)
+  const identityWarnings = buildPatientIdentityWarnings(patient, duplicateCount)
+  const actionLabel = getPatientActionLabel(action)
+
+  return (
+    <CommandItem
+      key={`patient:${id}:${action || 'view'}`}
+      value={`${name} ${patient?.medical_record_number || ''} ${patient?.date_of_birth || ''}`.trim()}
+      onSelect={() => {
+        if (shouldConfirmPatientSelection(patient, { action, duplicateCount })) {
+          onConfirmPatient({
+            kind: 'patient_identity',
+            href: destination,
+            patient,
+            actionLabel,
+            duplicateCount,
+            identityParts,
+            identityWarnings,
+          })
+          return
+        }
+        onSelectPatient(destination)
+      }}
+      className={COMMAND_ITEM_CLASSNAME}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <LeadingIcon Icon={UserRound} tone="sky" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="truncate font-display text-base text-foreground">{name}</span>
+            {actionLabel && (
+              <span className="shrink-0 rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
+                {actionLabel}
+              </span>
+            )}
+            {identityWarnings.map((warning) => (
+              <span
+                key={`${id}:${warning}`}
+                className={cn(
+                  "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                  warning === 'Fuzzy match'
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-rose-200 bg-rose-50 text-rose-700"
+                )}
+              >
+                {warning}
+              </span>
+            ))}
+          </div>
+          <div className="break-words font-mono text-[10px] text-muted-foreground">
+            {identityParts.length > 0 ? identityParts.join('  ·  ') : 'No verified identifiers available'}
+          </div>
+        </div>
+      </div>
+    </CommandItem>
+  )
+}
+
+function GenericCommandItem({ item, Icon = FileText, tone = 'sky', keyPrefix = 'search', onSelectResult }) {
+  const href = item?.href || item?.route_path
+  const label = item?.label || item?.title || 'Result'
+  const description = item?.description || item?.subtitle || item?.status_label || href
+  if (!href || !item?.id) return null
+
+  return (
+    <CommandItem
+      key={`${keyPrefix}:${item.id}`}
+      value={`${label} ${description || ''}`.trim()}
+      onSelect={() => onSelectResult(href)}
+      className={COMMAND_ITEM_CLASSNAME}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <LeadingIcon Icon={Icon} tone={tone} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-heading text-sm font-semibold text-foreground">
+            {label}
+          </div>
+          <div className="truncate font-mono text-[10px] text-muted-foreground">
+            {description}
+          </div>
+        </div>
+      </div>
+    </CommandItem>
+  )
+}
+
+function AiIntentPreviewGroup({ preview, onRunPreview }) {
+  const {
+    show,
+    isLoading,
+    isError,
+    result,
+    href,
+    confidenceBand,
+    isBlocked,
+    isFallback,
+    confirmationRequired,
+    note,
+    disabled,
+    serverQuery,
+  } = preview
+
+  if (!show) return null
+
+  return (
+    <>
+      <CommandGroup heading="AI Intent Preview">
+        {isLoading && (
+          <CommandItem disabled value="AI intent loading" className={COMMAND_ITEM_CLASSNAME}>
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon Icon={Sparkles} tone="amber" />
+              <span className="font-mono text-[10px] text-muted-foreground">
+                Parsing intent…
+              </span>
+            </div>
+          </CommandItem>
+        )}
+
+        {!isLoading && isError && (
+          <CommandItem disabled value="AI intent error" className={COMMAND_ITEM_CLASSNAME}>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              AI intent unavailable. Use standard search results below.
+            </span>
+          </CommandItem>
+        )}
+
+        {!isLoading && !isError && result && (
+          <CommandItem
+            key={`ai-intent:${serverQuery}`}
+            value={`AI ${result.intent_type || ''} ${href}`}
+            onSelect={onRunPreview}
+            disabled={disabled}
+            className={COMMAND_ITEM_CLASSNAME}
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon
+                Icon={
+                  isBlocked || isFallback
+                    ? ShieldX
+                    : confirmationRequired
+                      ? ShieldAlert
+                      : ShieldCheck
+                }
+                tone={isBlocked || isFallback ? 'rose' : confirmationRequired ? 'amber' : 'emerald'}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-heading text-sm font-semibold text-foreground">
+                    {formatIntentLabel(result.intent_type)}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                      confidenceClass(confidenceBand)
+                    )}
+                  >
+                    {confidenceLabel(confidenceBand)}
+                  </span>
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {href}
+                </div>
+                {note && (
+                  <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                    {note}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CommandItem>
+        )}
+      </CommandGroup>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+    </>
+  )
+}
+
+function EmptyOmniSearchGroups({
+  hasQuery,
+  recentPatients,
+  visibleRecentPages,
+  suggestedCommands,
+  patientNameCounts,
+  onSelectPage,
+  onSelectPatient,
+  onConfirmPatient,
+  onChooseCommand,
+}) {
+  if (hasQuery) return null
+
+  return (
+    <>
+      <CommandGroup heading="Recent Patients">
+        {(recentPatients || []).map((patient) => (
+          <PatientCommandItem
+            key={`recent-patient:${patient?.id}`}
+            patient={patient}
+            patientNameCounts={patientNameCounts}
+            onSelectPatient={onSelectPatient}
+            onConfirmPatient={onConfirmPatient}
+          />
+        ))}
+        {(recentPatients || []).length === 0 && (
+          <NoResultsItem value="No recent patients">No recent patients</NoResultsItem>
+        )}
+      </CommandGroup>
+
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+
+      <CommandGroup heading="Recent Pages">
+        {visibleRecentPages.map((page) => (
+          <PageCommandItem key={`recent-page:${page.path}`} page={page} onSelectPage={onSelectPage} />
+        ))}
+        {visibleRecentPages.length === 0 && (
+          <NoResultsItem value="No recent pages">No recent pages</NoResultsItem>
+        )}
+      </CommandGroup>
+
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+
+      <CommandGroup heading="Suggested Commands">
+        {suggestedCommands.map((cmd) => (
+          <CommandItem
+            key={cmd.id}
+            value={cmd.label}
+            onSelect={() => onChooseCommand(cmd.query)}
+            className={COMMAND_ITEM_CLASSNAME}
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon Icon={Sparkles} tone="amber" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-heading text-sm font-semibold text-foreground">
+                  {cmd.label}
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">{cmd.query}</div>
+              </div>
+            </div>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    </>
+  )
+}
+
+function PagesOnlyResults({ hasQuery, mode, pages, onSelectPage }) {
+  if (!(hasQuery && mode === 'pages')) return null
+
+  return (
+    <CommandGroup heading="Pages">
+      {pages.map((page) => (
+        <PageCommandItem key={`page-only:${page.path}`} page={page} onSelectPage={onSelectPage} />
+      ))}
+      {pages.length === 0 && (
+        <NoResultsItem value="No matching pages">No matching pages</NoResultsItem>
+      )}
+    </CommandGroup>
+  )
+}
+
+function ActionResultsGroup({ hasQuery, mode, actions, onRunAction }) {
+  if (!(hasQuery && mode === 'all' && actions.length > 0)) return null
+
+  return (
+    <>
+      <CommandGroup heading="Actions">
+        {actions.map((action) => (
+          <CommandItem
+            key={action.id}
+            value={`${action.label} ${(action.keywords || []).join(' ')}`}
+            onSelect={() => onRunAction(action)}
+            className={COMMAND_ITEM_CLASSNAME}
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon Icon={Sparkles} tone="amber" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-heading text-sm font-semibold text-foreground">
+                  {action.label}
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {(action.keywords || []).slice(0, 4).join(' · ')}
+                </div>
+              </div>
+            </div>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+    </>
+  )
+}
+
+function PageResultsGroup({ hasQuery, mode, pages, onSelectPage }) {
+  if (!(hasQuery && mode === 'all' && pages.length > 0)) return null
+
+  return (
+    <>
+      <CommandGroup heading="Pages">
+        {pages.map((page) => (
+          <PageCommandItem key={`page-result:${page.path}`} page={page} onSelectPage={onSelectPage} />
+        ))}
+      </CommandGroup>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+    </>
+  )
+}
+
+function getPatientGroupHeading({ mode, effectiveQuery }) {
+  if (mode === 'patients') return effectiveQuery.length < 2 ? 'Recent Patients' : 'Patients'
+  if (mode === 'patient_action') return effectiveQuery.length < 2 ? 'Recent Patients' : 'Select Patient'
+  return 'Patients'
+}
+
+function PatientResultsGroup({
+  hasQuery,
+  serverEnabled,
+  serverQueryReady,
+  mode,
+  effectiveQuery,
+  patientPickerItems,
+  patientAction,
+  isLoading,
+  patientNameCounts,
+  onSelectPatient,
+  onConfirmPatient,
+}) {
+  const isPatientMode = mode === 'patients' || mode === 'patient_action' || mode === 'all'
+  if (!(hasQuery && serverEnabled && serverQueryReady && mode !== 'staff' && mode !== 'pages' && isPatientMode)) {
+    return null
+  }
+
+  return (
+    <>
+      <CommandGroup heading={getPatientGroupHeading({ mode, effectiveQuery })}>
+        {patientPickerItems.map((patient) => (
+          <PatientCommandItem
+            key={`patient-result:${patient?.id}:${patientAction || 'view'}`}
+            patient={patient}
+            action={patientAction}
+            patientNameCounts={patientNameCounts}
+            onSelectPatient={onSelectPatient}
+            onConfirmPatient={onConfirmPatient}
+          />
+        ))}
+        {patientPickerItems.length === 0 && !isLoading && (
+          <NoResultsItem value={effectiveQuery.length >= 2 ? 'No matching patients' : 'No recent patients'}>
+            {effectiveQuery.length >= 2 ? 'No matching patients' : 'No recent patients'}
+          </NoResultsItem>
+        )}
+      </CommandGroup>
+      {mode === 'all' && <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />}
+    </>
+  )
+}
+
+function WardsGroup({ wards, effectiveQuery, isLoading, onSelectResult }) {
+  return (
+    <>
+      <CommandGroup heading="Wards">
+        {(wards || []).map((ward) => (
+          <CommandItem
+            key={`ward:${ward.id}`}
+            value={`${ward.name} ${ward.ward_type || ''}`.trim()}
+            onSelect={() => onSelectResult(`/wards/${ward.id}`)}
+            className={COMMAND_ITEM_CLASSNAME}
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon Icon={Building2} tone="emerald" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-heading text-sm font-semibold text-foreground">
+                  {ward.name}
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {ward.ward_type ? String(ward.ward_type).toUpperCase() : 'WARD'}
+                </div>
+              </div>
+            </div>
+          </CommandItem>
+        ))}
+        {(wards || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
+          <NoResultsItem value="No matching wards">No matching wards</NoResultsItem>
+        )}
+      </CommandGroup>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+    </>
+  )
+}
+
+function EncountersGroup({ encounters, role, effectiveQuery, isLoading, onSelectResult }) {
+  return (
+    <>
+      <CommandGroup heading="Encounters">
+        {(encounters || []).map((encounter) => (
+          <CommandItem
+            key={`encounter:${encounter.id}`}
+            value={`${encounter.patient_name || ''} ${encounter.reason || ''}`.trim()}
+            onSelect={() => {
+              const to = ROLE_GROUPS.ENCOUNTER_WORKSPACE.includes(role)
+                ? `/encounters/${encounter.id}/workspace`
+                : `/encounters/${encounter.id}`
+              onSelectResult(to)
+            }}
+            className={COMMAND_ITEM_CLASSNAME}
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon Icon={Stethoscope} tone="amber" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-heading text-sm font-semibold text-foreground">
+                  {encounter.patient_name || 'Encounter'}
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {encounter.reason ? String(encounter.reason) : 'No reason recorded'}
+                </div>
+              </div>
+            </div>
+          </CommandItem>
+        ))}
+        {(encounters || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
+          <NoResultsItem value="No matching encounters">No matching encounters</NoResultsItem>
+        )}
+      </CommandGroup>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+    </>
+  )
+}
+
+function AppointmentsGroup({ appointments, effectiveQuery, isLoading, onSelectResult }) {
+  return (
+    <>
+      <CommandGroup heading="Appointments">
+        {(appointments || []).map((appointment) => (
+          <CommandItem
+            key={`appointment:${appointment.id}`}
+            value={`${appointment.patient_name || ''} ${appointment.practitioner_name || ''}`.trim()}
+            onSelect={() => onSelectResult(`/appointments/${appointment.id}`)}
+            className={COMMAND_ITEM_CLASSNAME}
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon Icon={CalendarClock} tone="sky" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-heading text-sm font-semibold text-foreground">
+                  {appointment.patient_name || 'Appointment'}
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {appointment.start_time ? new Date(appointment.start_time).toLocaleString() : ''}
+                </div>
+              </div>
+            </div>
+          </CommandItem>
+        ))}
+        {(appointments || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
+          <NoResultsItem value="No matching appointments">No matching appointments</NoResultsItem>
+        )}
+      </CommandGroup>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+    </>
+  )
+}
+
+function AdmissionsGroup({ admissions, effectiveQuery, isLoading, onSelectResult }) {
+  return (
+    <>
+      <CommandGroup heading="Admissions">
+        {(admissions || []).map((admission) => (
+          <CommandItem
+            key={`admission:${admission.id}`}
+            value={`${admission.patient_name || ''} ${admission.ward_name || ''}`.trim()}
+            onSelect={() => onSelectResult(`/admissions/${admission.id}`)}
+            className={COMMAND_ITEM_CLASSNAME}
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <LeadingIcon Icon={BedDouble} tone="emerald" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-heading text-sm font-semibold text-foreground">
+                  {admission.patient_name || 'Admission'}
+                </div>
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {admission.ward_name ? String(admission.ward_name) : 'No ward'}
+                  {admission.bed_number ? `  ·  Bed ${admission.bed_number}` : ''}
+                </div>
+              </div>
+            </div>
+          </CommandItem>
+        ))}
+        {(admissions || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
+          <NoResultsItem value="No matching admissions">No matching admissions</NoResultsItem>
+        )}
+      </CommandGroup>
+    </>
+  )
+}
+
+function StaffResultItems({ staff, effectiveQuery, isLoading, onSelectResult }) {
+  return (
+    <>
+      {(staff || []).map((member) => (
+        <CommandItem
+          key={`staff:${member.id}`}
+          value={`${member.name || ''} ${member.employee_id || ''}`.trim()}
+          onSelect={() => onSelectResult(`/staff/${member.id}`)}
+          className={COMMAND_ITEM_CLASSNAME}
+        >
+          <div className="flex min-w-0 items-start gap-3">
+            <LeadingIcon Icon={IdCard} tone="rose" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-heading text-sm font-semibold text-foreground">
+                {member.name || 'Staff'}
+              </div>
+              <div className="truncate font-mono text-[10px] text-muted-foreground">
+                {member.employee_id || ''}
+              </div>
+            </div>
+          </div>
+        </CommandItem>
+      ))}
+      {(staff || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
+        <NoResultsItem value="No matching staff">No matching staff</NoResultsItem>
+      )}
+    </>
+  )
+}
+
+function AdminStaffGroup({ isAdmin, staff, effectiveQuery, isLoading, onSelectResult }) {
+  if (!isAdmin) return null
+
+  return (
+    <>
+      <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+      <CommandGroup heading="Staff">
+        <StaffResultItems
+          staff={staff}
+          effectiveQuery={effectiveQuery}
+          isLoading={isLoading}
+          onSelectResult={onSelectResult}
+        />
+      </CommandGroup>
+    </>
+  )
+}
+
+function AllModeServerGroups({
+  hasQuery,
+  mode,
+  serverEnabled,
+  serverQueryReady,
+  groups,
+  role,
+  isAdmin,
+  effectiveQuery,
+  isLoading,
+  onSelectResult,
+}) {
+  if (!(hasQuery && mode === 'all' && serverEnabled && serverQueryReady)) return null
+
+  return (
+    <>
+      <WardsGroup
+        wards={groups.wards}
+        effectiveQuery={effectiveQuery}
+        isLoading={isLoading}
+        onSelectResult={onSelectResult}
+      />
+      <EncountersGroup
+        encounters={groups.encounters}
+        role={role}
+        effectiveQuery={effectiveQuery}
+        isLoading={isLoading}
+        onSelectResult={onSelectResult}
+      />
+      <AppointmentsGroup
+        appointments={groups.appointments}
+        effectiveQuery={effectiveQuery}
+        isLoading={isLoading}
+        onSelectResult={onSelectResult}
+      />
+      <AdmissionsGroup
+        admissions={groups.admissions}
+        effectiveQuery={effectiveQuery}
+        isLoading={isLoading}
+        onSelectResult={onSelectResult}
+      />
+      <AdminStaffGroup
+        isAdmin={isAdmin}
+        staff={groups.staff}
+        effectiveQuery={effectiveQuery}
+        isLoading={isLoading}
+        onSelectResult={onSelectResult}
+      />
+      {GENERIC_RESULT_GROUPS.map((group) => (
+        <GenericResultGroup
+          key={group.keyPrefix}
+          heading={group.heading}
+          items={groups[group.itemsKey]}
+          Icon={group.Icon}
+          tone={group.tone}
+          keyPrefix={group.keyPrefix}
+          renderItem={(item, options) => (
+            <GenericCommandItem
+              key={`${options.keyPrefix}:${item?.id}`}
+              item={item}
+              Icon={options.Icon}
+              tone={options.tone}
+              keyPrefix={options.keyPrefix}
+              onSelectResult={onSelectResult}
+            />
+          )}
+        />
+      ))}
+    </>
+  )
+}
+
+function StaffModeGroup({ hasQuery, mode, parsed, effectiveQuery, staff, isLoading, onSelectResult }) {
+  if (!(hasQuery && mode === 'staff')) return null
+
+  return (
+    <CommandGroup heading="Staff">
+      {parsed.staffDisabled && (
+        <NoResultsItem value="Staff search is admin-only">{parsed.hint}</NoResultsItem>
+      )}
+      {!parsed.staffDisabled && effectiveQuery.length < 2 && (
+        <NoResultsItem value="Type at least 2 characters">
+          Type at least 2 characters to search staff
+        </NoResultsItem>
+      )}
+      {!parsed.staffDisabled && effectiveQuery.length >= 2 && (
+        <StaffResultItems
+          staff={staff}
+          effectiveQuery={effectiveQuery}
+          isLoading={isLoading}
+          onSelectResult={onSelectResult}
+        />
+      )}
+    </CommandGroup>
+  )
+}
+
+function SearchStatusItems({ isLoading, isError, hasQuery }) {
+  return (
+    <>
+      {isLoading && hasQuery && (
+        <CommandItem disabled value="Loading" className={COMMAND_ITEM_CLASSNAME}>
+          <div className="flex min-w-0 items-start gap-3">
+            <LeadingIcon Icon={Sparkles} tone="amber" />
+            <span className="font-mono text-[10px] text-muted-foreground">Searching…</span>
+          </div>
+        </CommandItem>
+      )}
+
+      {isError && (
+        <CommandItem disabled value="Error" className={COMMAND_ITEM_CLASSNAME}>
+          <span className="font-mono text-[10px] text-muted-foreground">Search failed. Try again.</span>
+        </CommandItem>
+      )}
+    </>
+  )
+}
+
+function OmniSearchFooter({ isAdmin }) {
+  return (
+    <div className="border-t bg-muted/20 px-4 py-2 text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-tight">
+        <span>Enter to open</span>
+        <span className="opacity-50">·</span>
+        <span>Esc to close</span>
+        <span className="opacity-50">·</span>
+        <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.70_0.15_230)]">
+          &gt; pages
+        </span>
+        <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.75_0.18_55)]">
+          # patients
+        </span>
+        <span
+          className={cn(
+            "rounded-full border bg-card px-2 py-0.5 text-[oklch(0.65_0.22_15)]",
+            !isAdmin && "opacity-50"
+          )}
+        >
+          @ staff
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function OmniSearchConfirmationDialog({
+  open,
+  pendingExecution,
+  onOpenChange,
+  onCancel,
+  onConfirm,
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="font-display text-xl">
+            {pendingExecution?.kind === 'patient_identity' ? 'Confirm Patient Identity' : 'Confirm Sensitive Action'}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {pendingExecution?.kind === 'patient_identity'
+              ? 'Verify the identifiers before opening this chart.'
+              : 'AI command preview indicates this navigation requires confirmation.'}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        {pendingExecution?.kind === 'patient_identity' ? (
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-display text-lg text-foreground">
+                {pendingExecution?.patient?.name || 'Patient'}
+              </span>
+              {pendingExecution?.actionLabel && (
+                <span className="rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
+                  {pendingExecution.actionLabel}
+                </span>
+              )}
+            </div>
+            <div className="mt-2 break-words font-mono text-xs text-muted-foreground">
+              {(pendingExecution?.identityParts || []).length > 0
+                ? pendingExecution.identityParts.join('  ·  ')
+                : 'No verified identifiers available'}
+            </div>
+            {(pendingExecution?.identityWarnings || []).length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {pendingExecution.identityWarnings.map((warning) => (
+                  <span
+                    key={`confirm:${warning}`}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                      warning === 'Fuzzy match'
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : "border-rose-200 bg-rose-50 text-rose-700"
+                    )}
+                  >
+                    {warning}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <div className="flex items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                  confidenceClass(pendingExecution?.confidenceBand)
+                )}
+              >
+                {confidenceLabel(pendingExecution?.confidenceBand)}
+              </span>
+              <span className="font-heading font-semibold text-foreground">
+                {formatIntentLabel(pendingExecution?.intent?.intent_type)}
+              </span>
+            </div>
+            <div className="mt-2 font-mono text-xs text-muted-foreground">
+              {pendingExecution?.href}
+            </div>
+            {(pendingExecution?.preview?.denial_reasons || []).length > 0 && (
+              <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 p-2 font-mono text-xs text-rose-700">
+                {(pendingExecution?.preview?.denial_reasons || [])[0]}
+              </div>
+            )}
+          </div>
+        )}
+
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>
+            Continue
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function useOmniSearchDialogModel({ inputRef, navigate }) {
   const { user, facilityCode } = useAuth()
   const role = user?.role || ''
   const isAdmin = role === ROLES.ADMIN
@@ -414,16 +1234,26 @@ export function OmniSearchDialog() {
     [isAdmin, isClinical]
   )
 
+  const closeDialog = React.useCallback(() => {
+    setOpen(false)
+    setRawQuery('')
+  }, [setOpen])
+
+  const handleDialogOpenChange = React.useCallback(
+    (nextOpen) => {
+      setOpen(nextOpen)
+      if (!nextOpen) setRawQuery('')
+    },
+    [setOpen]
+  )
+
   React.useEffect(() => {
-    if (!open) {
-      setRawQuery('')
-      return
-    }
+    if (!open) return
 
     // Ensure focus moves to the input after the dialog portal is mounted.
     const id = window.setTimeout(() => inputRef.current?.focus(), 0)
     return () => window.clearTimeout(id)
-  }, [open])
+  }, [open, inputRef])
 
   React.useEffect(() => {
     if (!open || effectiveQuery.length === 0) {
@@ -507,10 +1337,10 @@ export function OmniSearchDialog() {
 
   const onSelectAndClose = React.useCallback(
     (to) => {
-      setOpen(false)
+      closeDialog()
       if (to) navigate(to)
     },
-    [navigate, setOpen]
+    [closeDialog, navigate]
   )
 
   const closeConfirmation = React.useCallback(() => {
@@ -571,7 +1401,7 @@ export function OmniSearchDialog() {
       }
 
       if (previewDecision.requires_confirmation || previewIntent.requires_confirmation) {
-        setOpen(false)
+        closeDialog()
         setPendingExecution({
           href,
           intent: previewIntent,
@@ -594,141 +1424,31 @@ export function OmniSearchDialog() {
     aiIntentPreview?.denial_reasons,
     aiIntentResult,
     executePreviewMutation,
+    closeDialog,
     onSelectAndClose,
     serverQuery,
-    setOpen,
   ])
 
-  const renderPageItem = React.useCallback(
-    (page) => {
-      if (!page?.path) return null
-      return (
-        <CommandItem
-          key={`page:${page.path}`}
-          value={`${page.label || ''} ${page.path}`.trim()}
-          onSelect={() => onSelectAndClose(page.path)}
-          className={COMMAND_ITEM_CLASSNAME}
-        >
-          <div className="flex min-w-0 items-start gap-3">
-            <LeadingIcon Icon={FileText} tone="sky" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-heading text-sm font-semibold text-foreground">
-                {page.label || page.path}
-              </div>
-              <div className="truncate font-mono text-[10px] text-muted-foreground">{page.path}</div>
-            </div>
-          </div>
-        </CommandItem>
-      )
+  const handleConfirmPatient = React.useCallback(
+    (execution) => {
+      closeDialog()
+      setPendingExecution(execution)
+      setConfirmOpen(true)
     },
-    [onSelectAndClose]
+    [closeDialog]
   )
 
-  const renderPatientItem = (patient, { action } = {}) => {
-    const name = patient?.name || 'Patient'
-    const id = patient?.id
-    if (!id) return null
-
-    const destination = action ? `/patients/${id}?action=${action}` : `/patients/${id}`
-    const duplicateCount = getPatientDuplicateCount(patient, patientNameCounts)
-    const identityParts = buildPatientIdentityParts(patient)
-    const identityWarnings = buildPatientIdentityWarnings(patient, duplicateCount)
-    const actionLabel =
-      action === 'add_note'
-        ? 'Note'
-        : action === 'add_prescription'
-          ? 'Rx'
-          : action === 'ward_round'
-            ? 'Ward Round'
-            : action === 'consultation'
-              ? 'Consult'
-              : null
-
-    return (
-      <CommandItem
-        key={`patient:${id}:${action || 'view'}`}
-        value={`${name} ${patient?.medical_record_number || ''} ${patient?.date_of_birth || ''}`.trim()}
-        onSelect={() => {
-          if (shouldConfirmPatientSelection(patient, { action, duplicateCount })) {
-            setOpen(false)
-            setPendingExecution({
-              kind: 'patient_identity',
-              href: destination,
-              patient,
-              actionLabel,
-              duplicateCount,
-              identityParts,
-              identityWarnings,
-            })
-            setConfirmOpen(true)
-            return
-          }
-          onSelectAndClose(destination)
-        }}
-        className={COMMAND_ITEM_CLASSNAME}
-      >
-        <div className="flex min-w-0 items-start gap-3">
-          <LeadingIcon Icon={UserRound} tone="sky" />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate font-display text-base text-foreground">{name}</span>
-              {actionLabel && (
-                <span className="shrink-0 rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
-                  {actionLabel}
-                </span>
-              )}
-              {identityWarnings.map((warning) => (
-                <span
-                  key={`${id}:${warning}`}
-                  className={cn(
-                    "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
-                    warning === 'Fuzzy match'
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : "border-rose-200 bg-rose-50 text-rose-700"
-                  )}
-                >
-                  {warning}
-                </span>
-              ))}
-            </div>
-            <div className="break-words font-mono text-[10px] text-muted-foreground">
-              {identityParts.length > 0 ? identityParts.join('  ·  ') : 'No verified identifiers available'}
-            </div>
-          </div>
-        </div>
-      </CommandItem>
-    )
-  }
-
-  const renderGenericItem = React.useCallback(
-    (item, { Icon = FileText, tone = 'sky', keyPrefix = 'search' } = {}) => {
-      const href = item?.href || item?.route_path
-      const label = item?.label || item?.title || 'Result'
-      const description = item?.description || item?.subtitle || item?.status_label || href
-      if (!href || !item?.id) return null
-
-      return (
-        <CommandItem
-          key={`${keyPrefix}:${item.id}`}
-          value={`${label} ${description || ''}`.trim()}
-          onSelect={() => onSelectAndClose(href)}
-          className={COMMAND_ITEM_CLASSNAME}
-        >
-          <div className="flex min-w-0 items-start gap-3">
-            <LeadingIcon Icon={Icon} tone={tone} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-heading text-sm font-semibold text-foreground">
-                {label}
-              </div>
-              <div className="truncate font-mono text-[10px] text-muted-foreground">
-                {description}
-              </div>
-            </div>
-          </div>
-        </CommandItem>
-      )
+  const handleRunAction = React.useCallback(
+    (action) => {
+      closeDialog()
+      action.run({ navigate, user })
     },
-    [onSelectAndClose]
+    [closeDialog, navigate, user]
+  )
+
+  const handleConfirmationOpenChange = React.useCallback(
+    (nextOpen) => (!nextOpen ? closeConfirmation() : setConfirmOpen(nextOpen)),
+    [closeConfirmation]
   )
 
   const hasQuery = rawQuery.trim().length > 0
@@ -746,6 +1466,21 @@ export function OmniSearchDialog() {
     aiIntentNote = aiIntentPreview?.denial_reasons?.[0] || 'Not allowed for this role or scope.'
   } else if (aiIntentConfirmationRequired) {
     aiIntentNote = 'Confirmation required before navigation.'
+  }
+
+  const aiIntentPreviewGroup = {
+    show: showAiIntentPreview,
+    isLoading: isAiIntentLoading,
+    isError: isAiIntentError,
+    result: aiIntentResult,
+    href: aiIntentHref,
+    confidenceBand: aiIntentBand,
+    isBlocked: aiIntentBlocked,
+    isFallback: aiIntentFallback,
+    confirmationRequired: aiIntentConfirmationRequired,
+    note: aiIntentNote,
+    disabled: aiIntentDisabled,
+    serverQuery,
   }
 
   const patientPickerItems =
@@ -778,11 +1513,64 @@ export function OmniSearchDialog() {
           (groups.inventory || []).length === 0 &&
           (groups.referrals || []).length === 0)
 
+  return {
+    actions,
+    aiIntentBand,
+    aiIntentBlocked,
+    aiIntentConfirmationRequired,
+    aiIntentDisabled,
+    aiIntentFallback,
+    aiIntentHref,
+    aiIntentNote,
+    aiIntentPreviewGroup,
+    aiIntentResult,
+    closeConfirmation,
+    confirmOpen,
+    effectiveQuery,
+    groups,
+    handleConfirmExecution,
+    handleConfirmPatient,
+    handleDialogOpenChange,
+    handleConfirmationOpenChange,
+    handleRunAction,
+    handleRunAiPreview,
+    hasQuery,
+    isAdmin,
+    isAiIntentError,
+    isAiIntentLoading,
+    isError,
+    isLoading,
+    mode,
+    onSelectAndClose,
+    open,
+    pages,
+    parsed,
+    patientNameCounts,
+    patientPickerItems,
+    pendingExecution,
+    rawQuery,
+    role,
+    serverEnabled,
+    serverQuery,
+    serverQueryReady,
+    setRawQuery,
+    showAiIntentPreview,
+    showEmpty,
+    suggestedCommands,
+    visibleRecentPages,
+  }
+}
+
+export function OmniSearchDialog() {
+  const inputRef = React.useRef(null)
+  const navigate = useNavigate()
+  const dialog = useOmniSearchDialogModel({ inputRef, navigate })
+
   return (
     <>
       <CommandDialog
-      open={open}
-      onOpenChange={setOpen}
+      open={dialog.open}
+      onOpenChange={dialog.handleDialogOpenChange}
       title="Omni Search"
       description="Search patients, pages, or actions."
       contentClassName="sm:max-w-2xl rounded-2xl border-border/60 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80"
@@ -803,559 +1591,106 @@ export function OmniSearchDialog() {
       <CommandInput
         ref={inputRef}
         placeholder="Type a command or search..."
-        value={rawQuery}
-        onValueChange={setRawQuery}
+        value={dialog.rawQuery}
+        onValueChange={dialog.setRawQuery}
         className="font-heading tracking-tight"
       />
 
       <CommandList className="chronicle-scrollbar max-h-[420px]">
-        {showEmpty && <CommandEmpty>No results found.</CommandEmpty>}
+        {dialog.showEmpty && <CommandEmpty>No results found.</CommandEmpty>}
 
-        {showAiIntentPreview && (
-          <>
-            <CommandGroup heading="AI Intent Preview">
-              {isAiIntentLoading && (
-                <CommandItem disabled value="AI intent loading" className={COMMAND_ITEM_CLASSNAME}>
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={Sparkles} tone="amber" />
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      Parsing intent…
-                    </span>
-                  </div>
-                </CommandItem>
-              )}
+        <AiIntentPreviewGroup
+          preview={dialog.aiIntentPreviewGroup}
+          onRunPreview={dialog.handleRunAiPreview}
+        />
 
-              {!isAiIntentLoading && isAiIntentError && (
-                <CommandItem disabled value="AI intent error" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    AI intent unavailable. Use standard search results below.
-                  </span>
-                </CommandItem>
-              )}
+        <EmptyOmniSearchGroups
+          hasQuery={dialog.hasQuery}
+          recentPatients={dialog.groups.recent_patients}
+          visibleRecentPages={dialog.visibleRecentPages}
+          suggestedCommands={dialog.suggestedCommands}
+          patientNameCounts={dialog.patientNameCounts}
+          onSelectPage={dialog.onSelectAndClose}
+          onSelectPatient={dialog.onSelectAndClose}
+          onConfirmPatient={dialog.handleConfirmPatient}
+          onChooseCommand={dialog.setRawQuery}
+        />
 
-              {!isAiIntentLoading && !isAiIntentError && aiIntentResult && (
-                <CommandItem
-                  key={`ai-intent:${serverQuery}`}
-                  value={`AI ${aiIntentResult.intent_type || ''} ${aiIntentHref}`}
-                  onSelect={handleRunAiPreview}
-                  disabled={aiIntentDisabled}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon
-                      Icon={
-                        aiIntentBlocked || aiIntentFallback
-                          ? ShieldX
-                          : aiIntentConfirmationRequired
-                            ? ShieldAlert
-                            : ShieldCheck
-                      }
-                      tone={aiIntentBlocked || aiIntentFallback ? 'rose' : aiIntentConfirmationRequired ? 'amber' : 'emerald'}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-heading text-sm font-semibold text-foreground">
-                          {formatIntentLabel(aiIntentResult.intent_type)}
-                        </span>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
-                            confidenceClass(aiIntentBand)
-                          )}
-                        >
-                          {confidenceLabel(aiIntentBand)}
-                        </span>
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {aiIntentHref}
-                      </div>
-                      {aiIntentNote && (
-                        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-                          {aiIntentNote}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CommandItem>
-              )}
-            </CommandGroup>
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-          </>
-        )}
+        <PagesOnlyResults
+          hasQuery={dialog.hasQuery}
+          mode={dialog.mode}
+          pages={dialog.pages}
+          onSelectPage={dialog.onSelectAndClose}
+        />
 
-        {!hasQuery && (
-          <>
-            <CommandGroup heading="Recent Patients">
-              {(groups.recent_patients || []).map((p) => renderPatientItem(p))}
-              {(groups.recent_patients || []).length === 0 && (
-                <CommandItem disabled value="No recent patients" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">No recent patients</span>
-                </CommandItem>
-              )}
-            </CommandGroup>
+        <ActionResultsGroup
+          hasQuery={dialog.hasQuery}
+          mode={dialog.mode}
+          actions={dialog.actions}
+          onRunAction={dialog.handleRunAction}
+        />
 
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+        <PageResultsGroup
+          hasQuery={dialog.hasQuery}
+          mode={dialog.mode}
+          pages={dialog.pages}
+          onSelectPage={dialog.onSelectAndClose}
+        />
 
-            <CommandGroup heading="Recent Pages">
-              {visibleRecentPages.map((p) => renderPageItem(p))}
-              {visibleRecentPages.length === 0 && (
-                <CommandItem disabled value="No recent pages" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">No recent pages</span>
-                </CommandItem>
-              )}
-            </CommandGroup>
+        <PatientResultsGroup
+          hasQuery={dialog.hasQuery}
+          serverEnabled={dialog.serverEnabled}
+          serverQueryReady={dialog.serverQueryReady}
+          mode={dialog.mode}
+          effectiveQuery={dialog.effectiveQuery}
+          patientPickerItems={dialog.patientPickerItems}
+          patientAction={dialog.parsed.patientAction}
+          isLoading={dialog.isLoading}
+          patientNameCounts={dialog.patientNameCounts}
+          onSelectPatient={dialog.onSelectAndClose}
+          onConfirmPatient={dialog.handleConfirmPatient}
+        />
 
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+        <AllModeServerGroups
+          hasQuery={dialog.hasQuery}
+          mode={dialog.mode}
+          serverEnabled={dialog.serverEnabled}
+          serverQueryReady={dialog.serverQueryReady}
+          groups={dialog.groups}
+          role={dialog.role}
+          isAdmin={dialog.isAdmin}
+          effectiveQuery={dialog.effectiveQuery}
+          isLoading={dialog.isLoading}
+          onSelectResult={dialog.onSelectAndClose}
+        />
 
-            <CommandGroup heading="Suggested Commands">
-              {suggestedCommands.map((cmd) => (
-                <CommandItem
-                  key={cmd.id}
-                  value={cmd.label}
-                  onSelect={() => setRawQuery(cmd.query)}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={Sparkles} tone="amber" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-heading text-sm font-semibold text-foreground">
-                        {cmd.label}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">{cmd.query}</div>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
+        <StaffModeGroup
+          hasQuery={dialog.hasQuery}
+          mode={dialog.mode}
+          parsed={dialog.parsed}
+          effectiveQuery={dialog.effectiveQuery}
+          staff={dialog.groups.staff}
+          isLoading={dialog.isLoading}
+          onSelectResult={dialog.onSelectAndClose}
+        />
 
-        {hasQuery && mode === 'pages' && (
-          <CommandGroup heading="Pages">
-            {pages.map((p) => renderPageItem(p))}
-            {pages.length === 0 && (
-              <CommandItem disabled value="No matching pages" className={COMMAND_ITEM_CLASSNAME}>
-                <span className="font-mono text-[10px] text-muted-foreground">No matching pages</span>
-              </CommandItem>
-            )}
-          </CommandGroup>
-        )}
-
-        {hasQuery && mode === 'all' && actions.length > 0 && (
-          <>
-            <CommandGroup heading="Actions">
-              {actions.map((a) => (
-                <CommandItem
-                  key={a.id}
-                  value={`${a.label} ${(a.keywords || []).join(' ')}`}
-                  onSelect={() => {
-                    setOpen(false)
-                    a.run({ navigate, user })
-                  }}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={Sparkles} tone="amber" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-heading text-sm font-semibold text-foreground">
-                        {a.label}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {(a.keywords || []).slice(0, 4).join(' · ')}
-                      </div>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-          </>
-        )}
-
-        {hasQuery && mode === 'all' && pages.length > 0 && (
-          <>
-            <CommandGroup heading="Pages">
-              {pages.map((p) => renderPageItem(p))}
-            </CommandGroup>
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-          </>
-        )}
-
-        {hasQuery &&
-          serverEnabled &&
-          serverQueryReady &&
-          mode !== 'staff' &&
-          mode !== 'pages' &&
-          (mode === 'patients' || mode === 'patient_action' || mode === 'all') && (
-            <>
-              <CommandGroup
-                heading={
-                  mode === 'patients'
-                    ? effectiveQuery.length < 2
-                      ? 'Recent Patients'
-                      : 'Patients'
-                    : mode === 'patient_action'
-                      ? effectiveQuery.length < 2
-                        ? 'Recent Patients'
-                        : 'Select Patient'
-                      : 'Patients'
-                }
-              >
-                {patientPickerItems.map((p) => renderPatientItem(p, { action: parsed.patientAction }))}
-                {patientPickerItems.length === 0 && !isLoading && (
-                  <CommandItem
-                    disabled
-                    value={effectiveQuery.length >= 2 ? 'No matching patients' : 'No recent patients'}
-                    className={COMMAND_ITEM_CLASSNAME}
-                  >
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {effectiveQuery.length >= 2 ? 'No matching patients' : 'No recent patients'}
-                    </span>
-                  </CommandItem>
-                )}
-              </CommandGroup>
-              {mode === 'all' && <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />}
-            </>
-          )}
-
-        {hasQuery && mode === 'all' && serverEnabled && serverQueryReady && (
-          <>
-            <CommandGroup heading="Wards">
-              {(groups.wards || []).map((w) => (
-                <CommandItem
-                  key={`ward:${w.id}`}
-                  value={`${w.name} ${w.ward_type || ''}`.trim()}
-                  onSelect={() => onSelectAndClose(`/wards/${w.id}`)}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={Building2} tone="emerald" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-heading text-sm font-semibold text-foreground">
-                        {w.name}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {w.ward_type ? String(w.ward_type).toUpperCase() : 'WARD'}
-                      </div>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-              {(groups.wards || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
-                <CommandItem disabled value="No matching wards" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">No matching wards</span>
-                </CommandItem>
-              )}
-            </CommandGroup>
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-
-            <CommandGroup heading="Encounters">
-              {(groups.encounters || []).map((e) => (
-                <CommandItem
-                  key={`encounter:${e.id}`}
-                  value={`${e.patient_name || ''} ${e.reason || ''}`.trim()}
-                  onSelect={() => {
-                    const to = ROLE_GROUPS.ENCOUNTER_WORKSPACE.includes(role)
-                      ? `/encounters/${e.id}/workspace`
-                      : `/encounters/${e.id}`
-                    onSelectAndClose(to)
-                  }}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={Stethoscope} tone="amber" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-heading text-sm font-semibold text-foreground">
-                        {e.patient_name || 'Encounter'}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {e.reason ? String(e.reason) : 'No reason recorded'}
-                      </div>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-              {(groups.encounters || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
-                <CommandItem disabled value="No matching encounters" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">No matching encounters</span>
-                </CommandItem>
-              )}
-            </CommandGroup>
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-
-            <CommandGroup heading="Appointments">
-              {(groups.appointments || []).map((a) => (
-                <CommandItem
-                  key={`appointment:${a.id}`}
-                  value={`${a.patient_name || ''} ${a.practitioner_name || ''}`.trim()}
-                  onSelect={() => onSelectAndClose(`/appointments/${a.id}`)}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={CalendarClock} tone="sky" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-heading text-sm font-semibold text-foreground">
-                        {a.patient_name || 'Appointment'}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {a.start_time ? new Date(a.start_time).toLocaleString() : ''}
-                      </div>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-              {(groups.appointments || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
-                <CommandItem disabled value="No matching appointments" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">No matching appointments</span>
-                </CommandItem>
-              )}
-            </CommandGroup>
-            <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-
-            <CommandGroup heading="Admissions">
-              {(groups.admissions || []).map((a) => (
-                <CommandItem
-                  key={`admission:${a.id}`}
-                  value={`${a.patient_name || ''} ${a.ward_name || ''}`.trim()}
-                  onSelect={() => onSelectAndClose(`/admissions/${a.id}`)}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={BedDouble} tone="emerald" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-heading text-sm font-semibold text-foreground">
-                        {a.patient_name || 'Admission'}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {a.ward_name ? String(a.ward_name) : 'No ward'}
-                        {a.bed_number ? `  ·  Bed ${a.bed_number}` : ''}
-                      </div>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-              {(groups.admissions || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
-                <CommandItem disabled value="No matching admissions" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">No matching admissions</span>
-                </CommandItem>
-              )}
-            </CommandGroup>
-
-            {isAdmin && (
-              <>
-                <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
-                <CommandGroup heading="Staff">
-                  {(groups.staff || []).map((s) => (
-                    <CommandItem
-                      key={`staff:${s.id}`}
-                      value={`${s.name || ''} ${s.employee_id || ''}`.trim()}
-                      onSelect={() => onSelectAndClose(`/staff/${s.id}`)}
-                      className={COMMAND_ITEM_CLASSNAME}
-                    >
-                      <div className="flex min-w-0 items-start gap-3">
-                        <LeadingIcon Icon={IdCard} tone="rose" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-heading text-sm font-semibold text-foreground">
-                            {s.name || 'Staff'}
-                          </div>
-                          <div className="truncate font-mono text-[10px] text-muted-foreground">
-                            {s.employee_id || ''}
-                          </div>
-                        </div>
-                      </div>
-                    </CommandItem>
-                  ))}
-                  {(groups.staff || []).length === 0 && effectiveQuery.length >= 2 && !isLoading && (
-                    <CommandItem disabled value="No matching staff" className={COMMAND_ITEM_CLASSNAME}>
-                      <span className="font-mono text-[10px] text-muted-foreground">No matching staff</span>
-                    </CommandItem>
-                  )}
-                </CommandGroup>
-              </>
-            )}
-            {GENERIC_RESULT_GROUPS.map((group) => (
-              <GenericResultGroup
-                key={group.keyPrefix}
-                heading={group.heading}
-                items={groups[group.itemsKey]}
-                Icon={group.Icon}
-                tone={group.tone}
-                keyPrefix={group.keyPrefix}
-                renderItem={renderGenericItem}
-              />
-            ))}
-          </>
-        )}
-
-        {hasQuery && mode === 'staff' && (
-          <CommandGroup heading="Staff">
-            {parsed.staffDisabled && (
-              <CommandItem disabled value="Staff search is admin-only" className={COMMAND_ITEM_CLASSNAME}>
-                <span className="font-mono text-[10px] text-muted-foreground">{parsed.hint}</span>
-              </CommandItem>
-            )}
-            {!parsed.staffDisabled && effectiveQuery.length < 2 && (
-              <CommandItem disabled value="Type at least 2 characters" className={COMMAND_ITEM_CLASSNAME}>
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  Type at least 2 characters to search staff
-                </span>
-              </CommandItem>
-            )}
-            {!parsed.staffDisabled &&
-              effectiveQuery.length >= 2 &&
-              (groups.staff || []).map((s) => (
-                <CommandItem
-                  key={`staff:${s.id}`}
-                  value={`${s.name || ''} ${s.employee_id || ''}`.trim()}
-                  onSelect={() => onSelectAndClose(`/staff/${s.id}`)}
-                  className={COMMAND_ITEM_CLASSNAME}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <LeadingIcon Icon={IdCard} tone="rose" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-heading text-sm font-semibold text-foreground">
-                        {s.name || 'Staff'}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground">
-                        {s.employee_id || ''}
-                      </div>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-            {!parsed.staffDisabled &&
-              effectiveQuery.length >= 2 &&
-              (groups.staff || []).length === 0 &&
-              !isLoading && (
-                <CommandItem disabled value="No matching staff" className={COMMAND_ITEM_CLASSNAME}>
-                  <span className="font-mono text-[10px] text-muted-foreground">No matching staff</span>
-                </CommandItem>
-              )}
-          </CommandGroup>
-        )}
-
-        {isLoading && hasQuery && (
-          <CommandItem disabled value="Loading" className={COMMAND_ITEM_CLASSNAME}>
-            <div className="flex min-w-0 items-start gap-3">
-              <LeadingIcon Icon={Sparkles} tone="amber" />
-              <span className="font-mono text-[10px] text-muted-foreground">Searching…</span>
-            </div>
-          </CommandItem>
-        )}
-
-        {isError && (
-          <CommandItem disabled value="Error" className={COMMAND_ITEM_CLASSNAME}>
-            <span className="font-mono text-[10px] text-muted-foreground">Search failed. Try again.</span>
-          </CommandItem>
-        )}
+        <SearchStatusItems
+          isLoading={dialog.isLoading}
+          isError={dialog.isError}
+          hasQuery={dialog.hasQuery}
+        />
         </CommandList>
 
-        <div className="border-t bg-muted/20 px-4 py-2 text-muted-foreground">
-          <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-tight">
-            <span>Enter to open</span>
-            <span className="opacity-50">·</span>
-            <span>Esc to close</span>
-            <span className="opacity-50">·</span>
-            <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.70_0.15_230)]">
-              &gt; pages
-            </span>
-            <span className="rounded-full border bg-card px-2 py-0.5 text-[oklch(0.75_0.18_55)]">
-              # patients
-            </span>
-            <span
-              className={cn(
-                "rounded-full border bg-card px-2 py-0.5 text-[oklch(0.65_0.22_15)]",
-                !isAdmin && "opacity-50"
-              )}
-            >
-              @ staff
-            </span>
-          </div>
-        </div>
+        <OmniSearchFooter isAdmin={dialog.isAdmin} />
       </CommandDialog>
 
-      <AlertDialog open={confirmOpen} onOpenChange={(nextOpen) => (!nextOpen ? closeConfirmation() : setConfirmOpen(nextOpen))}>
-        <AlertDialogContent className="max-w-lg">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-display text-xl">
-              {pendingExecution?.kind === 'patient_identity' ? 'Confirm Patient Identity' : 'Confirm Sensitive Action'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingExecution?.kind === 'patient_identity'
-                ? 'Verify the identifiers before opening this chart.'
-                : 'AI command preview indicates this navigation requires confirmation.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {pendingExecution?.kind === 'patient_identity' ? (
-            <div className="rounded-lg border bg-muted/40 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-display text-lg text-foreground">
-                  {pendingExecution?.patient?.name || 'Patient'}
-                </span>
-                {pendingExecution?.actionLabel && (
-                  <span className="rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
-                    {pendingExecution.actionLabel}
-                  </span>
-                )}
-              </div>
-              <div className="mt-2 break-words font-mono text-xs text-muted-foreground">
-                {(pendingExecution?.identityParts || []).length > 0
-                  ? pendingExecution.identityParts.join('  ·  ')
-                  : 'No verified identifiers available'}
-              </div>
-              {(pendingExecution?.identityWarnings || []).length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {pendingExecution.identityWarnings.map((warning) => (
-                    <span
-                      key={`confirm:${warning}`}
-                      className={cn(
-                        "rounded-full border px-2 py-0.5 font-mono text-[10px]",
-                        warning === 'Fuzzy match'
-                          ? "border-amber-200 bg-amber-50 text-amber-700"
-                          : "border-rose-200 bg-rose-50 text-rose-700"
-                      )}
-                    >
-                      {warning}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-lg border bg-muted/40 p-4">
-              <div className="flex items-center gap-2 text-sm">
-                <span
-                  className={cn(
-                    "rounded-full border px-2 py-0.5 font-mono text-[10px]",
-                    confidenceClass(pendingExecution?.confidenceBand)
-                  )}
-                >
-                  {confidenceLabel(pendingExecution?.confidenceBand)}
-                </span>
-                <span className="font-heading font-semibold text-foreground">
-                  {formatIntentLabel(pendingExecution?.intent?.intent_type)}
-                </span>
-              </div>
-              <div className="mt-2 font-mono text-xs text-muted-foreground">
-                {pendingExecution?.href}
-              </div>
-              {(pendingExecution?.preview?.denial_reasons || []).length > 0 && (
-                <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 p-2 font-mono text-xs text-rose-700">
-                  {(pendingExecution?.preview?.denial_reasons || [])[0]}
-                </div>
-              )}
-            </div>
-          )}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={closeConfirmation}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmExecution}>
-              Continue
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <OmniSearchConfirmationDialog
+        open={dialog.confirmOpen}
+        pendingExecution={dialog.pendingExecution}
+        onOpenChange={dialog.handleConfirmationOpenChange}
+        onCancel={dialog.closeConfirmation}
+        onConfirm={dialog.handleConfirmExecution}
+      />
     </>
   )
 }

@@ -20,11 +20,10 @@ import { workflowRoutes } from '@/features/workflows/routes'
 import { clinicalNotesRoutes } from '@/features/clinical-notes/routes'
 import { chartRoutes } from '@/features/charts/routes'
 import { opsRoutes } from '@/features/ops/routes'
+import { wardBoardRoutes } from '@/features/ward-board/routes'
 import { validateRoutes } from './routeTypes'
 import { withFeature } from '@/shared/lib/features'
 
-const wardTaskBoardPageModules = import.meta.glob('/src/features/ward-board/pages/WardBoardPage.{js,jsx}')
-const wardTaskBoardRouteLoaders = import.meta.glob('/src/features/ward-board/routes.{js,jsx}')
 const WARD_TASK_BOARD_ROUTE_FEATURES = [
   'ward_task_board',
   'patient_chronicle',
@@ -73,19 +72,7 @@ const resolveWardTaskBoardRouteModule = (routeModule) => {
   }))
 }
 
-async function loadWardTaskBoardRoutes() {
-  // The ward-board package can land in parallel; avoid importing its route module until the page exists.
-  if (Object.keys(wardTaskBoardPageModules).length === 0) {
-    return []
-  }
-
-  const routeModules = await Promise.all(
-    Object.values(wardTaskBoardRouteLoaders).map((loadRouteModule) => loadRouteModule())
-  )
-  return routeModules.flatMap(resolveWardTaskBoardRouteModule)
-}
-
-const wardTaskBoardRoutes = await loadWardTaskBoardRoutes()
+const wardTaskBoardRoutes = resolveWardTaskBoardRouteModule({ wardBoardRoutes })
 
 export const featureRoutes = [
   ...withFeature(appointmentRoutes, 'appointments'),
