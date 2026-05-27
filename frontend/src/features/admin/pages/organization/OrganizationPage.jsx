@@ -14,7 +14,7 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -446,6 +446,348 @@ function UnitDetailPanel({ unitId, onEdit }) {
   );
 }
 
+function collectTreeIds(nodes) {
+  const ids = new Set();
+  const collect = (node) => {
+    ids.add(node.id);
+    node.children?.forEach(collect);
+  };
+  nodes.forEach(collect);
+  return ids;
+}
+
+function filterOrganizationTree(tree, searchQuery) {
+  if (!searchQuery) return tree;
+
+  const searchLower = searchQuery.toLowerCase();
+
+  const filterNode = (node) => {
+    const matches =
+      node.name.toLowerCase().includes(searchLower) ||
+      node.code?.toLowerCase().includes(searchLower);
+
+    const filteredChildren = node.children
+      ? node.children.flatMap((child) => {
+        const filteredChild = filterNode(child);
+        return filteredChild ? [filteredChild] : [];
+      })
+      : [];
+
+    if (matches || filteredChildren.length > 0) {
+      return { ...node, children: filteredChildren };
+    }
+    return null;
+  };
+
+  return tree.flatMap((node) => {
+    const filteredNode = filterNode(node);
+    return filteredNode ? [filteredNode] : [];
+  });
+}
+
+function getAncestorIds(nodeId, nodes) {
+  const ancestors = new Set();
+  const findPath = (currentNodes, targetId, path = []) => {
+    for (const node of currentNodes) {
+      if (node.id === targetId) {
+        path.forEach((id) => ancestors.add(id));
+        return true;
+      }
+      if (node.children?.length && findPath(node.children, targetId, [...path, node.id])) {
+        return true;
+      }
+    }
+    return false;
+  };
+  findPath(nodes, nodeId);
+  return ancestors;
+}
+
+function OrganizationSidebarHeader({
+  searchQuery,
+  onSearchChange,
+  onCreateUnit,
+  onExpandAll,
+  onCollapseAll,
+  onRefresh,
+}) {
+  return (
+    <div className="p-5 border-b bg-background">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
+            <FolderTree className="size-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h1 className="font-display text-xl font-semibold tracking-tight">Organization</h1>
+        </div>
+        <Button onClick={onCreateUnit} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs">
+          <Plus className="size-4 mr-1.5" />
+          Add Unit
+        </Button>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search units..."
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
+          className="pl-9 font-mono text-sm"
+        />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1">
+        <Button variant="ghost" size="sm" className="font-mono text-xs text-muted-foreground hover:text-foreground" onClick={onExpandAll}>
+          Expand All
+        </Button>
+        <Button variant="ghost" size="sm" className="font-mono text-xs text-muted-foreground hover:text-foreground" onClick={onCollapseAll}>
+          Collapse All
+        </Button>
+        <Button variant="ghost" size="icon" className="ml-auto size-8" onClick={onRefresh}>
+          <RefreshCw className="size-4 text-muted-foreground" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function OrganizationTreeLoading() {
+  return (
+    <div className="space-y-2 p-2">
+      {[...Array(5)].map((_, i) => (
+        <Skeleton key={i} className="h-14 w-full rounded-lg" />
+      ))}
+    </div>
+  );
+}
+
+function EmptyOrganizationTree({ searchQuery }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/50 mb-4">
+        <Building2 className="size-8 text-muted-foreground/50" />
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {searchQuery ? 'No units match your search' : 'No units yet'}
+      </p>
+      {!searchQuery && (
+        <p className="text-xs text-muted-foreground mt-1">Create your first organizational unit</p>
+      )}
+    </div>
+  );
+}
+
+function OrganizationTreeContent({
+  isLoading,
+  filteredTree,
+  searchQuery,
+  selectedUnitId,
+  expandedIds,
+  onSelectUnit,
+  onAction,
+  onToggleExpand,
+}) {
+  if (isLoading) return <OrganizationTreeLoading />;
+  if (filteredTree.length === 0) return <EmptyOrganizationTree searchQuery={searchQuery} />;
+
+  return (
+    <div className="space-y-1">
+      {filteredTree.map((node) => (
+        <TreeNode
+          key={node.id}
+          node={node}
+          selectedId={selectedUnitId}
+          onSelect={onSelectUnit}
+          onAction={onAction}
+          expandedIds={expandedIds}
+          onToggleExpand={onToggleExpand}
+        />
+      ))}
+    </div>
+  );
+}
+
+function OrganizationSidebar({
+  searchQuery,
+  onSearchChange,
+  onCreateUnit,
+  onExpandAll,
+  onCollapseAll,
+  onRefresh,
+  isLoading,
+  filteredTree,
+  selectedUnitId,
+  expandedIds,
+  onSelectUnit,
+  onAction,
+  onToggleExpand,
+}) {
+  return (
+    <div className="flex max-h-[70vh] w-full min-w-0 flex-col border-b bg-card lg:max-h-none lg:w-[420px] lg:shrink-0 lg:border-b-0 lg:border-r">
+      <OrganizationSidebarHeader
+        searchQuery={searchQuery}
+        onSearchChange={onSearchChange}
+        onCreateUnit={onCreateUnit}
+        onExpandAll={onExpandAll}
+        onCollapseAll={onCollapseAll}
+        onRefresh={onRefresh}
+      />
+      <div className="flex-1 overflow-y-auto p-3">
+        <OrganizationTreeContent
+          isLoading={isLoading}
+          filteredTree={filteredTree}
+          searchQuery={searchQuery}
+          selectedUnitId={selectedUnitId}
+          expandedIds={expandedIds}
+          onSelectUnit={onSelectUnit}
+          onAction={onAction}
+          onToggleExpand={onToggleExpand}
+        />
+      </div>
+    </div>
+  );
+}
+
+function EmptyUnitSelection() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full">
+      <div className="flex size-20 items-center justify-center rounded-2xl bg-muted/50 mb-4">
+        <Building2 className="size-10 text-muted-foreground/30" />
+      </div>
+      <p className="text-muted-foreground">Select a unit to view details</p>
+      <p className="text-xs text-muted-foreground/60 mt-1">or create a new organizational unit</p>
+    </div>
+  );
+}
+
+function OrganizationDetailArea({ selectedUnitId, onEditUnit }) {
+  return (
+    <div className={cn(
+      "min-w-0 flex-1 bg-muted/20",
+      selectedUnitId ? "block" : "hidden lg:block"
+    )}>
+      {selectedUnitId ? (
+        <UnitDetailPanel unitId={selectedUnitId} onEdit={onEditUnit} />
+      ) : (
+        <EmptyUnitSelection />
+      )}
+    </div>
+  );
+}
+
+function UnitFormSlideOver({
+  open,
+  editingUnitId,
+  parentForNewUnit,
+  onClose,
+  isLoadingEditUnit,
+  editingUnit,
+  onSubmit,
+  isSaving,
+}) {
+  return (
+    <>
+      <div
+        className={cn(
+          "fixed inset-y-0 right-0 z-[100] w-full sm:w-[500px] bg-background border-l border-border",
+          "transform transition-transform duration-300 ease-in-out",
+          "flex flex-col shadow-2xl",
+          open ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
+              <Building2 className="size-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h2 className="font-display text-xl font-semibold">
+                {editingUnitId ? 'Edit Unit' : 'Create Unit'}
+              </h2>
+              {parentForNewUnit && (
+                <p className="font-mono text-xs text-muted-foreground">
+                  Adding to {parentForNewUnit.name}
+                </p>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="size-8 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-5" />
+          </Button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {editingUnitId && isLoadingEditUnit ? (
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-2/3" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <UnitForm
+              key={editingUnitId || 'new'}
+              unit={editingUnit}
+              parentUnit={parentForNewUnit}
+              onSubmit={onSubmit}
+              onCancel={onClose}
+              isLoading={isSaving}
+            />
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <button
+          type="button"
+          aria-label="Close unit form"
+          className="fixed inset-0 z-[99] border-0 bg-black/10 p-0"
+          onClick={onClose}
+        />
+      )}
+    </>
+  );
+}
+
+function DeleteUnitDialog({ unit, onOpenChange, onDelete, isDeleting }) {
+  return (
+    <Dialog open={Boolean(unit)} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-900/30">
+              <Trash2 className="size-5 text-rose-600 dark:text-rose-400" />
+            </div>
+            <DialogTitle className="font-display text-xl">Delete Unit</DialogTitle>
+          </div>
+          <DialogDescription className="text-sm">
+            Are you sure you want to delete <span className="font-display font-medium">{unit?.name}</span>?
+            This will also delete all child units. This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="font-mono text-xs">
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={onDelete}
+            disabled={isDeleting}
+            className="font-mono text-xs"
+          >
+            {isDeleting ? 'Deleting...' : 'Delete Unit'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * OrganizationPage - Main organization management page
  */
@@ -472,51 +814,14 @@ export default function OrganizationPage() {
 
   const tree = useMemo(() => treeData?.data || treeData || [], [treeData]);
 
-  // Filter tree based on search
-  const filteredTree = useMemo(() => {
-    if (!searchQuery) return tree;
-
-    const searchLower = searchQuery.toLowerCase();
-
-    const filterNode = (node) => {
-      const matches =
-        node.name.toLowerCase().includes(searchLower) ||
-        node.code?.toLowerCase().includes(searchLower);
-
-      const filteredChildren = node.children
-        ? node.children.flatMap((child) => {
-          const filteredChild = filterNode(child);
-          return filteredChild ? [filteredChild] : [];
-        })
-        : [];
-
-      if (matches || filteredChildren.length > 0) {
-        return { ...node, children: filteredChildren };
-      }
-      return null;
-    };
-
-    return tree.flatMap((node) => {
-      const filteredNode = filterNode(node);
-      return filteredNode ? [filteredNode] : [];
-    });
-  }, [tree, searchQuery]);
-
-  // Expand all when searching
-  useMemo(() => {
-    if (searchQuery) {
-      const getAllIds = (nodes) => {
-        const ids = new Set();
-        const collect = (node) => {
-          ids.add(node.id);
-          node.children?.forEach(collect);
-        };
-        nodes.forEach(collect);
-        return ids;
-      };
-      setExpandedIds(getAllIds(filteredTree));
-    }
-  }, [searchQuery, filteredTree]);
+  const filteredTree = useMemo(
+    () => filterOrganizationTree(tree, searchQuery),
+    [tree, searchQuery]
+  );
+  const displayExpandedIds = useMemo(
+    () => (searchQuery ? collectTreeIds(filteredTree) : expandedIds),
+    [expandedIds, filteredTree, searchQuery]
+  );
 
   const handleToggleExpand = (id) => {
     setExpandedIds((prev) => {
@@ -528,27 +833,6 @@ export default function OrganizationPage() {
       }
       return next;
     });
-  };
-
-  // Get all ancestor IDs for a node
-  const getAncestorIds = (nodeId, nodes) => {
-    const ancestors = new Set();
-    const findPath = (currentNodes, targetId, path = []) => {
-      for (const node of currentNodes) {
-        if (node.id === targetId) {
-          path.forEach(id => ancestors.add(id));
-          return true;
-        }
-        if (node.children?.length) {
-          if (findPath(node.children, targetId, [...path, node.id])) {
-            return true;
-          }
-        }
-      }
-      return false;
-    };
-    findPath(nodes, nodeId);
-    return ancestors;
   };
 
   const handleSelectUnit = (id) => {
@@ -565,16 +849,7 @@ export default function OrganizationPage() {
   };
 
   const handleExpandAll = () => {
-    const getAllIds = (nodes) => {
-      const ids = new Set();
-      const collect = (node) => {
-        ids.add(node.id);
-        node.children?.forEach(collect);
-      };
-      nodes.forEach(collect);
-      return ids;
-    };
-    setExpandedIds(getAllIds(tree));
+    setExpandedIds(collectTreeIds(tree));
   };
 
   const handleCollapseAll = () => {
@@ -651,210 +926,47 @@ export default function OrganizationPage() {
     <PageShell>
       {pageMeta}
       <div className="flex min-w-0 flex-col lg:h-[calc(100vh-4rem)] lg:flex-row">
-        {/* Left Panel - Tree View */}
-        <div className="flex max-h-[70vh] w-full min-w-0 flex-col border-b bg-card lg:max-h-none lg:w-[420px] lg:shrink-0 lg:border-b-0 lg:border-r">
-          {/* Header */}
-          <div className="p-5 border-b bg-background">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                  <FolderTree className="size-5 text-amber-600 dark:text-amber-400" />
-                </div>
-                <h1 className="font-display text-xl font-semibold tracking-tight">Organization</h1>
-              </div>
-              <Button onClick={handleCreateUnit} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs">
-                <Plus className="size-4 mr-1.5" />
-                Add Unit
-              </Button>
-            </div>
-
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                placeholder="Search units..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 font-mono text-sm"
-              />
-            </div>
-
-            {/* Toolbar */}
-            <div className="mt-3 flex flex-wrap items-center gap-1">
-              <Button variant="ghost" size="sm" className="font-mono text-xs text-muted-foreground hover:text-foreground" onClick={handleExpandAll}>
-                Expand All
-              </Button>
-              <Button variant="ghost" size="sm" className="font-mono text-xs text-muted-foreground hover:text-foreground" onClick={handleCollapseAll}>
-                Collapse All
-              </Button>
-              <Button variant="ghost" size="icon" className="ml-auto size-8" onClick={() => refetch()}>
-                <RefreshCw className="size-4 text-muted-foreground" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Tree */}
-          <div className="flex-1 overflow-y-auto p-3">
-            {isLoading ? (
-              <div className="space-y-2 p-2">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full rounded-lg" />
-                ))}
-              </div>
-            ) : filteredTree.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/50 mb-4">
-                  <Building2 className="size-8 text-muted-foreground/50" />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {searchQuery ? 'No units match your search' : 'No units yet'}
-                </p>
-                {!searchQuery && (
-                  <p className="text-xs text-muted-foreground mt-1">Create your first organizational unit</p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {filteredTree.map((node) => (
-                  <TreeNode
-                    key={node.id}
-                    node={node}
-                    selectedId={selectedUnitId}
-                    onSelect={handleSelectUnit}
-                    onAction={handleAction}
-                    expandedIds={expandedIds}
-                    onToggleExpand={handleToggleExpand}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Panel - Detail View */}
-        <div className={cn(
-          "min-w-0 flex-1 bg-muted/20",
-          selectedUnitId ? "block" : "hidden lg:block"
-        )}>
-          {selectedUnitId ? (
-            <UnitDetailPanel
-              unitId={selectedUnitId}
-              onClose={() => setSelectedUnitId(null)}
-              onEdit={(unit) => {
-                setEditingUnitId(unit.id);
-                openUnitForm();
-              }}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="flex size-20 items-center justify-center rounded-2xl bg-muted/50 mb-4">
-                <Building2 className="size-10 text-muted-foreground/30" />
-              </div>
-              <p className="text-muted-foreground">Select a unit to view details</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">or create a new organizational unit</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Unit Form Slide-Over */}
-      <div
-        className={cn(
-          "fixed inset-y-0 right-0 z-[100] w-full sm:w-[500px] bg-background border-l border-border",
-          "transform transition-transform duration-300 ease-in-out",
-          "flex flex-col shadow-2xl",
-          showUnitForm ? "translate-x-0" : "translate-x-full"
-        )}
-      >
-        {/* Header */}
-        <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-              <Building2 className="size-5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div>
-              <h2 className="font-display text-xl font-semibold">
-                {editingUnitId ? 'Edit Unit' : 'Create Unit'}
-              </h2>
-              {parentForNewUnit && (
-                <p className="font-mono text-xs text-muted-foreground">
-                  Adding to {parentForNewUnit.name}
-                </p>
-              )}
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={closeUnitForm}
-            className="size-8 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-5" />
-          </Button>
-        </header>
-
-        {/* Content - scrollable */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {editingUnitId && isLoadingEditUnit ? (
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-2/3" />
-              <Skeleton className="h-20 w-full" />
-            </div>
-          ) : (
-            <UnitForm
-              key={editingUnitId || 'new'}
-              unit={editingUnit}
-              parentUnit={parentForNewUnit}
-              onSubmit={handleSaveUnit}
-              onCancel={closeUnitForm}
-              isLoading={createUnit.isPending || updateUnit.isPending}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Backdrop */}
-      {showUnitForm && (
-        <button
-          type="button"
-          aria-label="Close unit form"
-          className="fixed inset-0 z-[99] border-0 bg-black/10 p-0"
-          onClick={closeUnitForm}
+        <OrganizationSidebar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onCreateUnit={handleCreateUnit}
+          onExpandAll={handleExpandAll}
+          onCollapseAll={handleCollapseAll}
+          onRefresh={() => refetch()}
+          isLoading={isLoading}
+          filteredTree={filteredTree}
+          selectedUnitId={selectedUnitId}
+          expandedIds={displayExpandedIds}
+          onSelectUnit={handleSelectUnit}
+          onAction={handleAction}
+          onToggleExpand={handleToggleExpand}
         />
-      )}
+        <OrganizationDetailArea
+          selectedUnitId={selectedUnitId}
+          onEditUnit={(unit) => {
+            setEditingUnitId(unit.id);
+            openUnitForm();
+          }}
+        />
+      </div>
 
-      {/* Delete Confirmation */}
-      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-900/30">
-                <Trash2 className="size-5 text-rose-600 dark:text-rose-400" />
-              </div>
-              <DialogTitle className="font-display text-xl">Delete Unit</DialogTitle>
-            </div>
-            <DialogDescription className="text-sm">
-              Are you sure you want to delete <span className="font-display font-medium">{deleteConfirm?.name}</span>?
-              This will also delete all child units. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)} className="font-mono text-xs">
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteUnit}
-              disabled={deleteUnit.isPending}
-              className="font-mono text-xs"
-            >
-              {deleteUnit.isPending ? 'Deleting...' : 'Delete Unit'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <UnitFormSlideOver
+        open={showUnitForm}
+        editingUnitId={editingUnitId}
+        parentForNewUnit={parentForNewUnit}
+        onClose={closeUnitForm}
+        isLoadingEditUnit={isLoadingEditUnit}
+        editingUnit={editingUnit}
+        onSubmit={handleSaveUnit}
+        isSaving={createUnit.isPending || updateUnit.isPending}
+      />
+
+      <DeleteUnitDialog
+        unit={deleteConfirm}
+        onOpenChange={() => setDeleteConfirm(null)}
+        onDelete={handleDeleteUnit}
+        isDeleting={deleteUnit.isPending}
+      />
     </PageShell>
   );
 }
