@@ -91,6 +91,488 @@ const normalizeReferral = (referral) => {
   };
 };
 
+const statusConfig = {
+  draft: { label: 'Draft', badgeClass: 'bg-muted text-muted-foreground' },
+  pending: { label: 'Pending Review', badgeClass: 'badge-chronicle-amber' },
+  accepted: { label: 'Accepted', badgeClass: 'badge-chronicle-emerald' },
+  declined: { label: 'Declined', badgeClass: 'badge-chronicle-rose' },
+  scheduled: { label: 'Scheduled', badgeClass: 'badge-chronicle-sky' },
+  completed: { label: 'Completed', badgeClass: 'badge-chronicle-emerald' },
+};
+
+const urgencyConfig = {
+  routine: {
+    label: 'Routine',
+    badgeClass: 'bg-muted text-muted-foreground',
+    icon: Clock,
+  },
+  urgent: {
+    label: 'Urgent',
+    badgeClass: 'badge-chronicle-amber',
+    icon: AlertCircle,
+  },
+  emergency: {
+    label: 'Emergency',
+    badgeClass: 'badge-chronicle-rose',
+    icon: AlertCircle,
+  },
+};
+
+const actionConfig = {
+  accept: {
+    title: 'Accept Referral',
+    description:
+      'Accept this referral and add any notes about scheduling or next steps',
+    buttonLabel: 'Accept Referral',
+    buttonClass: 'bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)] text-white',
+    notesLabel: 'Acceptance Notes (Optional)',
+    notesPlaceholder:
+      'Add notes about scheduling, what the patient should bring, or any pre-visit instructions...',
+  },
+  decline: {
+    title: 'Decline Referral',
+    description: 'Decline this referral and provide a reason',
+    buttonLabel: 'Decline Referral',
+    buttonClass: 'bg-[oklch(0.65_0.22_15)] hover:bg-[oklch(0.60_0.22_15)] text-white',
+    notesLabel: 'Reason for Declining *',
+    notesPlaceholder:
+      'Provide a clear reason for declining (e.g., patient needs different specialty, insufficient information, not appropriate for referral)...',
+  },
+  complete: {
+    title: 'Complete Referral',
+    description: 'Mark this referral as completed and provide your findings',
+    buttonLabel: 'Complete Referral',
+    buttonClass: 'bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)] text-white',
+    notesLabel: 'Specialist Notes *',
+    notesPlaceholder:
+      'Document your findings, diagnosis, treatment plan, and any procedures performed...',
+  },
+};
+
+function ReferralInboxLoadingState() {
+  return (
+    <PageShell>
+      <PageHeader
+        title="Referral Inbox"
+        description="Review and manage referrals sent to your department"
+      />
+      <div className="flex items-center justify-center py-12">
+        <div className="text-muted-foreground">Loading referrals…</div>
+      </div>
+    </PageShell>
+  );
+}
+
+function ReferralInboxHeader({ referralCount, breachedCount, waitlistWaitingCount }) {
+  return (
+    <PageHeader
+      title="Referral Inbox"
+      description="Review and manage referrals sent to your department"
+      actions={(
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <span className="badge-chronicle-amber text-base px-3 py-1">
+            {referralCount} Referrals
+          </span>
+          <span className="badge-chronicle-rose text-base px-3 py-1">
+            {breachedCount} SLA Breached
+          </span>
+          <span className="badge-chronicle-sky text-base px-3 py-1">
+            {waitlistWaitingCount} Waitlist
+          </span>
+        </div>
+      )}
+    />
+  );
+}
+
+function ReferralInboxSearch({ searchQuery, onSearchChange }) {
+  return (
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+      <Input
+        placeholder="Search by patient name, MRN, referral number, or reason..."
+        value={searchQuery}
+        onChange={(e) => onSearchChange(e.target.value)}
+        className="pl-10 bg-card border-border"
+      />
+    </div>
+  );
+}
+
+function ReferralEmptyState({ hasActiveFilters }) {
+  return (
+    <Card className="bg-card border-border">
+      <CardContent className="py-12">
+        <div className="text-center text-muted-foreground">
+          <Stethoscope className="size-12 mx-auto mb-3 opacity-50" />
+          <p className="font-heading font-medium">No referrals found</p>
+          <p className="text-sm mt-1">
+            {hasActiveFilters
+              ? 'Try adjusting your search'
+              : 'Referrals will appear here when sent to your department'}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReferralStatusBadges({ referral }) {
+  const status = statusConfig[referral.status] || statusConfig.draft;
+  const urgency = urgencyConfig[referral.urgency] || urgencyConfig.routine;
+  const UrgencyIcon = urgency.icon;
+
+  return (
+    <>
+      <span className={cn('text-xs px-2 py-0.5 rounded-full', status.badgeClass)}>
+        {status.label}
+      </span>
+      <span className={cn('gap-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full', urgency.badgeClass)}>
+        <UrgencyIcon className="size-3" />
+        {urgency.label}
+      </span>
+    </>
+  );
+}
+
+function ReferralCardHeader({ referral }) {
+  return (
+    <CardHeader>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <CardTitle className="font-heading text-lg text-foreground">
+              Referral #{referral.referral_number}
+            </CardTitle>
+            <ReferralStatusBadges referral={referral} />
+          </div>
+          <CardDescription className="space-y-1">
+            <div className="flex items-center gap-4 flex-wrap text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <User className="size-3" />
+                {referral.patientName}
+              </span>
+              {referral.patientMrn && (
+                <span className="font-mono">
+                  MRN: {referral.patientMrn}
+                </span>
+              )}
+              {referral.created_at && (
+                <span className="flex items-center gap-1 font-mono text-xs">
+                  <Calendar className="size-3" />
+                  {format(new Date(referral.created_at), 'MMM dd, yyyy')}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1 text-muted-foreground">
+              <Building2 className="size-3" />
+              <span className="capitalize">
+                {referral.referred_to_department?.replace(/_/g, ' ')}
+              </span>
+              {referral.referred_to_specialty && referral.referred_to_specialty !== referral.referred_to_department && (
+                <span className="opacity-60">
+                  • {referral.referred_to_specialty}
+                </span>
+              )}
+            </div>
+          </CardDescription>
+        </div>
+      </div>
+    </CardHeader>
+  );
+}
+
+function ReferralProviderPanel({ referral }) {
+  if (!referral.referringProviderName) {
+    return null;
+  }
+
+  return (
+    <div className="bg-muted border border-border rounded-lg p-3">
+      <p className="text-xs font-heading font-medium text-muted-foreground mb-1">
+        Referring Provider:
+      </p>
+      <p className="text-sm text-foreground">
+        Dr. {referral.referringProviderName}
+      </p>
+    </div>
+  );
+}
+
+function ReferralClinicalDetails({ referral }) {
+  return (
+    <>
+      <div>
+        <p className="text-sm font-heading font-medium text-foreground mb-1 flex items-center gap-1">
+          <FileText className="size-3" />
+          Reason for Referral:
+        </p>
+        <p className="text-sm text-muted-foreground">{referral.reason}</p>
+      </div>
+
+      {referral.clinical_summary && (
+        <div>
+          <p className="text-sm font-heading font-medium text-foreground mb-1">
+            Clinical Summary:
+          </p>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {referral.clinical_summary}
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReferralOutcomePanels({ referral }) {
+  return (
+    <>
+      {referral.acceptanceNotes && (
+        <div className="bg-[oklch(0.70_0.17_155_/_0.1)] border border-[oklch(0.70_0.17_155_/_0.3)] rounded-lg p-3">
+          <p className="text-xs font-heading font-medium text-[oklch(0.70_0.17_155)] mb-1">
+            Acceptance Notes:
+          </p>
+          <p className="text-sm text-foreground">
+            {referral.acceptanceNotes}
+          </p>
+        </div>
+      )}
+
+      {referral.decline_reason && (
+        <div className="bg-[oklch(0.65_0.22_15_/_0.1)] border border-[oklch(0.65_0.22_15_/_0.3)] rounded-lg p-3">
+          <p className="text-xs font-heading font-medium text-[oklch(0.65_0.22_15)] mb-1">
+            Decline Reason:
+          </p>
+          <p className="text-sm text-foreground">{referral.decline_reason}</p>
+        </div>
+      )}
+
+      {referral.specialist_notes && (referral.status === 'completed' || !referral.acceptanceNotes) && (
+        <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
+          <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
+            Specialist Notes:
+          </p>
+          <p className="text-sm text-foreground whitespace-pre-wrap">
+            {referral.specialist_notes}
+          </p>
+        </div>
+      )}
+
+      {referral.recommendations && (
+        <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
+          <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
+            Recommendations:
+          </p>
+          <p className="text-sm text-foreground whitespace-pre-wrap">
+            {referral.recommendations}
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReferralCardActions({ referral, onStartConsultation, onActionClick }) {
+  return (
+    <div className="flex items-center gap-2 pt-2 flex-wrap">
+      {referral.status === 'pending' && (
+        <>
+          <Button
+            onClick={() => onActionClick(referral, 'accept')}
+            className="bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)] text-white font-mono text-xs"
+          >
+            <CheckCircle className="size-4 mr-2" />
+            Accept
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onActionClick(referral, 'decline')}
+            className="border-[oklch(0.65_0.22_15_/_0.5)] text-[oklch(0.65_0.22_15)] hover:bg-[oklch(0.65_0.22_15_/_0.1)] font-mono text-xs"
+          >
+            <XCircle className="size-4 mr-2" />
+            Decline
+          </Button>
+        </>
+      )}
+      {referral.status === 'accepted' && (
+        <>
+          <Button
+            onClick={() => onStartConsultation(referral)}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
+          >
+            <PlayCircle className="size-4 mr-2" />
+            Start Consultation
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onActionClick(referral, 'complete')}
+            className="font-mono text-xs"
+          >
+            <MessageSquare className="size-4 mr-2" />
+            Quick Response
+          </Button>
+        </>
+      )}
+      {referral.status === 'scheduled' && (
+        <>
+          <Button
+            onClick={() => onStartConsultation(referral)}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
+          >
+            <Stethoscope className="size-4 mr-2" />
+            View Patient
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onActionClick(referral, 'complete')}
+            className="font-mono text-xs"
+          >
+            <CheckCircle className="size-4 mr-2" />
+            Complete Referral
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReferralCard({ referral, onStartConsultation, onActionClick }) {
+  return (
+    <Card className="bg-card border-border animate-chronicle-enter">
+      <ReferralCardHeader referral={referral} />
+      <CardContent className="space-y-4">
+        <ReferralProviderPanel referral={referral} />
+        <ReferralClinicalDetails referral={referral} />
+        <ReferralOutcomePanels referral={referral} />
+        <ReferralCardActions
+          referral={referral}
+          onStartConsultation={onStartConsultation}
+          onActionClick={onActionClick}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReferralList({
+  referrals,
+  hasActiveFilters,
+  onStartConsultation,
+  onActionClick,
+}) {
+  if (referrals.length === 0) {
+    return <ReferralEmptyState hasActiveFilters={hasActiveFilters} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {referrals.map((referral) => (
+        <ReferralCard
+          key={referral.id}
+          referral={referral}
+          onStartConsultation={onStartConsultation}
+          onActionClick={onActionClick}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ReferralActionDialog({
+  isOpen,
+  selectedReferral,
+  currentAction,
+  actionNotes,
+  recommendations,
+  isPending,
+  onOpenChange,
+  onActionNotesChange,
+  onRecommendationsChange,
+  onSubmit,
+}) {
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl bg-card border-border">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl">{actionConfig[currentAction]?.title}</DialogTitle>
+          <DialogDescription>
+            {actionConfig[currentAction]?.description}
+          </DialogDescription>
+        </DialogHeader>
+
+        {selectedReferral && (
+          <div className="py-4 space-y-4">
+            <div className="bg-muted border border-border rounded-lg p-4">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Referral Number:</span>
+                  <span className="font-mono font-semibold text-foreground">
+                    #{selectedReferral.referral_number}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Patient:</span>
+                  <span className="font-semibold text-foreground">{selectedReferral.patientName}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Reason:</span>
+                  <span className="font-semibold text-foreground">{selectedReferral.reason}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="action_notes" className="font-heading">
+                {actionConfig[currentAction]?.notesLabel}
+              </Label>
+              <Textarea
+                id="action_notes"
+                placeholder={actionConfig[currentAction]?.notesPlaceholder}
+                value={actionNotes}
+                onChange={(e) => onActionNotesChange(e.target.value)}
+                className="min-h-[120px] bg-background border-border"
+              />
+            </div>
+
+            {currentAction === 'complete' && (
+              <div className="space-y-2">
+                <Label htmlFor="recommendations" className="font-heading">
+                  Recommendations for Referring Provider (Optional)
+                </Label>
+                <Textarea
+                  id="recommendations"
+                  placeholder="Follow-up care, medication adjustments, further testing needed, etc..."
+                  value={recommendations}
+                  onChange={(e) => onRecommendationsChange(e.target.value)}
+                  className="min-h-[100px] bg-background border-border"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+            className="font-mono text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onSubmit}
+            disabled={isPending}
+            className={cn('font-mono text-xs', actionConfig[currentAction]?.buttonClass)}
+          >
+            {isPending ? 'Processing...' : actionConfig[currentAction]?.buttonLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * ReferralInbox - Received referrals management for specialists
  */
@@ -212,410 +694,48 @@ const ReferralInbox = () => {
     }
   };
 
-  const statusConfig = {
-    draft: { label: 'Draft', badgeClass: 'bg-muted text-muted-foreground' },
-    pending: { label: 'Pending Review', badgeClass: 'badge-chronicle-amber' },
-    accepted: { label: 'Accepted', badgeClass: 'badge-chronicle-emerald' },
-    declined: { label: 'Declined', badgeClass: 'badge-chronicle-rose' },
-    scheduled: { label: 'Scheduled', badgeClass: 'badge-chronicle-sky' },
-    completed: { label: 'Completed', badgeClass: 'badge-chronicle-emerald' },
-  };
-
-  const urgencyConfig = {
-    routine: {
-      label: 'Routine',
-      badgeClass: 'bg-muted text-muted-foreground',
-      icon: Clock,
-    },
-    urgent: {
-      label: 'Urgent',
-      badgeClass: 'badge-chronicle-amber',
-      icon: AlertCircle,
-    },
-    emergency: {
-      label: 'Emergency',
-      badgeClass: 'badge-chronicle-rose',
-      icon: AlertCircle,
-    },
-  };
-
-  const actionConfig = {
-    accept: {
-      title: 'Accept Referral',
-      description:
-        'Accept this referral and add any notes about scheduling or next steps',
-      buttonLabel: 'Accept Referral',
-      buttonClass: 'bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)] text-white',
-      notesLabel: 'Acceptance Notes (Optional)',
-      notesPlaceholder:
-        'Add notes about scheduling, what the patient should bring, or any pre-visit instructions...',
-    },
-    decline: {
-      title: 'Decline Referral',
-      description: 'Decline this referral and provide a reason',
-      buttonLabel: 'Decline Referral',
-      buttonClass: 'bg-[oklch(0.65_0.22_15)] hover:bg-[oklch(0.60_0.22_15)] text-white',
-      notesLabel: 'Reason for Declining *',
-      notesPlaceholder:
-        'Provide a clear reason for declining (e.g., patient needs different specialty, insufficient information, not appropriate for referral)...',
-    },
-    complete: {
-      title: 'Complete Referral',
-      description: 'Mark this referral as completed and provide your findings',
-      buttonLabel: 'Complete Referral',
-      buttonClass: 'bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)] text-white',
-      notesLabel: 'Specialist Notes *',
-      notesPlaceholder:
-        'Document your findings, diagnosis, treatment plan, and any procedures performed...',
-    },
-  };
+  const actionPending =
+    acceptReferral.isPending ||
+    declineReferral.isPending ||
+    completeReferral.isPending;
 
   if (isLoading) {
-    return (
-      <PageShell>
-        <PageHeader
-          title="Referral Inbox"
-          description="Review and manage referrals sent to your department"
-        />
-        <div className="flex items-center justify-center py-12">
-          <div className="text-muted-foreground">Loading referrals…</div>
-        </div>
-      </PageShell>
-    );
+    return <ReferralInboxLoadingState />;
   }
 
   return (
     <PageShell>
-      <PageHeader
-        title="Referral Inbox"
-        description="Review and manage referrals sent to your department"
-        actions={(
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <span className="badge-chronicle-amber text-base px-3 py-1">
-              {filteredReferrals.length} Referrals
-            </span>
-            <span className="badge-chronicle-rose text-base px-3 py-1">
-              {breachedCount} SLA Breached
-            </span>
-            <span className="badge-chronicle-sky text-base px-3 py-1">
-              {waitlistWaitingCount} Waitlist
-            </span>
-          </div>
-        )}
+      <ReferralInboxHeader
+        referralCount={filteredReferrals.length}
+        breachedCount={breachedCount}
+        waitlistWaitingCount={waitlistWaitingCount}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by patient name, MRN, referral number, or reason..."
-            value={searchQuery}
-            onChange={(e) => updateSearch(e.target.value)}
-            className="pl-10 bg-card border-border"
-          />
-        </div>
+        <ReferralInboxSearch
+          searchQuery={searchQuery}
+          onSearchChange={updateSearch}
+        />
 
-        {filteredReferrals.length === 0 ? (
-          <Card className="bg-card border-border">
-            <CardContent className="py-12">
-              <div className="text-center text-muted-foreground">
-                <Stethoscope className="size-12 mx-auto mb-3 opacity-50" />
-                <p className="font-heading font-medium">No referrals found</p>
-                <p className="text-sm mt-1">
-                  {hasActiveFilters
-                    ? 'Try adjusting your search'
-                    : 'Referrals will appear here when sent to your department'}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {filteredReferrals.map((referral) => {
-              const status = statusConfig[referral.status] || statusConfig.draft;
-              const urgency = urgencyConfig[referral.urgency] || urgencyConfig.routine;
-              const UrgencyIcon = urgency.icon;
+        <ReferralList
+          referrals={filteredReferrals}
+          hasActiveFilters={hasActiveFilters}
+          onStartConsultation={handleStartConsultation}
+          onActionClick={handleActionClick}
+        />
 
-              return (
-                <Card key={referral.id} className="bg-card border-border animate-chronicle-enter">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <CardTitle className="font-heading text-lg text-foreground">
-                            Referral #{referral.referral_number}
-                          </CardTitle>
-                          <span className={cn('text-xs px-2 py-0.5 rounded-full', status.badgeClass)}>
-                            {status.label}
-                          </span>
-                          <span className={cn('gap-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full', urgency.badgeClass)}>
-                            <UrgencyIcon className="size-3" />
-                            {urgency.label}
-                          </span>
-                        </div>
-                        <CardDescription className="space-y-1">
-                          <div className="flex items-center gap-4 flex-wrap text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <User className="size-3" />
-                              {referral.patientName}
-                            </span>
-                            {referral.patientMrn && (
-                              <span className="font-mono">
-                                MRN: {referral.patientMrn}
-                              </span>
-                            )}
-                            {referral.created_at && (
-                              <span className="flex items-center gap-1 font-mono text-xs">
-                                <Calendar className="size-3" />
-                                {format(new Date(referral.created_at), 'MMM dd, yyyy')}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1 text-muted-foreground">
-                            <Building2 className="size-3" />
-                            <span className="capitalize">
-                              {referral.referred_to_department?.replace(/_/g, ' ')}
-                            </span>
-                            {referral.referred_to_specialty && referral.referred_to_specialty !== referral.referred_to_department && (
-                              <span className="opacity-60">
-                                • {referral.referred_to_specialty}
-                              </span>
-                            )}
-                          </div>
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {referral.referringProviderName && (
-                      <div className="bg-muted border border-border rounded-lg p-3">
-                        <p className="text-xs font-heading font-medium text-muted-foreground mb-1">
-                          Referring Provider:
-                        </p>
-                        <p className="text-sm text-foreground">
-                          Dr. {referral.referringProviderName}
-                        </p>
-                      </div>
-                    )}
-
-                    <div>
-                      <p className="text-sm font-heading font-medium text-foreground mb-1 flex items-center gap-1">
-                        <FileText className="size-3" />
-                        Reason for Referral:
-                      </p>
-                      <p className="text-sm text-muted-foreground">{referral.reason}</p>
-                    </div>
-
-                    {referral.clinical_summary && (
-                      <div>
-                        <p className="text-sm font-heading font-medium text-foreground mb-1">
-                          Clinical Summary:
-                        </p>
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                          {referral.clinical_summary}
-                        </p>
-                      </div>
-                    )}
-
-                    {referral.acceptanceNotes && (
-                      <div className="bg-[oklch(0.70_0.17_155_/_0.1)] border border-[oklch(0.70_0.17_155_/_0.3)] rounded-lg p-3">
-                        <p className="text-xs font-heading font-medium text-[oklch(0.70_0.17_155)] mb-1">
-                          Acceptance Notes:
-                        </p>
-                        <p className="text-sm text-foreground">
-                          {referral.acceptanceNotes}
-                        </p>
-                      </div>
-                    )}
-
-                    {referral.decline_reason && (
-                      <div className="bg-[oklch(0.65_0.22_15_/_0.1)] border border-[oklch(0.65_0.22_15_/_0.3)] rounded-lg p-3">
-                        <p className="text-xs font-heading font-medium text-[oklch(0.65_0.22_15)] mb-1">
-                          Decline Reason:
-                        </p>
-                        <p className="text-sm text-foreground">{referral.decline_reason}</p>
-                      </div>
-                    )}
-
-                    {referral.specialist_notes && (referral.status === 'completed' || !referral.acceptanceNotes) && (
-                      <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
-                        <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
-                          Specialist Notes:
-                        </p>
-                        <p className="text-sm text-foreground whitespace-pre-wrap">
-                          {referral.specialist_notes}
-                        </p>
-                      </div>
-                    )}
-
-                    {referral.recommendations && (
-                      <div className="bg-[oklch(0.70_0.15_230_/_0.1)] border border-[oklch(0.70_0.15_230_/_0.3)] rounded-lg p-3">
-                        <p className="text-xs font-heading font-medium text-[oklch(0.70_0.15_230)] mb-1">
-                          Recommendations:
-                        </p>
-                        <p className="text-sm text-foreground whitespace-pre-wrap">
-                          {referral.recommendations}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2 pt-2 flex-wrap">
-                      {referral.status === 'pending' && (
-                        <>
-                          <Button
-                            onClick={() => handleActionClick(referral, 'accept')}
-                            className="bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)] text-white font-mono text-xs"
-                          >
-                            <CheckCircle className="size-4 mr-2" />
-                            Accept
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => handleActionClick(referral, 'decline')}
-                            className="border-[oklch(0.65_0.22_15_/_0.5)] text-[oklch(0.65_0.22_15)] hover:bg-[oklch(0.65_0.22_15_/_0.1)] font-mono text-xs"
-                          >
-                            <XCircle className="size-4 mr-2" />
-                            Decline
-                          </Button>
-                        </>
-                      )}
-                      {referral.status === 'accepted' && (
-                        <>
-                          <Button
-                            onClick={() => handleStartConsultation(referral)}
-                            className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
-                          >
-                            <PlayCircle className="size-4 mr-2" />
-                            Start Consultation
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => handleActionClick(referral, 'complete')}
-                            className="font-mono text-xs"
-                          >
-                            <MessageSquare className="size-4 mr-2" />
-                            Quick Response
-                          </Button>
-                        </>
-                      )}
-                      {referral.status === 'scheduled' && (
-                        <>
-                          <Button
-                            onClick={() => handleStartConsultation(referral)}
-                            className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs"
-                          >
-                            <Stethoscope className="size-4 mr-2" />
-                            View Patient
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => handleActionClick(referral, 'complete')}
-                            className="font-mono text-xs"
-                          >
-                            <CheckCircle className="size-4 mr-2" />
-                            Complete Referral
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-
-        <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
-          <DialogContent className="max-w-2xl bg-card border-border">
-            <DialogHeader>
-              <DialogTitle className="font-display text-xl">{actionConfig[currentAction]?.title}</DialogTitle>
-              <DialogDescription>
-                {actionConfig[currentAction]?.description}
-              </DialogDescription>
-            </DialogHeader>
-
-            {selectedReferral && (
-              <div className="py-4 space-y-4">
-                <div className="bg-muted border border-border rounded-lg p-4">
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Referral Number:</span>
-                      <span className="font-mono font-semibold text-foreground">
-                        #{selectedReferral.referral_number}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Patient:</span>
-                      <span className="font-semibold text-foreground">{selectedReferral.patientName}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Reason:</span>
-                      <span className="font-semibold text-foreground">{selectedReferral.reason}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="action_notes" className="font-heading">
-                    {actionConfig[currentAction]?.notesLabel}
-                  </Label>
-                  <Textarea
-                    id="action_notes"
-                    placeholder={actionConfig[currentAction]?.notesPlaceholder}
-                    value={actionNotes}
-                    onChange={(e) => setActionNotes(e.target.value)}
-                    className="min-h-[120px] bg-background border-border"
-                  />
-                </div>
-
-                {currentAction === 'complete' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="recommendations" className="font-heading">
-                      Recommendations for Referring Provider (Optional)
-                    </Label>
-                    <Textarea
-                      id="recommendations"
-                      placeholder="Follow-up care, medication adjustments, further testing needed, etc..."
-                      value={recommendations}
-                      onChange={(e) => setRecommendations(e.target.value)}
-                      className="min-h-[100px] bg-background border-border"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setActionDialogOpen(false)}
-                disabled={
-                  acceptReferral.isPending ||
-                  declineReferral.isPending ||
-                  completeReferral.isPending
-                }
-                className="font-mono text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleActionSubmit}
-                disabled={
-                  acceptReferral.isPending ||
-                  declineReferral.isPending ||
-                  completeReferral.isPending
-                }
-                className={cn('font-mono text-xs', actionConfig[currentAction]?.buttonClass)}
-              >
-                {acceptReferral.isPending ||
-                declineReferral.isPending ||
-                completeReferral.isPending
-                  ? 'Processing...'
-                  : actionConfig[currentAction]?.buttonLabel}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ReferralActionDialog
+          isOpen={actionDialogOpen}
+          selectedReferral={selectedReferral}
+          currentAction={currentAction}
+          actionNotes={actionNotes}
+          recommendations={recommendations}
+          isPending={actionPending}
+          onOpenChange={setActionDialogOpen}
+          onActionNotesChange={setActionNotes}
+          onRecommendationsChange={setRecommendations}
+          onSubmit={handleActionSubmit}
+        />
       </div>
     </PageShell>
   );
