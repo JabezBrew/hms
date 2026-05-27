@@ -3,7 +3,7 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,35 +44,45 @@ const CopyNoteModal = ({
   noteEntry,
   onCopyConfirm,
 }) => {
-  const [selectedSections, setSelectedSections] = useState(new Set());
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <CopyNoteModalContent
+          key={noteEntry?.id || 'new-note-copy'}
+          noteEntry={noteEntry}
+          onCopyConfirm={onCopyConfirm}
+          onOpenChange={onOpenChange}
+        />
+      ) : null}
+    </Dialog>
+  );
+};
+
+function CopyNoteModalContent({
+  noteEntry,
+  onCopyConfirm,
+  onOpenChange,
+}) {
+  const [selectedOverride, setSelectedOverride] = useState(null);
 
   // Fetch available sections for the note
   const {
     data: sections,
     isLoading: sectionsLoading,
     error: sectionsError,
-  } = useNoteEntrySections(noteEntry?.id, { enabled: open && !!noteEntry?.id });
+  } = useNoteEntrySections(noteEntry?.id, { enabled: !!noteEntry?.id });
 
-  // Initialize selected sections when sections load
-  useEffect(() => {
-    if (sections && open) {
-      // Pre-select all sections that have data
-      const sectionsWithData = [];
-      for (const section of sections) {
-        if (section.has_data) {
-          sectionsWithData.push(section.name);
-        }
+  const defaultSelectedSections = useMemo(() => {
+    const sectionsWithData = [];
+    for (const section of sections || []) {
+      if (section.has_data) {
+        sectionsWithData.push(section.name);
       }
-      setSelectedSections(new Set(sectionsWithData));
     }
-  }, [sections, open]);
+    return new Set(sectionsWithData);
+  }, [sections]);
 
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setSelectedSections(new Set());
-    }
-  }, [open]);
+  const selectedSections = selectedOverride ?? defaultSelectedSections;
 
   // Toggle section selection
   const toggleSection = (sectionName) => {
@@ -82,13 +92,13 @@ const CopyNoteModal = ({
     } else {
       newSelected.add(sectionName);
     }
-    setSelectedSections(newSelected);
+    setSelectedOverride(newSelected);
   };
 
   // Select/deselect all
   const toggleAll = () => {
     if (selectedSections.size === sections?.filter((s) => s.has_data).length) {
-      setSelectedSections(new Set());
+      setSelectedOverride(new Set());
     } else {
       const allWithData = [];
       for (const section of sections) {
@@ -96,7 +106,7 @@ const CopyNoteModal = ({
           allWithData.push(section.name);
         }
       }
-      setSelectedSections(new Set(allWithData));
+      setSelectedOverride(new Set(allWithData));
     }
   };
 
@@ -153,8 +163,7 @@ const CopyNoteModal = ({
   const sectionsWithDataCount = sections?.filter((s) => s.has_data).length || 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
+    <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Copy className="size-5 text-primary" />
@@ -283,9 +292,8 @@ const CopyNoteModal = ({
             Copy & Edit {selectedSections.size > 0 ? `(${selectedSections.size})` : ''}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
-};
+}
 
 export default CopyNoteModal;
