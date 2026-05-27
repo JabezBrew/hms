@@ -49,6 +49,273 @@ function idMatches(left, right) {
   return String(left || '') === String(right || '')
 }
 
+function FeatureEntitlementsHeader({ onBack }) {
+  return (
+    <PageHeader
+      title={(
+        <span className="flex items-center gap-3 sm:gap-4">
+          <span className="p-2.5 sm:p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <Boxes className="size-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
+          </span>
+          Feature Entitlements
+        </span>
+      )}
+      description="Control clinic, hospital, and network product modules without changing the codebase."
+      contentClassName="max-w-6xl mx-auto w-full"
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onBack}
+        className="-ml-2 font-mono text-xs"
+      >
+        <ArrowLeft className="size-4 mr-2" />
+        Back to Settings
+      </Button>
+    </PageHeader>
+  )
+}
+
+function FeatureToggleCard({ feature, state, toggleDisabled, isSaving, onToggle, onRemove }) {
+  return (
+    <div
+      className="rounded-xl border border-border bg-background/60 p-4"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-1">
+          <h3 className="font-heading text-sm text-foreground">
+            {feature.label}
+          </h3>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            {feature.key} · {feature.kind}
+          </p>
+        </div>
+        <Switch
+          checked={state.checked}
+          disabled={toggleDisabled}
+          onCheckedChange={(checked) => onToggle(feature, checked)}
+          aria-label={`Toggle ${feature.label}`}
+        />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="space-y-1">
+          <span
+            className={`inline-flex font-mono text-[10px] uppercase tracking-wider rounded-full px-2 py-1 ${
+              state.checked
+                ? 'bg-emerald-500/10 text-emerald-400'
+                : 'bg-rose-500/10 text-rose-400'
+            }`}
+          >
+            {state.checked ? 'Enabled' : 'Disabled'}
+          </span>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            Source: {state.source}
+          </p>
+        </div>
+        {state.selectedOverride ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onRemove(state.selectedOverride.id, feature.label)}
+            disabled={isSaving}
+            className="font-mono text-xs"
+          >
+            <RotateCcw className="mr-2 size-3.5" />
+            Inherit
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function FeatureToggleGrid({ features, columnsClassName, stateForFeature, toggleDisabled, isSaving, onToggle, onRemove }) {
+  return (
+    <div className={columnsClassName}>
+      {features.map((feature) => (
+        <FeatureToggleCard
+          key={feature.key}
+          feature={feature}
+          state={stateForFeature(feature)}
+          toggleDisabled={toggleDisabled}
+          isSaving={isSaving}
+          onToggle={onToggle}
+          onRemove={onRemove}
+        />
+      ))}
+    </div>
+  )
+}
+
+function ModuleTogglesPanel({
+  capabilities,
+  moduleFeatures,
+  isLoading,
+  toggleContext,
+}) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">
+        <div>
+          <h2 className="font-display text-xl text-foreground">Module Toggles</h2>
+          <p className="text-sm text-muted-foreground">
+            Profile: {capabilities?.profile_label || capabilities?.deployment_profile || 'Unknown'}
+          </p>
+        </div>
+        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+          Current facility {capabilities?.facility_code || 'global'}
+        </span>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading module toggles…</p>
+      ) : moduleFeatures.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No product modules are available.</p>
+      ) : (
+        <FeatureToggleGrid
+          features={moduleFeatures}
+          columnsClassName="grid grid-cols-1 md:grid-cols-2 gap-3"
+          {...toggleContext}
+        />
+      )}
+    </section>
+  )
+}
+
+function ToggleScopePanel({
+  scope,
+  facilityId,
+  facilities,
+  facilityRequired,
+  reason,
+  onScopeChange,
+  onFacilityChange,
+  onReasonChange,
+}) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 space-y-4">
+      <div>
+        <h2 className="font-display text-xl text-foreground">Toggle Scope</h2>
+        <p className="text-sm text-muted-foreground">
+          Facility overrides win over global overrides and deployment defaults.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="font-mono text-xs uppercase">Scope</Label>
+        <Select value={scope} onValueChange={onScopeChange}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={GLOBAL_SCOPE}>Global</SelectItem>
+            <SelectItem value={FACILITY_SCOPE}>Facility</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {scope === FACILITY_SCOPE && (
+        <div className="space-y-2">
+          <Label className="font-mono text-xs uppercase">Facility</Label>
+          <Select value={facilityId} onValueChange={onFacilityChange}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Choose facility" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_FACILITY}>Choose facility</SelectItem>
+              {facilities.map((facility) => (
+                <SelectItem key={facility.id} value={facility.id}>
+                  {facility.code} · {facility.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {facilityRequired ? (
+            <p className="text-xs text-amber-500">
+              Choose a facility before changing facility-level toggles.
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="reason" className="font-mono text-xs uppercase">Change reason</Label>
+        <Input
+          id="reason"
+          value={reason}
+          onChange={(event) => onReasonChange(event.target.value)}
+          maxLength={255}
+          placeholder="Optional operational reason"
+        />
+      </div>
+    </section>
+  )
+}
+
+function ActiveOverridesPanel({ overrides, deletePending, onRemove }) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+      <h2 className="font-display text-xl text-foreground mb-4">Active Overrides</h2>
+      <div className="space-y-3">
+        {overrides.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No database overrides are active.</p>
+        ) : overrides.map((override) => (
+          <div key={override.id} className="rounded-xl border border-border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-heading text-sm">{override.feature_label}</p>
+                <p className="font-mono text-[11px] text-muted-foreground">
+                  {override.scope}
+                  {override.facility_code ? ` · ${override.facility_code}` : ''}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onRemove(override.id, override.feature_label)}
+                disabled={deletePending}
+                aria-label={`Remove ${override.feature_key} override`}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+            <p className="mt-2 font-mono text-[11px]">
+              {override.is_enabled ? 'Enabled' : 'Disabled'}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AdvancedFeatureControls({ advancedFeatures, isLoading, toggleContext }) {
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 xl:col-span-2">
+      <div className="mb-5">
+        <h2 className="font-display text-xl text-foreground">Advanced Feature Controls</h2>
+        <p className="text-sm text-muted-foreground">
+          Platform, subfeature, and integration toggles that support the commercial modules.
+        </p>
+      </div>
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading feature controls…</p>
+      ) : advancedFeatures.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No advanced features are available.</p>
+      ) : (
+        <FeatureToggleGrid
+          features={advancedFeatures}
+          columnsClassName="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"
+          {...toggleContext}
+        />
+      )}
+    </section>
+  )
+}
+
 export default function FeatureEntitlementsPage() {
   const navigate = useNavigate()
   const [scope, setScope] = useState(GLOBAL_SCOPE)
@@ -186,227 +453,52 @@ export default function FeatureEntitlementsPage() {
     }
   }
 
-  const renderFeatureToggle = (feature) => {
-    const state = resolveFeatureState(feature)
-    const toggleDisabled = isLoading || isSaving || facilityRequired
-
-    return (
-      <div
-        key={feature.key}
-        className="rounded-xl border border-border bg-background/60 p-4"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 space-y-1">
-            <h3 className="font-heading text-sm text-foreground">
-              {feature.label}
-            </h3>
-            <p className="font-mono text-[11px] text-muted-foreground">
-              {feature.key} · {feature.kind}
-            </p>
-          </div>
-          <Switch
-            checked={state.checked}
-            disabled={toggleDisabled}
-            onCheckedChange={(checked) => saveFeatureOverride(feature, checked)}
-            aria-label={`Toggle ${feature.label}`}
-          />
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="space-y-1">
-            <span
-              className={`inline-flex font-mono text-[10px] uppercase tracking-wider rounded-full px-2 py-1 ${
-                state.checked
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'bg-rose-500/10 text-rose-400'
-              }`}
-            >
-              {state.checked ? 'Enabled' : 'Disabled'}
-            </span>
-            <p className="font-mono text-[11px] text-muted-foreground">
-              Source: {state.source}
-            </p>
-          </div>
-          {state.selectedOverride ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => removeOverride(state.selectedOverride.id, feature.label)}
-              disabled={isSaving}
-              className="font-mono text-xs"
-            >
-              <RotateCcw className="mr-2 size-3.5" />
-              Inherit
-            </Button>
-          ) : null}
-        </div>
-      </div>
-    )
+  const toggleContext = {
+    stateForFeature: resolveFeatureState,
+    toggleDisabled: isLoading || isSaving || facilityRequired,
+    isSaving,
+    onToggle: saveFeatureOverride,
+    onRemove: removeOverride,
   }
 
   return (
     <PageShell>
       {pageMeta}
-      <PageHeader
-        title={(
-          <span className="flex items-center gap-3 sm:gap-4">
-            <span className="p-2.5 sm:p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-              <Boxes className="size-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
-            </span>
-            Feature Entitlements
-          </span>
-        )}
-        description="Control clinic, hospital, and network product modules without changing the codebase."
-        contentClassName="max-w-6xl mx-auto w-full"
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate('/settings')}
-          className="-ml-2 font-mono text-xs"
-        >
-          <ArrowLeft className="size-4 mr-2" />
-          Back to Settings
-        </Button>
-      </PageHeader>
+      <FeatureEntitlementsHeader onBack={() => navigate('/settings')} />
 
       <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
-          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">
-              <div>
-                <h2 className="font-display text-xl text-foreground">Module Toggles</h2>
-                <p className="text-sm text-muted-foreground">
-                  Profile: {capabilities?.profile_label || capabilities?.deployment_profile || 'Unknown'}
-                </p>
-              </div>
-              <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Current facility {capabilities?.facility_code || 'global'}
-              </span>
-            </div>
-
-            {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading module toggles…</p>
-            ) : moduleFeatures.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No product modules are available.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {moduleFeatures.map(renderFeatureToggle)}
-              </div>
-            )}
-          </section>
+          <ModuleTogglesPanel
+            capabilities={capabilities}
+            moduleFeatures={moduleFeatures}
+            isLoading={isLoading}
+            toggleContext={toggleContext}
+          />
 
           <aside className="space-y-6">
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 space-y-4">
-              <div>
-                <h2 className="font-display text-xl text-foreground">Toggle Scope</h2>
-                <p className="text-sm text-muted-foreground">
-                  Facility overrides win over global overrides and deployment defaults.
-                </p>
-              </div>
+            <ToggleScopePanel
+              scope={scope}
+              facilityId={facilityId}
+              facilities={facilities}
+              facilityRequired={facilityRequired}
+              reason={reason}
+              onScopeChange={setScope}
+              onFacilityChange={setFacilityId}
+              onReasonChange={setReason}
+            />
 
-              <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase">Scope</Label>
-                <Select value={scope} onValueChange={setScope}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={GLOBAL_SCOPE}>Global</SelectItem>
-                    <SelectItem value={FACILITY_SCOPE}>Facility</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {scope === FACILITY_SCOPE && (
-                <div className="space-y-2">
-                  <Label className="font-mono text-xs uppercase">Facility</Label>
-                  <Select value={facilityId} onValueChange={setFacilityId}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choose facility" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_FACILITY}>Choose facility</SelectItem>
-                      {facilities.map((facility) => (
-                        <SelectItem key={facility.id} value={facility.id}>
-                          {facility.code} · {facility.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {facilityRequired ? (
-                    <p className="text-xs text-amber-500">
-                      Choose a facility before changing facility-level toggles.
-                    </p>
-                  ) : null}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="reason" className="font-mono text-xs uppercase">Change reason</Label>
-                <Input
-                  id="reason"
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  maxLength={255}
-                  placeholder="Optional operational reason"
-                />
-              </div>
-            </section>
-
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display text-xl text-foreground mb-4">Active Overrides</h2>
-              <div className="space-y-3">
-                {overrides.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No database overrides are active.</p>
-                ) : overrides.map((override) => (
-                  <div key={override.id} className="rounded-xl border border-border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-heading text-sm">{override.feature_label}</p>
-                        <p className="font-mono text-[11px] text-muted-foreground">
-                          {override.scope}
-                          {override.facility_code ? ` · ${override.facility_code}` : ''}
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeOverride(override.id, override.feature_label)}
-                        disabled={deleteOverride.isPending}
-                        aria-label={`Remove ${override.feature_key} override`}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                    <p className="mt-2 font-mono text-[11px]">
-                      {override.is_enabled ? 'Enabled' : 'Disabled'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <ActiveOverridesPanel
+              overrides={overrides}
+              deletePending={deleteOverride.isPending}
+              onRemove={removeOverride}
+            />
           </aside>
 
-          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 xl:col-span-2">
-            <div className="mb-5">
-              <h2 className="font-display text-xl text-foreground">Advanced Feature Controls</h2>
-              <p className="text-sm text-muted-foreground">
-                Platform, subfeature, and integration toggles that support the commercial modules.
-              </p>
-            </div>
-            {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading feature controls…</p>
-            ) : advancedFeatures.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No advanced features are available.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {advancedFeatures.map(renderFeatureToggle)}
-              </div>
-            )}
-          </section>
+          <AdvancedFeatureControls
+            advancedFeatures={advancedFeatures}
+            isLoading={isLoading}
+            toggleContext={toggleContext}
+          />
         </div>
       </main>
     </PageShell>
