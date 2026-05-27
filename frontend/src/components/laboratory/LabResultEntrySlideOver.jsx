@@ -83,6 +83,270 @@ const getResultEntryKey = (order) => {
   return `${order.id}:${testsKey}`;
 };
 
+function ResultEntryHeader({ order, onClose }) {
+  return (
+    <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
+          <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="result-entry-title" className="font-display text-xl text-foreground">
+            Enter Lab Results
+          </h2>
+          {order && (
+            <p className="font-mono text-xs text-muted-foreground mt-0.5">
+              {order.order_number} &middot; {order.patient_name}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onClose}
+        className="font-mono text-xs"
+      >
+        <X className="size-4 mr-1.5" aria-hidden="true" />
+        Close
+      </Button>
+    </header>
+  );
+}
+
+function ResultEntryProgress({ enteredCount, totalCount, criticalCount, progressPercent }) {
+  return (
+    <div className="px-6 py-3 border-b border-border bg-card/50">
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-mono text-xs text-muted-foreground">
+          Progress: {enteredCount} of {totalCount} entered
+        </span>
+        {criticalCount > 0 && (
+          <Badge variant="outline" className="bg-rose-100 text-rose-700 border-rose-300 text-xs">
+            <AlertTriangle className="size-3 mr-1" />
+            {criticalCount} critical
+          </Badge>
+        )}
+      </div>
+      <Progress value={progressPercent} className="h-2" />
+    </div>
+  );
+}
+
+function ResultEntryBody({
+  focusedIndex,
+  inputRefs,
+  results,
+  onFocusIndex,
+  onKeyDown,
+  onValueChange,
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto chronicle-scrollbar">
+      {results.length === 0 ? (
+        <ResultEntryEmptyState />
+      ) : (
+        <ResultEntryTable
+          focusedIndex={focusedIndex}
+          inputRefs={inputRefs}
+          results={results}
+          onFocusIndex={onFocusIndex}
+          onKeyDown={onKeyDown}
+          onValueChange={onValueChange}
+        />
+      )}
+    </div>
+  );
+}
+
+function ResultEntryEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+      <CheckCircle2 className="size-12 mb-4 text-emerald-500" aria-hidden="true" />
+      <p className="font-medium">All results already entered</p>
+      <p className="text-sm">No pending tests for this order</p>
+    </div>
+  );
+}
+
+function ResultEntryTable({
+  focusedIndex,
+  inputRefs,
+  results,
+  onFocusIndex,
+  onKeyDown,
+  onValueChange,
+}) {
+  return (
+    <div className="min-w-0">
+      <ResultEntryTableHeader />
+      <div className="divide-y divide-border">
+        {results.map((result, index) => (
+          <ResultEntryRow
+            key={result.order_test_id}
+            index={index}
+            inputRefs={inputRefs}
+            isActive={focusedIndex === index}
+            result={result}
+            onFocusIndex={onFocusIndex}
+            onKeyDown={onKeyDown}
+            onValueChange={onValueChange}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ResultEntryTableHeader() {
+  return (
+    <div className="sticky top-0 z-10 bg-card border-b border-border">
+      <div className="grid grid-cols-12 gap-2 px-6 py-3 text-xs font-mono uppercase text-muted-foreground">
+        <div className="col-span-4">Test</div>
+        <div className="col-span-2">Value</div>
+        <div className="col-span-2">Unit</div>
+        <div className="col-span-2">Ref Range</div>
+        <div className="col-span-2">Flag</div>
+      </div>
+    </div>
+  );
+}
+
+function ResultEntryRow({
+  index,
+  inputRefs,
+  isActive,
+  result,
+  onFocusIndex,
+  onKeyDown,
+  onValueChange,
+}) {
+  const flagConfig = FLAG_CONFIGS[result.flag] || null;
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-12 gap-2 px-6 py-3 items-center transition-colors",
+        "animate-chronicle-enter",
+        isActive && "bg-sky-50/50 dark:bg-sky-900/10",
+        result.flag?.includes("critical") && "bg-rose-50/50 dark:bg-rose-900/10"
+      )}
+      style={{ animationDelay: `${index * 30}ms` }}
+    >
+      <div className="col-span-4 min-w-0">
+        <p className="font-medium text-sm truncate">{result.test_name}</p>
+        {result.test_code && (
+          <p className="font-mono text-xs text-muted-foreground">
+            {result.test_code}
+          </p>
+        )}
+      </div>
+
+      <div className="col-span-2">
+        <Input
+          ref={(element) => (inputRefs.current[index] = element)}
+          type="text"
+          inputMode="decimal"
+          aria-label={`Result value for ${result.test_name}`}
+          value={result.value}
+          onChange={(event) => onValueChange(index, event.target.value)}
+          onKeyDown={(event) => onKeyDown(event, index)}
+          onFocus={() => onFocusIndex(index)}
+          placeholder="--"
+          className={cn(
+            "font-mono text-sm h-9 text-center",
+            result.flag?.includes("critical") && "border-rose-300 focus:ring-rose-500"
+          )}
+          autoFocus={index === 0}
+        />
+      </div>
+
+      <div className="col-span-2">
+        <span className="font-mono text-xs text-muted-foreground">
+          {result.unit || "-"}
+        </span>
+      </div>
+
+      <div className="col-span-2">
+        <ReferenceRangeText result={result} />
+      </div>
+
+      <div className="col-span-2">
+        {flagConfig ? (
+          <ResultFlagBadge flagConfig={flagConfig} />
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReferenceRangeText({ result }) {
+  let label = "-";
+  if (result.reference_low !== null && result.reference_high !== null) {
+    label = `${result.reference_low} - ${result.reference_high}`;
+  } else if (result.reference_low !== null) {
+    label = `> ${result.reference_low}`;
+  } else if (result.reference_high !== null) {
+    label = `< ${result.reference_high}`;
+  }
+
+  return <span className="font-mono text-xs text-muted-foreground">{label}</span>;
+}
+
+function ResultFlagBadge({ flagConfig }) {
+  const FlagIcon = flagConfig.icon;
+  return (
+    <Badge variant="outline" className={cn("text-xs", flagConfig.className)}>
+      {FlagIcon && <FlagIcon className="size-3 mr-1" />}
+      {flagConfig.label}
+    </Badge>
+  );
+}
+
+function ResultEntryFooter({ enteredCount, isSubmitting, onClose, onSave }) {
+  return (
+    <footer className="px-6 py-4 border-t border-border bg-card">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-muted-foreground font-mono">
+          <span className="hidden sm:inline">Tab/Enter: next &middot; </span>
+          <span className="hidden sm:inline">Arrows: navigate &middot; </span>
+          <span className="hidden sm:inline">Esc: close</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="font-mono text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onSave}
+            disabled={isSubmitting || enteredCount === 0}
+            className="bg-sky-600 hover:bg-sky-700 text-white font-mono text-xs"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Save className="size-4 mr-2" />
+                Save {enteredCount > 0 ? `${enteredCount} Result${enteredCount > 1 ? "s" : ""}` : "Results"}
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 /**
  * LabResultEntrySlideOver - Chronicle-styled slide-over for bulk lab result entry
  *
@@ -243,196 +507,27 @@ const LabResultEntrySlideOverContent = ({
         open ? "translate-x-0" : "translate-x-full"
       )}
     >
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <TestTube2 className="size-5 text-sky-600 dark:text-sky-400" aria-hidden="true" />
-          </div>
-          <div>
-            <h2 id="result-entry-title" className="font-display text-xl text-foreground">
-              Enter Lab Results
-            </h2>
-            {order && (
-              <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                {order.order_number} &middot; {order.patient_name}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onClose}
-          className="font-mono text-xs"
-        >
-          <X className="size-4 mr-1.5" aria-hidden="true" />
-          Close
-        </Button>
-      </header>
-
-      {/* Progress Bar */}
-      <div className="px-6 py-3 border-b border-border bg-card/50">
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-mono text-xs text-muted-foreground">
-            Progress: {enteredCount} of {totalCount} entered
-          </span>
-          {criticalResults.length > 0 && (
-            <Badge variant="outline" className="bg-rose-100 text-rose-700 border-rose-300 text-xs">
-              <AlertTriangle className="size-3 mr-1" />
-              {criticalResults.length} critical
-            </Badge>
-          )}
-        </div>
-        <Progress value={progressPercent} className="h-2" />
-      </div>
-
-      {/* Content - Results Table */}
-      <div className="flex-1 overflow-y-auto chronicle-scrollbar">
-        {results.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-            <CheckCircle2 className="size-12 mb-4 text-emerald-500" aria-hidden="true" />
-            <p className="font-medium">All results already entered</p>
-            <p className="text-sm">No pending tests for this order</p>
-          </div>
-        ) : (
-          <div className="min-w-0">
-            {/* Table Header */}
-            <div className="sticky top-0 z-10 bg-card border-b border-border">
-              <div className="grid grid-cols-12 gap-2 px-6 py-3 text-xs font-mono uppercase text-muted-foreground">
-                <div className="col-span-4">Test</div>
-                <div className="col-span-2">Value</div>
-                <div className="col-span-2">Unit</div>
-                <div className="col-span-2">Ref Range</div>
-                <div className="col-span-2">Flag</div>
-              </div>
-            </div>
-
-            {/* Table Body */}
-            <div className="divide-y divide-border">
-              {results.map((result, index) => {
-                const flagConfig = FLAG_CONFIGS[result.flag] || null;
-                const isActive = focusedIndex === index;
-
-                return (
-                  <div
-                    key={result.order_test_id}
-                    className={cn(
-                      "grid grid-cols-12 gap-2 px-6 py-3 items-center transition-colors",
-                      "animate-chronicle-enter",
-                      isActive && "bg-sky-50/50 dark:bg-sky-900/10",
-                      result.flag?.includes("critical") && "bg-rose-50/50 dark:bg-rose-900/10"
-                    )}
-                    style={{ animationDelay: `${index * 30}ms` }}
-                  >
-                    {/* Test Name */}
-                    <div className="col-span-4 min-w-0">
-                      <p className="font-medium text-sm truncate">{result.test_name}</p>
-                      {result.test_code && (
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {result.test_code}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Value Input */}
-                    <div className="col-span-2">
-                      <Input
-                        ref={(el) => (inputRefs.current[index] = el)}
-                        type="text"
-                        inputMode="decimal"
-                        aria-label={`Result value for ${result.test_name}`}
-                        value={result.value}
-                        onChange={(e) => handleValueChange(index, e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, index)}
-                        onFocus={() => setFocusedIndex(index)}
-                        placeholder="--"
-                        className={cn(
-                          "font-mono text-sm h-9 text-center",
-                          result.flag?.includes("critical") && "border-rose-300 focus:ring-rose-500"
-                        )}
-                        autoFocus={index === 0}
-                      />
-                    </div>
-
-                    {/* Unit */}
-                    <div className="col-span-2">
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {result.unit || "-"}
-                      </span>
-                    </div>
-
-                    {/* Reference Range */}
-                    <div className="col-span-2">
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {result.reference_low !== null && result.reference_high !== null
-                          ? `${result.reference_low} - ${result.reference_high}`
-                          : result.reference_low !== null
-                          ? `> ${result.reference_low}`
-                          : result.reference_high !== null
-                          ? `< ${result.reference_high}`
-                          : "-"}
-                      </span>
-                    </div>
-
-                    {/* Flag */}
-                    <div className="col-span-2">
-                      {flagConfig ? (
-                        <Badge variant="outline" className={cn("text-xs", flagConfig.className)}>
-                          {flagConfig.icon && <flagConfig.icon className="size-3 mr-1" />}
-                          {flagConfig.label}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <footer className="px-6 py-4 border-t border-border bg-card">
-        <div className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground font-mono">
-            <span className="hidden sm:inline">Tab/Enter: next &middot; </span>
-            <span className="hidden sm:inline">Arrows: navigate &middot; </span>
-            <span className="hidden sm:inline">Esc: close</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="font-mono text-xs"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={isSubmitting || enteredCount === 0}
-              className="bg-sky-600 hover:bg-sky-700 text-white font-mono text-xs"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  <Save className="size-4 mr-2" />
-                  Save {enteredCount > 0 ? `${enteredCount} Result${enteredCount > 1 ? "s" : ""}` : "Results"}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </footer>
+      <ResultEntryHeader order={order} onClose={onClose} />
+      <ResultEntryProgress
+        enteredCount={enteredCount}
+        totalCount={totalCount}
+        criticalCount={criticalResults.length}
+        progressPercent={progressPercent}
+      />
+      <ResultEntryBody
+        focusedIndex={focusedIndex}
+        inputRefs={inputRefs}
+        results={results}
+        onFocusIndex={setFocusedIndex}
+        onKeyDown={handleKeyDown}
+        onValueChange={handleValueChange}
+      />
+      <ResultEntryFooter
+        enteredCount={enteredCount}
+        isSubmitting={isSubmitting}
+        onClose={onClose}
+        onSave={handleSave}
+      />
     </dialog>
   );
 };
