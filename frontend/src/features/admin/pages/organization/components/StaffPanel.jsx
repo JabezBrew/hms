@@ -5,7 +5,7 @@ import Star from 'lucide-react/dist/esm/icons/star.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -72,13 +72,28 @@ function SortableHeader({ label, field, sortField, sortDirection, onSort, classN
  * Uses Chronicle Design System styling with sortable table
  */
 export function StaffPanel({ unitId }) {
+  const [listSearch, setListSearch] = useState('');
+  const debouncedSearch = useDebounce(listSearch, 300);
+  const activeQuery = debouncedSearch.length >= 2 ? debouncedSearch : '';
+
+  return (
+    <StaffPanelContent
+      key={`${unitId}:${activeQuery}`}
+      unitId={unitId}
+      listSearch={listSearch}
+      setListSearch={setListSearch}
+      activeQuery={activeQuery}
+    />
+  );
+}
+
+function StaffPanelContent({ unitId, listSearch, setListSearch, activeQuery }) {
   const AUTO_FETCH_LIMIT = 3;
   const navigate = useNavigate();
+  const autoFetchAttemptsRef = useRef(0);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState(null);
-  const [listSearch, setListSearch] = useState('');
-  const [autoFetchAttempts, setAutoFetchAttempts] = useState(0);
   const [sortField, setSortField] = useState('practitioner_name');
   const [sortDirection, setSortDirection] = useState('asc');
   const [selectedRows, setSelectedRows] = useState(new Set());
@@ -90,9 +105,6 @@ export function StaffPanel({ unitId }) {
     effective_until: '',
   });
   const [selectedPractitioner, setSelectedPractitioner] = useState(null);
-
-  const debouncedSearch = useDebounce(listSearch, 300);
-  const activeQuery = debouncedSearch.length >= 2 ? debouncedSearch : '';
 
   const {
     data: staffData,
@@ -306,6 +318,7 @@ export function StaffPanel({ unitId }) {
 
   const isSearchActive = activeQuery.length > 0;
   const isDerivedEmpty = isDerived && staff.length === 0 && (totalCount == null || totalCount > 0);
+  const autoFetchAttempts = autoFetchAttemptsRef.current;
   const shouldAutoFetch = isDerivedEmpty && hasNextPage && autoFetchAttempts < AUTO_FETCH_LIMIT;
   const showLoadMore = isDerivedEmpty && hasNextPage && autoFetchAttempts >= AUTO_FETCH_LIMIT;
   const isSearchingParent = isDerivedEmpty && hasNextPage && autoFetchAttempts < AUTO_FETCH_LIMIT;
@@ -321,21 +334,12 @@ export function StaffPanel({ unitId }) {
       : 'Assign staff members to this unit';
 
   useEffect(() => {
-    setAutoFetchAttempts(0);
-  }, [unitId, activeQuery, isDerived]);
-
-  useEffect(() => {
     if (!shouldAutoFetch || isLoading || isFetchingNextPage) {
       return;
     }
-    setAutoFetchAttempts((prev) => prev + 1);
+    autoFetchAttemptsRef.current += 1;
     fetchNextPage();
   }, [shouldAutoFetch, isLoading, isFetchingNextPage, fetchNextPage]);
-
-  // Clear selection when data changes
-  useEffect(() => {
-    setSelectedRows(new Set());
-  }, [unitId, activeQuery]);
 
   const showSkeleton = isLoading && staff.length === 0;
 
@@ -464,7 +468,7 @@ export function StaffPanel({ unitId }) {
                 <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
                   <Checkbox
                     checked={selectedRows.has(member.id)}
-                    onCheckedChange={(checked) => handleSelectRow(member.id, { stopPropagation: () => {} })}
+                    onCheckedChange={() => handleSelectRow(member.id, { stopPropagation: () => {} })}
                     onClick={(e) => handleSelectRow(member.id, e)}
                     aria-label={`Select ${member.practitioner_name}`}
                   />
