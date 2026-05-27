@@ -500,7 +500,7 @@ function MetricCard({ title, value, subtitle, icon: Icon, color, index }) {
   };
 
   return (
-    <article
+    <div
       className={cn(
         "relative bg-card border border-border rounded-2xl p-5",
         "animate-chronicle-enter"
@@ -521,7 +521,7 @@ function MetricCard({ title, value, subtitle, icon: Icon, color, index }) {
       {subtitle && (
         <p className="font-mono text-xs text-muted-foreground mt-1">{subtitle}</p>
       )}
-    </article>
+    </div>
   );
 }
 
@@ -553,15 +553,24 @@ function InvoiceRow({ invoice, index, onClick }) {
   };
 
   const badge = getStatusBadge(invoice.status);
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
 
   return (
-    <article
+    <div
       className={cn(
         "px-6 py-4 hover:bg-muted/30 cursor-pointer transition-colors",
         "animate-chronicle-enter"
       )}
       style={{ animationDelay: `${(index + 4) * 50}ms` }}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
     >
       <div className="flex items-center justify-between">
         <div className="min-w-0 flex-1">
@@ -589,7 +598,7 @@ function InvoiceRow({ invoice, index, onClick }) {
           )}
         </div>
       </div>
-    </article>
+    </div>
   );
 }
 

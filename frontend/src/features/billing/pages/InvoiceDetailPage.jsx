@@ -217,12 +217,13 @@ export default function InvoiceDetailPage() {
                   <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider mb-1">
                     Patient Name
                   </p>
-                  <p
-                    className="text-foreground font-medium cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => navigate(`/patients/${invoice.patient}`)}
-                  >
-                    {patientName}
-                  </p>
+	                  <button
+	                    type="button"
+	                    className="text-left text-foreground font-medium cursor-pointer hover:text-primary transition-colors"
+	                    onClick={() => navigate(`/patients/${invoice.patient}`)}
+	                  >
+	                    {patientName}
+	                  </button>
                 </div>
                 {patientMrn && (
                   <div>
