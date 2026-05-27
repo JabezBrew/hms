@@ -12,32 +12,6 @@ export const toList = (payload) => {
 };
 
 /**
- * Convert value to string, handling null/undefined
- */
-export const toValue = (value) => (value == null ? '' : String(value));
-
-/**
- * Format time value for display
- */
-export const formatRosterTime = (value) => (value ? String(value).slice(0, 5) : '--:--');
-
-/**
- * Safely extract date from value
- */
-export const safeDate = (value) => (value ? String(value).slice(0, 10) : '--');
-
-/**
- * Format roster name with fallback
- */
-export const formatRosterName = (name, fallback) => name || fallback || '—';
-
-/**
- * Check if two dates are the same
- */
-export const isSameDate = (dateValue, compareValue) =>
-  String(dateValue).slice(0, 10) === compareValue;
-
-/**
  * Flatten unit tree to flat list
  */
 export const flattenUnitTree = (nodes, parentId = null, parentName = null, results = []) => {
