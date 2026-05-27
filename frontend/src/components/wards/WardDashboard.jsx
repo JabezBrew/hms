@@ -30,6 +30,350 @@ import {
 import { useWard, useWardBeds, useAdmissions, useWardSections } from '@/features/wards/hooks/useWardQueries';
 import { WardBedLayout } from './WardBedLayout';
 
+const EMPTY_WARD_FILTERS = {
+  status: 'all',
+  bedType: 'all',
+  searchTerm: '',
+};
+
+const WARD_TYPE_LABELS = {
+  general: 'General Ward',
+  private: 'Private Ward',
+  icu: 'Intensive Care Unit',
+  emergency: 'Emergency Ward',
+  maternity: 'Maternity Ward',
+  pediatric: 'Pediatric Ward',
+  psychiatric: 'Psychiatric Ward',
+  isolation: 'Isolation Ward',
+};
+
+function filterBeds(beds, filters) {
+  const normalizedSearch = filters.searchTerm.toLowerCase();
+
+  return beds.filter((bed) => {
+    if (filters.status !== 'all' && bed.status !== filters.status) return false;
+    if (filters.bedType !== 'all' && bed.bed_type !== filters.bedType) return false;
+    if (normalizedSearch && !bed.bed_number.toLowerCase().includes(normalizedSearch)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function buildWardStats(beds) {
+  return beds.reduce(
+    (acc, bed) => {
+      acc.total += 1;
+      if (bed.status === 'available') acc.available += 1;
+      if (bed.status === 'occupied') acc.occupied += 1;
+      if (bed.status === 'reserved') acc.reserved += 1;
+      if (bed.status === 'maintenance') acc.maintenance += 1;
+      return acc;
+    },
+    { total: 0, available: 0, occupied: 0, reserved: 0, maintenance: 0 },
+  );
+}
+
+function buildSectionStats(sections, beds) {
+  if (!sections || sections.length === 0) return [];
+
+  const bedsBySection = new Map();
+  beds.forEach((bed) => {
+    const current = bedsBySection.get(bed.section) || {
+      totalBeds: 0,
+      availableBeds: 0,
+      occupiedBeds: 0,
+    };
+
+    current.totalBeds += 1;
+    if (bed.status === 'available') current.availableBeds += 1;
+    if (bed.status === 'occupied') current.occupiedBeds += 1;
+    bedsBySection.set(bed.section, current);
+  });
+
+  return sections
+    .toSorted((a, b) => (a.display_order || 0) - (b.display_order || 0))
+    .map((section) => {
+      const {
+        totalBeds = 0,
+        availableBeds = 0,
+        occupiedBeds = 0,
+      } = bedsBySection.get(section.id) || {};
+      const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+
+      return {
+        ...section,
+        totalBeds,
+        availableBeds,
+        occupiedBeds,
+        occupancyRate,
+      };
+    });
+}
+
+function findActiveAdmissionByBedId(admissions, bedId) {
+  return admissions.find((admission) => {
+    const admissionBedId = admission?.bed?.id || admission?.bed;
+    return admissionBedId === bedId && admission.status === 'admitted';
+  });
+}
+
+function hasWardFilters(filters) {
+  return filters.status !== 'all' || filters.bedType !== 'all' || filters.searchTerm;
+}
+
+function WardDashboardLoadingState() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="h-10 w-32" />
+      </div>
+      <div className="grid grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
+      </div>
+      <Skeleton className="h-12 w-full" />
+      <div className="grid grid-cols-4 gap-4">
+        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => <Skeleton key={i} className="h-28" />)}
+      </div>
+    </div>
+  );
+}
+
+function WardDashboardErrorState({ error, onRetry }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <Building2 className="size-12 text-muted-foreground mb-4" />
+      <h2 className="text-xl font-display text-foreground mb-2">Unable to load ward</h2>
+      <p className="text-muted-foreground text-sm mb-4">
+        {error?.message || 'Please try again'}
+      </p>
+      <Button onClick={onRetry} variant="outline">
+        <RefreshCw className="size-4 mr-2" />
+        Try Again
+      </Button>
+    </div>
+  );
+}
+
+function WardDashboardNotFoundState({ onBack }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <Building2 className="size-12 text-muted-foreground mb-4" />
+      <h2 className="text-xl font-display text-foreground">Ward not found</h2>
+      <p className="text-muted-foreground text-sm mt-1">
+        The requested ward could not be found
+      </p>
+      <Button className="mt-4" variant="outline" onClick={onBack}>
+        Back to Wards
+      </Button>
+    </div>
+  );
+}
+
+function WardDashboardHeader({ ward, onNewAdmission }) {
+  return (
+    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+      <div>
+        <div className="flex items-center gap-3 mb-2">
+          <h1 className="text-2xl font-display font-bold text-foreground">
+            {ward.name}
+          </h1>
+          <span className={cn(
+            "px-2.5 py-1 rounded-full text-xs font-mono",
+            ward.is_active
+              ? "bg-emerald-500/10 text-emerald-600"
+              : "bg-muted text-muted-foreground"
+          )}>
+            {ward.is_active ? 'Active' : 'Inactive'}
+          </span>
+        </div>
+        <p className="text-muted-foreground">
+          {WARD_TYPE_LABELS[ward.ward_type] || ward.ward_type}
+          {ward.description && ` — ${ward.description}`}
+        </p>
+      </div>
+      <Button onClick={onNewAdmission} className="shrink-0">
+        <UserPlus className="size-4 mr-2" />
+        New Admission
+      </Button>
+    </div>
+  );
+}
+
+function WardStatsGrid({ filters, onFilterChange, stats }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <StatCard icon={Bed} label="Total Beds" value={stats.total} color="primary" />
+      <StatCard
+        icon={Activity}
+        label="Available"
+        value={stats.available}
+        color="emerald"
+        onClick={() => onFilterChange('status', stats.available > 0 ? 'available' : 'all')}
+        active={filters.status === 'available'}
+      />
+      <StatCard
+        icon={Users}
+        label="Occupied"
+        value={stats.occupied}
+        color="rose"
+        onClick={() => onFilterChange('status', stats.occupied > 0 ? 'occupied' : 'all')}
+        active={filters.status === 'occupied'}
+      />
+      <StatCard
+        label="Reserved"
+        value={stats.reserved}
+        color="amber"
+        onClick={() => onFilterChange('status', stats.reserved > 0 ? 'reserved' : 'all')}
+        active={filters.status === 'reserved'}
+      />
+      <StatCard
+        label="Maintenance"
+        value={stats.maintenance}
+        color="slate"
+        onClick={() => onFilterChange('status', stats.maintenance > 0 ? 'maintenance' : 'all')}
+        active={filters.status === 'maintenance'}
+      />
+    </div>
+  );
+}
+
+function WardSectionOverview({ sectionStats }) {
+  if (sectionStats.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">Section Overview</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {sectionStats.map((section) => (
+          <SectionStatCard key={section.id} section={section} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WardFilterBar({
+  filters,
+  hasActiveFilters,
+  onClearFilters,
+  onFilterChange,
+  onViewModeChange,
+  viewMode,
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between bg-card/50 rounded-xl p-4 border border-border/50">
+      <div className="flex flex-wrap gap-3 items-center flex-1">
+        <div className="relative w-full sm:w-auto">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
+          <Label htmlFor="bed-search" className="sr-only">Search beds</Label>
+          <Input
+            id="bed-search"
+            placeholder="Search beds..."
+            className="pl-10 font-mono text-sm w-full sm:w-48"
+            value={filters.searchTerm}
+            onChange={(event) => onFilterChange('searchTerm', event.target.value)}
+          />
+        </div>
+
+        <Select
+          value={filters.bedType}
+          onValueChange={(value) => onFilterChange('bedType', value)}
+        >
+          <SelectTrigger className="w-full sm:w-40 font-mono text-sm">
+            <SelectValue placeholder="Bed Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="standard">Standard</SelectItem>
+            <SelectItem value="icu">ICU</SelectItem>
+            <SelectItem value="pediatric">Pediatric</SelectItem>
+            <SelectItem value="bariatric">Bariatric</SelectItem>
+            <SelectItem value="maternity">Maternity</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearFilters}
+            className="text-muted-foreground"
+          >
+            <Filter className="size-4 mr-1" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      <fieldset className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
+        <legend className="sr-only">View mode</legend>
+        <Button
+          variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={() => onViewModeChange('grid')}
+          className="size-8 p-0"
+          aria-label="Grid view"
+          aria-pressed={viewMode === 'grid'}
+        >
+          <LayoutGrid className="size-4" aria-hidden="true" />
+        </Button>
+        <Button
+          variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={() => onViewModeChange('list')}
+          className="size-8 p-0"
+          aria-label="List view"
+          aria-pressed={viewMode === 'list'}
+        >
+          <List className="size-4" aria-hidden="true" />
+        </Button>
+      </fieldset>
+    </div>
+  );
+}
+
+function WardBedsContent({
+  admissions,
+  beds,
+  filteredBeds,
+  hasActiveFilters,
+  onBedClick,
+  onClearFilters,
+  viewMode,
+  wardId,
+}) {
+  if (filteredBeds.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Bed className="size-12 text-muted-foreground mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-foreground">
+          {beds.length > 0 ? 'No beds match your filters' : 'No beds configured'}
+        </h3>
+        <p className="text-muted-foreground text-sm mt-1">
+          {beds.length > 0 ? 'Try adjusting your filters' : 'Add beds to this ward to get started'}
+        </p>
+        {hasActiveFilters && (
+          <Button variant="outline" className="mt-4" onClick={onClearFilters}>
+            Clear Filters
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <WardBedLayout
+      beds={filteredBeds}
+      admissions={admissions}
+      onBedClick={onBedClick}
+      wardId={wardId}
+      viewMode={viewMode}
+    />
+  );
+}
+
 /**
  * WardDashboard - Chronicle-style ward detail view
  *
@@ -43,11 +387,7 @@ export function WardDashboard() {
   const { wardId } = useParams();
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState('grid');
-  const [filters, setFilters] = useState({
-    status: 'all',
-    bedType: 'all',
-    searchTerm: '',
-  });
+  const [filters, setFilters] = useState(EMPTY_WARD_FILTERS);
 
   // Fetch data with React Query
   const {
@@ -83,51 +423,9 @@ export function WardDashboard() {
 
   const isLoading = isWardLoading || isBedsLoading || isAdmissionsLoading || isSectionsLoading;
 
-  // Filter beds
-  const filteredBeds = useMemo(() => {
-    return beds.filter(bed => {
-      if (filters.status !== 'all' && bed.status !== filters.status) return false;
-      if (filters.bedType !== 'all' && bed.bed_type !== filters.bedType) return false;
-      if (filters.searchTerm && !bed.bed_number.toLowerCase().includes(filters.searchTerm.toLowerCase())) {
-        return false;
-      }
-      return true;
-    });
-  }, [beds, filters]);
-
-  // Calculate quick stats
-  const stats = useMemo(() => {
-    const total = beds.length;
-    const available = beds.filter(b => b.status === 'available').length;
-    const occupied = beds.filter(b => b.status === 'occupied').length;
-    const reserved = beds.filter(b => b.status === 'reserved').length;
-    const maintenance = beds.filter(b => b.status === 'maintenance').length;
-
-    return { total, available, occupied, reserved, maintenance };
-  }, [beds]);
-
-  // Calculate section stats
-  const sectionStats = useMemo(() => {
-    if (!sections || sections.length === 0) return [];
-
-    return sections
-      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-      .map(section => {
-        const sectionBeds = beds.filter(bed => bed.section === section.id);
-        const availableBeds = sectionBeds.filter(b => b.status === 'available').length;
-        const occupiedBeds = sectionBeds.filter(b => b.status === 'occupied').length;
-        const totalBeds = sectionBeds.length;
-        const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
-
-        return {
-          ...section,
-          totalBeds,
-          availableBeds,
-          occupiedBeds,
-          occupancyRate
-        };
-      });
-  }, [sections, beds]);
+  const filteredBeds = useMemo(() => filterBeds(beds, filters), [beds, filters]);
+  const stats = useMemo(() => buildWardStats(beds), [beds]);
+  const sectionStats = useMemo(() => buildSectionStats(sections, beds), [sections, beds]);
 
   // Handle filter change
   const handleFilterChange = (key, value) => {
@@ -136,12 +434,7 @@ export function WardDashboard() {
 
   // Handle bed click
   const handleBedClick = (bedId) => {
-    const activeAdmission = admissions.find(
-      (admission) => {
-        const admissionBedId = admission?.bed?.id || admission?.bed;
-        return admissionBedId === bedId && admission.status === 'admitted';
-      }
-    );
+    const activeAdmission = findActiveAdmissionByBedId(admissions, bedId);
 
     if (activeAdmission) {
       navigate(`/admissions/${activeAdmission.id}`);
@@ -163,256 +456,57 @@ export function WardDashboard() {
 
   // Clear filters
   const clearFilters = () => {
-    setFilters({ status: 'all', bedType: 'all', searchTerm: '' });
+    setFilters(EMPTY_WARD_FILTERS);
   };
 
-  const hasActiveFilters = filters.status !== 'all' || filters.bedType !== 'all' || filters.searchTerm;
+  const hasActiveFilters = hasWardFilters(filters);
 
   // Loading state
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24" />)}
-        </div>
-        <Skeleton className="h-12 w-full" />
-        <div className="grid grid-cols-4 gap-4">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <Skeleton key={i} className="h-28" />)}
-        </div>
-      </div>
-    );
+    return <WardDashboardLoadingState />;
   }
 
   // Error state
   if (isWardError || isBedsError) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Building2 className="size-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-display text-foreground mb-2">Unable to load ward</h2>
-        <p className="text-muted-foreground text-sm mb-4">
-          {wardError?.message || 'Please try again'}
-        </p>
-        <Button onClick={handleRefresh} variant="outline">
-          <RefreshCw className="size-4 mr-2" />
-          Try Again
-        </Button>
-      </div>
-    );
+    return <WardDashboardErrorState error={wardError} onRetry={handleRefresh} />;
   }
 
   if (!ward) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Building2 className="size-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-display text-foreground">Ward not found</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          The requested ward could not be found
-        </p>
-        <Button className="mt-4" variant="outline" onClick={() => navigate('/wards')}>
-          Back to Wards
-        </Button>
-      </div>
-    );
+    return <WardDashboardNotFoundState onBack={() => navigate('/wards')} />;
   }
-
-  // Ward type labels
-  const wardTypeLabels = {
-    'general': 'General Ward',
-    'private': 'Private Ward',
-    'icu': 'Intensive Care Unit',
-    'emergency': 'Emergency Ward',
-    'maternity': 'Maternity Ward',
-    'pediatric': 'Pediatric Ward',
-    'psychiatric': 'Psychiatric Ward',
-    'isolation': 'Isolation Ward',
-  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-2xl font-display font-bold text-foreground">
-              {ward.name}
-            </h1>
-            <span className={cn(
-              "px-2.5 py-1 rounded-full text-xs font-mono",
-              ward.is_active
-                ? "bg-emerald-500/10 text-emerald-600"
-                : "bg-muted text-muted-foreground"
-            )}>
-              {ward.is_active ? 'Active' : 'Inactive'}
-            </span>
-          </div>
-          <p className="text-muted-foreground">
-            {wardTypeLabels[ward.ward_type] || ward.ward_type}
-            {ward.description && ` — ${ward.description}`}
-          </p>
-        </div>
-        <Button onClick={handleNewAdmission} className="shrink-0">
-          <UserPlus className="size-4 mr-2" />
-          New Admission
-        </Button>
-      </div>
+      <WardDashboardHeader ward={ward} onNewAdmission={handleNewAdmission} />
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <StatCard
-          icon={Bed}
-          label="Total Beds"
-          value={stats.total}
-          color="primary"
-        />
-        <StatCard
-          icon={Activity}
-          label="Available"
-          value={stats.available}
-          color="emerald"
-          onClick={() => handleFilterChange('status', stats.available > 0 ? 'available' : 'all')}
-          active={filters.status === 'available'}
-        />
-        <StatCard
-          icon={Users}
-          label="Occupied"
-          value={stats.occupied}
-          color="rose"
-          onClick={() => handleFilterChange('status', stats.occupied > 0 ? 'occupied' : 'all')}
-          active={filters.status === 'occupied'}
-        />
-        <StatCard
-          label="Reserved"
-          value={stats.reserved}
-          color="amber"
-          onClick={() => handleFilterChange('status', stats.reserved > 0 ? 'reserved' : 'all')}
-          active={filters.status === 'reserved'}
-        />
-        <StatCard
-          label="Maintenance"
-          value={stats.maintenance}
-          color="slate"
-          onClick={() => handleFilterChange('status', stats.maintenance > 0 ? 'maintenance' : 'all')}
-          active={filters.status === 'maintenance'}
-        />
-      </div>
+      <WardStatsGrid
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        stats={stats}
+      />
 
-      {/* Section Stats */}
-      {sectionStats.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">Section Overview</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sectionStats.map(section => (
-              <SectionStatCard key={section.id} section={section} />
-            ))}
-          </div>
-        </div>
-      )}
+      <WardSectionOverview sectionStats={sectionStats} />
 
-      {/* Filter Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between bg-card/50 rounded-xl p-4 border border-border/50">
-        <div className="flex flex-wrap gap-3 items-center flex-1">
-          {/* Search */}
-          <div className="relative w-full sm:w-auto">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
-            <Label htmlFor="bed-search" className="sr-only">Search beds</Label>
-            <Input
-              id="bed-search"
-              placeholder="Search beds..."
-              className="pl-10 font-mono text-sm w-full sm:w-48"
-              value={filters.searchTerm}
-              onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
-            />
-          </div>
+      <WardFilterBar
+        filters={filters}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={clearFilters}
+        onFilterChange={handleFilterChange}
+        onViewModeChange={setViewMode}
+        viewMode={viewMode}
+      />
 
-          {/* Bed Type Filter */}
-          <Select
-            value={filters.bedType}
-            onValueChange={(value) => handleFilterChange('bedType', value)}
-          >
-            <SelectTrigger className="w-full sm:w-40 font-mono text-sm">
-              <SelectValue placeholder="Bed Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="standard">Standard</SelectItem>
-              <SelectItem value="icu">ICU</SelectItem>
-              <SelectItem value="pediatric">Pediatric</SelectItem>
-              <SelectItem value="bariatric">Bariatric</SelectItem>
-              <SelectItem value="maternity">Maternity</SelectItem>
-            </SelectContent>
-          </Select>
+      <WardBedsContent
+        admissions={admissions}
+        beds={beds}
+        filteredBeds={filteredBeds}
+        hasActiveFilters={hasActiveFilters}
+        onBedClick={handleBedClick}
+        onClearFilters={clearFilters}
+        viewMode={viewMode}
+        wardId={ward.id}
+      />
 
-          {/* Clear Filters */}
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearFilters}
-              className="text-muted-foreground"
-            >
-              <Filter className="size-4 mr-1" />
-              Clear
-            </Button>
-          )}
-        </div>
-
-        {/* View Toggle */}
-        <fieldset className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
-          <legend className="sr-only">View mode</legend>
-          <Button
-            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-            className="size-8 p-0"
-            aria-label="Grid view"
-            aria-pressed={viewMode === 'grid'}
-          >
-            <LayoutGrid className="size-4" aria-hidden="true" />
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            className="size-8 p-0"
-            aria-label="List view"
-            aria-pressed={viewMode === 'list'}
-          >
-            <List className="size-4" aria-hidden="true" />
-          </Button>
-        </fieldset>
-      </div>
-
-      {/* Beds Display */}
-      {filteredBeds.length === 0 ? (
-        <div className="text-center py-12">
-          <Bed className="size-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-foreground">
-            {beds.length > 0 ? 'No beds match your filters' : 'No beds configured'}
-          </h3>
-          <p className="text-muted-foreground text-sm mt-1">
-            {beds.length > 0 ? 'Try adjusting your filters' : 'Add beds to this ward to get started'}
-          </p>
-          {hasActiveFilters && (
-            <Button variant="outline" className="mt-4" onClick={clearFilters}>
-              Clear Filters
-            </Button>
-          )}
-        </div>
-      ) : (
-        <WardBedLayout
-          beds={filteredBeds}
-          admissions={admissions}
-          onBedClick={handleBedClick}
-          wardId={ward.id}
-          viewMode={viewMode}
-        />
-      )}
-
-      {/* Results count */}
       {filteredBeds.length > 0 && (
         <div className="text-center">
           <p className="font-mono text-xs text-muted-foreground">
