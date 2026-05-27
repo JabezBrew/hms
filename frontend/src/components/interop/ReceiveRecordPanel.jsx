@@ -3,7 +3,7 @@ import Download from 'lucide-react/dist/esm/icons/download.js';
 import Hash from 'lucide-react/dist/esm/icons/hash.js';
 import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useReducer } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,14 +16,72 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { useRetrieveRecordExport } from "@/hooks/useInteropQueries";
 
-const ReceiveRecordPanel = ({ open, onClose, patient }) => {
+const initialReceiveRecordState = Object.freeze({
+  sourceFacilityCode: "",
+  exportId: "",
+  consentToken: "",
+  exportJob: null,
+  bundle: null,
+  checksum: null,
+});
+
+function receiveRecordReducer(state, action) {
+  switch (action.type) {
+    case "sourceFacilityCodeChanged":
+      return {
+        ...state,
+        sourceFacilityCode: action.value.toUpperCase(),
+      };
+    case "exportIdChanged":
+      return {
+        ...state,
+        exportId: action.value,
+      };
+    case "consentTokenChanged":
+      return {
+        ...state,
+        consentToken: action.value,
+      };
+    case "bundleRetrieved":
+      return {
+        ...state,
+        exportJob: null,
+        bundle: action.bundle,
+        checksum: action.checksum,
+      };
+    case "exportStatusUpdated":
+      return {
+        ...state,
+        exportJob: action.exportJob,
+        bundle: null,
+        checksum: null,
+      };
+    default:
+      return state;
+  }
+}
+
+const ReceiveRecordPanel = (props) => (
+  <ReceiveRecordPanelContent
+    key={props.open ? "receive-record-open" : "receive-record-closed"}
+    {...props}
+  />
+);
+
+const ReceiveRecordPanelContent = ({ open, onClose, patient }) => {
   const { facilityCode } = useAuth();
-  const [sourceFacilityCode, setSourceFacilityCode] = useState("");
-  const [exportId, setExportId] = useState("");
-  const [consentToken, setConsentToken] = useState("");
-  const [exportJob, setExportJob] = useState(null);
-  const [bundle, setBundle] = useState(null);
-  const [checksum, setChecksum] = useState(null);
+  const [receiveState, dispatchReceiveState] = useReducer(
+    receiveRecordReducer,
+    initialReceiveRecordState,
+  );
+  const {
+    sourceFacilityCode,
+    exportId,
+    consentToken,
+    exportJob,
+    bundle,
+    checksum,
+  } = receiveState;
 
   const retrieveMutation = useRetrieveRecordExport();
 
@@ -35,17 +93,6 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
     }
     return patient?.name || patient?.full_name || "Patient";
   }, [patient]);
-
-  useEffect(() => {
-    if (!open) {
-      setSourceFacilityCode("");
-      setExportId("");
-      setConsentToken("");
-      setExportJob(null);
-      setBundle(null);
-      setChecksum(null);
-    }
-  }, [open]);
 
   const bundleSummary = useMemo(() => {
     if (!bundle) return null;
@@ -84,14 +131,17 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
       });
 
       if (response?.bundle) {
-        setBundle(response.bundle);
-        setChecksum(response.checksum || null);
-        setExportJob(null);
+        dispatchReceiveState({
+          type: "bundleRetrieved",
+          bundle: response.bundle,
+          checksum: response.checksum || null,
+        });
         toast.success("Record bundle retrieved");
       } else {
-        setExportJob(response);
-        setBundle(null);
-        setChecksum(null);
+        dispatchReceiveState({
+          type: "exportStatusUpdated",
+          exportJob: response,
+        });
         toast.success("Export status updated", {
           description: response?.status ? `Status: ${response.status}` : undefined,
         });
@@ -148,7 +198,12 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
                 <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input
                   value={sourceFacilityCode}
-                  onChange={(event) => setSourceFacilityCode(event.target.value.toUpperCase())}
+                  onChange={(event) => {
+                    dispatchReceiveState({
+                      type: "sourceFacilityCodeChanged",
+                      value: event.target.value,
+                    });
+                  }}
                   placeholder="SOURCE-CODE"
                   className="pl-9 font-mono"
                 />
@@ -168,7 +223,12 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
                 <Hash className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input
                   value={exportId}
-                  onChange={(event) => setExportId(event.target.value)}
+                  onChange={(event) => {
+                    dispatchReceiveState({
+                      type: "exportIdChanged",
+                      value: event.target.value,
+                    });
+                  }}
                   placeholder="Export job UUID"
                   className="pl-9 font-mono"
                 />
@@ -183,7 +243,12 @@ const ReceiveRecordPanel = ({ open, onClose, patient }) => {
                 <KeyRound className="size-4 text-muted-foreground absolute left-3 top-3" />
                 <Textarea
                   value={consentToken}
-                  onChange={(event) => setConsentToken(event.target.value)}
+                  onChange={(event) => {
+                    dispatchReceiveState({
+                      type: "consentTokenChanged",
+                      value: event.target.value,
+                    });
+                  }}
                   placeholder="Paste consent token from the source facility"
                   className="pl-9 font-mono min-h-[120px]"
                 />
