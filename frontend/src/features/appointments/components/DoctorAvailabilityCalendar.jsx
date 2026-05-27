@@ -1,1 +1,1 @@
-export { default } from '@/components/appointments/DoctorAvailabilityCalendar';
+export { default } from './doctor-availability-calendar/DoctorAvailabilityCalendar';
