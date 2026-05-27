@@ -82,6 +82,325 @@ const groupByDate = (items) => {
   return groups;
 };
 
+function InboxFilterHeader({
+  activeFilter,
+  filters,
+  unreadCount,
+  onFilterChange,
+  onRefresh,
+}) {
+  return (
+    <PageHeader
+      title="Inbox"
+      description="Notifications and items requiring your attention"
+      actions={unreadCount > 0 ? (
+        <span className="badge-chronicle-amber px-3 py-1 rounded-full text-xs font-mono">
+          {unreadCount} unread
+        </span>
+      ) : null}
+      contentClassName="max-w-4xl mx-auto w-full"
+    >
+      <div className="flex items-center gap-2 flex-wrap mt-4 sm:mt-6">
+        {filters.map((filter) => (
+          <button
+            type="button"
+            key={filter.id}
+            onClick={() => onFilterChange(filter.id)}
+            className={cn(
+              'px-4 py-2 rounded-full text-sm font-mono transition-all',
+              activeFilter === filter.id
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'
+            )}
+          >
+            {filter.label}
+            {filter.count > 0 && (
+              <span className={cn(
+                'ml-2 px-1.5 py-0.5 rounded-full text-[10px]',
+                activeFilter === filter.id
+                  ? 'bg-primary-foreground/20 text-primary-foreground'
+                  : 'bg-background'
+              )}>
+                {filter.count}
+              </span>
+            )}
+          </button>
+        ))}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRefresh}
+          className="shrink-0 size-8"
+        >
+          <RefreshCw className="size-4" />
+        </Button>
+      </div>
+    </PageHeader>
+  );
+}
+
+function InboxLoadingState() {
+  return (
+    <div className="space-y-6">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="animate-pulse">
+          <div className="h-4 bg-muted rounded w-24 mb-4" />
+          <div className="space-y-3">
+            {Array.from({ length: 2 }).map((_, j) => (
+              <div key={j} className="bg-card border border-border rounded-xl p-4">
+                <div className="flex gap-4">
+                  <div className="size-10 bg-muted rounded-full" />
+                  <div className="flex-1">
+                    <div className="h-4 bg-muted rounded w-1/3 mb-2" />
+                    <div className="h-3 bg-muted rounded w-2/3" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InboxEmptyState({ activeFilter }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+        <Inbox className="size-8 text-muted-foreground" />
+      </div>
+      <h3 className="font-display text-xl text-foreground mb-2">
+        {activeFilter === 'unread'
+          ? "You're all caught up!"
+          : activeFilter === 'action'
+          ? 'No items requiring action'
+          : 'Your inbox is empty'}
+      </h3>
+      <p className="text-muted-foreground text-sm max-w-md">
+        {activeFilter === 'unread'
+          ? 'All notifications have been read.'
+          : activeFilter === 'action'
+          ? 'There are no pending items that need your attention.'
+          : 'New notifications and action items will appear here.'}
+      </p>
+    </div>
+  );
+}
+
+function getUrgencyBadgeClass(urgency) {
+  if (urgency === 'emergency') {
+    return 'badge-chronicle-rose';
+  }
+  if (urgency === 'urgent') {
+    return 'badge-chronicle-amber';
+  }
+  if (urgency === 'normal') {
+    return 'badge-chronicle-sky';
+  }
+  return 'badge-chronicle-emerald';
+}
+
+function getIndicatorClass(item) {
+  if (item.urgency === 'emergency') {
+    return 'bg-rose-500';
+  }
+  if (item.urgency === 'urgent') {
+    return 'bg-amber-500';
+  }
+  if (item.urgency === 'normal') {
+    return 'bg-sky-500';
+  }
+  if (item.urgency === 'routine') {
+    return 'bg-emerald-500';
+  }
+  return !item.isRead ? 'bg-primary' : 'bg-muted-foreground/50';
+}
+
+function InboxTimelineItem({
+  item,
+  groupIndex,
+  itemIndex,
+  isMarkingRead,
+  onOpenItem,
+  onMarkRead,
+}) {
+  const config = notificationConfig[item.type] || notificationConfig.default;
+  const Icon = config.icon;
+
+  return (
+    <div
+      className={cn(
+        'relative pl-12 group',
+        'animate-chronicle-enter'
+      )}
+      style={{ animationDelay: `${(groupIndex * 100) + (itemIndex * 50)}ms` }}
+    >
+      <div
+        className={cn(
+          'absolute left-[13px] size-5 rounded-full flex items-center justify-center',
+          'bg-card border-2 border-border transition-all',
+          'group-hover:scale-110',
+          !item.isRead && 'border-primary animate-node-pulse'
+        )}
+      >
+        <div className={cn('size-2 rounded-full', getIndicatorClass(item))} />
+      </div>
+
+      <div
+        className={cn(
+          'bg-card border border-border rounded-xl p-4 transition-all',
+          'hover:bg-card/80 hover:border-border/80 hover:shadow-lg',
+          !item.isRead && 'border-l-2 border-l-primary bg-primary/5'
+        )}
+      >
+        <div className="flex gap-4">
+          <div
+            className={cn(
+              'size-10 rounded-full flex items-center justify-center flex-shrink-0',
+              'bg-muted/50'
+            )}
+          >
+            <Icon className={cn('size-5', config.iconClass)} />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={cn(
+                  'font-heading font-medium text-sm',
+                  !item.isRead && 'text-foreground'
+                )}>
+                  {item.title}
+                </span>
+                {!item.isRead && (
+                  <span className="size-2 rounded-full bg-primary flex-shrink-0" />
+                )}
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
+                {format(item.timestamp, 'h:mm a')}
+              </span>
+            </div>
+
+            <p className="font-mono text-xs text-muted-foreground mt-1 truncate">
+              {item.subtitle}
+            </p>
+
+            <div className="flex items-center justify-between gap-3 mt-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                {item.urgency && (
+                  <span className={cn(
+                    getUrgencyBadgeClass(item.urgency),
+                    'text-[10px] px-2 py-0.5 rounded-full uppercase'
+                  )}>
+                    {item.urgency.replace('_', ' ')}
+                  </span>
+                )}
+                {item.category === 'action' && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-mono">
+                    <AlertCircle className="size-3" />
+                    ACTION REQUIRED
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 font-mono text-[10px]"
+                  onClick={() => onOpenItem(item.data)}
+                >
+                  Open
+                </Button>
+                {!item.isRead && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 font-mono text-[10px]"
+                    disabled={isMarkingRead}
+                    onClick={(event) => onMarkRead(event, item)}
+                  >
+                    <Check className="size-3.5 mr-1" />
+                    Mark read
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InboxTimeline({ groupedItems, isMarkingRead, onOpenItem, onMarkRead }) {
+  return (
+    <div className="space-y-8">
+      {Object.entries(groupedItems).map(([date, items], groupIndex) => (
+        <div
+          key={date}
+          className="animate-chronicle-enter"
+          style={{ animationDelay: `${groupIndex * 100}ms` }}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+              {date}
+            </span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          <div className="relative">
+            <div className="absolute left-5 top-0 bottom-0 w-px bg-gradient-to-b from-border via-border to-transparent" />
+
+            <div className="space-y-3">
+              {items.map((item, index) => (
+                <InboxTimelineItem
+                  key={item.id}
+                  item={item}
+                  groupIndex={groupIndex}
+                  itemIndex={index}
+                  isMarkingRead={isMarkingRead}
+                  onOpenItem={onOpenItem}
+                  onMarkRead={onMarkRead}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InboxMainContent({
+  activeFilter,
+  isLoading,
+  filteredItems,
+  groupedItems,
+  isMarkingRead,
+  onOpenItem,
+  onMarkRead,
+}) {
+  return (
+    <main className="max-w-4xl mx-auto p-4 sm:p-6">
+      {isLoading ? (
+        <InboxLoadingState />
+      ) : filteredItems.length === 0 ? (
+        <InboxEmptyState activeFilter={activeFilter} />
+      ) : (
+        <InboxTimeline
+          groupedItems={groupedItems}
+          isMarkingRead={isMarkingRead}
+          onOpenItem={onOpenItem}
+          onMarkRead={onMarkRead}
+        />
+      )}
+    </main>
+  );
+}
+
 /**
  * InboxPage - Chronicle-styled unified inbox
  *
@@ -167,260 +486,23 @@ const InboxPage = () => {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Inbox"
-        description="Notifications and items requiring your attention"
-        actions={unreadCount > 0 ? (
-          <span className="badge-chronicle-amber px-3 py-1 rounded-full text-xs font-mono">
-            {unreadCount} unread
-          </span>
-        ) : null}
-        contentClassName="max-w-4xl mx-auto w-full"
-      >
-        <div className="flex items-center gap-2 flex-wrap mt-4 sm:mt-6">
-          {filters.map((filter) => (
-            <button
-              type="button"
-              key={filter.id}
-              onClick={() => setActiveFilter(filter.id)}
-              className={cn(
-                "px-4 py-2 rounded-full text-sm font-mono transition-all",
-                activeFilter === filter.id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
-              )}
-            >
-              {filter.label}
-              {filter.count > 0 && (
-                <span className={cn(
-                  "ml-2 px-1.5 py-0.5 rounded-full text-[10px]",
-                  activeFilter === filter.id
-                    ? "bg-primary-foreground/20 text-primary-foreground"
-                    : "bg-background"
-                )}>
-                  {filter.count}
-                </span>
-              )}
-            </button>
-          ))}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleRefresh}
-            className="shrink-0 size-8"
-          >
-            <RefreshCw className="size-4" />
-          </Button>
-        </div>
-      </PageHeader>
+      <InboxFilterHeader
+        activeFilter={activeFilter}
+        filters={filters}
+        unreadCount={unreadCount}
+        onFilterChange={setActiveFilter}
+        onRefresh={handleRefresh}
+      />
 
-      {/* Main Content - Timeline */}
-      <main className="max-w-4xl mx-auto p-4 sm:p-6">
-        {isLoading ? (
-          <div className="space-y-6">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="h-4 bg-muted rounded w-24 mb-4" />
-                <div className="space-y-3">
-                  {Array.from({ length: 2 }).map((_, j) => (
-                    <div key={j} className="bg-card border border-border rounded-xl p-4">
-                      <div className="flex gap-4">
-                        <div className="size-10 bg-muted rounded-full" />
-                        <div className="flex-1">
-                          <div className="h-4 bg-muted rounded w-1/3 mb-2" />
-                          <div className="h-3 bg-muted rounded w-2/3" />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : filteredItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
-              <Inbox className="size-8 text-muted-foreground" />
-            </div>
-            <h3 className="font-display text-xl text-foreground mb-2">
-              {activeFilter === 'unread'
-                ? "You're all caught up!"
-                : activeFilter === 'action'
-                ? 'No items requiring action'
-                : 'Your inbox is empty'}
-            </h3>
-            <p className="text-muted-foreground text-sm max-w-md">
-              {activeFilter === 'unread'
-                ? 'All notifications have been read.'
-                : activeFilter === 'action'
-                ? 'There are no pending items that need your attention.'
-                : 'New notifications and action items will appear here.'}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {Object.entries(groupedItems).map(([date, items], groupIndex) => (
-              <div key={date} className="animate-chronicle-enter" style={{ animationDelay: `${groupIndex * 100}ms` }}>
-                {/* Date Header */}
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                    {date}
-                  </span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-
-                {/* Timeline Items */}
-                <div className="relative">
-                  {/* Timeline Spine */}
-                  <div className="absolute left-5 top-0 bottom-0 w-px bg-gradient-to-b from-border via-border to-transparent" />
-
-                  <div className="space-y-3">
-                    {items.map((item, index) => {
-                      const config = notificationConfig[item.type] || notificationConfig.default;
-                      const Icon = config.icon;
-
-                      const openInboxItem = () => handleInboxItemClick(item.data);
-                      const badgeClass = item.urgency === 'emergency'
-                        ? 'badge-chronicle-rose'
-                        : item.urgency === 'urgent'
-                        ? 'badge-chronicle-amber'
-                        : item.urgency === 'normal'
-                        ? 'badge-chronicle-sky'
-                        : 'badge-chronicle-emerald';
-                      const indicatorClass = item.urgency === 'emergency'
-                        ? 'bg-rose-500'
-                        : item.urgency === 'urgent'
-                        ? 'bg-amber-500'
-                        : item.urgency === 'normal'
-                        ? 'bg-sky-500'
-                        : item.urgency === 'routine'
-                        ? 'bg-emerald-500'
-                        : !item.isRead
-                        ? 'bg-primary'
-                        : 'bg-muted-foreground/50';
-
-                      return (
-                        <div
-                          key={item.id}
-                          className={cn(
-                            "relative pl-12 group",
-                            "animate-chronicle-enter",
-                          )}
-                          style={{ animationDelay: `${(groupIndex * 100) + (index * 50)}ms` }}
-                        >
-                          {/* Timeline Node */}
-                          <div
-                            className={cn(
-                              "absolute left-[13px] size-5 rounded-full flex items-center justify-center",
-                              "bg-card border-2 border-border transition-all",
-                              "group-hover:scale-110",
-                              !item.isRead && "border-primary animate-node-pulse"
-                            )}
-                          >
-                            <div className={cn(
-                              "size-2 rounded-full",
-                              indicatorClass
-                            )} />
-                          </div>
-
-                          {/* Content Card */}
-                          <div
-                            className={cn(
-                              "bg-card border border-border rounded-xl p-4 transition-all",
-                              "hover:bg-card/80 hover:border-border/80 hover:shadow-lg",
-                              !item.isRead && "border-l-2 border-l-primary bg-primary/5"
-                            )}
-                          >
-                            <div className="flex gap-4">
-                              {/* Icon */}
-                              <div
-                                className={cn(
-                                  "size-10 rounded-full flex items-center justify-center flex-shrink-0",
-                                  "bg-muted/50"
-                                )}
-                              >
-                                <Icon className={cn('size-5', config.iconClass)} />
-                              </div>
-
-                              {/* Details */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className={cn(
-                                      "font-heading font-medium text-sm",
-                                      !item.isRead && "text-foreground"
-                                    )}>
-                                      {item.title}
-                                    </span>
-                                    {!item.isRead && (
-                                      <span className="size-2 rounded-full bg-primary flex-shrink-0" />
-                                    )}
-                                  </div>
-                                  <span className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
-                                    {format(item.timestamp, 'h:mm a')}
-                                  </span>
-                                </div>
-
-                                <p className="font-mono text-xs text-muted-foreground mt-1 truncate">
-                                  {item.subtitle}
-                                </p>
-
-                                {/* Badges */}
-                                <div className="flex items-center justify-between gap-3 mt-3 flex-wrap">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {item.urgency && (
-                                      <span className={cn(
-                                        badgeClass,
-                                        "text-[10px] px-2 py-0.5 rounded-full uppercase"
-                                      )}>
-                                        {item.urgency.replace('_', ' ')}
-                                      </span>
-                                    )}
-                                    {item.category === 'action' && (
-                                      <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-mono">
-                                        <AlertCircle className="size-3" />
-                                        ACTION REQUIRED
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 font-mono text-[10px]"
-                                      onClick={openInboxItem}
-                                    >
-                                      Open
-                                    </Button>
-                                    {!item.isRead && (
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 px-2 font-mono text-[10px]"
-                                        disabled={markInboxRead.isPending}
-                                        onClick={(event) => handleMarkRead(event, item)}
-                                      >
-                                        <Check className="size-3.5 mr-1" />
-                                        Mark read
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
+      <InboxMainContent
+        activeFilter={activeFilter}
+        isLoading={isLoading}
+        filteredItems={filteredItems}
+        groupedItems={groupedItems}
+        isMarkingRead={markInboxRead.isPending}
+        onOpenItem={handleInboxItemClick}
+        onMarkRead={handleMarkRead}
+      />
     </PageShell>
   );
 };
