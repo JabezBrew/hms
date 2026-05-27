@@ -209,7 +209,13 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
   );
 }
 
-function ClinicRosterWizardDialogContent({ onOpenChange, unitId, unitType, existingClinic = null }) {
+function ClinicRosterWizardDialogContent(props) {
+  const controller = useClinicRosterWizardController(props);
+  if (!controller.canHaveClinics) return null;
+  return <ClinicRosterWizardLayout {...controller} />;
+}
+
+function useClinicRosterWizardController({ onOpenChange, unitId, unitType, existingClinic = null }) {
   const fieldId = useId();
   const open = true;
   const canHaveClinics = unitType === 'department' || unitType === 'division';
@@ -548,8 +554,6 @@ function ClinicRosterWizardDialogContent({ onOpenChange, unitId, unitType, exist
     }
   };
 
-  if (!canHaveClinics) return null;
-
   const steps = [
     { id: 'mode', label: 'Mode' },
     { id: 'clinic', label: 'Clinic' },
@@ -558,6 +562,111 @@ function ClinicRosterWizardDialogContent({ onOpenChange, unitId, unitType, exist
     { id: 'preview', label: 'Preview' },
   ];
 
+  return {
+    canHaveClinics,
+    fieldId,
+    isEditClinic,
+    existingClinic,
+    steps,
+    step,
+    setStep,
+    mode,
+    setMode,
+    clinic,
+    setClinic,
+    selectedExistingDutyType,
+    existingClinicDutyTypes,
+    effectiveDutyTypeChoiceId,
+    setDutyTypeChoiceId,
+    setTeamSequenceOverride,
+    setModeOverride,
+    template,
+    setTemplateDraft,
+    treeLoading,
+    teamToAdd,
+    setTeamToAdd,
+    teamOptions,
+    handleAddTeam,
+    teamSequence,
+    setTeamSequence,
+    staffQuery,
+    setStaffQuery,
+    staffSearch,
+    staffResults,
+    selectedPractitionerId,
+    setSelectedPractitionerId,
+    handleAddPractitioner,
+    practitionerSequence,
+    setPractitionerSequence,
+    dateFrom,
+    setDateFrom,
+    dateTo,
+    setDateTo,
+    publishNow,
+    setPublishNow,
+    previewRows,
+    supportedExistingClinic,
+    effectiveExistingBookingMode,
+    requiredBookingMode,
+    handleConvertExistingClinic,
+    isBusy,
+    canNext,
+    handleCreate,
+    onOpenChange,
+  };
+}
+
+function ClinicRosterWizardLayout({
+  fieldId,
+  isEditClinic,
+  existingClinic,
+  steps,
+  step,
+  setStep,
+  mode,
+  setMode,
+  clinic,
+  setClinic,
+  selectedExistingDutyType,
+  existingClinicDutyTypes,
+  effectiveDutyTypeChoiceId,
+  setDutyTypeChoiceId,
+  setTeamSequenceOverride,
+  setModeOverride,
+  template,
+  setTemplateDraft,
+  treeLoading,
+  teamToAdd,
+  setTeamToAdd,
+  teamOptions,
+  handleAddTeam,
+  teamSequence,
+  setTeamSequence,
+  staffQuery,
+  setStaffQuery,
+  staffSearch,
+  staffResults,
+  selectedPractitionerId,
+  setSelectedPractitionerId,
+  handleAddPractitioner,
+  practitionerSequence,
+  setPractitionerSequence,
+  dateFrom,
+  setDateFrom,
+  dateTo,
+  setDateTo,
+  publishNow,
+  setPublishNow,
+  previewRows,
+  supportedExistingClinic,
+  effectiveExistingBookingMode,
+  requiredBookingMode,
+  handleConvertExistingClinic,
+  isBusy,
+  canNext,
+  handleCreate,
+  onOpenChange,
+}) {
   return (
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
@@ -578,478 +687,74 @@ function ClinicRosterWizardDialogContent({ onOpenChange, unitId, unitType, exist
 
         <div className="min-h-[360px] space-y-6 py-2">
           {step === 0 && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setMode('team')}
-                className={cn(
-                  'rounded-xl border p-4 text-left transition-colors',
-                  mode === 'team' ? 'border-amber-500/30 bg-amber-500/10' : 'border-border hover:bg-muted/30'
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Users className="size-4 text-muted-foreground" />
-                  <span className="font-heading font-medium">Team Clinic</span>
-                  <Badge variant="outline" className="ml-auto text-[10px] font-mono">Pool</Badge>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Whole team is on duty for the clinic session. Rotate teams across dates.
-                </p>
-              </button>
-
-	              <button
-	                type="button"
-	                onClick={() => setMode('practitioner')}
-                className={cn(
-                  'rounded-xl border p-4 text-left transition-colors',
-                  mode === 'practitioner' ? 'border-amber-500/30 bg-amber-500/10' : 'border-border hover:bg-muted/30'
-                )}
-              >
-	                <div className="flex items-center gap-2">
-	                  <UserRound className="size-4 text-muted-foreground" />
-	                  <span className="font-heading font-medium">Practitioner Clinic</span>
-	                  <Badge variant="outline" className="ml-auto text-[10px] font-mono">Direct</Badge>
-	                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Individual clinician(s) run the session. Rotate practitioners across dates.
-                </p>
-              </button>
-            </div>
+            <ClinicModeStep mode={mode} setMode={setMode} />
           )}
 
           {step === 1 && (
-            <div className="space-y-4">
-              {isEditClinic && (
-                <div className="rounded-lg border border-border bg-card/50 p-3 text-sm">
-                  Rostering existing clinic: <span className="font-heading font-medium">{existingClinic?.name}</span>{' '}
-                  <span className="ml-2 font-mono text-xs text-muted-foreground">{existingClinic?.code}</span>
-                </div>
-              )}
-              {isEditClinic && !supportedExistingClinic && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      This clinic is currently in booking mode{' '}
-                      <span className="font-mono">{effectiveExistingBookingMode}</span>. This wizard step requires{' '}
-                      <span className="font-mono">{requiredBookingMode}</span>.
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="font-mono text-xs"
-                      onClick={handleConvertExistingClinic}
-                      disabled={isBusy}
-                    >
-                      Convert
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label htmlFor={`${fieldId}-clinic-name`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    Clinic Name {!isEditClinic && '*'}
-                  </label>
-                  <Input
-                    id={`${fieldId}-clinic-name`}
-                    value={clinic.name}
-                    onChange={(e) => setClinic((p) => ({ ...p, name: e.target.value }))}
-                    placeholder="Cardiology Clinic (Tue AM)"
-                    disabled={isEditClinic}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor={`${fieldId}-clinic-code`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    Clinic Code {!isEditClinic && '*'}
-                  </label>
-                  <Input
-                    id={`${fieldId}-clinic-code`}
-                    value={clinic.code}
-                    onChange={(e) => setClinic((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
-                    placeholder="CARDIO-TUE"
-                    className="font-mono"
-                    disabled={isEditClinic}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor={`${fieldId}-clinic-description`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                  Description (Optional)
-                </label>
-                <Textarea
-                  id={`${fieldId}-clinic-description`}
-                  value={clinic.description}
-                  onChange={(e) => setClinic((p) => ({ ...p, description: e.target.value }))}
-                  placeholder="Short operational description..."
-                  rows={2}
-                  disabled={isEditClinic}
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label htmlFor={`${fieldId}-clinic-walk-ins`} className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    id={`${fieldId}-clinic-walk-ins`}
-                    checked={clinic.accepts_walk_ins}
-                    onCheckedChange={(v) => setClinic((p) => ({ ...p, accepts_walk_ins: Boolean(v) }))}
-                    disabled={isEditClinic}
-                  />
-                  <span className="text-sm">Accepts walk-ins</span>
-                </label>
-                <label htmlFor={`${fieldId}-clinic-waitlist`} className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    id={`${fieldId}-clinic-waitlist`}
-                    checked={clinic.waitlist_enabled}
-                    onCheckedChange={(v) => setClinic((p) => ({ ...p, waitlist_enabled: Boolean(v) }))}
-                    disabled={isEditClinic}
-                  />
-                  <span className="text-sm">Waitlist enabled</span>
-                </label>
-              </div>
-            </div>
+            <ClinicDetailsStep
+              fieldId={fieldId}
+              isEditClinic={isEditClinic}
+              existingClinic={existingClinic}
+              clinic={clinic}
+              setClinic={setClinic}
+              supportedExistingClinic={supportedExistingClinic}
+              effectiveExistingBookingMode={effectiveExistingBookingMode}
+              requiredBookingMode={requiredBookingMode}
+              handleConvertExistingClinic={handleConvertExistingClinic}
+              isBusy={isBusy}
+            />
           )}
 
           {step === 2 && (
-            <div className="space-y-4">
-              {selectedExistingDutyType ? (
-                <div className="rounded-xl border border-border bg-card/50 p-4">
-                  {existingClinicDutyTypes.length > 1 && (
-                    <div className="mb-4 space-y-2">
-                      <label htmlFor={`${fieldId}-template-choice`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                        Select template
-                      </label>
-                      <Select
-                        value={effectiveDutyTypeChoiceId}
-                        onValueChange={(value) => {
-                          setDutyTypeChoiceId(value);
-                          setTeamSequenceOverride(null);
-                          setModeOverride(null);
-                        }}
-                      >
-                        <SelectTrigger id={`${fieldId}-template-choice`} className="font-mono">
-                          <SelectValue placeholder="Select duty type template" />
-                        </SelectTrigger>
-                        <SelectContent className="z-[200]">
-                          {existingClinicDutyTypes.map((dt) => (
-                            <SelectItem key={dt.id} value={String(dt.id)} className="font-mono">
-                              {dt.name} ({dt.code})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-heading font-medium">{selectedExistingDutyType.name}</p>
-                      <p className="mt-1 font-mono text-xs text-muted-foreground">
-                        {selectedExistingDutyType.code}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="font-mono text-[10px]">Existing template</Badge>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-lg border border-border bg-background p-3">
-                      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Day</p>
-                      <p className="mt-1 text-sm">
-                        {DAYS.find((d) => d.value === Number(template.day_of_week))?.label}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-background p-3">
-                      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Time</p>
-                      <p className="mt-1 text-sm">{template.start_time}-{template.end_time}</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-background p-3">
-                      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Slots</p>
-                      <p className="mt-1 text-sm">
-                        {template.slot_duration_minutes}m, cap {template.max_patients_per_slot}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    To edit this template, use the Duty Roster setup screens. This wizard will only generate roster entries.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-4">
-                    <div className="space-y-2 sm:col-span-2">
-                      <label htmlFor={`${fieldId}-template-day`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                        Day of week
-                      </label>
-                      <Select
-                        value={String(template.day_of_week)}
-                        onValueChange={(v) => setTemplateDraft((p) => ({ ...p, day_of_week: Number(v) }))}
-                      >
-                        <SelectTrigger id={`${fieldId}-template-day`} className="font-mono">
-                          <SelectValue placeholder="Select day" />
-                        </SelectTrigger>
-                        <SelectContent className="z-[200]">
-                          {DAYS.map((d) => (
-                            <SelectItem key={d.value} value={String(d.value)} className="font-mono">
-                              {d.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <label htmlFor={`${fieldId}-template-start`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                        Start
-                      </label>
-                      <Input
-                        id={`${fieldId}-template-start`}
-                        type="time"
-                        value={template.start_time}
-                        onChange={(e) => setTemplateDraft((p) => ({ ...p, start_time: e.target.value }))}
-                        className="font-mono"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label htmlFor={`${fieldId}-template-end`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                        End
-                      </label>
-                      <Input
-                        id={`${fieldId}-template-end`}
-                        type="time"
-                        value={template.end_time}
-                        onChange={(e) => setTemplateDraft((p) => ({ ...p, end_time: e.target.value }))}
-                        className="font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-4">
-                    <div className="space-y-2 sm:col-span-2">
-                      <label htmlFor={`${fieldId}-slot-duration`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                        Slot duration (minutes)
-                      </label>
-                      <Input
-                        id={`${fieldId}-slot-duration`}
-                        type="number"
-                        min="5"
-                        max="480"
-                        value={template.slot_duration_minutes}
-                        onChange={(e) => setTemplateDraft((p) => ({ ...p, slot_duration_minutes: Number(e.target.value) }))}
-                        className="font-mono"
-                      />
-                    </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <label htmlFor={`${fieldId}-max-patients`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                        Max patients per slot
-                      </label>
-                      <Input
-                        id={`${fieldId}-max-patients`}
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={template.max_patients_per_slot}
-                        onChange={(e) => setTemplateDraft((p) => ({ ...p, max_patients_per_slot: Number(e.target.value) }))}
-                        className="font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border bg-card/50 p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <CalendarClock className="size-4 text-muted-foreground" />
-                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Result</span>
-                      <span className="ml-auto font-mono text-xs text-muted-foreground">
-                        {DAYS.find((d) => d.value === Number(template.day_of_week))?.label} {template.start_time}-{template.end_time}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            <ClinicTemplateStep
+              fieldId={fieldId}
+              selectedExistingDutyType={selectedExistingDutyType}
+              existingClinicDutyTypes={existingClinicDutyTypes}
+              effectiveDutyTypeChoiceId={effectiveDutyTypeChoiceId}
+              setDutyTypeChoiceId={setDutyTypeChoiceId}
+              setTeamSequenceOverride={setTeamSequenceOverride}
+              setModeOverride={setModeOverride}
+              template={template}
+              setTemplateDraft={setTemplateDraft}
+            />
           )}
 
           {step === 3 && (
-            <div className="space-y-4">
-              {treeLoading ? (
-                <Skeleton className="h-24 w-full" />
-              ) : mode === 'team' ? (
-                <>
-                  <div className="space-y-2">
-                    <p id={`${fieldId}-team-rotation-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                      Team rotation (add in order)
-                    </p>
-                    <div className="flex gap-2">
-                      <Select value={teamToAdd} onValueChange={setTeamToAdd}>
-                        <SelectTrigger aria-labelledby={`${fieldId}-team-rotation-label`} className="font-mono">
-                          <SelectValue placeholder={teamOptions.length ? 'Select team' : 'No teams found'} />
-                        </SelectTrigger>
-                        <SelectContent className="z-[200]">
-                          {teamOptions.map((t) => (
-                            <SelectItem key={t.id} value={t.id} className="font-mono">
-                              {t.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button variant="outline" onClick={handleAddTeam} disabled={!teamToAdd}>
-                        Add
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Rotation is sequential: first date uses Team 1, next date uses Team 2, etc.
-                    </p>
-                  </div>
-
-                  {teamSequence.length > 0 && (
-                    <div className="space-y-2">
-                      {teamSequence.map((id, idx) => {
-                        const team = teamOptions.find((t) => t.id === id);
-                        return (
-                          <div key={id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
-                            <div className="flex items-center gap-2">
-                              <Users className="size-4 text-muted-foreground" />
-                              <span className="text-sm">{team?.name || id}</span>
-                              <Badge variant="outline" className="text-[10px] font-mono">#{idx + 1}</Badge>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setTeamSequence((prev) => prev.filter((x) => x !== id))}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    <p id={`${fieldId}-practitioner-rotation-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                      Practitioner rotation (search, then add in order)
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <Input
-                        aria-labelledby={`${fieldId}-practitioner-rotation-label`}
-                        value={staffQuery}
-                        onChange={(e) => setStaffQuery(e.target.value)}
-                        placeholder="Search practitioner (min 2 chars)"
-                        className="font-mono"
-                      />
-                      <div className="flex gap-2">
-                        <Select value={selectedPractitionerId} onValueChange={setSelectedPractitionerId}>
-                          <SelectTrigger aria-labelledby={`${fieldId}-practitioner-rotation-label`} className="font-mono">
-                            <SelectValue
-                              placeholder={
-                                staffQuery.trim().length < 2
-                                  ? 'Type to search'
-                                  : staffSearch.isLoading
-                                    ? 'Searching...'
-                                    : 'Select practitioner'
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent className="z-[200]">
-                            {staffResults.map((row) => (
-                              <SelectItem key={row.id} value={String(row.practitioner)} className="font-mono">
-                                {row.practitioner_name || row.employee_id || row.practitioner}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button variant="outline" onClick={handleAddPractitioner} disabled={!selectedPractitionerId}>
-                          Add
-                        </Button>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Rotation is sequential across the selected date range.
-                    </p>
-                  </div>
-
-                  {practitionerSequence.length > 0 && (
-                    <div className="space-y-2">
-                      {practitionerSequence.map((p, idx) => (
-                        <div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
-                          <div className="flex items-center gap-2">
-                            <UserRound className="size-4 text-muted-foreground" />
-                            <span className="text-sm">{p.name}</span>
-                            <Badge variant="outline" className="text-[10px] font-mono">#{idx + 1}</Badge>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setPractitionerSequence((prev) => prev.filter((x) => x.id !== p.id))}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+            <ClinicStaffingStep
+              fieldId={fieldId}
+              treeLoading={treeLoading}
+              mode={mode}
+              teamToAdd={teamToAdd}
+              setTeamToAdd={setTeamToAdd}
+              teamOptions={teamOptions}
+              handleAddTeam={handleAddTeam}
+              teamSequence={teamSequence}
+              setTeamSequence={setTeamSequence}
+              staffQuery={staffQuery}
+              setStaffQuery={setStaffQuery}
+              staffSearch={staffSearch}
+              staffResults={staffResults}
+              selectedPractitionerId={selectedPractitionerId}
+              setSelectedPractitionerId={setSelectedPractitionerId}
+              handleAddPractitioner={handleAddPractitioner}
+              practitionerSequence={practitionerSequence}
+              setPractitionerSequence={setPractitionerSequence}
+            />
           )}
 
           {step === 4 && (
-            <div className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <label htmlFor={`${fieldId}-date-from`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    Date from
-                  </label>
-                  <Input id={`${fieldId}-date-from`} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="font-mono" />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor={`${fieldId}-date-to`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    Date to
-                  </label>
-                  <Input id={`${fieldId}-date-to`} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="font-mono" />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    Publish
-                  </p>
-                  <label htmlFor={`${fieldId}-publish-now`} className="flex h-10 items-center gap-2 rounded-md border border-border px-3 cursor-pointer">
-                    <Checkbox id={`${fieldId}-publish-now`} checked={publishNow} onCheckedChange={(v) => setPublishNow(Boolean(v))} />
-                    <span className="text-sm">Publish roster now</span>
-                  </label>
-                </div>
-              </div>
-
-              {previewRows.length === 0 ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                  No preview available. Check your date range and staffing selections.
-                </div>
-              ) : (
-                <div className="rounded-lg border border-border overflow-hidden">
-                  <div className="flex items-center justify-between bg-muted/30 px-4 py-2">
-                    <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      Preview ({previewRows.length} sessions)
-                    </div>
-                    <Badge variant="outline" className="font-mono text-[10px]">
-                      {mode === 'team' ? 'Teams' : 'Practitioners'}
-                    </Badge>
-                  </div>
-                  <div className="max-h-[240px] overflow-auto">
-                    {previewRows.map((row) => (
-                      <div key={row.date} className="flex items-center justify-between px-4 py-2 border-t border-border">
-                        <span className="font-mono text-xs text-muted-foreground">{row.date}</span>
-                        {mode === 'team' ? (
-                          <span className="text-sm">
-                            {teamOptions.find((t) => t.id === row.team)?.name || row.team}
-                          </span>
-                        ) : (
-                          <span className="text-sm">{row.practitioner?.name}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <ClinicPreviewStep
+              fieldId={fieldId}
+              mode={mode}
+              dateFrom={dateFrom}
+              setDateFrom={setDateFrom}
+              dateTo={dateTo}
+              setDateTo={setDateTo}
+              publishNow={publishNow}
+              setPublishNow={setPublishNow}
+              previewRows={previewRows}
+              teamOptions={teamOptions}
+            />
           )}
         </div>
 
@@ -1094,5 +799,635 @@ function ClinicRosterWizardDialogContent({ onOpenChange, unitId, unitType, exist
           </div>
         </DialogFooter>
       </DialogContent>
+  );
+}
+
+function ClinicModeStep({ mode, setMode }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <button
+        type="button"
+        onClick={() => setMode('team')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          mode === 'team' ? 'border-amber-500/30 bg-amber-500/10' : 'border-border hover:bg-muted/30'
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <Users className="size-4 text-muted-foreground" />
+          <span className="font-heading font-medium">Team Clinic</span>
+          <Badge variant="outline" className="ml-auto text-[10px] font-mono">Pool</Badge>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Whole team is on duty for the clinic session. Rotate teams across dates.
+        </p>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setMode('practitioner')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          mode === 'practitioner' ? 'border-amber-500/30 bg-amber-500/10' : 'border-border hover:bg-muted/30'
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <UserRound className="size-4 text-muted-foreground" />
+          <span className="font-heading font-medium">Practitioner Clinic</span>
+          <Badge variant="outline" className="ml-auto text-[10px] font-mono">Direct</Badge>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Individual clinician(s) run the session. Rotate practitioners across dates.
+        </p>
+      </button>
+    </div>
+  );
+}
+
+function ClinicDetailsStep({
+  fieldId,
+  isEditClinic,
+  existingClinic,
+  clinic,
+  setClinic,
+  supportedExistingClinic,
+  effectiveExistingBookingMode,
+  requiredBookingMode,
+  handleConvertExistingClinic,
+  isBusy,
+}) {
+  return (
+    <div className="space-y-4">
+      {isEditClinic && (
+        <div className="rounded-lg border border-border bg-card/50 p-3 text-sm">
+          Rostering existing clinic: <span className="font-heading font-medium">{existingClinic?.name}</span>{' '}
+          <span className="ml-2 font-mono text-xs text-muted-foreground">{existingClinic?.code}</span>
+        </div>
+      )}
+      {isEditClinic && !supportedExistingClinic && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              This clinic is currently in booking mode{' '}
+              <span className="font-mono">{effectiveExistingBookingMode}</span>. This wizard step requires{' '}
+              <span className="font-mono">{requiredBookingMode}</span>.
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="font-mono text-xs"
+              onClick={handleConvertExistingClinic}
+              disabled={isBusy}
+            >
+              Convert
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <label htmlFor={`${fieldId}-clinic-name`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+            Clinic Name {!isEditClinic && '*'}
+          </label>
+          <Input
+            id={`${fieldId}-clinic-name`}
+            value={clinic.name}
+            onChange={(e) => setClinic((p) => ({ ...p, name: e.target.value }))}
+            placeholder="Cardiology Clinic (Tue AM)"
+            disabled={isEditClinic}
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor={`${fieldId}-clinic-code`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+            Clinic Code {!isEditClinic && '*'}
+          </label>
+          <Input
+            id={`${fieldId}-clinic-code`}
+            value={clinic.code}
+            onChange={(e) => setClinic((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
+            placeholder="CARDIO-TUE"
+            className="font-mono"
+            disabled={isEditClinic}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor={`${fieldId}-clinic-description`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+          Description (Optional)
+        </label>
+        <Textarea
+          id={`${fieldId}-clinic-description`}
+          value={clinic.description}
+          onChange={(e) => setClinic((p) => ({ ...p, description: e.target.value }))}
+          placeholder="Short operational description..."
+          rows={2}
+          disabled={isEditClinic}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label htmlFor={`${fieldId}-clinic-walk-ins`} className="flex items-center gap-2 cursor-pointer">
+          <Checkbox
+            id={`${fieldId}-clinic-walk-ins`}
+            checked={clinic.accepts_walk_ins}
+            onCheckedChange={(v) => setClinic((p) => ({ ...p, accepts_walk_ins: Boolean(v) }))}
+            disabled={isEditClinic}
+          />
+          <span className="text-sm">Accepts walk-ins</span>
+        </label>
+        <label htmlFor={`${fieldId}-clinic-waitlist`} className="flex items-center gap-2 cursor-pointer">
+          <Checkbox
+            id={`${fieldId}-clinic-waitlist`}
+            checked={clinic.waitlist_enabled}
+            onCheckedChange={(v) => setClinic((p) => ({ ...p, waitlist_enabled: Boolean(v) }))}
+            disabled={isEditClinic}
+          />
+          <span className="text-sm">Waitlist enabled</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function ClinicTemplateStep({
+  fieldId,
+  selectedExistingDutyType,
+  existingClinicDutyTypes,
+  effectiveDutyTypeChoiceId,
+  setDutyTypeChoiceId,
+  setTeamSequenceOverride,
+  setModeOverride,
+  template,
+  setTemplateDraft,
+}) {
+  if (selectedExistingDutyType) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-card/50 p-4">
+          {existingClinicDutyTypes.length > 1 && (
+            <div className="mb-4 space-y-2">
+              <label htmlFor={`${fieldId}-template-choice`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                Select template
+              </label>
+              <Select
+                value={effectiveDutyTypeChoiceId}
+                onValueChange={(value) => {
+                  setDutyTypeChoiceId(value);
+                  setTeamSequenceOverride(null);
+                  setModeOverride(null);
+                }}
+              >
+                <SelectTrigger id={`${fieldId}-template-choice`} className="font-mono">
+                  <SelectValue placeholder="Select duty type template" />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  {existingClinicDutyTypes.map((dt) => (
+                    <SelectItem key={dt.id} value={String(dt.id)} className="font-mono">
+                      {dt.name} ({dt.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-heading font-medium">{selectedExistingDutyType.name}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                {selectedExistingDutyType.code}
+              </p>
+            </div>
+            <Badge variant="outline" className="font-mono text-[10px]">Existing template</Badge>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <TemplateSummaryItem label="Day">
+              {DAYS.find((d) => d.value === Number(template.day_of_week))?.label}
+            </TemplateSummaryItem>
+            <TemplateSummaryItem label="Time">
+              {template.start_time}-{template.end_time}
+            </TemplateSummaryItem>
+            <TemplateSummaryItem label="Slots">
+              {template.slot_duration_minutes}m, cap {template.max_patients_per_slot}
+            </TemplateSummaryItem>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            To edit this template, use the Duty Roster setup screens. This wizard will only generate roster entries.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-4">
+        <div className="space-y-2 sm:col-span-2">
+          <label htmlFor={`${fieldId}-template-day`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+            Day of week
+          </label>
+          <Select
+            value={String(template.day_of_week)}
+            onValueChange={(v) => setTemplateDraft((p) => ({ ...p, day_of_week: Number(v) }))}
+          >
+            <SelectTrigger id={`${fieldId}-template-day`} className="font-mono">
+              <SelectValue placeholder="Select day" />
+            </SelectTrigger>
+            <SelectContent className="z-[200]">
+              {DAYS.map((d) => (
+                <SelectItem key={d.value} value={String(d.value)} className="font-mono">
+                  {d.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <TemplateTimeInput
+          id={`${fieldId}-template-start`}
+          label="Start"
+          value={template.start_time}
+          onChange={(value) => setTemplateDraft((p) => ({ ...p, start_time: value }))}
+        />
+        <TemplateTimeInput
+          id={`${fieldId}-template-end`}
+          label="End"
+          value={template.end_time}
+          onChange={(value) => setTemplateDraft((p) => ({ ...p, end_time: value }))}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-4">
+        <TemplateNumberInput
+          id={`${fieldId}-slot-duration`}
+          label="Slot duration (minutes)"
+          value={template.slot_duration_minutes}
+          min="5"
+          max="480"
+          onChange={(value) => setTemplateDraft((p) => ({ ...p, slot_duration_minutes: Number(value) }))}
+        />
+        <TemplateNumberInput
+          id={`${fieldId}-max-patients`}
+          label="Max patients per slot"
+          value={template.max_patients_per_slot}
+          min="1"
+          max="20"
+          onChange={(value) => setTemplateDraft((p) => ({ ...p, max_patients_per_slot: Number(value) }))}
+        />
+      </div>
+
+      <div className="rounded-lg border border-border bg-card/50 p-3">
+        <div className="flex items-center gap-2 text-sm">
+          <CalendarClock className="size-4 text-muted-foreground" />
+          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Result</span>
+          <span className="ml-auto font-mono text-xs text-muted-foreground">
+            {DAYS.find((d) => d.value === Number(template.day_of_week))?.label} {template.start_time}-{template.end_time}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TemplateSummaryItem({ label, children }) {
+  return (
+    <div className="rounded-lg border border-border bg-background p-3">
+      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm">{children}</p>
+    </div>
+  );
+}
+
+function TemplateTimeInput({ id, label, value, onChange }) {
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      <Input
+        id={id}
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="font-mono"
+      />
+    </div>
+  );
+}
+
+function TemplateNumberInput({ id, label, value, min, max, onChange }) {
+  return (
+    <div className="space-y-2 sm:col-span-2">
+      <label htmlFor={id} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      <Input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="font-mono"
+      />
+    </div>
+  );
+}
+
+function ClinicStaffingStep({
+  fieldId,
+  treeLoading,
+  mode,
+  teamToAdd,
+  setTeamToAdd,
+  teamOptions,
+  handleAddTeam,
+  teamSequence,
+  setTeamSequence,
+  staffQuery,
+  setStaffQuery,
+  staffSearch,
+  staffResults,
+  selectedPractitionerId,
+  setSelectedPractitionerId,
+  handleAddPractitioner,
+  practitionerSequence,
+  setPractitionerSequence,
+}) {
+  if (treeLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {mode === 'team' ? (
+        <TeamRotationStep
+          fieldId={fieldId}
+          teamToAdd={teamToAdd}
+          setTeamToAdd={setTeamToAdd}
+          teamOptions={teamOptions}
+          handleAddTeam={handleAddTeam}
+          teamSequence={teamSequence}
+          setTeamSequence={setTeamSequence}
+        />
+      ) : (
+        <PractitionerRotationStep
+          fieldId={fieldId}
+          staffQuery={staffQuery}
+          setStaffQuery={setStaffQuery}
+          staffSearch={staffSearch}
+          staffResults={staffResults}
+          selectedPractitionerId={selectedPractitionerId}
+          setSelectedPractitionerId={setSelectedPractitionerId}
+          handleAddPractitioner={handleAddPractitioner}
+          practitionerSequence={practitionerSequence}
+          setPractitionerSequence={setPractitionerSequence}
+        />
+      )}
+    </div>
+  );
+}
+
+function TeamRotationStep({
+  fieldId,
+  teamToAdd,
+  setTeamToAdd,
+  teamOptions,
+  handleAddTeam,
+  teamSequence,
+  setTeamSequence,
+}) {
+  return (
+    <>
+      <div className="space-y-2">
+        <p id={`${fieldId}-team-rotation-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+          Team rotation (add in order)
+        </p>
+        <div className="flex gap-2">
+          <Select value={teamToAdd} onValueChange={setTeamToAdd}>
+            <SelectTrigger aria-labelledby={`${fieldId}-team-rotation-label`} className="font-mono">
+              <SelectValue placeholder={teamOptions.length ? 'Select team' : 'No teams found'} />
+            </SelectTrigger>
+            <SelectContent className="z-[200]">
+              {teamOptions.map((team) => (
+                <SelectItem key={team.id} value={team.id} className="font-mono">
+                  {team.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={handleAddTeam} disabled={!teamToAdd}>
+            Add
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Rotation is sequential: first date uses Team 1, next date uses Team 2, etc.
+        </p>
+      </div>
+
+      {teamSequence.length > 0 && (
+        <div className="space-y-2">
+          {teamSequence.map((id, idx) => {
+            const team = teamOptions.find((t) => t.id === id);
+            return (
+              <div key={id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
+                <div className="flex items-center gap-2">
+                  <Users className="size-4 text-muted-foreground" />
+                  <span className="text-sm">{team?.name || id}</span>
+                  <Badge variant="outline" className="text-[10px] font-mono">#{idx + 1}</Badge>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setTeamSequence((prev) => prev.filter((x) => x !== id))}
+                >
+                  Remove
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function PractitionerRotationStep({
+  fieldId,
+  staffQuery,
+  setStaffQuery,
+  staffSearch,
+  staffResults,
+  selectedPractitionerId,
+  setSelectedPractitionerId,
+  handleAddPractitioner,
+  practitionerSequence,
+  setPractitionerSequence,
+}) {
+  return (
+    <>
+      <div className="space-y-2">
+        <p id={`${fieldId}-practitioner-rotation-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+          Practitioner rotation (search, then add in order)
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input
+            aria-labelledby={`${fieldId}-practitioner-rotation-label`}
+            value={staffQuery}
+            onChange={(e) => setStaffQuery(e.target.value)}
+            placeholder="Search practitioner (min 2 chars)"
+            className="font-mono"
+          />
+          <div className="flex gap-2">
+            <Select value={selectedPractitionerId} onValueChange={setSelectedPractitionerId}>
+              <SelectTrigger aria-labelledby={`${fieldId}-practitioner-rotation-label`} className="font-mono">
+                <SelectValue
+                  placeholder={
+                    staffQuery.trim().length < 2
+                      ? 'Type to search'
+                      : staffSearch.isLoading
+                        ? 'Searching...'
+                        : 'Select practitioner'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent className="z-[200]">
+                {staffResults.map((row) => (
+                  <SelectItem key={row.id} value={String(row.practitioner)} className="font-mono">
+                    {row.practitioner_name || row.employee_id || row.practitioner}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={handleAddPractitioner} disabled={!selectedPractitionerId}>
+              Add
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Rotation is sequential across the selected date range.
+        </p>
+      </div>
+
+      {practitionerSequence.length > 0 && (
+        <div className="space-y-2">
+          {practitionerSequence.map((practitioner, idx) => (
+            <div key={practitioner.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
+              <div className="flex items-center gap-2">
+                <UserRound className="size-4 text-muted-foreground" />
+                <span className="text-sm">{practitioner.name}</span>
+                <Badge variant="outline" className="text-[10px] font-mono">#{idx + 1}</Badge>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPractitionerSequence((prev) => prev.filter((x) => x.id !== practitioner.id))}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ClinicPreviewStep({
+  fieldId,
+  mode,
+  dateFrom,
+  setDateFrom,
+  dateTo,
+  setDateTo,
+  publishNow,
+  setPublishNow,
+  previewRows,
+  teamOptions,
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="space-y-2">
+          <label htmlFor={`${fieldId}-date-from`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+            Date from
+          </label>
+          <Input
+            id={`${fieldId}-date-from`}
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="font-mono"
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor={`${fieldId}-date-to`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+            Date to
+          </label>
+          <Input
+            id={`${fieldId}-date-to`}
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="font-mono"
+          />
+        </div>
+        <div className="space-y-2">
+          <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+            Publish
+          </p>
+          <label htmlFor={`${fieldId}-publish-now`} className="flex h-10 items-center gap-2 rounded-md border border-border px-3 cursor-pointer">
+            <Checkbox
+              id={`${fieldId}-publish-now`}
+              checked={publishNow}
+              onCheckedChange={(value) => setPublishNow(Boolean(value))}
+            />
+            <span className="text-sm">Publish roster now</span>
+          </label>
+        </div>
+      </div>
+
+      {previewRows.length === 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+          No preview available. Check your date range and staffing selections.
+        </div>
+      ) : (
+        <ClinicRosterPreview mode={mode} previewRows={previewRows} teamOptions={teamOptions} />
+      )}
+    </div>
+  );
+}
+
+function ClinicRosterPreview({ mode, previewRows, teamOptions }) {
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="flex items-center justify-between bg-muted/30 px-4 py-2">
+        <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+          Preview ({previewRows.length} sessions)
+        </div>
+        <Badge variant="outline" className="font-mono text-[10px]">
+          {mode === 'team' ? 'Teams' : 'Practitioners'}
+        </Badge>
+      </div>
+      <div className="max-h-[240px] overflow-auto">
+        {previewRows.map((row) => (
+          <div key={row.date} className="flex items-center justify-between px-4 py-2 border-t border-border">
+            <span className="font-mono text-xs text-muted-foreground">{row.date}</span>
+            {mode === 'team' ? (
+              <span className="text-sm">
+                {teamOptions.find((team) => team.id === row.team)?.name || row.team}
+              </span>
+            ) : (
+              <span className="text-sm">{row.practitioner?.name}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
