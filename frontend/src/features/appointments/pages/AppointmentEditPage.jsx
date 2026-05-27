@@ -1,6 +1,7 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
@@ -55,13 +56,31 @@ const AppointmentEditPage = () => {
   const rustV2Mode = isRustV2ApiMode();
   const [appointment, setAppointment] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [slots, setSlots] = useState([]);
-  const [slotsLoading, setSlotsLoading] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [updating, setUpdating] = useState(false);
   const canReschedule = !rustV2Mode
     || appointment?.v2_status === 'scheduled'
     || appointment?.status === 'booked';
+  const currentStart = appointment?.start_time || appointment?.start;
+  const currentStartMs = safeDate(currentStart)?.getTime();
+  const {
+    data: slots = [],
+    isFetching: slotsLoading,
+    isError: slotsError,
+  } = useQuery({
+    queryKey: ['appointments', 'reschedule-slots', id, currentStart],
+    queryFn: async ({ signal }) => {
+      const data = await appointmentsApi.getAvailableSlots({
+        start_date: dateKey(currentStart),
+        end_date: addDaysKey(currentStart, 2),
+      }, { signal });
+      return (Array.isArray(data) ? data : [])
+        .filter((slot) => safeDate(slot.start)?.getTime() !== currentStartMs)
+        .slice(0, 12);
+    },
+    enabled: Boolean(rustV2Mode && appointment && canReschedule && currentStart),
+    staleTime: 30 * 1000,
+  });
   
   // Load appointment data
   useEffect(() => {
@@ -109,36 +128,6 @@ const AppointmentEditPage = () => {
     loadAppointment();
   }, [id, navigate, rustV2Mode]);
 
-  useEffect(() => {
-    if (!rustV2Mode || !appointment || !canReschedule) {
-      return;
-    }
-
-    const loadSlots = async () => {
-      setSlotsLoading(true);
-      try {
-        const currentStart = appointment.start_time || appointment.start;
-        const data = await appointmentsApi.getAvailableSlots({
-          start_date: dateKey(currentStart),
-          end_date: addDaysKey(currentStart, 2),
-        });
-        const currentStartMs = safeDate(currentStart)?.getTime();
-        setSlots(
-          (Array.isArray(data) ? data : [])
-            .filter((slot) => safeDate(slot.start)?.getTime() !== currentStartMs)
-            .slice(0, 12)
-        );
-      } catch (error) {
-        toast.error(error.message || 'Failed to load appointment slots');
-        setSlots([]);
-      } finally {
-        setSlotsLoading(false);
-      }
-    };
-
-    loadSlots();
-  }, [appointment, canReschedule, rustV2Mode]);
-  
   // Handle successful appointment update
   const handleSuccess = (updatedAppointment) => {
     navigate(`/appointments/${updatedAppointment.id}`);
@@ -264,7 +253,9 @@ const AppointmentEditPage = () => {
                     </div>
                   ) : (
                     <div className="rounded-lg border border-border p-4 font-mono text-sm text-muted-foreground">
-                      No reschedule slots are available for this appointment.
+                      {slotsError
+                        ? 'Failed to load appointment slots.'
+                        : 'No reschedule slots are available for this appointment.'}
                     </div>
                   )}
                 </div>
