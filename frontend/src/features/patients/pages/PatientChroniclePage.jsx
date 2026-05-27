@@ -50,11 +50,8 @@ import { patientsApi } from '@/features/patients/api';
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
 import { ProblemListSidebar } from "@/features/problems";
-import {
-  getInitialExpandedEncounterIds,
-  getInitialExpandedNoteIds,
-  normalizeExpansionId,
-} from "@/components/chronicle/chronicleNoteUtils";
+import { normalizeExpansionId } from "@/components/chronicle/chronicleNoteUtils";
+import { useChronicleTimelineExpansion } from "@/features/patients/chronicle/useChronicleTimelineExpansion";
 import { useChronicleWorkspaceRouting } from "@/features/patients/chronicle/useChronicleWorkspaceRouting";
 import {
   buildChronicleSearch,
@@ -1663,13 +1660,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const queryClient = useQueryClient();
   const openedPatientChartsRef = useRef(new Set());
   const lastFilterEventRef = useRef(null);
-  const encounterExpansionSeedRef = useRef(null);
-  const noteExpansionSeedRef = useRef(null);
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
-  const [expandedEncounters, setExpandedEncounters] = useState(() => new Set());
-  const [expandedNoteIds, setExpandedNoteIds] = useState(() => new Set());
 
   // Copy forward state - holds template and data for pre-filling note editor
   const [copyForwardData, setCopyForwardData] = useState(null);
@@ -2232,111 +2225,23 @@ const PatientChroniclePage = ({ defaultAction }) => {
     rustV2ActiveAdmissionId,
   ]);
 
-  const expansionSeedKey = `${id}:${resolvedVisitScope || 'pending'}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`;
-
-  // Use stable length values instead of array references to avoid spurious re-runs.
-  // The seed key already captures meaningful changes (patient, visit scope, filter, search).
-  const encounterGroupCount = groupedByEncounter.encounters.length;
-  const unlinkedEntryCount = groupedByEncounter.unlinked.length;
-
-  useEffect(() => {
-    if (encounterGroupCount > 0 && areEncountersLoading) {
-      return;
-    }
-    if (encounterGroupCount === 0 && unlinkedEntryCount === 0) {
-      return;
-    }
-    if (encounterExpansionSeedRef.current === expansionSeedKey) {
-      return;
-    }
-
-    // oxlint-disable-next-line react-doctor/no-derived-state -- Expansion is user-controlled UI state seeded once per patient/visit/filter key; recomputing each render would erase manual toggles.
-    setExpandedEncounters(getInitialExpandedEncounterIds({
-      encounters: groupedByEncounter.encounters,
-      unlinkedEntries: groupedByEncounter.unlinked,
-      activeEncounterId: activeEncounter?.id,
-    }));
-    encounterExpansionSeedRef.current = expansionSeedKey;
-  }, [
-    activeEncounter?.id,
+  const {
+    collapseAll,
+    expandAll,
+    expandedEncounters,
+    expandedNoteIds,
+    toggleEncounter,
+    toggleNoteExpanded,
+  } = useChronicleTimelineExpansion({
+    activeEncounterId: activeEncounter?.id,
+    activeFilter,
     areEncountersLoading,
-    expansionSeedKey,
-    encounterGroupCount,
-    groupedByEncounter.encounters,
-    groupedByEncounter.unlinked,
-    unlinkedEntryCount,
-  ]);
-
-  useEffect(() => {
-    if (filteredEntries.length === 0) {
-      return;
-    }
-    if (noteExpansionSeedRef.current === expansionSeedKey) {
-      return;
-    }
-
-    // oxlint-disable-next-line react-doctor/no-derived-state -- Note expansion is user-controlled UI state seeded once per patient/visit/filter key; recomputing each render would erase manual toggles.
-    setExpandedNoteIds(getInitialExpandedNoteIds({
-      entries: filteredEntries,
-      activeFilter,
-    }));
-    noteExpansionSeedRef.current = expansionSeedKey;
-  }, [activeFilter, expansionSeedKey, filteredEntries]);
-
-  // Toggle encounter expansion
-  const toggleEncounter = useCallback((encounterId) => {
-    const normalizedEncounterId = normalizeExpansionId(encounterId);
-    if (!normalizedEncounterId) {
-      return;
-    }
-
-    setExpandedEncounters(prev => {
-      const next = new Set(prev);
-      if (next.has(normalizedEncounterId)) {
-        next.delete(normalizedEncounterId);
-      } else {
-        next.add(normalizedEncounterId);
-      }
-      return next;
-    });
-  }, []);
-
-  const toggleNoteExpanded = useCallback((noteId) => {
-    const normalizedNoteId = normalizeExpansionId(noteId);
-    if (!normalizedNoteId) {
-      return;
-    }
-
-    setExpandedNoteIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(normalizedNoteId)) {
-        next.delete(normalizedNoteId);
-      } else {
-        next.add(normalizedNoteId);
-      }
-      return next;
-    });
-  }, []);
-
-  // Expand all encounters
-  const expandAll = useCallback(() => {
-    const allIds = new Set();
-    if (groupedByEncounter.unlinked.length > 0) {
-      allIds.add('unlinked');
-    }
-    groupedByEncounter.encounters.forEach((group) => {
-      const normalizedEncounterId = normalizeExpansionId(group.encounter?.id);
-      if (normalizedEncounterId) {
-        allIds.add(normalizedEncounterId);
-      }
-    });
-    setExpandedEncounters(allIds);
-  }, [groupedByEncounter]);
-
-  // Collapse all encounters
-  const collapseAll = useCallback(() => {
-    setExpandedEncounters(new Set());
-  }, []);
+    debouncedSearch,
+    filteredEntries,
+    groupedByEncounter,
+    patientId: id,
+    resolvedVisitScope,
+  });
 
   useEffect(() => {
     if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
