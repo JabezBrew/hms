@@ -35,7 +35,11 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
       trend: 'stable',
       icon: Heart,
       lastUpdated: '2 mins ago',
-      history: ['125/78', '128/82', '130/80'],
+      history: [
+        { id: 'bp-125-78', value: '125/78' },
+        { id: 'bp-128-82', value: '128/82' },
+        { id: 'bp-130-80', value: '130/80' },
+      ],
     },
     {
       id: 2,
@@ -46,7 +50,11 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
       trend: 'stable',
       icon: Activity,
       lastUpdated: '2 mins ago',
-      history: ['76', '77', '78'],
+      history: [
+        { id: 'hr-76', value: '76' },
+        { id: 'hr-77', value: '77' },
+        { id: 'hr-78', value: '78' },
+      ],
     },
     {
       id: 3,
@@ -57,7 +65,11 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
       trend: 'up',
       icon: Droplet,
       lastUpdated: '2 mins ago',
-      history: ['96', '97', '98'],
+      history: [
+        { id: 'spo2-96', value: '96' },
+        { id: 'spo2-97', value: '97' },
+        { id: 'spo2-98', value: '98' },
+      ],
     },
     {
       id: 4,
@@ -68,7 +80,11 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
       trend: 'stable',
       icon: Thermometer,
       lastUpdated: '5 mins ago',
-      history: ['37.1', '37.2', '37.2'],
+      history: [
+        { id: 'temp-37-1', value: '37.1' },
+        { id: 'temp-37-2-a', value: '37.2' },
+        { id: 'temp-37-2-b', value: '37.2' },
+      ],
     },
   ];
 
@@ -199,12 +215,12 @@ export function MonitoringModeLayout({ encounter, formatDate, getStatusBadge }) 
                       </div>
                       {/* Mini trend */}
                       <div className="flex gap-1 pt-2">
-                        {vital.history.map((val, idx) => (
+                        {vital.history.map((point) => (
                           <div
-                            key={idx}
+                            key={point.id}
                             className="flex-1 h-8 bg-primary/10 rounded flex items-end justify-center text-xs"
                           >
-                            <span className="pb-1">{val}</span>
+                            <span className="pb-1">{point.value}</span>
                           </div>
                         ))}
                       </div>

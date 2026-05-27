@@ -455,5 +455,4 @@ const formatChangeValue = (value) => {
   return String(value);
 };
 
-export default AuditLogTable;
 export { AuditLogTable };
