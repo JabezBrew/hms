@@ -1,564 +1,136 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
-import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import User from 'lucide-react/dist/esm/icons/user.js';
-import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
-import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import Edit from 'lucide-react/dist/esm/icons/square-pen.js';
-import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
-import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
-import Activity from 'lucide-react/dist/esm/icons/activity.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
-import { useState, useMemo, useEffect } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import format from 'date-fns/format';
-import parseISO from 'date-fns/parseISO';
-import isValid from 'date-fns/isValid';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+
 import { useNoteEntriesForEncounter } from '@/features/clinical-notes/hooks';
 import { encountersApi } from '@/features/encounters/api';
-import { TimelineEntry } from '@/components/chronicle';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { EncounterDetailContent } from './EncounterDetailContent';
+import { EncounterDetailDialogs } from './EncounterDetailDialogs';
+import { EncounterDetailErrorState } from './EncounterDetailErrorState';
+import { EncounterDetailHeader } from './EncounterDetailHeader';
+import { EncounterDetailLoadingState } from './EncounterDetailLoadingState';
+import { EncounterDetailNotFoundState } from './EncounterDetailNotFoundState';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+  buildEncounterTimelineEntries,
+  getEncounterActionState,
+  getEncounterStatusConfig,
+  getEncounterTypeConfig,
+} from './encounterDetailUtils';
 
 /**
- * EncounterDetail - Chronicle-style encounter view
+ * EncounterDetail - Chronicle-style encounter view.
  *
- * Clean, single-page layout aligned with PatientChroniclePage:
- * - Hero header with encounter identity
- * - Encounter information section
- * - Timeline entries for this encounter
- * - Actions (discharge, cancel)
- *
- * Removed from old version:
- * - ViewMode switching (Documentation/Review/Monitoring modes)
- * - Tab-based content navigation
- * - Redundant card layouts
+ * The module owns encounter-level workflow state and delegates rendering to
+ * focused view modules so clinical display, actions, and dialogs remain local.
  */
 export function EncounterDetail({ encounter: initialEncounter, loading: initialLoading, isError }) {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [encounter, setEncounter] = useState(initialEncounter ?? null);
+  const [localEncounter, setLocalEncounter] = useState(null);
   const [showDischargeDialog, setShowDischargeDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch clinical notes for this encounter
+  const encounter = localEncounter?.id === initialEncounter?.id
+    ? localEncounter
+    : initialEncounter ?? null;
+
   const {
     data: clinicalNotes = [],
-    isLoading: isLoadingNotes
+    isLoading: isLoadingNotes,
   } = useNoteEntriesForEncounter(id, { page_size: 200 });
 
-  // Update encounter when props change
-  useEffect(() => {
-    if (initialEncounter) {
-      setEncounter(initialEncounter);
-    }
-  }, [initialEncounter]);
+  const timelineEntries = useMemo(
+    () => buildEncounterTimelineEntries(clinicalNotes),
+    [clinicalNotes]
+  );
 
-  // Format date for display
-  const formatDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      const date = parseISO(dateString);
-      return isValid(date) ? format(date, 'MMM d, yyyy h:mm a') : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const formatDateShort = (dateString) => {
-    if (!dateString) return null;
-    try {
-      const date = parseISO(dateString);
-      return isValid(date) ? format(date, 'MMM d, yyyy') : null;
-    } catch {
-      return null;
-    }
-  };
-
-  // Get status config
-  const getStatusConfig = (status) => {
-    const configs = {
-      'planned': {
-        label: 'Planned',
-        badgeClass: 'bg-muted text-muted-foreground border-border',
-        icon: Clock
-      },
-      'in-progress': {
-        label: 'In Progress',
-        badgeClass: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30',
-        icon: Activity
-      },
-      'finished': {
-        label: 'Completed',
-        badgeClass: 'bg-sky-500/10 text-sky-600 border-sky-500/30',
-        icon: CheckCircle
-      },
-      'cancelled': {
-        label: 'Cancelled',
-        badgeClass: 'bg-destructive/10 text-destructive border-destructive/30',
-        icon: XCircle
-      }
-    };
-    return configs[status] || configs['planned'];
-  };
-
-  // Get encounter type config
-  const getTypeConfig = (type) => {
-    const configs = {
-      'inpatient': {
-        label: 'Inpatient Admission',
-        shortLabel: 'Inpatient',
-        badgeClass: 'bg-sky-500/10 text-sky-600 border-sky-500/30',
-        icon: Building2
-      },
-      'outpatient': {
-        label: 'Outpatient Visit',
-        shortLabel: 'Outpatient',
-        badgeClass: 'bg-amber-500/10 text-amber-600 border-amber-500/30',
-        icon: Calendar
-      },
-      'emergency': {
-        label: 'Emergency Visit',
-        shortLabel: 'Emergency',
-        badgeClass: 'bg-destructive/10 text-destructive border-destructive/30',
-        icon: AlertTriangle
-      }
-    };
-    return configs[type] || configs['outpatient'];
-  };
-
-  // Transform clinical notes to timeline entries
-  const timelineEntries = useMemo(() => {
-    if (!clinicalNotes || clinicalNotes.length === 0) return [];
-
-    return clinicalNotes.map(note => ({
-      id: note.id,
-      type: note.note_type || 'progress_note',
-      title: note.title,
-      content: note.content,
-      timestamp: note.created_at,
-      author: note.author_name,
-      data: note
-    }));
-  }, [clinicalNotes]);
-
-  // Handle discharge patient
   const handleDischarge = async () => {
     try {
       setActionInProgress(true);
       await encountersApi.dischargePatient(id, {
         discharge_disposition: 'home',
-        destination: 'Home'
+        destination: 'Home',
       });
       const updatedEncounter = await encountersApi.getEncounter(id);
-      setEncounter(updatedEncounter);
+      setLocalEncounter(updatedEncounter);
       setShowDischargeDialog(false);
-    } catch (err) {
-      console.error('Error discharging patient:', err);
+    } catch {
       setError('Failed to discharge patient. Please try again.');
     } finally {
       setActionInProgress(false);
     }
   };
 
-  // Handle cancel encounter
   const handleCancel = async () => {
     try {
       setActionInProgress(true);
       await encountersApi.cancelEncounter(id);
       const updatedEncounter = await encountersApi.getEncounter(id);
-      setEncounter(updatedEncounter);
+      setLocalEncounter(updatedEncounter);
       setShowCancelDialog(false);
-    } catch (err) {
-      console.error('Error cancelling encounter:', err);
+    } catch {
       setError('Failed to cancel encounter. Please try again.');
     } finally {
       setActionInProgress(false);
     }
   };
 
-  // Loading state
   if (initialLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="bg-card border-b border-border px-4 sm:px-6 py-6 sm:py-8">
-          <Skeleton className="h-8 w-32 mb-4" />
-          <Skeleton className="h-10 w-64 mb-2" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-        <div className="p-4 sm:p-6 space-y-4">
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-32 w-full rounded-xl" />
-        </div>
-      </div>
-    );
+    return <EncounterDetailLoadingState />;
   }
 
-  // Error state
   if (isError || error) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="size-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <XCircle className="size-8 text-destructive" />
-          </div>
-          <h2 className="font-display text-xl text-foreground">Unable to load encounter</h2>
-          <p className="text-muted-foreground text-sm">{error || 'Please try again'}</p>
-          <Button variant="outline" onClick={() => navigate('/encounters')}>
-            <ChevronLeft className="size-4 mr-2" />
-            Back to Encounters
-          </Button>
-        </div>
-      </div>
+      <EncounterDetailErrorState
+        message={error}
+        onBack={() => navigate('/encounters')}
+      />
     );
   }
 
-  // Not found state
   if (!encounter) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto">
-            <FileText className="size-8 text-muted-foreground" />
-          </div>
-          <h2 className="font-display text-xl text-foreground">Encounter not found</h2>
-          <p className="text-muted-foreground text-sm">The requested encounter could not be found.</p>
-          <Button variant="outline" onClick={() => navigate('/encounters')}>
-            <ChevronLeft className="size-4 mr-2" />
-            Back to Encounters
-          </Button>
-        </div>
-      </div>
-    );
+    return <EncounterDetailNotFoundState onBack={() => navigate('/encounters')} />;
   }
 
-  const statusConfig = getStatusConfig(encounter.status);
-  const typeConfig = getTypeConfig(encounter.encounter_type);
-  const StatusIcon = statusConfig.icon;
-  const TypeIcon = typeConfig.icon;
   const rustV2Mode = isRustV2ApiMode();
-
-  const canEdit = encounter.status === 'planned' || encounter.status === 'in-progress';
-  const canDischarge = !rustV2Mode &&
-                      encounter.encounter_type === 'inpatient' &&
-                      encounter.status === 'in-progress' &&
-                      !encounter.end_time;
-  const dischargeHandledByAdmissionWorkflow = rustV2Mode &&
-                      encounter.encounter_type === 'inpatient' &&
-                      encounter.status === 'in-progress' &&
-                      !encounter.end_time;
-  const canCancel = encounter.status === 'planned' || encounter.status === 'in-progress';
+  const actionState = getEncounterActionState(encounter, rustV2Mode);
+  const statusConfig = getEncounterStatusConfig(encounter.status);
+  const typeConfig = getEncounterTypeConfig(encounter.encounter_type);
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Encounter Identity Header */}
-      <header className="bg-card border-b border-border">
-        <div className="max-w-5xl mx-auto p-4 sm:p-6">
-          {/* Navigation */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/encounters')}
-              className="self-start -ml-2"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Encounters
-            </Button>
+      <EncounterDetailHeader
+        actionState={actionState}
+        encounter={encounter}
+        encounterId={id}
+        onCancel={() => setShowCancelDialog(true)}
+        onDischarge={() => setShowDischargeDialog(true)}
+        onNavigate={navigate}
+        statusConfig={statusConfig}
+        typeConfig={typeConfig}
+      />
 
-            {/* Actions */}
-            <div className="flex flex-wrap gap-2">
-              {canEdit && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate(`/encounters/${id}/edit`)}
-                >
-                  <Edit className="size-4 mr-2" />
-                  <span className="hidden sm:inline">Edit</span>
-                </Button>
-              )}
-              {canDischarge && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDischargeDialog(true)}
-                  className="text-emerald-600 hover:text-emerald-600 hover:bg-emerald-500/10"
-                >
-                  <CheckCircle className="size-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Discharge</span>
-                </Button>
-              )}
-              {canCancel && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowCancelDialog(true)}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                >
-                  <XCircle className="size-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Cancel</span>
-                </Button>
-              )}
-            </div>
-          </div>
+      <EncounterDetailContent
+        actionState={actionState}
+        encounter={encounter}
+        encounterId={id}
+        isLoadingNotes={isLoadingNotes}
+        onNavigate={navigate}
+        timelineEntries={timelineEntries}
+      />
 
-          {dischargeHandledByAdmissionWorkflow && (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Inpatient discharge is handled by admission discharge workflows in Rust V2.
-            </div>
-          )}
-
-          {/* Encounter Identity */}
-          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-            {/* Type Icon */}
-            <div className={cn(
-              "size-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0",
-              typeConfig.badgeClass.replace('text-', 'bg-').replace('/10', '/20')
-            )}>
-              <TypeIcon className="size-7 sm:h-8 sm:w-8 text-foreground/70" />
-            </div>
-
-            {/* Info */}
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <h1 className="font-display text-xl sm:text-2xl lg:text-3xl text-foreground tracking-tight">
-                  {typeConfig.label}
-                </h1>
-                <span className={cn(
-                  "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium",
-                  statusConfig.badgeClass
-                )}>
-                  <StatusIcon className="size-3" />
-                  {statusConfig.label}
-                </span>
-              </div>
-
-              {/* Patient Link */}
-              {encounter.patient_name && (
-                <Link
-                  to={`/patients/${encounter.patient}`}
-                  className="inline-flex items-center gap-2 text-primary hover:underline mb-2"
-                >
-                  <User className="size-4" />
-                  <span className="font-medium">{encounter.patient_name}</span>
-                  <ExternalLink className="size-3" />
-                </Link>
-              )}
-
-              {/* Meta info */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                {encounter.practitioner_name && (
-                  <span className="flex items-center gap-1.5">
-                    <Stethoscope className="size-3.5" />
-                    {encounter.practitioner_name}
-                  </span>
-                )}
-                {encounter.location && (
-                  <span className="flex items-center gap-1.5">
-                    <MapPin className="size-3.5" />
-                    {encounter.location}
-                  </span>
-                )}
-                {encounter.start_time && (
-                  <span className="flex items-center gap-1.5">
-                    <Calendar className="size-3.5" />
-                    {formatDateShort(encounter.start_time)}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
-        {/* Encounter Details */}
-        <section>
-          <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-            <FileText className="size-5 text-muted-foreground" />
-            Details
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
-            <InfoItem
-              label="Start Time"
-              value={formatDate(encounter.start_time)}
-              icon={Clock}
-            />
-            <InfoItem
-              label="End Time"
-              value={formatDate(encounter.end_time) || 'Ongoing'}
-              icon={Clock}
-            />
-            <InfoItem
-              label="Service Type"
-              value={encounter.service_type}
-              icon={Activity}
-            />
-            <InfoItem
-              label="Reason"
-              value={encounter.reason}
-              icon={FileText}
-              className="col-span-2 sm:col-span-1"
-            />
-          </div>
-
-          {/* Diagnosis if available */}
-          {encounter.diagnosis && (
-            <div className="mt-4 p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-card/50 border border-border">
-              <h3 className="font-mono text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground mb-2">
-                Diagnosis
-              </h3>
-              <p className="text-foreground">{encounter.diagnosis}</p>
-            </div>
-          )}
-        </section>
-
-        {/* Timeline / Clinical Notes */}
-        <section>
-          <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-            <Clock className="size-5 text-muted-foreground" />
-            Clinical Notes
-            {timelineEntries.length > 0 && (
-              <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded ml-2">
-                {timelineEntries.length}
-              </span>
-            )}
-          </h2>
-
-          {isLoadingNotes ? (
-            <div className="space-y-4">
-              {[1, 2].map(i => (
-                <Skeleton key={i} className="h-24 w-full rounded-xl" />
-              ))}
-            </div>
-          ) : timelineEntries.length === 0 ? (
-            <div className="p-8 rounded-xl sm:rounded-2xl bg-card/50 border border-dashed border-border text-center">
-              <FileText className="size-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground text-sm">No clinical notes for this encounter</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {timelineEntries.map((entry, index) => (
-                <TimelineEntry
-                  key={entry.id}
-                  entry={entry}
-                  index={index}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Quick Actions */}
-        <section className="pt-4 border-t border-border">
-          <div className="flex flex-wrap gap-2">
-            {encounter.patient && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/patients/${encounter.patient}`)}
-              >
-                <User className="size-4 mr-2" />
-                View Patient Record
-              </Button>
-            )}
-            {canEdit && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/encounters/${id}/edit`)}
-              >
-                <Edit className="size-4 mr-2" />
-                Edit Encounter
-              </Button>
-            )}
-          </div>
-        </section>
-      </main>
-
-      {/* Discharge Dialog */}
-      <AlertDialog open={showDischargeDialog} onOpenChange={setShowDischargeDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discharge Patient</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to discharge this patient? This will mark the encounter as finished.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionInProgress}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDischarge}
-              disabled={actionInProgress}
-              className="bg-emerald-600 hover:bg-emerald-700"
-            >
-              {actionInProgress ? 'Processing...' : 'Discharge Patient'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Cancel Dialog */}
-      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancel Encounter</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to cancel this encounter? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionInProgress}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleCancel}
-              disabled={actionInProgress}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {actionInProgress ? 'Processing...' : 'Cancel Encounter'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-/**
- * InfoItem - Reusable info display component
- */
-function InfoItem({ label, value, icon: Icon, className }) {
-  return (
-    <div className={cn("min-w-0", className)}>
-      <div className="flex items-center gap-1.5 mb-1">
-        {Icon && <Icon className="size-3.5 text-muted-foreground" />}
-        <p className="font-mono text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground">
-          {label}
-        </p>
-      </div>
-      <p className="text-sm sm:text-base text-foreground truncate">
-        {value || <span className="text-muted-foreground">-</span>}
-      </p>
+      <EncounterDetailDialogs
+        actionInProgress={actionInProgress}
+        onCancelEncounter={handleCancel}
+        onDischargePatient={handleDischarge}
+        setShowCancelDialog={setShowCancelDialog}
+        setShowDischargeDialog={setShowDischargeDialog}
+        showCancelDialog={showCancelDialog}
+        showDischargeDialog={showDischargeDialog}
+      />
     </div>
   );
 }
