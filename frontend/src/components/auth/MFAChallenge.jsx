@@ -21,7 +21,7 @@ export function MFAChallenge() {
     mfaAvailableMethods,
     completeMfa,
   } = useAuth()
-  const [activeSession, setActiveSession] = useState(mfaSession)
+  const [sessionOverride, setSessionOverride] = useState(null)
   const [totpSecret, setTotpSecret] = useState(null)
   const [totpCode, setTotpCode] = useState('')
   const [recoveryCode, setRecoveryCode] = useState('')
@@ -31,9 +31,9 @@ export function MFAChallenge() {
   const [copiedSecret, setCopiedSecret] = useState(false)
   const [challengeStatus, setChallengeStatus] = useState(null)
 
-  useEffect(() => {
-    setActiveSession(mfaSession)
-  }, [mfaSession])
+  const activeSession = sessionOverride?.source === mfaSession
+    ? sessionOverride.value
+    : mfaSession
 
   useEffect(() => {
     let isCancelled = false
@@ -159,7 +159,7 @@ export function MFAChallenge() {
     try {
       const options = await authApi.mfaWebAuthnRegistrationOptions(activeSession)
       if (options.mfa_session) {
-        setActiveSession(options.mfa_session)
+        setSessionOverride({ source: mfaSession, value: options.mfa_session })
       }
       const publicKey = toRegistrationOptions(options)
       const credential = await navigator.credentials.create({ publicKey })
