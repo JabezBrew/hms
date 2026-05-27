@@ -56,8 +56,11 @@ function DateRangePickerDraft({
   pickerClassName,
   separator,
 }) {
-  // Internal state for pending selections
+  // DateRangePicker keys this draft component by the incoming range, so prop changes remount it.
+  // Internal state is intentionally draft-only while one side of the range is pending.
+  // react-doctor-disable-next-line react-doctor/no-derived-useState
   const [pendingFrom, setPendingFrom] = React.useState(from);
+  // react-doctor-disable-next-line react-doctor/no-derived-useState
   const [pendingTo, setPendingTo] = React.useState(to);
 
   const handleFromChange = (date) => {

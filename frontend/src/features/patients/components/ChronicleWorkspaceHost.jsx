@@ -34,6 +34,7 @@ const ChronicleWorkspaceHost = ({ activeWorkspace, workspaceContext }) => {
     <Suspense fallback={null}>
       <WorkspaceComponent {...workspaceProps} />
       <MobileWorkspaceContextDock
+        key={activeWorkspace}
         activeWorkspace={activeWorkspace}
         context={workspaceContext.mobileContext}
       />

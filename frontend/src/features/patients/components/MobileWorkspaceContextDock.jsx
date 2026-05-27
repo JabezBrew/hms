@@ -175,10 +175,6 @@ const MobileWorkspaceContextDock = ({ activeWorkspace, context }) => {
   const titleId = useId();
 
   useEffect(() => {
-    setIsOpen(false);
-  }, [activeWorkspace]);
-
-  useEffect(() => {
     if (!isOpen) return undefined;
 
     const handleKeyDown = (event) => {
