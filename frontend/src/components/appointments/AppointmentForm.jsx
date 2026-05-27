@@ -1,6 +1,4 @@
-import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -12,10 +10,8 @@ const DEFAULT_EMPTY_OBJECT = {};
 
 import { useNavigate } from 'react-router-dom';
 import {toast} from 'sonner';
-import { useDebounce } from '@/hooks/use-debounce';
 
 import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
 import {
   Form,
   FormControl,
@@ -26,11 +22,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -39,15 +30,11 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
-import { cn, normalizeApiResults } from '@/lib/utils';
-import {
-  fetchAppointmentTypes,
-  fetchAvailableSlots,
-  createAppointment,
-} from '@/features/appointments/api';
-import { patientsApi } from '@/features/patients/api';
-import { staffApi } from '@/features/staff/api';
+import { normalizeApiResults } from '@/lib/utils';
+import { createAppointment } from '@/features/appointments/api';
+import { useAppointmentTypes } from '@/features/appointments/hooks/useAppointmentQueries';
+import { usePatient, useSearchPatients } from '@/features/patients/hooks/usePatientQueries';
+import { usePractitioner, useSearchPractitioners } from '@/hooks/useStaffQueries';
 import { SearchBar } from "@/components/ui/search-bar";
 import DoctorAvailability from './DoctorAvailability';
 
@@ -72,166 +59,120 @@ const formSchema = z.object({
   comment: z.string().optional(),
 });
 
-const AppointmentForm = ({ initialData = DEFAULT_EMPTY_OBJECT, onSuccess }) => {
-  const [appointmentTypes, setAppointmentTypes] = useState([]);
-  const [patientSearchQuery, setPatientSearchQuery] = useState("");
-  const [patients, setPatients] = useState([]);
-  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
-  const debouncedPatientQuery = useDebounce(patientSearchQuery, 300);
+const getAppointmentDefaults = (initialData = DEFAULT_EMPTY_OBJECT) => ({
+  patientId: initialData.patientId || "",
+  practitionerId: initialData.practitionerId || "",
+  appointmentTypeId: initialData.appointmentTypeId || "",
+  date: initialData.date ? parseISO(initialData.date) : new Date(),
+  slotId: initialData.slotId || "",
+  startTime: initialData.startTime || "",
+  endTime: initialData.endTime || "",
+  description: initialData.description || "",
+  comment: initialData.comment || "",
+});
 
-  const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
-  const [practitioners, setPractitioners] = useState([]);
-  const [isLoadingPractitioners, setIsLoadingPractitioners] = useState(false);
-  const debouncedPractitionerQuery = useDebounce(practitionerSearchQuery, 300);
+const getAppointmentFormKey = (initialData = DEFAULT_EMPTY_OBJECT) => [
+  initialData.id || 'new',
+  initialData.patientId || '',
+  initialData.practitionerId || '',
+  initialData.appointmentTypeId || '',
+  initialData.date || '',
+].join(':');
 
-  const [loading, setLoading] = useState(true);
+const getPatientOption = (patient) => {
+  let name = "Unknown Patient";
+  let id = patient?.id || "";
+
+  if (patient?.name) {
+    name = patient.name;
+  } else if (patient?.fhir_resource?.name?.[0]) {
+    const given = patient.fhir_resource.name[0].given?.join(' ') || "";
+    const family = patient.fhir_resource.name[0].family || "";
+    name = `${family}, ${given}`.trim() || "Unknown Patient";
+    id = patient.fhir_resource.id;
+  } else if (patient?.local_data?.user_details) {
+    name = `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim() || "Unknown Patient";
+    id = patient.local_data.id;
+  }
+
+  return {
+    label: name,
+    value: id
+  };
+};
+
+const getPractitionerOption = (practitioner) => {
+  if (practitioner?.name) {
+    return {
+      label: practitioner.name,
+      value: practitioner.id
+    };
+  }
+
+  if (practitioner?.fhir_resource) {
+    const name = practitioner.fhir_resource.name?.[0];
+    const given = name?.given?.join(' ') || '';
+    const family = name?.family || '';
+    const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
+    return {
+      label: displayName,
+      value: practitioner.fhir_resource.id
+    };
+  }
+
+  return {
+    label: `${practitioner?.staff_details?.user_details?.first_name || ''} ${practitioner?.staff_details?.user_details?.last_name || ''} - ${practitioner?.staff_details?.user_details?.user_type === 'doctor' ? 'Doctor' : practitioner?.staff_details?.user_details?.user_type || 'Staff'}`.replace(/\s+/g, ' ').trim(),
+    value: practitioner?.id || ''
+  };
+};
+
+const AppointmentForm = (props) => (
+  <AppointmentFormContent
+    key={getAppointmentFormKey(props.initialData)}
+    {...props}
+  />
+);
+
+const AppointmentFormContent = ({ initialData = DEFAULT_EMPTY_OBJECT, onSuccess }) => {
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+  const appointmentTypesQuery = useAppointmentTypes();
+  const appointmentTypes = Array.isArray(appointmentTypesQuery.data)
+    ? appointmentTypesQuery.data
+    : [];
+  const initialPatientQuery = usePatient(initialData.patientId, {
+    enabled: Boolean(initialData.patientId),
+  });
+  const patientSearch = useSearchPatients();
+  const patients = patientSearch.debouncedSearchTerm
+    ? normalizeApiResults(patientSearch.data)
+    : [initialPatientQuery.data].filter(Boolean);
+  const isLoadingPatients = patientSearch.isFetching || initialPatientQuery.isFetching;
+
+  const initialPractitionerQuery = usePractitioner(initialData.practitionerId, {
+    enabled: Boolean(initialData.practitionerId),
+  });
+  const practitionerSearch = useSearchPractitioners(true);
+  const practitionerSearchResults = Array.isArray(practitionerSearch.data)
+    ? practitionerSearch.data
+    : [];
+  const practitioners = practitionerSearch.debouncedSearchTerm
+    ? practitionerSearchResults
+    : [initialPractitionerQuery.data].filter(Boolean);
+  const isLoadingPractitioners = practitionerSearch.isFetching || initialPractitionerQuery.isFetching;
+  const loading = appointmentTypesQuery.isLoading
+    || initialPatientQuery.isLoading
+    || initialPractitionerQuery.isLoading;
 
   // Initialize form with default values
   const form = useForm({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      patientId: "",
-      practitionerId: "",
-      appointmentTypeId: "",
-      date: new Date(),
-      slotId: "",
-      startTime: "",
-      endTime: "",
-      description: "",
-      comment: "",
-    },
+    defaultValues: getAppointmentDefaults(initialData),
   });
-
-  // Reset form with initialData when it changes (for edit mode)
-  useEffect(() => {
-    if (initialData && Object.keys(initialData).length > 0) {
-      form.reset({
-        patientId: initialData.patientId || "",
-        practitionerId: initialData.practitionerId || "",
-        appointmentTypeId: initialData.appointmentTypeId || "",
-        date: initialData.date ? parseISO(initialData.date) : new Date(),
-        slotId: initialData.slotId || "",
-        startTime: initialData.startTime || "",
-        endTime: initialData.endTime || "",
-        description: initialData.description || "",
-        comment: initialData.comment || "",
-      });
-    }
-  }, [initialData, form]);
 
   // Watch form values for dependent fields
   const watchPractitionerId = form.watch("practitionerId");
-  const watchDate = form.watch("date");
   const watchAppointmentTypeId = form.watch("appointmentTypeId");
-  const watchSlotId = form.watch("slotId");
-
-  // Load appointment types
-  useEffect(() => {
-    const loadAppointmentTypes = async () => {
-      try {
-        const data = await fetchAppointmentTypes();
-        setAppointmentTypes(data);
-      } catch (error) {
-        console.error('Error loading appointment types:', error);
-        toast.error('Failed to load appointment types');
-      }
-    };
-
-    loadAppointmentTypes();
-  }, [toast]);
-
-  // Load initial data
-  useEffect(() => {
-    const loadInitialData = async () => {
-      setLoading(true);
-      try {
-        // If we have initialData with patientId or practitionerId, fetch those
-        if (initialData.patientId) {
-          try {
-            const patientData = await patientsApi.getPatient(initialData.patientId);
-            setPatients([patientData]);
-          } catch (error) {
-            console.error('Error loading initial patient:', error);
-          }
-        }
-
-        if (initialData.practitionerId) {
-          try {
-            // Search for the practitioner by ID to get their details
-            // Using doctorsOnly=true since appointments are only with doctors
-            const result = await staffApi.searchPractitioners(initialData.practitionerId, true);
-            if (Array.isArray(result) && result.length > 0) {
-              setPractitioners(result);
-            }
-          } catch (error) {
-            console.error('Error loading initial practitioner:', error);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading initial data:', error);
-        toast.error('Failed to load initial data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadInitialData();
-  }, [initialData.patientId, initialData.practitionerId]);
-
-  // Search for patients when query changes
-  useEffect(() => {
-    const searchForPatients = async () => {
-      if (!debouncedPatientQuery || debouncedPatientQuery.length < 2) {
-        setPatients([]);
-        return;
-      }
-
-      setIsLoadingPatients(true);
-      try {
-        const response = await patientsApi.searchPatients(debouncedPatientQuery);
-        setPatients(normalizeApiResults(response));
-      } catch (error) {
-        console.error('Error searching patients:', error);
-        toast.error('Failed to search patients');
-        setPatients([]);
-      } finally {
-        setIsLoadingPatients(false);
-      }
-    };
-
-    searchForPatients();
-  }, [debouncedPatientQuery]);
-
-  // Search for practitioners (doctors only) when query changes
-  useEffect(() => {
-    const searchForPractitioners = async () => {
-      if (!debouncedPractitionerQuery || debouncedPractitionerQuery.length < 2) {
-        return;
-      }
-
-      setIsLoadingPractitioners(true);
-      try {
-        // Using doctorsOnly=true since appointments are only with doctors
-        const results = await staffApi.searchPractitioners(debouncedPractitionerQuery, true);
-        setPractitioners(Array.isArray(results) ? results : []);
-      } catch (error) {
-        console.error('Error searching practitioners:', error);
-        toast.error('Failed to search practitioners');
-      } finally {
-        setIsLoadingPractitioners(false);
-      }
-    };
-
-    searchForPractitioners();
-  }, [debouncedPractitionerQuery]);
-
-  // We no longer need to load available slots here as the DoctorAvailability component handles this
-  // This effect is kept for reference but is now empty
-  useEffect(() => {
-    // The slot loading is now handled by the DoctorAvailability component
-  }, [watchPractitionerId, watchDate, watchAppointmentTypeId]);
 
   // Handle form submission
   const onSubmit = async (data) => {
@@ -321,35 +262,10 @@ const AppointmentForm = ({ initialData = DEFAULT_EMPTY_OBJECT, onSuccess }) => {
               <FormLabel>Patient</FormLabel>
               <FormControl>
                 <SearchBar
-                    options={Array.isArray(patients) ? patients.map((patient) => {
-                      let name = "Unknown Patient";
-                      let id = patient?.id || "";
-
-                      // Check for simple name field first (from search API)
-                      if (patient?.name) {
-                        name = patient.name;
-                      }
-                      // Check for FHIR resource format
-                      else if (patient?.fhir_resource?.name?.[0]) {
-                        const given = patient.fhir_resource.name[0].given?.join(' ') || "";
-                        const family = patient.fhir_resource.name[0].family || "";
-                        name = `${family}, ${given}`.trim() || "Unknown Patient";
-                        id = patient.fhir_resource.id;
-                      }
-                      // Then check for local_data
-                      else if (patient?.local_data?.user_details) {
-                        name = `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim() || "Unknown Patient";
-                        id = patient.local_data.id;
-                      }
-
-                      return {
-                        label: name,
-                        value: id
-                      };
-                    }) : []}
+                  options={Array.isArray(patients) ? patients.map(getPatientOption) : []}
                   value={field.value}
                   onChange={field.onChange}
-                  onInputChange={setPatientSearchQuery}
+                  onInputChange={patientSearch.setSearchTerm}
                   placeholder="Search for a patient"
                   emptyMessage={isLoadingPatients ? "Searching..." : "No patients found."}
                   searchPlaceholder="Search by name, MRN, or NHIS ID..."
@@ -375,34 +291,12 @@ const AppointmentForm = ({ initialData = DEFAULT_EMPTY_OBJECT, onSuccess }) => {
                   <FormLabel>Practitioner</FormLabel>
                   <FormControl>
                     <SearchBar
-                        options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
-                          // Check for simple name field first (from search API)
-                          if (practitioner?.name) {
-                            return {
-                              label: practitioner.name,
-                              value: practitioner.id
-                            };
-                          } else if (practitioner.fhir_resource) {
-                            // New structure with FHIR resource
-                            const name = practitioner.fhir_resource.name?.[0];
-                            const given = name?.given?.join(' ') || '';
-                            const family = name?.family || '';
-                            const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
-                            return {
-                              label: displayName,
-                              value: practitioner.fhir_resource.id
-                            };
-                          } else {
-                            // Old structure with staff_details
-                            return {
-                              label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.user_details?.user_type === 'doctor' ? 'Doctor' : practitioner.staff_details?.user_details?.user_type}`.replace(/\s+/g, ' ').trim(),
-                              value: practitioner.id
-                            };
-                          }
-                        }) : []}
+                        options={Array.isArray(practitioners)
+                          ? practitioners.map(getPractitionerOption)
+                          : []}
                         value={field.value}
                         onChange={field.onChange}
-                        onInputChange={setPractitionerSearchQuery}
+                        onInputChange={practitionerSearch.setSearchTerm}
                         placeholder="Search for a doctor"
                         emptyMessage={isLoadingPractitioners ? "Searching..." : "No doctors found."}
                         searchPlaceholder="Search by name, employee ID, or license number..."

@@ -7,7 +7,7 @@ import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import { useState, useEffect } from "react";
+import { useReducer } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +47,118 @@ import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
  * - Only available to doctors
  * - Backend API integration
  */
-const AddPrescriptionSlideOver = ({
+const createPrescriptionFormData = () => ({
+  medication_name: '',
+  dosage: '',
+  route: 'oral',
+  frequency: 'daily',
+  duration_days: '',
+  start_date: new Date().toISOString().split('T')[0],
+  instructions: '',
+  reason: ''
+});
+
+const createPrescriptionState = (marGenerationAvailable) => ({
+  formData: createPrescriptionFormData(),
+  generateMAR: marGenerationAvailable,
+  marDays: 7,
+  selectedRxcui: null,
+  errors: {},
+  safetyCheckPending: false,
+  safetyDialogOpen: false,
+  safetyAlerts: [],
+  hasCriticalAlerts: false,
+});
+
+const withoutFieldError = (errors, field) => {
+  if (!errors[field]) {
+    return errors;
+  }
+
+  const nextErrors = { ...errors };
+  delete nextErrors[field];
+  return nextErrors;
+};
+
+const prescriptionReducer = (state, action) => {
+  switch (action.type) {
+    case 'reset':
+      return createPrescriptionState(action.marGenerationAvailable);
+    case 'fieldChanged':
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          [action.field]: action.value,
+        },
+        errors: withoutFieldError(state.errors, action.field),
+      };
+    case 'medicationSelected':
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          medication_name: action.name,
+        },
+        selectedRxcui: action.rxcui,
+        errors: withoutFieldError(state.errors, 'medication_name'),
+      };
+    case 'drugFormSelected':
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          dosage: action.dosage,
+          route: action.route,
+        },
+        errors: withoutFieldError(state.errors, 'dosage'),
+      };
+    case 'validationFailed':
+      return {
+        ...state,
+        errors: action.errors,
+      };
+    case 'setGenerateMAR':
+      return {
+        ...state,
+        generateMAR: action.value,
+      };
+    case 'setMarDays':
+      return {
+        ...state,
+        marDays: action.value,
+      };
+    case 'safetyCheckStarted':
+      return {
+        ...state,
+        safetyCheckPending: true,
+      };
+    case 'safetyCheckCompleted':
+      return {
+        ...state,
+        safetyCheckPending: false,
+        safetyAlerts: action.alerts,
+        hasCriticalAlerts: action.hasCriticalAlerts,
+        safetyDialogOpen: action.openDialog,
+      };
+    case 'setSafetyDialogOpen':
+      return {
+        ...state,
+        safetyDialogOpen: action.open,
+      };
+    default:
+      return state;
+  }
+};
+
+const AddPrescriptionSlideOver = (props) => (
+  <AddPrescriptionSlideOverContent
+    key={props.open ? 'open' : 'closed'}
+    {...props}
+  />
+);
+
+const AddPrescriptionSlideOverContent = ({
   open,
   onClose,
   patient,
@@ -61,35 +172,25 @@ const AddPrescriptionSlideOver = ({
 
   const queryClient = useQueryClient();
 
-  // Form state
-  const [formData, setFormData] = useState({
-    medication_name: '',
-    dosage: '',
-    route: 'oral',
-    frequency: 'daily',
-    duration_days: '',
-    start_date: new Date().toISOString().split('T')[0],
-    instructions: '',
-    reason: ''
-  });
-
-  // MAR generation option - auto generates for inpatients
-  const [generateMAR, setGenerateMAR] = useState(marGenerationAvailable);
-  const [marDays, setMarDays] = useState(7);
+  const [state, dispatch] = useReducer(
+    prescriptionReducer,
+    marGenerationAvailable,
+    createPrescriptionState,
+  );
+  const {
+    formData,
+    generateMAR,
+    marDays,
+    selectedRxcui,
+    errors,
+    safetyCheckPending,
+    safetyDialogOpen,
+    safetyAlerts,
+    hasCriticalAlerts,
+  } = state;
 
   // Check if patient is admitted (for MAR generation hint)
   const isPatientAdmitted = patient?.local_data?.current_admission || patient?.is_admitted || false;
-
-  // Selected medication rxcui for fetching drug forms
-  const [selectedRxcui, setSelectedRxcui] = useState(null);
-
-  const [errors, setErrors] = useState({});
-
-  // Drug safety state
-  const [safetyCheckPending, setSafetyCheckPending] = useState(false);
-  const [safetyDialogOpen, setSafetyDialogOpen] = useState(false);
-  const [safetyAlerts, setSafetyAlerts] = useState([]);
-  const [hasCriticalAlerts, setHasCriticalAlerts] = useState(false);
 
   // Hooks for drug safety - only fetch when slide-over is open
   const safetyCheck = useSafetyCheck();
@@ -150,80 +251,30 @@ const AddPrescriptionSlideOver = ({
     }
   });
 
-  // Reset form when panel closes
-  useEffect(() => {
-    if (!open) {
-      setFormData({
-        medication_name: '',
-        dosage: '',
-        route: 'oral',
-        frequency: 'daily',
-        duration_days: '',
-        start_date: new Date().toISOString().split('T')[0],
-        instructions: '',
-        reason: ''
-      });
-      setSelectedRxcui(null);
-      setErrors({});
-      setGenerateMAR(marGenerationAvailable);
-      setMarDays(7);
-    }
-  }, [marGenerationAvailable, open]);
-
   // Handle medication selection from autocomplete
   const handleMedicationSelect = (medication) => {
-    // medication is now { name, rxcui }
-    setFormData(prev => ({
-      ...prev,
-      medication_name: medication.name
-    }));
-    setSelectedRxcui(drugSafetyEnhancementsAvailable ? medication.rxcui : null);
-
-    // Clear error
-    if (errors.medication_name) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.medication_name;
-        return newErrors;
-      });
-    }
+    dispatch({
+      type: 'medicationSelected',
+      name: medication.name,
+      rxcui: drugSafetyEnhancementsAvailable ? medication.rxcui : null,
+    });
   };
 
   // Handle drug form selection - auto-populate dosage and route
   const handleDrugFormSelect = (formRxcui) => {
     const selectedForm = drugForms.find(f => f.rxcui === formRxcui);
     if (selectedForm) {
-      setFormData(prev => ({
-        ...prev,
+      dispatch({
+        type: 'drugFormSelected',
         dosage: selectedForm.strength,
-        route: selectedForm.route
-      }));
-
-      // Clear dosage error
-      if (errors.dosage) {
-        setErrors(prev => {
-          const newErrors = { ...prev };
-          delete newErrors.dosage;
-          return newErrors;
-        });
-      }
+        route: selectedForm.route,
+      });
     }
   };
 
   // Handle input change
   const handleChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    // Clear error for this field
-    if (errors[field]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
+    dispatch({ type: 'fieldChanged', field, value });
   };
 
   // Validate form
@@ -246,7 +297,7 @@ const AddPrescriptionSlideOver = ({
       newErrors.frequency = 'Frequency is required';
     }
 
-    setErrors(newErrors);
+    dispatch({ type: 'validationFailed', errors: newErrors });
     return Object.keys(newErrors).length === 0;
   };
 
@@ -258,7 +309,7 @@ const AddPrescriptionSlideOver = ({
       return true;
     }
 
-    setSafetyCheckPending(true);
+    dispatch({ type: 'safetyCheckStarted' });
 
     try {
       const result = await safetyCheck.mutateAsync({
@@ -266,12 +317,15 @@ const AddPrescriptionSlideOver = ({
         medication_name: formData.medication_name.trim(),
       });
 
-      setSafetyAlerts(result.alerts || []);
-      setHasCriticalAlerts(result.has_critical_alerts || false);
+      dispatch({
+        type: 'safetyCheckCompleted',
+        alerts: result.alerts || [],
+        hasCriticalAlerts: result.has_critical_alerts || false,
+        openDialog: Boolean(result.has_alerts),
+      });
 
       // If there are alerts, show the safety dialog
       if (result.has_alerts) {
-        setSafetyDialogOpen(true);
         return false;
       }
 
@@ -286,9 +340,13 @@ const AddPrescriptionSlideOver = ({
       } else {
         toast.error('Safety check failed. Please try again.');
       }
+      dispatch({
+        type: 'safetyCheckCompleted',
+        alerts: [],
+        hasCriticalAlerts: false,
+        openDialog: false,
+      });
       return false;
-    } finally {
-      setSafetyCheckPending(false);
     }
   };
 
@@ -367,30 +425,19 @@ const AddPrescriptionSlideOver = ({
 
   // Handle safety dialog proceed
   const handleSafetyProceed = (overrideReason) => {
-    setSafetyDialogOpen(false);
-    createPrescription(overrideReason);
+    dispatch({ type: 'setSafetyDialogOpen', open: false });
+    void createPrescription(overrideReason);
   };
 
   // Handle safety dialog cancel
   const handleSafetyCancel = () => {
-    setSafetyDialogOpen(false);
+    dispatch({ type: 'setSafetyDialogOpen', open: false });
     toast.info('Prescription cancelled due to safety alerts');
   };
 
   // Handle close
   const handleClose = () => {
-    setFormData({
-      medication_name: '',
-      dosage: '',
-      route: 'oral',
-      frequency: 'daily',
-      duration_days: '',
-      start_date: new Date().toISOString().split('T')[0],
-      instructions: '',
-      reason: ''
-    });
-    setSelectedRxcui(null);
-    setErrors({});
+    dispatch({ type: 'reset', marGenerationAvailable });
     onClose();
   };
 
@@ -681,7 +728,10 @@ const AddPrescriptionSlideOver = ({
                 <Checkbox
                   id="generate-mar"
                   checked={generateMAR}
-                  onCheckedChange={setGenerateMAR}
+                  onCheckedChange={(value) => dispatch({
+                    type: 'setGenerateMAR',
+                    value: Boolean(value),
+                  })}
                   className="mt-0.5"
                 />
                 <div className="flex-1 space-y-2">
@@ -708,7 +758,10 @@ const AddPrescriptionSlideOver = ({
                         min="1"
                         max="30"
                         value={marDays}
-                        onChange={(e) => setMarDays(parseInt(e.target.value) || 7)}
+                        onChange={(e) => dispatch({
+                          type: 'setMarDays',
+                          value: parseInt(e.target.value) || 7,
+                        })}
                         className="font-mono w-16 h-8 text-center"
                       />
                       <Label className="font-mono text-xs text-muted-foreground">
@@ -794,7 +847,10 @@ const AddPrescriptionSlideOver = ({
       {/* Drug Safety Dialog */}
       <DrugSafetyDialog
         open={safetyDialogOpen}
-        onOpenChange={setSafetyDialogOpen}
+        onOpenChange={(nextOpen) => dispatch({
+          type: 'setSafetyDialogOpen',
+          open: nextOpen,
+        })}
         alerts={safetyAlerts}
         hasCriticalAlerts={hasCriticalAlerts}
         medicationName={formData.medication_name}

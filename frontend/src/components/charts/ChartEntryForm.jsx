@@ -12,7 +12,7 @@ import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import { useState, useEffect, useMemo } from "react";
+import { useReducer, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -27,51 +27,112 @@ import {
   useCreateChartEntry,
 } from "@/features/charts/hooks";
 
+const buildInitialChartData = (template) => {
+  const initialData = {};
+  template?.fields?.forEach((field) => {
+    initialData[field.field_key] = field.config?.default ?? null;
+  });
+  return initialData;
+};
+
+const withoutFieldError = (errors, field) => {
+  if (!errors[field]) {
+    return errors;
+  }
+
+  const nextErrors = { ...errors };
+  delete nextErrors[field];
+  return nextErrors;
+};
+
+const createChartFormState = (template) => ({
+  formData: buildInitialChartData(template),
+  notes: '',
+  errors: {},
+});
+
+const chartFormReducer = (state, action) => {
+  switch (action.type) {
+    case 'fieldChanged':
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          [action.fieldKey]: action.value,
+        },
+        errors: withoutFieldError(state.errors, action.fieldKey),
+      };
+    case 'notesChanged':
+      return {
+        ...state,
+        notes: action.value,
+      };
+    case 'validationFailed':
+      return {
+        ...state,
+        errors: action.errors,
+      };
+    case 'reset':
+      return createChartFormState(action.template);
+    default:
+      return state;
+  }
+};
+
+const chartFormKey = ({ assignmentId, assignment, open }) => {
+  const fieldsKey = assignment?.template?.fields
+    ?.map((field) => `${field.field_key}:${field.config?.default ?? ''}`)
+    .join('|') || 'loading';
+
+  return [
+    open ? 'open' : 'closed',
+    assignmentId || 'none',
+    assignment?.id || 'none',
+    assignment?.template?.id || 'none',
+    fieldsKey,
+  ].join(':');
+};
+
 /**
  * ChartEntryForm - Slide-over for recording chart observations
  */
-const ChartEntryForm = ({
+const ChartEntryForm = (props) => {
+  const { data: assignment, isLoading } = useChartAssignment(props.assignmentId);
+  const createMutation = useCreateChartEntry();
+
+  return (
+    <ChartEntryFormContent
+      key={chartFormKey({ ...props, assignment })}
+      {...props}
+      assignment={assignment}
+      isLoading={isLoading}
+      createMutation={createMutation}
+    />
+  );
+};
+
+const ChartEntryFormContent = ({
   open,
   onClose,
   assignmentId,
   patient,
   onEntryRecorded,
+  assignment,
+  isLoading,
+  createMutation,
 }) => {
-  // Fetch assignment with template
-  const { data: assignment, isLoading } = useChartAssignment(assignmentId);
-  const createMutation = useCreateChartEntry();
-
-  // Form state
-  const [formData, setFormData] = useState({});
-  const [notes, setNotes] = useState('');
-  const [errors, setErrors] = useState({});
-
-  // Initialize form when assignment loads
-  useEffect(() => {
-    if (assignment?.template?.fields) {
-      const initialData = {};
-      assignment.template.fields.forEach((field) => {
-        initialData[field.field_key] = field.config?.default ?? null;
-      });
-      setFormData(initialData);
-      setErrors({});
-    }
-  }, [assignment]);
-
-  // Reset form when panel closes
-  useEffect(() => {
-    if (!open) {
-      setNotes('');
-      setErrors({});
-    }
-  }, [open]);
+  const template = assignment?.template;
+  const [state, dispatch] = useReducer(
+    chartFormReducer,
+    template,
+    createChartFormState,
+  );
+  const { formData, notes, errors } = state;
 
   // Get patient display info
   const patientName = patient?.local_data?.user_details
     ? `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim()
     : patient?.name || 'Patient';
-
-  const template = assignment?.template;
 
   // Compute calculated fields
   const computedData = useMemo(() => {
@@ -123,18 +184,7 @@ const ChartEntryForm = ({
 
   // Update field value
   const updateField = (fieldKey, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [fieldKey]: value,
-    }));
-    // Clear error when user types
-    if (errors[fieldKey]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[fieldKey];
-        return newErrors;
-      });
-    }
+    dispatch({ type: 'fieldChanged', fieldKey, value });
   };
 
   // Validate form
@@ -165,7 +215,7 @@ const ChartEntryForm = ({
       }
     });
 
-    setErrors(newErrors);
+    dispatch({ type: 'validationFailed', errors: newErrors });
     return Object.keys(newErrors).length === 0;
   };
 
@@ -183,15 +233,7 @@ const ChartEntryForm = ({
         notes,
       });
 
-      // Reset form for next entry
-      if (template?.fields) {
-        const initialData = {};
-        template.fields.forEach((field) => {
-          initialData[field.field_key] = field.config?.default ?? null;
-        });
-        setFormData(initialData);
-      }
-      setNotes('');
+      dispatch({ type: 'reset', template });
 
       onEntryRecorded?.();
     } catch (err) {
@@ -329,7 +371,10 @@ const ChartEntryForm = ({
               </Label>
               <Textarea
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e) => dispatch({
+                  type: 'notesChanged',
+                  value: e.target.value,
+                })}
                 placeholder="Additional observations..."
                 className="font-mono text-sm resize-none"
                 rows={3}

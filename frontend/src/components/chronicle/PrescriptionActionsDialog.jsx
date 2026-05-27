@@ -6,7 +6,7 @@ import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useState, useEffect } from "react";
+import { useReducer } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,15 +46,91 @@ import {
  * - resume: Resume a held prescription
  * - renew: Create new prescription with same details
  */
-const PrescriptionActionsDialog = ({
+const getPrescriptionId = (prescription) => prescription?.id || prescription?.data?.id;
+
+const createActionFormData = ({ action, prescription }) => {
+  switch (action) {
+    case 'edit':
+      return {
+        dosage: prescription?.dosage || '',
+        frequency: prescription?.frequency || 'daily',
+        duration_days: prescription?.duration_days || '',
+        instructions: prescription?.instructions || '',
+        reason: prescription?.reason || '',
+      };
+    case 'discontinue':
+    case 'hold':
+      return { reason: '' };
+    case 'renew':
+      return {
+        duration_days: prescription?.duration_days || '',
+        instructions: prescription?.instructions || '',
+      };
+    default:
+      return {};
+  }
+};
+
+const createActionState = (initial) => ({
+  formData: createActionFormData(initial),
+  errors: {},
+});
+
+const withoutFieldError = (errors, field) => {
+  if (!errors[field]) {
+    return errors;
+  }
+
+  const nextErrors = { ...errors };
+  delete nextErrors[field];
+  return nextErrors;
+};
+
+const actionDialogReducer = (state, action) => {
+  switch (action.type) {
+    case 'fieldChanged':
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          [action.field]: action.value,
+        },
+        errors: withoutFieldError(state.errors, action.field),
+      };
+    case 'validationFailed':
+      return {
+        ...state,
+        errors: action.errors,
+      };
+    default:
+      return state;
+  }
+};
+
+const PrescriptionActionsDialog = (props) => (
+  <PrescriptionActionsDialogContent
+    key={[
+      props.open ? 'open' : 'closed',
+      props.action || 'none',
+      getPrescriptionId(props.prescription) || 'none',
+    ].join(':')}
+    {...props}
+  />
+);
+
+const PrescriptionActionsDialogContent = ({
   open,
   onOpenChange,
   prescription,
   action, // 'edit' | 'discontinue' | 'hold' | 'resume' | 'renew'
   onSuccess,
 }) => {
-  const [formData, setFormData] = useState({});
-  const [errors, setErrors] = useState({});
+  const [state, dispatch] = useReducer(
+    actionDialogReducer,
+    { action, prescription },
+    createActionState,
+  );
+  const { formData, errors } = state;
 
   // Mutations
   const updateMutation = useUpdatePrescription();
@@ -77,36 +153,6 @@ const PrescriptionActionsDialog = ({
 
   const mutation = getMutation();
   const isLoading = mutation?.isPending;
-
-  // Initialize form data when dialog opens
-  useEffect(() => {
-    if (open && prescription) {
-      switch (action) {
-        case 'edit':
-          setFormData({
-            dosage: prescription.dosage || '',
-            frequency: prescription.frequency || 'daily',
-            duration_days: prescription.duration_days || '',
-            instructions: prescription.instructions || '',
-            reason: prescription.reason || '',
-          });
-          break;
-        case 'discontinue':
-        case 'hold':
-          setFormData({ reason: '' });
-          break;
-        case 'renew':
-          setFormData({
-            duration_days: prescription.duration_days || '',
-            instructions: prescription.instructions || '',
-          });
-          break;
-        default:
-          setFormData({});
-      }
-      setErrors({});
-    }
-  }, [open, prescription, action]);
 
   // Action configurations
   const actionConfig = {
@@ -183,7 +229,7 @@ const PrescriptionActionsDialog = ({
       }
     }
 
-    setErrors(newErrors);
+    dispatch({ type: 'validationFailed', errors: newErrors });
     return Object.keys(newErrors).length === 0;
   };
 
@@ -191,7 +237,7 @@ const PrescriptionActionsDialog = ({
   const handleSubmit = async () => {
     if (!validate()) return;
 
-    const prescriptionId = prescription?.id || prescription?.data?.id;
+    const prescriptionId = getPrescriptionId(prescription);
 
     try {
       switch (action) {
@@ -266,7 +312,11 @@ const PrescriptionActionsDialog = ({
               <Input
                 id="dosage"
                 value={formData.dosage || ''}
-                onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
+                onChange={(e) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'dosage',
+                  value: e.target.value,
+                })}
                 placeholder="e.g., 500mg, 10ml"
                 className={errors.dosage ? 'border-destructive' : ''}
               />
@@ -280,7 +330,11 @@ const PrescriptionActionsDialog = ({
               <Label htmlFor="frequency">Frequency</Label>
               <Select
                 value={formData.frequency || 'daily'}
-                onValueChange={(value) => setFormData({ ...formData, frequency: value })}
+                onValueChange={(value) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'frequency',
+                  value,
+                })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -303,7 +357,11 @@ const PrescriptionActionsDialog = ({
                 type="number"
                 min="1"
                 value={formData.duration_days || ''}
-                onChange={(e) => setFormData({ ...formData, duration_days: e.target.value })}
+                onChange={(e) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'duration_days',
+                  value: e.target.value,
+                })}
                 placeholder="Leave empty for ongoing"
               />
             </div>
@@ -314,7 +372,11 @@ const PrescriptionActionsDialog = ({
               <Textarea
                 id="instructions"
                 value={formData.instructions || ''}
-                onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
+                onChange={(e) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'instructions',
+                  value: e.target.value,
+                })}
                 placeholder="e.g., Take with food"
                 rows={2}
               />
@@ -343,7 +405,11 @@ const PrescriptionActionsDialog = ({
               <Textarea
                 id="reason"
                 value={formData.reason || ''}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                onChange={(e) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'reason',
+                  value: e.target.value,
+                })}
                 placeholder="e.g., Course completed, adverse reaction, patient request..."
                 rows={3}
                 className={errors.reason ? 'border-destructive' : ''}
@@ -371,7 +437,11 @@ const PrescriptionActionsDialog = ({
               <Textarea
                 id="reason"
                 value={formData.reason || ''}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                onChange={(e) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'reason',
+                  value: e.target.value,
+                })}
                 placeholder="e.g., Pending lab results, pre-operative hold..."
                 rows={2}
               />
@@ -412,7 +482,11 @@ const PrescriptionActionsDialog = ({
                 type="number"
                 min="1"
                 value={formData.duration_days || ''}
-                onChange={(e) => setFormData({ ...formData, duration_days: e.target.value })}
+                onChange={(e) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'duration_days',
+                  value: e.target.value,
+                })}
                 placeholder="Same as original if empty"
               />
             </div>
@@ -423,7 +497,11 @@ const PrescriptionActionsDialog = ({
               <Textarea
                 id="instructions"
                 value={formData.instructions || ''}
-                onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
+                onChange={(e) => dispatch({
+                  type: 'fieldChanged',
+                  field: 'instructions',
+                  value: e.target.value,
+                })}
                 rows={2}
               />
             </div>
