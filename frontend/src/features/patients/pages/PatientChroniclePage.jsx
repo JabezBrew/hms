@@ -421,6 +421,364 @@ function compactLabDetail(lab) {
   ].filter(hasDisplayValue).join(' • ');
 }
 
+function useChronicleTimelineViewModel({
+  activeEncounter,
+  activeFilter,
+  chartContextEncounter,
+  encounters,
+  isAllVisitsScope,
+  labResults,
+  medications,
+  patientName,
+  recentVitals,
+  timelineDisplayData,
+}) {
+  const timelineEntries = useMemo(() => {
+    if (!timelineDisplayData) return [];
+
+    const flatEntries = flattenTimelinePages(timelineDisplayData);
+
+    return flatEntries.map(entry => {
+      let displayType = entry.type;
+      const normalizedTimestamp = getEntryTimestamp(entry);
+
+      if (entry.entry_type === 'prescription') {
+        displayType = 'medication';
+      }
+
+      if (entry.entry_type === 'vitals' && entry.data) {
+        return {
+          ...entry,
+          type: 'vitals',
+          timestamp: normalizedTimestamp,
+          data: {
+            temperature: entry.data.temperature,
+            blood_pressure: entry.data.blood_pressure,
+            heart_rate: entry.data.heart_rate,
+            spo2: entry.data.spo2 || entry.data.oxygen_saturation,
+            oxygen_saturation: entry.data.oxygen_saturation || entry.data.spo2,
+            respiratory_rate: entry.data.respiratory_rate,
+            pain_level: entry.data.pain_level,
+          }
+        };
+      }
+
+      if (entry.entry_type === 'prescription' && entry.data) {
+        return {
+          ...entry,
+          type: 'medication',
+          timestamp: normalizedTimestamp,
+          data: {
+            ...entry.data,
+            name: entry.data.medication_name,
+            dose: entry.data.dosage,
+            route: entry.data.route_display,
+            frequency: entry.data.frequency_display,
+            notes: entry.data.instructions,
+          }
+        };
+      }
+
+      return {
+        ...entry,
+        type: displayType,
+        timestamp: normalizedTimestamp,
+      };
+    });
+  }, [timelineDisplayData]);
+
+  const filteredEntries = useMemo(() => {
+    if (activeFilter === 'progress_note') {
+      return timelineEntries.filter(entry =>
+        entry.type === 'progress_note' ||
+        entry.type === 'soap_note' ||
+        entry.type === 'admission_note' ||
+        entry.type === 'discharge_note' ||
+        entry.type === 'consult_note' ||
+        entry.type === 'nursing_note'
+      );
+    }
+    return timelineEntries;
+  }, [timelineEntries, activeFilter]);
+
+  const groupedByEncounter = useMemo(() => {
+    const encounterMap = new Map();
+    if (encounters) {
+      encounters.forEach(enc => {
+        if (enc?.id !== null && enc?.id !== undefined) {
+          encounterMap.set(String(enc.id), enc);
+        }
+      });
+    }
+
+    const groups = {
+      encounters: [],
+      unlinked: []
+    };
+
+    const encounterEntries = new Map();
+
+    filteredEntries.forEach(entry => {
+      const encounterId = normalizeExpansionId(
+        entry.encounter_id
+          || entry.encounter?.id
+          || entry.data?.encounter_id
+          || entry.data?.encounter?.id
+      );
+
+      if (encounterId) {
+        if (!encounterEntries.has(encounterId)) {
+          encounterEntries.set(encounterId, []);
+        }
+        encounterEntries.get(encounterId).push(entry);
+      } else {
+        groups.unlinked.push(entry);
+      }
+    });
+
+    encounterEntries.forEach((entries, encounterId) => {
+      const sortedEntries = sortEntriesByTimestampDesc(entries);
+      const fallbackTimestamp = getEntryTimestamp(sortedEntries[0]);
+      const sourceEncounter = encounterMap.get(encounterId)
+        || sortedEntries[0]?.encounter
+        || {};
+      const encounter = {
+        ...sourceEncounter,
+        id: sourceEncounter.id || encounterId,
+        start_time: getEncounterDisplayStart(sourceEncounter, fallbackTimestamp),
+        end_time: getEncounterDisplayEnd(sourceEncounter),
+      };
+
+      groups.encounters.push({
+        encounter,
+        entries: sortedEntries
+      });
+    });
+
+    groups.encounters.sort((a, b) => {
+      const dateA = toTimestampMs(a.encounter.start_time || getEntryTimestamp(a.entries[0])) || 0;
+      const dateB = toTimestampMs(b.encounter.start_time || getEntryTimestamp(b.entries[0])) || 0;
+      return dateB - dateA;
+    });
+
+    groups.unlinked = sortEntriesByTimestampDesc(groups.unlinked);
+
+    return groups;
+  }, [filteredEntries, encounters]);
+
+  const totalCount = useMemo(() => getTimelineTotalCount(timelineDisplayData), [timelineDisplayData]);
+
+  const mobileWorkspaceContext = useMemo(() => {
+    const sortedTimelineEntries = sortEntriesByTimestampDesc(timelineEntries);
+    const contextEncounter = chartContextEncounter || activeEncounter || null;
+    const recentNotes = sortedTimelineEntries
+      .filter(isNoteTimelineEntry)
+      .slice(0, 3)
+      .map((entry, index) => ({
+        id: entry.id || `${entry.type || entry.entry_type || 'note'}-${getEntryTimestamp(entry) || index}`,
+        title: getTimelineEntryTitle(entry),
+        kind: entry.type || entry.entry_type || 'note',
+        status: entry.status || entry.data?.status || null,
+        timestamp: getEntryTimestamp(entry),
+      }));
+
+    return {
+      patientName,
+      entryCount: totalCount,
+      visitLabel: isAllVisitsScope
+        ? 'All history'
+        : formatEncounterScopeLabel(contextEncounter, activeEncounter?.id),
+      encounter: contextEncounter ? {
+        id: contextEncounter.id,
+        title: getEncounterTitle(contextEncounter),
+        status: contextEncounter.status || null,
+        dateRange: formatEncounterDateRange(contextEncounter),
+      } : null,
+      latestVitals: recentVitals.slice(0, 6),
+      medications: medications.slice(0, 4).map((medication, index) => ({
+        id: medication.id || medication.medication_id || `${medication.name || medication.medication_name || 'med'}-${index}`,
+        name: medication.name || medication.medication_name || medication.drug_name || 'Medication',
+        detail: compactMedicationDetail(medication),
+      })),
+      labs: labResults.slice(0, 4).map((lab, index) => ({
+        id: lab.id || `${lab.name || 'lab'}-${lab.timestamp || index}`,
+        name: lab.name,
+        detail: compactLabDetail(lab),
+        flag: lab.abnormal_direction || (lab.is_abnormal ? 'abnormal' : null),
+      })),
+      recentNotes,
+      lastUpdated: sortedTimelineEntries[0] ? getEntryTimestamp(sortedTimelineEntries[0]) : null,
+    };
+  }, [
+    activeEncounter,
+    chartContextEncounter,
+    isAllVisitsScope,
+    labResults,
+    medications,
+    patientName,
+    recentVitals,
+    timelineEntries,
+    totalCount,
+  ]);
+
+  return {
+    filteredEntries,
+    groupedByEncounter,
+    mobileWorkspaceContext,
+    totalCount,
+  };
+}
+
+function ChronicleAccessDeniedState({
+  breakGlassExpiresAt,
+  breakGlassReason,
+  canRequestBreakGlass,
+  isBreakGlassOpen,
+  isSubmitting,
+  pageMeta,
+  patient,
+  patientName,
+  rustV2Mode,
+  onBreakGlassOpenChange,
+  onBreakGlassReasonChange,
+  onBreakGlassSubmit,
+}) {
+  const patientDetails = patient?.local_data || patient;
+  const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
+
+  return (
+    <>
+      {pageMeta}
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
+          <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center gap-2">
+                <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
+                  Access Restricted
+                </span>
+                {breakGlassExpiresAt && (
+                  <span className="badge-chronicle-amber text-[10px]">
+                    Break-glass active
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h2 className="font-display text-2xl text-foreground">
+                  Team-based access required
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  This patient record is protected by team-based access controls.
+                  Request break-glass only for urgent clinical need. All access is audited.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Patient
+                </p>
+                <p className="text-sm text-foreground">
+                  {patientName || "Unknown Patient"}
+                </p>
+                {patientMrn && (
+                  <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
+                )}
+              </div>
+
+              {canRequestBreakGlass ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    onClick={() => onBreakGlassOpenChange(true)}
+                    className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
+                  >
+                    Request Break-Glass Access
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Provide a reason to unlock this record for a limited time.
+                  </span>
+                </div>
+              ) : rustV2Mode ? (
+                <p className="text-xs text-muted-foreground">
+                  Break-glass access is not available in Rust V2 mode.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Break-glass access is available to clinical staff only.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {canRequestBreakGlass && (
+          <BreakGlassDialog
+            open={isBreakGlassOpen}
+            onOpenChange={onBreakGlassOpenChange}
+            patientName={patientName}
+            patientMrn={patientMrn}
+            reason={breakGlassReason}
+            onReasonChange={onBreakGlassReasonChange}
+            onSubmit={onBreakGlassSubmit}
+            isSubmitting={isSubmitting}
+            ttlMinutes={30}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+function ChronicleLoadingState({ pageMeta }) {
+  return (
+    <>
+      {pageMeta}
+      <div className="min-h-screen bg-background">
+        <div className="bg-card border-b border-border px-6 py-8">
+          <Skeleton className="h-12 w-64 mb-4" />
+          <Skeleton className="h-4 w-96 mb-2" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+
+        <div className="flex">
+          <div className="w-80 border-r border-border p-6 space-y-6">
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+          <div className="flex-1 p-6 space-y-4">
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ChronicleErrorState({ gateError, pageMeta, onRetry }) {
+  return (
+    <>
+      {pageMeta}
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-display text-foreground">
+            Unable to load patient record
+          </h2>
+          <p className="text-muted-foreground">
+            {gateError?.message || 'An error occurred while fetching patient data.'}
+          </p>
+          <Button onClick={onRetry}>
+            <RefreshCw className="size-4 mr-2" />
+            Try Again
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /**
  * PatientChroniclePage - Magazine-style patient health record view
  *
@@ -982,93 +1340,27 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // ============================================
-  // Transform API data for timeline components
-  // ============================================
-
-  const timelineEntries = useMemo(() => {
-    if (!timelineDisplayData) return [];
-
-    const flatEntries = flattenTimelinePages(timelineDisplayData);
-
-    // Transform API entries to match TimelineEntry component format
-    return flatEntries.map(entry => {
-      // Map entry_type to display type
-      let displayType = entry.type;
-      const normalizedTimestamp = getEntryTimestamp(entry);
-
-      // Handle prescription type
-      if (entry.entry_type === 'prescription') {
-        displayType = 'medication';
-      }
-
-      // Transform vitals data to match expected format
-      if (entry.entry_type === 'vitals' && entry.data) {
-        return {
-          ...entry,
-          type: 'vitals',
-          timestamp: normalizedTimestamp,
-          data: {
-            temperature: entry.data.temperature,
-            blood_pressure: entry.data.blood_pressure,
-            heart_rate: entry.data.heart_rate,
-            spo2: entry.data.spo2 || entry.data.oxygen_saturation,
-            oxygen_saturation: entry.data.oxygen_saturation || entry.data.spo2,
-            respiratory_rate: entry.data.respiratory_rate,
-            pain_level: entry.data.pain_level,
-          }
-        };
-      }
-
-      // Transform prescription data to medication format
-      if (entry.entry_type === 'prescription' && entry.data) {
-        return {
-          ...entry,
-          type: 'medication',
-          timestamp: normalizedTimestamp,
-          data: {
-            ...entry.data,  // Preserve all original data including status, id, etc.
-            name: entry.data.medication_name,
-            dose: entry.data.dosage,
-            route: entry.data.route_display,
-            frequency: entry.data.frequency_display,
-            notes: entry.data.instructions,
-          }
-        };
-      }
-
-      return {
-        ...entry,
-        type: displayType,
-        timestamp: normalizedTimestamp,
-      };
-    });
-  }, [timelineDisplayData]);
-
   // Use allergies from clinical summary hook (already parsed from patient data)
   // The hook handles parsing from string/array formats
   const allergies = parsedAllergies;
   const problemSummaries = chronicleContext?.problems || chronicleContext?.summaries?.problems || [];
-
-  // ============================================
-  // Filter entries (filtering is done by API, but we keep this for local display type mapping)
-  // ============================================
-
-  const filteredEntries = useMemo(() => {
-    // If filtering for specific types not supported by API, filter locally
-    if (activeFilter === 'progress_note') {
-      return timelineEntries.filter(entry =>
-        entry.type === 'progress_note' ||
-        entry.type === 'soap_note' ||
-        entry.type === 'admission_note' ||
-        entry.type === 'discharge_note' ||
-        entry.type === 'consult_note' ||
-        entry.type === 'nursing_note'
-      );
-    }
-    // Labs are now filtered by API, no local filtering needed
-    return timelineEntries;
-  }, [timelineEntries, activeFilter]);
+  const {
+    filteredEntries,
+    groupedByEncounter,
+    mobileWorkspaceContext,
+    totalCount,
+  } = useChronicleTimelineViewModel({
+    activeEncounter,
+    activeFilter,
+    chartContextEncounter,
+    encounters,
+    isAllVisitsScope,
+    labResults,
+    medications,
+    patientName,
+    recentVitals,
+    timelineDisplayData,
+  });
 
   const dischargeCaseAdmissionId = useMemo(() => (
     requestedDischargeAdmissionId
@@ -1084,78 +1376,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     requestedDischargeAdmissionId,
     rustV2ActiveAdmissionId,
   ]);
-
-  // Group entries by encounter
-  const groupedByEncounter = useMemo(() => {
-    // Create a map of encounter_id -> encounter details
-    const encounterMap = new Map();
-    if (encounters) {
-      encounters.forEach(enc => {
-        if (enc?.id !== null && enc?.id !== undefined) {
-          encounterMap.set(String(enc.id), enc);
-        }
-      });
-    }
-
-    // Group entries
-    const groups = {
-      encounters: [], // Array of { encounter, entries }
-      unlinked: []    // Entries without an encounter
-    };
-
-    // Temporary map to collect entries by encounter
-    const encounterEntries = new Map();
-
-    filteredEntries.forEach(entry => {
-      const encounterId = normalizeExpansionId(
-        entry.encounter_id
-          || entry.encounter?.id
-          || entry.data?.encounter_id
-          || entry.data?.encounter?.id
-      );
-
-      if (encounterId) {
-        if (!encounterEntries.has(encounterId)) {
-          encounterEntries.set(encounterId, []);
-        }
-        encounterEntries.get(encounterId).push(entry);
-      } else {
-        groups.unlinked.push(entry);
-      }
-    });
-
-    // Convert to array and attach encounter details
-    encounterEntries.forEach((entries, encounterId) => {
-      const sortedEntries = sortEntriesByTimestampDesc(entries);
-      const fallbackTimestamp = getEntryTimestamp(sortedEntries[0]);
-      // Get encounter details from map or from first entry
-      const sourceEncounter = encounterMap.get(encounterId)
-        || sortedEntries[0]?.encounter
-        || {};
-      const encounter = {
-        ...sourceEncounter,
-        id: sourceEncounter.id || encounterId,
-        start_time: getEncounterDisplayStart(sourceEncounter, fallbackTimestamp),
-        end_time: getEncounterDisplayEnd(sourceEncounter),
-      };
-
-      groups.encounters.push({
-        encounter,
-        entries: sortedEntries
-      });
-    });
-
-    // Sort encounters by start_time (most recent first)
-    groups.encounters.sort((a, b) => {
-      const dateA = toTimestampMs(a.encounter.start_time || getEntryTimestamp(a.entries[0])) || 0;
-      const dateB = toTimestampMs(b.encounter.start_time || getEntryTimestamp(b.entries[0])) || 0;
-      return dateB - dateA;
-    });
-
-    groups.unlinked = sortEntriesByTimestampDesc(groups.unlinked);
-
-    return groups;
-  }, [filteredEntries, encounters]);
 
   const expansionSeedKey = `${id}:${resolvedVisitScope || 'pending'}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`;
 
@@ -1262,61 +1482,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const collapseAll = useCallback(() => {
     setExpandedEncounters(new Set());
   }, []);
-
-  // Get total count for display
-  const totalCount = useMemo(() => getTimelineTotalCount(timelineDisplayData), [timelineDisplayData]);
-  const mobileWorkspaceContext = useMemo(() => {
-    const sortedTimelineEntries = sortEntriesByTimestampDesc(timelineEntries);
-    const contextEncounter = chartContextEncounter || activeEncounter || null;
-    const recentNotes = sortedTimelineEntries
-      .filter(isNoteTimelineEntry)
-      .slice(0, 3)
-      .map((entry, index) => ({
-        id: entry.id || `${entry.type || entry.entry_type || 'note'}-${getEntryTimestamp(entry) || index}`,
-        title: getTimelineEntryTitle(entry),
-        kind: entry.type || entry.entry_type || 'note',
-        status: entry.status || entry.data?.status || null,
-        timestamp: getEntryTimestamp(entry),
-      }));
-
-    return {
-      patientName,
-      entryCount: totalCount,
-      visitLabel: isAllVisitsScope
-        ? 'All history'
-        : formatEncounterScopeLabel(contextEncounter, activeEncounter?.id),
-      encounter: contextEncounter ? {
-        id: contextEncounter.id,
-        title: getEncounterTitle(contextEncounter),
-        status: contextEncounter.status || null,
-        dateRange: formatEncounterDateRange(contextEncounter),
-      } : null,
-      latestVitals: recentVitals.slice(0, 6),
-      medications: medications.slice(0, 4).map((medication, index) => ({
-        id: medication.id || medication.medication_id || `${medication.name || medication.medication_name || 'med'}-${index}`,
-        name: medication.name || medication.medication_name || medication.drug_name || 'Medication',
-        detail: compactMedicationDetail(medication),
-      })),
-      labs: labResults.slice(0, 4).map((lab, index) => ({
-        id: lab.id || `${lab.name || 'lab'}-${lab.timestamp || index}`,
-        name: lab.name,
-        detail: compactLabDetail(lab),
-        flag: lab.abnormal_direction || (lab.is_abnormal ? 'abnormal' : null),
-      })),
-      recentNotes,
-      lastUpdated: sortedTimelineEntries[0] ? getEntryTimestamp(sortedTimelineEntries[0]) : null,
-    };
-  }, [
-    activeEncounter,
-    chartContextEncounter,
-    isAllVisitsScope,
-    labResults,
-    medications,
-    patientName,
-    recentVitals,
-    timelineEntries,
-    totalCount,
-  ]);
 
   useEffect(() => {
     if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
@@ -1706,120 +1871,26 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // ============================================
 
   if (accessDenied) {
-    const patientDetails = patient?.local_data || patient;
-    const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
-
     return (
-      <>
-        {pageMeta}
-        <div className="min-h-screen bg-background">
-          <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
-            <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
-              <div className="flex flex-col gap-6">
-                <div className="flex items-center gap-2">
-                  <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
-                    Access Restricted
-                  </span>
-                  {breakGlassExpiresAt && (
-                    <span className="badge-chronicle-amber text-[10px]">
-                      Break-glass active
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <h2 className="font-display text-2xl text-foreground">
-                    Team-based access required
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    This patient record is protected by team-based access controls.
-                    Request break-glass only for urgent clinical need. All access is audited.
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-border/70 bg-background/60 p-4">
-                  <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Patient
-                  </p>
-                  <p className="text-sm text-foreground">
-                    {patientName || "Unknown Patient"}
-                  </p>
-                  {patientMrn && (
-                    <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
-                  )}
-                </div>
-
-                {canRequestBreakGlass ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Button
-                      onClick={() => setBreakGlassOpen(true)}
-                      className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
-                    >
-                      Request Break-Glass Access
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                      Provide a reason to unlock this record for a limited time.
-                    </span>
-                  </div>
-                ) : rustV2Mode ? (
-                  <p className="text-xs text-muted-foreground">
-                    Break-glass access is not available in Rust V2 mode.
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Break-glass access is available to clinical staff only.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {canRequestBreakGlass && (
-            <BreakGlassDialog
-              open={isBreakGlassOpen}
-              onOpenChange={setBreakGlassOpen}
-              patientName={patientName}
-              patientMrn={patientMrn}
-              reason={breakGlassReason}
-              onReasonChange={setBreakGlassReason}
-              onSubmit={handleBreakGlassSubmit}
-              isSubmitting={breakGlassMutation.isPending}
-              ttlMinutes={30}
-            />
-          )}
-        </div>
-      </>
+      <ChronicleAccessDeniedState
+        breakGlassExpiresAt={breakGlassExpiresAt}
+        breakGlassReason={breakGlassReason}
+        canRequestBreakGlass={canRequestBreakGlass}
+        isBreakGlassOpen={isBreakGlassOpen}
+        isSubmitting={breakGlassMutation.isPending}
+        pageMeta={pageMeta}
+        patient={patient}
+        patientName={patientName}
+        rustV2Mode={rustV2Mode}
+        onBreakGlassOpenChange={setBreakGlassOpen}
+        onBreakGlassReasonChange={setBreakGlassReason}
+        onBreakGlassSubmit={handleBreakGlassSubmit}
+      />
     );
   }
 
   if (isLoading || isContextLoading || authLoading) {
-    return (
-      <>
-        {pageMeta}
-        <div className="min-h-screen bg-background">
-          {/* Hero skeleton */}
-          <div className="bg-card border-b border-border px-6 py-8">
-            <Skeleton className="h-12 w-64 mb-4" />
-            <Skeleton className="h-4 w-96 mb-2" />
-            <Skeleton className="h-4 w-48" />
-          </div>
-
-          {/* Content skeleton */}
-          <div className="flex">
-            <div className="w-80 border-r border-border p-6 space-y-6">
-              <Skeleton className="h-40 w-full" />
-              <Skeleton className="h-32 w-full" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-            <div className="flex-1 p-6 space-y-4">
-              <Skeleton className="h-32 w-full" />
-              <Skeleton className="h-32 w-full" />
-              <Skeleton className="h-32 w-full" />
-            </div>
-          </div>
-        </div>
-      </>
-    );
+    return <ChronicleLoadingState pageMeta={pageMeta} />;
   }
 
   // ============================================
@@ -1828,26 +1899,14 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   if (hasGateError) {
     return (
-      <>
-        {pageMeta}
-        <div className="min-h-screen bg-background flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <h2 className="text-2xl font-display text-foreground">
-              Unable to load patient record
-            </h2>
-            <p className="text-muted-foreground">
-              {gateError?.message || 'An error occurred while fetching patient data.'}
-            </p>
-            <Button onClick={() => {
-              refetchPatient();
-              refetchContext();
-            }}>
-              <RefreshCw className="size-4 mr-2" />
-              Try Again
-            </Button>
-          </div>
-        </div>
-      </>
+      <ChronicleErrorState
+        gateError={gateError}
+        pageMeta={pageMeta}
+        onRetry={() => {
+          refetchPatient();
+          refetchContext();
+        }}
+      />
     );
   }
 
