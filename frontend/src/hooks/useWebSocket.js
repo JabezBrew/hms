@@ -4,12 +4,32 @@
  * Provides the notification websocket hook used by the app shell.
  */
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useReducer, useState } from 'react';
 import { NotificationWebSocket } from '@/lib/websocket';
 import { useAuth } from '@/lib/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLatest } from '@/hooks/useLatest';
 import { referralKeys } from '@/hooks/useReferralQueries';
+
+const initialConnectionState = {
+  isConnected: false,
+  connectionError: null,
+};
+
+function connectionReducer(state, action) {
+  switch (action.type) {
+    case 'opened':
+      return { isConnected: true, connectionError: null };
+    case 'closed':
+      return { ...state, isConnected: false };
+    case 'errored':
+      return { ...state, connectionError: action.error };
+    case 'failed':
+      return { ...state, connectionError: new Error('Max reconnection attempts reached') };
+    default:
+      return state;
+  }
+}
 
 /**
  * Hook for subscribing to real-time referral notifications.
@@ -31,30 +51,25 @@ export function useNotificationWebSocket(options = {}) {
   const queryClient = useQueryClient();
 
   const wsRef = useRef(null);
-  const [isConnected, setIsConnected] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [connectionError, setConnectionError] = useState(null);
   const [token, setToken] = useState(null);
+  const [connectionState, dispatchConnectionState] = useReducer(
+    connectionReducer,
+    initialConnectionState,
+  );
 
   // Use ref for callback to prevent effect re-runs
   const onNotificationRef = useLatest(onNotification);
 
   // Only enable for doctors
-  const shouldConnect = enabled && isAuthenticated && token && ['doctor', 'inpatient_doctor'].includes(user?.role);
+  const currentAccessToken = enabled && isAuthenticated ? getAccessToken?.() : null;
+  const activeToken = currentAccessToken || (enabled && isAuthenticated ? token : null);
+  const shouldConnect = Boolean(activeToken && ['doctor', 'inpatient_doctor'].includes(user?.role));
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!enabled || !isAuthenticated) {
-      setToken(null);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    const existingToken = getAccessToken?.();
-    if (existingToken) {
-      setToken(existingToken);
+    if (!enabled || !isAuthenticated || currentAccessToken) {
       return () => {
         isMounted = false;
       };
@@ -76,32 +91,31 @@ export function useNotificationWebSocket(options = {}) {
     return () => {
       isMounted = false;
     };
-  }, [enabled, isAuthenticated, getAccessToken, refreshAccessToken]);
+  }, [enabled, isAuthenticated, currentAccessToken, refreshAccessToken]);
 
   useEffect(() => {
     if (!shouldConnect) {
       return;
     }
 
-    const ws = new NotificationWebSocket(token);
+    const ws = new NotificationWebSocket(activeToken);
     wsRef.current = ws;
 
     // Connection handlers
     const unsubscribeConnectionOpen = ws.on('connection.open', () => {
-      setIsConnected(true);
-      setConnectionError(null);
+      dispatchConnectionState({ type: 'opened' });
     });
 
     const unsubscribeConnectionClose = ws.on('connection.close', () => {
-      setIsConnected(false);
+      dispatchConnectionState({ type: 'closed' });
     });
 
     const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
-      setConnectionError(error);
+      dispatchConnectionState({ type: 'errored', error });
     });
 
     const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
-      setConnectionError(new Error('Max reconnection attempts reached'));
+      dispatchConnectionState({ type: 'failed' });
     });
 
     // Notification handler - use ref to get latest callback without re-running effect
@@ -129,15 +143,15 @@ export function useNotificationWebSocket(options = {}) {
       ws.disconnect();
       wsRef.current = null;
     };
-  }, [shouldConnect, token, queryClient, onNotificationRef]);
+  }, [shouldConnect, activeToken, queryClient, onNotificationRef]);
 
   const clearNotifications = useCallback(() => {
     setNotifications([]);
   }, []);
 
   return {
-    isConnected,
-    connectionError,
+    isConnected: shouldConnect && connectionState.isConnected,
+    connectionError: connectionState.connectionError,
     notifications,
     clearNotifications,
   };
