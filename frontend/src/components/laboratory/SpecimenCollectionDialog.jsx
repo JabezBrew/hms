@@ -27,6 +27,249 @@ import format from "date-fns/format";
 import { toast } from "sonner";
 import { useCreateLabSpecimen, useCollectLabOrder } from "@/features/laboratory/hooks";
 
+const SPECIMEN_TYPES = [
+  { value: "blood", label: "Blood" },
+  { value: "serum", label: "Serum" },
+  { value: "plasma", label: "Plasma" },
+  { value: "urine", label: "Urine" },
+  { value: "stool", label: "Stool" },
+  { value: "sputum", label: "Sputum" },
+  { value: "csf", label: "Cerebrospinal Fluid (CSF)" },
+  { value: "swab", label: "Swab" },
+  { value: "tissue", label: "Tissue" },
+  { value: "other", label: "Other" },
+];
+
+const CONTAINER_TYPES = [
+  { value: "red_top", label: "Red Top (No Additive)" },
+  { value: "lavender_top", label: "Lavender Top (EDTA)" },
+  { value: "green_top", label: "Green Top (Heparin)" },
+  { value: "blue_top", label: "Blue Top (Citrate)" },
+  { value: "yellow_top", label: "Yellow Top (ACD)" },
+  { value: "gray_top", label: "Gray Top (Oxalate/Fluoride)" },
+  { value: "gold_top", label: "Gold/SST (Gel Separator)" },
+  { value: "urine_cup", label: "Urine Cup" },
+  { value: "sterile_container", label: "Sterile Container" },
+  { value: "swab_transport", label: "Swab Transport" },
+  { value: "other", label: "Other" },
+];
+
+function SpecimenCollectionHeader({ orderNumber }) {
+  return (
+    <DialogHeader>
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+          <Droplet className="size-5 text-amber-600 dark:text-amber-400" />
+        </div>
+        <div>
+          <DialogTitle className="font-display text-xl">
+            Collect Specimen
+          </DialogTitle>
+          <DialogDescription className="font-mono text-xs">
+            {orderNumber}
+          </DialogDescription>
+        </div>
+      </div>
+    </DialogHeader>
+  );
+}
+
+function OrderSummary({ order }) {
+  return (
+    <div className="bg-card/50 rounded-lg border border-border p-3 mb-4">
+      <div className="flex justify-between items-start mb-2">
+        <div>
+          <p className="font-display text-sm font-medium">{order?.patient_name}</p>
+          <p className="font-mono text-xs text-muted-foreground">
+            MRN: {order?.patient_mrn}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-muted-foreground">
+            {order?.order_tests?.length || 0} test(s)
+          </p>
+        </div>
+      </div>
+      {order?.fasting_required && (
+        <div className="flex items-center gap-1.5 text-amber-600 text-xs">
+          <AlertCircle className="size-3" />
+          <span>Fasting required - verify with patient</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequiredMarker() {
+  return <span className="text-rose-500">*</span>;
+}
+
+function FieldError({ message }) {
+  if (!message) return null;
+
+  return <p className="text-xs text-rose-500">{message}</p>;
+}
+
+function SpecimenSelectField({
+  id,
+  label,
+  value,
+  error,
+  options,
+  placeholder,
+  onChange,
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id} className="text-sm font-medium">
+        {label} <RequiredMarker />
+      </Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger
+          id={id}
+          className={cn(error && "border-rose-500")}
+        >
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent className="z-[200]">
+          {options.map((type) => (
+            <SelectItem key={type.value} value={type.value}>
+              {type.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FieldError message={error} />
+    </div>
+  );
+}
+
+function TextInputField({
+  id,
+  label,
+  value,
+  placeholder,
+  description,
+  onChange,
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id} className="text-sm font-medium">
+        {label}
+      </Label>
+      <Input
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="font-mono text-sm"
+      />
+      {description && (
+        <p className="text-xs text-muted-foreground">
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CollectionTimeField({ value, error, onChange }) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="collected_at" className="text-sm font-medium">
+        Collection Time <RequiredMarker />
+      </Label>
+      <Input
+        id="collected_at"
+        type="datetime-local"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={cn(
+          "font-mono text-sm",
+          error && "border-rose-500"
+        )}
+      />
+      <FieldError message={error} />
+    </div>
+  );
+}
+
+function SpecimenCollectionFields({ formData, errors, onChange }) {
+  return (
+    <div className="space-y-4">
+      <SpecimenSelectField
+        id="specimen_type"
+        label="Specimen Type"
+        value={formData.specimen_type}
+        error={errors.specimen_type}
+        options={SPECIMEN_TYPES}
+        placeholder="Select specimen type"
+        onChange={(value) => onChange("specimen_type", value)}
+      />
+      <SpecimenSelectField
+        id="container_type"
+        label="Container Type"
+        value={formData.container_type}
+        error={errors.container_type}
+        options={CONTAINER_TYPES}
+        placeholder="Select container type"
+        onChange={(value) => onChange("container_type", value)}
+      />
+      <TextInputField
+        id="collection_site"
+        label="Collection Site"
+        value={formData.collection_site}
+        placeholder="e.g., Left antecubital fossa"
+        description="Anatomical site where specimen was collected"
+        onChange={(value) => onChange("collection_site", value)}
+      />
+      <TextInputField
+        id="volume_collected"
+        label="Volume Collected"
+        value={formData.volume_collected}
+        placeholder="e.g., 5 mL"
+        onChange={(value) => onChange("volume_collected", value)}
+      />
+      <CollectionTimeField
+        value={formData.collected_at}
+        error={errors.collected_at}
+        onChange={(value) => onChange("collected_at", value)}
+      />
+    </div>
+  );
+}
+
+function SpecimenCollectionFooter({ isSubmitting, onCancel, onSubmit }) {
+  return (
+    <DialogFooter className="mt-6">
+      <Button
+        variant="outline"
+        onClick={onCancel}
+        disabled={isSubmitting}
+      >
+        Cancel
+      </Button>
+      <Button
+        onClick={onSubmit}
+        disabled={isSubmitting}
+        className="bg-amber-600 hover:bg-amber-700 text-white"
+      >
+        {isSubmitting ? (
+          <>
+            <Loader2 className="size-4 mr-2 animate-spin" />
+            Collecting…
+          </>
+        ) : (
+          <>
+            <Droplet className="size-4 mr-2" />
+            Collect Specimen
+          </>
+        )}
+      </Button>
+    </DialogFooter>
+  );
+}
+
 /**
  * SpecimenCollectionDialog - Dialog for recording specimen collection
  *
@@ -55,35 +298,6 @@ const SpecimenCollectionDialog = ({
 
   const createSpecimenMutation = useCreateLabSpecimen();
   const collectOrderMutation = useCollectLabOrder();
-
-  // Common specimen types
-  const specimenTypes = [
-    { value: "blood", label: "Blood" },
-    { value: "serum", label: "Serum" },
-    { value: "plasma", label: "Plasma" },
-    { value: "urine", label: "Urine" },
-    { value: "stool", label: "Stool" },
-    { value: "sputum", label: "Sputum" },
-    { value: "csf", label: "Cerebrospinal Fluid (CSF)" },
-    { value: "swab", label: "Swab" },
-    { value: "tissue", label: "Tissue" },
-    { value: "other", label: "Other" },
-  ];
-
-  // Common container types
-  const containerTypes = [
-    { value: "red_top", label: "Red Top (No Additive)" },
-    { value: "lavender_top", label: "Lavender Top (EDTA)" },
-    { value: "green_top", label: "Green Top (Heparin)" },
-    { value: "blue_top", label: "Blue Top (Citrate)" },
-    { value: "yellow_top", label: "Yellow Top (ACD)" },
-    { value: "gray_top", label: "Gray Top (Oxalate/Fluoride)" },
-    { value: "gold_top", label: "Gold/SST (Gel Separator)" },
-    { value: "urine_cup", label: "Urine Cup" },
-    { value: "sterile_container", label: "Sterile Container" },
-    { value: "swab_transport", label: "Swab Transport" },
-    { value: "other", label: "Other" },
-  ];
 
   // Validate form
   const validateForm = () => {
@@ -147,7 +361,7 @@ const SpecimenCollectionDialog = ({
   };
 
   // Handle input change
-  const handleChange = (field, value) => {
+  const updateSpecimenField = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear error when field is updated
     if (errors[field]) {
@@ -160,181 +374,18 @@ const SpecimenCollectionDialog = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-              <Droplet className="size-5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div>
-              <DialogTitle className="font-display text-xl">
-                Collect Specimen
-              </DialogTitle>
-              <DialogDescription className="font-mono text-xs">
-                {order?.order_number}
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        {/* Order Summary */}
-        <div className="bg-card/50 rounded-lg border border-border p-3 mb-4">
-          <div className="flex justify-between items-start mb-2">
-            <div>
-              <p className="font-display text-sm font-medium">{order?.patient_name}</p>
-              <p className="font-mono text-xs text-muted-foreground">
-                MRN: {order?.patient_mrn}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">
-                {order?.order_tests?.length || 0} test(s)
-              </p>
-            </div>
-          </div>
-          {order?.fasting_required && (
-            <div className="flex items-center gap-1.5 text-amber-600 text-xs">
-              <AlertCircle className="size-3" />
-              <span>Fasting required - verify with patient</span>
-            </div>
-          )}
-        </div>
-
-        {/* Form */}
-        <div className="space-y-4">
-          {/* Specimen Type */}
-          <div className="space-y-2">
-            <Label htmlFor="specimen_type" className="text-sm font-medium">
-              Specimen Type <span className="text-rose-500">*</span>
-            </Label>
-            <Select
-              value={formData.specimen_type}
-              onValueChange={(value) => handleChange("specimen_type", value)}
-            >
-              <SelectTrigger
-                id="specimen_type"
-                className={cn(errors.specimen_type && "border-rose-500")}
-              >
-                <SelectValue placeholder="Select specimen type" />
-              </SelectTrigger>
-              <SelectContent className="z-[200]">
-                {specimenTypes.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.specimen_type && (
-              <p className="text-xs text-rose-500">{errors.specimen_type}</p>
-            )}
-          </div>
-
-          {/* Container Type */}
-          <div className="space-y-2">
-            <Label htmlFor="container_type" className="text-sm font-medium">
-              Container Type <span className="text-rose-500">*</span>
-            </Label>
-            <Select
-              value={formData.container_type}
-              onValueChange={(value) => handleChange("container_type", value)}
-            >
-              <SelectTrigger
-                id="container_type"
-                className={cn(errors.container_type && "border-rose-500")}
-              >
-                <SelectValue placeholder="Select container type" />
-              </SelectTrigger>
-              <SelectContent className="z-[200]">
-                {containerTypes.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.container_type && (
-              <p className="text-xs text-rose-500">{errors.container_type}</p>
-            )}
-          </div>
-
-          {/* Collection Site */}
-          <div className="space-y-2">
-            <Label htmlFor="collection_site" className="text-sm font-medium">
-              Collection Site
-            </Label>
-            <Input
-              id="collection_site"
-              value={formData.collection_site}
-              onChange={(e) => handleChange("collection_site", e.target.value)}
-              placeholder="e.g., Left antecubital fossa"
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Anatomical site where specimen was collected
-            </p>
-          </div>
-
-          {/* Volume Collected */}
-          <div className="space-y-2">
-            <Label htmlFor="volume_collected" className="text-sm font-medium">
-              Volume Collected
-            </Label>
-            <Input
-              id="volume_collected"
-              value={formData.volume_collected}
-              onChange={(e) => handleChange("volume_collected", e.target.value)}
-              placeholder="e.g., 5 mL"
-              className="font-mono text-sm"
-            />
-          </div>
-
-          {/* Collection Time */}
-          <div className="space-y-2">
-            <Label htmlFor="collected_at" className="text-sm font-medium">
-              Collection Time <span className="text-rose-500">*</span>
-            </Label>
-            <Input
-              id="collected_at"
-              type="datetime-local"
-              value={formData.collected_at}
-              onChange={(e) => handleChange("collected_at", e.target.value)}
-              className={cn(
-                "font-mono text-sm",
-                errors.collected_at && "border-rose-500"
-              )}
-            />
-            {errors.collected_at && (
-              <p className="text-xs text-rose-500">{errors.collected_at}</p>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter className="mt-6">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="bg-amber-600 hover:bg-amber-700 text-white"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
-                Collecting…
-              </>
-            ) : (
-              <>
-                <Droplet className="size-4 mr-2" />
-                Collect Specimen
-              </>
-            )}
-          </Button>
-        </DialogFooter>
+        <SpecimenCollectionHeader orderNumber={order?.order_number} />
+        <OrderSummary order={order} />
+        <SpecimenCollectionFields
+          formData={formData}
+          errors={errors}
+          onChange={updateSpecimenField}
+        />
+        <SpecimenCollectionFooter
+          isSubmitting={isSubmitting}
+          onCancel={() => onOpenChange(false)}
+          onSubmit={handleSubmit}
+        />
       </DialogContent>
     </Dialog>
   );
