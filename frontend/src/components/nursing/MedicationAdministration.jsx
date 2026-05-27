@@ -614,6 +614,12 @@ export function MedicationAdministration({ patient }) {
   );
 }
 
+function handleKeyboardActivation(event, onActivate) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  onActivate();
+}
+
 // Medication Card Component
 function MedicationCard({ medication, onAdminister, getStatusBadge, formatTime, isOverdue, isDueSoon }) {
   const isUrgent = isOverdue(medication.scheduled_time);
@@ -626,6 +632,9 @@ function MedicationCard({ medication, onAdminister, getStatusBadge, formatTime, 
         isDue ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/20' : ''
       }`}
       onClick={onAdminister}
+      onKeyDown={(event) => handleKeyboardActivation(event, onAdminister)}
+      role="button"
+      tabIndex={0}
     >
       <div className="flex justify-between items-start">
         <div>

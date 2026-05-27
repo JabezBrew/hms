@@ -299,10 +299,20 @@ const InboxPage = () => {
                         ? 'bg-primary'
                         : 'bg-muted-foreground/50';
 
+                      const handleMessageKeyDown = (event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        handleClick();
+                      };
+
                       return (
-                        <article
+                        <div
                           key={item.id}
                           onClick={handleClick}
+                          onKeyDown={handleMessageKeyDown}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open inbox item ${item.title}`}
                           className={cn(
                             "relative pl-12 cursor-pointer group",
                             "animate-chronicle-enter",
@@ -401,7 +411,7 @@ const InboxPage = () => {
                               </div>
                             </div>
                           </div>
-                        </article>
+                        </div>
                       );
                     })}
                   </div>

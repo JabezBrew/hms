@@ -646,8 +646,14 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
   const typeConfig = getTypeConfig(encounter.encounter_type);
   const TypeIcon = typeConfig.icon;
 
+  const handleKeyDown = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onClick();
+  };
+
   return (
-    <article
+    <div
       className={cn(
         "group relative bg-card/50 border border-border rounded-xl p-5",
         "hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]",
@@ -656,6 +662,10 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
       )}
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`View encounter for ${encounter.patient_name || 'unknown patient'}`}
     >
       {statusConfig.ribbon && <div className={cn("status-ribbon", statusConfig.ribbon)} />}
 
@@ -709,6 +719,6 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
           <ChevronRight className="size-3 ml-1" />
         </Button>
       </div>
-    </article>
+    </div>
   );
 }

@@ -469,14 +469,20 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
     }
   };
 
+  const interactiveProps = onClick
+    ? {
+        onClick,
+        onKeyDown: handleKeyDown,
+        tabIndex: 0,
+        role: 'button',
+        'aria-pressed': active,
+        'aria-label': `Filter by ${label}: ${value}`,
+      }
+    : {};
+
   return (
     <div
-      onClick={onClick}
-      onKeyDown={handleKeyDown}
-      tabIndex={onClick ? 0 : undefined}
-      role={onClick ? "button" : undefined}
-      aria-pressed={onClick ? active : undefined}
-      aria-label={onClick ? `Filter by ${label}: ${value}` : undefined}
+      {...interactiveProps}
       className={cn(
         "rounded-xl p-4 border border-border/50 transition-all",
         onClick && "cursor-pointer hover:border-border hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",

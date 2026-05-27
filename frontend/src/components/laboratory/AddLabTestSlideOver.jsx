@@ -389,18 +389,29 @@ const AddLabTestSlideOver = ({
                     No tests available. Create some tests first.
                   </div>
                 ) : (
-                  tests.map((test) => (
-                    <div
-                      key={test.id}
-                      className={cn(
-                        "flex items-center gap-3 p-3 border-b border-border/50 last:border-0",
-                        "hover:bg-muted/30 cursor-pointer",
-                        panelForm.tests.includes(test.id) && "bg-amber-50 dark:bg-amber-900/20"
-                      )}
-                      onClick={() => handleTestToggle(test.id)}
-                    >
+                  tests.map((test) => {
+                    const isSelected = panelForm.tests.includes(test.id);
+
+                    return (
+                      <div
+                        key={test.id}
+                        className={cn(
+                          "flex items-center gap-3 p-3 border-b border-border/50 last:border-0",
+                          "hover:bg-muted/30 cursor-pointer",
+                          isSelected && "bg-amber-50 dark:bg-amber-900/20"
+                        )}
+                        onClick={() => handleTestToggle(test.id)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return;
+                          event.preventDefault();
+                          handleTestToggle(test.id);
+                        }}
+                        role="checkbox"
+                        tabIndex={0}
+                        aria-checked={isSelected}
+                      >
                       <Checkbox
-                        checked={panelForm.tests.includes(test.id)}
+                        checked={isSelected}
                         onCheckedChange={() => handleTestToggle(test.id)}
                         onClick={(e) => e.stopPropagation()}
                       />
@@ -410,8 +421,9 @@ const AddLabTestSlideOver = ({
                           {test.loinc_code || test.category}
                         </p>
                       </div>
-                    </div>
-                  ))
+                      </div>
+                    );
+                  })
                 )}
               </div>
               <p className="text-xs text-muted-foreground">

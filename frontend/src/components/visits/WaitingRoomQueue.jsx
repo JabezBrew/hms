@@ -133,12 +133,13 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
                 <ActionCard
                   key={visit.encounter_id}
                   title={
-                    <span
-                      className="cursor-pointer hover:underline"
+                    <button
+                      type="button"
+                      className="cursor-pointer bg-transparent p-0 text-left hover:underline"
                       onClick={() => handlePatientClick(visit)}
                     >
                       #{visit.queue_number} {visit.patient_name}
-                    </span>
+                    </button>
                   }
                   status="stable"
                   badges={[
@@ -176,12 +177,13 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
                 <ActionCard
                   key={visit.encounter_id}
                   title={
-                    <span
-                      className="cursor-pointer hover:underline"
+                    <button
+                      type="button"
+                      className="cursor-pointer bg-transparent p-0 text-left hover:underline"
                       onClick={() => handlePatientClick(visit)}
                     >
                       #{visit.queue_number} {visit.patient_name}
-                    </span>
+                    </button>
                   }
                   status="warning"
                   badges={[
@@ -219,12 +221,13 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
                 <ActionCard
                   key={visit.encounter_id}
                   title={
-                    <span
-                      className="cursor-pointer hover:underline"
+                    <button
+                      type="button"
+                      className="cursor-pointer bg-transparent p-0 text-left hover:underline"
                       onClick={() => handlePatientClick(visit)}
                     >
                       #{visit.queue_number} {visit.patient_name}
-                    </span>
+                    </button>
                   }
                   status="info"
                   badges={[

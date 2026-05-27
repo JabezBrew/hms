@@ -214,13 +214,23 @@ const StaffChronicleCard = ({
     }
   };
 
+  const handleViewProfileKeyDown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    handleViewProfile();
+  };
+
   // ============================================
   // Render
   // ============================================
 
   return (
-    <article
+    <div
       onClick={handleViewProfile}
+      onKeyDown={handleViewProfileKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`View staff profile for ${displayName}`}
       className={cn(
         "group relative bg-card/50 backdrop-blur border border-border",
         "rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer",
@@ -273,7 +283,7 @@ const StaffChronicleCard = ({
             Position
           </dt>
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm truncate">
-            {position || <span className="text-muted-foreground">—</span>}
+            {position || <span className="text-muted-foreground">Not set</span>}
           </dd>
         </div>
         <div className="min-w-0">
@@ -281,7 +291,7 @@ const StaffChronicleCard = ({
             Since
           </dt>
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm">
-            {hireDate || <span className="text-muted-foreground">—</span>}
+            {hireDate || <span className="text-muted-foreground">Not set</span>}
           </dd>
         </div>
         <div className="min-w-0">
@@ -289,7 +299,7 @@ const StaffChronicleCard = ({
             Tenure
           </dt>
           <dd className="text-foreground/90 font-medium text-xs sm:text-sm">
-            {tenure || <span className="text-muted-foreground">—</span>}
+            {tenure || <span className="text-muted-foreground">Not set</span>}
           </dd>
         </div>
       </div>
@@ -350,7 +360,7 @@ const StaffChronicleCard = ({
           )}
         </div>
       </footer>
-    </article>
+    </div>
   );
 };
 

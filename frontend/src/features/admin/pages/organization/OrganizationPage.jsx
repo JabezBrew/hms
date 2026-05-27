@@ -71,6 +71,12 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
     onToggleExpand(node.id);
   };
 
+  const handleSelectKeyDown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    onSelect(node.id);
+  };
+
   return (
     <div>
       <div
@@ -82,6 +88,11 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
         )}
         style={{ paddingLeft: `${level * 20 + 12}px` }}
         onClick={() => onSelect(node.id)}
+        onKeyDown={handleSelectKeyDown}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isSelected}
+        aria-expanded={hasChildren ? isExpanded : undefined}
       >
         {/* Expand/Collapse Toggle */}
         <button
@@ -808,8 +819,10 @@ export default function OrganizationPage() {
 
       {/* Backdrop */}
       {showUnitForm && (
-        <div
-          className="fixed inset-0 z-[99] bg-black/10"
+        <button
+          type="button"
+          aria-label="Close unit form"
+          className="fixed inset-0 z-[99] border-0 bg-black/10 p-0"
           onClick={closeUnitForm}
         />
       )}

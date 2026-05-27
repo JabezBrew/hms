@@ -23,6 +23,12 @@ import VirtualizedList from '@/components/ui/VirtualizedList';
 
 import { useWardSections } from '@/features/wards/hooks/useWardQueries';
 
+function handleKeyboardActivation(event, onActivate) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  onActivate();
+}
+
 /**
  * WardBedLayout - Chronicle-style bed visualization
  *
@@ -322,6 +328,9 @@ function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                       <TooltipTrigger asChild>
                         <div
                           onClick={() => onBedClick(bed.id)}
+                          onKeyDown={(event) => handleKeyboardActivation(event, () => onBedClick(bed.id))}
+                          role="button"
+                          tabIndex={0}
                           className={cn(
                             "relative rounded-xl border-2 p-4 cursor-pointer transition-all duration-200",
                             "hover:shadow-lg hover:-translate-y-0.5",
@@ -433,6 +442,9 @@ function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabel
                 return (
                   <div
                     onClick={() => onBedClick(bed.id)}
+                    onKeyDown={(event) => handleKeyboardActivation(event, () => onBedClick(bed.id))}
+                    role="button"
+                    tabIndex={0}
                     className={cn(
                       "flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all",
                       "hover:shadow-md hover:border-border",

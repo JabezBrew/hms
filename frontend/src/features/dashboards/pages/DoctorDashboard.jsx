@@ -249,18 +249,19 @@ export default function DoctorDashboard() {
 
             <div className="flex items-center justify-between">
               <div className="space-y-3">
-                <h2
-                  tabIndex={canUsePatientChronicle ? 0 : undefined}
-                  role={canUsePatientChronicle ? 'button' : undefined}
-                  aria-label={canUsePatientChronicle ? `View patient ${data.current_patient.patient_name}` : undefined}
-                  className={cn(
-                    'font-display text-3xl text-foreground',
-                    canUsePatientChronicle && 'cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline',
+                <h2 className="font-display text-3xl text-foreground">
+                  {canUsePatientChronicle ? (
+                    <button
+                      type="button"
+                      aria-label={`View patient ${data.current_patient.patient_name}`}
+                      className="cursor-pointer bg-transparent p-0 text-left [font:inherit] hover:text-primary focus:outline-none focus-visible:underline"
+                      onClick={() => handleViewPatient(data.current_patient.patient_id)}
+                    >
+                      {data.current_patient.patient_name}
+                    </button>
+                  ) : (
+                    data.current_patient.patient_name
                   )}
-                  onClick={canUsePatientChronicle ? () => handleViewPatient(data.current_patient.patient_id) : undefined}
-                  onKeyDown={canUsePatientChronicle ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewPatient(data.current_patient.patient_id); } } : undefined}
-                >
-                  {data.current_patient.patient_name}
                 </h2>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   {data.current_patient.reason && (
@@ -423,18 +424,19 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <h3
-              tabIndex={onViewPatient ? 0 : undefined}
-              role={onViewPatient ? 'button' : undefined}
-              aria-label={onViewPatient ? `View patient ${appointment.patient_name}` : undefined}
-              className={cn(
-                'font-display text-xl text-foreground',
-                onViewPatient && 'cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline',
+            <h3 className="font-display text-xl text-foreground">
+              {onViewPatient ? (
+                <button
+                  type="button"
+                  aria-label={`View patient ${appointment.patient_name}`}
+                  className="cursor-pointer bg-transparent p-0 text-left [font:inherit] hover:text-primary focus:outline-none focus-visible:underline"
+                  onClick={onViewPatient}
+                >
+                  {appointment.patient_name}
+                </button>
+              ) : (
+                appointment.patient_name
               )}
-              onClick={onViewPatient}
-              onKeyDown={onViewPatient ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } } : undefined}
-            >
-              {appointment.patient_name}
             </h3>
             <span className={badge.class}>{badge.label}</span>
           </div>
@@ -471,15 +473,29 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
  * CompletedCard - Completed appointment card (muted)
  */
 function CompletedCard({ appointment, index, onViewPatient }) {
+  const interactiveProps = onViewPatient
+    ? {
+        onClick: onViewPatient,
+        onKeyDown: (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          onViewPatient();
+        },
+        role: 'button',
+        tabIndex: 0,
+        'aria-label': `View patient ${appointment.patient_name}`,
+      }
+    : {};
+
   return (
-    <article
+    <div
       className={cn(
         "bg-card/30 border border-border rounded-xl p-4 opacity-60",
         onViewPatient && "hover:opacity-80 transition-opacity cursor-pointer",
         "animate-chronicle-enter"
       )}
       style={{ animationDelay: `${(index + 5) * 50}ms` }}
-      onClick={onViewPatient}
+      {...interactiveProps}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -495,7 +511,7 @@ function CompletedCard({ appointment, index, onViewPatient }) {
         </div>
         <span className="badge-chronicle-emerald">Completed</span>
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -524,18 +540,19 @@ function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCa
             <span className="font-mono text-sm text-muted-foreground">
               #{visit.queue_number}
             </span>
-            <h3
-              tabIndex={onViewPatient ? 0 : undefined}
-              role={onViewPatient ? 'button' : undefined}
-              aria-label={onViewPatient ? `View patient ${visit.patient_name}` : undefined}
-              className={cn(
-                'font-display text-xl text-foreground',
-                onViewPatient && 'cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline',
+            <h3 className="font-display text-xl text-foreground">
+              {onViewPatient ? (
+                <button
+                  type="button"
+                  aria-label={`View patient ${visit.patient_name}`}
+                  className="cursor-pointer bg-transparent p-0 text-left [font:inherit] hover:text-primary focus:outline-none focus-visible:underline"
+                  onClick={onViewPatient}
+                >
+                  {visit.patient_name}
+                </button>
+              ) : (
+                visit.patient_name
               )}
-              onClick={onViewPatient}
-              onKeyDown={onViewPatient ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } } : undefined}
-            >
-              {visit.patient_name}
             </h3>
             <span className={cn(
               "text-xs font-mono px-2 py-0.5 rounded",

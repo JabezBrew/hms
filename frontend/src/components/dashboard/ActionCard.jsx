@@ -62,6 +62,16 @@ export default function ActionCard({
     }
   };
 
+  const interactiveProps = onClick
+    ? {
+        onClick,
+        onKeyDown: handleKeyDown,
+        tabIndex: 0,
+        role: 'button',
+        'aria-label': title,
+      }
+    : {};
+
   return (
     <div
       className={cn(
@@ -74,11 +84,7 @@ export default function ActionCard({
         'animate-chronicle-enter',
         className
       )}
-      onClick={onClick}
-      onKeyDown={handleKeyDown}
-      tabIndex={onClick ? 0 : undefined}
-      role={onClick ? "button" : undefined}
-      aria-label={onClick ? title : undefined}
+      {...interactiveProps}
     >
       {/* Status ribbon */}
       {status && (

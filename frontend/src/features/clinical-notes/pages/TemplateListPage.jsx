@@ -458,9 +458,19 @@ export default function TemplateListPage() {
  * TemplateCard - Chronicle-style template card
  */
 function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onDelete }) {
+  const handleViewKeyDown = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onView();
+  };
+
   return (
-    <article
+    <div
       onClick={onView}
+      onKeyDown={handleViewKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`View template ${template.title}`}
       className={cn(
         "group relative bg-card/50 backdrop-blur border border-border",
         "rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer",
@@ -575,7 +585,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
           </Button>
         </div>
       </footer>
-    </article>
+    </div>
   );
 }
 

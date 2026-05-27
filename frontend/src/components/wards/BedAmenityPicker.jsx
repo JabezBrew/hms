@@ -161,6 +161,14 @@ export function BedAmenityPicker({
                             isSelected && 'bg-amber-50 hover:bg-amber-100'
                           )}
                           onClick={() => handleToggle(amenity.id)}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter' && event.key !== ' ') return;
+                            event.preventDefault();
+                            handleToggle(amenity.id);
+                          }}
+                          role="checkbox"
+                          tabIndex={0}
+                          aria-checked={isSelected}
                         >
                           <Checkbox
                             checked={isSelected}

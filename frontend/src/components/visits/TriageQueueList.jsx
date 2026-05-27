@@ -118,12 +118,13 @@ export function TriageQueueList({
             <span
               className={`size-2 rounded-full ${priorityConfig.indicator}`}
             />
-            <span
-              className="cursor-pointer hover:underline"
+            <button
+              type="button"
+              className="cursor-pointer bg-transparent p-0 text-left hover:underline"
               onClick={() => handlePatientClick(entry)}
             >
               {entry.patient_name}
-            </span>
+            </button>
           </div>
         }
         subtitle={entry.chief_complaint || 'No chief complaint provided'}
