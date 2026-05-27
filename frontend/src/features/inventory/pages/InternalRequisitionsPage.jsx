@@ -248,37 +248,14 @@ function InternalRequisitionCard({
   );
 }
 
-/**
- * InternalRequisitionsPage - Internal department requisitions page
- */
-export default function InternalRequisitionsPage() {
+function useInternalRequisitionFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
-
   const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [selectedRequisitionId, setSelectedRequisitionId] = useState(null);
+
   const status = searchParams.get('status') || 'all';
   const location = searchParams.get('location') || '';
   const page = parseInt(searchParams.get('page') || '1', 10);
-
   const debouncedSearch = useDebounce(search, 300);
-
-  const queryParams = {
-    page,
-    page_size: 20,
-    ...(debouncedSearch && { search: debouncedSearch }),
-    ...(status !== 'all' && { status }),
-    ...(location && { requesting_location: location }),
-  };
-
-  const { data: requisitionsData, isLoading, error, refetch } = useInternalRequisitions(queryParams);
-  const { data: locationsData } = useStorageLocations();
-
-  const requisitions = requisitionsData?.results || [];
-  const totalCount = requisitionsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
-  const locations = locationsData?.results || locationsData || [];
-
-  const handleSearchChange = (e) => setSearch(e.target.value);
 
   useEffect(() => {
     setSearchParams((prev) => {
@@ -326,13 +303,128 @@ export default function InternalRequisitionsPage() {
     setSearchParams({});
   };
 
-  const hasActiveFilters = debouncedSearch || status !== 'all' || location;
+  return {
+    search,
+    status,
+    location,
+    page,
+    queryParams: {
+      page,
+      page_size: 20,
+      ...(debouncedSearch && { search: debouncedSearch }),
+      ...(status !== 'all' && { status }),
+      ...(location && { requesting_location: location }),
+    },
+    hasActiveFilters: debouncedSearch || status !== 'all' || location,
+    setSearch,
+    handleTabChange,
+    handleLocationChange,
+    handlePageChange,
+    clearFilters,
+  };
+}
 
-  const handleClick = (id) => setSelectedRequisitionId(id);
-  const handleApprove = (id) => setSelectedRequisitionId(id);
-  const handleFulfill = (id) => setSelectedRequisitionId(id);
+function InternalRequisitionsHeader({ totalCount, isLoading, onRefresh }) {
+  return (
+    <PageHeader
+      title="Internal Requisitions"
+      description={`${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
+      actions={(
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onRefresh}>
+            <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+        </div>
+      )}
+    />
+  );
+}
 
-  const requisitionColumns = [
+function InternalRequisitionsLoadingState() {
+  return (
+    <PageState variant="loading" fullHeight={false} className="space-y-6">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="h-10 w-40" />
+      </div>
+      <Skeleton className="h-10 w-full max-w-xl" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[...Array(6)].map((_, i) => (
+          <Card key={i} className="bg-card/30 border-border/50">
+            <CardContent className="p-4">
+              <Skeleton className="h-4 w-24 mb-3" />
+              <Skeleton className="h-5 w-20 mb-3" />
+              <Skeleton className="h-4 w-full mb-2" />
+              <Skeleton className="h-4 w-2/3" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </PageState>
+  );
+}
+
+function InternalRequisitionStatusTabs({ status, onTabChange }) {
+  return (
+    <Tabs value={status} onValueChange={onTabChange}>
+      <TabsList className="w-full sm:w-auto">
+        {STATUS_TABS.map((tab) => (
+          <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
+            {tab.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function InternalRequisitionFilters({
+  search,
+  location,
+  locations,
+  hasActiveFilters,
+  onSearchChange,
+  onLocationChange,
+  onClearFilters,
+}) {
+  return (
+    <div className="flex flex-col lg:flex-row gap-3">
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by number..."
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          className="pl-9 font-mono text-sm"
+        />
+      </div>
+
+      <Select value={location || 'all'} onValueChange={onLocationChange}>
+        <SelectTrigger className="w-full lg:w-[200px] font-mono text-sm">
+          <Filter className="size-4 mr-2 text-muted-foreground" />
+          <SelectValue placeholder="Location" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Locations</SelectItem>
+          {locations.map((loc) => (
+            <SelectItem key={loc.id} value={loc.id.toString()}>{loc.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {hasActiveFilters && (
+        <Button variant="ghost" size="sm" onClick={onClearFilters} className="text-muted-foreground">
+          <X className="size-4 mr-1" />
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function createRequisitionColumns({ onOpen, onApprove, onFulfill }) {
+  return [
     {
       key: 'number',
       header: 'Requisition #',
@@ -396,9 +488,9 @@ export default function InternalRequisitionsPage() {
             className="h-8 px-2 text-xs"
             onClick={(event) => {
               event.stopPropagation();
-              if (req.status === 'pending_approval') handleApprove(req.id);
-              else if (['approved', 'in_progress'].includes(req.status)) handleFulfill(req.id);
-              else handleClick(req.id);
+              if (req.status === 'pending_approval') onApprove(req.id);
+              else if (['approved', 'in_progress'].includes(req.status)) onFulfill(req.id);
+              else onOpen(req.id);
             }}
           >
             {req.status === 'pending_approval'
@@ -411,29 +503,104 @@ export default function InternalRequisitionsPage() {
       ),
     },
   ];
+}
+
+function InternalRequisitionsTable({
+  requisitions,
+  columns,
+  hasActiveFilters,
+  onOpen,
+}) {
+  if (requisitions.length === 0) {
+    return (
+      <div className="bg-card/50 border rounded-2xl p-12 text-center">
+        <ClipboardList className="size-10 text-muted-foreground/50 mx-auto mb-3" />
+        <h3 className="font-display text-xl mb-2">No Requisitions Found</h3>
+        <p className="text-muted-foreground text-sm mb-4">
+          {hasActiveFilters ? 'Try adjusting your filters' : 'Ward stock requests will appear here after submission'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <VirtualizedTable
+        rows={requisitions}
+        rowKey={(req) => req.id}
+        rowHeight={68}
+        columns={columns}
+        onRowClick={(req) => onOpen(req.id)}
+        rowClassName="hover:bg-muted/30"
+        className="min-w-[1100px]"
+        headerClassName="bg-muted/50 border-b border-border"
+      />
+    </div>
+  );
+}
+
+function InternalRequisitionsPagination({ page, totalPages, onPageChange }) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center justify-between pt-4 border-t">
+      <p className="font-mono text-xs text-muted-foreground">
+        Page {page} of {totalPages}
+      </p>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+          <ChevronLeft className="size-4 mr-1" />
+          Previous
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+          Next
+          <ChevronRight className="size-4 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * InternalRequisitionsPage - Internal department requisitions page
+ */
+export default function InternalRequisitionsPage() {
+  const [selectedRequisitionId, setSelectedRequisitionId] = useState(null);
+  const {
+    search,
+    status,
+    location,
+    page,
+    queryParams,
+    hasActiveFilters,
+    setSearch,
+    handleTabChange,
+    handleLocationChange,
+    handlePageChange,
+    clearFilters,
+  } = useInternalRequisitionFilters();
+
+  const { data: requisitionsData, isLoading, error, refetch } = useInternalRequisitions(queryParams);
+  const { data: locationsData } = useStorageLocations();
+
+  const requisitions = requisitionsData?.results || [];
+  const totalCount = requisitionsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / 20);
+  const locations = locationsData?.results || locationsData || [];
+
+  const handleClick = (id) => setSelectedRequisitionId(id);
+  const handleApprove = (id) => setSelectedRequisitionId(id);
+  const handleFulfill = (id) => setSelectedRequisitionId(id);
+  const requisitionColumns = createRequisitionColumns({
+    onOpen: handleClick,
+    onApprove: handleApprove,
+    onFulfill: handleFulfill,
+  });
 
   if (isLoading) {
-    return (
-      <PageState variant="loading" fullHeight={false} className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-9 w-56" />
-          <Skeleton className="h-10 w-40" />
-        </div>
-        <Skeleton className="h-10 w-full max-w-xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <Card key={i} className="bg-card/30 border-border/50">
-              <CardContent className="p-4">
-                <Skeleton className="h-4 w-24 mb-3" />
-                <Skeleton className="h-5 w-20 mb-3" />
-                <Skeleton className="h-4 w-full mb-2" />
-                <Skeleton className="h-4 w-2/3" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </PageState>
-    );
+    return <InternalRequisitionsLoadingState />;
   }
 
   if (error) {
@@ -449,103 +616,40 @@ export default function InternalRequisitionsPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Internal Requisitions"
-        description={`${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
-        actions={(
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
-              Refresh
-            </Button>
-          </div>
-        )}
+      <InternalRequisitionsHeader
+        totalCount={totalCount}
+        isLoading={isLoading}
+        onRefresh={refetch}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
+        <InternalRequisitionStatusTabs
+          status={status}
+          onTabChange={handleTabChange}
+        />
 
-      <Tabs value={status} onValueChange={handleTabChange}>
-        <TabsList className="w-full sm:w-auto">
-          {STATUS_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+        <InternalRequisitionFilters
+          search={search}
+          location={location}
+          locations={locations}
+          hasActiveFilters={hasActiveFilters}
+          onSearchChange={setSearch}
+          onLocationChange={handleLocationChange}
+          onClearFilters={clearFilters}
+        />
 
-      <div className="flex flex-col lg:flex-row gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by number..."
-            value={search}
-            onChange={handleSearchChange}
-            className="pl-9 font-mono text-sm"
-          />
-        </div>
+        <InternalRequisitionsTable
+          requisitions={requisitions}
+          columns={requisitionColumns}
+          hasActiveFilters={hasActiveFilters}
+          onOpen={handleClick}
+        />
 
-        <Select value={location || 'all'} onValueChange={handleLocationChange}>
-          <SelectTrigger className="w-full lg:w-[200px] font-mono text-sm">
-            <Filter className="size-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Location" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Locations</SelectItem>
-            {locations.map((loc) => (
-              <SelectItem key={loc.id} value={loc.id.toString()}>{loc.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-            <X className="size-4 mr-1" />
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {requisitions.length > 0 ? (
-        <div className="overflow-x-auto">
-          <VirtualizedTable
-            rows={requisitions}
-            rowKey={(req) => req.id}
-            rowHeight={68}
-            columns={requisitionColumns}
-            onRowClick={(req) => handleClick(req.id)}
-            rowClassName="hover:bg-muted/30"
-            className="min-w-[1100px]"
-            headerClassName="bg-muted/50 border-b border-border"
-          />
-        </div>
-      ) : (
-        <div className="bg-card/50 border rounded-2xl p-12 text-center">
-          <ClipboardList className="size-10 text-muted-foreground/50 mx-auto mb-3" />
-          <h3 className="font-display text-xl mb-2">No Requisitions Found</h3>
-          <p className="text-muted-foreground text-sm mb-4">
-            {hasActiveFilters ? 'Try adjusting your filters' : 'Ward stock requests will appear here after submission'}
-          </p>
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => handlePageChange(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages}>
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
+        <InternalRequisitionsPagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+        />
       </div>
 
       <InternalRequisitionDetailDialog
