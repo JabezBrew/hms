@@ -11,7 +11,6 @@ export function useDashboardWebSocketToken({
     let isMounted = true;
 
     if (!shouldConnect) {
-      setWsToken(null);
       return () => {
         isMounted = false;
       };
@@ -43,5 +42,5 @@ export function useDashboardWebSocketToken({
     };
   }, [shouldConnect, getAccessToken, refreshAccessToken]);
 
-  return [wsToken, setWsToken];
+  return [shouldConnect ? wsToken : null, setWsToken];
 }
