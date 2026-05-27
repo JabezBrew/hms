@@ -1,13 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import format from 'date-fns/format';
 import addDays from 'date-fns/addDays';
 import startOfDay from 'date-fns/startOfDay';
 import startOfMonth from 'date-fns/startOfMonth';
 import endOfMonth from 'date-fns/endOfMonth';
-import { toast } from 'sonner';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useAvailableSlots } from '@/features/appointments/hooks/useAppointmentQueries';
 
@@ -33,14 +31,13 @@ const DoctorAvailability = ({
   // State
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date())); // Track displayed month
   const [selectedDate, setSelectedDate] = useState(null); // Default to null, select on click
-  const [availabilityData, setAvailabilityData] = useState({}); // Availability summary for calendar
 
   // Debounce practitioner and appointment type changes
   const debouncedPractitionerId = useDebounce(practitionerId, 300);
   const debouncedAppointmentTypeId = useDebounce(appointmentTypeId, 300);
 
   // Prepare params for calendar view (month +/- buffer)
-  const getCalendarParams = () => {
+  const calendarParams = useMemo(() => {
     if (!debouncedPractitionerId) return null;
 
     const firstDay = startOfMonth(currentMonth);
@@ -60,10 +57,10 @@ const DoctorAvailability = ({
     }
 
     return params;
-  };
+  }, [currentMonth, debouncedAppointmentTypeId, debouncedPractitionerId]);
 
   // Prepare params for selected date
-  const getDateParams = () => {
+  const dateParams = useMemo(() => {
     if (!debouncedPractitionerId || !selectedDate) return null;
 
     const formattedDate = format(selectedDate, 'yyyy-MM-dd');
@@ -80,10 +77,9 @@ const DoctorAvailability = ({
     }
 
     return params;
-  };
+  }, [debouncedAppointmentTypeId, debouncedPractitionerId, selectedDate]);
 
   // Use React Query to fetch calendar data
-  const calendarParams = getCalendarParams();
   const {
     data: calendarData,
     isLoading: isLoadingCalendar,
@@ -93,7 +89,6 @@ const DoctorAvailability = ({
   });
 
   // Use React Query to fetch slots for selected date
-  const dateParams = getDateParams();
   const {
     data: slotsData,
     isLoading: isLoadingSlots,
@@ -103,13 +98,9 @@ const DoctorAvailability = ({
   });
 
   // Process calendar data to create availability map
-  useEffect(() => {
-    if (!calendarData) {
-      setAvailabilityData({});
-      return;
-    }
-
+  const availabilityData = useMemo(() => {
     const availabilityMap = {};
+
     if (Array.isArray(calendarData)) {
       calendarData.forEach(slot => {
         // Use startOfDay to ensure consistency regardless of slot time
@@ -123,21 +114,8 @@ const DoctorAvailability = ({
       });
     }
 
-    setAvailabilityData(availabilityMap);
+    return availabilityMap;
   }, [calendarData]);
-
-  // Show error toast if queries fail
-  useEffect(() => {
-    if (calendarError) {
-      console.error('Error fetching availability data:', calendarError);
-      toast.error('Failed to load availability data');
-    }
-
-    if (slotsError) {
-      console.error('Error fetching slots for date:', slotsError);
-      toast.error('Failed to load time slots');
-    }
-  }, [calendarError, slotsError]);
 
   // Handler for date selection from the calendar component
   const handleDateChange = (date) => {
