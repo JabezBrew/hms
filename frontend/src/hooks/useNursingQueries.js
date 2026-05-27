@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { v2Api } from '@/lib/api/v2/client';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
-import { keyWith } from '@/shared/lib/queryKeys';
 
 import {
   MAX_MONITORING_PAGE_SIZE,
@@ -10,7 +9,6 @@ import {
   DEFAULT_FLUID_BALANCE_SETTINGS,
   rethrowV2Error,
   adaptV2WardBoardMonitoringItem,
-  adaptV2Handoff,
   adaptV2NursingAlert,
   adaptV2NursingTask,
   adaptV2MedicationAdministration,
@@ -24,7 +22,6 @@ import {
   normalizeV2MedicationAdministrationPayload,
   normalizeV2MedicationAdministerPayload,
   normalizeV2TaskPayload,
-  normalizeV2HandoffPayload,
   normalizeV2CreateVitalsPayload,
   addDaysToDateKey,
   buildPatientMAR,
@@ -39,67 +36,23 @@ import {
   getV2FluidBalanceEntries,
   getV2NursingAlerts,
   getV2NursingTasks,
-  getV2Handoffs,
   getV2PatientVitals,
   getV2PendingPharmacyQueue,
 } from './nursingQueriesV2Bridge';
+import { nursingKeys } from './nursing/nursingQueryKeys';
+import {
+  useCreateShiftHandoff,
+  useShiftHandoffs,
+  useTodayHandoffs,
+  useUpdateShiftHandoff,
+} from './nursing/useShiftHandoffQueries';
 
-export const nursingKeys = {
-  patientMonitoring: (wardId, page, pageSize) => keyWith('patient-monitoring', wardId, page, pageSize),
-  patientMonitoringAll: () => keyWith('patient-monitoring'),
-  patientDetail: (patientId) => keyWith('patient-detail', patientId),
-  vitalSigns: (patient, admission, encounter, date, startDate, endDate) =>
-    keyWith('vital-signs', patient, admission, encounter, date, startDate, endDate),
-  vitalSignsWindow: (patientId, window) => keyWith('vital-signs', patientId, window),
-  vitalSignsAll: () => keyWith('vital-signs'),
-  vitalSignsTrends: (patientId, days, encounterId, admissionId, startDate, endDate) =>
-    keyWith('vital-signs-trends', patientId, days, encounterId, admissionId, startDate, endDate),
-  vitalSignsTrendsByPatient: (patientId) => keyWith('vital-signs-trends', patientId),
-  nursingTasks: (patient, status, ward, date, taskType, priority) =>
-    keyWith('nursing-tasks', patient, status, ward, date, taskType, priority),
-  nursingTasksAll: () => keyWith('nursing-tasks'),
-  nursingTasksToday: () => keyWith('nursing-tasks-today'),
-  nursingAlerts: (patient, ward, severity, status) => keyWith('nursing-alerts', patient, ward, severity, status),
-  nursingAlertsAll: () => keyWith('nursing-alerts'),
-  nursingAlertsActive: () => keyWith('nursing-alerts-active'),
-  medicationAdministrations: (patient, admission, date, status) =>
-    keyWith('medication-administrations', patient, admission, date, status),
-  medicationAdministrationsAll: () => keyWith('medication-administrations'),
-  medicationsDueNow: () => keyWith('medications-due-now'),
-  medicationsOverdue: () => keyWith('medications-overdue'),
-  medicationAdministrationHistory: (patient, status, startDate, endDate, ordering, page, pageSize) =>
-    keyWith('medication-administration-history', patient, status, startDate, endDate, ordering, page, pageSize),
-  patientMar: (patientId, date) => keyWith('patient-mar', patientId, date),
-  patientMarAll: () => keyWith('patient-mar'),
-  marGrid: (admissionId, startDate, days) => keyWith('mar-grid', admissionId, startDate, days),
-  marGridAll: () => keyWith('mar-grid'),
-  pendingDispensing: (patientId) => keyWith('pending-dispensing', patientId),
-  pendingDispensingAll: () => keyWith('pending-dispensing'),
-  pendingDispensingGrouped: (patientId) => keyWith('pending-dispensing', 'grouped', patientId),
-  readyForAdmin: (patientId) => keyWith('ready-for-admin', patientId),
-  readyForAdminAll: () => keyWith('ready-for-admin'),
-  shiftHandoffs: (ward, date, shift) => keyWith('shift-handoffs', ward, date, shift),
-  shiftHandoffsAll: () => keyWith('shift-handoffs'),
-  shiftHandoffsToday: () => keyWith('shift-handoffs-today'),
-  treatmentSheet: (admissionId) => keyWith('treatment-sheet', admissionId),
-  treatmentSheetAll: () => keyWith('treatment-sheet'),
-  treatmentSheetEntry: (entryId) => keyWith('treatment-sheet-entry', entryId),
-  treatmentSheetLowSupply: () => keyWith('treatment-sheet-low-supply'),
-  supplyStatus: (entryId) => keyWith('supply-status', entryId),
-  supplyRequests: (status) => keyWith('supply-requests', status),
-  supplyRequestsAll: () => keyWith('supply-requests'),
-  supplyRequest: (requestId) => keyWith('supply-request', requestId),
-  fluidBalance: (patientId, admissionId, entryType, date, startDate, endDate) =>
-    keyWith('fluid-balance', patientId, admissionId, entryType, date, startDate, endDate),
-  fluidBalanceAll: () => keyWith('fluid-balance'),
-  fluidBalanceTrends: (patientId, admissionId, startDate, endDate) =>
-    keyWith('fluid-balance-trends', patientId, admissionId, startDate, endDate),
-  fluidBalanceSummary: (patientId, date) => keyWith('fluid-balance-summary', patientId, date),
-  fluidBalanceSummaryAll: () => keyWith('fluid-balance-summary'),
-  fluidBalanceToday: (patientId) => keyWith('fluid-balance-today', patientId),
-  fluidBalanceTodayAll: () => keyWith('fluid-balance-today'),
-  fluidBalanceSettings: () => keyWith('fluid-balance-settings'),
-  fluidBalanceAlerts: (patientId, date) => keyWith('fluid-balance-alerts', patientId, date),
+export {
+  nursingKeys,
+  useCreateShiftHandoff,
+  useShiftHandoffs,
+  useTodayHandoffs,
+  useUpdateShiftHandoff,
 };
 
 // ========== Patient Monitoring ==========
@@ -957,106 +910,6 @@ export const useBulkDispense = () => {
       queryClient.invalidateQueries({ queryKey: nursingKeys.readyForAdminAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.patientMarAll() });
-    },
-  });
-};
-
-// ========== Shift Handoffs ==========
-
-export const useShiftHandoffs = (filters = {}) => {
-  // Extract filter values to use as stable primitives in query key
-  const { ward, date, shift } = filters;
-
-  return useQuery({
-    // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.shiftHandoffs(ward, date, shift),
-    queryFn: async ({ signal }) => {
-      if (isRustV2ApiMode()) {
-        return getV2Handoffs(filters, { signal });
-      }
-
-      const params = new URLSearchParams(filters);
-      const response = await apiClient.get(`/nursing/handoffs/?${params.toString()}`);
-      // apiClient.get returns data directly, not response.data
-      const data = response?.data ?? response;
-      return Array.isArray(data) ? data : [];
-    },
-    placeholderData: [],
-    staleTime: 30000,
-    refetchOnWindowFocus: false,
-  });
-};
-
-export const useTodayHandoffs = () => {
-  return useQuery({
-    queryKey: nursingKeys.shiftHandoffsToday(),
-    queryFn: async ({ signal }) => {
-      if (isRustV2ApiMode()) {
-        return getV2Handoffs({ date: new Date().toISOString().slice(0, 10) }, { signal });
-      }
-
-      const response = await apiClient.get('/nursing/handoffs/today/');
-      // apiClient.get returns data directly or response.data depending on implementation
-      // Ensure we always return an array (not undefined)
-      const data = response?.data ?? response;
-      return Array.isArray(data) ? data : [];
-    },
-    placeholderData: [],
-  });
-};
-
-export const useCreateShiftHandoff = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data) => {
-      if (isRustV2ApiMode()) {
-        try {
-          const response = await v2Api.postHandoffs(
-            normalizeV2HandoffPayload(data),
-            { signal: data?.signal },
-          );
-          return adaptV2Handoff(response?.data);
-        } catch (error) {
-          rethrowV2Error(error, 'Failed to create shift handoff');
-        }
-      }
-
-      const response = await apiClient.post('/nursing/handoffs/', data);
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsAll() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsToday() });
-    },
-  });
-};
-
-export const useUpdateShiftHandoff = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ handoffId, data, signal }) => {
-      if (isRustV2ApiMode()) {
-        if (data?.status === 'completed' || data?.complete === true) {
-          try {
-            const response = await v2Api.postHandoffComplete({ id: handoffId }, {
-              signal: signal || data?.signal,
-            });
-            return adaptV2Handoff(response?.data);
-          } catch (error) {
-            rethrowV2Error(error, 'Failed to complete shift handoff');
-          }
-        }
-        throw new Error('Rust V2 does not expose general shift handoff edits yet.');
-      }
-
-      const response = await apiClient.patch(`/nursing/handoffs/${handoffId}/`, data);
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsAll() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.shiftHandoffsToday() });
     },
   });
 };
