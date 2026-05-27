@@ -484,26 +484,16 @@ function InvoiceCard({ invoice, index, onClick, onPatientContext }) {
   };
 
   const badge = getStatusBadge(invoice.status);
-  const handleCardKeyDown = (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    onClick();
-  };
 
   return (
     <div
       className={cn(
         "group relative bg-card border border-border rounded-xl p-4 sm:p-5",
         "hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]",
-        "transition-all duration-300 cursor-pointer",
+        "transition-all duration-300",
         "animate-chronicle-enter"
       )}
       style={{ animationDelay: `${index * 50}ms` }}
-      onClick={onClick}
-      onKeyDown={handleCardKeyDown}
-      role="button"
-      tabIndex={0}
-      aria-label={`View invoice ${invoice.invoice_number}`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -563,7 +553,17 @@ function InvoiceCard({ invoice, index, onClick, onPatientContext }) {
               </p>
             )}
           </div>
-          <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onClick}
+            className="font-mono text-xs opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+            aria-label={`View invoice ${invoice.invoice_number}`}
+          >
+            View
+            <ChevronRight className="size-3 ml-1" />
+          </Button>
         </div>
       </div>
     </div>

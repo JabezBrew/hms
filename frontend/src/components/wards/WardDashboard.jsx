@@ -361,7 +361,8 @@ export function WardDashboard() {
         </div>
 
         {/* View Toggle */}
-        <div role="group" aria-label="View mode" className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
+        <fieldset className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
+          <legend className="sr-only">View mode</legend>
           <Button
             variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
             size="sm"
@@ -382,7 +383,7 @@ export function WardDashboard() {
           >
             <List className="size-4" aria-hidden="true" />
           </Button>
-        </div>
+        </fieldset>
       </div>
 
       {/* Beds Display */}

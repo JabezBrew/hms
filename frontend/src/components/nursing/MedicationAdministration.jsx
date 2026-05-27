@@ -614,12 +614,6 @@ export function MedicationAdministration({ patient }) {
   );
 }
 
-function handleKeyboardActivation(event, onActivate) {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  event.preventDefault();
-  onActivate();
-}
-
 // Medication Card Component
 function MedicationCard({ medication, onAdminister, getStatusBadge, formatTime, isOverdue, isDueSoon }) {
   const isUrgent = isOverdue(medication.scheduled_time);
@@ -627,14 +621,10 @@ function MedicationCard({ medication, onAdminister, getStatusBadge, formatTime, 
 
   return (
     <div
-      className={`p-4 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors ${
+      className={`p-4 border rounded-lg hover:bg-muted/50 transition-colors ${
         isUrgent ? 'border-red-300 bg-red-50 dark:bg-red-950/20' :
         isDue ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/20' : ''
       }`}
-      onClick={onAdminister}
-      onKeyDown={(event) => handleKeyboardActivation(event, onAdminister)}
-      role="button"
-      tabIndex={0}
     >
       <div className="flex justify-between items-start">
         <div>

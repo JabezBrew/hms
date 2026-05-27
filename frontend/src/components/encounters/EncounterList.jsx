@@ -646,26 +646,15 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
   const typeConfig = getTypeConfig(encounter.encounter_type);
   const TypeIcon = typeConfig.icon;
 
-  const handleKeyDown = (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    onClick();
-  };
-
   return (
     <div
       className={cn(
         "group relative bg-card/50 border border-border rounded-xl p-5",
         "hover:border-primary/30 hover:shadow-[0_0_20px_-8px_var(--chronicle-amber)]",
-        "transition-all duration-300 cursor-pointer",
+        "transition-all duration-300",
         "animate-chronicle-enter"
       )}
       style={{ animationDelay: `${index * 50}ms` }}
-      onClick={onClick}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
-      aria-label={`View encounter for ${encounter.patient_name || 'unknown patient'}`}
     >
       {statusConfig.ribbon && <div className={cn("status-ribbon", statusConfig.ribbon)} />}
 
@@ -713,7 +702,9 @@ function EncounterCard({ encounter, index, formatDate, onClick }) {
         <Button
           variant="ghost"
           size="sm"
-          className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={onClick}
+          className="font-mono text-xs opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          aria-label={`View encounter for ${encounter.patient_name || 'unknown patient'}`}
         >
           View
           <ChevronRight className="size-3 ml-1" />

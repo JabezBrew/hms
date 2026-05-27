@@ -19,20 +19,14 @@ vi.mock('@/components/layout/layout', () => ({
 }));
 
 vi.mock('@/components/ui/select', () => ({
-  Select: ({ children, onValueChange }) => (
-    <div
+  Select: ({ onValueChange }) => (
+    <select
       data-testid="select-control"
       onClick={() => onValueChange?.('dept-1')}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          onValueChange?.('dept-1');
-        }
-      }}
-      role="button"
-      tabIndex={0}
+      onChange={() => onValueChange?.('dept-1')}
     >
-      {children}
-    </div>
+      <option value="dept-1">Department</option>
+    </select>
   ),
   SelectContent: ({ children }) => <div>{children}</div>,
   SelectItem: ({ children, value }) => <div data-value={value}>{children}</div>,

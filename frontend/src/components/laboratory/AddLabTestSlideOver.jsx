@@ -26,7 +26,6 @@ import {
   useCreateLabPanel,
   useLabTests,
 } from "@/features/laboratory/hooks";
-import { Checkbox } from "@/components/ui/checkbox";
 
 function getInitialTestForm() {
   return {
@@ -395,35 +394,37 @@ function AddLabTestSlideOverContent({
                     const isSelected = panelForm.tests.includes(test.id);
 
                     return (
-                      <div
+                      <label
                         key={test.id}
                         className={cn(
                           "flex items-center gap-3 p-3 border-b border-border/50 last:border-0",
                           "hover:bg-muted/30 cursor-pointer",
                           isSelected && "bg-amber-50 dark:bg-amber-900/20"
                         )}
-                        onClick={() => handleTestToggle(test.id)}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter' && event.key !== ' ') return;
-                          event.preventDefault();
-                          handleTestToggle(test.id);
-                        }}
-                        role="checkbox"
-                        tabIndex={0}
-                        aria-checked={isSelected}
                       >
-                      <Checkbox
+                      <input
+                        type="checkbox"
                         checked={isSelected}
-                        onCheckedChange={() => handleTestToggle(test.id)}
-                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => handleTestToggle(test.id)}
+                        aria-label={`Include ${test.name} in this panel`}
+                        className="peer sr-only"
                       />
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "flex size-4 shrink-0 items-center justify-center rounded border border-input shadow-xs transition-colors",
+                          isSelected && "border-primary bg-primary text-primary-foreground"
+                        )}
+                      >
+                        {isSelected && <Check className="size-3.5" />}
+                      </span>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm truncate">{test.name}</p>
                         <p className="font-mono text-xs text-muted-foreground">
                           {test.loinc_code || test.category}
                         </p>
                       </div>
-                      </div>
+                      </label>
                     );
                   })
                 )}

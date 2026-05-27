@@ -21,8 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -415,12 +414,11 @@ const LabOrderFormContent = ({
     : patient?.name || 'Patient';
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      open={open}
       aria-labelledby="lab-order-title"
       className={cn(
-        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
+        "fixed inset-y-0 right-0 z-[100] m-0 h-auto max-h-none w-full max-w-none p-0 lg:w-1/2 bg-background border-0 border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
         "flex flex-col shadow-2xl",
         open ? "translate-x-0" : "translate-x-full"
@@ -538,29 +536,34 @@ const LabOrderFormContent = ({
                             Panels ({filteredPanels.length})
                           </div>
                           {filteredPanels.map((panel) => (
-                            <Card
+                            <label
                               key={panel.id}
-                              tabIndex={0}
-                              role="checkbox"
-                              aria-checked={formData.selected_panels.includes(panel.id)}
-                              aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlePanelToggle(panel.id); } }}
                               className={cn(
-                                "cursor-pointer transition-colors",
+                                "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
                                 formData.selected_panels.includes(panel.id)
                                   ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                                   : "hover:border-muted-foreground/50"
                               )}
-                              onClick={() => handlePanelToggle(panel.id)}
                             >
+                              <input
+                                type="checkbox"
+                                checked={formData.selected_panels.includes(panel.id)}
+                                onChange={() => handlePanelToggle(panel.id)}
+                                aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
+                                className="peer sr-only"
+                              />
                               <CardHeader className="py-3">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-start gap-3">
-                                    <Checkbox
-                                      checked={formData.selected_panels.includes(panel.id)}
-                                      onCheckedChange={() => handlePanelToggle(panel.id)}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
+                                    <span
+                                      aria-hidden="true"
+                                      className={cn(
+                                        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
+                                        formData.selected_panels.includes(panel.id) && "border-primary bg-primary text-primary-foreground"
+                                      )}
+                                    >
+                                      {formData.selected_panels.includes(panel.id) && <Check className="size-3.5" />}
+                                    </span>
                                     <div>
                                       <div className="flex items-center gap-2">
                                         <CardTitle className="text-base">{panel.name}</CardTitle>
@@ -578,7 +581,7 @@ const LabOrderFormContent = ({
                                   </div>
                                 </div>
                               </CardHeader>
-                            </Card>
+                            </label>
                           ))}
                         </div>
                       )}
@@ -591,29 +594,34 @@ const LabOrderFormContent = ({
                             Individual Tests ({filteredTests.length})
                           </div>
                           {filteredTests.slice(0, 20).map((test) => (
-                            <Card
+                            <label
                               key={test.id}
-                              tabIndex={0}
-                              role="checkbox"
-                              aria-checked={formData.selected_tests.includes(test.id)}
-                              aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTestToggle(test.id); } }}
                               className={cn(
-                                "cursor-pointer transition-colors",
+                                "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
                                 formData.selected_tests.includes(test.id)
                                   ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                                   : "hover:border-muted-foreground/50"
                               )}
-                              onClick={() => handleTestToggle(test.id)}
                             >
+                              <input
+                                type="checkbox"
+                                checked={formData.selected_tests.includes(test.id)}
+                                onChange={() => handleTestToggle(test.id)}
+                                aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
+                                className="peer sr-only"
+                              />
                               <CardHeader className="py-3">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-start gap-3">
-                                    <Checkbox
-                                      checked={formData.selected_tests.includes(test.id)}
-                                      onCheckedChange={() => handleTestToggle(test.id)}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
+                                    <span
+                                      aria-hidden="true"
+                                      className={cn(
+                                        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
+                                        formData.selected_tests.includes(test.id) && "border-primary bg-primary text-primary-foreground"
+                                      )}
+                                    >
+                                      {formData.selected_tests.includes(test.id) && <Check className="size-3.5" />}
+                                    </span>
                                     <div>
                                       <div className="flex items-center gap-2">
                                         <CardTitle className="text-base">{test.name}</CardTitle>
@@ -633,7 +641,7 @@ const LabOrderFormContent = ({
                                   </div>
                                 </div>
                               </CardHeader>
-                            </Card>
+                            </label>
                           ))}
                           {filteredTests.length > 20 && (
                             <p className="text-xs text-muted-foreground text-center py-2">
@@ -695,29 +703,34 @@ const LabOrderFormContent = ({
                         </div>
                       ) : (
                         filteredPanels.map((panel) => (
-                          <Card
+                          <label
                             key={panel.id}
-                            tabIndex={0}
-                            role="checkbox"
-                            aria-checked={formData.selected_panels.includes(panel.id)}
-                            aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handlePanelToggle(panel.id); } }}
                             className={cn(
-                              "cursor-pointer transition-colors",
+                              "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
                               formData.selected_panels.includes(panel.id)
                                 ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                                 : "hover:border-muted-foreground/50"
                             )}
-                            onClick={() => handlePanelToggle(panel.id)}
                           >
+                            <input
+                              type="checkbox"
+                              checked={formData.selected_panels.includes(panel.id)}
+                              onChange={() => handlePanelToggle(panel.id)}
+                              aria-label={`${panel.name} panel, ${panel.test_count || 0} tests, $${Number(panel.price || 0).toFixed(2)}`}
+                              className="peer sr-only"
+                            />
                             <CardHeader className="pb-3">
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-3">
-                                  <Checkbox
-                                    checked={formData.selected_panels.includes(panel.id)}
-                                    onCheckedChange={() => handlePanelToggle(panel.id)}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
+                                  <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
+                                      formData.selected_panels.includes(panel.id) && "border-primary bg-primary text-primary-foreground"
+                                    )}
+                                  >
+                                    {formData.selected_panels.includes(panel.id) && <Check className="size-3.5" />}
+                                  </span>
                                   <div>
                                     <CardTitle className="text-base">
                                       {panel.name}
@@ -741,7 +754,7 @@ const LabOrderFormContent = ({
                                 </p>
                               </CardContent>
                             )}
-                          </Card>
+                          </label>
                         ))
                       )}
                     </TabsContent>
@@ -758,29 +771,34 @@ const LabOrderFormContent = ({
                         </div>
                       ) : (
                         filteredTests.map((test) => (
-                          <Card
+                          <label
                             key={test.id}
-                            tabIndex={0}
-                            role="checkbox"
-                            aria-checked={formData.selected_tests.includes(test.id)}
-                            aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTestToggle(test.id); } }}
                             className={cn(
-                              "cursor-pointer transition-colors",
+                              "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm cursor-pointer transition-colors",
                               formData.selected_tests.includes(test.id)
                                 ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                                 : "hover:border-muted-foreground/50"
                             )}
-                            onClick={() => handleTestToggle(test.id)}
                           >
+                            <input
+                              type="checkbox"
+                              checked={formData.selected_tests.includes(test.id)}
+                              onChange={() => handleTestToggle(test.id)}
+                              aria-label={`${test.name}, ${test.category}, $${Number(test.price || 0).toFixed(2)}`}
+                              className="peer sr-only"
+                            />
                             <CardHeader className="pb-3">
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-3">
-                                  <Checkbox
-                                    checked={formData.selected_tests.includes(test.id)}
-                                    onCheckedChange={() => handleTestToggle(test.id)}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
+                                  <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors",
+                                      formData.selected_tests.includes(test.id) && "border-primary bg-primary text-primary-foreground"
+                                    )}
+                                  >
+                                    {formData.selected_tests.includes(test.id) && <Check className="size-3.5" />}
+                                  </span>
                                   <div>
                                     <div className="flex items-center gap-2">
                                       <CardTitle className="text-base">
@@ -815,7 +833,7 @@ const LabOrderFormContent = ({
                                 </div>
                               </CardContent>
                             )}
-                          </Card>
+                          </label>
                         ))
                       )}
                     </TabsContent>
@@ -1103,7 +1121,7 @@ const LabOrderFormContent = ({
             </div>
           </div>
         </footer>
-      </div>
+    </dialog>
   );
 };
 

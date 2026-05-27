@@ -109,7 +109,7 @@ const InboxPage = () => {
   const { data: inboxCountData, refetch: refetchCounts } = useInboxCounts();
   const markInboxRead = useMarkInboxRead();
 
-  const inboxItems = inboxData?.results || [];
+  const inboxItems = useMemo(() => inboxData?.results || [], [inboxData]);
 
   const handleInboxItemClick = useCallback((item) => {
     if (item.action_url) {
@@ -299,22 +299,11 @@ const InboxPage = () => {
                         ? 'bg-primary'
                         : 'bg-muted-foreground/50';
 
-                      const handleMessageKeyDown = (event) => {
-                        if (event.key !== 'Enter' && event.key !== ' ') return;
-                        event.preventDefault();
-                        openInboxItem();
-                      };
-
                       return (
                         <div
                           key={item.id}
-                          onClick={openInboxItem}
-                          onKeyDown={handleMessageKeyDown}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`Open inbox item ${item.title}`}
                           className={cn(
-                            "relative pl-12 cursor-pointer group",
+                            "relative pl-12 group",
                             "animate-chronicle-enter",
                           )}
                           style={{ animationDelay: `${(groupIndex * 100) + (index * 50)}ms` }}
@@ -394,19 +383,30 @@ const InboxPage = () => {
                                       </span>
                                     )}
                                   </div>
-                                  {!item.isRead && (
+                                  <div className="flex items-center gap-2">
                                     <Button
                                       type="button"
                                       variant="ghost"
                                       size="sm"
                                       className="h-7 px-2 font-mono text-[10px]"
-                                      disabled={markInboxRead.isPending}
-                                      onClick={(event) => handleMarkRead(event, item)}
+                                      onClick={openInboxItem}
                                     >
-                                      <Check className="size-3.5 mr-1" />
-                                      Mark read
+                                      Open
                                     </Button>
-                                  )}
+                                    {!item.isRead && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 font-mono text-[10px]"
+                                        disabled={markInboxRead.isPending}
+                                        onClick={(event) => handleMarkRead(event, item)}
+                                      >
+                                        <Check className="size-3.5 mr-1" />
+                                        Mark read
+                                      </Button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>

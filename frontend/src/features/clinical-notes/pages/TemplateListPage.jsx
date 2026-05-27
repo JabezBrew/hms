@@ -458,22 +458,11 @@ export default function TemplateListPage() {
  * TemplateCard - Chronicle-style template card
  */
 function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onDelete }) {
-  const handleViewKeyDown = (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    onView();
-  };
-
   return (
     <div
-      onClick={onView}
-      onKeyDown={handleViewKeyDown}
-      role="button"
-      tabIndex={0}
-      aria-label={`View template ${template.title}`}
       className={cn(
         "group relative bg-card/50 backdrop-blur border border-border",
-        "rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer",
+        "rounded-xl sm:rounded-2xl p-4 sm:p-6",
         "hover:border-primary/30 transition-all duration-500",
         "hover:shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
         "animate-chronicle-enter",
@@ -547,7 +536,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
         )}
 
         {/* Actions - Always visible on mobile */}
-        <div className="flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity ml-auto">
+        <div className="flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity ml-auto">
           <Button
             variant="secondary"
             size="sm"

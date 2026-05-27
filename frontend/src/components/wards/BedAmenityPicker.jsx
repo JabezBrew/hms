@@ -8,6 +8,7 @@ import Sun from 'lucide-react/dist/esm/icons/sun.js';
 import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Accessibility from 'lucide-react/dist/esm/icons/accessibility.js';
+import CheckIcon from 'lucide-react/dist/esm/icons/check.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import React, { useId, useState } from 'react';
 
@@ -16,7 +17,6 @@ const DEFAULT_EMPTY_ARRAY = [];
 import { useAmenities } from '@/features/wards/hooks/useWardQueries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Popover,
   PopoverContent,
@@ -154,26 +154,29 @@ export function BedAmenityPicker({
                       const isSelected = selectedAmenities.includes(amenity.id);
 
                       return (
-                        <div
+                        <label
                           key={amenity.id}
                           className={cn(
                             'flex items-center gap-3 px-2 py-2 rounded cursor-pointer hover:bg-stone-50 transition-colors',
                             isSelected && 'bg-amber-50 hover:bg-amber-100'
                           )}
-                          onClick={() => handleToggle(amenity.id)}
-                          onKeyDown={(event) => {
-                            if (event.key !== 'Enter' && event.key !== ' ') return;
-                            event.preventDefault();
-                            handleToggle(amenity.id);
-                          }}
-                          role="checkbox"
-                          tabIndex={0}
-                          aria-checked={isSelected}
                         >
-                          <Checkbox
+                          <input
+                            type="checkbox"
                             checked={isSelected}
-                            onCheckedChange={() => handleToggle(amenity.id)}
+                            onChange={() => handleToggle(amenity.id)}
+                            aria-label={`${isSelected ? 'Remove' : 'Add'} ${amenity.name}`}
+                            className="peer sr-only"
                           />
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs transition-colors',
+                              isSelected && 'border-primary bg-primary text-primary-foreground'
+                            )}
+                          >
+                            {isSelected && <CheckIcon className="size-3.5" />}
+                          </span>
                           <Icon className={cn(
                             'size-4 flex-shrink-0',
                             isSelected ? 'text-amber-600' : 'text-stone-400'
@@ -186,7 +189,7 @@ export function BedAmenityPicker({
                               </div>
                             )}
                           </div>
-                        </div>
+                        </label>
                       );
                     })}
                   </div>
