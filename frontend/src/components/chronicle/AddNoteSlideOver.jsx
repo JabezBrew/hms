@@ -7,7 +7,7 @@ import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
 import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js';
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,69 @@ const CATEGORY_COLORS = {
   custom: 'violet',
 };
 
+const INITIAL_AI_ASSISTANT_STATE = {
+  draftPrompt: '',
+  draftTextByStepId: {},
+  draftCitationsByStepId: {},
+  lintResult: null,
+  lintDataHash: null,
+  majorAcknowledgement: {
+    dataHash: null,
+    acknowledged: false,
+  },
+};
+
+function aiAssistantReducer(state, action) {
+  switch (action.type) {
+    case 'setDraftPrompt':
+      return {
+        ...state,
+        draftPrompt: action.prompt,
+      };
+    case 'draftApplied':
+      return {
+        ...state,
+        draftTextByStepId: action.draftTextByStepId,
+        draftCitationsByStepId: action.citationsByStepId,
+        lintResult: null,
+        lintDataHash: null,
+        majorAcknowledgement: INITIAL_AI_ASSISTANT_STATE.majorAcknowledgement,
+      };
+    case 'lintChecked':
+      return {
+        ...state,
+        lintResult: action.result,
+        lintDataHash: action.dataHash,
+        majorAcknowledgement: INITIAL_AI_ASSISTANT_STATE.majorAcknowledgement,
+      };
+    case 'acknowledgeMajor':
+      return {
+        ...state,
+        majorAcknowledgement: {
+          dataHash: action.dataHash,
+          acknowledged: action.acknowledged,
+        },
+      };
+    case 'reset':
+      return INITIAL_AI_ASSISTANT_STATE;
+    default:
+      return state;
+  }
+}
+
+function buildContentKey({ open, patientId, editNoteId, initialTemplate }) {
+  if (!open) {
+    return 'closed';
+  }
+
+  return [
+    'open',
+    patientId || 'unknown-patient',
+    editNoteId || 'new-note',
+    initialTemplate?.id || 'manual-template',
+  ].join(':');
+}
+
 /**
  * AddNoteSlideOver - Split-screen panel for creating/editing clinical notes
  *
@@ -72,9 +135,45 @@ const AddNoteSlideOver = ({
   initialData = null,      // Pre-filled data (for copy forward or edit)
   editNoteId = null,       // If provided, we're editing an existing note
 }) => {
-  // Get patient ID for the workflow hook
   const patientId = patient?.local_data?.id || patient?.id;
+  const contentKey = buildContentKey({ open, patientId, editNoteId, initialTemplate });
 
+  return (
+    <div
+      className={cn(
+        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
+        "transform transition-transform duration-300 ease-in-out",
+        "flex flex-col shadow-2xl",
+        open ? "translate-x-0" : "translate-x-full"
+      )}
+    >
+      <AddNoteSlideOverContent
+        key={contentKey}
+        open={open}
+        onClose={onClose}
+        patient={patient}
+        patientId={patientId}
+        encounter={encounter}
+        onNoteCreated={onNoteCreated}
+        initialTemplate={initialTemplate}
+        initialData={initialData}
+        editNoteId={editNoteId}
+      />
+    </div>
+  );
+};
+
+const AddNoteSlideOverContent = ({
+  open,
+  onClose,
+  patient,
+  patientId,
+  encounter = null,
+  onNoteCreated,
+  initialTemplate = null,
+  initialData = null,
+  editNoteId = null,
+}) => {
   // Determine if we're in edit mode
   const isEditMode = !!editNoteId;
   const aiAssistantAvailable = !isRustV2ApiMode();
@@ -105,12 +204,18 @@ const AddNoteSlideOver = ({
   const isLastStep = currentStep === totalSteps;
   const currentStepConfig = steps[currentStep - 1] || null;
   const categoryColor = CATEGORY_COLORS[template?.category] || 'amber';
-  const [draftPrompt, setDraftPrompt] = useState('');
-  const [draftTextByStepId, setDraftTextByStepId] = useState({});
-  const [draftCitationsByStepId, setDraftCitationsByStepId] = useState({});
-  const [lintResult, setLintResult] = useState(null);
-  const [lintDataHash, setLintDataHash] = useState(null);
-  const [majorAcknowledged, setMajorAcknowledged] = useState(false);
+  const [aiAssistantState, dispatchAiAssistant] = useReducer(
+    aiAssistantReducer,
+    INITIAL_AI_ASSISTANT_STATE
+  );
+  const {
+    draftPrompt,
+    draftTextByStepId,
+    draftCitationsByStepId,
+    lintResult,
+    lintDataHash,
+    majorAcknowledgement,
+  } = aiAssistantState;
 
   const noteDraftMutation = useAINoteDraft();
   const noteLintMutation = useAINoteLint();
@@ -120,6 +225,8 @@ const AddNoteSlideOver = ({
 
   const finalNoteData = useMemo(() => buildWorkflowNoteData(steps, formData), [steps, formData]);
   const finalDataHash = useMemo(() => JSON.stringify(finalNoteData), [finalNoteData]);
+  const majorAcknowledged = majorAcknowledgement.dataHash === finalDataHash
+    && majorAcknowledgement.acknowledged;
   const lintIssues = useMemo(() => sortLintIssues(lintResult?.issues || []), [lintResult]);
   const hasLintForCurrentData = !!lintResult && lintDataHash === finalDataHash;
   const lintGate = useMemo(
@@ -139,8 +246,14 @@ const AddNoteSlideOver = ({
     [currentStepDraftText, currentStepConfig, formData]
   );
 
+  const resetWorkflowAndAssistant = useCallback(() => {
+    resetWorkflow();
+    dispatchAiAssistant({ type: 'reset' });
+  }, [resetWorkflow]);
+
   // Handle template selection
   const handleSelectTemplate = async (selectedTemplate) => {
+    dispatchAiAssistant({ type: 'reset' });
     await startWorkflow(selectedTemplate, null, {
       applyTemplateText: true,
       applyMode: 'empty_only',
@@ -152,13 +265,27 @@ const AddNoteSlideOver = ({
     updateStepData(stepId, data);
   }, [updateStepData]);
 
+  const handleCurrentStepDataChange = useCallback((data) => {
+    if (!currentStepConfig) {
+      return;
+    }
+    handleStepDataChange(currentStepConfig.id, data);
+  }, [currentStepConfig, handleStepDataChange]);
+
+  const handleDraftPromptChange = useCallback((event) => {
+    dispatchAiAssistant({
+      type: 'setDraftPrompt',
+      prompt: event.target.value,
+    });
+  }, []);
+
   // Navigation handlers
   const handleBack = () => {
     if (currentStep > 1) {
       prevStep();
     } else {
       // Go back to template selection
-      resetWorkflow();
+      resetWorkflowAndAssistant();
     }
   };
 
@@ -212,9 +339,11 @@ const AddNoteSlideOver = ({
         throw new Error('Quality check did not return a valid result.');
       }
 
-      setLintResult(result);
-      setLintDataHash(finalDataHash);
-      setMajorAcknowledged(false);
+      dispatchAiAssistant({
+        type: 'lintChecked',
+        result,
+        dataHash: finalDataHash,
+      });
 
       if (!silent) {
         const issueCounts = result.issue_counts || {};
@@ -252,6 +381,10 @@ const AddNoteSlideOver = ({
     template,
     templateRevisionId,
   ]);
+
+  const handleRunQualityCheck = useCallback(() => {
+    void runQualityCheck();
+  }, [runQualityCheck]);
 
   const handleGenerateDraft = useCallback(async () => {
     if (!aiAssistantAvailable) {
@@ -292,11 +425,11 @@ const AddNoteSlideOver = ({
       });
 
       applyMergedFormData(mergedData);
-      setDraftTextByStepId(mappedDraftText);
-      setDraftCitationsByStepId(citationsByStepId);
-      setLintResult(null);
-      setLintDataHash(null);
-      setMajorAcknowledged(false);
+      dispatchAiAssistant({
+        type: 'draftApplied',
+        draftTextByStepId: mappedDraftText,
+        citationsByStepId,
+      });
 
       toast.success('AI draft applied to empty sections.', {
         description: 'Review and edit content before completion.',
@@ -338,7 +471,7 @@ const AddNoteSlideOver = ({
 
       const result = await completeWorkflow();
       if (result?.success || result?.note) {
-        resetWorkflow();
+        resetWorkflowAndAssistant();
         onNoteCreated?.();
         onClose();
       }
@@ -348,39 +481,17 @@ const AddNoteSlideOver = ({
   };
 
   const handleClose = () => {
-    resetWorkflow();
-    setDraftPrompt('');
-    setDraftTextByStepId({});
-    setDraftCitationsByStepId({});
-    setLintResult(null);
-    setLintDataHash(null);
-    setMajorAcknowledged(false);
+    resetWorkflowAndAssistant();
     onClose();
   };
 
-  // Reset state when panel closes
-  useEffect(() => {
-    if (!open) {
-      resetWorkflow();
-    }
-  }, [open, resetWorkflow]);
-
-  useEffect(() => {
-    if (!template) {
-      setDraftPrompt('');
-      setDraftTextByStepId({});
-      setDraftCitationsByStepId({});
-      setLintResult(null);
-      setLintDataHash(null);
-      setMajorAcknowledged(false);
-    }
-  }, [template]);
-
-  useEffect(() => {
-    if (lintDataHash && lintDataHash !== finalDataHash) {
-      setMajorAcknowledged(false);
-    }
-  }, [finalDataHash, lintDataHash]);
+  const handleMajorAcknowledgementChange = useCallback((value) => {
+    dispatchAiAssistant({
+      type: 'acknowledgeMajor',
+      dataHash: finalDataHash,
+      acknowledged: Boolean(value),
+    });
+  }, [finalDataHash]);
 
   // Auto-start workflow when opened with initial template (copy forward)
   useEffect(() => {
@@ -407,14 +518,7 @@ const AddNoteSlideOver = ({
     : patient?.name || 'Patient';
 
   return (
-    <div
-      className={cn(
-        "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
-        "transform transition-transform duration-300 ease-in-out",
-        "flex flex-col shadow-2xl",
-        open ? "translate-x-0" : "translate-x-full"
-      )}
-    >
+    <>
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
@@ -479,7 +583,7 @@ const AddNoteSlideOver = ({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={resetWorkflow}
+                onClick={resetWorkflowAndAssistant}
                 className="ml-4 font-mono text-xs"
               >
                 <ChevronLeft className="size-3.5 mr-1" />
@@ -497,7 +601,7 @@ const AddNoteSlideOver = ({
           <div className="flex items-center justify-between mb-3">
             <button
               type="button"
-              onClick={resetWorkflow}
+              onClick={resetWorkflowAndAssistant}
               className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors font-mono text-xs"
             >
               <ChevronLeft className="size-3.5" />
@@ -554,7 +658,7 @@ const AddNoteSlideOver = ({
               <div className="flex flex-col gap-2 lg:flex-row">
                 <Input
                   value={draftPrompt}
-                  onChange={(event) => setDraftPrompt(event.target.value)}
+                  onChange={handleDraftPromptChange}
                   placeholder="Optional draft focus (e.g., 'post-op handoff')"
                   className="h-8 font-mono text-xs"
                   disabled={isAiBusy}
@@ -574,7 +678,7 @@ const AddNoteSlideOver = ({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => runQualityCheck()}
+                  onClick={handleRunQualityCheck}
                   disabled={isAiBusy}
                   className="font-mono text-xs"
                 >
@@ -588,7 +692,7 @@ const AddNoteSlideOver = ({
             <DynamicWorkflowStep
               stepConfig={currentStepConfig}
               formData={formData[currentStepConfig.id] || {}}
-              onDataChange={(data) => handleStepDataChange(currentStepConfig.id, data)}
+              onDataChange={handleCurrentStepDataChange}
               patient={patient}
               template={template}
             />
@@ -727,7 +831,7 @@ const AddNoteSlideOver = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={resetWorkflow}
+              onClick={resetWorkflowAndAssistant}
               className="font-mono text-xs"
             >
               <ChevronLeft className="size-3.5 mr-1" />
@@ -759,7 +863,7 @@ const AddNoteSlideOver = ({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => runQualityCheck()}
+                  onClick={handleRunQualityCheck}
                   disabled={isSaving || isLoading || isAiBusy}
                   className="font-mono text-xs"
                 >
@@ -788,7 +892,7 @@ const AddNoteSlideOver = ({
 	                  <Checkbox
 	                    id="add-note-major-acknowledgement"
 	                    checked={majorAcknowledged}
-                    onCheckedChange={(value) => setMajorAcknowledged(Boolean(value))}
+                    onCheckedChange={handleMajorAcknowledgementChange}
                   />
                   <span className="font-mono text-[10px] leading-tight text-amber-800">
                     Acknowledge major quality issues and continue.
@@ -821,7 +925,7 @@ const AddNoteSlideOver = ({
           </div>
         </footer>
       )}
-    </div>
+    </>
   );
 };
 
