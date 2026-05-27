@@ -31,8 +31,6 @@ vi.mock('@/shared/hooks/usePageMeta', () => ({
 }))
 
 vi.mock('@/features/patients/prefetch', () => ({
-  prefetchMyPatientsRoute: vi.fn(),
-  prefetchPatientRegistryRoute: vi.fn(),
   prefetchPatientChronicleData: vi.fn(),
 }))
 

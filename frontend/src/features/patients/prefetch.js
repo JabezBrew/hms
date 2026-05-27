@@ -17,8 +17,6 @@ const PREFETCH_CACHE_MAX_ITEMS = 50
 const prefetchedPatients = new Map()
 
 let patientDetailRoutePromise = null
-let patientRegistryRoutePromise = null
-let myPatientsRoutePromise = null
 
 function prunePrefetchCache(now = Date.now()) {
   for (const [patientId, state] of prefetchedPatients) {
@@ -65,14 +63,6 @@ function loadPatientChroniclePage() {
   return import('@/features/patients/pages/PatientChroniclePage')
 }
 
-function loadPatientRegistryPage() {
-  return import('@/features/patients/pages/PatientChronicleListPage')
-}
-
-function loadMyPatientsPage() {
-  return import('@/features/patients/pages/MyPatientsPage')
-}
-
 export function prefetchPatientDetailRoute() {
   if (!patientDetailRoutePromise) {
     patientDetailRoutePromise = Promise.all([
@@ -83,24 +73,6 @@ export function prefetchPatientDetailRoute() {
     })
   }
   return patientDetailRoutePromise
-}
-
-export function prefetchPatientRegistryRoute() {
-  if (!patientRegistryRoutePromise) {
-    patientRegistryRoutePromise = loadPatientRegistryPage().catch(() => {
-      patientRegistryRoutePromise = null
-    })
-  }
-  return patientRegistryRoutePromise
-}
-
-export function prefetchMyPatientsRoute() {
-  if (!myPatientsRoutePromise) {
-    myPatientsRoutePromise = loadMyPatientsPage().catch(() => {
-      myPatientsRoutePromise = null
-    })
-  }
-  return myPatientsRoutePromise
 }
 
 function prefetchChronicleContext(queryClient, patientId) {

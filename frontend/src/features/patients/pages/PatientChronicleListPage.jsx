@@ -54,9 +54,7 @@ import { useClinicalUnits } from "@/hooks/useOrganization";
 import { useSearchPractitioners } from "@/hooks/useStaffQueries";
 import { format } from "date-fns";
 import {
-  prefetchMyPatientsRoute,
   prefetchPatientChronicleData,
-  prefetchPatientRegistryRoute,
 } from "@/features/patients/prefetch";
 
 // Clinical provider roles that can access "My Patients" feature
@@ -610,8 +608,6 @@ const PatientChronicleListPage = () => {
             <NavLink
               to="/patients"
               end
-              onMouseEnter={prefetchPatientRegistryRoute}
-              onFocus={prefetchPatientRegistryRoute}
               className={({ isActive }) => cn(
                 "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
                 isActive
@@ -624,8 +620,6 @@ const PatientChronicleListPage = () => {
             </NavLink>
             <NavLink
               to="/patients/my-patients"
-              onMouseEnter={prefetchMyPatientsRoute}
-              onFocus={prefetchMyPatientsRoute}
               className={({ isActive }) => cn(
                 "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
                 isActive

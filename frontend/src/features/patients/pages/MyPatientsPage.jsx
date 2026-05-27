@@ -5,7 +5,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import Pin from 'lucide-react/dist/esm/icons/pin.js';
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import {
   useMyPatients,
@@ -22,10 +22,6 @@ import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
-import {
-  prefetchMyPatientsRoute,
-  prefetchPatientRegistryRoute,
-} from "@/features/patients/prefetch";
 
 /**
  * MyPatientsPage - Dedicated page for user's personal patient list
@@ -49,11 +45,6 @@ const MyPatientsPage = () => {
     ],
   });
 
-  useEffect(() => {
-    prefetchMyPatientsRoute();
-    prefetchPatientRegistryRoute();
-  }, []);
-
   // Fetch My Patients data
   const {
     data: myPatientsData,
@@ -62,8 +53,8 @@ const MyPatientsPage = () => {
   } = useMyPatients();
 
   // Mutations
-  const removeFromMyPatients = useRemoveFromMyPatients();
-  const togglePin = useToggleMyPatientPin();
+  const { mutate: removeFromMyPatients } = useRemoveFromMyPatients();
+  const { mutate: togglePin } = useToggleMyPatientPin();
 
   // Process patient list
   const patients = useMemo(() => {
@@ -116,27 +107,27 @@ const MyPatientsPage = () => {
     setSearchQuery("");
   };
 
-  const handleRemoveFromMyPatients = (patientId) => {
-    removeFromMyPatients.mutate(patientId);
-  };
+  const handleRemoveFromMyPatients = useCallback((patientId) => {
+    removeFromMyPatients(patientId);
+  }, [removeFromMyPatients]);
 
-  const handleTogglePin = (entryId) => {
-    togglePin.mutate(entryId);
-  };
+  const handleTogglePin = useCallback((entryId) => {
+    togglePin(entryId);
+  }, [togglePin]);
 
-  const handleStartRound = (patient) => {
+  const handleStartRound = useCallback((patient) => {
     const patientId = patient?.id || patient?.patient_profile;
     if (patientId) {
       navigate(`/patients/${patientId}?wardRound=true`);
     }
-  };
+  }, [navigate]);
 
-  const handleStartConsultation = (patient) => {
+  const handleStartConsultation = useCallback((patient) => {
     const patientId = patient?.id || patient?.patient_profile;
     if (patientId) {
       navigate(`/patients/${patientId}?consultation=true`);
     }
-  };
+  }, [navigate]);
 
   const handleAddPatient = () => {
     navigate('/patients');
@@ -263,7 +254,13 @@ const MyPatientsPage = () => {
     });
 
     return columns;
-  }, [rustV2Mode]);
+  }, [
+    handleRemoveFromMyPatients,
+    handleStartConsultation,
+    handleStartRound,
+    handleTogglePin,
+    rustV2Mode,
+  ]);
 
   return (
     <PageShell>
@@ -289,8 +286,6 @@ const MyPatientsPage = () => {
           <NavLink
             to="/patients"
             end
-            onMouseEnter={prefetchPatientRegistryRoute}
-            onFocus={prefetchPatientRegistryRoute}
             className={({ isActive }) => cn(
               "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
               isActive
@@ -303,8 +298,6 @@ const MyPatientsPage = () => {
           </NavLink>
           <NavLink
             to="/patients/my-patients"
-            onMouseEnter={prefetchMyPatientsRoute}
-            onFocus={prefetchMyPatientsRoute}
             className={({ isActive }) => cn(
               "px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2",
               isActive

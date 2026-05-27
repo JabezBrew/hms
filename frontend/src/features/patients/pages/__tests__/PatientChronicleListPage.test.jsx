@@ -7,10 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PatientChronicleListPage from '../PatientChronicleListPage'
 import { usePatientSearch } from '@/features/patients/hooks/usePatientQueries'
 import {
-  prefetchMyPatientsRoute,
   prefetchPatientChronicleData,
   prefetchPatientDetailRoute,
-  prefetchPatientRegistryRoute,
 } from '@/features/patients/prefetch'
 
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
@@ -46,10 +44,8 @@ vi.mock('@/hooks/use-debounce', () => ({
 }))
 
 vi.mock('@/features/patients/prefetch', () => ({
-  prefetchMyPatientsRoute: vi.fn(),
   prefetchPatientChronicleData: vi.fn(),
   prefetchPatientDetailRoute: vi.fn(),
-  prefetchPatientRegistryRoute: vi.fn(),
 }))
 
 const mockUsePatientSearch = vi.mocked(usePatientSearch)
@@ -285,8 +281,6 @@ describe('PatientChronicleListPage registry scope behavior', () => {
 
 const mockPrefetchPatientChronicleData = vi.mocked(prefetchPatientChronicleData)
 const mockPrefetchPatientDetailRoute = vi.mocked(prefetchPatientDetailRoute)
-const mockPrefetchMyPatientsRoute = vi.mocked(prefetchMyPatientsRoute)
-const mockPrefetchPatientRegistryRoute = vi.mocked(prefetchPatientRegistryRoute)
 
 describe('PatientChronicleListPage PHI prefetch gating', () => {
   beforeEach(() => {
@@ -317,12 +311,10 @@ describe('PatientChronicleListPage PHI prefetch gating', () => {
     expect(mockPrefetchPatientChronicleData).not.toHaveBeenCalled()
   })
 
-  it('does not automatically prefetch route chunks on mount', () => {
+  it('does not automatically prefetch patient detail route chunks on mount', () => {
     renderPage()
 
     expect(mockPrefetchPatientDetailRoute).not.toHaveBeenCalled()
-    expect(mockPrefetchMyPatientsRoute).not.toHaveBeenCalled()
-    expect(mockPrefetchPatientRegistryRoute).not.toHaveBeenCalled()
   })
 
   it('does not prefetch patient detail route or PHI data on focus', async () => {
