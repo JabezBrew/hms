@@ -27,6 +27,210 @@ import {
   useBulkDispense
 } from '@/features/nursing/hooks';
 
+function formatQueueTime(timestamp) {
+  if (!timestamp) return '-';
+  try {
+    return format(new Date(timestamp), 'h:mm a');
+  } catch {
+    return timestamp;
+  }
+}
+
+function formatQueueDateTime(timestamp) {
+  if (!timestamp) return '-';
+  try {
+    return format(new Date(timestamp), 'MMM d, h:mm a');
+  } catch {
+    return timestamp;
+  }
+}
+
+function getQueuePatientName(med) {
+  if (med.patient_name) return med.patient_name;
+  if (med.patient_details?.user_details) {
+    const { first_name: firstName, last_name: lastName } = med.patient_details.user_details;
+    if (firstName || lastName) {
+      return `${firstName || ''} ${lastName || ''}`.trim();
+    }
+  }
+  return 'Unknown Patient';
+}
+
+function getQueuePatientMRN(med) {
+  return med.patient_mrn || med.patient_details?.medical_record_number || '-';
+}
+
+function getQueuePatientWard(med) {
+  return med.patient_ward || med.patient_details?.current_ward || 'Unknown';
+}
+
+function getQueuePrescriberName(med) {
+  if (med.prescriber_name) return med.prescriber_name;
+  if (med.prescribed_by_details?.staff_details?.user_details) {
+    const { first_name: firstName, last_name: lastName } = med.prescribed_by_details.staff_details.user_details;
+    if (firstName || lastName) {
+      return `Dr. ${firstName || ''} ${lastName || ''}`.trim();
+    }
+  }
+  return '-';
+}
+
+function filterPendingMedications(pendingMeds, searchTerm) {
+  const normalizedSearch = searchTerm.toLowerCase();
+  return (pendingMeds || []).filter((med) => (
+    med.medication_name?.toLowerCase().includes(normalizedSearch) ||
+    getQueuePatientName(med).toLowerCase().includes(normalizedSearch) ||
+    med.dosage?.toLowerCase().includes(normalizedSearch)
+  ));
+}
+
+function groupMedicationsByPatient(medications) {
+  return medications.reduce((acc, med) => {
+    const patientId = med.patient;
+    if (!acc[patientId]) {
+      acc[patientId] = {
+        firstMed: med,
+        medications: []
+      };
+    }
+    acc[patientId].medications.push(med);
+    return acc;
+  }, {});
+}
+
+function getMedicationDispenseIds(medication) {
+  return medication.mar_entry_ids?.length
+    ? medication.mar_entry_ids
+    : [medication.mar_entry_id || medication.id];
+}
+
+function expandSelectedDispenseIds(pendingMeds, selectedMeds) {
+  const groupsById = new Map((pendingMeds || []).map((med) => [med.id, med]));
+  return selectedMeds.flatMap((groupId) => {
+    const group = groupsById.get(groupId);
+    if (!group) return [];
+    if (group.mar_entry_ids?.length) return group.mar_entry_ids;
+    return group.mar_entry_id ? [group.mar_entry_id] : [];
+  });
+}
+
+function PharmacyQueueLoadingState() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-12 rounded-xl" />
+      <Skeleton className="h-96 rounded-xl" />
+    </div>
+  );
+}
+
+function PharmacyQueueErrorState({ error, onRetry }) {
+  return (
+    <div className="bg-card/50 backdrop-blur border border-destructive/30 rounded-xl p-8 text-center">
+      <AlertCircle className="size-12 text-destructive mx-auto mb-4" />
+      <h3 className="font-display text-xl text-foreground mb-2">Error Loading Queue</h3>
+      <p className="text-muted-foreground mb-4">
+        {error.message || 'Failed to load dispensing queue'}
+      </p>
+      <Button variant="outline" onClick={onRetry}>
+        <RefreshCw className="size-4 mr-2" />
+        Try Again
+      </Button>
+    </div>
+  );
+}
+
+function PharmacyQueueControls({
+  bulkDispensePending,
+  dispensingActionsAvailable,
+  onBulkDispense,
+  onRefresh,
+  onSearchChange,
+  onViewModeChange,
+  searchTerm,
+  selectedCount,
+  totalPatients,
+  totalPending,
+  viewMode,
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard icon={Package} value={totalPending} label="Pending Dispensing" color="amber" />
+        <StatCard icon={User} value={totalPatients} label="Patients Waiting" color="sky" />
+        <StatCard icon={CheckCircle} value={selectedCount} label="Selected" color="emerald" />
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by patient name or medication..."
+            value={searchTerm}
+            onChange={(event) => onSearchChange(event.target.value)}
+            className="pl-10 font-mono text-sm bg-background"
+          />
+        </div>
+        <div className="flex gap-2">
+          <div className="flex bg-muted rounded-lg p-0.5">
+            <button
+              type="button"
+              onClick={() => onViewModeChange('by-patient')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
+                viewMode === 'by-patient'
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <User className="size-3.5" />
+              By Patient
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange('all')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
+                viewMode === 'all'
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Pill className="size-3.5" />
+              All Medications
+            </button>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onRefresh} className="shrink-0">
+            <RefreshCw className="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      {!dispensingActionsAvailable && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
+          Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.
+        </div>
+      )}
+
+      {dispensingActionsAvailable && selectedCount > 0 && (
+        <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+          <span className="font-mono text-sm text-primary">
+            {selectedCount} medication{selectedCount !== 1 ? 's' : ''} selected
+          </span>
+          <Button onClick={onBulkDispense} disabled={bulkDispensePending} size="sm">
+            <Package className="size-4 mr-2" />
+            Dispense Selected
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function PharmacyQueue() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMeds, setSelectedMeds] = useState([]);
@@ -52,81 +256,8 @@ export function PharmacyQueue() {
   const bulkDispenseMutation = useBulkDispense();
   const dispenseMutation = bulkDispenseMutation;
 
-  // Format timestamp
-  const formatTime = (timestamp) => {
-    if (!timestamp) return '-';
-    try {
-      return format(new Date(timestamp), 'h:mm a');
-    } catch {
-      return timestamp;
-    }
-  };
-
-  const formatDateTime = (timestamp) => {
-    if (!timestamp) return '-';
-    try {
-      return format(new Date(timestamp), 'MMM d, h:mm a');
-    } catch {
-      return timestamp;
-    }
-  };
-
-  // Helper to get patient name
-  const getPatientName = (med) => {
-    if (med.patient_name) return med.patient_name;
-    if (med.patient_details?.user_details) {
-      const { first_name, last_name } = med.patient_details.user_details;
-      if (first_name || last_name) {
-        return `${first_name || ''} ${last_name || ''}`.trim();
-      }
-    }
-    return 'Unknown Patient';
-  };
-
-  // Helper to get patient MRN
-  const getPatientMRN = (med) => {
-    return med.patient_mrn || med.patient_details?.medical_record_number || '-';
-  };
-
-  // Helper to get patient ward
-  const getPatientWard = (med) => {
-    return med.patient_ward || med.patient_details?.current_ward || 'Unknown';
-  };
-
-  // Helper to get prescriber name
-  const getPrescriberName = (med) => {
-    if (med.prescriber_name) return med.prescriber_name;
-    if (med.prescribed_by_details?.staff_details?.user_details) {
-      const { first_name, last_name } = med.prescribed_by_details.staff_details.user_details;
-      if (first_name || last_name) {
-        return `Dr. ${first_name || ''} ${last_name || ''}`.trim();
-      }
-    }
-    return '-';
-  };
-
-  // Filter medications
-  const filteredMeds = (pendingMeds || []).filter(med => {
-    const patientName = getPatientName(med);
-    return (
-      med.medication_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      med.dosage?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  });
-
-  // Group by patient
-  const groupedByPatient = filteredMeds.reduce((acc, med) => {
-    const patientId = med.patient;
-    if (!acc[patientId]) {
-      acc[patientId] = {
-        firstMed: med,
-        medications: []
-      };
-    }
-    acc[patientId].medications.push(med);
-    return acc;
-  }, {});
+  const filteredMeds = filterPendingMedications(pendingMeds, searchTerm);
+  const groupedByPatient = groupMedicationsByPatient(filteredMeds);
 
   // Toggle medication selection
   const toggleMedSelection = (medId) => {
@@ -158,9 +289,7 @@ export function PharmacyQueue() {
       toast.error('Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.');
       return;
     }
-    const ids = medication.mar_entry_ids?.length
-      ? medication.mar_entry_ids
-      : [medication.mar_entry_id || medication.id];
+    const ids = getMedicationDispenseIds(medication);
     try {
       await bulkDispenseMutation.mutateAsync(ids);
       toast.success(`${medication.medication_name} dispensed successfully`);
@@ -183,17 +312,7 @@ export function PharmacyQueue() {
       return;
     }
 
-    const groupsById = new Map((pendingMeds || []).map((m) => [m.id, m]));
-    const marIds = [];
-    for (const groupId of selectedMeds) {
-      const group = groupsById.get(groupId);
-      if (!group) continue;
-      if (group.mar_entry_ids?.length) {
-        marIds.push(...group.mar_entry_ids);
-      } else if (group.mar_entry_id) {
-        marIds.push(group.mar_entry_id);
-      }
-    }
+    const marIds = expandSelectedDispenseIds(pendingMeds, selectedMeds);
 
     try {
       const result = await bulkDispenseMutation.mutateAsync(marIds);
@@ -213,9 +332,9 @@ export function PharmacyQueue() {
 
   const openPatientContext = (medication) => {
     setContextPatient({
-      name: getPatientName(medication),
-      mrn: getPatientMRN(medication),
-      ward: getPatientWard(medication),
+      name: getQueuePatientName(medication),
+      mrn: getQueuePatientMRN(medication),
+      ward: getQueuePatientWard(medication),
       allergies: medication.patient_allergies || [],
       problems: medication.patient_problems || [],
       medications: medication.patient_medications || [],
@@ -224,33 +343,11 @@ export function PharmacyQueue() {
   };
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => (
-            <Skeleton key={i} className="h-24 rounded-xl" />
-          ))}
-        </div>
-        <Skeleton className="h-12 rounded-xl" />
-        <Skeleton className="h-96 rounded-xl" />
-      </div>
-    );
+    return <PharmacyQueueLoadingState />;
   }
 
   if (error) {
-    return (
-      <div className="bg-card/50 backdrop-blur border border-destructive/30 rounded-xl p-8 text-center">
-        <AlertCircle className="size-12 text-destructive mx-auto mb-4" />
-        <h3 className="font-display text-xl text-foreground mb-2">Error Loading Queue</h3>
-        <p className="text-muted-foreground mb-4">
-          {error.message || 'Failed to load dispensing queue'}
-        </p>
-        <Button variant="outline" onClick={() => refetch()}>
-          <RefreshCw className="size-4 mr-2" />
-          Try Again
-        </Button>
-      </div>
-    );
+    return <PharmacyQueueErrorState error={error} onRetry={() => refetch()} />;
   }
 
   const totalPending = filteredMeds.length;
@@ -259,97 +356,19 @@ export function PharmacyQueue() {
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard
-          icon={Package}
-          value={totalPending}
-          label="Pending Dispensing"
-          color="amber"
-        />
-        <StatCard
-          icon={User}
-          value={totalPatients}
-          label="Patients Waiting"
-          color="sky"
-        />
-        <StatCard
-          icon={CheckCircle}
-          value={totalSelected}
-          label="Selected"
-          color="emerald"
-        />
-      </div>
-
-      {/* Search and Actions */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by patient name or medication..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 font-mono text-sm bg-background"
-          />
-        </div>
-        <div className="flex gap-2">
-          {/* View Toggle */}
-          <div className="flex bg-muted rounded-lg p-0.5">
-            <button
-              type="button"
-              onClick={() => setViewMode('by-patient')}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
-                viewMode === 'by-patient'
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <User className="size-3.5" />
-              By Patient
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('all')}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-mono transition-colors flex items-center gap-1.5",
-                viewMode === 'all'
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Pill className="size-3.5" />
-              All Medications
-            </button>
-          </div>
-          <Button variant="ghost" size="icon" onClick={() => refetch()} className="shrink-0">
-            <RefreshCw className="size-4" />
-          </Button>
-        </div>
-      </div>
-
-      {rustV2Mode ? (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
-          Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.
-        </div>
-      ) : null}
-
-      {/* Bulk Actions */}
-      {dispensingActionsAvailable && selectedMeds.length > 0 && (
-        <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
-          <span className="font-mono text-sm text-primary">
-            {selectedMeds.length} medication{selectedMeds.length !== 1 ? 's' : ''} selected
-          </span>
-          <Button
-            onClick={handleBulkDispense}
-            disabled={bulkDispenseMutation.isPending}
-            size="sm"
-          >
-            <Package className="size-4 mr-2" />
-            Dispense Selected
-          </Button>
-        </div>
-      )}
+      <PharmacyQueueControls
+        bulkDispensePending={bulkDispenseMutation.isPending}
+        dispensingActionsAvailable={dispensingActionsAvailable}
+        onBulkDispense={handleBulkDispense}
+        onRefresh={() => refetch()}
+        onSearchChange={setSearchTerm}
+        onViewModeChange={setViewMode}
+        searchTerm={searchTerm}
+        selectedCount={totalSelected}
+        totalPatients={totalPatients}
+        totalPending={totalPending}
+        viewMode={viewMode}
+      />
 
       {/* Main Content */}
       {viewMode === 'by-patient' ? (
@@ -361,11 +380,10 @@ export function PharmacyQueue() {
           openConfirmDialog={openConfirmDialog}
           openPatientContext={openPatientContext}
           dispenseMutation={dispenseMutation}
-          getPatientName={getPatientName}
-          getPatientMRN={getPatientMRN}
-          getPatientWard={getPatientWard}
-          getPrescriberName={getPrescriberName}
-          formatTime={formatTime}
+          getPatientName={getQueuePatientName}
+          getPatientMRN={getQueuePatientMRN}
+          getPatientWard={getQueuePatientWard}
+          formatTime={formatQueueTime}
           dispensingActionsAvailable={dispensingActionsAvailable}
         />
       ) : (
@@ -377,10 +395,10 @@ export function PharmacyQueue() {
           openConfirmDialog={openConfirmDialog}
           openPatientContext={openPatientContext}
           dispenseMutation={dispenseMutation}
-          getPatientName={getPatientName}
-          getPatientMRN={getPatientMRN}
-          getPrescriberName={getPrescriberName}
-          formatDateTime={formatDateTime}
+          getPatientName={getQueuePatientName}
+          getPatientMRN={getQueuePatientMRN}
+          getPrescriberName={getQueuePrescriberName}
+          formatDateTime={formatQueueDateTime}
           dispensingActionsAvailable={dispensingActionsAvailable}
         />
       )}
@@ -404,8 +422,8 @@ export function PharmacyQueue() {
                 </div>
               )}
               <div className="bg-muted/50 rounded-xl p-4 space-y-3">
-                <DetailRow label="Patient" value={getPatientName(confirmMedication)} highlight />
-                <DetailRow label="MRN" value={getPatientMRN(confirmMedication)} mono />
+                <DetailRow label="Patient" value={getQueuePatientName(confirmMedication)} highlight />
+                <DetailRow label="MRN" value={getQueuePatientMRN(confirmMedication)} mono />
                 <hr className="border-border" />
                 <DetailRow label="Medication" value={confirmMedication.medication_name} highlight />
                 <DetailRow label="Dosage" value={confirmMedication.dosage} />
@@ -420,15 +438,15 @@ export function PharmacyQueue() {
                     />
                     <DetailRow
                       label="Next due"
-                      value={formatDateTime(confirmMedication.scheduled_time)}
+                      value={formatQueueDateTime(confirmMedication.scheduled_time)}
                       mono
                     />
                   </>
                 ) : (
-                  <DetailRow label="Scheduled" value={formatDateTime(confirmMedication.scheduled_time)} mono />
+                  <DetailRow label="Scheduled" value={formatQueueDateTime(confirmMedication.scheduled_time)} mono />
                 )}
                 <hr className="border-border" />
-                <DetailRow label="Prescribed by" value={getPrescriberName(confirmMedication)} />
+                <DetailRow label="Prescribed by" value={getQueuePrescriberName(confirmMedication)} />
               </div>
             </div>
           )}
@@ -515,7 +533,6 @@ const ByPatientView = ({
   getPatientName,
   getPatientMRN,
   getPatientWard,
-  getPrescriberName,
   formatTime,
   dispensingActionsAvailable,
 }) => {
