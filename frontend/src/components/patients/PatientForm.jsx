@@ -176,7 +176,1085 @@ const patientFormSchema = z.object({
   country: z.string().optional(),
 });
 
-const PatientForm = ({ patient, onSuccess }) => {
+function PatientFormValidationSummary({
+  validationState,
+  encounterState,
+  formErrors,
+  navigation,
+}) {
+  const { showValidation, hasFormErrors, hasBlockingIssues } = validationState;
+  const {
+    isEditMode,
+    selectedDepartment,
+    admissionType,
+    encounterBlocksOutpatient,
+    clinicSelectionRequired,
+    selectedClinicIsActive,
+  } = encounterState;
+  const { goToStep, goToFirstErrorStep } = navigation;
+
+  if (!showValidation || (!hasFormErrors && !hasBlockingIssues)) return null;
+
+  return (
+    <Alert className="mb-6 border-amber-200 bg-amber-50/60 text-amber-950 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-100">
+      <AlertCircle />
+      <AlertTitle>Fix a few items to continue</AlertTitle>
+      <AlertDescription>
+        <div className="space-y-1">
+          {!isEditMode && !selectedDepartment && (
+            <button
+              type="button"
+              className="text-left hover:underline font-mono text-xs"
+              onClick={() => goToStep('encounter')}
+            >
+              Encounter: select a department
+            </button>
+          )}
+          {!isEditMode && admissionType === 'outpatient' && encounterBlocksOutpatient && (
+            <button
+              type="button"
+              className="text-left hover:underline font-mono text-xs"
+              onClick={() => goToStep('encounter')}
+            >
+              Encounter: no clinics are scheduled right now for this department
+            </button>
+          )}
+          {!isEditMode && admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinicIsActive && (
+            <button
+              type="button"
+              className="text-left hover:underline font-mono text-xs"
+              onClick={() => goToStep('encounter')}
+            >
+              Encounter: select a clinic
+            </button>
+          )}
+          {Object.entries(formErrors || {}).map(([field, err]) => (
+            <button
+              key={field}
+              type="button"
+              className="text-left hover:underline font-mono text-xs"
+              onClick={goToFirstErrorStep}
+            >
+              {String(err?.message || field)}
+            </button>
+          ))}
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function PatientFormStepProgress({
+  currentStepIndex,
+  stepDefs,
+  activeStep,
+  stepErrorCounts,
+  tabColsClass,
+}) {
+  return (
+    <>
+      <div className="mb-6 rounded-lg border border-border/60 bg-muted/20 p-3 sm:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-mono text-[10px] uppercase text-muted-foreground">
+            Step {currentStepIndex + 1} of {stepDefs.length}
+          </p>
+          {stepErrorCounts[activeStep] > 0 && (
+            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+              {stepErrorCounts[activeStep]}
+            </Badge>
+          )}
+        </div>
+        <p className="mt-1 font-heading text-sm font-semibold text-foreground">
+          {stepDefs[currentStepIndex]?.label || 'Registration'}
+        </p>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/70">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${((currentStepIndex + 1) / stepDefs.length) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      <TabsList className={cn("mb-6 hidden w-full sm:grid", tabColsClass)}>
+        {stepDefs.map((step, idx) => {
+          const count = stepErrorCounts[step.key] || 0;
+          return (
+            <TabsTrigger key={step.key} value={step.key} className="font-mono text-xs">
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-flex size-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
+                  {idx + 1}
+                </span>
+                <span>{step.label}</span>
+                {count > 0 && (
+                  <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                    {count}
+                  </Badge>
+                )}
+              </span>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </>
+  );
+}
+
+function EncounterStepContent({
+  encounterState,
+  encounterActions,
+  clinicState,
+  clinicActions,
+  wardState,
+  wardActions,
+  form,
+}) {
+  const {
+    admissionType,
+    selectedDepartment,
+    selectedPrimaryTeam,
+    showValidation,
+    isDepartmentsLoading,
+    departments,
+  } = encounterState;
+  const { handleAdmissionTypeChange, handleDepartmentChange, setSelectedPrimaryTeam } = encounterActions;
+  const {
+    activeClinicOptions,
+    outpatientRequiresActiveClinicSchedule,
+    clinicSelectionRequired,
+    selectedClinicIsActive,
+    selectedClinic,
+  } = clinicState;
+  const { setSelectedClinic } = clinicActions;
+  const { isWaitingList, selectedWard, isWardsLoading, unitWards, beds } = wardState;
+  const { handleWaitingListChange, handleWardChange } = wardActions;
+
+  return (
+    <TabsContent value="encounter" className="space-y-4 mt-4">
+      <div className="space-y-3">
+        <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+          <Stethoscope className="size-4" />
+          Encounter Type
+        </span>
+        <RadioGroup
+          value={admissionType}
+          onValueChange={handleAdmissionTypeChange}
+          className="flex flex-col gap-y-2"
+        >
+          <div className="flex items-center gap-x-2">
+            <RadioGroupItem value="outpatient" id="outpatient" />
+            <label htmlFor="outpatient" className="font-normal cursor-pointer">
+              Outpatient (Clinic visit)
+            </label>
+          </div>
+          <div className="flex items-center gap-x-2">
+            <RadioGroupItem value="inpatient" id="inpatient" />
+            <label htmlFor="inpatient" className="font-normal cursor-pointer">
+              Inpatient (Admit to ward)
+            </label>
+          </div>
+          <div className="flex items-center gap-x-2">
+            <RadioGroupItem value="emergency" id="emergency" />
+            <label htmlFor="emergency" className="font-normal cursor-pointer">
+              Emergency (ED triage)
+            </label>
+          </div>
+        </RadioGroup>
+      </div>
+
+      <Separator className="my-4" />
+
+      <div className="space-y-2">
+        <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+          <Building2 className="size-4" />
+          Department
+          <span className="text-rose-500">*</span>
+        </span>
+        <Select
+          value={selectedDepartment}
+          onValueChange={handleDepartmentChange}
+        >
+          <SelectTrigger className={cn("font-mono", showValidation && !selectedDepartment && "border-rose-500")}>
+            <SelectValue placeholder={isDepartmentsLoading ? "Loading departments..." : "Select department"} />
+          </SelectTrigger>
+          <SelectContent>
+            {departments.map((dept) => (
+              <SelectItem key={dept.id} value={dept.id} className="font-mono">
+                {dept.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {showValidation && !selectedDepartment && (
+          <p className="text-xs text-rose-500 font-mono">Department is required for registration</p>
+        )}
+      </div>
+
+      {admissionType === 'outpatient' && selectedDepartment && (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            <Stethoscope className="size-4" />
+            Clinic
+            {clinicSelectionRequired && <span className="text-rose-500">*</span>}
+          </label>
+
+          {activeClinicOptions.length === 0 ? (
+            outpatientRequiresActiveClinicSchedule ? (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="size-4 text-amber-600 dark:text-amber-400" />
+                  <p className="text-sm text-amber-700 dark:text-amber-300 font-mono">
+                    No clinics are scheduled right now for this department. Choose another department or publish a roster session.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="size-4 text-sky-600 dark:text-sky-400" />
+                  <p className="text-sm text-sky-700 dark:text-sky-300 font-mono">
+                    No active clinic schedule found. Registration will continue under the selected department.
+                  </p>
+                </div>
+              </div>
+            )
+          ) : activeClinicOptions.length === 1 ? (
+            <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center gap-2">
+                <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
+                <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                  Auto-selected: <span className="font-mono font-medium">{activeClinicOptions[0].name}</span>
+                </p>
+              </div>
+            </div>
+          ) : (
+            <Select value={selectedClinicIsActive ? selectedClinic : ""} onValueChange={setSelectedClinic}>
+              <SelectTrigger className={cn("font-mono", showValidation && clinicSelectionRequired && !selectedClinicIsActive && "border-rose-500")}>
+                <SelectValue placeholder="Select clinic" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeClinicOptions.map((clinic) => (
+                  <SelectItem key={clinic.id} value={clinic.id} className="font-mono">
+                    {clinic.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {clinicSelectionRequired && !selectedClinicIsActive && activeClinicOptions.length > 1 && showValidation && (
+            <p className="text-xs text-rose-500 font-mono">
+              Multiple clinics are active; please select one
+            </p>
+          )}
+        </div>
+      )}
+
+      {(admissionType === 'inpatient' || admissionType === 'emergency') && selectedDepartment && (
+        <TeamSelectionField
+          departmentId={selectedDepartment}
+          encounterType={admissionType}
+          value={selectedPrimaryTeam}
+          onChange={setSelectedPrimaryTeam}
+        />
+      )}
+
+      {admissionType === 'inpatient' && selectedDepartment && (
+        <>
+          <div className="flex items-center gap-x-2 mb-2">
+            <input
+              type="checkbox"
+              id="waitingList"
+              aria-label="Add to waiting list and assign bed later"
+              checked={isWaitingList}
+              onChange={handleWaitingListChange}
+              className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
+            />
+            <label htmlFor="waitingList" className="text-sm font-medium leading-none">
+              Add to waiting list (assign bed later)
+            </label>
+          </div>
+
+          {!isWaitingList && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormItem>
+                <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</FormLabel>
+                <Select
+                  onValueChange={handleWardChange}
+                  value={selectedWard}
+                >
+                  <SelectTrigger className="font-mono">
+                    <SelectValue placeholder={isWardsLoading ? "Loading wards..." : "Select ward"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(unitWards || []).map((ward) => (
+                      <SelectItem key={ward.id} value={ward.id}>
+                        {ward.name} ({ward.ward_type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+
+              <FormField
+                control={form.control}
+                name="bed_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Bed</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={!selectedWard}>
+                      <SelectTrigger className="font-mono">
+                        <SelectValue placeholder={selectedWard ? "Select bed" : "Select ward first"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {beds.map((bed) => (
+                          <SelectItem key={bed.id} value={bed.id}>
+                            {bed.bed_number} ({bed.bed_type}) - ${bed.total_rate}
+                          </SelectItem>
+                        ))}
+                        {selectedWard && beds.length === 0 && (
+                          <div className="p-2 text-sm text-muted-foreground">No available beds</div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </TabsContent>
+  );
+}
+
+function IdentityStepContent({
+  form,
+  isEditMode,
+  noEmail,
+  noEmailPlaceholder,
+  handleNoEmailChange,
+  isRuleRequired,
+  dobString,
+  possibleMatches,
+  isMatchesLoading,
+  navigate,
+}) {
+  return (
+    <TabsContent value="identity" className="space-y-4 mt-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="first_name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                First Name <span className="text-rose-500">*</span>
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="First name" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="last_name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Last Name <span className="text-rose-500">*</span>
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="Last name" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="date_of_birth"
+          render={({ field }) => (
+            <FormItem className="flex flex-col">
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Date of Birth {!isEditMode && <span className="text-rose-500">*</span>}
+              </FormLabel>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <FormControl>
+                    <Button
+                      variant={"outline"}
+                      className={cn(
+                        "w-full pl-3 text-left font-normal",
+                        !field.value && "text-muted-foreground"
+                      )}
+                    >
+                      {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                      <CalendarIcon className="ml-auto size-4 opacity-50" />
+                    </Button>
+                  </FormControl>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={field.value}
+                    onSelect={field.onChange}
+                    disabled={(date) => date > MAX_DATE_OF_BIRTH || date < MIN_DATE_OF_BIRTH}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Email <span className="text-rose-500">*</span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="email"
+                  placeholder="Email address"
+                  {...field}
+                  disabled={!isEditMode && noEmail}
+                />
+              </FormControl>
+              {!isEditMode && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    id="noEmail"
+                    type="checkbox"
+                    aria-label="No email available"
+                    checked={noEmail}
+                    onChange={handleNoEmailChange}
+                    className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <label htmlFor="noEmail" className="text-xs text-muted-foreground font-mono">
+                    No email available (a placeholder will be generated)
+                  </label>
+                </div>
+              )}
+              {noEmail && !isEditMode && (
+                <p className="text-xs text-muted-foreground font-mono">
+                  Placeholder: <span className="font-medium">{noEmailPlaceholder}</span>
+                </p>
+              )}
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="gender"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Sex {!isEditMode && <span className="text-rose-500">*</span>}
+              </FormLabel>
+              <Select value={field.value || ""} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger className="font-mono">
+                    <SelectValue placeholder="Select sex" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="female">Female</SelectItem>
+                  <SelectItem value="male">Male</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                  <SelectItem value="unknown">Unknown</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="phone_number"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Phone Number {(noEmail && !isEditMode) || isRuleRequired('phone_number') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="Phone number" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="nhis_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                NHIS ID {isRuleRequired('nhis_id') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="NHIS ID" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      {isEditMode && (
+        <FormField
+          control={form.control}
+          name="medical_record_number"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Medical Record Number</FormLabel>
+              <FormControl>
+                <Input placeholder="Medical record number" {...field} readOnly />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
+
+      {!isEditMode && dobString && (
+        <div className="p-4 border border-border rounded-lg bg-muted/20">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <Search className="size-4 text-muted-foreground" />
+              <p className="text-sm font-medium">Possible duplicates</p>
+            </div>
+            {isMatchesLoading && (
+              <span className="text-xs text-muted-foreground font-mono">Searching…</span>
+            )}
+          </div>
+          {possibleMatches.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No matches found for this name and date of birth.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-amber-700 dark:text-amber-300 font-mono">
+                Verify before creating a new record.
+              </p>
+              {possibleMatches.map((match) => (
+                <div key={match.id} className="flex items-center justify-between gap-3 p-2 rounded-md border border-border bg-card/40">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{match.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      MRN {match.medical_record_number || 'N/A'} · DOB {match.date_of_birth}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="font-mono text-xs"
+                    onClick={() => navigate(`/patients/${match.id}`)}
+                  >
+                    Open
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </TabsContent>
+  );
+}
+
+function ContactStepContent({ form, isRuleRequired }) {
+  return (
+    <TabsContent value="contact" className="space-y-4 mt-4">
+      <h3 className="font-display text-lg text-foreground">Address</h3>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="address_line1"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Address Line 1 {isRuleRequired('address_line1') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="Address line 1" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="address_line2"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Address Line 2 {isRuleRequired('address_line2') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="Address line 2" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="city"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                City {isRuleRequired('city') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="City" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="state"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                State/Province {isRuleRequired('state') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="State/Province" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="postal_code"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Postal Code {isRuleRequired('postal_code') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="Postal code" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="country"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Country {isRuleRequired('country') ? <span className="text-rose-500">*</span> : null}
+              </FormLabel>
+              <FormControl>
+                <Input placeholder="Country" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <Separator className="my-4" />
+      <h3 className="font-display text-lg text-foreground">Emergency Contact</h3>
+
+      <FormField
+        control={form.control}
+        name="emergency_contact_name"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+              Emergency Contact Name {isRuleRequired('emergency_contact_name') ? <span className="text-rose-500">*</span> : null}
+            </FormLabel>
+            <FormControl>
+              <Input placeholder="Emergency contact name" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="emergency_contact_phone"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+              Emergency Contact Phone {isRuleRequired('emergency_contact_phone') ? <span className="text-rose-500">*</span> : null}
+            </FormLabel>
+            <FormControl>
+              <Input placeholder="Emergency contact phone" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="emergency_contact_relationship"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+              Relationship {isRuleRequired('emergency_contact_relationship') ? <span className="text-rose-500">*</span> : null}
+            </FormLabel>
+            <FormControl>
+              <Input placeholder="Relationship to patient" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </TabsContent>
+  );
+}
+
+function InsuranceStepContent({
+  insuranceData,
+  showValidation,
+  validateInsuranceStep,
+  handleInsuranceEnabledChange,
+  selectedProviderId,
+  handleInsuranceProviderChange,
+  insuranceQueryEnabled,
+  providers,
+  handleInsurancePlanChange,
+  plansQueryEnabled,
+  plans,
+  handleInsurancePolicyNumberChange,
+  handleInsuranceValidFromChange,
+  handleInsuranceValidUntilChange,
+}) {
+  return (
+    <TabsContent value="insurance" className="space-y-4 mt-4">
+      <div className="space-y-4">
+        <div className={cn(
+          "flex items-center justify-between p-4 rounded-lg border",
+          showValidation && insuranceData.hasInsurance && !validateInsuranceStep() ? "border-rose-200 bg-rose-50/40 dark:border-rose-900/40 dark:bg-rose-900/10" : "border-border bg-muted/20"
+        )}>
+          <div className="flex items-center gap-3">
+            <Shield className="size-5 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">Insurance Coverage</p>
+              <p className="text-xs text-muted-foreground">
+                Add insurance details for this patient
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {insuranceData.hasInsurance ? 'Enabled' : 'Skip'}
+            </span>
+            <input
+              type="checkbox"
+              aria-label="Enable insurance coverage"
+              checked={insuranceData.hasInsurance}
+              onChange={handleInsuranceEnabledChange}
+              className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
+            />
+          </div>
+        </div>
+
+        {insuranceData.hasInsurance && (
+          <div className="space-y-4 p-4 border border-border rounded-lg">
+            <div className="space-y-2">
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Insurance Provider <span className="text-rose-500">*</span>
+              </FormLabel>
+              <Select
+                value={selectedProviderId}
+                onValueChange={handleInsuranceProviderChange}
+                disabled={!insuranceQueryEnabled}
+              >
+                <SelectTrigger className={cn("font-mono", showValidation && !selectedProviderId && "border-rose-500")}>
+                  <SelectValue placeholder={insuranceQueryEnabled ? "Select provider" : "Loading providers..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Insurance Plan <span className="text-rose-500">*</span>
+              </FormLabel>
+              <Select
+                value={insuranceData.plan}
+                onValueChange={handleInsurancePlanChange}
+                disabled={!selectedProviderId || !plansQueryEnabled}
+              >
+                <SelectTrigger className={cn("font-mono", showValidation && !insuranceData.plan && "border-rose-500")}>
+                  <SelectValue placeholder={selectedProviderId ? "Select plan" : "Select provider first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {plans.map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id}>
+                      {plan.name} ({plan.coverage_percentage}% coverage)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Policy Number <span className="text-rose-500">*</span>
+              </FormLabel>
+              <Input
+                value={insuranceData.policy_number}
+                onChange={handleInsurancePolicyNumberChange}
+                placeholder="e.g., POL-12345678"
+                className={cn(showValidation && !insuranceData.policy_number?.trim() && "border-rose-500")}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Validity Period
+              </FormLabel>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <DatePicker
+                    date={insuranceData.valid_from}
+                    setDate={handleInsuranceValidFromChange}
+                    placeholder="Start date"
+                    className="w-full"
+                  />
+                </div>
+                <span className="text-muted-foreground text-sm">to</span>
+                <div className="flex-1">
+                  <DatePicker
+                    date={insuranceData.valid_until}
+                    setDate={handleInsuranceValidUntilChange}
+                    placeholder="No expiry"
+                    className="w-full"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Leave end date blank for no expiry</p>
+            </div>
+          </div>
+        )}
+
+        {!insuranceData.hasInsurance && (
+          <div className="text-center py-8 text-muted-foreground">
+            <Shield className="size-10 mx-auto mb-3 opacity-30" />
+            <p className="text-sm">No insurance will be added</p>
+            <p className="text-xs mt-1">You can add insurance later from the patient's profile</p>
+          </div>
+        )}
+      </div>
+    </TabsContent>
+  );
+}
+
+function ReviewStepContent({
+  isEditMode,
+  admissionType,
+  departments,
+  selectedDepartment,
+  selectedClinicForAdmission,
+  activeClinicOptions,
+  selectedWard,
+  unitWards,
+  isWaitingList,
+  encounterBlocksOutpatient,
+  firstName,
+  lastName,
+  dobString,
+  form,
+  insuranceData,
+  providers,
+  selectedProviderId,
+  plans,
+}) {
+  return (
+    <TabsContent value="review" className="space-y-4 mt-4">
+      <div className="space-y-3">
+        {!isEditMode && (
+          <div className="p-4 rounded-lg border border-border bg-card/40">
+            <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Encounter</p>
+            <p className="text-sm">
+              <span className="font-medium">Type:</span> {admissionType}
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">Department:</span>{' '}
+              {departments.find((d) => d.id === selectedDepartment)?.name || (selectedDepartment ? 'Selected' : 'Not selected')}
+            </p>
+            {admissionType === 'outpatient' && selectedClinicForAdmission && (
+              <p className="text-sm">
+                <span className="font-medium">Clinic:</span>{' '}
+                {activeClinicOptions.find((c) => c.id === selectedClinicForAdmission)?.name || 'Selected'}
+              </p>
+            )}
+            {admissionType === 'inpatient' && (
+              <p className="text-sm">
+                <span className="font-medium">Ward:</span>{' '}
+                {selectedWard ? (unitWards.find((w) => w.id === selectedWard)?.name || 'Selected') : (isWaitingList ? 'Waiting list' : 'Not selected')}
+              </p>
+            )}
+            {encounterBlocksOutpatient && (
+              <p className="text-sm text-rose-600 dark:text-rose-400 font-mono mt-2">
+                Cannot register outpatient visit: no clinics are scheduled right now.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="p-4 rounded-lg border border-border bg-card/40">
+          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Identity</p>
+          <p className="text-sm">
+            <span className="font-medium">Name:</span> {firstName} {lastName}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">DOB:</span> {dobString || 'Not set'}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">Sex:</span> {form.getValues('gender') || 'Not set'}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">Email:</span> {form.getValues('email') || 'Not set'}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">Phone:</span> {form.getValues('phone_number') || 'Not set'}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">NHIS ID:</span> {form.getValues('nhis_id') || 'Not set'}
+          </p>
+        </div>
+
+        <div className="p-4 rounded-lg border border-border bg-card/40">
+          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Contact</p>
+          <p className="text-sm">
+            <span className="font-medium">Address:</span> {[
+              form.getValues('address_line1'),
+              form.getValues('address_line2'),
+              form.getValues('city'),
+              form.getValues('state'),
+              form.getValues('postal_code'),
+              form.getValues('country'),
+            ].filter(Boolean).join(', ') || 'Not set'}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">Emergency:</span> {[
+              form.getValues('emergency_contact_name'),
+              form.getValues('emergency_contact_relationship'),
+              form.getValues('emergency_contact_phone'),
+            ].filter(Boolean).join(' · ') || 'Not set'}
+          </p>
+        </div>
+
+        {!isEditMode && (
+          <div className="p-4 rounded-lg border border-border bg-card/40">
+            <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Insurance</p>
+            {insuranceData.hasInsurance ? (
+              <>
+                <p className="text-sm">
+                  <span className="font-medium">Provider:</span> {providers.find((p) => p.id === selectedProviderId)?.name || 'Selected'}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Plan:</span> {plans.find((p) => p.id === insuranceData.plan)?.name || 'Selected'}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Policy:</span> {insuranceData.policy_number || 'Not set'}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No insurance will be added</p>
+            )}
+          </div>
+        )}
+      </div>
+    </TabsContent>
+  );
+}
+
+function PatientFormActions({
+  stepState,
+  actions,
+}) {
+  const {
+    isFirstStep,
+    isSubmitting,
+    isLastStep,
+    isEditMode,
+    activeStep,
+    encounterBlocksOutpatient,
+  } = stepState;
+  const { handleBack, handleNext } = actions;
+
+  return (
+    <div className="flex items-center justify-between pt-6">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={handleBack}
+        disabled={isFirstStep || isSubmitting}
+        className="font-mono text-sm"
+      >
+        Back
+      </Button>
+
+      {!isLastStep ? (
+        <Button
+          type="button"
+          onClick={handleNext}
+          disabled={isSubmitting || (!isEditMode && activeStep === 'encounter' && encounterBlocksOutpatient)}
+          className="font-mono text-sm bg-primary hover:bg-primary/90"
+        >
+          Next
+        </Button>
+      ) : (
+        <Button
+          type="submit"
+          disabled={isSubmitting || (!isEditMode && encounterBlocksOutpatient)}
+          className="font-mono text-sm bg-primary hover:bg-primary/90"
+        >
+          {isSubmitting ? "Saving..." : isEditMode ? "Update Patient" : "Register Patient"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function usePatientFormController({ patient, onSuccess }) {
   const navigate = useNavigate();
   const isEditMode = !!patient;
 
@@ -880,957 +1958,278 @@ const PatientForm = ({ patient, onSuccess }) => {
   const hasBlockingIssues = showValidation && !isEditMode && (encounterBlocksOutpatient || !validateEncounterStep() || !validateInsuranceStep());
   const hasFormErrors = Object.keys(form.formState.errors || {}).length > 0;
 
+  return {
+    activeClinicOptions,
+    activeStep,
+    admissionType,
+    beds,
+    clinicSelectionRequired,
+    currentStepIndex,
+    departments,
+    dobString,
+    encounterBlocksOutpatient,
+    firstName,
+    form,
+    handleAdmissionTypeChange,
+    handleBack,
+    handleDepartmentChange,
+    handleInsuranceEnabledChange,
+    handleInsurancePlanChange,
+    handleInsurancePolicyNumberChange,
+    handleInsuranceProviderChange,
+    handleInsuranceValidFromChange,
+    handleInsuranceValidUntilChange,
+    handleNext,
+    handleNoEmailChange,
+    handleWaitingListChange,
+    handleWardChange,
+    hasBlockingIssues,
+    hasFormErrors,
+    insuranceData,
+    insuranceQueryEnabled,
+    isDepartmentsLoading,
+    isEditMode,
+    isFirstStep,
+    isLastStep,
+    isMatchesLoading,
+    isRuleRequired,
+    isSubmitting,
+    isWaitingList,
+    isWardsLoading,
+    lastName,
+    navigate,
+    noEmail,
+    noEmailPlaceholder,
+    onFormSubmit,
+    outpatientRequiresActiveClinicSchedule,
+    plans,
+    plansQueryEnabled,
+    possibleMatches,
+    providers,
+    selectedClinic,
+    selectedClinicForAdmission,
+    selectedClinicIsActive,
+    selectedDepartment,
+    selectedPrimaryTeam,
+    selectedProviderId,
+    selectedWard,
+    setActiveStep,
+    setSelectedClinic,
+    setSelectedPrimaryTeam,
+    showValidation,
+    stepDefs,
+    stepErrorCounts,
+    tabColsClass,
+    unitWards,
+    validateInsuranceStep,
+    goToFirstErrorStep,
+    goToStep,
+  };
+}
+
+function PatientFormView({ controller }) {
+  const {
+    activeClinicOptions,
+    activeStep,
+    admissionType,
+    beds,
+    clinicSelectionRequired,
+    currentStepIndex,
+    departments,
+    dobString,
+    encounterBlocksOutpatient,
+    firstName,
+    form,
+    handleAdmissionTypeChange,
+    handleBack,
+    handleDepartmentChange,
+    handleInsuranceEnabledChange,
+    handleInsurancePlanChange,
+    handleInsurancePolicyNumberChange,
+    handleInsuranceProviderChange,
+    handleInsuranceValidFromChange,
+    handleInsuranceValidUntilChange,
+    handleNext,
+    handleNoEmailChange,
+    handleWaitingListChange,
+    handleWardChange,
+    hasBlockingIssues,
+    hasFormErrors,
+    insuranceData,
+    insuranceQueryEnabled,
+    isDepartmentsLoading,
+    isEditMode,
+    isFirstStep,
+    isLastStep,
+    isMatchesLoading,
+    isRuleRequired,
+    isSubmitting,
+    isWaitingList,
+    isWardsLoading,
+    lastName,
+    navigate,
+    noEmail,
+    noEmailPlaceholder,
+    onFormSubmit,
+    outpatientRequiresActiveClinicSchedule,
+    plans,
+    plansQueryEnabled,
+    possibleMatches,
+    providers,
+    selectedClinic,
+    selectedClinicForAdmission,
+    selectedClinicIsActive,
+    selectedDepartment,
+    selectedPrimaryTeam,
+    selectedProviderId,
+    selectedWard,
+    setActiveStep,
+    setSelectedClinic,
+    setSelectedPrimaryTeam,
+    showValidation,
+    stepDefs,
+    stepErrorCounts,
+    tabColsClass,
+    unitWards,
+    validateInsuranceStep,
+    goToFirstErrorStep,
+    goToStep,
+  } = controller;
+
   return (
     <Card className="w-full border-border">
       <CardContent className="pt-6">
-        {showValidation && (hasFormErrors || hasBlockingIssues) && (
-          <Alert className="mb-6 border-amber-200 bg-amber-50/60 text-amber-950 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-100">
-            <AlertCircle />
-            <AlertTitle>Fix a few items to continue</AlertTitle>
-            <AlertDescription>
-              <div className="space-y-1">
-                {!isEditMode && !selectedDepartment && (
-                  <button
-                    type="button"
-                    className="text-left hover:underline font-mono text-xs"
-                    onClick={() => goToStep('encounter')}
-                  >
-                    Encounter: select a department
-                  </button>
-                )}
-                {!isEditMode && admissionType === 'outpatient' && encounterBlocksOutpatient && (
-                  <button
-                    type="button"
-                    className="text-left hover:underline font-mono text-xs"
-                    onClick={() => goToStep('encounter')}
-                  >
-                    Encounter: no clinics are scheduled right now for this department
-                  </button>
-                )}
-                {!isEditMode && admissionType === 'outpatient' && clinicSelectionRequired && !selectedClinicIsActive && (
-                  <button
-                    type="button"
-                    className="text-left hover:underline font-mono text-xs"
-                    onClick={() => goToStep('encounter')}
-                  >
-                    Encounter: select a clinic
-                  </button>
-                )}
-                {Object.entries(form.formState.errors || {}).map(([field, err]) => (
-                  <button
-                    key={field}
-                    type="button"
-                    className="text-left hover:underline font-mono text-xs"
-                    onClick={() => goToFirstErrorStep()}
-                  >
-                    {String(err?.message || field)}
-                  </button>
-                ))}
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
+        <PatientFormValidationSummary
+          validationState={{ showValidation, hasFormErrors, hasBlockingIssues }}
+          encounterState={{
+            isEditMode,
+            selectedDepartment,
+            admissionType,
+            encounterBlocksOutpatient,
+            clinicSelectionRequired,
+            selectedClinicIsActive,
+          }}
+          formErrors={form.formState.errors}
+          navigation={{ goToStep, goToFirstErrorStep }}
+        />
 
         <Tabs value={activeStep} onValueChange={setActiveStep}>
-          <div className="mb-6 rounded-lg border border-border/60 bg-muted/20 p-3 sm:hidden">
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-mono text-[10px] uppercase text-muted-foreground">
-                Step {currentStepIndex + 1} of {stepDefs.length}
-              </p>
-              {stepErrorCounts[activeStep] > 0 && (
-                <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
-                  {stepErrorCounts[activeStep]}
-                </Badge>
-              )}
-            </div>
-            <p className="mt-1 font-heading text-sm font-semibold text-foreground">
-              {stepDefs[currentStepIndex]?.label || 'Registration'}
-            </p>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/70">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${((currentStepIndex + 1) / stepDefs.length) * 100}%` }}
-              />
-            </div>
-          </div>
-
-          <TabsList className={cn("mb-6 hidden w-full sm:grid", tabColsClass)}>
-            {stepDefs.map((step, idx) => {
-              const count = stepErrorCounts[step.key] || 0;
-              return (
-                <TabsTrigger key={step.key} value={step.key} className="font-mono text-xs">
-                  <span className="inline-flex items-center gap-2">
-                    <span className="inline-flex size-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
-                      {idx + 1}
-                    </span>
-                    <span>{step.label}</span>
-                    {count > 0 && (
-                      <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
-                        {count}
-                      </Badge>
-                    )}
-                  </span>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
+          <PatientFormStepProgress
+            currentStepIndex={currentStepIndex}
+            stepDefs={stepDefs}
+            activeStep={activeStep}
+            stepErrorCounts={stepErrorCounts}
+            tabColsClass={tabColsClass}
+          />
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onFormSubmit)} className="space-y-6">
               {!isEditMode && (
-                <TabsContent value="encounter" className="space-y-4 mt-4">
-                  <div className="space-y-3">
-	                    <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-	                      <Stethoscope className="size-4" />
-	                      Encounter Type
-	                    </span>
-                    <RadioGroup
-                      value={admissionType}
-                      onValueChange={handleAdmissionTypeChange}
-                      className="flex flex-col gap-y-2"
-                    >
-                      <div className="flex items-center gap-x-2">
-                        <RadioGroupItem value="outpatient" id="outpatient" />
-                        <label htmlFor="outpatient" className="font-normal cursor-pointer">
-                          Outpatient (Clinic visit)
-                        </label>
-                      </div>
-                      <div className="flex items-center gap-x-2">
-                        <RadioGroupItem value="inpatient" id="inpatient" />
-                        <label htmlFor="inpatient" className="font-normal cursor-pointer">
-                          Inpatient (Admit to ward)
-                        </label>
-                      </div>
-                      <div className="flex items-center gap-x-2">
-                        <RadioGroupItem value="emergency" id="emergency" />
-                        <label htmlFor="emergency" className="font-normal cursor-pointer">
-                          Emergency (ED triage)
-                        </label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-                  <Separator className="my-4" />
-
-                  <div className="space-y-2">
-	                    <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-	                      <Building2 className="size-4" />
-	                      Department
-	                      <span className="text-rose-500">*</span>
-	                    </span>
-                    <Select
-                      value={selectedDepartment}
-                      onValueChange={handleDepartmentChange}
-                    >
-                      <SelectTrigger className={cn("font-mono", showValidation && !selectedDepartment && "border-rose-500")}>
-                        <SelectValue placeholder={isDepartmentsLoading ? "Loading departments..." : "Select department"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {departments.map((dept) => (
-                          <SelectItem key={dept.id} value={dept.id} className="font-mono">
-                            {dept.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {showValidation && !selectedDepartment && (
-                      <p className="text-xs text-rose-500 font-mono">Department is required for registration</p>
-                    )}
-                  </div>
-
-                  {admissionType === 'outpatient' && selectedDepartment && (
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        <Stethoscope className="size-4" />
-                        Clinic
-                        {clinicSelectionRequired && <span className="text-rose-500">*</span>}
-                      </label>
-
-                      {activeClinicOptions.length === 0 ? (
-                        outpatientRequiresActiveClinicSchedule ? (
-                          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                            <div className="flex items-center gap-2">
-                              <AlertCircle className="size-4 text-amber-600 dark:text-amber-400" />
-                              <p className="text-sm text-amber-700 dark:text-amber-300 font-mono">
-                                No clinics are scheduled right now for this department. Choose another department or publish a roster session.
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800">
-                            <div className="flex items-center gap-2">
-                              <AlertCircle className="size-4 text-sky-600 dark:text-sky-400" />
-                              <p className="text-sm text-sky-700 dark:text-sky-300 font-mono">
-                                No active clinic schedule found. Registration will continue under the selected department.
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      ) : activeClinicOptions.length === 1 ? (
-                        <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
-                          <div className="flex items-center gap-2">
-                            <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
-                            <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                              Auto-selected: <span className="font-mono font-medium">{activeClinicOptions[0].name}</span>
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <Select value={selectedClinicIsActive ? selectedClinic : ""} onValueChange={setSelectedClinic}>
-                          <SelectTrigger className={cn("font-mono", showValidation && clinicSelectionRequired && !selectedClinicIsActive && "border-rose-500")}>
-                            <SelectValue placeholder="Select clinic" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {activeClinicOptions.map((clinic) => (
-                              <SelectItem key={clinic.id} value={clinic.id} className="font-mono">
-                                {clinic.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-
-                      {clinicSelectionRequired && !selectedClinicIsActive && activeClinicOptions.length > 1 && showValidation && (
-                        <p className="text-xs text-rose-500 font-mono">
-                          Multiple clinics are active; please select one
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {(admissionType === 'inpatient' || admissionType === 'emergency') && selectedDepartment && (
-                    <TeamSelectionField
-                      departmentId={selectedDepartment}
-                      encounterType={admissionType}
-                      value={selectedPrimaryTeam}
-                      onChange={setSelectedPrimaryTeam}
-                    />
-                  )}
-
-                  {admissionType === 'inpatient' && selectedDepartment && (
-                    <>
-                      <div className="flex items-center gap-x-2 mb-2">
-                        <input
-                          type="checkbox"
-                          id="waitingList"
-                          aria-label="Add to waiting list and assign bed later"
-                          checked={isWaitingList}
-                          onChange={handleWaitingListChange}
-                          className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        <label htmlFor="waitingList" className="text-sm font-medium leading-none">
-                          Add to waiting list (assign bed later)
-                        </label>
-                      </div>
-
-                      {!isWaitingList && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormItem>
-                            <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</FormLabel>
-                            <Select
-                              onValueChange={handleWardChange}
-                              value={selectedWard}
-                            >
-                              <SelectTrigger className="font-mono">
-                                <SelectValue placeholder={isWardsLoading ? "Loading wards..." : "Select ward"} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(unitWards || []).map((ward) => (
-                                  <SelectItem key={ward.id} value={ward.id}>
-                                    {ward.name} ({ward.ward_type})
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </FormItem>
-
-                          <FormField
-                            control={form.control}
-                            name="bed_id"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Bed</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value} disabled={!selectedWard}>
-                                  <SelectTrigger className="font-mono">
-                                    <SelectValue placeholder={selectedWard ? "Select bed" : "Select ward first"} />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {beds.map((bed) => (
-                                      <SelectItem key={bed.id} value={bed.id}>
-                                        {bed.bed_number} ({bed.bed_type}) - ${bed.total_rate}
-                                      </SelectItem>
-                                    ))}
-                                    {selectedWard && beds.length === 0 && (
-                                      <div className="p-2 text-sm text-muted-foreground">No available beds</div>
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </TabsContent>
+                <EncounterStepContent
+                  encounterState={{
+                    admissionType,
+                    selectedDepartment,
+                    selectedPrimaryTeam,
+                    showValidation,
+                    isDepartmentsLoading,
+                    departments,
+                  }}
+                  encounterActions={{
+                    handleAdmissionTypeChange,
+                    handleDepartmentChange,
+                    setSelectedPrimaryTeam,
+                  }}
+                  clinicState={{
+                    activeClinicOptions,
+                    outpatientRequiresActiveClinicSchedule,
+                    clinicSelectionRequired,
+                    selectedClinicIsActive,
+                    selectedClinic,
+                  }}
+                  clinicActions={{ setSelectedClinic }}
+                  wardState={{ isWaitingList, selectedWard, isWardsLoading, unitWards, beds }}
+                  wardActions={{ handleWaitingListChange, handleWardChange }}
+                  form={form}
+                />
               )}
 
-              <TabsContent value="identity" className="space-y-4 mt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="first_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          First Name <span className="text-rose-500">*</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="First name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+              <IdentityStepContent
+                form={form}
+                isEditMode={isEditMode}
+                noEmail={noEmail}
+                noEmailPlaceholder={noEmailPlaceholder}
+                handleNoEmailChange={handleNoEmailChange}
+                isRuleRequired={isRuleRequired}
+                dobString={dobString}
+                possibleMatches={possibleMatches}
+                isMatchesLoading={isMatchesLoading}
+                navigate={navigate}
+              />
 
-                  <FormField
-                    control={form.control}
-                    name="last_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Last Name <span className="text-rose-500">*</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="Last name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="date_of_birth"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-col">
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Date of Birth {!isEditMode && <span className="text-rose-500">*</span>}
-                        </FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant={"outline"}
-                                className={cn(
-                                  "w-full pl-3 text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                <CalendarIcon className="ml-auto size-4 opacity-50" />
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              disabled={(date) => date > MAX_DATE_OF_BIRTH || date < MIN_DATE_OF_BIRTH}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Email <span className="text-rose-500">*</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="email"
-                            placeholder="Email address"
-                            {...field}
-                            disabled={!isEditMode && noEmail}
-                          />
-                        </FormControl>
-                        {!isEditMode && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <input
-                              id="noEmail"
-                              type="checkbox"
-                              aria-label="No email available"
-                              checked={noEmail}
-                              onChange={handleNoEmailChange}
-                              className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            />
-                            <label htmlFor="noEmail" className="text-xs text-muted-foreground font-mono">
-                              No email available (a placeholder will be generated)
-                            </label>
-                          </div>
-                        )}
-                        {noEmail && !isEditMode && (
-                          <p className="text-xs text-muted-foreground font-mono">
-                            Placeholder: <span className="font-medium">{noEmailPlaceholder}</span>
-                          </p>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="gender"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Sex {!isEditMode && <span className="text-rose-500">*</span>}
-                        </FormLabel>
-                        <Select value={field.value || ""} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger className="font-mono">
-                              <SelectValue placeholder="Select sex" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="female">Female</SelectItem>
-                            <SelectItem value="male">Male</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                            <SelectItem value="unknown">Unknown</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="phone_number"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Phone Number {(noEmail && !isEditMode) || isRuleRequired('phone_number') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="Phone number" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="nhis_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          NHIS ID {isRuleRequired('nhis_id') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="NHIS ID" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {isEditMode && (
-                  <FormField
-                    control={form.control}
-                    name="medical_record_number"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Medical Record Number</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Medical record number" {...field} readOnly />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
-                {!isEditMode && dobString && (
-                  <div className="p-4 border border-border rounded-lg bg-muted/20">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2">
-                        <Search className="size-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">Possible duplicates</p>
-                      </div>
-                      {isMatchesLoading && (
-                        <span className="text-xs text-muted-foreground font-mono">Searching…</span>
-                      )}
-                    </div>
-                    {possibleMatches.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        No matches found for this name and date of birth.
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs text-amber-700 dark:text-amber-300 font-mono">
-                          Verify before creating a new record.
-                        </p>
-                        {possibleMatches.map((match) => (
-                          <div key={match.id} className="flex items-center justify-between gap-3 p-2 rounded-md border border-border bg-card/40">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{match.name}</p>
-                              <p className="text-xs text-muted-foreground font-mono">
-                                MRN {match.medical_record_number || 'N/A'} · DOB {match.date_of_birth}
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="font-mono text-xs"
-                              onClick={() => navigate(`/patients/${match.id}`)}
-                            >
-                              Open
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="contact" className="space-y-4 mt-4">
-                <h3 className="font-display text-lg text-foreground">Address</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="address_line1"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Address Line 1 {isRuleRequired('address_line1') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="Address line 1" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="address_line2"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Address Line 2 {isRuleRequired('address_line2') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="Address line 2" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          City {isRuleRequired('city') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="City" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          State/Province {isRuleRequired('state') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="State/Province" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="postal_code"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Postal Code {isRuleRequired('postal_code') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="Postal code" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="country"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                          Country {isRuleRequired('country') ? <span className="text-rose-500">*</span> : null}
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="Country" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <Separator className="my-4" />
-                <h3 className="font-display text-lg text-foreground">Emergency Contact</h3>
-
-                <FormField
-                  control={form.control}
-                  name="emergency_contact_name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Emergency Contact Name {isRuleRequired('emergency_contact_name') ? <span className="text-rose-500">*</span> : null}
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="Emergency contact name" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="emergency_contact_phone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Emergency Contact Phone {isRuleRequired('emergency_contact_phone') ? <span className="text-rose-500">*</span> : null}
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="Emergency contact phone" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="emergency_contact_relationship"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Relationship {isRuleRequired('emergency_contact_relationship') ? <span className="text-rose-500">*</span> : null}
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="Relationship to patient" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </TabsContent>
+              <ContactStepContent form={form} isRuleRequired={isRuleRequired} />
 
               {!isEditMode && (
-                <TabsContent value="insurance" className="space-y-4 mt-4">
-                  <div className="space-y-4">
-                    <div className={cn(
-                      "flex items-center justify-between p-4 rounded-lg border",
-                      showValidation && insuranceData.hasInsurance && !validateInsuranceStep() ? "border-rose-200 bg-rose-50/40 dark:border-rose-900/40 dark:bg-rose-900/10" : "border-border bg-muted/20"
-                    )}>
-                      <div className="flex items-center gap-3">
-                        <Shield className="size-5 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">Insurance Coverage</p>
-                          <p className="text-xs text-muted-foreground">
-                            Add insurance details for this patient
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">
-                          {insuranceData.hasInsurance ? 'Enabled' : 'Skip'}
-                        </span>
-                        <input
-                          type="checkbox"
-                          aria-label="Enable insurance coverage"
-                          checked={insuranceData.hasInsurance}
-                          onChange={handleInsuranceEnabledChange}
-                          className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                      </div>
-                    </div>
-
-                    {insuranceData.hasInsurance && (
-                      <div className="space-y-4 p-4 border border-border rounded-lg">
-                        <div className="space-y-2">
-                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                            Insurance Provider <span className="text-rose-500">*</span>
-                          </FormLabel>
-                          <Select
-                            value={selectedProviderId}
-                            onValueChange={handleInsuranceProviderChange}
-                            disabled={!insuranceQueryEnabled}
-                          >
-                            <SelectTrigger className={cn("font-mono", showValidation && !selectedProviderId && "border-rose-500")}>
-                              <SelectValue placeholder={insuranceQueryEnabled ? "Select provider" : "Loading providers..."} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {providers.map((provider) => (
-                                <SelectItem key={provider.id} value={provider.id}>
-                                  {provider.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                            Insurance Plan <span className="text-rose-500">*</span>
-                          </FormLabel>
-                          <Select
-                            value={insuranceData.plan}
-                            onValueChange={handleInsurancePlanChange}
-                            disabled={!selectedProviderId || !plansQueryEnabled}
-                          >
-                            <SelectTrigger className={cn("font-mono", showValidation && !insuranceData.plan && "border-rose-500")}>
-                              <SelectValue placeholder={selectedProviderId ? "Select plan" : "Select provider first"} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {plans.map((plan) => (
-                                <SelectItem key={plan.id} value={plan.id}>
-                                  {plan.name} ({plan.coverage_percentage}% coverage)
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                            Policy Number <span className="text-rose-500">*</span>
-                          </FormLabel>
-                          <Input
-                            value={insuranceData.policy_number}
-                            onChange={handleInsurancePolicyNumberChange}
-                            placeholder="e.g., POL-12345678"
-                            className={cn(showValidation && !insuranceData.policy_number?.trim() && "border-rose-500")}
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                            Validity Period
-                          </FormLabel>
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1">
-                              <DatePicker
-                                date={insuranceData.valid_from}
-                                setDate={handleInsuranceValidFromChange}
-                                placeholder="Start date"
-                                className="w-full"
-                              />
-                            </div>
-                            <span className="text-muted-foreground text-sm">to</span>
-                            <div className="flex-1">
-                              <DatePicker
-                                date={insuranceData.valid_until}
-                                setDate={handleInsuranceValidUntilChange}
-                                placeholder="No expiry"
-                                className="w-full"
-                              />
-                            </div>
-                          </div>
-                          <p className="text-xs text-muted-foreground">Leave end date blank for no expiry</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {!insuranceData.hasInsurance && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Shield className="size-10 mx-auto mb-3 opacity-30" />
-                        <p className="text-sm">No insurance will be added</p>
-                        <p className="text-xs mt-1">You can add insurance later from the patient's profile</p>
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
+                <InsuranceStepContent
+                  insuranceData={insuranceData}
+                  showValidation={showValidation}
+                  validateInsuranceStep={validateInsuranceStep}
+                  handleInsuranceEnabledChange={handleInsuranceEnabledChange}
+                  selectedProviderId={selectedProviderId}
+                  handleInsuranceProviderChange={handleInsuranceProviderChange}
+                  insuranceQueryEnabled={insuranceQueryEnabled}
+                  providers={providers}
+                  handleInsurancePlanChange={handleInsurancePlanChange}
+                  plansQueryEnabled={plansQueryEnabled}
+                  plans={plans}
+                  handleInsurancePolicyNumberChange={handleInsurancePolicyNumberChange}
+                  handleInsuranceValidFromChange={handleInsuranceValidFromChange}
+                  handleInsuranceValidUntilChange={handleInsuranceValidUntilChange}
+                />
               )}
 
-              <TabsContent value="review" className="space-y-4 mt-4">
-                <div className="space-y-3">
-                  {!isEditMode && (
-                    <div className="p-4 rounded-lg border border-border bg-card/40">
-                      <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Encounter</p>
-                      <p className="text-sm">
-                        <span className="font-medium">Type:</span> {admissionType}
-                      </p>
-                      <p className="text-sm">
-                        <span className="font-medium">Department:</span>{' '}
-                        {departments.find((d) => d.id === selectedDepartment)?.name || (selectedDepartment ? 'Selected' : 'Not selected')}
-                      </p>
-                      {admissionType === 'outpatient' && selectedClinicForAdmission && (
-                        <p className="text-sm">
-                          <span className="font-medium">Clinic:</span>{' '}
-                          {activeClinicOptions.find((c) => c.id === selectedClinicForAdmission)?.name || 'Selected'}
-                        </p>
-                      )}
-                      {admissionType === 'inpatient' && (
-                        <p className="text-sm">
-                          <span className="font-medium">Ward:</span>{' '}
-                          {selectedWard ? (unitWards.find((w) => w.id === selectedWard)?.name || 'Selected') : (isWaitingList ? 'Waiting list' : 'Not selected')}
-                        </p>
-                      )}
-                      {encounterBlocksOutpatient && (
-                        <p className="text-sm text-rose-600 dark:text-rose-400 font-mono mt-2">
-                          Cannot register outpatient visit: no clinics are scheduled right now.
-                        </p>
-                      )}
-                    </div>
-                  )}
+              <ReviewStepContent
+                isEditMode={isEditMode}
+                admissionType={admissionType}
+                departments={departments}
+                selectedDepartment={selectedDepartment}
+                selectedClinicForAdmission={selectedClinicForAdmission}
+                activeClinicOptions={activeClinicOptions}
+                selectedWard={selectedWard}
+                unitWards={unitWards}
+                isWaitingList={isWaitingList}
+                encounterBlocksOutpatient={encounterBlocksOutpatient}
+                firstName={firstName}
+                lastName={lastName}
+                dobString={dobString}
+                form={form}
+                insuranceData={insuranceData}
+                providers={providers}
+                selectedProviderId={selectedProviderId}
+                plans={plans}
+              />
 
-                  <div className="p-4 rounded-lg border border-border bg-card/40">
-                    <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Identity</p>
-                    <p className="text-sm">
-                      <span className="font-medium">Name:</span> {firstName} {lastName}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">DOB:</span> {dobString || 'Not set'}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Sex:</span> {form.getValues('gender') || 'Not set'}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Email:</span> {form.getValues('email') || 'Not set'}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Phone:</span> {form.getValues('phone_number') || 'Not set'}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">NHIS ID:</span> {form.getValues('nhis_id') || 'Not set'}
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg border border-border bg-card/40">
-                    <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Contact</p>
-                    <p className="text-sm">
-                      <span className="font-medium">Address:</span> {[
-                        form.getValues('address_line1'),
-                        form.getValues('address_line2'),
-                        form.getValues('city'),
-                        form.getValues('state'),
-                        form.getValues('postal_code'),
-                        form.getValues('country'),
-                      ].filter(Boolean).join(', ') || 'Not set'}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Emergency:</span> {[
-                        form.getValues('emergency_contact_name'),
-                        form.getValues('emergency_contact_relationship'),
-                        form.getValues('emergency_contact_phone'),
-                      ].filter(Boolean).join(' · ') || 'Not set'}
-                    </p>
-                  </div>
-
-                  {!isEditMode && (
-                    <div className="p-4 rounded-lg border border-border bg-card/40">
-                      <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Insurance</p>
-                      {insuranceData.hasInsurance ? (
-                        <>
-                          <p className="text-sm">
-                            <span className="font-medium">Provider:</span> {providers.find((p) => p.id === selectedProviderId)?.name || 'Selected'}
-                          </p>
-                          <p className="text-sm">
-                            <span className="font-medium">Plan:</span> {plans.find((p) => p.id === insuranceData.plan)?.name || 'Selected'}
-                          </p>
-                          <p className="text-sm">
-                            <span className="font-medium">Policy:</span> {insuranceData.policy_number || 'Not set'}
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No insurance will be added</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-
-              <div className="flex items-center justify-between pt-6">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleBack}
-                  disabled={isFirstStep || isSubmitting}
-                  className="font-mono text-sm"
-                >
-                  Back
-                </Button>
-
-                {!isLastStep ? (
-                  <Button
-                    type="button"
-                    onClick={handleNext}
-                    disabled={isSubmitting || (!isEditMode && activeStep === 'encounter' && encounterBlocksOutpatient)}
-                    className="font-mono text-sm bg-primary hover:bg-primary/90"
-                  >
-                    Next
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting || (!isEditMode && encounterBlocksOutpatient)}
-                    className="font-mono text-sm bg-primary hover:bg-primary/90"
-                  >
-                    {isSubmitting ? "Saving..." : isEditMode ? "Update Patient" : "Register Patient"}
-                  </Button>
-                )}
-              </div>
+              <PatientFormActions
+                stepState={{
+                  isFirstStep,
+                  isSubmitting,
+                  isLastStep,
+                  isEditMode,
+                  activeStep,
+                  encounterBlocksOutpatient,
+                }}
+                actions={{ handleBack, handleNext }}
+              />
             </form>
           </Form>
         </Tabs>
       </CardContent>
     </Card>
   );
-};
+}
+
+function PatientForm({ patient, onSuccess }) {
+  const controller = usePatientFormController({ patient, onSuccess });
+  return <PatientFormView controller={controller} />;
+}
 
 export default PatientForm;
