@@ -3,7 +3,7 @@ import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,43 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   minimumFractionDigits: 2,
 });
 
+const INVOICE_FORM_ID = 'invoice-form';
+
+function getInvoiceFormKey(patient) {
+  return `create-${patient?.id || 'none'}`;
+}
+
+function getDefaultDueDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 30); // 30 days from now
+  return date.toISOString().split('T')[0];
+}
+
+function getPatientDraft(patient) {
+  if (!patient) {
+    return null;
+  }
+
+  return {
+    id: patient.id,
+    name: patient.name || `${patient.first_name || ''} ${patient.last_name || ''}`.trim(),
+    mrn: patient.mrn || patient.medical_record_number || '',
+  };
+}
+
+function createInvoiceDraft(patient) {
+  return {
+    selectedPatient: getPatientDraft(patient),
+    formData: {
+      due_date: getDefaultDueDate(),
+      notes: '',
+    },
+    items: [
+      { service: '', description: '', quantity: 1, unit_price: '' },
+    ],
+  };
+}
+
 /**
  * InvoiceFormSlideOver - Slide-over panel for creating invoices
  */
@@ -36,21 +73,38 @@ export default function InvoiceFormSlideOver({
   patient, // Optional - pre-selected patient
   onSuccess,
 }) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <InvoiceFormContent
+      key={getInvoiceFormKey(patient)}
+      open={open}
+      onClose={onClose}
+      patient={patient}
+      onSuccess={onSuccess}
+    />
+  );
+}
+
+function InvoiceFormContent({
+  open,
+  onClose,
+  patient,
+  onSuccess,
+}) {
   const createInvoiceMutation = useCreateInvoice();
   const { data: servicesData } = useServices({ is_active: true });
   const services = servicesData?.results || servicesData || [];
+  const initialDraft = createInvoiceDraft(patient);
 
   // Selected patient state
-  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [selectedPatient, setSelectedPatient] = useState(initialDraft.selectedPatient);
 
   // Form state
-  const [formData, setFormData] = useState({
-    due_date: '',
-    notes: '',
-  });
-  const [items, setItems] = useState([
-    { service: '', description: '', quantity: 1, unit_price: '' },
-  ]);
+  const [formData, setFormData] = useState(initialDraft.formData);
+  const [items, setItems] = useState(initialDraft.items);
   const [errors, setErrors] = useState({});
 
   // Handle patient selection from PatientSelector
@@ -75,34 +129,6 @@ export default function InvoiceFormSlideOver({
 
   const clearPatient = () => {
     setSelectedPatient(null);
-  };
-
-  // Reset form when panel opens/closes
-  useEffect(() => {
-    if (open) {
-      // If patient prop is provided, set it as selected
-      if (patient) {
-        setSelectedPatient({
-          id: patient.id,
-          name: patient.name || `${patient.first_name || ''} ${patient.last_name || ''}`.trim(),
-          mrn: patient.mrn || patient.medical_record_number || '',
-        });
-      } else {
-        setSelectedPatient(null);
-      }
-      setFormData({
-        due_date: getDefaultDueDate(),
-        notes: '',
-      });
-      setItems([{ service: '', description: '', quantity: 1, unit_price: '' }]);
-      setErrors({});
-    }
-  }, [open, patient]);
-
-  const getDefaultDueDate = () => {
-    const date = new Date();
-    date.setDate(date.getDate() + 30); // 30 days from now
-    return date.toISOString().split('T')[0];
   };
 
   const handleChange = (field, value) => {
@@ -225,7 +251,7 @@ export default function InvoiceFormSlideOver({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form id={INVOICE_FORM_ID} onSubmit={handleSubmit} className="space-y-6">
           {/* Patient Selection */}
           <div className="space-y-2">
             <Label className="font-mono text-xs uppercase tracking-wider">
@@ -407,7 +433,8 @@ export default function InvoiceFormSlideOver({
           Cancel
         </Button>
         <Button
-          onClick={handleSubmit}
+          type="submit"
+          form={INVOICE_FORM_ID}
           disabled={createInvoiceMutation.isPending}
           className="font-mono text-xs"
         >

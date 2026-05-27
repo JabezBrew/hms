@@ -1,7 +1,7 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,47 @@ import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import PatientSelector from '@/components/patients/PatientSelector';
 
+const INSURANCE_FORM_ID = 'patient-insurance-form';
+
+function getInsuranceFormKey(insurance, defaultPatient) {
+  if (insurance) {
+    return `edit-${insurance.id}`;
+  }
+  return `create-${defaultPatient?.id || 'none'}`;
+}
+
+function createInsuranceDraft(insurance, defaultPatient) {
+  if (insurance) {
+    return {
+      formData: {
+        patient: insurance.patient || '',
+        plan: insurance.plan || '',
+        policy_number: insurance.policy_number || '',
+        is_active: insurance.is_active ?? true,
+        notes: insurance.notes || '',
+      },
+      validFrom: insurance.valid_from ? parseISO(insurance.valid_from) : null,
+      validUntil: insurance.valid_until ? parseISO(insurance.valid_until) : null,
+      selectedPatient: insurance.patient_details || null,
+      selectedProviderId: insurance.plan_details?.provider || '',
+    };
+  }
+
+  return {
+    formData: {
+      patient: defaultPatient?.id || '',
+      plan: '',
+      policy_number: '',
+      is_active: true,
+      notes: '',
+    },
+    validFrom: null,
+    validUntil: null,
+    selectedPatient: defaultPatient || null,
+    selectedProviderId: '',
+  };
+}
+
 /**
  * PatientInsuranceFormSlideOver - Slide-over panel for creating/editing patient insurance
  *
@@ -43,16 +84,38 @@ export default function PatientInsuranceFormSlideOver({
   insurance = null, // null for create, object for edit
   defaultPatient = null, // Pre-fill patient for new insurance (from chronicle page)
 }) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <PatientInsuranceFormContent
+      key={getInsuranceFormKey(insurance, defaultPatient)}
+      open={open}
+      onClose={onClose}
+      insurance={insurance}
+      defaultPatient={defaultPatient}
+    />
+  );
+}
+
+function PatientInsuranceFormContent({
+  open,
+  onClose,
+  insurance = null,
+  defaultPatient = null,
+}) {
   const isEditing = !!insurance;
 
   const createMutation = useCreatePatientInsurance();
   const updateMutation = useUpdatePatientInsurance();
+  const initialDraft = createInsuranceDraft(insurance, defaultPatient);
 
   // Fetch providers and plans
   const { data: providersData } = useInsuranceProviders({}, { enabled: open });
   const providers = providersData?.results || providersData || [];
 
-  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const [selectedProviderId, setSelectedProviderId] = useState(initialDraft.selectedProviderId);
   const { data: plansData } = useInsurancePlans(
     selectedProviderId ? { provider: selectedProviderId } : {},
     { enabled: open && !!selectedProviderId }
@@ -60,54 +123,11 @@ export default function PatientInsuranceFormSlideOver({
   const plans = plansData?.results || plansData || [];
 
   // Form state
-  const [formData, setFormData] = useState({
-    patient: '',
-    plan: '',
-    policy_number: '',
-    is_active: true,
-    notes: '',
-  });
-  const [validFrom, setValidFrom] = useState(null);
-  const [validUntil, setValidUntil] = useState(null);
-  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [formData, setFormData] = useState(initialDraft.formData);
+  const [validFrom, setValidFrom] = useState(initialDraft.validFrom);
+  const [validUntil, setValidUntil] = useState(initialDraft.validUntil);
+  const [selectedPatient, setSelectedPatient] = useState(initialDraft.selectedPatient);
   const [errors, setErrors] = useState({});
-
-  // Reset form when panel opens
-  useEffect(() => {
-    if (open) {
-      if (insurance) {
-        // Edit mode - populate form
-        setFormData({
-          patient: insurance.patient || '',
-          plan: insurance.plan || '',
-          policy_number: insurance.policy_number || '',
-          is_active: insurance.is_active ?? true,
-          notes: insurance.notes || '',
-        });
-        setValidFrom(insurance.valid_from ? parseISO(insurance.valid_from) : null);
-        setValidUntil(insurance.valid_until ? parseISO(insurance.valid_until) : null);
-        setSelectedPatient(insurance.patient_details || null);
-        // Set provider from plan
-        if (insurance.plan_details?.provider) {
-          setSelectedProviderId(insurance.plan_details.provider);
-        }
-      } else {
-        // Create mode - reset form, optionally pre-fill patient
-        setFormData({
-          patient: defaultPatient?.id || '',
-          plan: '',
-          policy_number: '',
-          is_active: true,
-          notes: '',
-        });
-        setValidFrom(null);
-        setValidUntil(null);
-        setSelectedPatient(defaultPatient || null);
-        setSelectedProviderId('');
-      }
-      setErrors({});
-    }
-  }, [open, insurance, defaultPatient]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -221,7 +241,7 @@ export default function PatientInsuranceFormSlideOver({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form id={INSURANCE_FORM_ID} onSubmit={handleSubmit} className="space-y-5">
           {/* Patient Selection */}
           <div className="space-y-2">
             <Label className="font-mono text-xs uppercase tracking-wider">
@@ -396,7 +416,8 @@ export default function PatientInsuranceFormSlideOver({
           Cancel
         </Button>
         <Button
-          onClick={handleSubmit}
+          type="submit"
+          form={INSURANCE_FORM_ID}
           disabled={isPending}
           className="font-mono text-xs"
         >
