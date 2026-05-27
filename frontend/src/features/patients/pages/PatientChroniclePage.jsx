@@ -576,8 +576,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     });
   }, [id, navigate, search]);
 
-  // react-doctor-disable-next-line react-doctor/no-event-handler -- Route/default action params are external navigation commands; this effect is the boundary that opens the matching Chronicle workspace once patient context is available.
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-event-handler -- Route/default action params are external navigation commands; this effect is the boundary that opens the matching Chronicle workspace once patient context is available.
     const action = actionParam || defaultAction;
     if (action === 'add_note') {
       openChronicleWorkspace('note');
