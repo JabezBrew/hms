@@ -62,6 +62,295 @@ function getUserCapabilities(user) {
   ])
 }
 
+function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" size="sm" onClick={() => onNavigate('/admissions/requests')}>
+        <ChevronLeft className="mr-2 size-4" />
+        Admissions
+      </Button>
+      {admissionCase.admission_id && (
+        <Button variant="outline" size="sm" onClick={() => onNavigate(`/admissions/${admissionCase.admission_id}`)}>
+          Active Stay
+        </Button>
+      )}
+      {!admissionCase.admission_id && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => cancelCase.mutateAsync({ caseId: admissionCase.id, notes: '' })}
+          disabled={cancelCase.isPending}
+        >
+          Cancel Case
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function AdmissionCaseHeaderBadges({ admissionCase }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <AdmissionStatusBadge status={admissionCase.status} />
+      {admissionCase.active_reservation && <Badge variant="outline">Bed Reserved</Badge>}
+      {admissionCase.admission_id && <Badge variant="outline">Activated</Badge>}
+    </div>
+  )
+}
+
+function SummaryField({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm">{value}</p>
+    </div>
+  )
+}
+
+function AdmissionCaseSummaryCard({ admissionCase }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Admission Summary</CardTitle>
+        <CardDescription>Request timing, placement state, and activation status.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-4">
+        <SummaryField label="Requested" value={formatDateTime(admissionCase.requested_at)} />
+        <SummaryField
+          label="Requested Placement"
+          value={admissionCase.requested_bed_label || admissionCase.requested_ward_name || 'Not assigned'}
+        />
+        <SummaryField label="Ready for Activation" value={formatDateTime(admissionCase.ready_for_activation_at)} />
+        <SummaryField label="Activated" value={formatDateTime(admissionCase.activated_at)} />
+      </CardContent>
+    </Card>
+  )
+}
+
+function ReservedBedPanel({ reservation }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-4">
+      <p className="font-medium">{reservation.ward_name} · Bed {reservation.bed_number}</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Reserved at {formatDateTime(reservation.reserved_at)}
+      </p>
+    </div>
+  )
+}
+
+function AdmissionPlacementCard({
+  admissionCase,
+  canReserveBed,
+  onReserveBed,
+  onSelectedBedChange,
+  patientGender,
+  reserveBed,
+  selectedBed,
+}) {
+  if (admissionCase.admission_id) {
+    return null
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BedDouble className="size-5" />
+          Placement
+        </CardTitle>
+        <CardDescription>Reserve a bed before activating the ward admission.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {admissionCase.active_reservation ? (
+          <ReservedBedPanel reservation={admissionCase.active_reservation} />
+        ) : (
+          <>
+            <BedAssignment
+              onBedSelect={onSelectedBedChange}
+              selectedBedId={selectedBed?.id}
+              wardId={admissionCase.requested_ward || undefined}
+              patientGender={patientGender}
+              showAdvancedFilters
+            />
+            {canReserveBed && (
+              <Button onClick={onReserveBed} disabled={!selectedBed?.id || reserveBed.isPending}>
+                Reserve Selected Bed
+              </Button>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function AdmissionActivationCard({ admissionCase, activateCase, canActivateAdmission }) {
+  if (!admissionCase.can_activate || !canActivateAdmission) {
+    return null
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Ward Activation</CardTitle>
+        <CardDescription>All activation blockers are clear. You can now create the live inpatient stay.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button onClick={() => activateCase.mutateAsync({ caseId: admissionCase.id, data: {} })} disabled={activateCase.isPending}>
+          Activate Admission
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function AdmissionIntakeCard({
+  admissionCase,
+  admissionTaskMutationsAvailable,
+  completeIntake,
+  isNursingRole,
+  pendingBlockers,
+}) {
+  if (admissionCase.status !== 'intake_in_progress' || !isNursingRole || !admissionTaskMutationsAvailable) {
+    return null
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Finish Admission Intake</CardTitle>
+        <CardDescription>Close the admission case after the required intake tasks are complete.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Pending blockers: {pendingBlockers.length}
+        </p>
+        <Button onClick={() => completeIntake.mutateAsync({ caseId: admissionCase.id })} disabled={completeIntake.isPending}>
+          Complete Intake
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function AdmissionTaskReviewNotice() {
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+      <p className="font-mono text-xs uppercase tracking-wide">
+        Admission task review
+      </p>
+      <p className="mt-1">
+        Admission task clearance and intake completion are not available for this deployment yet. Bed reservation, activation, and case cancellation remain available.
+      </p>
+    </div>
+  )
+}
+
+function getTaskActionState({ admissionTaskMutationsAvailable, task, userType }) {
+  const isAssignedUser = task.assigned_role === userType || userType === 'admin'
+  const isProtectedPreActivationBlocker =
+    task.phase === 'pre_activation' &&
+    task.blocking &&
+    ['medical_admission_order', 'placement'].includes(task.task_type)
+
+  return {
+    canAcknowledge: admissionTaskMutationsAvailable && task.status === 'pending' && !task.blocking && isAssignedUser,
+    canComplete: admissionTaskMutationsAvailable && task.status === 'pending' && isAssignedUser && !isProtectedPreActivationBlocker,
+  }
+}
+
+function AdmissionTaskItem({
+  acknowledgeTask,
+  admissionTaskMutationsAvailable,
+  clearFinancial,
+  clearRegistration,
+  completeTask,
+  onTaskComplete,
+  task,
+  userType,
+}) {
+  const { canAcknowledge, canComplete } = getTaskActionState({
+    admissionTaskMutationsAvailable,
+    task,
+    userType,
+  })
+
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-medium capitalize">{titleizeTask(task.task_type)}</p>
+            {task.blocking && <Badge variant="outline">Blocking</Badge>}
+            <AdmissionTaskStatusBadge status={task.status} blocking={task.blocking} />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {task.assigned_role ? `Assigned to ${task.assigned_role.replaceAll('_', ' ')}` : 'Unassigned'}
+          </p>
+          {task.notes && <p className="text-sm">{task.notes}</p>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canComplete && (
+            <Button size="sm" onClick={() => onTaskComplete(task)} disabled={completeTask.isPending || clearRegistration.isPending || clearFinancial.isPending}>
+              <CheckCircle2 className="mr-2 size-4" />
+              {task.task_type === 'registration_completion'
+                ? 'Clear Registration'
+                : task.task_type === 'financial_clearance'
+                  ? 'Clear Finance'
+                  : 'Complete'}
+            </Button>
+          )}
+          {canAcknowledge && (
+            <Button size="sm" variant="outline" onClick={() => acknowledgeTask.mutateAsync({ taskId: task.id, notes: '' })} disabled={acknowledgeTask.isPending}>
+              <XCircle className="mr-2 size-4" />
+              Acknowledge
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AdmissionTasksCard({
+  acknowledgeTask,
+  admissionCase,
+  admissionTaskMutationsAvailable,
+  clearFinancial,
+  clearRegistration,
+  completeTask,
+  onTaskComplete,
+  userType,
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ClipboardList className="size-5" />
+          Tasks
+        </CardTitle>
+        <CardDescription>Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!admissionTaskMutationsAvailable && <AdmissionTaskReviewNotice />}
+        {(admissionCase.tasks || []).map((task) => (
+          <AdmissionTaskItem
+            acknowledgeTask={acknowledgeTask}
+            admissionTaskMutationsAvailable={admissionTaskMutationsAvailable}
+            clearFinancial={clearFinancial}
+            clearRegistration={clearRegistration}
+            completeTask={completeTask}
+            key={task.id}
+            onTaskComplete={onTaskComplete}
+            task={task}
+            userType={userType}
+          />
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function AdmissionCaseDetailPage() {
   const { caseId } = useParams()
   const navigate = useNavigate()
@@ -169,200 +458,53 @@ export default function AdmissionCaseDetailPage() {
         title={admissionCase.patient_name || 'Admission Case'}
         description={admissionCase.medical_record_number ? `MRN ${admissionCase.medical_record_number}` : undefined}
         actions={(
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate('/admissions/requests')}>
-              <ChevronLeft className="mr-2 size-4" />
-              Admissions
-            </Button>
-            {admissionCase.admission_id && (
-              <Button variant="outline" size="sm" onClick={() => navigate(`/admissions/${admissionCase.admission_id}`)}>
-                Active Stay
-              </Button>
-            )}
-            {!admissionCase.admission_id && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => cancelCase.mutateAsync({ caseId: admissionCase.id, notes: '' })}
-                disabled={cancelCase.isPending}
-              >
-                Cancel Case
-              </Button>
-            )}
-          </div>
+          <AdmissionCaseHeaderActions
+            admissionCase={admissionCase}
+            cancelCase={cancelCase}
+            onNavigate={navigate}
+          />
         )}
       >
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <AdmissionStatusBadge status={admissionCase.status} />
-          {admissionCase.active_reservation && <Badge variant="outline">Bed Reserved</Badge>}
-          {admissionCase.admission_id && <Badge variant="outline">Activated</Badge>}
-        </div>
+        <AdmissionCaseHeaderBadges admissionCase={admissionCase} />
       </PageHeader>
 
       <main className="space-y-6 p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Admission Summary</CardTitle>
-            <CardDescription>Request timing, placement state, and activation status.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-4">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Requested</p>
-              <p className="mt-1 text-sm">{formatDateTime(admissionCase.requested_at)}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Requested Placement</p>
-              <p className="mt-1 text-sm">{admissionCase.requested_bed_label || admissionCase.requested_ward_name || 'Not assigned'}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Ready for Activation</p>
-              <p className="mt-1 text-sm">{formatDateTime(admissionCase.ready_for_activation_at)}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Activated</p>
-              <p className="mt-1 text-sm">{formatDateTime(admissionCase.activated_at)}</p>
-            </div>
-          </CardContent>
-        </Card>
+        <AdmissionCaseSummaryCard admissionCase={admissionCase} />
 
-        {!admissionCase.admission_id && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BedDouble className="size-5" />
-                Placement
-              </CardTitle>
-              <CardDescription>Reserve a bed before activating the ward admission.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {admissionCase.active_reservation ? (
-                <div className="rounded-lg border border-border bg-muted/30 p-4">
-                  <p className="font-medium">{admissionCase.active_reservation.ward_name} · Bed {admissionCase.active_reservation.bed_number}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Reserved at {formatDateTime(admissionCase.active_reservation.reserved_at)}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <BedAssignment
-                    onBedSelect={setSelectedBed}
-                    selectedBedId={selectedBed?.id}
-                    wardId={admissionCase.requested_ward || undefined}
-                    patientGender={patientGender}
-                    showAdvancedFilters
-                  />
-                  {canReserveBed && (
-                    <Button onClick={handleReserveBed} disabled={!selectedBed?.id || reserveBed.isPending}>
-                      Reserve Selected Bed
-                    </Button>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        <AdmissionPlacementCard
+          admissionCase={admissionCase}
+          canReserveBed={canReserveBed}
+          onReserveBed={handleReserveBed}
+          onSelectedBedChange={setSelectedBed}
+          patientGender={patientGender}
+          reserveBed={reserveBed}
+          selectedBed={selectedBed}
+        />
 
-        {admissionCase.can_activate && canActivateAdmission && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Ward Activation</CardTitle>
-              <CardDescription>All activation blockers are clear. You can now create the live inpatient stay.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => activateCase.mutateAsync({ caseId: admissionCase.id, data: {} })} disabled={activateCase.isPending}>
-                Activate Admission
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        <AdmissionActivationCard
+          activateCase={activateCase}
+          admissionCase={admissionCase}
+          canActivateAdmission={canActivateAdmission}
+        />
 
-        {admissionCase.status === 'intake_in_progress' && isNursingRole && admissionTaskMutationsAvailable && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Finish Admission Intake</CardTitle>
-              <CardDescription>Close the admission case after the required intake tasks are complete.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Pending blockers: {pendingBlockers.length}
-              </p>
-              <Button onClick={() => completeIntake.mutateAsync({ caseId: admissionCase.id })} disabled={completeIntake.isPending}>
-                Complete Intake
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        <AdmissionIntakeCard
+          admissionCase={admissionCase}
+          admissionTaskMutationsAvailable={admissionTaskMutationsAvailable}
+          completeIntake={completeIntake}
+          isNursingRole={isNursingRole}
+          pendingBlockers={pendingBlockers}
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ClipboardList className="size-5" />
-              Tasks
-            </CardTitle>
-            <CardDescription>Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!admissionTaskMutationsAvailable && (
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                <p className="font-mono text-xs uppercase tracking-wide">
-                  Admission task review
-                </p>
-                <p className="mt-1">
-                  Admission task clearance and intake completion are not available for this deployment yet. Bed reservation, activation, and case cancellation remain available.
-                </p>
-              </div>
-            )}
-            {(admissionCase.tasks || []).map((task) => {
-              const isAssignedUser = task.assigned_role === userType || userType === 'admin'
-              const canComplete =
-                admissionTaskMutationsAvailable &&
-                task.status === 'pending' &&
-                isAssignedUser &&
-                !(task.phase === 'pre_activation' && task.blocking && ['medical_admission_order', 'placement'].includes(task.task_type))
-              const canAcknowledge =
-                admissionTaskMutationsAvailable &&
-                task.status === 'pending' &&
-                !task.blocking &&
-                isAssignedUser
-
-              return (
-                <div key={task.id} className="rounded-lg border border-border p-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium capitalize">{titleizeTask(task.task_type)}</p>
-                        {task.blocking && <Badge variant="outline">Blocking</Badge>}
-                        <AdmissionTaskStatusBadge status={task.status} blocking={task.blocking} />
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {task.assigned_role ? `Assigned to ${task.assigned_role.replaceAll('_', ' ')}` : 'Unassigned'}
-                      </p>
-                      {task.notes && <p className="text-sm">{task.notes}</p>}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {canComplete && (
-                        <Button size="sm" onClick={() => handleTaskComplete(task)} disabled={completeTask.isPending || clearRegistration.isPending || clearFinancial.isPending}>
-                          <CheckCircle2 className="mr-2 size-4" />
-                          {task.task_type === 'registration_completion'
-                            ? 'Clear Registration'
-                            : task.task_type === 'financial_clearance'
-                              ? 'Clear Finance'
-                              : 'Complete'}
-                        </Button>
-                      )}
-                      {canAcknowledge && (
-                        <Button size="sm" variant="outline" onClick={() => acknowledgeTask.mutateAsync({ taskId: task.id, notes: '' })} disabled={acknowledgeTask.isPending}>
-                          <XCircle className="mr-2 size-4" />
-                          Acknowledge
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
+        <AdmissionTasksCard
+          acknowledgeTask={acknowledgeTask}
+          admissionCase={admissionCase}
+          admissionTaskMutationsAvailable={admissionTaskMutationsAvailable}
+          clearFinancial={clearFinancial}
+          clearRegistration={clearRegistration}
+          completeTask={completeTask}
+          onTaskComplete={handleTaskComplete}
+          userType={userType}
+        />
       </main>
     </PageShell>
   )
