@@ -10,7 +10,7 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import History from 'lucide-react/dist/esm/icons/history.js';
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,117 @@ import {
   useDeleteFluidBalance
 } from "@/features/nursing/hooks";
 
+const INITIAL_FORM_DATA = {
+  type: 'intake',
+  category: '',
+  subcategory: '',
+  amount: '',
+  colour: '',
+  notes: ''
+};
+
+const CATEGORY_LABELS = {
+  oral: 'Oral',
+  iv: 'IV',
+  enteral: 'Enteral',
+  blood: 'Blood',
+  urine: 'Urine',
+  vomit: 'Vomit',
+  stool: 'Stool',
+  drain: 'Drain',
+  ng_suction: 'N.G. Suction',
+  other: 'Other'
+};
+
+const getCategoryLabel = (category) => CATEGORY_LABELS[category] || category;
+
+function BalanceSummary({ intake, output, balance, label }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 bg-muted/30 rounded-lg">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1.5">
+          <ArrowDownCircle className="size-3.5 text-sky-500" />
+          <span className="font-mono text-sm text-sky-600">{intake}ml</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <ArrowUpCircle className="size-3.5 text-amber-500" />
+          <span className="font-mono text-sm text-amber-600">{output}ml</span>
+        </div>
+        <div className={cn(
+          "font-mono text-sm font-medium px-2 py-0.5 rounded",
+          balance > 0 && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+          balance < 0 && "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
+          balance === 0 && "bg-muted text-muted-foreground"
+        )}>
+          {balance > 0 ? '+' : ''}{balance}ml
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FluidEntryRow({
+  record,
+  allowDelete = true,
+  deletionAvailable,
+  deletePending,
+  onDelete,
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between p-3 rounded-lg border",
+        record.entry_type === 'intake'
+          ? "bg-sky-50/50 border-sky-200 dark:bg-sky-900/10 dark:border-sky-800"
+          : "bg-amber-50/50 border-amber-200 dark:bg-amber-900/10 dark:border-amber-800"
+      )}
+    >
+      <div className="flex items-center gap-3">
+        {record.entry_type === 'intake' ? (
+          <ArrowDownCircle className="size-4 text-sky-500 flex-shrink-0" />
+        ) : (
+          <ArrowUpCircle className="size-4 text-amber-500 flex-shrink-0" />
+        )}
+        <div>
+          <div className="font-mono text-sm">
+            <span className={record.entry_type === 'intake' ? 'text-sky-700 dark:text-sky-400' : 'text-amber-700 dark:text-amber-400'}>
+              {record.volume_ml}ml
+            </span>
+            <span className="text-muted-foreground ml-2">
+              {getCategoryLabel(record.category)}
+              {record.subcategory && ` - ${record.subcategory}`}
+            </span>
+            {record.entry_type === 'output' && record.colour && (
+              <span className="text-muted-foreground ml-2 italic">
+                ({record.colour})
+              </span>
+            )}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground">
+            {format(new Date(record.recorded_at), 'h:mm a')}
+            {record.notes && <span className="ml-2">• {record.notes}</span>}
+          </div>
+        </div>
+      </div>
+      {allowDelete && deletionAvailable && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Delete fluid balance entry"
+          className="size-7 text-muted-foreground hover:text-destructive flex-shrink-0"
+          onClick={() => onDelete(record.id)}
+          disabled={deletePending}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /**
  * AddFluidBalanceSlideOver - Chronicle-styled split-screen panel for fluid balance
  *
@@ -63,29 +174,51 @@ const AddFluidBalanceSlideOver = ({
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
+  const admissionId = admission?.id || 'no-admission';
+  const formScopeKey = open
+    ? `${patientId || 'unknown-patient'}:${admissionId}:${allowEntry ? 'entry' : 'history-only'}`
+    : 'closed';
 
+  return (
+    <AddFluidBalanceSlideOverContent
+      key={formScopeKey}
+      open={open}
+      onClose={onClose}
+      patient={patient}
+      patientId={patientId}
+      admission={admission}
+      onFluidRecorded={onFluidRecorded}
+      allowEntry={allowEntry}
+    />
+  );
+};
+
+function AddFluidBalanceSlideOverContent({
+  open,
+  onClose,
+  patient,
+  patientId,
+  admission,
+  onFluidRecorded,
+  allowEntry,
+}) {
   // Active tab state
-  const [activeTab, setActiveTab] = useState(allowEntry ? 'entry' : 'history'); // 'entry' | 'history'
+  const [activeTabValue, setActiveTab] = useState(allowEntry ? 'entry' : 'history'); // 'entry' | 'history'
+  const activeTab = allowEntry ? activeTabValue : 'history';
 
   // History date navigation state
-  const [historyDate, setHistoryDate] = useState(new Date());
+  const [historyDate, setHistoryDate] = useState(() => new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const rustV2Mode = isRustV2ApiMode();
   const fluidBalanceDeletionAvailable = !rustV2Mode;
 
   // Form state (includes colour for outputs)
-  const [formData, setFormData] = useState({
-    type: 'intake',
-    category: '',
-    subcategory: '',
-    amount: '',
-    colour: '',
-    notes: ''
-  });
+  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
+  const maxHistoryDate = useMemo(() => startOfDay(new Date()), []);
 
   // Format history date for API (YYYY-MM-DD)
   const historyDateString = format(historyDate, 'yyyy-MM-dd');
-  const todayDateString = format(new Date(), 'yyyy-MM-dd');
+  const todayDateString = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
 
   // API hooks - only fetch when slide-over is open
   // Today's data for entry tab
@@ -103,34 +236,12 @@ const AddFluidBalanceSlideOver = ({
   const goToPreviousDay = () => setHistoryDate(prev => subDays(prev, 1));
   const goToNextDay = () => {
     const tomorrow = addDays(historyDate, 1);
-    if (startOfDay(tomorrow) <= startOfDay(new Date())) {
+    if (startOfDay(tomorrow) <= maxHistoryDate) {
       setHistoryDate(tomorrow);
     }
   };
   const goToToday = () => setHistoryDate(new Date());
   const isHistoryToday = isToday(historyDate);
-
-  // Reset form and state when panel closes
-  useEffect(() => {
-    if (!open) {
-      setFormData({
-        type: 'intake',
-        category: '',
-        subcategory: '',
-        amount: '',
-        colour: '',
-        notes: ''
-      });
-      setActiveTab(allowEntry ? 'entry' : 'history');
-      setHistoryDate(new Date());
-    }
-  }, [allowEntry, open]);
-
-  useEffect(() => {
-    if (!allowEntry && activeTab === 'entry') {
-      setActiveTab('history');
-    }
-  }, [activeTab, allowEntry]);
 
   // Get patient display name
   const patientName = patient?.local_data?.user_details
@@ -280,16 +391,6 @@ const AddFluidBalanceSlideOver = ({
 
   // Handle close
   const handleClose = () => {
-    setFormData({
-      type: 'intake',
-      category: '',
-      subcategory: '',
-      amount: '',
-      colour: '',
-      notes: ''
-    });
-    setActiveTab(allowEntry ? 'entry' : 'history');
-    setHistoryDate(new Date());
     onClose();
   };
 
@@ -312,103 +413,6 @@ const AddFluidBalanceSlideOver = ({
   const historyRecordsList = useMemo(() => {
     return Array.isArray(historyRecords) ? historyRecords : historyRecords?.results || [];
   }, [historyRecords]);
-
-  // Get category display label
-  const getCategoryLabel = (category) => {
-    const labels = {
-      oral: 'Oral',
-      iv: 'IV',
-      enteral: 'Enteral',
-      blood: 'Blood',
-      urine: 'Urine',
-      vomit: 'Vomit',
-      stool: 'Stool',
-      drain: 'Drain',
-      ng_suction: 'N.G. Suction',
-      other: 'Other'
-    };
-    return labels[category] || category;
-  };
-
-  // Render a fluid entry row
-  const renderEntryRow = (record, allowDelete = true) => (
-    <div
-      key={record.id}
-      className={cn(
-        "flex items-center justify-between p-3 rounded-lg border",
-        record.entry_type === 'intake'
-          ? "bg-sky-50/50 border-sky-200 dark:bg-sky-900/10 dark:border-sky-800"
-          : "bg-amber-50/50 border-amber-200 dark:bg-amber-900/10 dark:border-amber-800"
-      )}
-    >
-      <div className="flex items-center gap-3">
-        {record.entry_type === 'intake' ? (
-          <ArrowDownCircle className="size-4 text-sky-500 flex-shrink-0" />
-        ) : (
-          <ArrowUpCircle className="size-4 text-amber-500 flex-shrink-0" />
-        )}
-        <div>
-          <div className="font-mono text-sm">
-            <span className={record.entry_type === 'intake' ? 'text-sky-700 dark:text-sky-400' : 'text-amber-700 dark:text-amber-400'}>
-              {record.volume_ml}ml
-            </span>
-            <span className="text-muted-foreground ml-2">
-              {getCategoryLabel(record.category)}
-              {record.subcategory && ` - ${record.subcategory}`}
-            </span>
-            {record.entry_type === 'output' && record.colour && (
-              <span className="text-muted-foreground ml-2 italic">
-                ({record.colour})
-              </span>
-            )}
-          </div>
-          <div className="font-mono text-[10px] text-muted-foreground">
-            {format(new Date(record.recorded_at), 'h:mm a')}
-            {record.notes && <span className="ml-2">• {record.notes}</span>}
-          </div>
-        </div>
-      </div>
-      {allowDelete && fluidBalanceDeletionAvailable && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Delete fluid balance entry"
-          className="size-7 text-muted-foreground hover:text-destructive flex-shrink-0"
-          onClick={() => handleDelete(record.id)}
-          disabled={deleteMutation.isPending}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      )}
-    </div>
-  );
-
-  // Render balance summary bar
-  const renderBalanceSummary = (intake, output, balance, label) => (
-    <div className="flex items-center justify-between px-4 py-3 bg-muted/30 rounded-lg">
-      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-1.5">
-          <ArrowDownCircle className="size-3.5 text-sky-500" />
-          <span className="font-mono text-sm text-sky-600">{intake}ml</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <ArrowUpCircle className="size-3.5 text-amber-500" />
-          <span className="font-mono text-sm text-amber-600">{output}ml</span>
-        </div>
-        <div className={cn(
-          "font-mono text-sm font-medium px-2 py-0.5 rounded",
-          balance > 0 && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-          balance < 0 && "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
-          balance === 0 && "bg-muted text-muted-foreground"
-        )}>
-          {balance > 0 ? '+' : ''}{balance}ml
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <div
@@ -487,7 +491,12 @@ const AddFluidBalanceSlideOver = ({
         <>
           <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
             {/* Today's Summary */}
-            {renderBalanceSummary(todayIntake, todayOutput, todayBalance, "Today's Balance")}
+            <BalanceSummary
+              intake={todayIntake}
+              output={todayOutput}
+              balance={todayBalance}
+              label="Today's Balance"
+            />
 
             {rustV2Mode ? (
               <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 font-mono text-xs text-amber-900 dark:text-amber-100">
@@ -664,7 +673,16 @@ const AddFluidBalanceSlideOver = ({
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {todayRecordsList.map(record => renderEntryRow(record, true))}
+                      {todayRecordsList.map(record => (
+                        <FluidEntryRow
+                          key={record.id}
+                          record={record}
+                          allowDelete
+                          deletionAvailable={fluidBalanceDeletionAvailable}
+                          deletePending={deleteMutation.isPending}
+                          onDelete={handleDelete}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -745,7 +763,7 @@ const AddFluidBalanceSlideOver = ({
                           setCalendarOpen(false);
                         }
                       }}
-                      disabled={(date) => startOfDay(date) > startOfDay(new Date())}
+                      disabled={(date) => startOfDay(date) > maxHistoryDate}
                       initialFocus
                     />
                   </PopoverContent>
@@ -777,12 +795,12 @@ const AddFluidBalanceSlideOver = ({
 
           <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
             {/* Selected Date Summary */}
-            {renderBalanceSummary(
-              historyIntake,
-              historyOutput,
-              historyBalance,
-              isHistoryToday ? "Today's Balance" : `${format(historyDate, 'MMM d')} Balance`
-            )}
+            <BalanceSummary
+              intake={historyIntake}
+              output={historyOutput}
+              balance={historyBalance}
+              label={isHistoryToday ? "Today's Balance" : `${format(historyDate, 'MMM d')} Balance`}
+            />
 
             {rustV2Mode ? (
               <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 font-mono text-xs text-amber-900 dark:text-amber-100">
@@ -808,7 +826,16 @@ const AddFluidBalanceSlideOver = ({
               ) : (
                 <ScrollArea className="h-[400px]">
                   <div className="space-y-2 pr-4">
-                    {historyRecordsList.map(record => renderEntryRow(record, isHistoryToday))}
+                    {historyRecordsList.map(record => (
+                      <FluidEntryRow
+                        key={record.id}
+                        record={record}
+                        allowDelete={isHistoryToday}
+                        deletionAvailable={fluidBalanceDeletionAvailable}
+                        deletePending={deleteMutation.isPending}
+                        onDelete={handleDelete}
+                      />
+                    ))}
                   </div>
                 </ScrollArea>
               )}
@@ -835,7 +862,7 @@ const AddFluidBalanceSlideOver = ({
       )}
     </div>
   );
-};
+}
 
 export default AddFluidBalanceSlideOver;
 export { AddFluidBalanceSlideOver };
