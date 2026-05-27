@@ -31,9 +31,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  LocationCardSkeleton,
-} from '@/components/inventory/LocationCard';
+import { LocationCardSkeleton } from '@/components/inventory/LocationCard';
 import {
   formatLocationCurrency,
   formatLocationNumber,
@@ -74,54 +72,15 @@ const TEMP_ZONE_OPTIONS = [
   { value: 'controlled', label: 'Controlled' },
 ];
 
-/**
- * LocationsPage - Storage locations management page
- */
-export default function LocationsPage() {
-  const navigate = useNavigate();
+function useStorageLocationFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const locationMutationsAvailable = !isRustV2ApiMode();
-
-  // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const locationType = searchParams.get('type') || '';
   const tempZone = searchParams.get('temp_zone') || '';
+  const action = searchParams.get('action');
   const page = parseInt(searchParams.get('page') || '1', 10);
-
-  // Debounced search
   const debouncedSearch = useDebounce(search, 300);
 
-  // Sheet state from URL
-  const action = searchParams.get('action');
-  const isCreateOpen = locationMutationsAvailable && action === 'create';
-
-  // Build query params
-  const queryParams = {
-    page,
-    page_size: 24,
-    ...(debouncedSearch && { search: debouncedSearch }),
-    ...(locationType && { location_type: locationType }),
-    ...(tempZone && { temperature_zone: tempZone }),
-  };
-
-  // Fetch data
-  const {
-    data: locationsData,
-    isLoading,
-    error,
-    refetch,
-  } = useStorageLocations(queryParams);
-
-  const locations = locationsData?.results || locationsData || [];
-  const totalCount = locationsData?.count || locations.length;
-  const totalPages = Math.ceil(totalCount / 24);
-
-  // Handle search input
-  const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-  };
-
-  // Update search params when debounced search changes
   useEffect(() => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
@@ -135,8 +94,7 @@ export default function LocationsPage() {
     });
   }, [debouncedSearch, setSearchParams]);
 
-  // Handle filter changes
-  const handleTypeChange = (value) => {
+  const handleTypeChange = useCallback((value) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       if (value && value !== 'all') {
@@ -147,9 +105,9 @@ export default function LocationsPage() {
       params.set('page', '1');
       return params;
     });
-  };
+  }, [setSearchParams]);
 
-  const handleTempZoneChange = (value) => {
+  const handleTempZoneChange = useCallback((value) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       if (value && value !== 'all') {
@@ -160,56 +118,53 @@ export default function LocationsPage() {
       params.set('page', '1');
       return params;
     });
-  };
+  }, [setSearchParams]);
 
-  const handlePageChange = (newPage) => {
+  const handlePageChange = useCallback((newPage) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.set('page', newPage.toString());
       return params;
     });
-  };
+  }, [setSearchParams]);
 
-  // Clear all filters
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSearch('');
     setSearchParams({});
+  }, [setSearchParams]);
+
+  const queryParams = useMemo(() => ({
+    page,
+    page_size: 24,
+    ...(debouncedSearch && { search: debouncedSearch }),
+    ...(locationType && { location_type: locationType }),
+    ...(tempZone && { temperature_zone: tempZone }),
+  }), [debouncedSearch, locationType, page, tempZone]);
+
+  return {
+    search,
+    locationType,
+    tempZone,
+    action,
+    page,
+    queryParams,
+    hasActiveFilters: Boolean(debouncedSearch || locationType || tempZone),
+    handleSearchChange: (event) => setSearch(event.target.value),
+    handleTypeChange,
+    handleTempZoneChange,
+    handlePageChange,
+    clearFilters,
+    setSearchParams,
   };
+}
 
-  const hasActiveFilters = debouncedSearch || locationType || tempZone;
-
-  // Navigate to location
-  const handleLocationClick = (locationId) => {
-    navigate(`/inventory/locations/${locationId}`);
-  };
-
-  const handleViewStock = useCallback((locationId) => {
-    navigate(`/inventory/items?location=${locationId}`);
-  }, [navigate]);
-
-  const handleEditLocation = useCallback((locationId) => {
-    if (!locationMutationsAvailable) {
-      return;
-    }
-    navigate(`/inventory/locations/${locationId}?action=edit`);
-  }, [locationMutationsAvailable, navigate]);
-
-  const handleTransferTo = useCallback((locationId) => {
-    navigate(`/inventory/transfers?action=create&to=${locationId}`);
-  }, [navigate]);
-
-  const handleCreateLocation = () => {
-    if (!locationMutationsAvailable) {
-      return;
-    }
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      params.set('action', 'create');
-      return params;
-    });
-  };
-
-  const locationColumns = useMemo(() => ([
+function createLocationColumns({
+  locationMutationsAvailable,
+  onViewStock,
+  onTransferTo,
+  onEditLocation,
+}) {
+  return [
     {
       key: 'location',
       header: 'Location',
@@ -277,12 +232,12 @@ export default function LocationsPage() {
       header: 'Temp Zone',
       width: '160px',
       render: (location) => {
-        const tempZone = getTempZoneConfig(location.temperature_zone);
-        const TempIcon = tempZone?.icon;
-        return tempZone ? (
-          <div className={cn('flex items-center gap-1 text-xs', tempZone.color)}>
+        const tempConfig = getTempZoneConfig(location.temperature_zone);
+        const TempIcon = tempConfig?.icon;
+        return tempConfig ? (
+          <div className={cn('flex items-center gap-1 text-xs', tempConfig.color)}>
             <TempIcon className="size-3" />
-            <span>{tempZone.label}</span>
+            <span>{tempConfig.label}</span>
           </div>
         ) : (
           <span className="text-muted-foreground text-xs">-</span>
@@ -305,18 +260,18 @@ export default function LocationsPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleViewStock(location.id); }}>
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onViewStock(location.id); }}>
               <Eye className="size-4 mr-2" />
               View Stock
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleTransferTo(location.id); }}>
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onTransferTo(location.id); }}>
               <ArrowRightLeft className="size-4 mr-2" />
               Transfer To
             </DropdownMenuItem>
             {locationMutationsAvailable && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditLocation(location.id); }}>
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onEditLocation(location.id); }}>
                   <Edit className="size-4 mr-2" />
                   Edit
                 </DropdownMenuItem>
@@ -326,57 +281,343 @@ export default function LocationsPage() {
         </DropdownMenu>
       ),
     },
-  ]), [
-    handleEditLocation,
-    handleTransferTo,
-    handleViewStock,
-    locationMutationsAvailable,
-  ]);
+  ];
+}
 
-  const handleCloseSheet = () => {
+function LocationsLoadingState() {
+  return (
+    <PageState variant="loading" fullHeight={false} className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-5 w-32 mt-2" />
+        </div>
+        <Skeleton className="h-10 w-36" />
+      </div>
+
+      <div className="flex gap-3">
+        <Skeleton className="h-10 flex-1 max-w-md" />
+        <Skeleton className="h-10 w-40" />
+        <Skeleton className="h-10 w-40" />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {[...Array(8)].map((_, i) => (
+          <LocationCardSkeleton key={i} />
+        ))}
+      </div>
+    </PageState>
+  );
+}
+
+function LocationsHeader({
+  totalCount,
+  isLoading,
+  locationMutationsAvailable,
+  onRefresh,
+  onCreateLocation,
+}) {
+  return (
+    <PageHeader
+      title="Storage Locations"
+      description={`${totalCount} location${totalCount !== 1 ? 's' : ''}`}
+      actions={(
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onRefresh}>
+            <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+          {locationMutationsAvailable && (
+            <Button onClick={onCreateLocation}>
+              <Plus className="size-4 mr-2" />
+              Add Location
+            </Button>
+          )}
+        </div>
+      )}
+    />
+  );
+}
+
+function RustV2LocationMutationNotice({ locationMutationsAvailable }) {
+  if (locationMutationsAvailable) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      Storage location creation and editing is not available in Rust V2 mode yet. Existing
+      location review, stock visibility, and transfer request workflows remain available.
+    </div>
+  );
+}
+
+function LocationsFilters({
+  search,
+  locationType,
+  tempZone,
+  hasActiveFilters,
+  onSearchChange,
+  onTypeChange,
+  onTempZoneChange,
+  onClearFilters,
+}) {
+  return (
+    <div className="flex flex-col lg:flex-row gap-3">
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name or code..."
+          value={search}
+          onChange={onSearchChange}
+          className="pl-9 font-mono text-sm"
+        />
+      </div>
+
+      <Select value={locationType || 'all'} onValueChange={onTypeChange}>
+        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+          <Filter className="size-4 mr-2 text-muted-foreground" />
+          <SelectValue placeholder="Type" />
+        </SelectTrigger>
+        <SelectContent>
+          {LOCATION_TYPE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={tempZone || 'all'} onValueChange={onTempZoneChange}>
+        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+          <SelectValue placeholder="Temp Zone" />
+        </SelectTrigger>
+        <SelectContent>
+          {TEMP_ZONE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {hasActiveFilters && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClearFilters}
+          className="font-mono text-xs text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-4 mr-1" />
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function LocationsTable({ locations, columns, onOpenLocation }) {
+  return (
+    <div className="overflow-x-auto">
+      <VirtualizedTable
+        rows={locations}
+        rowKey={(location) => location.id}
+        rowHeight={64}
+        columns={columns}
+        onRowClick={(location) => onOpenLocation(location.id)}
+        rowClassName="hover:bg-muted/30"
+        className="min-w-[980px]"
+        headerClassName="bg-muted/50 border-b border-border"
+      />
+    </div>
+  );
+}
+
+function LocationsEmptyState({
+  hasActiveFilters,
+  locationMutationsAvailable,
+  onCreateLocation,
+}) {
+  return (
+    <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
+      <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+        <MapPin className="size-8 text-muted-foreground" />
+      </div>
+      <h3 className="font-display text-xl text-foreground mb-2">
+        No Locations Found
+      </h3>
+      <p className="text-muted-foreground text-sm mb-4">
+        {hasActiveFilters
+          ? 'Try adjusting your filters'
+          : 'Add your first storage location to get started'}
+      </p>
+      {!hasActiveFilters && locationMutationsAvailable && (
+        <Button onClick={onCreateLocation} className="font-mono text-xs">
+          <Plus className="size-4 mr-2" />
+          Add Location
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function LocationsDisplay({
+  locations,
+  columns,
+  hasActiveFilters,
+  locationMutationsAvailable,
+  onOpenLocation,
+  onCreateLocation,
+}) {
+  if (locations.length === 0) {
+    return (
+      <LocationsEmptyState
+        hasActiveFilters={hasActiveFilters}
+        locationMutationsAvailable={locationMutationsAvailable}
+        onCreateLocation={onCreateLocation}
+      />
+    );
+  }
+
+  return (
+    <LocationsTable
+      locations={locations}
+      columns={columns}
+      onOpenLocation={onOpenLocation}
+    />
+  );
+}
+
+function LocationsPagination({ page, totalPages, totalCount, onPageChange }) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center justify-between pt-4 border-t border-border">
+      <p className="font-mono text-xs text-muted-foreground">
+        Page {page} of {totalPages} ({totalCount} locations)
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+          className="font-mono text-xs"
+        >
+          <ChevronLeft className="size-4 mr-1" />
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+          className="font-mono text-xs"
+        >
+          Next
+          <ChevronRight className="size-4 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CreateLocationSheet({ isOpen, onClose, onCreateSuccess }) {
+  return (
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="sm:max-w-xl overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-display text-2xl">Add Storage Location</SheetTitle>
+          <SheetDescription>
+            Create a new storage location for your inventory.
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          <LocationForm
+            onSuccess={onCreateSuccess}
+            onCancel={onClose}
+          />
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/**
+ * LocationsPage - Storage locations management page
+ */
+export default function LocationsPage() {
+  const navigate = useNavigate();
+  const locationMutationsAvailable = !isRustV2ApiMode();
+  const {
+    search,
+    locationType,
+    tempZone,
+    action,
+    page,
+    queryParams,
+    hasActiveFilters,
+    handleSearchChange,
+    handleTypeChange,
+    handleTempZoneChange,
+    handlePageChange,
+    clearFilters,
+    setSearchParams,
+  } = useStorageLocationFilters();
+  const isCreateOpen = locationMutationsAvailable && action === 'create';
+  const { data: locationsData, isLoading, error, refetch } = useStorageLocations(queryParams);
+  const locations = locationsData?.results || locationsData || [];
+  const totalCount = locationsData?.count || locations.length;
+  const totalPages = Math.ceil(totalCount / 24);
+
+  const handleLocationClick = useCallback((locationId) => {
+    navigate(`/inventory/locations/${locationId}`);
+  }, [navigate]);
+  const handleViewStock = useCallback((locationId) => {
+    navigate(`/inventory/items?location=${locationId}`);
+  }, [navigate]);
+  const handleEditLocation = useCallback((locationId) => {
+    if (locationMutationsAvailable) {
+      navigate(`/inventory/locations/${locationId}?action=edit`);
+    }
+  }, [locationMutationsAvailable, navigate]);
+  const handleTransferTo = useCallback((locationId) => {
+    navigate(`/inventory/transfers?action=create&to=${locationId}`);
+  }, [navigate]);
+  const handleCreateLocation = useCallback(() => {
+    if (!locationMutationsAvailable) {
+      return;
+    }
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('action', 'create');
+      return params;
+    });
+  }, [locationMutationsAvailable, setSearchParams]);
+  const handleCloseSheet = useCallback(() => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.delete('action');
       return params;
     });
-  };
-
-  const handleCreateSuccess = () => {
+  }, [setSearchParams]);
+  const handleCreateSuccess = useCallback(() => {
     handleCloseSheet();
     refetch();
-  };
+  }, [handleCloseSheet, refetch]);
+  const locationColumns = useMemo(() => createLocationColumns({
+    locationMutationsAvailable,
+    onViewStock: handleViewStock,
+    onTransferTo: handleTransferTo,
+    onEditLocation: handleEditLocation,
+  }), [handleEditLocation, handleTransferTo, handleViewStock, locationMutationsAvailable]);
 
-  // Loading state (only show skeleton on initial load, not on refetches)
   if (isLoading && !locationsData) {
-    return (
-      <PageState variant="loading" fullHeight={false} className="space-y-6">
-        {/* Header skeleton */}
-        <div className="flex items-center justify-between">
-          <div>
-            <Skeleton className="h-9 w-48" />
-            <Skeleton className="h-5 w-32 mt-2" />
-          </div>
-          <Skeleton className="h-10 w-36" />
-        </div>
-
-        {/* Filters skeleton */}
-        <div className="flex gap-3">
-          <Skeleton className="h-10 flex-1 max-w-md" />
-          <Skeleton className="h-10 w-40" />
-          <Skeleton className="h-10 w-40" />
-        </div>
-
-        {/* Grid skeleton */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(8)].map((_, i) => (
-            <LocationCardSkeleton key={i} />
-          ))}
-        </div>
-      </PageState>
-    );
+    return <LocationsLoadingState />;
   }
 
-  // Error state
   if (error) {
     return (
       <PageState
@@ -390,173 +631,49 @@ export default function LocationsPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Storage Locations"
-        description={`${totalCount} location${totalCount !== 1 ? 's' : ''}`}
-        actions={(
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
-              Refresh
-            </Button>
-            {locationMutationsAvailable && (
-              <Button onClick={handleCreateLocation}>
-                <Plus className="size-4 mr-2" />
-                Add Location
-              </Button>
-            )}
-          </div>
-        )}
+      <LocationsHeader
+        totalCount={totalCount}
+        isLoading={isLoading}
+        locationMutationsAvailable={locationMutationsAvailable}
+        onRefresh={refetch}
+        onCreateLocation={handleCreateLocation}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
-      {!locationMutationsAvailable && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Storage location creation and editing is not available in Rust V2 mode yet. Existing
-          location review, stock visibility, and transfer request workflows remain available.
-        </div>
-      )}
+        <RustV2LocationMutationNotice locationMutationsAvailable={locationMutationsAvailable} />
 
-      {/* Filters Row */}
-      <div className="flex flex-col lg:flex-row gap-3">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name or code..."
-            value={search}
-            onChange={handleSearchChange}
-            className="pl-9 font-mono text-sm"
-          />
-        </div>
+        <LocationsFilters
+          search={search}
+          locationType={locationType}
+          tempZone={tempZone}
+          hasActiveFilters={hasActiveFilters}
+          onSearchChange={handleSearchChange}
+          onTypeChange={handleTypeChange}
+          onTempZoneChange={handleTempZoneChange}
+          onClearFilters={clearFilters}
+        />
 
-        {/* Type Filter */}
-        <Select value={locationType || 'all'} onValueChange={handleTypeChange}>
-          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <Filter className="size-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            {LOCATION_TYPE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <LocationsDisplay
+          locations={locations}
+          columns={locationColumns}
+          hasActiveFilters={hasActiveFilters}
+          locationMutationsAvailable={locationMutationsAvailable}
+          onOpenLocation={handleLocationClick}
+          onCreateLocation={handleCreateLocation}
+        />
 
-        {/* Temperature Zone Filter */}
-        <Select value={tempZone || 'all'} onValueChange={handleTempZoneChange}>
-          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-            <SelectValue placeholder="Temp Zone" />
-          </SelectTrigger>
-          <SelectContent>
-            {TEMP_ZONE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <LocationsPagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={handlePageChange}
+        />
 
-        {/* Clear Filters */}
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="font-mono text-xs text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4 mr-1" />
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {/* Locations Display */}
-      {locations.length > 0 ? (
-        <div className="overflow-x-auto">
-          <VirtualizedTable
-            rows={locations}
-            rowKey={(location) => location.id}
-            rowHeight={64}
-            columns={locationColumns}
-            onRowClick={(location) => handleLocationClick(location.id)}
-            rowClassName="hover:bg-muted/30"
-            className="min-w-[980px]"
-            headerClassName="bg-muted/50 border-b border-border"
-          />
-        </div>
-      ) : (
-        <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
-          <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <MapPin className="size-8 text-muted-foreground" />
-          </div>
-          <h3 className="font-display text-xl text-foreground mb-2">
-            No Locations Found
-          </h3>
-          <p className="text-muted-foreground text-sm mb-4">
-            {hasActiveFilters
-              ? 'Try adjusting your filters'
-              : 'Add your first storage location to get started'}
-          </p>
-          {!hasActiveFilters && locationMutationsAvailable && (
-            <Button onClick={handleCreateLocation} className="font-mono text-xs">
-              <Plus className="size-4 mr-2" />
-              Add Location
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t border-border">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {page} of {totalPages} ({totalCount} locations)
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page <= 1}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="font-mono text-xs"
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Create Location Sheet */}
-      <Sheet open={isCreateOpen} onOpenChange={(open) => !open && handleCloseSheet()}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="font-display text-2xl">Add Storage Location</SheetTitle>
-            <SheetDescription>
-              Create a new storage location for your inventory.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            <LocationForm
-              onSuccess={handleCreateSuccess}
-              onCancel={handleCloseSheet}
-            />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
+        <CreateLocationSheet
+          isOpen={isCreateOpen}
+          onClose={handleCloseSheet}
+          onCreateSuccess={handleCreateSuccess}
+        />
       </div>
     </PageShell>
   );
