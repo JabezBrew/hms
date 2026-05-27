@@ -46,6 +46,358 @@ import { PageShell } from '@/shared/components/page/PageShell';
  * - Grid/list view toggle
  * - Mobile responsive
  */
+function getTemplateSections(template) {
+  return Array.isArray(template.structure)
+    ? template.structure
+    : template.structure?.sections || [];
+}
+
+function TemplateListView({
+  filteredTemplates,
+  headerDescription,
+  isError,
+  isLoading,
+  onClearSearch,
+  onCreate,
+  onDelete,
+  onEdit,
+  onRefresh,
+  onSearchChange,
+  onView,
+  pageMeta,
+  searchQuery,
+  setViewMode,
+  viewMode,
+}) {
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title="Note Templates"
+        description={headerDescription}
+        actions={(
+          <Button
+            onClick={onCreate}
+            size="sm"
+            className="font-mono text-xs w-full sm:w-auto"
+            data-onboarding="note-template-create"
+          >
+            <Plus className="size-4 mr-2" />
+            Create Template
+          </Button>
+        )}
+      />
+
+      <main className="p-4 sm:p-6 space-y-4">
+        <TemplateListToolbar
+          onClearSearch={onClearSearch}
+          onRefresh={onRefresh}
+          onSearchChange={onSearchChange}
+          searchQuery={searchQuery}
+          setViewMode={setViewMode}
+          viewMode={viewMode}
+        />
+
+        {isLoading ? (
+          <LoadingSkeleton viewMode={viewMode} />
+        ) : isError ? (
+          <ErrorState onRetry={onRefresh} />
+        ) : filteredTemplates.length === 0 ? (
+          <EmptyState
+            hasSearch={!!searchQuery}
+            onClear={onClearSearch}
+            onCreate={onCreate}
+          />
+        ) : (
+          <div className={cn(
+            viewMode === 'grid'
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6"
+              : "space-y-4"
+          )}>
+            {filteredTemplates.map((template, index) => (
+              <TemplateCard
+                key={template.id}
+                template={template}
+                index={index}
+                sections={getTemplateSections(template)}
+                viewMode={viewMode}
+                onView={() => onView(template)}
+                onEdit={() => onEdit(template)}
+                onDelete={() => onDelete(template)}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+    </PageShell>
+  );
+}
+
+function TemplateListToolbar({
+  onClearSearch,
+  onRefresh,
+  onSearchChange,
+  searchQuery,
+  setViewMode,
+  viewMode,
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search templates..."
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="pl-10 font-mono text-sm bg-background"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={cn(
+              "p-1.5 rounded-md transition-colors",
+              viewMode === 'grid'
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <LayoutGrid className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={cn(
+              "p-1.5 rounded-md transition-colors",
+              viewMode === 'list'
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <List className="size-4" />
+          </button>
+        </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRefresh}
+          className="shrink-0 size-9"
+        >
+          <RefreshCw className="size-4" />
+        </Button>
+
+        {searchQuery ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearSearch}
+            className="font-mono text-xs h-9"
+          >
+            <X className="size-4 mr-1" />
+            Clear
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TemplateEditorView({ isEditingTemplate, onBack, onTemplateSuccess, pageMeta, selectedTemplate }) {
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3">
+            <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
+              <ClipboardList className="size-6 text-amber-600 dark:text-amber-400" />
+            </span>
+            {isEditingTemplate ? 'Edit Note Template' : 'New Note Template'}
+          </span>
+        )}
+        description={
+          isEditingTemplate
+            ? selectedTemplate?.title || 'Update template sections and sharing rules.'
+            : 'Build a Chronicle-aligned template for structured clinical documentation.'
+        }
+        descriptionClassName="font-mono text-xs text-muted-foreground"
+        contentClassName="max-w-6xl mx-auto w-full"
+        actions={(
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBack}
+            className="font-mono text-xs"
+          >
+            <ChevronLeft className="size-4 mr-1.5" />
+            Back to Templates
+          </Button>
+        )}
+      />
+
+      <main className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
+        <TemplateBuilder
+          initialTemplate={selectedTemplate}
+          onSuccess={onTemplateSuccess}
+        />
+      </main>
+    </PageShell>
+  );
+}
+
+function TemplateDetailView({ onBack, onEdit, pageMeta, selectedTemplate }) {
+  const sections = getTemplateSections(selectedTemplate);
+
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title="Note Template"
+        description={selectedTemplate.description || 'Clinical note template details'}
+        contentClassName="max-w-4xl mx-auto w-full"
+        actions={(
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEdit}
+          >
+            <Pencil className="size-4 mr-2" />
+            Edit
+          </Button>
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          className="-ml-2"
+        >
+          <ChevronLeft className="size-4 mr-1" />
+          Templates
+        </Button>
+      </PageHeader>
+
+      <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+        <TemplateDetailHeader selectedTemplate={selectedTemplate} />
+        <TemplateStructure sections={sections} />
+      </main>
+    </PageShell>
+  );
+}
+
+function TemplateDetailHeader({ selectedTemplate }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
+          {selectedTemplate.title}
+        </h1>
+        <div className="flex gap-1.5">
+          <span className={cn(
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+            selectedTemplate.is_active
+              ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
+              : "bg-muted text-muted-foreground border border-border"
+          )}>
+            {selectedTemplate.is_active ? (
+              <CheckCircle className="size-3" />
+            ) : (
+              <XCircle className="size-3" />
+            )}
+            {selectedTemplate.is_active ? 'Active' : 'Inactive'}
+          </span>
+          <span className={cn(
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+            selectedTemplate.is_public
+              ? "bg-sky-500/10 text-sky-600 border border-sky-500/30"
+              : "bg-muted text-muted-foreground border border-border"
+          )}>
+            {selectedTemplate.is_public ? (
+              <Globe className="size-3" />
+            ) : (
+              <Lock className="size-3" />
+            )}
+            {selectedTemplate.is_public ? 'Public' : 'Private'}
+          </span>
+        </div>
+      </div>
+      {selectedTemplate.description ? (
+        <p className="text-muted-foreground">
+          {selectedTemplate.description}
+        </p>
+      ) : null}
+      {selectedTemplate.created_by_name ? (
+        <p className="font-mono text-xs text-muted-foreground">
+          Created by {selectedTemplate.created_by_name}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function TemplateStructure({ sections }) {
+  return (
+    <section>
+      <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
+        <FileText className="size-5 text-muted-foreground" />
+        Template Structure
+      </h2>
+      <div className="space-y-3">
+        {sections.map((section, index) => (
+          <div
+            key={section.id || section.name || section.section}
+            className="p-4 rounded-xl bg-card/50 border border-border flex items-center justify-between"
+            style={{ animationDelay: `${index * 50}ms` }}
+          >
+            <div>
+              <h3 className="font-medium text-foreground">
+                {section.name || section.section}
+              </h3>
+              <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                {section.type}
+                {(section.observationType || section.observation_type) &&
+                  ` · ${section.observationType || section.observation_type}`}
+              </p>
+            </div>
+            <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+              Section {index + 1}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DeleteTemplateDialog({ onConfirm, onOpenChange, templateToDelete }) {
+  return (
+    <AlertDialog open={!!templateToDelete} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Template</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{templateToDelete?.title}"?
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onConfirm}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export default function TemplateListPage() {
   const [view, setView] = useState('list'); // 'list', 'create', 'edit', 'detail'
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -105,13 +457,6 @@ export default function TemplateListPage() {
     </span>
   );
 
-  // Get sections from template structure
-  const getSections = (template) => {
-    return Array.isArray(template.structure)
-      ? template.structure
-      : template.structure?.sections || [];
-  };
-
   // Handle template creation success
   const handleTemplateSuccess = () => {
     toast.success(selectedTemplate ? 'Template updated successfully' : 'Template created successfully');
@@ -128,159 +473,44 @@ export default function TemplateListPage() {
       toast.success('Template deleted successfully');
       setTemplateToDelete(null);
       refetch();
-    } catch (error) {
+    } catch {
       toast.error('Failed to delete template');
-      console.error('Error deleting template:', error);
     }
   };
 
   // Render list view
   if (view === 'list') {
     return (
-      <PageShell>
-        {pageMeta}
-          <PageHeader
-            title="Note Templates"
-            description={headerDescription}
-            actions={(
-              <Button
-                onClick={() => setView('create')}
-                size="sm"
-                className="font-mono text-xs w-full sm:w-auto"
-                data-onboarding="note-template-create"
-              >
-                <Plus className="size-4 mr-2" />
-                Create Template
-              </Button>
-            )}
-          />
-
-          {/* Template List */}
-          <main className="p-4 sm:p-6 space-y-4">
-            {/* Search and Filters */}
-            <div className="flex flex-col gap-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search templates..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 font-mono text-sm bg-background"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {/* View Mode Toggle */}
-                <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('grid')}
-                    className={cn(
-                      "p-1.5 rounded-md transition-colors",
-                      viewMode === 'grid'
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <LayoutGrid className="size-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('list')}
-                    className={cn(
-                      "p-1.5 rounded-md transition-colors",
-                      viewMode === 'list'
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <List className="size-4" />
-                  </button>
-                </div>
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => refetch()}
-                  className="shrink-0 size-9"
-                >
-                  <RefreshCw className="size-4" />
-                </Button>
-
-                {searchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSearchQuery('')}
-                    className="font-mono text-xs h-9"
-                  >
-                    <X className="size-4 mr-1" />
-                    Clear
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {isLoading ? (
-              <LoadingSkeleton viewMode={viewMode} />
-            ) : isError ? (
-              <ErrorState onRetry={refetch} />
-            ) : filteredTemplates.length === 0 ? (
-              <EmptyState
-                hasSearch={!!searchQuery}
-                onClear={() => setSearchQuery('')}
-                onCreate={() => setView('create')}
-              />
-            ) : (
-              <div className={cn(
-                viewMode === 'grid'
-                  ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6"
-                  : "space-y-4"
-              )}>
-                {filteredTemplates.map((template, index) => (
-                  <TemplateCard
-                    key={template.id}
-                    template={template}
-                    index={index}
-                    sections={getSections(template)}
-                    viewMode={viewMode}
-                    onView={() => {
-                      setSelectedTemplate(template);
-                      setView('detail');
-                    }}
-                    onEdit={() => {
-                      setSelectedTemplate(template);
-                      setView('edit');
-                    }}
-                    onDelete={() => setTemplateToDelete(template)}
-                  />
-                ))}
-              </div>
-            )}
-          </main>
-
-          {/* Delete Confirmation Dialog */}
-          <AlertDialog open={!!templateToDelete} onOpenChange={() => setTemplateToDelete(null)}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Template</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete "{templateToDelete?.title}"?
-                  This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDeleteTemplate}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </PageShell>
+      <>
+        <TemplateListView
+          filteredTemplates={filteredTemplates}
+          headerDescription={headerDescription}
+          isError={isError}
+          isLoading={isLoading}
+          onClearSearch={() => setSearchQuery('')}
+          onCreate={() => setView('create')}
+          onDelete={setTemplateToDelete}
+          onEdit={(template) => {
+            setSelectedTemplate(template);
+            setView('edit');
+          }}
+          onRefresh={refetch}
+          onSearchChange={setSearchQuery}
+          onView={(template) => {
+            setSelectedTemplate(template);
+            setView('detail');
+          }}
+          pageMeta={pageMeta}
+          searchQuery={searchQuery}
+          setViewMode={setViewMode}
+          viewMode={viewMode}
+        />
+        <DeleteTemplateDialog
+          onConfirm={handleDeleteTemplate}
+          onOpenChange={() => setTemplateToDelete(null)}
+          templateToDelete={templateToDelete}
+        />
+      </>
     );
   }
 
@@ -289,166 +519,31 @@ export default function TemplateListPage() {
     const isEditingTemplate = view === 'edit';
 
     return (
-      <PageShell>
-        {pageMeta}
-          <PageHeader
-            title={(
-              <span className="flex items-center gap-3">
-                <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                  <ClipboardList className="size-6 text-amber-600 dark:text-amber-400" />
-                </span>
-                {isEditingTemplate ? 'Edit Note Template' : 'New Note Template'}
-              </span>
-            )}
-            description={
-              isEditingTemplate
-                ? selectedTemplate?.title || 'Update template sections and sharing rules.'
-                : 'Build a Chronicle-aligned template for structured clinical documentation.'
-            }
-            descriptionClassName="font-mono text-xs text-muted-foreground"
-            contentClassName="max-w-6xl mx-auto w-full"
-            actions={(
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setView('list');
-                  setSelectedTemplate(null);
-                }}
-                className="font-mono text-xs"
-              >
-                <ChevronLeft className="size-4 mr-1.5" />
-                Back to Templates
-              </Button>
-            )}
-          />
-
-          <main className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
-            <TemplateBuilder
-              initialTemplate={selectedTemplate}
-              onSuccess={handleTemplateSuccess}
-            />
-          </main>
-        </PageShell>
+      <TemplateEditorView
+        isEditingTemplate={isEditingTemplate}
+        onBack={() => {
+          setView('list');
+          setSelectedTemplate(null);
+        }}
+        onTemplateSuccess={handleTemplateSuccess}
+        pageMeta={pageMeta}
+        selectedTemplate={selectedTemplate}
+      />
     );
   }
 
   // Render detail view
   if (view === 'detail' && selectedTemplate) {
-    const sections = getSections(selectedTemplate);
-
     return (
-      <PageShell>
-        {pageMeta}
-          <PageHeader
-            title="Note Template"
-            description={selectedTemplate.description || 'Clinical note template details'}
-            contentClassName="max-w-4xl mx-auto w-full"
-            actions={(
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setView('edit')}
-              >
-                <Pencil className="size-4 mr-2" />
-                Edit
-              </Button>
-            )}
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setView('list');
-                setSelectedTemplate(null);
-              }}
-              className="-ml-2"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Templates
-            </Button>
-          </PageHeader>
-
-          <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
-            {/* Template Header */}
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="font-display text-2xl sm:text-3xl text-foreground tracking-tight">
-                  {selectedTemplate.title}
-                </h1>
-                <div className="flex gap-1.5">
-                  <span className={cn(
-                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
-                    selectedTemplate.is_active
-                      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
-                      : "bg-muted text-muted-foreground border border-border"
-                  )}>
-                    {selectedTemplate.is_active ? (
-                      <CheckCircle className="size-3" />
-                    ) : (
-                      <XCircle className="size-3" />
-                    )}
-                    {selectedTemplate.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                  <span className={cn(
-                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
-                    selectedTemplate.is_public
-                      ? "bg-sky-500/10 text-sky-600 border border-sky-500/30"
-                      : "bg-muted text-muted-foreground border border-border"
-                  )}>
-                    {selectedTemplate.is_public ? (
-                      <Globe className="size-3" />
-                    ) : (
-                      <Lock className="size-3" />
-                    )}
-                    {selectedTemplate.is_public ? 'Public' : 'Private'}
-                  </span>
-                </div>
-              </div>
-              {selectedTemplate.description && (
-                <p className="text-muted-foreground">
-                  {selectedTemplate.description}
-                </p>
-              )}
-              {selectedTemplate.created_by_name && (
-                <p className="font-mono text-xs text-muted-foreground">
-                  Created by {selectedTemplate.created_by_name}
-                </p>
-              )}
-            </div>
-
-            {/* Template Structure */}
-            <section>
-              <h2 className="font-display text-lg sm:text-xl text-foreground mb-4 flex items-center gap-2">
-                <FileText className="size-5 text-muted-foreground" />
-                Template Structure
-              </h2>
-              <div className="space-y-3">
-                {sections.map((section, index) => (
-                  <div
-                    key={section.id || section.name || section.section}
-                    className="p-4 rounded-xl bg-card/50 border border-border flex items-center justify-between"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <div>
-                      <h3 className="font-medium text-foreground">
-                        {section.name || section.section}
-                      </h3>
-                      <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                        {section.type}
-                        {(section.observationType || section.observation_type) &&
-                          ` · ${section.observationType || section.observation_type}`}
-                      </p>
-                    </div>
-                    <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                      Section {index + 1}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </main>
-        </PageShell>
+      <TemplateDetailView
+        onBack={() => {
+          setView('list');
+          setSelectedTemplate(null);
+        }}
+        onEdit={() => setView('edit')}
+        pageMeta={pageMeta}
+        selectedTemplate={selectedTemplate}
+      />
     );
   }
 
