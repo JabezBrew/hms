@@ -314,7 +314,7 @@
 }
 
 .loading-spinner {
-  color: currentColor;
+  color: var(--chronicle-amber, #d97706);
   overflow: visible;
 }
 

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter } from 'react-router-dom'
+import { BrowserRouter, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
 import { ViewModeProvider } from './contexts/ViewModeContext'
@@ -8,6 +8,7 @@ import { HelmetProvider } from 'react-helmet-async'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import RuntimeErrorGuard from './app/RuntimeErrorGuard'
+import PublicAuthLoader from './app/PublicAuthLoader'
 import { queryClient } from './lib/react-query'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
@@ -22,7 +23,9 @@ const PasswordChangeRequiredApp = lazy(() => import('./app/PasswordChangeRequire
 // Main app content with routes
 function AppContent() {
   const { isAuthenticated, loading, passwordChangeRequired } = useAuth()
+  const { pathname } = useLocation()
   const isOpsHost = isStandaloneOpsDashboardHost()
+  const isPublicAuthRoute = pathname === '/login' || pathname.startsWith('/reset-password')
   const appState = isOpsHost
     ? 'ops'
     : loading
@@ -42,7 +45,9 @@ function AppContent() {
       </Suspense>
     )
   } else if (loading) {
-    content = (
+    content = isPublicAuthRoute ? (
+      <PublicAuthLoader />
+    ) : (
       <div className="flex min-h-screen flex-col">
         {/* Skeleton for header */}
         <header className="border-b">
@@ -82,7 +87,7 @@ function AppContent() {
     )
   } else if (!isAuthenticated) {
     content = (
-      <Suspense fallback={<PageLoader />}>
+      <Suspense fallback={<PublicAuthLoader />}>
         <PublicAuthApp />
       </Suspense>
     )
