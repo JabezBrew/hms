@@ -8,7 +8,7 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
@@ -225,7 +225,7 @@ function ChartEntryBody({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <LoadingSpinner className="size-6 text-muted-foreground" />
       </div>
     );
   }
@@ -285,7 +285,7 @@ function ChartEntryFooter({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                <LoadingSpinner className="size-3.5 mr-1.5" />
                 Saving…
               </>
             ) : (

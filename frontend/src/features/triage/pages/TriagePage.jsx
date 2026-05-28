@@ -13,6 +13,7 @@ import { TriageAssessmentDialog } from '@/components/visits/TriageAssessmentDial
 import { TriageAssignDialog } from '@/components/visits/TriageAssignDialog';
 import { useTriageQueue, useTriageActions } from '@/hooks/useVisitQueries';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/lib/auth';
@@ -97,7 +98,11 @@ export default function TriagePage() {
                   onClick={() => refetch()}
                   disabled={isFetching}
                 >
-                  <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+                  {isFetching ? (
+                    <LoadingSpinner className="h-4 w-8" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
                 </Button>
               </div>
             )}
@@ -129,7 +134,11 @@ export default function TriagePage() {
                   onClick={() => refetch()}
                   disabled={isFetching}
                 >
-                  <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+                  {isFetching ? (
+                    <LoadingSpinner className="h-4 w-8" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
                 </Button>
               </div>
             )}
@@ -165,7 +174,11 @@ export default function TriagePage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+                {isFetching ? (
+                  <LoadingSpinner className="h-4 w-8" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
               </Button>
             </div>
           )}

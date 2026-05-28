@@ -9,7 +9,7 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Info from 'lucide-react/dist/esm/icons/info.js';
@@ -197,7 +197,7 @@ function AddChartTemplateSelectionStep({
 
       {templatesLoading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <LoadingSpinner className="size-6 text-muted-foreground" />
         </div>
       ) : filteredTemplates.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
@@ -338,7 +338,7 @@ function AddChartFooter({
             >
               {isAssigning ? (
                 <>
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  <LoadingSpinner className="size-3.5 mr-1.5" />
                   Assigning…
                 </>
               ) : (

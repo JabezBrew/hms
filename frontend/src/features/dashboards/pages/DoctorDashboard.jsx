@@ -11,6 +11,7 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useDashboardModuleGates,
@@ -267,7 +268,11 @@ function DoctorDashboardActions({
         className="font-mono text-xs"
         disabled={isFetching}
       >
-        <RefreshCw className={cn('size-4 mr-2', isFetching && 'animate-spin')} />
+        {isFetching ? (
+          <LoadingSpinner className="mr-2 h-4 w-8" />
+        ) : (
+          <RefreshCw className="size-4 mr-2" />
+        )}
         Refresh
       </Button>
     </div>

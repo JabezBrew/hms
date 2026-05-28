@@ -1,5 +1,5 @@
 import FileCheck2 from 'lucide-react/dist/esm/icons/file-check-2.js'
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js'
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js'
 import { useId } from 'react'
 import { Button } from '@/components/ui/button'
@@ -106,7 +106,7 @@ export default function WardRoundMode({
             disabled={mode.isSavingDraft || mode.isSigning}
             onClick={() => mode.saveDraft()}
           >
-            {mode.isSavingDraft && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+            {mode.isSavingDraft && <LoadingSpinner className="mr-2 size-3.5" />}
             Save draft
           </Button>
           <Button
@@ -116,7 +116,7 @@ export default function WardRoundMode({
             onClick={() => mode.signRound()}
           >
             {mode.isSigning ? (
-              <Loader2 className="mr-2 size-3.5 animate-spin" />
+              <LoadingSpinner className="mr-2 size-3.5" />
             ) : (
               <FileCheck2 className="mr-2 size-3.5" />
             )}

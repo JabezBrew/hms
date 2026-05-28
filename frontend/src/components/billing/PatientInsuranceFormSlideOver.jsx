@@ -1,7 +1,7 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -427,7 +427,7 @@ function InsuranceFormFooter({ isEditing, isPending, onClose }) {
       >
         {isPending ? (
           <>
-            <Loader2 className="size-4 mr-2 animate-spin" />
+            <LoadingSpinner className="size-4 mr-2" />
             {isEditing ? 'Updating...' : 'Creating...'}
           </>
         ) : (

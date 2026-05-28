@@ -7,7 +7,7 @@ import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import TrendingDown from 'lucide-react/dist/esm/icons/trending-down.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
@@ -543,7 +543,11 @@ function LabResultsHeader({ isFetching, metrics, onRefresh, stats }) {
           className="flex items-center gap-2"
           disabled={isFetching}
         >
-          <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
+          {isFetching ? (
+            <LoadingSpinner className="h-4 w-8" />
+          ) : (
+            <RefreshCw className="size-4" />
+          )}
           Refresh
         </Button>
       )}
@@ -1353,7 +1357,7 @@ function LabVerifyDialog({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Verifying…
               </>
             ) : (

@@ -2,6 +2,7 @@ import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const DEFAULT_TITLES = {
@@ -30,6 +31,7 @@ export function PageState({
         {children || (
           <>
             <p className="sr-only">{DEFAULT_TITLES.loading}</p>
+            <LoadingSpinner className="h-6 w-12 text-primary" aria-hidden="true" />
             <Skeleton className="h-12 w-64" />
             <div className="flex gap-4">
               <Skeleton className="h-10 flex-1 max-w-md" />
@@ -87,6 +89,7 @@ export function PageLoader({ rows = 6, className }) {
   return (
     <div className={cn('bg-background p-4 sm:p-6 space-y-6 min-h-screen', className)}>
       <p className="sr-only">{DEFAULT_TITLES.loading}</p>
+      <LoadingSpinner className="h-6 w-12 text-primary" aria-hidden="true" />
       <Skeleton className="h-12 w-64" />
       <div className="flex gap-4">
         <Skeleton className="h-10 flex-1 max-w-md" />

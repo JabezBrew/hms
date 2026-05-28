@@ -1,6 +1,6 @@
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import format from 'date-fns/format';
 
 import { Button } from '@/components/ui/button';
@@ -44,7 +44,7 @@ export function AvailabilityCalendarPanel({
 
         {isLoading ? (
           <div className="flex h-[300px] items-center justify-center">
-            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+            <LoadingSpinner className="size-8 text-muted-foreground" />
           </div>
         ) : (
           <Calendar

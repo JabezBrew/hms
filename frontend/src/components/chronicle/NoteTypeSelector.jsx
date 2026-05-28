@@ -11,7 +11,7 @@ import Lock from 'lucide-react/dist/esm/icons/lock.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Globe from 'lucide-react/dist/esm/icons/globe.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
@@ -131,7 +131,7 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        <LoadingSpinner className="size-8 text-muted-foreground" />
         <span className="ml-3 font-mono text-sm text-muted-foreground">Loading templates…</span>
       </div>
     );

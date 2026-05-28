@@ -24,6 +24,7 @@ import Timer from 'lucide-react/dist/esm/icons/timer.js'
 import TriangleAlert from 'lucide-react/dist/esm/icons/triangle-alert.js'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import {
   Table,
   TableBody,
@@ -1176,7 +1177,11 @@ export default function OpsDashboardPage() {
               disabled={activeQuery.isFetching}
               className="font-mono text-xs"
             >
-              <RefreshCw className={cn('mr-2 size-4', activeQuery.isFetching && 'animate-spin')} aria-hidden="true" />
+              {activeQuery.isFetching ? (
+                <LoadingSpinner className="mr-2 h-4 w-8" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="mr-2 size-4" aria-hidden="true" />
+              )}
               Refresh
             </Button>
           </div>

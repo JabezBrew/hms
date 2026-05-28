@@ -1,5 +1,5 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useState } from "react";
 import {
   AlertDialog,
@@ -145,7 +145,7 @@ const CancelOrderDialog = ({
           >
             {cancelMutation.isPending ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Cancelling…
               </>
             ) : (

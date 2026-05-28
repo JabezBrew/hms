@@ -41,7 +41,7 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Save from 'lucide-react/dist/esm/icons/save.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 
@@ -471,7 +471,7 @@ function InventoryItemFormActions({ isEditing, isSubmitting, onCancel }) {
       )}
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? (
-          <Loader2 className="size-4 mr-2 animate-spin" />
+          <LoadingSpinner className="size-4 mr-2" />
         ) : (
           <Save className="size-4 mr-2" />
         )}

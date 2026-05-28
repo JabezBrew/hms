@@ -17,6 +17,7 @@ import { format } from 'date-fns';
 import { Layout } from '@/components/layout/layout';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -476,7 +477,11 @@ function AdminDashboardActions({
         disabled={anyFetching}
         aria-label="Refresh dashboard"
       >
-        <RefreshCw className={cn('size-4', anyFetching && 'animate-spin')} />
+        {anyFetching ? (
+          <LoadingSpinner className="h-4 w-8" />
+        ) : (
+          <RefreshCw className="size-4" />
+        )}
       </Button>
     </div>
   );

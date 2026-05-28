@@ -1,7 +1,7 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
@@ -610,7 +610,7 @@ function CustomizeSlideOverFooter({
               className="font-mono text-xs"
             >
               {resetMutation.isPending ? (
-                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                <LoadingSpinner className="size-3.5 mr-1.5" />
               ) : (
                 <RotateCcw className="size-3.5 mr-1.5" />
               )}
@@ -636,7 +636,7 @@ function CustomizeSlideOverFooter({
           >
             {customizeMutation.isPending ? (
               <>
-                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                <LoadingSpinner className="size-3.5 mr-1.5" />
                 Saving…
               </>
             ) : (

@@ -1,4 +1,4 @@
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import { useState } from "react";
@@ -256,7 +256,7 @@ function SpecimenCollectionFooter({ isSubmitting, onCancel, onSubmit }) {
       >
         {isSubmitting ? (
           <>
-            <Loader2 className="size-4 mr-2 animate-spin" />
+            <LoadingSpinner className="size-4 mr-2" />
             Collecting…
           </>
         ) : (

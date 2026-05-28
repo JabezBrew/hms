@@ -8,7 +8,7 @@ import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -151,7 +151,7 @@ function getPaymentColumns({ navigate, printReceipt, printingId }) {
           >
             {printingId === payment.id ? (
               <>
-                <Loader2 className="size-3 mr-1 animate-spin" />
+                <LoadingSpinner className="size-3 mr-1" />
                 Loading…
               </>
             ) : (

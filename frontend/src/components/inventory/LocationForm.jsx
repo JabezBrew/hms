@@ -27,7 +27,7 @@ import {
   useUpdateStorageLocation,
 } from '@/features/inventory/hooks';
 import { toast } from 'sonner';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Save from 'lucide-react/dist/esm/icons/save.js';
 
 const LOCATION_TYPES = [
@@ -320,7 +320,7 @@ export function LocationForm({ location, onSuccess, onCancel }) {
           </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
+              <LoadingSpinner className="size-4 mr-2" />
             ) : (
               <Save className="size-4 mr-2" />
             )}

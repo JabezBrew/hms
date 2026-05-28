@@ -1,6 +1,6 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Save from 'lucide-react/dist/esm/icons/save.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -170,7 +170,7 @@ const EditNoteSlideOverContent = ({ onOpenChange, entry, onSuccess }) => {
           >
             {updateNote.isPending ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Saving…
               </>
             ) : (

@@ -1,4 +1,4 @@
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -472,7 +472,7 @@ function UnitFormActions({ unit, onCancel, isLoading }) {
         disabled={isLoading}
         className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs"
       >
-        {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
+        {isLoading && <LoadingSpinner className="mr-2 size-4" />}
         {unit ? 'Update Unit' : 'Create Unit'}
       </Button>
     </div>

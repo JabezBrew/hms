@@ -2,7 +2,7 @@
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useMemo } from "react";
@@ -522,7 +522,11 @@ function LabCatalogHeader({
             disabled={isActiveFetching}
             className="font-mono text-xs"
           >
-            <RefreshCw className={cn("size-3.5 mr-1.5", isActiveFetching && "animate-spin")} />
+            {isActiveFetching ? (
+              <LoadingSpinner className="mr-1.5 h-3.5 w-7" />
+            ) : (
+              <RefreshCw className="size-3.5 mr-1.5" />
+            )}
             Refresh
           </Button>
           {catalogMutationsAvailable ? (
@@ -771,7 +775,7 @@ function LabCatalogDeleteDialog({
           >
             {isDeleting ? (
               <>
-                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                <LoadingSpinner className="size-3.5 mr-1.5" />
                 Deleting…
               </>
             ) : (

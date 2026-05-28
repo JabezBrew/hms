@@ -5,7 +5,7 @@ import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useMemo, useState } from 'react';
@@ -96,7 +96,7 @@ const PRIORITY_LEVELS = [
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending', color: 'bg-gray-100 text-gray-800', icon: Clock },
-  { value: 'in_progress', label: 'In Progress', color: 'bg-blue-100 text-blue-800', icon: Loader2 },
+  { value: 'in_progress', label: 'In Progress', color: 'bg-blue-100 text-blue-800', icon: LoadingSpinner },
   { value: 'completed', label: 'Completed', color: 'bg-green-100 text-green-800', icon: CheckCircle },
   { value: 'cancelled', label: 'Cancelled', color: 'bg-gray-100 text-gray-600', icon: null },
   { value: 'overdue', label: 'Overdue', color: 'bg-red-100 text-red-800', icon: AlertTriangle },
@@ -506,7 +506,7 @@ function CreateTaskDialog({
           <Button onClick={onCreateTask} disabled={createMutation.isPending}>
             {createMutation.isPending ? (
               <>
-                <Loader2 className="mr-2 size-4 animate-spin" />
+                <LoadingSpinner className="mr-2 size-4" />
                 Creating…
               </>
             ) : (
@@ -853,7 +853,7 @@ function CompleteTaskDialog({
           >
             {completeMutation.isPending ? (
               <>
-                <Loader2 className="mr-2 size-4 animate-spin" />
+                <LoadingSpinner className="mr-2 size-4" />
                 Completing…
               </>
             ) : (

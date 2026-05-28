@@ -1,4 +1,4 @@
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
@@ -123,7 +123,7 @@ export function ResetPasswordConfirmForm() {
   if (isValidating) {
     return (
       <div className="mx-auto flex w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
-        <Loader2 className="size-8 animate-spin text-primary" aria-hidden="true" />
+        <LoadingSpinner className="size-8 text-primary" aria-hidden="true" />
         <p className="text-sm text-muted-foreground">Validating reset link…</p>
       </div>
     )
@@ -205,7 +205,7 @@ export function ResetPasswordConfirmForm() {
         </div>
 
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? <><Loader2 className="mr-2 size-4 animate-spin" />Resetting…</> : 'Reset Password'}
+          {isSubmitting ? <><LoadingSpinner className="mr-2 size-4" />Resetting…</> : 'Reset Password'}
         </Button>
       </form>
 

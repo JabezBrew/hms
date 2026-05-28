@@ -18,7 +18,7 @@ import MapPinned from 'lucide-react/dist/esm/icons/map-pinned.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -385,7 +385,7 @@ const ChartFieldEditorForm = ({
           >
             {isSaving ? (
               <>
-                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                <LoadingSpinner className="size-3.5 mr-1.5" />
                 Saving…
               </>
             ) : (

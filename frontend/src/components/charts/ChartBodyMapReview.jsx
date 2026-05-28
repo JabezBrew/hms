@@ -1,5 +1,5 @@
 import MapPinned from 'lucide-react/dist/esm/icons/map-pinned.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useMemo } from "react";
 import format from "date-fns/format";
 
@@ -36,7 +36,7 @@ const ChartBodyMapReview = ({
   if ((shouldFetchAssignment && assignmentLoading) || entriesLoadingProp || (shouldFetchEntries && entriesLoading)) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <LoadingSpinner className="size-5 text-muted-foreground" />
       </div>
     );
   }

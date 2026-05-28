@@ -1,6 +1,6 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- The builder keeps independent draft/editing UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import { useMemo, useState } from 'react';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import {
   KeyboardSensor,
   PointerSensor,
@@ -224,7 +224,7 @@ function ChartTemplateBuilderEditor({
         <div className="max-w-3xl mx-auto px-6 py-8">
           {templateLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+              <LoadingSpinner className="size-6 text-muted-foreground" />
             </div>
           ) : (
             <ChartTemplateBuilderStep

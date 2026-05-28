@@ -54,7 +54,7 @@ import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import AlertOctagon from 'lucide-react/dist/esm/icons/alert-octagon.js';
@@ -187,7 +187,7 @@ function GRNItemRow({
               aria-label={`Save ${item.item_name || item.name || 'GRN item'}`}
             >
               {updateMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
+                <LoadingSpinner className="size-4" />
               ) : (
                 <Check className="size-4 text-emerald-500" />
               )}
@@ -409,7 +409,7 @@ function GRNDetailHeader({
           {canInspect && (
             <Button onClick={onStartInspection} disabled={inspectPending}>
               {inspectPending ? (
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
               ) : (
                 <ClipboardCheck className="size-4 mr-2" />
               )}
@@ -807,7 +807,7 @@ function AcceptGRNDialog({
           </Button>
           <Button onClick={onAccept} disabled={acceptPending}>
             {acceptPending ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
+              <LoadingSpinner className="size-4 mr-2" />
             ) : (
               <Check className="size-4 mr-2" />
             )}

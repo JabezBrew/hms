@@ -6,7 +6,7 @@
  * Highlights critical values with color coding.
  */
 
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useMemo } from "react";
@@ -150,7 +150,7 @@ const ChartTrendGraph = ({
   if (isLoading) {
     return (
       <div className={cn("flex items-center justify-center py-12", className)}>
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <LoadingSpinner className="size-6 text-muted-foreground" />
       </div>
     );
   }

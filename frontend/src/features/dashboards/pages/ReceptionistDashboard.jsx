@@ -24,6 +24,7 @@ import {
   useReceptionistDashboard,
 } from '@/features/dashboards/hooks';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import format from 'date-fns/format';
@@ -195,7 +196,11 @@ export default function ReceptionistDashboard() {
                 disabled={isFetching}
                 aria-label="Refresh dashboard"
               >
-                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+                {isFetching ? (
+                  <LoadingSpinner className="h-4 w-8" aria-hidden="true" />
+                ) : (
+                  <RefreshCw className="size-4" aria-hidden="true" />
+                )}
               </Button>
             </div>
           )}

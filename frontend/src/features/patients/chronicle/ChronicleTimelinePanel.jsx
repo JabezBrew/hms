@@ -10,6 +10,7 @@ import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -77,10 +78,11 @@ function ChronicleTimelineTitle({
         aria-label="Refresh timeline"
         className="size-9 shrink-0 p-0 font-mono text-xs sm:w-auto sm:px-3"
       >
-        <RefreshCw className={cn(
-          "size-3.5 sm:mr-1.5",
-          isTimelineLoading && "animate-spin"
-        )} />
+        {isTimelineLoading ? (
+          <LoadingSpinner className="h-3.5 w-7 sm:mr-1.5" />
+        ) : (
+          <RefreshCw className="size-3.5 sm:mr-1.5" />
+        )}
         <span className="hidden sm:inline">Refresh</span>
       </Button>
     </div>

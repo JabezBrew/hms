@@ -42,7 +42,7 @@ import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import Mail from 'lucide-react/dist/esm/icons/mail.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
@@ -206,7 +206,7 @@ function PurchaseOrderHeader({
           {canApprove && (
             <Button onClick={onApprove} disabled={approvePending}>
               {approvePending ? (
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
               ) : (
                 <Check className="size-4 mr-2" />
               )}
@@ -632,7 +632,7 @@ function SendPurchaseOrderDialog({
           </Button>
           <Button onClick={onSend} disabled={isSending}>
             {isSending ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
+              <LoadingSpinner className="size-4 mr-2" />
             ) : (
               <Send className="size-4 mr-2" />
             )}

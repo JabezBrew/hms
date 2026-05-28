@@ -4,7 +4,7 @@ import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { cn } from '@/lib/utils';
@@ -186,7 +186,7 @@ function DrugFormSelector({
       </Label>
       {isLoadingForms ? (
         <div className="flex items-center gap-2 py-3 px-4 bg-muted/50 rounded-lg">
-          <Loader2 className="size-4 animate-spin text-sky-600" />
+          <LoadingSpinner className="size-4 text-sky-600" />
           <span className="font-mono text-sm text-muted-foreground">
             Loading available formulations…
           </span>

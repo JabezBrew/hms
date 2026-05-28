@@ -9,6 +9,7 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { WorkflowSteps, WorkflowKeyboardHints } from "@/components/ui/workflow-steps";
 import { PatientReviewStep } from "./consultation-steps/PatientReviewStep";
 import { HistoryExamStep } from "./consultation-steps/HistoryExamStep";
@@ -135,7 +136,7 @@ function ConsultationContent({
       {isLoading && !workflowId ? (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <div className="animate-spin rounded-full size-8 border-b-2 border-primary mx-auto mb-4" />
+            <LoadingSpinner className="mx-auto mb-4 h-8 w-16 text-primary" aria-hidden="true" />
             <p className="text-sm text-muted-foreground">Starting consultation…</p>
           </div>
         </div>

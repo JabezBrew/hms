@@ -1,5 +1,5 @@
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
@@ -316,7 +316,7 @@ function TimelinePaginationState({
       >
         {isFetchingNextPage ? (
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+            <LoadingSpinner className="size-4" />
             <span className="font-mono text-xs">Loading more…</span>
           </div>
         ) : (

@@ -266,6 +266,17 @@
   }
 }
 
+@keyframes loading-spinner-dash {
+  0% {
+    stroke-dashoffset: 260;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.5;
+  }
+}
+
 /* Animation utility classes */
 .animate-chronicle-enter {
   animation: chronicle-enter 0.5s ease-out both;
@@ -302,6 +313,30 @@
   animation: glow-pulse 2s ease-in-out 3;
 }
 
+.loading-spinner {
+  color: currentColor;
+  overflow: visible;
+}
+
+.loading-spinner__line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.loading-spinner__back {
+  stroke: currentColor;
+  opacity: 0.1;
+}
+
+.loading-spinner__front {
+  stroke: currentColor;
+  stroke-dasharray: 260;
+  stroke-dashoffset: 0;
+  animation: loading-spinner-dash 1.4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -320,6 +355,11 @@
   .animate-shimmer,
   .animate-glow-pulse {
     animation: none !important;
+  }
+
+  .loading-spinner__front {
+    animation: none !important;
+    opacity: 0.65;
   }
 }
 

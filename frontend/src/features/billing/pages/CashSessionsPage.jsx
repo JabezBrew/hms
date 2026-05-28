@@ -3,7 +3,7 @@ import Wallet from 'lucide-react/dist/esm/icons/wallet.js';
 import Flag from 'lucide-react/dist/esm/icons/flag.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { useMemo, useState, useCallback } from 'react';
@@ -311,7 +311,7 @@ function CurrentSessionSection({
           >
             {openCashSessionMutation.isPending ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Opening…
               </>
             ) : (
@@ -484,7 +484,7 @@ function CloseCashSessionDialog({
           >
             {closeCashSessionMutation.isPending ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Closing…
               </>
             ) : (
@@ -548,7 +548,7 @@ function ReviewCashSessionDialog({
           >
             {reviewCashSessionMutation.isPending ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Saving…
               </>
             ) : (

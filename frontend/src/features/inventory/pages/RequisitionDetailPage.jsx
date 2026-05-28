@@ -45,7 +45,7 @@ import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import ArrowRightCircle from 'lucide-react/dist/esm/icons/arrow-right-circle.js';
 
@@ -197,7 +197,7 @@ function RequisitionDetailHeader({
               </Button>
               <Button onClick={onApprove} disabled={approveMutation.isPending}>
                 {approveMutation.isPending ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  <LoadingSpinner className="size-4 mr-2" />
                 ) : (
                   <Check className="size-4 mr-2" />
                 )}
@@ -549,7 +549,7 @@ function RejectRequisitionDialog({
             disabled={!rejectReason.trim() || rejectMutation.isPending}
           >
             {rejectMutation.isPending ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
+              <LoadingSpinner className="size-4 mr-2" />
             ) : (
               <X className="size-4 mr-2" />
             )}
@@ -598,7 +598,7 @@ function ConvertRequisitionDialog({
           </Button>
           <Button onClick={onConvert} disabled={convertMutation.isPending}>
             {convertMutation.isPending ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
+              <LoadingSpinner className="size-4 mr-2" />
             ) : (
               <ShoppingCart className="size-4 mr-2" />
             )}

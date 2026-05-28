@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -344,7 +345,11 @@ function RequisitionsHeader({ totalCount, isLoading, onRefresh, onCreateRequisit
       actions={(
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={onRefresh}>
-            <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
+            {isLoading ? (
+              <LoadingSpinner className="mr-2 h-4 w-8" />
+            ) : (
+              <RefreshCw className="size-4 mr-2" />
+            )}
             Refresh
           </Button>
           <Button onClick={onCreateRequisition}>

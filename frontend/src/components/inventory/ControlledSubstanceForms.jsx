@@ -51,7 +51,7 @@ import ClipboardCheck from 'lucide-react/dist/esm/icons/clipboard-check.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 function staffOptionsFromResponse(staffData) {
   if (Array.isArray(staffData)) {
@@ -443,7 +443,7 @@ export function ControlledDispenseForm({
                 className="bg-rose-600 hover:bg-rose-700"
               >
                 {dispenseMutation.isPending ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  <LoadingSpinner className="size-4 mr-2" />
                 ) : (
                   <Pill className="size-4 mr-2" />
                 )}
@@ -651,7 +651,7 @@ export function ControlledCountForm({
               </Button>
               <Button type="submit" disabled={countMutation.isPending}>
                 {countMutation.isPending ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  <LoadingSpinner className="size-4 mr-2" />
                 ) : (
                   <ClipboardCheck className="size-4 mr-2" />
                 )}
@@ -879,7 +879,7 @@ export function WastageForm({
                 className="bg-amber-600 hover:bg-amber-700"
               >
                 {wastageMutation.isPending ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  <LoadingSpinner className="size-4 mr-2" />
                 ) : (
                   <Trash2 className="size-4 mr-2" />
                 )}

@@ -1,6 +1,6 @@
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useState, useRef, useEffect } from "react";
 
 const DEFAULT_EMPTY_ARRAY = [];
@@ -133,7 +133,7 @@ const SearchBar = ({
                 <CommandEmpty>
                   {isLoading ? (
                     <div className="flex items-center justify-center py-6">
-                      <Loader2 className="size-4 animate-spin text-muted-foreground mr-2" />
+                      <LoadingSpinner className="size-4 text-muted-foreground mr-2" />
                       <span>Searching…</span>
                     </div>
                   ) : (

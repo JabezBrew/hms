@@ -7,7 +7,7 @@ import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
 import ClipboardEdit from 'lucide-react/dist/esm/icons/clipboard-pen.js';
 import { useState } from "react";
@@ -27,7 +27,7 @@ const STATUS_CONFIG = {
   ordered: { label: "Ordered", className: "bg-sky-100 text-sky-700 border-sky-300", icon: Clock },
   collected: { label: "Collected", className: "bg-amber-100 text-amber-700 border-amber-300", icon: CheckCircle2 },
   received: { label: "Received", className: "bg-violet-100 text-violet-700 border-violet-300", icon: CheckCircle2 },
-  processing: { label: "Processing", className: "bg-indigo-100 text-indigo-700 border-indigo-300", icon: Loader2 },
+  processing: { label: "Processing", className: "bg-indigo-100 text-indigo-700 border-indigo-300", icon: LoadingSpinner },
   completed: { label: "Completed", className: "bg-emerald-100 text-emerald-700 border-emerald-300", icon: CheckCircle2 },
   cancelled: { label: "Cancelled", className: "bg-rose-100 text-rose-700 border-rose-300", icon: XCircle },
 };

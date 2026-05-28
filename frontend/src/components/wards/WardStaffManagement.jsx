@@ -6,7 +6,7 @@ import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import HeartPulse from 'lucide-react/dist/esm/icons/heart-pulse.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useState } from 'react';
 import { cn, normalizeApiResults } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -131,7 +131,7 @@ export function WardStaffManagement({ wardId }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <LoadingSpinner className="size-6 text-muted-foreground" />
       </div>
     );
   }

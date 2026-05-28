@@ -9,6 +9,7 @@ import { useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import {
   WorkflowSteps,
   WorkflowKeyboardHints,
@@ -248,7 +249,7 @@ const DischargeSlideOver = ({ open, onClose, patient, admission, onComplete }) =
         {isLoading && !workflowId ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
-              <div className="animate-spin rounded-full size-8 border-b-2 border-primary mx-auto mb-4" />
+              <LoadingSpinner className="mx-auto mb-4 h-8 w-16 text-primary" aria-hidden="true" />
               <p className="text-sm text-muted-foreground">Starting medical discharge workflow…</p>
             </div>
           </div>

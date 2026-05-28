@@ -12,6 +12,7 @@ import { WaitingRoomQueue } from '@/components/visits/WaitingRoomQueue';
 import { useWaitingRoom } from '@/hooks/useVisitQueries';
 import { clinicsApi } from '@/features/clinics/api';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
@@ -78,7 +79,11 @@ export default function ClinicWaitingRoomPage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+                {isFetching ? (
+                  <LoadingSpinner className="h-4 w-8" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
               </Button>
             )}
           />
@@ -104,7 +109,11 @@ export default function ClinicWaitingRoomPage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+                {isFetching ? (
+                  <LoadingSpinner className="h-4 w-8" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
               </Button>
             )}
           />
@@ -138,7 +147,11 @@ export default function ClinicWaitingRoomPage() {
               onClick={() => refetch()}
               disabled={isFetching}
             >
-              <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+              {isFetching ? (
+                <LoadingSpinner className="h-4 w-8" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
             </Button>
           )}
         />

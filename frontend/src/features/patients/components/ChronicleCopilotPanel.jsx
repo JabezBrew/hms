@@ -1,7 +1,7 @@
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
 import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js'
 import SendHorizontal from 'lucide-react/dist/esm/icons/send-horizontal.js'
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js'
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useCallback, useMemo, useState } from 'react'
 
@@ -228,7 +228,7 @@ export default function ChronicleCopilotPanel({
           disabled={isBusy || !String(question || '').trim()}
           onClick={handleAskSubmit}
         >
-          {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <SendHorizontal className="size-3.5" />}
+          {isBusy ? <LoadingSpinner className="size-3.5" /> : <SendHorizontal className="size-3.5" />}
         </Button>
       </div>
 

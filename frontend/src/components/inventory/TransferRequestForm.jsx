@@ -26,7 +26,7 @@ import {
   useCreateTransferRequest,
 } from '@/features/inventory/hooks';
 import { toast } from 'sonner';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Save from 'lucide-react/dist/esm/icons/save.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
@@ -259,7 +259,7 @@ export function TransferRequestForm({ onSuccess, onCancel, initialToLocation }) 
           </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
+              <LoadingSpinner className="size-4 mr-2" />
             ) : (
               <Save className="size-4 mr-2" />
             )}

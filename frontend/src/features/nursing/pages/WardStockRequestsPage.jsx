@@ -53,7 +53,7 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
@@ -351,7 +351,7 @@ function WardStockRequestFormFooter({ isSubmitting, onCancel }) {
       </Button>
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? (
-          <Loader2 className="mr-2 size-4 animate-spin" />
+          <LoadingSpinner className="mr-2 size-4" />
         ) : (
           <Send className="mr-2 size-4" />
         )}
@@ -574,7 +574,11 @@ export default function WardStockRequestsPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className={cn('mr-2 size-4', isFetching && 'animate-spin')} />
+              {isFetching ? (
+                <LoadingSpinner className="mr-2 h-4 w-8" />
+              ) : (
+                <RefreshCw className="mr-2 size-4" />
+              )}
               Refresh
             </Button>
             <Button onClick={() => setCreateOpen(true)}>

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -286,7 +287,11 @@ export default function InventoryDashboardPage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handleRefresh}>
-              <RefreshCw className={cn('size-4 mr-2', isLoading && 'animate-spin')} />
+              {isLoading ? (
+                <LoadingSpinner className="mr-2 h-4 w-8" />
+              ) : (
+                <RefreshCw className="size-4 mr-2" />
+              )}
               Refresh
             </Button>
             <Button onClick={() => navigate('/inventory/items?action=create')}>

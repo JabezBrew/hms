@@ -4,8 +4,9 @@ import { PageState } from '../PageState'
 
 describe('PageState', () => {
   it('renders loading state', () => {
-    const { getByText } = render(<PageState variant="loading" />)
+    const { container, getByText } = render(<PageState variant="loading" />)
     expect(getByText('Loading')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="loading-spinner"]')).toBeInTheDocument()
   })
 
   it('renders error state with action', () => {

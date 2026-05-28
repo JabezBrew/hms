@@ -1,5 +1,5 @@
 import Copy from 'lucide-react/dist/esm/icons/copy.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
@@ -177,7 +177,7 @@ function CopyNoteModalContent({
         <div className="flex-1 overflow-y-auto py-4">
           {sectionsLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+              <LoadingSpinner className="size-6 text-muted-foreground" />
               <span className="ml-2 text-muted-foreground">Loading sections…</span>
             </div>
           ) : sectionsError ? (

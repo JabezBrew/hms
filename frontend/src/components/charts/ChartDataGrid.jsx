@@ -6,7 +6,7 @@
  */
 
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -122,7 +122,7 @@ const ChartDataGrid = ({
   if (isLoading) {
     return (
       <div className={cn("flex items-center justify-center py-12", className)}>
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <LoadingSpinner className="size-6 text-muted-foreground" />
       </div>
     );
   }

@@ -13,7 +13,7 @@ import Mail from 'lucide-react/dist/esm/icons/mail.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -158,7 +158,7 @@ function InvoiceHeader({
           >
             {isPrintingInvoice ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Loading…
               </>
             ) : (
@@ -389,7 +389,7 @@ function PaymentHistorySection({ payments, printingId, onPrintReceipt }) {
                 >
                   {printingId === payment.id ? (
                     <>
-                      <Loader2 className="size-3 mr-1 animate-spin" />
+                      <LoadingSpinner className="size-3 mr-1" />
                       Loading…
                     </>
                   ) : (

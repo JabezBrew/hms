@@ -3,7 +3,7 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -331,7 +331,7 @@ function AppointmentCreateActions({
       >
         {submitting ? (
           <>
-            <Loader2 className="mr-2 size-4 animate-spin" />
+            <LoadingSpinner className="mr-2 size-4" />
             Scheduling
           </>
         ) : (

@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import format from 'date-fns/format';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Badge } from "@/components/ui/badge";
 import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
@@ -237,7 +238,11 @@ function LabOrdersHeader({ isDoctor, isFetching, metrics, onRefresh, stats }) {
           className="flex items-center gap-2"
           disabled={isFetching}
         >
-          <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
+          {isFetching ? (
+            <LoadingSpinner className="h-4 w-8" />
+          ) : (
+            <RefreshCw className="size-4" />
+          )}
           Refresh
         </Button>
       )}

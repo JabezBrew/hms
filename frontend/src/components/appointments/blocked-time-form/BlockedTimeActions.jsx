@@ -1,4 +1,4 @@
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { Button } from '@/components/ui/button';
 
@@ -9,7 +9,7 @@ export function BlockedTimeActions({ initialData, isSubmitting, onCancel }) {
         Cancel
       </Button>
       <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+        {isSubmitting && <LoadingSpinner className="mr-2 size-4" />}
         {initialData ? 'Update' : 'Create'}
       </Button>
     </div>

@@ -9,7 +9,7 @@
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import MoreVertical from 'lucide-react/dist/esm/icons/ellipsis-vertical.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import Copy from 'lucide-react/dist/esm/icons/copy.js';
@@ -353,7 +353,7 @@ function ChartTemplatesContent({
     return (
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="flex items-center justify-center py-16">
-          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          <LoadingSpinner className="size-8 text-muted-foreground" />
         </div>
       </div>
     );
@@ -439,7 +439,7 @@ function DeleteTemplateDialog({
             className="font-mono text-xs bg-rose-500 hover:bg-rose-600"
           >
             {isDeleting ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <LoadingSpinner className="size-3.5" />
             ) : (
               "Delete"
             )}

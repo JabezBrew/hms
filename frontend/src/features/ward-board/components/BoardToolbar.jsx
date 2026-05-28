@@ -4,6 +4,7 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import Settings2 from 'lucide-react/dist/esm/icons/settings-2.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { BOARD_VIEWS, PAGE_SIZE_OPTIONS } from './wardBoardUtils';
@@ -105,7 +106,11 @@ export function BoardToolbar({
             aria-label="Refresh ward board"
             className="size-8"
           >
-            <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} aria-hidden="true" />
+            {isFetching ? (
+              <LoadingSpinner className="h-3.5 w-7" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="size-3.5" aria-hidden="true" />
+            )}
           </Button>
 
           <Button

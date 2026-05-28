@@ -15,6 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -322,7 +323,7 @@ const CompareView = ({ comparison, isLoading }) => {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin size-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
+          <LoadingSpinner className="mx-auto mb-2 h-8 w-16 text-primary" aria-hidden="true" />
           <p className="text-sm text-muted-foreground">Loading comparison…</p>
         </div>
       </div>

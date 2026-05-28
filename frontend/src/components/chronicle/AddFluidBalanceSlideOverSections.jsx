@@ -3,7 +3,7 @@ import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
 import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
@@ -423,7 +423,7 @@ function RecentFluidEntries({
         </h3>
         {loading ? (
           <div className="flex items-center justify-center py-4">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <LoadingSpinner className="size-5 text-muted-foreground" />
           </div>
         ) : (
           <div className="space-y-2">
@@ -474,7 +474,7 @@ function FluidEntryFooter({
         >
           {isPending ? (
             <>
-              <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+              <LoadingSpinner className="size-3.5 mr-1.5" />
               Recording…
             </>
           ) : (
@@ -644,7 +644,7 @@ function FluidHistoryContent({
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <LoadingSpinner className="size-5 text-muted-foreground" />
           </div>
         ) : records.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">

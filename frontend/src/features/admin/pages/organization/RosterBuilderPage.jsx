@@ -8,6 +8,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent } from '@/components/ui/card';
@@ -916,9 +917,11 @@ function RosterBuilderControls({
               onClick={handleGenerate}
               disabled={!selectedDepartment || generateMutation.isPending}
             >
-              <RefreshCw
-                className={cn('size-4 mr-1', generateMutation.isPending && 'animate-spin')}
-              />
+              {generateMutation.isPending ? (
+                <LoadingSpinner className="mr-1 h-4 w-8" />
+              ) : (
+                <RefreshCw className="mr-1 size-4" />
+              )}
               Generate
             </Button>
             <Button

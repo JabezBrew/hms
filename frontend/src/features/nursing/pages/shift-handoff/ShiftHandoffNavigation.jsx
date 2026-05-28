@@ -1,7 +1,7 @@
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { Button } from '@/components/ui/button';
 
@@ -41,7 +41,7 @@ export function ShiftHandoffNavigation({
         >
           {isSubmitting ? (
             <>
-              <Loader2 className="mr-2 size-4 animate-spin" />
+              <LoadingSpinner className="mr-2 size-4" />
               Submitting…
             </>
           ) : (

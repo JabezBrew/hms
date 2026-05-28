@@ -2,11 +2,10 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -96,7 +95,7 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <LoadingSpinner className="size-5 text-muted-foreground" />
       </div>
     );
   }

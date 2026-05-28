@@ -4,7 +4,7 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import ListOrdered from 'lucide-react/dist/esm/icons/list-ordered.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Lock from 'lucide-react/dist/esm/icons/lock.js';
 import MoveDown from 'lucide-react/dist/esm/icons/move-down.js';
 import MoveUp from 'lucide-react/dist/esm/icons/move-up.js';
@@ -900,7 +900,7 @@ function TemplateBuilderFooter({
             >
               {isSaving ? (
                 <>
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  <LoadingSpinner className="size-3.5 mr-1.5" />
                   Saving…
                 </>
               ) : (

@@ -1,6 +1,6 @@
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
@@ -349,7 +349,7 @@ function InvoiceActions({ isSubmitting, onCancel }) {
       >
         {isSubmitting ? (
           <>
-            <Loader2 className="size-4 mr-2 animate-spin" />
+            <LoadingSpinner className="size-4 mr-2" />
             Creating…
           </>
         ) : (

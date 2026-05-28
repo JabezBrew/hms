@@ -2,7 +2,7 @@ import X from 'lucide-react/dist/esm/icons/x.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import History from 'lucide-react/dist/esm/icons/history.js';
 import { useCallback, useMemo, useRef, useState } from 'react';
@@ -146,7 +146,7 @@ function ChartHistoryDetailView({
       <ScrollArea className="flex-1 p-6">
         {selectedAssignmentLoading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <LoadingSpinner className="size-6 text-muted-foreground" />
           </div>
         ) : !selectedAssignment ? (
           <div className="text-center py-16 text-muted-foreground">
@@ -263,7 +263,7 @@ function ChartHistoryListView({
       <ScrollArea className="flex-1 p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <LoadingSpinner className="size-6 text-muted-foreground" />
           </div>
         ) : assignments.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">

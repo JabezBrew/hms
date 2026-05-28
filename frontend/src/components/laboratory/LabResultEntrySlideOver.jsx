@@ -1,7 +1,7 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import Save from 'lucide-react/dist/esm/icons/save.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ArrowDown from 'lucide-react/dist/esm/icons/arrow-down.js';
@@ -331,7 +331,7 @@ function ResultEntryFooter({ enteredCount, isSubmitting, onClose, onSave }) {
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" />
+                <LoadingSpinner className="size-4 mr-2" />
                 Saving…
               </>
             ) : (

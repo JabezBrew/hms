@@ -1,7 +1,7 @@
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useId, useState } from 'react';
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -88,7 +88,7 @@ export function MedicationAutocomplete({
           <CommandList id={listboxId} className="max-h-[300px]">
             {showLoading && (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="size-5 animate-spin text-sky-600" />
+                <LoadingSpinner className="size-5 text-sky-600" />
                 <span className="ml-3 font-mono text-sm text-muted-foreground">
                   Searching RxNorm database…
                 </span>

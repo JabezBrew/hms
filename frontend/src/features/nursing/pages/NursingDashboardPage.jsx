@@ -7,6 +7,7 @@ import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js';
 import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Combobox } from '@/components/ui/combobox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -201,7 +202,11 @@ function NursingDashboardHeader({
             disabled={isFetching}
             aria-label="Refresh nursing dashboard"
           >
-            <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+            {isFetching ? (
+              <LoadingSpinner className="h-4 w-8" />
+            ) : (
+              <RefreshCw className="size-4" />
+            )}
           </Button>
         </div>
       )}

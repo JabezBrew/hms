@@ -2,7 +2,7 @@ import Heart from 'lucide-react/dist/esm/icons/heart.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -85,7 +85,7 @@ export function ClinicalInfoStep({
             <SelectContent>
               {nursesLoading ? (
                 <div className="p-2 text-sm text-muted-foreground font-mono flex items-center gap-2">
-                  <Loader2 className="size-4 animate-spin" />
+                  <LoadingSpinner className="size-4" />
                   Loading ward nurses…
                 </div>
               ) : nurses.length === 0 ? (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 
 import { Badge } from '@/components/ui/badge';
@@ -57,7 +57,7 @@ export default function ProblemCodePicker({
           className="pl-9"
         />
         {(isFetching || showLoading) && (
-          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground animate-spin" />
+          <LoadingSpinner className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         )}
       </div>
 

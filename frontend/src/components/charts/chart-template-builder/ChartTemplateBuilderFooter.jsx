@@ -1,7 +1,7 @@
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { Button } from '@/components/ui/button';
 
@@ -52,7 +52,7 @@ export function ChartTemplateBuilderFooter({
             >
               {isSaving ? (
                 <>
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  <LoadingSpinner className="size-3.5 mr-1.5" />
                   Saving…
                 </>
               ) : (

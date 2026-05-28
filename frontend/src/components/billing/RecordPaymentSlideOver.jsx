@@ -1,7 +1,7 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import X from 'lucide-react/dist/esm/icons/x.js';
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
 import Receipt from 'lucide-react/dist/esm/icons/receipt.js';
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js';
@@ -205,7 +205,7 @@ function MobileMoneyCollectionPanel({
         >
           {isPending ? (
             <>
-              <Loader2 className="size-4 mr-2 animate-spin" />
+              <LoadingSpinner className="size-4 mr-2" />
               Sending…
             </>
           ) : (
@@ -537,12 +537,12 @@ function RecordPaymentFooter({
       >
         {isRecording ? (
           <>
-            <Loader2 className="size-4 mr-2 animate-spin" />
+            <LoadingSpinner className="size-4 mr-2" />
             Recording…
           </>
         ) : hasPendingIntent ? (
           <>
-            <Loader2 className="size-4 mr-2 animate-spin" />
+            <LoadingSpinner className="size-4 mr-2" />
             Awaiting Confirmation
           </>
         ) : (
