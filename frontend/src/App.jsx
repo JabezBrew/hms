@@ -8,6 +8,7 @@ import { HelmetProvider } from 'react-helmet-async'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import RuntimeErrorGuard from './app/RuntimeErrorGuard'
+import PublicAuthApp from './app/PublicAuthApp'
 import PublicAuthLoader from './app/PublicAuthLoader'
 import { queryClient } from './lib/react-query'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
@@ -17,7 +18,6 @@ import { isStandaloneOpsDashboardHost } from './features/ops/host'
 
 const AuthenticatedApp = lazy(() => import('./app/AuthenticatedApp'))
 const OpsDashboardApp = lazy(() => import('./app/OpsDashboardApp'))
-const PublicAuthApp = lazy(() => import('./app/PublicAuthApp'))
 const PasswordChangeRequiredApp = lazy(() => import('./app/PasswordChangeRequiredApp'))
 
 // Main app content with routes
@@ -86,11 +86,7 @@ function AppContent() {
       </div>
     )
   } else if (!isAuthenticated) {
-    content = (
-      <Suspense fallback={<PublicAuthLoader />}>
-        <PublicAuthApp />
-      </Suspense>
-    )
+    content = <PublicAuthApp />
   } else if (passwordChangeRequired) {
     content = (
       <Suspense fallback={<PageLoader />}>
