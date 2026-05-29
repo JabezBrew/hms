@@ -118,7 +118,7 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
     let response = response.expect("request context probe succeeds");
 
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(observed_queries, 1);
+    assert_eq!(observed_queries, 0);
     let body = json_body(response).await;
     assert_eq!(body["request_id"], "request-context-test");
     assert_eq!(body["facility_code"], "HMS");
@@ -174,7 +174,7 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
 }
 
 #[tokio::test]
-async fn concurrent_request_context_misses_share_one_hydration_query() {
+async fn session_issue_warms_request_context_for_parallel_requests() {
     let app = app_with_request_context_probe().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
@@ -215,7 +215,7 @@ async fn concurrent_request_context_misses_share_one_hydration_query() {
             StatusCode::OK
         );
     }
-    assert_eq!(observed_queries, 1);
+    assert_eq!(observed_queries, 0);
 }
 
 #[tokio::test]

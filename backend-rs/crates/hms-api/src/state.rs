@@ -38,7 +38,6 @@ struct AppStateInner {
     cloudflare_access: Option<CloudflareAccessVerifier>,
 }
 
-const REQUEST_CONTEXT_CACHE_TTL: Duration = Duration::from_secs(60);
 const AUTH_FACT_CACHE_MAX_ENTRIES: usize = 1024;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -110,30 +109,13 @@ impl AuthCache {
         cache_get(&self.request_contexts, key)
     }
 
-    fn get_stale_request_context(
+    fn put_request_context(
         &self,
-        key: &AuthCacheKey,
-    ) -> Option<hms_db::auth::RequestContextAuthFacts> {
-        cache_get_stale(&self.request_contexts, key)
-    }
-
-    fn put_request_context(&self, key: AuthCacheKey, facts: hms_db::auth::RequestContextAuthFacts) {
-        cache_put(
-            &self.request_contexts,
-            key,
-            facts,
-            REQUEST_CONTEXT_CACHE_TTL,
-        );
-    }
-
-    fn refresh_request_context(&self, key: &AuthCacheKey) {
-        cache_refresh(&self.request_contexts, key, REQUEST_CONTEXT_CACHE_TTL);
-    }
-
-    fn remove_request_context(&self, key: &AuthCacheKey) {
-        if let Ok(mut contexts) = self.request_contexts.write() {
-            contexts.remove(key);
-        }
+        key: AuthCacheKey,
+        facts: hms_db::auth::RequestContextAuthFacts,
+        ttl: Duration,
+    ) {
+        cache_put(&self.request_contexts, key, facts, ttl);
     }
 
     fn request_context_hydration_lock(&self, key: &AuthCacheKey) -> Arc<tokio::sync::Mutex<()>> {
@@ -209,30 +191,6 @@ fn cache_get<T: Clone>(
     let cache = cache.read().ok()?;
     let cached = cache.get(key)?;
     (cached.expires_at > now).then(|| cached.value.clone())
-}
-
-fn cache_get_stale<T: Clone>(
-    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
-    key: &AuthCacheKey,
-) -> Option<T> {
-    cache
-        .read()
-        .ok()?
-        .get(key)
-        .map(|cached| cached.value.clone())
-}
-
-fn cache_refresh<T>(
-    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
-    key: &AuthCacheKey,
-    ttl: Duration,
-) {
-    let Ok(mut cache) = cache.write() else {
-        return;
-    };
-    if let Some(cached) = cache.get_mut(key) {
-        cached.expires_at = Instant::now() + ttl;
-    }
 }
 
 fn cache_put<T>(
@@ -566,29 +524,6 @@ impl AppState {
         .await
     }
 
-    async fn cached_request_context_is_current(
-        &self,
-        claims: &AccessClaims,
-        facts: &hms_db::auth::RequestContextAuthFacts,
-    ) -> Result<bool> {
-        let Some(versions) = hms_db::auth::request_context_cache_validation(
-            &self.inner.auth_pool,
-            claims.sub,
-            self.facility_id(),
-            claims.session_id,
-        )
-        .await?
-        else {
-            return Ok(false);
-        };
-
-        Ok(versions.session_version == claims.session_version
-            && versions.permission_version == claims.permission_version
-            && deployment_profile_claim_value(versions.active_profile).as_deref()
-                == Some(claims.active_profile.as_str())
-            && facts.feature_entitlements_updated_at == versions.feature_entitlements_updated_at)
-    }
-
     pub async fn request_context_facts_for_claims(
         &self,
         claims: &AccessClaims,
@@ -616,23 +551,6 @@ impl AppState {
             return Ok(Some(facts));
         }
 
-        if let Some(facts) = self.inner.auth_cache.get_stale_request_context(&cache_key) {
-            if self
-                .cached_request_context_is_current(claims, &facts)
-                .await?
-            {
-                self.inner.auth_cache.refresh_request_context(&cache_key);
-                self.inner.auth_cache.put_user_if_absent(
-                    cache_key,
-                    facts.user.clone(),
-                    self.inner.config.access_token_ttl,
-                );
-                hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
-                return Ok(Some(facts));
-            }
-            self.inner.auth_cache.remove_request_context(&cache_key);
-        }
-
         hms_observability::record_request_context_cache_miss(route_pattern, facility_safe);
         let started_at = Instant::now();
         let facts = self
@@ -645,9 +563,11 @@ impl AppState {
         );
         if let Some(facts) = &facts {
             if auth_user_matches_claims(&facts.user, claims) {
-                self.inner
-                    .auth_cache
-                    .put_request_context(cache_key.clone(), facts.clone());
+                self.inner.auth_cache.put_request_context(
+                    cache_key.clone(),
+                    facts.clone(),
+                    self.inner.config.access_token_ttl,
+                );
                 self.inner.auth_cache.put_user_if_absent(
                     cache_key,
                     facts.user.clone(),
@@ -1121,10 +1041,20 @@ impl AppState {
         let auth_user = user.to_auth_user();
         if let Some(cache_key) = AuthCacheKey::from_user_account(user, session_id) {
             self.inner.auth_cache.put_user(
-                cache_key,
+                cache_key.clone(),
                 auth_user.clone(),
                 self.inner.config.access_token_ttl,
             );
+            if let Some(facts) = self
+                .request_context_facts(user.id, user.facility_id, session_id)
+                .await?
+            {
+                self.inner.auth_cache.put_request_context(
+                    cache_key,
+                    facts,
+                    self.inner.config.access_token_ttl,
+                );
+            }
         }
 
         Ok(Some(LoginOutcome {
