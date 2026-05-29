@@ -273,6 +273,12 @@ services:
       - -c
       - checkpoint_completion_target=0.9
       - -c
+      - checkpoint_timeout=${POSTGRES_CHECKPOINT_TIMEOUT:-15min}
+      - -c
+      - max_wal_size=${POSTGRES_MAX_WAL_SIZE:-1GB}
+      - -c
+      - min_wal_size=${POSTGRES_MIN_WAL_SIZE:-128MB}
+      - -c
       - wal_compression=on
       - -c
       - shared_preload_libraries=pg_stat_statements
