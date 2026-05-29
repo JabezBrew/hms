@@ -110,6 +110,13 @@ impl AuthCache {
         cache_get(&self.request_contexts, key)
     }
 
+    fn get_stale_request_context(
+        &self,
+        key: &AuthCacheKey,
+    ) -> Option<hms_db::auth::RequestContextAuthFacts> {
+        cache_get_stale(&self.request_contexts, key)
+    }
+
     fn put_request_context(&self, key: AuthCacheKey, facts: hms_db::auth::RequestContextAuthFacts) {
         cache_put(
             &self.request_contexts,
@@ -117,6 +124,16 @@ impl AuthCache {
             facts,
             REQUEST_CONTEXT_CACHE_TTL,
         );
+    }
+
+    fn refresh_request_context(&self, key: &AuthCacheKey) {
+        cache_refresh(&self.request_contexts, key, REQUEST_CONTEXT_CACHE_TTL);
+    }
+
+    fn remove_request_context(&self, key: &AuthCacheKey) {
+        if let Ok(mut contexts) = self.request_contexts.write() {
+            contexts.remove(key);
+        }
     }
 
     fn request_context_hydration_lock(&self, key: &AuthCacheKey) -> Arc<tokio::sync::Mutex<()>> {
@@ -192,6 +209,30 @@ fn cache_get<T: Clone>(
     let cache = cache.read().ok()?;
     let cached = cache.get(key)?;
     (cached.expires_at > now).then(|| cached.value.clone())
+}
+
+fn cache_get_stale<T: Clone>(
+    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
+    key: &AuthCacheKey,
+) -> Option<T> {
+    cache
+        .read()
+        .ok()?
+        .get(key)
+        .map(|cached| cached.value.clone())
+}
+
+fn cache_refresh<T>(
+    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
+    key: &AuthCacheKey,
+    ttl: Duration,
+) {
+    let Ok(mut cache) = cache.write() else {
+        return;
+    };
+    if let Some(cached) = cache.get_mut(key) {
+        cached.expires_at = Instant::now() + ttl;
+    }
 }
 
 fn cache_put<T>(
@@ -525,6 +566,29 @@ impl AppState {
         .await
     }
 
+    async fn cached_request_context_is_current(
+        &self,
+        claims: &AccessClaims,
+        facts: &hms_db::auth::RequestContextAuthFacts,
+    ) -> Result<bool> {
+        let Some(versions) = hms_db::auth::request_context_cache_validation(
+            &self.inner.auth_pool,
+            claims.sub,
+            self.facility_id(),
+            claims.session_id,
+        )
+        .await?
+        else {
+            return Ok(false);
+        };
+
+        Ok(versions.session_version == claims.session_version
+            && versions.permission_version == claims.permission_version
+            && deployment_profile_claim_value(versions.active_profile).as_deref()
+                == Some(claims.active_profile.as_str())
+            && facts.feature_entitlements_updated_at == versions.feature_entitlements_updated_at)
+    }
+
     pub async fn request_context_facts_for_claims(
         &self,
         claims: &AccessClaims,
@@ -550,6 +614,23 @@ impl AppState {
         if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
             hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
             return Ok(Some(facts));
+        }
+
+        if let Some(facts) = self.inner.auth_cache.get_stale_request_context(&cache_key) {
+            if self
+                .cached_request_context_is_current(claims, &facts)
+                .await?
+            {
+                self.inner.auth_cache.refresh_request_context(&cache_key);
+                self.inner.auth_cache.put_user_if_absent(
+                    cache_key,
+                    facts.user.clone(),
+                    self.inner.config.access_token_ttl,
+                );
+                hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
+                return Ok(Some(facts));
+            }
+            self.inner.auth_cache.remove_request_context(&cache_key);
         }
 
         hms_observability::record_request_context_cache_miss(route_pattern, facility_safe);

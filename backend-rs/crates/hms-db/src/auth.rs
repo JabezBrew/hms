@@ -479,6 +479,63 @@ pub async fn user_auth_versions_for_facility(
     .transpose()
 }
 
+pub async fn request_context_cache_validation(
+    pool: &PgPool,
+    user_id: Uuid,
+    facility_id: Uuid,
+    session_id: Uuid,
+) -> anyhow::Result<Option<UserAuthVersions>> {
+    let row = hms_observability::observe_db_query(
+        "auth.request_context_cache_validation",
+        sqlx::query_as::<_, (i64, i64, String, Option<DateTime<Utc>>)>(
+            r#"
+            SELECT users.session_version,
+                   users.permission_version,
+                   facilities.deployment_profile AS active_profile,
+                   (
+                       SELECT MAX(facility_feature_entitlements.updated_at)
+                       FROM facility_feature_entitlements
+                       WHERE facility_feature_entitlements.facility_id = users.facility_id
+                   ) AS feature_entitlements_updated_at
+            FROM users
+            JOIN facilities ON facilities.id = users.facility_id
+            WHERE users.id = $1
+              AND users.facility_id = $2
+              AND users.is_active = TRUE
+              AND facilities.is_active = TRUE
+              AND EXISTS (
+                  SELECT 1
+                  FROM refresh_sessions
+                  WHERE refresh_sessions.session_id = $3
+                    AND refresh_sessions.user_id = users.id
+                    AND refresh_sessions.facility_id = users.facility_id
+                    AND refresh_sessions.session_version = users.session_version
+                    AND refresh_sessions.permission_version_at_issue = users.permission_version
+                    AND refresh_sessions.revoked_at IS NULL
+                    AND refresh_sessions.expires_at > now()
+              )
+            "#,
+        )
+        .bind(user_id)
+        .bind(facility_id)
+        .bind(session_id)
+        .fetch_optional(pool),
+    )
+    .await?;
+
+    row.map(
+        |(session_version, permission_version, active_profile, feature_entitlements_updated_at)| {
+            Ok(UserAuthVersions {
+                session_version,
+                permission_version,
+                active_profile: codec::decode(&active_profile)?,
+                feature_entitlements_updated_at,
+            })
+        },
+    )
+    .transpose()
+}
+
 pub async fn request_context_facts(
     pool: &PgPool,
     user_id: Uuid,
