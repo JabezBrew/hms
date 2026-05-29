@@ -123,41 +123,19 @@ pub async fn list_patient_registry(
 ) -> anyhow::Result<Vec<PatientListRecord>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT patients.id,
-               patients.facility_id,
-               patients.patient_code,
-               patients.first_name,
-               patients.last_name,
-               patients.date_of_birth,
-               patients.sex,
-               patients.status,
-               patients.created_at,
-               patients.updated_at,
-               CASE
-                   WHEN current_admission.id IS NULL THEN NULL
-                   WHEN current_bed.bed_code IS NULL THEN current_ward.name
-                   ELSE current_ward.name || ' - Bed ' || current_bed.bed_code
-               END AS patient_location
-        FROM patients
-        LEFT JOIN LATERAL (
-            SELECT admission_cases.id,
-                   admission_cases.facility_id,
-                   admission_cases.ward_id,
-                   admission_cases.bed_id
-            FROM admission_cases
-            WHERE admission_cases.facility_id = patients.facility_id
-              AND admission_cases.patient_id = patients.id
-              AND admission_cases.status IN ('admitted', 'discharge_pending')
-            ORDER BY admission_cases.admitted_at DESC, admission_cases.id DESC
-            LIMIT 1
-        ) current_admission ON TRUE
-        LEFT JOIN wards current_ward
-          ON current_ward.facility_id = current_admission.facility_id
-         AND current_ward.id = current_admission.ward_id
-        LEFT JOIN beds current_bed
-          ON current_bed.facility_id = current_admission.facility_id
-         AND current_bed.id = current_admission.bed_id
-        WHERE patients.facility_id =
+        WITH patient_page AS MATERIALIZED (
+            SELECT patients.id,
+                   patients.facility_id,
+                   patients.patient_code,
+                   patients.first_name,
+                   patients.last_name,
+                   patients.date_of_birth,
+                   patients.sex,
+                   patients.status,
+                   patients.created_at,
+                   patients.updated_at
+            FROM patients
+            WHERE patients.facility_id =
         "#,
     );
     query.push_bind(facility_id);
@@ -185,6 +163,46 @@ pub async fn list_patient_registry(
 
     query.push(" ORDER BY patients.created_at ASC, patients.id ASC LIMIT ");
     query.push_bind(limit);
+    query.push(
+        r#"
+        )
+        SELECT patient_page.id,
+               patient_page.facility_id,
+               patient_page.patient_code,
+               patient_page.first_name,
+               patient_page.last_name,
+               patient_page.date_of_birth,
+               patient_page.sex,
+               patient_page.status,
+               patient_page.created_at,
+               patient_page.updated_at,
+               CASE
+                   WHEN current_admission.id IS NULL THEN NULL
+                   WHEN current_bed.bed_code IS NULL THEN current_ward.name
+                   ELSE current_ward.name || ' - Bed ' || current_bed.bed_code
+               END AS patient_location
+        FROM patient_page
+        LEFT JOIN LATERAL (
+            SELECT admission_cases.id,
+                   admission_cases.facility_id,
+                   admission_cases.ward_id,
+                   admission_cases.bed_id
+            FROM admission_cases
+            WHERE admission_cases.facility_id = patient_page.facility_id
+              AND admission_cases.patient_id = patient_page.id
+              AND admission_cases.status IN ('admitted', 'discharge_pending')
+            ORDER BY admission_cases.admitted_at DESC, admission_cases.id DESC
+            LIMIT 1
+        ) current_admission ON TRUE
+        LEFT JOIN wards current_ward
+          ON current_ward.facility_id = current_admission.facility_id
+         AND current_ward.id = current_admission.ward_id
+        LEFT JOIN beds current_bed
+          ON current_bed.facility_id = current_admission.facility_id
+         AND current_bed.id = current_admission.bed_id
+        ORDER BY patient_page.created_at ASC, patient_page.id ASC
+        "#,
+    );
 
     let rows = observe_db_query(
         "patient.registry.list_projection",
