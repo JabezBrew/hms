@@ -28,6 +28,7 @@ const THINK_TIME_SCALE = positiveFloat(__ENV.HMS_LOAD_THINK_TIME_SCALE, 1);
 const STAGE_DURATION_SCALE = positiveFloat(__ENV.HMS_LOAD_STAGE_DURATION_SCALE, 1);
 const TOKEN_REFRESH_SECONDS = positiveInt(__ENV.HMS_LOAD_TOKEN_REFRESH_SECONDS, 8 * 60);
 const REQUEST_TIMEOUT = __ENV.HMS_LOAD_REQUEST_TIMEOUT || '30s';
+const LOAD_HOSTS = parseHosts(__ENV.HMS_LOAD_HOSTS);
 const REFRESH_COOKIE_NAME = 'hms_refresh';
 const CSRF_COOKIE_NAME = 'hms_v2_csrf';
 const REFRESH_COOKIE_PATH = '/api/v2/auth';
@@ -1009,6 +1010,8 @@ function buildOptions() {
     scenarios,
     thresholds,
     noCookiesReset: true,
+    ...(Object.keys(LOAD_HOSTS).length > 0 ? { hosts: LOAD_HOSTS } : {}),
+    ...(truthy(__ENV.HMS_LOAD_INSECURE_SKIP_TLS_VERIFY) ? { insecureSkipTLSVerify: true } : {}),
     tags: {
       hms_suite: 'rust-v2-realistic',
       hms_profile: PROFILE,
@@ -1249,6 +1252,21 @@ function parseList(value) {
     .split(',')
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function parseHosts(value) {
+  const hosts = {};
+  const raw = String(value || '').trim();
+  if (!raw) return hosts;
+
+  for (const entry of raw.split(',')) {
+    const [name, address] = entry.split('=').map((item) => item && item.trim());
+    if (name && address) {
+      hosts[name] = address;
+    }
+  }
+
+  return hosts;
 }
 
 function truthy(value) {
