@@ -239,21 +239,14 @@ impl Drop for TestDatabase {
                 host,
                 port,
                 user,
+                password,
                 database,
             } => {
-                let _ = command("dropdb")
-                    .args([
-                        "-h",
-                        host,
-                        "-p",
-                        &port.to_string(),
-                        "-U",
-                        user,
-                        "-w",
-                        "--if-exists",
-                        "--force",
-                        database,
-                    ])
+                let mut dropdb = command("dropdb");
+                apply_pgpassword(&mut dropdb, password.as_deref());
+                let _ = dropdb
+                    .args(["-h", host, "-p", &port.to_string(), "-U", user, "-w"])
+                    .args(["--if-exists", "--force", database])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
@@ -269,6 +262,7 @@ enum TestDatabaseCleanup {
         host: String,
         port: u16,
         user: String,
+        password: Option<String>,
         database: String,
     },
     Cluster {
@@ -367,19 +361,13 @@ fn create_local_database() -> anyhow::Result<TestDatabase> {
     let port = 5432;
     let mut last_error = None;
 
-    for user in local_postgres_users() {
+    for credentials in local_postgres_credentials() {
         let database = format!("hms_v2_test_{}", Uuid::new_v4().simple());
-        let create_result = command("createdb")
-            .args([
-                "-h",
-                &host,
-                "-p",
-                &port.to_string(),
-                "-U",
-                &user,
-                "-w",
-                &database,
-            ])
+        let mut createdb = command("createdb");
+        apply_pgpassword(&mut createdb, credentials.password.as_deref());
+        let create_result = createdb
+            .args(["-h", &host, "-p", &port.to_string()])
+            .args(["-U", &credentials.user, "-w", &database])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -388,18 +376,27 @@ fn create_local_database() -> anyhow::Result<TestDatabase> {
         match create_result {
             Ok(output) if output.status.success() => {
                 return Ok(TestDatabase {
-                    database_url: format!("postgres://{user}@{host}:{port}/{database}"),
+                    database_url: local_database_url(
+                        &credentials.user,
+                        credentials.password.as_deref(),
+                        &host,
+                        port,
+                        &database,
+                    ),
                     cleanup: TestDatabaseCleanup::Local {
                         host,
                         port,
-                        user,
+                        user: credentials.user,
+                        password: credentials.password,
                         database,
                     },
                 });
             }
             Ok(output) => {
                 last_error = Some(anyhow::anyhow!(
-                    "createdb failed for local user {user}: {}",
+                    "createdb failed for local user {} using {} auth: {}",
+                    credentials.user,
+                    credentials.auth_label(),
                     String::from_utf8_lossy(&output.stderr)
                 ));
             }
@@ -412,6 +409,47 @@ fn create_local_database() -> anyhow::Result<TestDatabase> {
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("no local postgres users available")))
 }
 
+struct LocalPostgresCredentials {
+    user: String,
+    password: Option<String>,
+}
+
+impl LocalPostgresCredentials {
+    fn auth_label(&self) -> &'static str {
+        if self.password.is_some() {
+            "password"
+        } else {
+            "passwordless"
+        }
+    }
+}
+
+fn local_postgres_credentials() -> Vec<LocalPostgresCredentials> {
+    let mut credentials = Vec::new();
+    let passwords = local_postgres_passwords();
+
+    for user in local_postgres_users() {
+        credentials.push(LocalPostgresCredentials {
+            user: user.clone(),
+            password: None,
+        });
+        for password in &passwords {
+            credentials.push(LocalPostgresCredentials {
+                user: user.clone(),
+                password: Some(password.clone()),
+            });
+        }
+        if user == "postgres" && !passwords.iter().any(|password| password == "postgres") {
+            credentials.push(LocalPostgresCredentials {
+                user,
+                password: Some("postgres".to_owned()),
+            });
+        }
+    }
+
+    credentials
+}
+
 fn local_postgres_users() -> Vec<String> {
     let mut users = vec!["postgres".to_owned()];
     if let Ok(user) = env::var("USER") {
@@ -421,6 +459,61 @@ fn local_postgres_users() -> Vec<String> {
     }
     users
 }
+
+fn local_postgres_passwords() -> Vec<String> {
+    let mut passwords = Vec::new();
+    for name in ["HMS_TEST_DATABASE_PASSWORD", "PGPASSWORD"] {
+        if let Ok(password) = env::var(name) {
+            if !password.is_empty() && !passwords.contains(&password) {
+                passwords.push(password);
+            }
+        }
+    }
+    passwords
+}
+
+fn local_database_url(
+    user: &str,
+    password: Option<&str>,
+    host: &str,
+    port: u16,
+    database: &str,
+) -> String {
+    let user = percent_encode_url_component(user);
+    let auth = match password {
+        Some(password) => format!("{user}:{}", percent_encode_url_component(password)),
+        None => user,
+    };
+    format!("postgres://{auth}@{host}:{port}/{database}")
+}
+
+fn percent_encode_url_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push(HEX[(byte >> 4) as usize] as char);
+                encoded.push(HEX[(byte & 0x0f) as usize] as char);
+            }
+        }
+    }
+    encoded
+}
+
+fn apply_pgpassword(command: &mut Command, password: Option<&str>) {
+    command.env("PGCONNECT_TIMEOUT", "2");
+    if let Some(password) = password {
+        command.env("PGPASSWORD", password);
+    } else {
+        command.env_remove("PGPASSWORD");
+    }
+}
+
+const HEX: &[u8; 16] = b"0123456789ABCDEF";
 
 fn free_port() -> anyhow::Result<u16> {
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
