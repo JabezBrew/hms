@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, HttpBody};
 use axum::extract::{MatchedPath, Request};
@@ -6,9 +6,11 @@ use axum::http::header::CONTENT_LENGTH;
 use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::Response;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::middleware::request_id::{current_request_id, RequestId};
+
+const SLOW_REQUEST_LOG_THRESHOLD: Duration = Duration::from_millis(100);
 
 pub async fn layer(
     matched_path: Option<MatchedPath>,
@@ -50,15 +52,37 @@ pub async fn layer(
         payload_bytes,
         &request_metrics,
     );
-    info!(
-        request_id = %request_id,
-        method = %method,
-        route = %route_pattern,
-        status = status,
-        duration_ms = elapsed.as_millis(),
-        db_query_count = request_metrics.db_query_count,
-        "request completed"
-    );
+    if status >= 500 {
+        warn!(
+            request_id = %request_id,
+            method = %method,
+            route = %route_pattern,
+            status = status,
+            duration_ms = elapsed.as_millis(),
+            db_query_count = request_metrics.db_query_count,
+            "request completed"
+        );
+    } else if status >= 400 || elapsed >= SLOW_REQUEST_LOG_THRESHOLD {
+        info!(
+            request_id = %request_id,
+            method = %method,
+            route = %route_pattern,
+            status = status,
+            duration_ms = elapsed.as_millis(),
+            db_query_count = request_metrics.db_query_count,
+            "request completed"
+        );
+    } else {
+        debug!(
+            request_id = %request_id,
+            method = %method,
+            route = %route_pattern,
+            status = status,
+            duration_ms = elapsed.as_millis(),
+            db_query_count = request_metrics.db_query_count,
+            "request completed"
+        );
+    }
 
     response
 }
