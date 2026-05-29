@@ -195,7 +195,7 @@ async fn search_documents_with_status(
               AND (
                   to_tsvector('simple', search_text) @@ plainto_tsquery('simple', $2)
                   OR lower(search_text) LIKE '%' || lower($2) || '%'
-                  OR similarity(lower(search_text), lower($2)) > 0.18
+                  OR lower(search_text) % lower($2)
               )
         ),
         ranked AS (

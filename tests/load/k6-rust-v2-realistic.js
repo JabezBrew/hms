@@ -25,8 +25,12 @@ const DEBUG_FAILURES = truthy(__ENV.HMS_LOAD_DEBUG_FAILURES);
 const DATA_SCALE = (__ENV.HMS_LOAD_DATA_SCALE || 'current-seed').toLowerCase();
 const BUDGET_MULTIPLIER = positiveFloat(__ENV.HMS_LOAD_BUDGET_MULTIPLIER, 1);
 const THINK_TIME_SCALE = positiveFloat(__ENV.HMS_LOAD_THINK_TIME_SCALE, 1);
+const STAGE_DURATION_SCALE = positiveFloat(__ENV.HMS_LOAD_STAGE_DURATION_SCALE, 1);
 const TOKEN_REFRESH_SECONDS = positiveInt(__ENV.HMS_LOAD_TOKEN_REFRESH_SECONDS, 8 * 60);
 const REQUEST_TIMEOUT = __ENV.HMS_LOAD_REQUEST_TIMEOUT || '30s';
+const REFRESH_COOKIE_NAME = 'hms_refresh';
+const CSRF_COOKIE_NAME = 'hms_v2_csrf';
+const REFRESH_COOKIE_PATH = '/api/v2/auth';
 
 const WORKFLOW_FILTER = parseList(__ENV.HMS_LOAD_WORKFLOWS);
 const ALL_WORKFLOWS = ['reception', 'doctor', 'nurse', 'lab', 'pharmacy', 'billing', 'admin'];
@@ -837,13 +841,14 @@ function loginWithCredentials(role, credential) {
   return {
     role,
     accessToken: token,
-    csrfToken: readCsrfCookie(),
+    ...captureSessionCookies(res, {}),
     lastAuthenticatedAt: Date.now(),
   };
 }
 
 function refreshSession(session, role) {
-  const csrfToken = readCsrfCookie() || session.csrfToken;
+  installSessionCookies(session);
+  const csrfToken = session.csrfToken || readCsrfCookie();
   const res = request('POST', '/api/v2/auth/refresh', {
     role,
     route: '/api/v2/auth/refresh',
@@ -864,7 +869,7 @@ function refreshSession(session, role) {
   return {
     role,
     accessToken: token,
-    csrfToken: readCsrfCookie() || csrfToken,
+    ...captureSessionCookies(res, { ...session, csrfToken }),
     lastAuthenticatedAt: Date.now(),
   };
 }
@@ -907,8 +912,9 @@ function request(method, path, opts) {
   };
 
   if (opts.session && opts.session.accessToken) {
+    installSessionCookies(opts.session);
     headers.Authorization = `Bearer ${opts.session.accessToken}`;
-    const csrfToken = readCsrfCookie() || opts.session.csrfToken;
+    const csrfToken = opts.session.csrfToken || readCsrfCookie();
     if (csrfToken) {
       headers['X-HMS-CSRF'] = csrfToken;
     }
@@ -1019,44 +1025,67 @@ function profileStages(profile) {
   switch (profile) {
     case 'baseline':
       return [
-        { duration: '2m', target: 25 },
-        { duration: '15m', target: 25 },
-        { duration: '2m', target: 0 },
+        stage('2m', 25),
+        stage('15m', 25),
+        stage('2m', 0),
       ];
     case 'small-site':
       return [
-        { duration: '3m', target: 50 },
-        { duration: '30m', target: 50 },
-        { duration: '3m', target: 0 },
+        stage('3m', 50),
+        stage('30m', 50),
+        stage('3m', 0),
       ];
     case 'busy-site':
       return [
-        { duration: '5m', target: 100 },
-        { duration: '30m', target: 100 },
-        { duration: '5m', target: 0 },
+        stage('5m', 100),
+        stage('30m', 100),
+        stage('5m', 0),
       ];
     case 'stress':
       return [
-        { duration: '5m', target: 50 },
-        { duration: '5m', target: 100 },
-        { duration: '5m', target: 200 },
-        { duration: '10m', target: 200 },
-        { duration: '5m', target: 0 },
+        stage('5m', 50),
+        stage('5m', 100),
+        stage('5m', 200),
+        stage('10m', 200),
+        stage('5m', 0),
       ];
     case 'soak':
       return [
-        { duration: '5m', target: 75 },
-        { duration: __ENV.HMS_LOAD_SOAK_HOLD_DURATION || '1h', target: 75 },
-        { duration: '5m', target: 0 },
+        stage('5m', 75),
+        stage(__ENV.HMS_LOAD_SOAK_HOLD_DURATION || '1h', 75),
+        stage('5m', 0),
       ];
     case 'smoke':
     default:
       return [
-        { duration: '30s', target: 5 },
-        { duration: '2m', target: 5 },
-        { duration: '30s', target: 0 },
+        stage('30s', 5),
+        stage('2m', 5),
+        stage('30s', 0),
       ];
   }
+}
+
+function stage(duration, target) {
+  return { duration: scaleDuration(duration), target };
+}
+
+function scaleDuration(duration) {
+  if (STAGE_DURATION_SCALE === 1) {
+    return duration;
+  }
+  const match = String(duration).trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h)$/);
+  if (!match) {
+    return duration;
+  }
+  const value = Number.parseFloat(match[1]);
+  const unit = match[2];
+  const seconds =
+    unit === 'ms' ? value / 1000 :
+      unit === 's' ? value :
+        unit === 'm' ? value * 60 :
+          value * 60 * 60;
+  const scaledSeconds = Math.max(1, Math.round(seconds * STAGE_DURATION_SCALE));
+  return `${scaledSeconds}s`;
 }
 
 function loadCredentials() {
@@ -1094,6 +1123,45 @@ function buildActiveRoles(credentials) {
     .filter((item) => credentials[item.role]);
 }
 
+function installSessionCookies(session) {
+  if (!session) return;
+  const jar = http.cookieJar();
+  if (session.refreshToken) {
+    jar.set(BASE_URL, REFRESH_COOKIE_NAME, session.refreshToken, { path: REFRESH_COOKIE_PATH });
+  }
+  if (session.csrfToken) {
+    jar.set(BASE_URL, CSRF_COOKIE_NAME, session.csrfToken, { path: '/' });
+  }
+}
+
+function captureSessionCookies(res, fallback) {
+  return {
+    refreshToken:
+      responseCookieValue(res, REFRESH_COOKIE_NAME) ||
+      readCookie(REFRESH_COOKIE_NAME) ||
+      fallback.refreshToken ||
+      '',
+    csrfToken:
+      responseCookieValue(res, CSRF_COOKIE_NAME) ||
+      readCookie(CSRF_COOKIE_NAME) ||
+      fallback.csrfToken ||
+      '',
+  };
+}
+
+function responseCookieValue(res, name) {
+  const values = res && res.cookies && res.cookies[name];
+  if (!Array.isArray(values) || values.length === 0) return '';
+  const cookie = values[0];
+  return cookie && cookie.value ? cookie.value : '';
+}
+
+function readCookie(name) {
+  const cookies = http.cookieJar().cookiesForURL(BASE_URL);
+  const values = cookies[name];
+  return Array.isArray(values) && values.length > 0 ? values[0] : '';
+}
+
 function workflowEnabled(workflow) {
   return WORKFLOW_FILTER.length === 0 || WORKFLOW_FILTER.indexOf(workflow) !== -1;
 }
@@ -1109,9 +1177,7 @@ function chooseRole(activeRoles) {
 }
 
 function readCsrfCookie() {
-  const cookies = http.cookieJar().cookiesForURL(BASE_URL);
-  const csrf = cookies.hms_v2_csrf;
-  return Array.isArray(csrf) && csrf.length > 0 ? csrf[0] : '';
+  return readCookie(CSRF_COOKIE_NAME);
 }
 
 function safeJson(res) {

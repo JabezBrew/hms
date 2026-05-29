@@ -4,7 +4,6 @@
 import { toast } from 'sonner';
 import { getClientDeviceLabel } from './device-label';
 import { getApiBasePathname, getApiBaseUrl } from './runtime-config';
-import { configureRumAuth, recordApiTiming } from './observability/rum';
 
 const AUTH_ENDPOINTS = [
   '/auth/login/',
@@ -16,12 +15,14 @@ const AUTH_ENDPOINTS = [
   '/auth/mfa/'
 ];
 const RESPONSE_ERROR_META_FIELDS = new Set(['status', 'code']);
+const RUM_TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
 // Token provider - will be set by the auth context
 let getAccessToken = () => null;
 let setAccessTokenFn = () => {};
 let onRefreshFailure = async () => {};
 let getFacilityCode = () => null;
+let rumModulePromise = null;
 
 // Flag to track if a token refresh is in progress (singleton across all callers)
 let isRefreshing = false;
@@ -37,6 +38,49 @@ const REFRESH_GRACE_PERIOD = 5000;
 
 // Refresh access tokens slightly before they expire to avoid avoidable 401s during polling.
 const ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 60;
+
+function normalizeRumBoolean(value) {
+  if (value === true) {
+    return true;
+  }
+  if (value === false || value == null) {
+    return false;
+  }
+  return RUM_TRUE_VALUES.has(String(value).trim().toLowerCase());
+}
+
+function isBrowserRumEnabled() {
+  const runtimeConfig = globalThis?.window?.__HMS_RUNTIME_CONFIG__;
+  if (runtimeConfig && typeof runtimeConfig === 'object' && 'rumEnabled' in runtimeConfig) {
+    return normalizeRumBoolean(runtimeConfig.rumEnabled);
+  }
+  return normalizeRumBoolean(import.meta.env?.VITE_RUM_ENABLED);
+}
+
+function loadRumModule() {
+  if (!rumModulePromise) {
+    rumModulePromise = import('./observability/rum');
+  }
+  return rumModulePromise;
+}
+
+function syncRumAuth() {
+  if (!isBrowserRumEnabled()) {
+    return;
+  }
+  void loadRumModule().then(({ configureRumAuth }) => {
+    configureRumAuth({ getAccessToken, getFacilityCode });
+  }).catch(() => {});
+}
+
+function recordApiTimingDeferred(event) {
+  if (!isBrowserRumEnabled()) {
+    return;
+  }
+  void loadRumModule().then(({ recordApiTiming }) => {
+    recordApiTiming(event);
+  }).catch(() => {});
+}
 
 function base64UrlDecodeToString(value) {
   const normalized = String(value).replace(/-/g, '+').replace(/_/g, '/');
@@ -85,12 +129,12 @@ export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHan
   getAccessToken = tokenGetter;
   setAccessTokenFn = tokenSetter;
   onRefreshFailure = refreshFailureHandler;
-  configureRumAuth({ getAccessToken, getFacilityCode });
+  syncRumAuth();
 }
 
 export function setFacilityCodeProvider(facilityGetter) {
   getFacilityCode = facilityGetter;
-  configureRumAuth({ getAccessToken, getFacilityCode });
+  syncRumAuth();
 }
 
 /**
@@ -376,7 +420,7 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
     );
   } finally {
     const endedAt = globalThis?.performance?.now?.() ?? Date.now();
-    recordApiTiming({
+    recordApiTimingDeferred({
       endpoint,
       method: options.method || 'GET',
       durationMs: endedAt - startedAt,

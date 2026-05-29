@@ -610,7 +610,9 @@ describe('AuthProvider', () => {
         result.current.setFacilityCode('SATELLITE')
       })
 
-      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'facility-change' })
+      await waitFor(() => {
+        expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'facility-change' })
+      })
     })
 
     it('clears cockpit cache when the authenticated role changes', async () => {

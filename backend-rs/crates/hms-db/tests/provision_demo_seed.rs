@@ -64,6 +64,10 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
     assert!(second_counts.lab_results >= 50);
     assert!(second_counts.invoices >= second_counts.appointments);
     assert!(second_counts.ward_rounds >= 6);
+    assert_eq!(
+        unsupported_appointment_status_count(&pool, baseline.facility_id).await,
+        0
+    );
 
     let archetype_count = sqlx::query_scalar::<_, i64>(
         r#"
@@ -265,6 +269,10 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
     assert!(second_counts.encounters >= second_counts.appointments);
     assert_eq!(second_counts.notes, second_counts.encounter_linked_notes);
     assert!(second_counts.ward_rounds >= 20);
+    assert_eq!(
+        unsupported_appointment_status_count(&pool, baseline.facility_id).await,
+        0
+    );
 }
 
 async fn demo_counts(pool: &hms_db::PgPool, facility_id: uuid::Uuid) -> DemoCounts {
@@ -306,4 +314,22 @@ async fn demo_counts(pool: &hms_db::PgPool, facility_id: uuid::Uuid) -> DemoCoun
     .fetch_one(pool)
     .await
     .expect("demo counts query succeeds")
+}
+
+async fn unsupported_appointment_status_count(
+    pool: &hms_db::PgPool,
+    facility_id: uuid::Uuid,
+) -> i64 {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM appointments
+        WHERE facility_id = $1
+          AND status NOT IN ('scheduled', 'checked_in', 'completed', 'cancelled')
+        "#,
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("appointment status compatibility query succeeds")
 }

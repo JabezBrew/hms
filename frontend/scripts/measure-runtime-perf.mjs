@@ -9,6 +9,7 @@ const FACILITY_CODE = process.env.HMS_FRONTEND_PERF_FACILITY || 'HMS'
 const PATIENT_ID = process.env.HMS_FRONTEND_PERF_PATIENT_ID || '31000000-0000-0000-0000-000000000001'
 const CPU_THROTTLE_RATE = Number(process.env.HMS_FRONTEND_PERF_CPU_THROTTLE || 4)
 const OUTPUT_PATH = process.env.HMS_FRONTEND_PERF_OUT || '/private/tmp/hms-frontend-runtime-perf.json'
+const RUNTIME_CONFIG_MODE = process.env.HMS_FRONTEND_RUNTIME_CONFIG || 'local-rust-v2'
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
@@ -69,6 +70,31 @@ function sanitizeResourceName(name) {
   } catch {
     return String(name || '').replace(UUID_PATTERN, ':id')
   }
+}
+
+function buildRuntimeConfigScript() {
+  const runtimeConfig = {
+    apiBaseUrl: process.env.HMS_FRONTEND_RUNTIME_API_BASE_URL || '/api',
+    apiMode: process.env.HMS_FRONTEND_RUNTIME_API_MODE || 'rust-v2',
+    v2ApiBaseUrl: process.env.HMS_FRONTEND_RUNTIME_V2_API_BASE_URL || '/api/v2',
+    wsUrl: process.env.HMS_FRONTEND_RUNTIME_WS_URL || '',
+    defaultFacilityCode: FACILITY_CODE,
+    multiFacilityMode: process.env.HMS_FRONTEND_RUNTIME_MULTI_FACILITY || 'false',
+    rumEnabled: process.env.HMS_FRONTEND_RUNTIME_RUM_ENABLED || 'false',
+    opsDashboardHosts: process.env.HMS_FRONTEND_RUNTIME_OPS_HOSTS || '',
+  }
+  return `window.__HMS_RUNTIME_CONFIG__ = Object.freeze(${JSON.stringify(runtimeConfig)});\n`
+}
+
+async function installRuntimeConfigRoute(page) {
+  if (RUNTIME_CONFIG_MODE === 'passthrough') {
+    return
+  }
+  await page.route('**/runtime-config.js', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/javascript; charset=utf-8',
+    body: buildRuntimeConfigScript(),
+  }))
 }
 
 function summarizeResources(entries) {
@@ -143,6 +169,14 @@ async function waitForSettled(page) {
   await page.waitForTimeout(150)
 }
 
+async function fillOptional(locator, value) {
+  if (await locator.count() === 0) {
+    return false
+  }
+  await locator.first().fill(value)
+  return true
+}
+
 async function navigateSpa(page, targetPath) {
   const url = new URL(targetPath, BASE_URL).toString()
   try {
@@ -194,13 +228,14 @@ async function main() {
   const page = await context.newPage()
   const cdp = await context.newCDPSession(page)
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE_RATE })
+  await installRuntimeConfigRoute(page)
   await installLongTaskObserver(page)
 
   await resetMeasurementWindow(page).catch(() => {})
   const loginStartedAt = await page.evaluate(() => performance.now()).catch(() => 0)
   await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
   await page.getByLabel(/email address/i).fill(EMAIL)
-  await page.getByLabel(/facility code/i).fill(FACILITY_CODE)
+  await fillOptional(page.getByLabel(/facility code/i), FACILITY_CODE)
   await page.getByLabel(/^password$/i).fill(PASSWORD)
   await page.getByRole('button', { name: /sign in/i }).click()
   await page.waitForURL((url) => url.pathname !== '/login', { timeout: 15000 })

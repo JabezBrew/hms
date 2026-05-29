@@ -5,11 +5,10 @@ import { getAuthValue, removeAuthValue, setAuthValue } from '@/lib/auth-storage'
 import { authApi } from "../api/auth"
 import { notifications } from "../notifications"
 import { setAuthTokenProvider, setFacilityCodeProvider, performTokenRefresh } from "../api-client"
-import { configureV2ApiClient, performV2TokenRefresh } from "../api/v2/client"
+import { configureV2ApiClient, performV2TokenRefresh } from "../api/v2/session"
 import { isRustV2ApiMode } from "../api/v2/runtime"
 import { queryClient } from '../react-query'
 import { getDefaultFacilityCode } from '../runtime-config'
-import { clearAllCockpitCaches } from '../cockpit-cache'
 
 export function useAuthProviderController() {
   const [user, setUser] = useState(null)
@@ -35,6 +34,7 @@ export function useAuthProviderController() {
 
   const clearCockpitCache = useCallback(async (reason) => {
     try {
+      const { clearAllCockpitCaches } = await import('../cockpit-cache')
       await clearAllCockpitCaches({ reason })
     } catch {
       // Cockpit cache cleanup must never block auth state transitions.

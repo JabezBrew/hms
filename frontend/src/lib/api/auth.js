@@ -3,7 +3,7 @@ import { getClientDeviceLabel } from '../device-label';
 import { getDefaultFacilityCode } from '../runtime-config';
 import { isRustV2ApiMode } from './v2/runtime';
 import { handleV2ApiError } from './v2/errors';
-import { performV2TokenRefresh, v2Api, v2Request } from './v2/client';
+import { performV2TokenRefresh, v2Request } from './v2/session';
 
 function splitDisplayName(displayName, email) {
   const parts = String(displayName || '').trim().split(/\s+/).filter(Boolean);
@@ -156,15 +156,16 @@ export const authApi = {
         if (!v2FacilityCode) {
           throw new Error('Facility code is required for Rust V2 login');
         }
-        const response = await v2Api.postAuthLogin(
-          {
+        const data = await v2AuthRequest('/api/v2/auth/login', {
+          method: 'POST',
+          body: {
             email,
             password,
             facility_code: v2FacilityCode,
           },
-          { signal: loginOptions.signal },
-        );
-        return adaptV2AuthTokenResponse(response);
+          signal: loginOptions.signal,
+        });
+        return adaptV2AuthTokenResponse({ data });
       }
 
       const payload = { email, password };
@@ -197,14 +198,14 @@ export const authApi = {
   requestPasswordReset: async (email, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthPasswordResetRequest(
-          {
+        return await v2AuthRequest('/api/v2/auth/password-reset/request', {
+          method: 'POST',
+          body: {
             email,
             facility_code: getDefaultFacilityCode(),
           },
-          { signal: options.signal },
-        );
-        return response?.data || response;
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/password-reset/', { email });
     } catch (error) {
@@ -251,14 +252,14 @@ export const authApi = {
         if (password !== passwordConfirm) {
           throw new Error('Passwords do not match');
         }
-        const response = await v2Api.postAuthPasswordResetComplete(
-          {
+        return await v2AuthRequest('/api/v2/auth/password-reset/complete', {
+          method: 'POST',
+          body: {
             token,
             new_password: password,
           },
-          { signal: options.signal },
-        );
-        return response?.data || response;
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/password-reset/confirm/', {
         token,
@@ -281,8 +282,9 @@ export const authApi = {
   getProfile: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getAuthMe({ signal: options.signal });
-        return adaptV2AuthUser(response?.data);
+        return adaptV2AuthUser(
+          await v2AuthRequest('/api/v2/auth/me', { signal: options.signal }),
+        );
       }
       return await apiClient.get('/auth/profile/');
     } catch (error) {
@@ -302,11 +304,13 @@ export const authApi = {
   updateProfile: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.patchAuthMe(
-          normalizeV2ProfileUpdate(data),
-          { signal: options.signal || data?.signal },
+        return adaptV2AuthUser(
+          await v2AuthRequest('/api/v2/auth/me', {
+            method: 'PATCH',
+            body: normalizeV2ProfileUpdate(data),
+            signal: options.signal || data?.signal,
+          }),
         );
-        return adaptV2AuthUser(response?.data);
       }
       return await apiClient.patch('/auth/profile/', data);
     } catch (error) {
@@ -321,14 +325,14 @@ export const authApi = {
   changePassword: async ({ oldPassword, newPassword, signal } = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthPassword(
-          {
+        return await v2AuthRequest('/api/v2/auth/password', {
+          method: 'POST',
+          body: {
             current_password: oldPassword,
             new_password: newPassword,
           },
-          { signal: options.signal || signal },
-        );
-        return response?.data || response;
+          signal: options.signal || signal,
+        });
       }
       return await apiClient.post('/users/users/change_password/', {
         old_password: oldPassword,
@@ -346,8 +350,7 @@ export const authApi = {
   listSessions: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getAuthSessions({ signal: options.signal });
-        return response?.data || response;
+        return await v2AuthRequest('/api/v2/auth/sessions', { signal: options.signal });
       }
       return await apiClient.get('/users/sessions/');
     } catch (error) {
@@ -362,11 +365,10 @@ export const authApi = {
   revokeSession: async (sessionId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthSessionRevoke(
-          { session_id: sessionId },
-          { signal: options.signal },
-        );
-        return response?.data || response;
+        return await v2AuthRequest(`/api/v2/auth/sessions/${encodeURIComponent(String(sessionId))}/revoke`, {
+          method: 'POST',
+          signal: options.signal,
+        });
       }
       return await apiClient.post(`/users/sessions/${sessionId}/revoke/`);
     } catch (error) {
@@ -388,13 +390,13 @@ export const authApi = {
 
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthSessionsRevokeAll(
-          {
+        return await v2AuthRequest('/api/v2/auth/sessions/revoke-all', {
+          method: 'POST',
+          body: {
             exclude_current: shouldExcludeCurrent,
           },
-          { signal: normalizedOptions.signal },
-        );
-        return response?.data || response;
+          signal: normalizedOptions.signal,
+        });
       }
       return await apiClient.post('/users/sessions/revoke_all/', {
         exclude_current: shouldExcludeCurrent,
@@ -415,7 +417,10 @@ export const authApi = {
   logout: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2Api.postAuthLogout({ signal: options.signal });
+        return await v2AuthRequest('/api/v2/auth/logout', {
+          method: 'POST',
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/logout/');
     } catch (error) {

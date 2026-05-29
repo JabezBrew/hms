@@ -2666,7 +2666,7 @@ async fn seed_chronicle_demo_outpatient(
             appointment_type_id,
             practitioner_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'fulfilled', $7, $5, $6, $8, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, 'completed', $7, $5, $6, $8, $7)
         ON CONFLICT (id) DO UPDATE
         SET starts_at = EXCLUDED.starts_at,
             ends_at = EXCLUDED.ends_at,

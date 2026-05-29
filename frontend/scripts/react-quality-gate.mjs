@@ -167,7 +167,9 @@ function main() {
   }
 
   if (!diagnosticsPath) {
-    if (/No changed source files/i.test(doctorOutput)) {
+    const emptyDoctorScan = /No changed source files/i.test(doctorOutput)
+      || /No issues found/i.test(doctorOutput)
+    if (emptyDoctorScan) {
       result.reactDoctor = {
         ...result.reactDoctor,
         diagnosticsPath: null,
@@ -175,7 +177,7 @@ function main() {
         bySeverity: {},
         byCategory: {},
         topRules: [],
-        skipped: 'no changed source files',
+        skipped: 'no findings',
       }
       return exitWithResult(result, options.json)
     }
