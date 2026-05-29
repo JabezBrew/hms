@@ -157,6 +157,9 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .expect("order tests are included for result entry");
     assert!(!order_tests.is_empty());
     assert!(order_tests[0]["test"]["name"].is_string());
+    let panel_order_test_id = order_tests[0]["test"]["id"]
+        .as_str()
+        .expect("panel order test id exists");
 
     let orders = app
         .clone()
@@ -352,7 +355,7 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
                 .body(Body::from(
                     json!({
                         "specimen_id": specimen_id,
-                        "test_id": test_id,
+                        "test_id": panel_order_test_id,
                         "value": "negative",
                         "unit": null
                     })

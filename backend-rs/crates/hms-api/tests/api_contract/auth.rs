@@ -174,6 +174,51 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
 }
 
 #[tokio::test]
+async fn concurrent_request_context_misses_share_one_hydration_query() {
+    let app = app_with_request_context_probe().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+    let request_context = || {
+        let app = app.clone();
+        let auth_header = auth_header.clone();
+        async move {
+            app.oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/__test/request-context")
+                    .header(AUTHORIZATION, auth_header)
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+        }
+    };
+
+    let (responses, observed_queries) = hms_observability::with_request_query_counter(async {
+        let (a, b, c, d, e, f, g, h) = tokio::join!(
+            request_context(),
+            request_context(),
+            request_context(),
+            request_context(),
+            request_context(),
+            request_context(),
+            request_context(),
+            request_context()
+        );
+        [a, b, c, d, e, f, g, h]
+    })
+    .await;
+
+    for response in responses {
+        assert_eq!(
+            response.expect("request context probe succeeds").status(),
+            StatusCode::OK
+        );
+    }
+    assert_eq!(observed_queries, 1);
+}
+
+#[tokio::test]
 async fn logout_invalidates_warmed_request_context_cache_for_session() {
     let app = app_with_request_context_probe().await;
     let (access_token, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;

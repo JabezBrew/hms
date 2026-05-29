@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -38,7 +38,7 @@ struct AppStateInner {
     cloudflare_access: Option<CloudflareAccessVerifier>,
 }
 
-const REQUEST_CONTEXT_CACHE_TTL: Duration = Duration::from_secs(5);
+const REQUEST_CONTEXT_CACHE_TTL: Duration = Duration::from_secs(60);
 const AUTH_FACT_CACHE_MAX_ENTRIES: usize = 1024;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -80,6 +80,7 @@ struct AuthCache {
     users: RwLock<HashMap<AuthCacheKey, CachedAuthValue<AuthUser>>>,
     request_contexts:
         RwLock<HashMap<AuthCacheKey, CachedAuthValue<hms_db::auth::RequestContextAuthFacts>>>,
+    request_context_hydration_locks: Mutex<HashMap<AuthCacheKey, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 struct CachedAuthValue<T> {
@@ -94,6 +95,12 @@ impl AuthCache {
 
     fn put_user(&self, key: AuthCacheKey, user: AuthUser, ttl: Duration) {
         cache_put(&self.users, key, user, ttl);
+    }
+
+    fn put_user_if_absent(&self, key: AuthCacheKey, user: AuthUser, ttl: Duration) {
+        if self.get_user(&key).is_none() {
+            self.put_user(key, user, ttl);
+        }
     }
 
     fn get_request_context(
@@ -112,12 +119,31 @@ impl AuthCache {
         );
     }
 
+    fn request_context_hydration_lock(&self, key: &AuthCacheKey) -> Arc<tokio::sync::Mutex<()>> {
+        let Ok(mut locks) = self.request_context_hydration_locks.lock() else {
+            return Arc::new(tokio::sync::Mutex::new(()));
+        };
+        if locks.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+            locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+            if locks.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+                locks.clear();
+            }
+        }
+        locks
+            .entry(key.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
     fn remove_user(&self, facility_id: Uuid, user_id: Uuid) {
         if let Ok(mut users) = self.users.write() {
             users.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
         }
         if let Ok(mut contexts) = self.request_contexts.write() {
             contexts.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
+        }
+        if let Ok(mut locks) = self.request_context_hydration_locks.lock() {
+            locks.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
         }
     }
 
@@ -136,6 +162,13 @@ impl AuthCache {
                     || key.session_id != session_id
             });
         }
+        if let Ok(mut locks) = self.request_context_hydration_locks.lock() {
+            locks.retain(|key, _| {
+                key.facility_id != facility_id
+                    || key.user_id != user_id
+                    || key.session_id != session_id
+            });
+        }
     }
 
     fn remove_facility(&self, facility_id: Uuid) {
@@ -144,6 +177,9 @@ impl AuthCache {
         }
         if let Ok(mut contexts) = self.request_contexts.write() {
             contexts.retain(|key, _| key.facility_id != facility_id);
+        }
+        if let Ok(mut locks) = self.request_context_hydration_locks.lock() {
+            locks.retain(|key, _| key.facility_id != facility_id);
         }
     }
 }
@@ -506,6 +542,16 @@ impl AppState {
             return Ok(Some(facts));
         }
 
+        let hydration_lock = self
+            .inner
+            .auth_cache
+            .request_context_hydration_lock(&cache_key);
+        let _hydration_guard = hydration_lock.lock().await;
+        if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
+            hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
+            return Ok(Some(facts));
+        }
+
         hms_observability::record_request_context_cache_miss(route_pattern, facility_safe);
         let started_at = Instant::now();
         let facts = self
@@ -521,7 +567,7 @@ impl AppState {
                 self.inner
                     .auth_cache
                     .put_request_context(cache_key.clone(), facts.clone());
-                self.inner.auth_cache.put_user(
+                self.inner.auth_cache.put_user_if_absent(
                     cache_key,
                     facts.user.clone(),
                     self.inner.config.access_token_ttl,
