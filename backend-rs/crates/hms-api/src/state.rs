@@ -36,7 +36,7 @@ const OMNI_SEARCH_CACHE_TTL: Duration = Duration::from_secs(30);
 const DASHBOARD_PROJECTION_CACHE_TTL: Duration = Duration::from_secs(30);
 const DASHBOARD_REFRESH_QUEUE_THROTTLE: Duration = Duration::from_secs(5);
 const PATIENT_LIST_CACHE_TTL: Duration = Duration::from_secs(30);
-const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(1);
+const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct AppState {
