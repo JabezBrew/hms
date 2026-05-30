@@ -335,9 +335,7 @@ where
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct OmniSearchCacheKey {
     facility_id: Uuid,
-    user_id: Uuid,
-    session_version: i64,
-    permission_version: i64,
+    user_id: Option<Uuid>,
     active_profile: DeploymentProfile,
     query_fingerprint: [u8; 32],
     query_present: bool,
@@ -356,14 +354,13 @@ impl OmniSearchCacheKey {
         types: &[SearchResourceType],
         limit_per_group: i64,
     ) -> Self {
+        let query_present = query.is_some();
         Self {
             facility_id,
-            user_id: user.id,
-            session_version: user.session_version,
-            permission_version: user.permission_version,
+            user_id: (!query_present).then_some(user.id),
             active_profile: user.active_profile,
             query_fingerprint: search_query_fingerprint(query),
-            query_present: query.is_some(),
+            query_present,
             resource_types: enum_scope_key(types),
             permission_codes: enum_scope_key(&user.permissions),
             feature_keys: enum_scope_key(&user.features),
@@ -447,14 +444,7 @@ impl PatientChronicleStartupCacheKey {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct PatientListCacheKey {
     facility_id: Uuid,
-    user_id: Uuid,
-    session_version: i64,
-    permission_version: i64,
     active_profile: DeploymentProfile,
-    permission_codes: Vec<String>,
-    feature_keys: Vec<String>,
-    patient_visibility: Vec<String>,
-    active_authorities: Vec<String>,
     search_fingerprint: [u8; 32],
     search_present: bool,
     status: Option<String>,
@@ -472,14 +462,7 @@ impl PatientListCacheKey {
         let (search_fingerprint, search_present) = text_filter_fingerprint(search);
         Self {
             facility_id,
-            user_id: ctx.user_id,
-            session_version: ctx.session_version,
-            permission_version: ctx.permission_version,
             active_profile: ctx.active_profile,
-            permission_codes: enum_scope_key(&ctx.permissions),
-            feature_keys: enum_scope_key(&ctx.enabled_features),
-            patient_visibility: enum_scope_key(&ctx.patient_visibility),
-            active_authorities: enum_scope_key(&ctx.active_authorities),
             search_fingerprint,
             search_present,
             status: status.as_ref().map(|value| format!("{value:?}")),
@@ -918,6 +901,16 @@ impl AppState {
         if let Some(result) = self.inner.hot_read_cache.omni_search.get(&cache_key) {
             return Ok(result);
         }
+        let cache_guard = self
+            .inner
+            .hot_read_cache
+            .omni_search
+            .hydration_lock(&cache_key)
+            .lock_owned()
+            .await;
+        if let Some(result) = self.inner.hot_read_cache.omni_search.get(&cache_key) {
+            return Ok(result);
+        }
 
         let result = hms_db::search::omni_search(
             &self.inner.pool,
@@ -937,6 +930,7 @@ impl AppState {
             .hot_read_cache
             .omni_search
             .put(cache_key, result.clone(), OMNI_SEARCH_CACHE_TTL);
+        drop(cache_guard);
         Ok(result)
     }
 

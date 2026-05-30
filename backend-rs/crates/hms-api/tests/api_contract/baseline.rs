@@ -161,4 +161,24 @@ async fn omni_search_hot_path_reuses_scoped_cache() {
         second_queries, 0,
         "same scoped search should stay off the database while warm"
     );
+
+    let mut same_scope_user = user.clone();
+    same_scope_user.id = Uuid::new_v4();
+    same_scope_user.email = "same-scope-search-cache@hms.local".to_owned();
+    let (same_scope, same_scope_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .omni_search(
+                &same_scope_user,
+                Some("Ama".to_owned()),
+                vec![hms_domain::search::SearchResourceType::Patients],
+                5,
+            )
+            .await
+    })
+    .await;
+    same_scope.expect("same-scope cached search succeeds");
+    assert_eq!(
+        same_scope_queries, 0,
+        "query-present OmniSearch cache should be scoped by result-affecting access facts, not user id"
+    );
 }

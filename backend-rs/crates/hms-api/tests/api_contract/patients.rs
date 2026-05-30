@@ -220,6 +220,30 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
         "patient registry hot-page cache should survive session refresh when access scope is unchanged"
     );
 
+    let mut same_scope_user = user.clone();
+    same_scope_user.id = Uuid::new_v4();
+    same_scope_user.email = "same-scope-registry-cache@hms.local".to_owned();
+    let same_scope_ctx = hms_access::RequestContext::new(
+        "patient-list-same-scope-cache-test".to_owned(),
+        Uuid::new_v4(),
+        same_scope_user,
+        user.features.clone(),
+        hms_access::OffsiteState::Onsite,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+    let (same_scope, same_scope_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .patients_service()
+            .list_patients(&same_scope_ctx, query.clone())
+            .await
+    })
+    .await;
+    same_scope.expect("same-scope cached patient list succeeds");
+    assert_eq!(
+        same_scope_queries, 0,
+        "patient registry hot-page cache should be facility-scoped after the registry access gate"
+    );
+
     app.state()
         .patients_service()
         .create_patient(
