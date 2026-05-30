@@ -106,7 +106,7 @@ impl Config {
         };
         let password_work_max_concurrency = match env::var("HMS_PASSWORD_WORK_MAX_CONCURRENCY") {
             Ok(value) => parse_usize(&value, "HMS_PASSWORD_WORK_MAX_CONCURRENCY")?,
-            Err(_) => 8,
+            Err(_) => 4,
         }
         .max(1);
 
