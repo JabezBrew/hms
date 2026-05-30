@@ -26,7 +26,7 @@ function runAfterBoot(callback, timeout = 1500) {
   window.setTimeout(callback, Math.min(timeout, 1000))
 }
 
-function runAfterStartup(callback, delay = 3000) {
+function runAfterStartup(callback, delay = 12000) {
   if (typeof window === 'undefined') {
     return
   }

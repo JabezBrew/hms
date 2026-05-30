@@ -280,7 +280,10 @@ const PatientChronicleListPage = () => {
         }}
       />
 
-      <main className="p-4 sm:p-6 space-y-8">
+      <main
+        data-perf-ready={isSearchLoading ? undefined : 'patient-registry'}
+        className="p-4 sm:p-6 space-y-8"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Search className="size-4" aria-hidden="true" />

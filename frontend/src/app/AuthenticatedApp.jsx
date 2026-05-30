@@ -10,6 +10,7 @@ import { ReadOnlyBanner } from '@/components/readonly'
 import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext'
 import { PageLoader } from '@/shared/components/page/PageState'
 import { OmniSearchProvider } from '@/shared/components/omni-search/OmniSearchProvider'
+import RouteChunkWarmup from './RouteChunkWarmup'
 import { featureRoutes } from './routes/featureRoutes'
 import { renderRoutes } from './routes/renderRoutes'
 
@@ -56,6 +57,7 @@ export default function AuthenticatedApp() {
             <OnboardingRuntime />
           </Suspense>
           <CriticalAlertsMonitor />
+          <RouteChunkWarmup />
           <OfflineIndicator />
           <SessionTimeoutWarning />
           <Suspense fallback={null}>

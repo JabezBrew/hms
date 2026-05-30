@@ -554,7 +554,7 @@ export default function LabOrdersPage() {
     selectedDoctorFilter !== "all";
 
   return (
-    <PageShell>
+    <PageShell data-perf-ready={isLoading ? undefined : 'lab-orders'}>
       <LabOrdersHeader
         isDoctor={isDoctor}
         isFetching={isFetching}

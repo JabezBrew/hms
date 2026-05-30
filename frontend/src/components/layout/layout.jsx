@@ -34,7 +34,7 @@ export function Layout({ children, sidebar }) {
             <AppSidebar sidebar={sidebar} />
           </Sidebar>
           <SidebarInset className="p-4 flex-1 min-w-0 flex flex-col">
-            <main id="main-content" className="w-full flex-1">
+            <main id="main-content" data-perf-ready="app-shell" className="w-full flex-1">
               <PageBreadcrumb />
               {children}
             </main>

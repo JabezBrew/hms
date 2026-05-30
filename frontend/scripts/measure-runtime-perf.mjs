@@ -3,6 +3,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 
 const BASE_URL = (process.env.HMS_FRONTEND_BASE_URL || 'http://127.0.0.1:4174').replace(/\/$/, '')
+const API_BASE_URL = (process.env.HMS_FRONTEND_PERF_API_BASE_URL || BASE_URL).replace(/\/$/, '')
 const EMAIL = process.env.HMS_FRONTEND_PERF_EMAIL || 'owner@hms.local'
 const PASSWORD = process.env.HMS_FRONTEND_PERF_PASSWORD || 'ChangeMe123!'
 const FACILITY_CODE = process.env.HMS_FRONTEND_PERF_FACILITY || 'HMS'
@@ -10,40 +11,57 @@ const CONFIGURED_PATIENT_ID = process.env.HMS_FRONTEND_PERF_PATIENT_ID || ''
 const CPU_THROTTLE_RATE = Number(process.env.HMS_FRONTEND_PERF_CPU_THROTTLE || 4)
 const OUTPUT_PATH = process.env.HMS_FRONTEND_PERF_OUT || '/private/tmp/hms-frontend-runtime-perf.json'
 const RUNTIME_CONFIG_MODE = process.env.HMS_FRONTEND_RUNTIME_CONFIG || 'local-rust-v2'
+const DASHBOARD_PATH = process.env.HMS_FRONTEND_PERF_DASHBOARD_PATH || '/dashboards/admin'
+const READY_TIMEOUT_MS = Number(process.env.HMS_FRONTEND_PERF_READY_TIMEOUT_MS || 15000)
+const POST_READY_SETTLE_MS = Number(process.env.HMS_FRONTEND_PERF_POST_READY_SETTLE_MS || 100)
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
+const APP_SHELL_TARGET = {
+  label: 'app_shell',
+  path: '/',
+  reportPath: '/',
+  readySelector: '[data-perf-ready="app-shell"]',
+}
+
 function buildRoutes(patientId) {
+  const encodedPatientId = encodeURIComponent(patientId)
   return [
+    {
+      label: 'dashboard',
+      path: DASHBOARD_PATH,
+      reportPath: DASHBOARD_PATH,
+      readySelector: '[data-perf-ready="admin-dashboard"]',
+    },
     {
       label: 'patient_registry',
       path: '/patients',
-      waitText: /Patient Registry/i,
-      apiPattern: /\/api\/v2\/patients(?:\?|$)/,
+      reportPath: '/patients',
+      readySelector: '[data-perf-ready="patient-registry"]',
     },
     {
       label: 'patient_chronicle',
-      path: `/patients/${patientId}`,
-      waitText: /Clinical Chronicle/i,
-      apiPattern: /\/api\/v2\/patients\/[^/]+\/chronicle(?:\?|$)/,
+      path: `/patients/${encodedPatientId}`,
+      reportPath: '/patients/:id',
+      readySelector: '[data-perf-ready="patient-chronicle"]',
     },
     {
       label: 'ward_board',
       path: '/ward-board',
-      waitText: /Ward Board/i,
-      apiPattern: /\/api\/v2\/wards\/board(?:\?|$)/,
+      reportPath: '/ward-board',
+      readySelector: '[data-perf-ready="ward-board"]',
     },
     {
       label: 'lab_orders',
       path: '/laboratory/orders',
-      waitText: /Lab Orders/i,
-      apiPattern: /\/api\/v2\/lab/,
+      reportPath: '/laboratory/orders',
+      readySelector: '[data-perf-ready="lab-orders"]',
     },
     {
       label: 'inventory_items',
       path: '/inventory/items',
-      waitText: /Inventory Items/i,
-      apiPattern: /\/api\/v2\/inventory/,
+      reportPath: '/inventory/items',
+      readySelector: '[data-perf-ready="inventory-items"]',
     },
   ]
 }
@@ -63,14 +81,21 @@ function percentile(values, p) {
   return sorted[index]
 }
 
+function sanitizePathname(pathname) {
+  return String(pathname || '')
+    .replace(/\/api\/v2\/patients\/[^/?]+(?=\/chronicle(?:\/|$)|$)/g, '/api/v2/patients/:id')
+    .replace(/\/patients\/[^/?]+(?=\/|$)/g, '/patients/:id')
+    .replace(UUID_PATTERN, ':id')
+}
+
 function sanitizeResourceName(name) {
   try {
     const url = new URL(name)
     const keys = [...url.searchParams.keys()].sort()
     const search = keys.length > 0 ? `?keys=${keys.join(',')}` : ''
-    return `${url.pathname.replace(UUID_PATTERN, ':id')}${search}`
+    return `${sanitizePathname(url.pathname)}${search}`
   } catch {
-    return String(name || '').replace(UUID_PATTERN, ':id')
+    return sanitizePathname(name)
   }
 }
 
@@ -147,8 +172,8 @@ async function resetMeasurementWindow(page) {
   })
 }
 
-async function collectMeasurement(page, startedAt) {
-  return page.evaluate((start) => {
+async function collectMeasurement(page) {
+  return page.evaluate(() => {
     const resources = performance.getEntriesByType('resource').map((entry) => ({
       name: entry.name,
       initiatorType: entry.initiatorType,
@@ -158,17 +183,52 @@ async function collectMeasurement(page, startedAt) {
     }))
     const longTasks = Array.isArray(window.__hmsPerfLongTasks) ? window.__hmsPerfLongTasks : []
     return {
-      duration_ms: performance.now() - start,
       resources,
       longTasks,
       longTaskUnsupported: Boolean(window.__hmsPerfLongTasksUnsupported),
     }
-  }, startedAt)
+  })
 }
 
-async function waitForSettled(page) {
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {})
-  await page.waitForTimeout(150)
+async function waitAfterReady(page) {
+  if (POST_READY_SETTLE_MS > 0) {
+    await page.waitForTimeout(POST_READY_SETTLE_MS)
+  }
+}
+
+async function waitForReady(page, target) {
+  await page
+    .locator(target.readySelector)
+    .first()
+    .waitFor({ state: 'visible', timeout: READY_TIMEOUT_MS })
+}
+
+async function waitForRouteChunkWarmup(page) {
+  const startedAt = performance.now()
+  const completed = await page
+    .waitForFunction(() => window.__hmsRouteChunkWarmupDone === true, { timeout: 5000 })
+    .then(() => true)
+    .catch(() => false)
+
+  return {
+    completed,
+    wait_ms: round(performance.now() - startedAt),
+  }
+}
+
+function summarizeMeasurement(raw, startedAt, readyAt, extras = {}) {
+  const longTaskDurations = raw.longTasks.map((entry) => entry.duration)
+  return {
+    duration_ms: round(readyAt - startedAt),
+    observed_ms: round(performance.now() - startedAt),
+    post_ready_settle_ms: POST_READY_SETTLE_MS,
+    long_task_count: longTaskDurations.length,
+    long_task_total_ms: round(longTaskDurations.reduce((sum, value) => sum + value, 0)),
+    long_task_max_ms: round(Math.max(0, ...longTaskDurations)),
+    long_task_observer: raw.longTaskUnsupported ? 'unsupported' : 'supported',
+    ...summarizeResources(raw.resources),
+    ...extras,
+  }
 }
 
 async function fillOptional(locator, value) {
@@ -180,7 +240,7 @@ async function fillOptional(locator, value) {
 }
 
 async function fetchJsonFromApi(pathName, token) {
-  const response = await fetch(new URL(pathName, BASE_URL), {
+  const response = await fetch(new URL(pathName, API_BASE_URL), {
     headers: {
       accept: 'application/json',
       authorization: `Bearer ${token}`,
@@ -193,7 +253,7 @@ async function fetchJsonFromApi(pathName, token) {
 }
 
 async function createProbeAccessToken() {
-  const response = await fetch(new URL('/api/v2/auth/login', BASE_URL), {
+  const response = await fetch(new URL('/api/v2/auth/login', API_BASE_URL), {
     method: 'POST',
     headers: {
       accept: 'application/json',
@@ -253,46 +313,78 @@ async function discoverChroniclePatientId() {
   throw new Error('No chronicle-accessible patient was available for the frontend perf probe.')
 }
 
-async function navigateSpa(page, targetPath) {
-  const url = new URL(targetPath, BASE_URL).toString()
-  try {
-    await page.evaluate((nextPath) => {
-      window.history.pushState({}, '', nextPath)
-      window.dispatchEvent(new PopStateEvent('popstate'))
-    }, targetPath)
-    await page.waitForURL(url, { timeout: 1500 })
-  } catch {
-    await page.goto(url, { waitUntil: 'domcontentloaded' })
-  }
+async function loginToApp(page) {
+  await resetMeasurementWindow(page).catch(() => {})
+  const startedAt = performance.now()
+  await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
+  await page.getByLabel(/email address/i).fill(EMAIL)
+  await fillOptional(page.getByLabel(/facility code/i), FACILITY_CODE)
+  await page.getByLabel(/^password$/i).fill(PASSWORD)
+  await page.getByRole('button', { name: /sign in/i }).click()
+  await page.waitForURL((url) => url.pathname !== '/login', { timeout: READY_TIMEOUT_MS })
+  await waitForReady(page, APP_SHELL_TARGET)
+  const readyAt = performance.now()
+  await waitAfterReady(page)
+  return summarizeMeasurement(await collectMeasurement(page), startedAt, readyAt, {
+    label: 'login_flow',
+    path: '/login',
+    mode: 'login',
+  })
 }
 
-async function measureRoute(page, route) {
+async function measureColdLoad(page, target) {
   await resetMeasurementWindow(page)
-  const startedAt = await page.evaluate(() => performance.now())
-  const apiWait = page.waitForResponse((response) => route.apiPattern.test(new URL(response.url()).pathname), {
-    timeout: 10000,
-  }).catch(() => null)
+  const startedAt = performance.now()
+  await page.goto(new URL(target.path, BASE_URL).toString(), { waitUntil: 'domcontentloaded' })
+  await waitForReady(page, target)
+  const readyAt = performance.now()
+  await waitAfterReady(page)
+  return summarizeMeasurement(await collectMeasurement(page), startedAt, readyAt, {
+    label: target.label,
+    path: target.reportPath,
+    mode: 'cold_route_load',
+  })
+}
 
-  await navigateSpa(page, route.path)
-  await page.getByText(route.waitText).first().waitFor({ state: 'visible', timeout: 15000 })
-  await apiWait
-  await waitForSettled(page)
+async function navigateWithHistory(page, targetPath) {
+  await page.evaluate((nextPath) => {
+    window.history.pushState({}, '', nextPath)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, targetPath)
+  await page.waitForFunction(
+    (nextPath) => `${window.location.pathname}${window.location.search}` === nextPath,
+    targetPath,
+    { timeout: 1500 },
+  )
+}
 
-  const raw = await collectMeasurement(page, startedAt)
-  const longTaskDurations = raw.longTasks.map((entry) => entry.duration)
-  const rowCount = await page.locator('tbody tr').count().catch(() => 0)
+async function measureWarmTransition(page, target) {
+  const fromPath = sanitizePathname(new URL(page.url()).pathname)
+  let navigationMethod = 'history'
 
-  return {
-    label: route.label,
-    path: route.path.replace(UUID_PATTERN, ':id'),
-    duration_ms: round(raw.duration_ms),
-    row_count: rowCount,
-    long_task_count: longTaskDurations.length,
-    long_task_total_ms: round(longTaskDurations.reduce((sum, value) => sum + value, 0)),
-    long_task_max_ms: round(Math.max(0, ...longTaskDurations)),
-    long_task_observer: raw.longTaskUnsupported ? 'unsupported' : 'supported',
-    ...summarizeResources(raw.resources),
+  await resetMeasurementWindow(page)
+  let startedAt = performance.now()
+  await navigateWithHistory(page, target.path)
+
+  try {
+    await waitForReady(page, target)
+  } catch (error) {
+    navigationMethod = 'document-fallback'
+    await resetMeasurementWindow(page)
+    startedAt = performance.now()
+    await page.goto(new URL(target.path, BASE_URL).toString(), { waitUntil: 'domcontentloaded' })
+    await waitForReady(page, target)
   }
+
+  const readyAt = performance.now()
+  await waitAfterReady(page)
+  return summarizeMeasurement(await collectMeasurement(page), startedAt, readyAt, {
+    label: target.label,
+    from_path: fromPath,
+    path: target.reportPath,
+    mode: 'warm_spa_transition',
+    navigation_method: navigationMethod,
+  })
 }
 
 async function main() {
@@ -307,47 +399,52 @@ async function main() {
   await installRuntimeConfigRoute(page)
   await installLongTaskObserver(page)
 
-  await resetMeasurementWindow(page).catch(() => {})
-  const loginStartedAt = await page.evaluate(() => performance.now()).catch(() => 0)
-  await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' })
-  await page.getByLabel(/email address/i).fill(EMAIL)
-  await fillOptional(page.getByLabel(/facility code/i), FACILITY_CODE)
-  await page.getByLabel(/^password$/i).fill(PASSWORD)
-  await page.getByRole('button', { name: /sign in/i }).click()
-  await page.waitForURL((url) => url.pathname !== '/login', { timeout: 15000 })
-  await waitForSettled(page)
-  const loginRaw = await collectMeasurement(page, loginStartedAt)
-  const chroniclePatientId = await discoverChroniclePatientId()
+  try {
+    const login = await loginToApp(page)
+    const chroniclePatientId = await discoverChroniclePatientId()
+    const routes = buildRoutes(chroniclePatientId)
+    const dashboardRoute = routes.find((route) => route.label === 'dashboard') || routes[0]
+    const warmRoutes = [
+      ...routes.filter((route) => route.label !== 'dashboard'),
+      dashboardRoute,
+    ]
 
-  const results = []
-  for (const route of buildRoutes(chroniclePatientId)) {
-    results.push(await measureRoute(page, route))
+    const appShell = await measureColdLoad(page, APP_SHELL_TARGET)
+
+    const coldRoutes = []
+    for (const route of routes) {
+      coldRoutes.push(await measureColdLoad(page, route))
+    }
+
+    await measureColdLoad(page, dashboardRoute)
+    const routeChunkWarmup = await waitForRouteChunkWarmup(page)
+    const warmTransitions = []
+    for (const route of warmRoutes) {
+      warmTransitions.push(await measureWarmTransition(page, route))
+    }
+
+    const report = {
+      captured_at: new Date().toISOString(),
+      base_url: BASE_URL,
+      api_base_url: API_BASE_URL === BASE_URL ? 'same-origin' : API_BASE_URL,
+      cpu_throttle_rate: CPU_THROTTLE_RATE,
+      viewport: '1366x768',
+      credentials: {
+        email_domain: EMAIL.split('@')[1] || null,
+        facility_code: FACILITY_CODE,
+      },
+      login,
+      app_shell: appShell,
+      cold_routes: coldRoutes,
+      route_chunk_warmup: routeChunkWarmup,
+      warm_transitions: warmTransitions,
+    }
+
+    fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(report, null, 2)}\n`)
+    console.log(JSON.stringify(report, null, 2))
+  } finally {
+    await browser.close()
   }
-
-  await browser.close()
-
-  const loginLongTasks = loginRaw.longTasks.map((entry) => entry.duration)
-  const report = {
-    captured_at: new Date().toISOString(),
-    base_url: BASE_URL,
-    cpu_throttle_rate: CPU_THROTTLE_RATE,
-    viewport: '1366x768',
-    credentials: {
-      email_domain: EMAIL.split('@')[1] || null,
-      facility_code: FACILITY_CODE,
-    },
-    login: {
-      duration_ms: round(loginRaw.duration_ms),
-      long_task_count: loginLongTasks.length,
-      long_task_total_ms: round(loginLongTasks.reduce((sum, value) => sum + value, 0)),
-      long_task_max_ms: round(Math.max(0, ...loginLongTasks)),
-      ...summarizeResources(loginRaw.resources),
-    },
-    routes: results,
-  }
-
-  fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(report, null, 2)}\n`)
-  console.log(JSON.stringify(report, null, 2))
 }
 
 main().catch((error) => {

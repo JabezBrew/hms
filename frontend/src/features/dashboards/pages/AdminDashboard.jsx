@@ -413,7 +413,10 @@ export default function AdminDashboard() {
           )}
         />
 
-        <div className="space-y-6 p-4 sm:p-6">
+        <div
+          data-perf-ready={summaryQuery.isLoading ? undefined : 'admin-dashboard'}
+          className="space-y-6 p-4 sm:p-6"
+        >
           <OperationalPostureCard
             generatedAt={generatedAt}
             isLiveConnected={isLiveConnected}

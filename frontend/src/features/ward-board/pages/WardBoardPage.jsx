@@ -210,7 +210,10 @@ export default function WardBoardPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[oklch(0.98_0.005_60)] text-foreground dark:bg-[oklch(0.14_0.01_50)]">
+    <div
+      data-perf-ready="ward-board"
+      className="flex h-screen flex-col overflow-hidden bg-[oklch(0.98_0.005_60)] text-foreground dark:bg-[oklch(0.14_0.01_50)]"
+    >
       {pageMeta}
 
       <header className="shrink-0 border-b border-border bg-card/80 px-6 py-4">

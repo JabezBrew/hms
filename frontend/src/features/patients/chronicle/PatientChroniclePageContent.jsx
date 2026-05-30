@@ -264,7 +264,10 @@ export function PatientChroniclePageContent({
   return (
     <>
       {pageMeta}
-      <div className="min-h-screen max-w-full overflow-x-clip bg-background">
+      <div
+        data-perf-ready="patient-chronicle"
+        className="min-h-screen max-w-full overflow-x-clip bg-background"
+      >
         <PatientIdentityHero
           patient={patientForChronicle}
           allergies={allergies}

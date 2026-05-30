@@ -84,6 +84,7 @@ const SORT_OPTIONS = [
 ];
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
+const DEFAULT_PAGE_SIZE = 12;
 
 function InventoryItemActionsMenu({
   item,
@@ -606,7 +607,7 @@ function useInventoryItemsUrlState({ onClearSelection }) {
   const location = searchParams.get('location') || '';
   const sortBy = searchParams.get('ordering') || '-updated_at';
   const page = parseInt(searchParams.get('page') || '1', 10);
-  const pageSize = parseInt(searchParams.get('page_size') || '24', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || String(DEFAULT_PAGE_SIZE), 10);
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
@@ -905,7 +906,7 @@ export default function ItemsPage() {
   }
 
   return (
-    <PageShell>
+    <PageShell data-perf-ready="inventory-items">
       <ItemsHeader
         totalCount={totalCount}
         isLoading={isLoading}
