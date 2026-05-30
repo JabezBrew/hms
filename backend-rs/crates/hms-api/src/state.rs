@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -7,13 +9,16 @@ use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::{DateTime, Utc};
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
+use hms_db::dashboard::DashboardProjectionRead;
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
-use hms_domain::deployment::DeploymentProfile;
+use hms_domain::deployment::{DeploymentProfile, NavigationManifest};
 use hms_domain::search::SearchResourceType;
+use hms_domain::ward::WardBoardItem;
 use hms_events::DomainEventKind;
+use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tracing::warn;
@@ -23,6 +28,13 @@ use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
 use crate::config::{Config, OpsAuthMode, OpsPrometheusConfig};
 use crate::ops_auth::{CloudflareAccessError, CloudflareAccessIdentity, CloudflareAccessVerifier};
 use crate::passwords::hash_password;
+use crate::response::ListResponse;
+
+const HOT_READ_CACHE_MAX_ENTRIES: usize = 1024;
+const OMNI_SEARCH_CACHE_TTL: Duration = Duration::from_secs(2);
+const DASHBOARD_PROJECTION_CACHE_TTL: Duration = Duration::from_secs(2);
+const DASHBOARD_REFRESH_QUEUE_THROTTLE: Duration = Duration::from_secs(5);
+const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(1);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -36,6 +48,8 @@ struct AppStateInner {
     pool: hms_db::PgPool,
     auth_pool: hms_db::PgPool,
     auth_cache: AuthCache,
+    hot_read_cache: HotReadCache,
+    dashboard_refresh_gate: DashboardRefreshGate,
     cloudflare_access: Option<CloudflareAccessVerifier>,
 }
 
@@ -76,13 +90,13 @@ impl AuthCacheKey {
 struct AuthCache {
     max_entries: usize,
     access_clock: AtomicU64,
-    users: RwLock<HashMap<AuthCacheKey, CachedAuthValue<AuthUser>>>,
+    users: RwLock<HashMap<AuthCacheKey, CachedValue<AuthUser>>>,
     request_contexts:
-        RwLock<HashMap<AuthCacheKey, CachedAuthValue<hms_db::auth::RequestContextAuthFacts>>>,
+        RwLock<HashMap<AuthCacheKey, CachedValue<hms_db::auth::RequestContextAuthFacts>>>,
     hydration_locks: Mutex<HashMap<AuthCacheKey, Arc<tokio::sync::Mutex<()>>>>,
 }
 
-struct CachedAuthValue<T> {
+struct CachedValue<T> {
     value: T,
     expires_at: Instant,
     last_accessed_tick: AtomicU64,
@@ -215,11 +229,224 @@ impl AuthCache {
     }
 }
 
-fn cache_get<T: Clone>(
-    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
-    key: &AuthCacheKey,
+struct HotReadCache {
+    omni_search: TimedLruCache<OmniSearchCacheKey, OmniSearchResult>,
+    dashboard_projection: TimedLruCache<DashboardProjectionCacheKey, DashboardProjectionRead>,
+    ward_board: TimedLruCache<WardBoardCacheKey, ListResponse<WardBoardItem>>,
+}
+
+impl HotReadCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            omni_search: TimedLruCache::new(max_entries),
+            dashboard_projection: TimedLruCache::new(max_entries),
+            ward_board: TimedLruCache::new(max_entries),
+        }
+    }
+}
+
+struct TimedLruCache<K, V> {
+    max_entries: usize,
+    access_clock: AtomicU64,
+    entries: RwLock<HashMap<K, CachedValue<V>>>,
+}
+
+impl<K, V> TimedLruCache<K, V>
+where
+    K: Clone + Eq + Hash,
+    V: Clone,
+{
+    fn new(max_entries: usize) -> Self {
+        Self {
+            max_entries,
+            access_clock: AtomicU64::new(0),
+            entries: RwLock::new(HashMap::new()),
+        }
+    }
+
+    fn get(&self, key: &K) -> Option<V> {
+        cache_get(&self.entries, key, self.next_access_tick())
+    }
+
+    fn put(&self, key: K, value: V, ttl: Duration) {
+        cache_put(
+            &self.entries,
+            key,
+            value,
+            ttl,
+            self.max_entries,
+            self.next_access_tick(),
+        );
+    }
+
+    fn clear(&self) {
+        if let Ok(mut entries) = self.entries.write() {
+            entries.clear();
+        }
+    }
+
+    fn next_access_tick(&self) -> u64 {
+        self.access_clock.fetch_add(1, Ordering::Relaxed) + 1
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct OmniSearchCacheKey {
+    facility_id: Uuid,
+    user_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: DeploymentProfile,
+    query_fingerprint: [u8; 32],
+    query_present: bool,
+    resource_types: Vec<String>,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+    patient_visibility: Vec<String>,
+    limit_per_group: i64,
+}
+
+impl OmniSearchCacheKey {
+    fn new(
+        facility_id: Uuid,
+        user: &AuthUser,
+        query: &Option<String>,
+        types: &[SearchResourceType],
+        limit_per_group: i64,
+    ) -> Self {
+        Self {
+            facility_id,
+            user_id: user.id,
+            session_version: user.session_version,
+            permission_version: user.permission_version,
+            active_profile: user.active_profile,
+            query_fingerprint: search_query_fingerprint(query),
+            query_present: query.is_some(),
+            resource_types: enum_scope_key(types),
+            permission_codes: enum_scope_key(&user.permissions),
+            feature_keys: enum_scope_key(&user.features),
+            patient_visibility: enum_scope_key(&user.patient_visibility),
+            limit_per_group,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct DashboardProjectionCacheKey {
+    facility_id: Uuid,
+    user_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: DeploymentProfile,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+}
+
+impl DashboardProjectionCacheKey {
+    fn from_context(facility_id: Uuid, ctx: &hms_access::RequestContext) -> Self {
+        Self {
+            facility_id,
+            user_id: ctx.user_id,
+            session_version: ctx.session_version,
+            permission_version: ctx.permission_version,
+            active_profile: ctx.active_profile,
+            permission_codes: enum_scope_key(&ctx.permissions),
+            feature_keys: enum_scope_key(&ctx.enabled_features),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct DashboardRefreshGateKey {
+    facility_id: Uuid,
+    active_profile: DeploymentProfile,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct WardBoardCacheKey {
+    facility_id: Uuid,
+    user_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: DeploymentProfile,
+    permission_codes: Vec<String>,
+    ward_id: Option<Uuid>,
+    page_size: u8,
+}
+
+impl WardBoardCacheKey {
+    fn new(
+        facility_id: Uuid,
+        ctx: &hms_access::RequestContext,
+        ward_id: Option<Uuid>,
+        page_size: u8,
+    ) -> Self {
+        Self {
+            facility_id,
+            user_id: ctx.user_id,
+            session_version: ctx.session_version,
+            permission_version: ctx.permission_version,
+            active_profile: ctx.active_profile,
+            permission_codes: enum_scope_key(&ctx.permissions),
+            ward_id,
+            page_size,
+        }
+    }
+}
+
+#[derive(Default)]
+struct DashboardRefreshGate {
+    next_allowed_at: Mutex<HashMap<DashboardRefreshGateKey, Instant>>,
+}
+
+impl DashboardRefreshGate {
+    fn claim(&self, key: DashboardRefreshGateKey, throttle: Duration) -> bool {
+        let Ok(mut next_allowed_by_key) = self.next_allowed_at.lock() else {
+            return true;
+        };
+        let now = Instant::now();
+        next_allowed_by_key.retain(|_, next_allowed_at| *next_allowed_at > now);
+        if next_allowed_by_key
+            .get(&key)
+            .is_some_and(|next_allowed_at| *next_allowed_at > now)
+        {
+            return false;
+        }
+        next_allowed_by_key.insert(key, now + throttle);
+        true
+    }
+}
+
+fn enum_scope_key<T: Debug>(values: &[T]) -> Vec<String> {
+    let mut labels = values
+        .iter()
+        .map(|value| format!("{value:?}"))
+        .collect::<Vec<_>>();
+    labels.sort();
+    labels
+}
+
+fn search_query_fingerprint(query: &Option<String>) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    match query {
+        Some(query) => {
+            hasher.update([1]);
+            hasher.update(query.as_bytes());
+        }
+        None => hasher.update([0]),
+    }
+    hasher.finalize().into()
+}
+
+fn cache_get<K, T>(
+    cache: &RwLock<HashMap<K, CachedValue<T>>>,
+    key: &K,
     access_tick: u64,
-) -> Option<T> {
+) -> Option<T>
+where
+    K: Clone + Eq + Hash,
+    T: Clone,
+{
     let now = Instant::now();
     {
         let cache = cache.read().ok()?;
@@ -242,14 +469,16 @@ fn cache_get<T: Clone>(
     None
 }
 
-fn cache_put<T>(
-    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
-    key: AuthCacheKey,
+fn cache_put<K, T>(
+    cache: &RwLock<HashMap<K, CachedValue<T>>>,
+    key: K,
     value: T,
     ttl: Duration,
     max_entries: usize,
     access_tick: u64,
-) {
+) where
+    K: Clone + Eq + Hash,
+{
     let Ok(mut cache) = cache.write() else {
         return;
     };
@@ -274,7 +503,7 @@ fn cache_put<T>(
     }
     cache.insert(
         key,
-        CachedAuthValue {
+        CachedValue {
             value,
             expires_at: now + ttl,
             last_accessed_tick: AtomicU64::new(access_tick),
@@ -379,6 +608,8 @@ impl AppState {
                 pool,
                 auth_pool,
                 auth_cache: AuthCache::new(auth_cache_max_entries),
+                hot_read_cache: HotReadCache::new(HOT_READ_CACHE_MAX_ENTRIES),
+                dashboard_refresh_gate: DashboardRefreshGate::default(),
                 cloudflare_access,
             }),
         })
@@ -502,7 +733,18 @@ impl AppState {
         types: Vec<SearchResourceType>,
         limit_per_group: i64,
     ) -> Result<OmniSearchResult> {
-        hms_db::search::omni_search(
+        let cache_key = OmniSearchCacheKey::new(
+            self.inner.facility_id,
+            user,
+            &query,
+            &types,
+            limit_per_group,
+        );
+        if let Some(result) = self.inner.hot_read_cache.omni_search.get(&cache_key) {
+            return Ok(result);
+        }
+
+        let result = hms_db::search::omni_search(
             &self.inner.pool,
             OmniSearchFilters {
                 facility_id: self.inner.facility_id,
@@ -515,7 +757,82 @@ impl AppState {
                 patient_visibility: user.patient_visibility.clone(),
             },
         )
-        .await
+        .await?;
+        self.inner
+            .hot_read_cache
+            .omni_search
+            .put(cache_key, result.clone(), OMNI_SEARCH_CACHE_TTL);
+        Ok(result)
+    }
+
+    pub async fn dashboard_projection(
+        &self,
+        ctx: &hms_access::RequestContext,
+        navigation: NavigationManifest,
+    ) -> Result<DashboardProjectionRead> {
+        let cache_key = DashboardProjectionCacheKey::from_context(self.inner.facility_id, ctx);
+        if let Some(projection) = self
+            .inner
+            .hot_read_cache
+            .dashboard_projection
+            .get(&cache_key)
+        {
+            return Ok(projection);
+        }
+
+        let projection = hms_db::dashboard::read_dashboard_projection(
+            &self.inner.pool,
+            self.inner.facility_id,
+            navigation,
+        )
+        .await?;
+        self.inner.hot_read_cache.dashboard_projection.put(
+            cache_key,
+            projection.clone(),
+            DASHBOARD_PROJECTION_CACHE_TTL,
+        );
+        Ok(projection)
+    }
+
+    pub fn claim_dashboard_projection_refresh_enqueue(
+        &self,
+        ctx: &hms_access::RequestContext,
+    ) -> bool {
+        self.inner.dashboard_refresh_gate.claim(
+            DashboardRefreshGateKey {
+                facility_id: self.inner.facility_id,
+                active_profile: ctx.active_profile,
+            },
+            DASHBOARD_REFRESH_QUEUE_THROTTLE,
+        )
+    }
+
+    pub(crate) fn cached_ward_board(
+        &self,
+        ctx: &hms_access::RequestContext,
+        ward_id: Option<Uuid>,
+        page_size: u8,
+    ) -> Option<ListResponse<WardBoardItem>> {
+        let cache_key = WardBoardCacheKey::new(self.inner.facility_id, ctx, ward_id, page_size);
+        self.inner.hot_read_cache.ward_board.get(&cache_key)
+    }
+
+    pub(crate) fn put_cached_ward_board(
+        &self,
+        ctx: &hms_access::RequestContext,
+        ward_id: Option<Uuid>,
+        page_size: u8,
+        response: ListResponse<WardBoardItem>,
+    ) {
+        let cache_key = WardBoardCacheKey::new(self.inner.facility_id, ctx, ward_id, page_size);
+        self.inner
+            .hot_read_cache
+            .ward_board
+            .put(cache_key, response, WARD_BOARD_CACHE_TTL);
+    }
+
+    pub(crate) fn invalidate_ward_board_cache(&self) {
+        self.inner.hot_read_cache.ward_board.clear();
     }
 
     pub fn verify_access_token(

@@ -21,6 +21,7 @@ pub struct NotificationCursor {
     pub id: Uuid,
 }
 
+#[derive(Clone)]
 pub struct DashboardProjectionRead {
     pub snapshot: Option<DashboardSnapshot>,
     pub generated_at: Option<DateTime<Utc>>,

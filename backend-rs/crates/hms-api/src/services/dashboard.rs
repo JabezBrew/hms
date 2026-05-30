@@ -56,36 +56,35 @@ impl DashboardService {
     ) -> Result<ObjectResponse<DashboardSnapshot>, ApiError> {
         require_dashboard_access(ctx, self.facility_id())?;
         let capabilities = deployment_capabilities_for_context(ctx);
-        let projection = dashboard::read_dashboard_projection(
-            self.pool(),
-            self.facility_id(),
-            capabilities.navigation,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "dashboard_snapshot_failed",
-                "Dashboard snapshot could not be loaded.",
-            )
-        })?;
-
-        let refresh_queued = if projection.is_stale {
-            match dashboard::queue_dashboard_projection_refresh(
-                self.pool(),
-                self.facility_id(),
-                ctx.active_profile,
-            )
+        let projection = self
+            .state
+            .dashboard_projection(ctx, capabilities.navigation)
             .await
-            {
-                Ok(queue) => queue.queued,
-                Err(error) => {
-                    tracing::warn!(%error, "dashboard projection refresh enqueue failed");
-                    false
+            .map_err(|_| {
+                ApiError::conflict(
+                    "dashboard_snapshot_failed",
+                    "Dashboard snapshot could not be loaded.",
+                )
+            })?;
+
+        let refresh_queued =
+            if projection.is_stale && self.state.claim_dashboard_projection_refresh_enqueue(ctx) {
+                match dashboard::queue_dashboard_projection_refresh(
+                    self.pool(),
+                    self.facility_id(),
+                    ctx.active_profile,
+                )
+                .await
+                {
+                    Ok(queue) => queue.queued,
+                    Err(error) => {
+                        tracing::warn!(%error, "dashboard projection refresh enqueue failed");
+                        false
+                    }
                 }
-            }
-        } else {
-            false
-        };
+            } else {
+                false
+            };
 
         let mut snapshot = projection
             .snapshot

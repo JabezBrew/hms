@@ -124,3 +124,41 @@ async fn omni_search_posts_access_scoped_projection_results() {
         .iter()
         .any(|status| status["resource_type"] == "patients" && status["status"] == "ready"));
 }
+
+#[tokio::test]
+async fn omni_search_hot_path_reuses_scoped_cache() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let claims = access_claims(&access_token);
+    let user = app
+        .state()
+        .auth_user_for_claims(&claims)
+        .await
+        .expect("auth user lookup succeeds")
+        .expect("auth user exists");
+    let types = vec![hms_domain::search::SearchResourceType::Patients];
+
+    let (first, first_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .omni_search(&user, Some("Ama".to_owned()), types.clone(), 5)
+            .await
+    })
+    .await;
+    first.expect("first search succeeds");
+    assert!(
+        first_queries > 0,
+        "first scoped search should hydrate from the database"
+    );
+
+    let (second, second_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .omni_search(&user, Some("Ama".to_owned()), types, 5)
+            .await
+    })
+    .await;
+    second.expect("cached search succeeds");
+    assert_eq!(
+        second_queries, 0,
+        "same scoped search should stay off the database while warm"
+    );
+}

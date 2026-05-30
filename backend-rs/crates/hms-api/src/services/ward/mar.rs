@@ -88,6 +88,7 @@ impl MarService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(medication))
     }
 
@@ -143,6 +144,7 @@ impl MarService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(medication))
     }
 

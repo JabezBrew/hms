@@ -76,31 +76,32 @@ pub async fn list_ward_board(
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<WardBoardItem>> {
-    let mut query = ward_board_query();
-    query.push(" WHERE admission_cases.facility_id = ");
+    let mut query = ward_board_list_query();
+    query.push(" WHERE facility_id = ");
     query.push_bind(facility_id);
-    query.push(" AND admission_cases.status IN ('admitted', 'discharge_pending')");
+    query.push(" AND status IN ('admitted', 'discharge_pending')");
 
     if let Some(ward_id) = ward_id {
-        query.push(" AND admission_cases.ward_id = ");
+        query.push(" AND ward_id = ");
         query.push_bind(ward_id);
     }
 
     if let Some(patient_id) = patient_id {
-        query.push(" AND admission_cases.patient_id = ");
+        query.push(" AND patient_id = ");
         query.push_bind(patient_id);
     }
 
     if let Some(cursor) = cursor {
-        query.push(" AND (admission_cases.admitted_at, admission_cases.id) > (");
+        query.push(" AND (admitted_at, id) > (");
         query.push_bind(cursor.occurred_at);
         query.push(", ");
         query.push_bind(cursor.id);
         query.push(")");
     }
 
-    query.push(" ORDER BY admission_cases.admitted_at ASC, admission_cases.id ASC LIMIT ");
+    query.push(" ORDER BY admitted_at ASC, id ASC LIMIT ");
     query.push_bind(limit);
+    query.push(ward_board_list_select());
 
     let rows = observe_db_query(
         "ward.admission_cases.ward_board.list",
@@ -657,6 +658,64 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
         ) med_counts ON med_counts.admission_case_id = admission_cases.id
         "#,
     )
+}
+
+fn ward_board_list_query() -> QueryBuilder<'static, Postgres> {
+    QueryBuilder::<Postgres>::new(
+        r#"
+        WITH selected_admissions AS (
+            SELECT id,
+                   facility_id,
+                   patient_id,
+                   ward_id,
+                   bed_id,
+                   status,
+                   admitted_at
+            FROM admission_cases
+        "#,
+    )
+}
+
+fn ward_board_list_select() -> &'static str {
+    r#"
+        )
+        SELECT admission_cases.id AS admission_id,
+               admission_cases.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               admission_cases.ward_id,
+               wards.name AS ward_name,
+               admission_cases.bed_id,
+               beds.bed_code,
+               admission_cases.status AS admission_status,
+               admission_cases.admitted_at,
+               COALESCE(task_counts.open_nursing_task_count, 0) AS open_nursing_task_count,
+               COALESCE(med_counts.due_medication_count, 0) AS due_medication_count
+        FROM selected_admissions admission_cases
+        JOIN patients
+          ON patients.id = admission_cases.patient_id
+         AND patients.facility_id = admission_cases.facility_id
+        JOIN wards
+          ON wards.id = admission_cases.ward_id
+         AND wards.facility_id = admission_cases.facility_id
+        LEFT JOIN beds
+          ON beds.id = admission_cases.bed_id
+         AND beds.facility_id = admission_cases.facility_id
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS open_nursing_task_count
+            FROM nursing_tasks
+            WHERE nursing_tasks.admission_case_id = admission_cases.id
+              AND nursing_tasks.status = 'open'
+        ) task_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS due_medication_count
+            FROM medication_administrations
+            WHERE medication_administrations.admission_case_id = admission_cases.id
+              AND medication_administrations.status = 'scheduled'
+              AND medication_administrations.scheduled_at <= now()
+        ) med_counts ON true
+        ORDER BY admission_cases.admitted_at ASC, admission_cases.id ASC
+        "#
 }
 
 fn admission_case_query() -> QueryBuilder<'static, Postgres> {

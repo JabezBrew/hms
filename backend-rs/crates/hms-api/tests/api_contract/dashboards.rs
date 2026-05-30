@@ -197,3 +197,51 @@ async fn dashboards_notifications_and_realtime_are_profile_aware_and_phi_safe() 
         .expect("limited subscriptions are array")
         .is_empty());
 }
+
+#[tokio::test]
+async fn dashboard_snapshot_hot_path_uses_cache_and_refresh_gate() {
+    let app = app().await;
+    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let claims = access_claims(&owner_token);
+    let user = app
+        .state()
+        .auth_user_for_claims(&claims)
+        .await
+        .expect("auth user lookup succeeds")
+        .expect("auth user exists");
+    let ctx = hms_access::RequestContext::new(
+        "dashboard-cache-test".to_owned(),
+        claims.session_id,
+        user.clone(),
+        user.features.clone(),
+        hms_access::OffsiteState::Onsite,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+    let navigation = hms_domain::deployment::NavigationManifest { groups: vec![] };
+
+    let (first, first_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .dashboard_projection(&ctx, navigation.clone())
+            .await
+    })
+    .await;
+    let first = first.expect("first dashboard projection succeeds");
+    assert!(
+        first_queries > 0,
+        "first stale dashboard projection should touch the database"
+    );
+    assert!(first.is_stale);
+    assert!(app.state().claim_dashboard_projection_refresh_enqueue(&ctx));
+    assert!(!app.state().claim_dashboard_projection_refresh_enqueue(&ctx));
+
+    let (second, second_queries) = hms_observability::with_request_query_counter(async {
+        app.state().dashboard_projection(&ctx, navigation).await
+    })
+    .await;
+    let second = second.expect("cached dashboard projection succeeds");
+    assert!(second.is_stale);
+    assert_eq!(
+        second_queries, 0,
+        "hot stale dashboard projection reads should not repeat DB reads"
+    );
+}

@@ -38,6 +38,12 @@ impl AdmissionCasesService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
+        let cacheable_hot_page = page.cursor.is_none() && query.patient_id.is_none();
+        if cacheable_hot_page {
+            if let Some(response) = self.state.cached_ward_board(ctx, query.ward_id, page_size) {
+                return Ok(response);
+            }
+        }
         let rows = hms_db::ward::list_ward_board(
             self.state.db_pool(),
             self.state.facility_id(),
@@ -49,9 +55,14 @@ impl AdmissionCasesService {
         .await
         .map_err(|_| ApiError::conflict("ward_board_failed", "Ward board could not be loaded."))?;
 
-        Ok(common::page_response(rows, page_size, |item| {
+        let response = common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.admitted_at, item.admission_id)
-        }))
+        });
+        if cacheable_hot_page {
+            self.state
+                .put_cached_ward_board(ctx, query.ward_id, page_size, response.clone());
+        }
+        Ok(response)
     }
 
     pub async fn get_admission(
@@ -154,6 +165,7 @@ impl AdmissionCasesService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(admission_case))
     }
 
@@ -190,6 +202,7 @@ impl AdmissionCasesService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(admission_case))
     }
 
@@ -224,6 +237,7 @@ impl AdmissionCasesService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(admission_case))
     }
 
@@ -258,6 +272,7 @@ impl AdmissionCasesService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(admission_case))
     }
 
@@ -289,6 +304,7 @@ impl AdmissionCasesService {
             ApiError::conflict("admission_create_failed", "Admission could not be created.")
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(admission))
     }
 }

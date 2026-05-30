@@ -87,6 +87,7 @@ impl NursingTaskBoardService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(task))
     }
 
@@ -127,6 +128,7 @@ impl NursingTaskBoardService {
                     ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
                 })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(task))
     }
 
@@ -174,6 +176,7 @@ impl NursingTaskBoardService {
                     ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
                 })?;
 
+        self.state.invalidate_ward_board_cache();
         Ok(object(task))
     }
 }
