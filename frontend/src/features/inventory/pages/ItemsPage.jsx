@@ -9,6 +9,7 @@ import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -274,6 +275,24 @@ function ItemsLoadingState() {
         ))}
       </div>
     </PageState>
+  );
+}
+
+function ItemsBodyPlaceholder() {
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="h-11 w-full max-w-lg rounded-lg bg-muted" />
+      <div className="flex flex-col gap-3 lg:flex-row">
+        <div className="h-10 max-w-md flex-1 rounded-lg bg-muted" />
+        <div className="h-10 w-40 rounded-lg bg-muted" />
+        <div className="h-10 w-40 rounded-lg bg-muted" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {[...Array(4)].map((_, i) => (
+          <InventoryItemCardSkeleton key={i} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -807,6 +826,11 @@ export default function ItemsPage() {
 
   const categories = categoriesData?.results || categoriesData || [];
   const suppliers = suppliersData?.results || suppliersData || [];
+  const showItemsBody = useAfterInitialPaint({
+    enabled: Boolean(itemsData && !isLoading),
+    minimumDelayMs: 200,
+    timeoutMs: 450,
+  });
 
   // Selection handlers
   const toggleItemSelection = useCallback((itemId) => {
@@ -859,16 +883,22 @@ export default function ItemsPage() {
     navigate(`/inventory/requisitions?action=create&items=${itemId}`);
   }, [navigate]);
 
-  const itemColumns = useMemo(() => createItemColumns({
-    selectAll,
-    selectedItems,
-    itemMutationsAvailable,
-    onSelectAll: handleSelectAll,
-    onToggleItemSelection: toggleItemSelection,
-    onViewItem: handleItemClick,
-    onEditItem: handleEditItem,
-    onCreateOrder: handleCreateOrder,
-  }), [
+  const itemColumns = useMemo(() => {
+    if (!showItemsBody) {
+      return [];
+    }
+
+    return createItemColumns({
+      selectAll,
+      selectedItems,
+      itemMutationsAvailable,
+      onSelectAll: handleSelectAll,
+      onToggleItemSelection: toggleItemSelection,
+      onViewItem: handleItemClick,
+      onEditItem: handleEditItem,
+      onCreateOrder: handleCreateOrder,
+    });
+  }, [
     handleCreateOrder,
     handleSelectAll,
     handleItemClick,
@@ -876,6 +906,7 @@ export default function ItemsPage() {
     itemMutationsAvailable,
     selectAll,
     selectedItems,
+    showItemsBody,
     toggleItemSelection,
   ]);
 
@@ -906,69 +937,75 @@ export default function ItemsPage() {
   }
 
   return (
-    <PageShell data-perf-ready="inventory-items">
-      <ItemsHeader
-        totalCount={totalCount}
-        isLoading={isLoading}
-        itemMutationsAvailable={itemMutationsAvailable}
-        onRefresh={refetch}
-        onCreateItem={handleCreateItem}
-      />
-
-      <div className="p-4 sm:p-6 space-y-6">
-        {!itemMutationsAvailable && <RustV2InventoryNotice />}
-
-        <StatusTabs tab={tab} onTabChange={handleTabChange} />
-
-        <ItemsFilters
-          search={search}
-          category={category}
-          supplier={supplier}
-          sortBy={sortBy}
-          categories={categories}
-          suppliers={suppliers}
-          hasActiveFilters={hasActiveFilters}
-          onSearchChange={handleSearchChange}
-          onCategoryChange={handleCategoryChange}
-          onSupplierChange={handleSupplierChange}
-          onSortChange={handleSortChange}
-          onClearFilters={clearFilters}
-        />
-
-        <ItemsBulkToolbar
-          items={items}
-          selectedItems={selectedItems}
-          selectAll={selectAll}
-          pageSize={pageSize}
-          onSelectAll={handleSelectAll}
-          onBulkReorder={handleBulkReorder}
-          onClearSelection={handleClearSelection}
-          onPageSizeChange={handlePageSizeChange}
-        />
-
-        <ItemsDisplay
-          items={items}
-          itemColumns={itemColumns}
-          selectedItems={selectedItems}
-          hasActiveFilters={hasActiveFilters}
+    <PageShell>
+      <div data-perf-ready="inventory-items">
+        <ItemsHeader
+          totalCount={totalCount}
+          isLoading={isLoading}
           itemMutationsAvailable={itemMutationsAvailable}
-          onItemClick={handleItemClick}
+          onRefresh={refetch}
           onCreateItem={handleCreateItem}
         />
-
-        <ItemsPagination
-          page={page}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          onPageChange={handlePageChange}
-        />
-
-        <CreateItemSheet
-          isOpen={isCreateOpen}
-          onClose={handleCloseSheet}
-          onSuccess={handleCreateSuccess}
-        />
       </div>
+
+      {showItemsBody ? (
+        <div className="p-4 sm:p-6 space-y-6">
+          {!itemMutationsAvailable && <RustV2InventoryNotice />}
+
+          <StatusTabs tab={tab} onTabChange={handleTabChange} />
+
+          <ItemsFilters
+            search={search}
+            category={category}
+            supplier={supplier}
+            sortBy={sortBy}
+            categories={categories}
+            suppliers={suppliers}
+            hasActiveFilters={hasActiveFilters}
+            onSearchChange={handleSearchChange}
+            onCategoryChange={handleCategoryChange}
+            onSupplierChange={handleSupplierChange}
+            onSortChange={handleSortChange}
+            onClearFilters={clearFilters}
+          />
+
+          <ItemsBulkToolbar
+            items={items}
+            selectedItems={selectedItems}
+            selectAll={selectAll}
+            pageSize={pageSize}
+            onSelectAll={handleSelectAll}
+            onBulkReorder={handleBulkReorder}
+            onClearSelection={handleClearSelection}
+            onPageSizeChange={handlePageSizeChange}
+          />
+
+          <ItemsDisplay
+            items={items}
+            itemColumns={itemColumns}
+            selectedItems={selectedItems}
+            hasActiveFilters={hasActiveFilters}
+            itemMutationsAvailable={itemMutationsAvailable}
+            onItemClick={handleItemClick}
+            onCreateItem={handleCreateItem}
+          />
+
+          <ItemsPagination
+            page={page}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            onPageChange={handlePageChange}
+          />
+
+          <CreateItemSheet
+            isOpen={isCreateOpen}
+            onClose={handleCloseSheet}
+            onSuccess={handleCreateSuccess}
+          />
+        </div>
+      ) : (
+        <ItemsBodyPlaceholder />
+      )}
     </PageShell>
   );
 }

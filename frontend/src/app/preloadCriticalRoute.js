@@ -23,6 +23,10 @@ const PRELOADERS = [
     test: (pathname) => pathname === '/inventory/items',
     load: () => import('@/features/inventory/pages/ItemsPage'),
   },
+  {
+    test: (pathname) => pathname === '/dashboards/admin',
+    load: () => import('@/features/dashboards/pages/AdminDashboard'),
+  },
 ]
 
 const preloadCache = new Map()

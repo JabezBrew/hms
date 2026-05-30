@@ -78,25 +78,25 @@ describe('ItemsPage Rust V2 guards', () => {
     delete window.__HMS_RUNTIME_CONFIG__;
   });
 
-  it('renders inventory items as read-only in Rust V2 mode when item mutations have no contract', () => {
+  it('renders inventory items as read-only in Rust V2 mode when item mutations have no contract', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
 
     renderPage();
 
-    expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument();
+    expect(await screen.findByText('Paracetamol 500mg')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add item/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(
-      screen.getByText(/inventory item creation and editing is not available in rust v2/i),
+      await screen.findByText(/inventory item creation and editing is not available in rust v2/i),
     ).toBeInTheDocument();
   });
 
-  it('keeps inventory item mutation controls available outside Rust V2 mode', () => {
+  it('keeps inventory item mutation controls available outside Rust V2 mode', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' };
 
     renderPage();
 
     expect(screen.getByRole('button', { name: /add item/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /edit/i })).toBeInTheDocument();
   });
 });

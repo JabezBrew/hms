@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
 import { useDebounce } from '@/hooks/use-debounce';
 import { cn } from '@/lib/utils';
 import {
@@ -75,6 +76,29 @@ function useUrlSyncedDraft(value) {
   }, [value]);
 
   return [draft, setDraft];
+}
+
+function WardBoardBodyPlaceholder() {
+  return (
+    <>
+      <div className="shrink-0 border-b border-border bg-card/60 px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap gap-3">
+          <div className="h-10 w-44 rounded-lg bg-muted" />
+          <div className="h-10 min-w-56 flex-1 rounded-lg bg-muted" />
+          <div className="h-10 w-32 rounded-lg bg-muted" />
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <main className="flex min-w-0 flex-1 flex-col overflow-auto p-4">
+          <div className="space-y-3">
+            <div className="h-14 rounded-lg bg-muted" />
+            <div className="h-20 rounded-lg bg-muted" />
+            <div className="h-20 rounded-lg bg-muted" />
+          </div>
+        </main>
+      </div>
+    </>
+  );
 }
 
 export default function WardBoardPage() {
@@ -156,6 +180,11 @@ export default function WardBoardPage() {
   const summary = useMemo(() => getBoardSummary(boardData, patients), [boardData, patients]);
   const watchlist = useMemo(() => getWatchlist(boardData, patients), [boardData, patients]);
   const totalCount = boardData?.count ?? patients.length;
+  const showBoardBody = useAfterInitialPaint({
+    enabled: Boolean(boardData && !isLoading),
+    minimumDelayMs: 200,
+    timeoutMs: 400,
+  });
   const taskMutation = useWardBoardTaskAction();
   const { isConnected: isLiveConnected } = useWardBoardLiveUpdates({
     enabled: !isLoading,
@@ -210,13 +239,10 @@ export default function WardBoardPage() {
   }
 
   return (
-    <div
-      data-perf-ready="ward-board"
-      className="flex h-screen flex-col overflow-hidden bg-[oklch(0.98_0.005_60)] text-foreground dark:bg-[oklch(0.14_0.01_50)]"
-    >
+    <div className="flex h-screen flex-col overflow-hidden bg-[oklch(0.98_0.005_60)] text-foreground dark:bg-[oklch(0.14_0.01_50)]">
       {pageMeta}
 
-      <header className="shrink-0 border-b border-border bg-card/80 px-6 py-4">
+      <header data-perf-ready="ward-board" className="shrink-0 border-b border-border bg-card/80 px-6 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl text-foreground">Ward Board</h1>
@@ -237,84 +263,90 @@ export default function WardBoardPage() {
         <MetricStrip summary={summary} className="mt-4" />
       </header>
 
-      <BoardToolbar
-        view={view}
-        searchValue={searchDraft}
-        patientValue={queryPatient}
-        wardValue={effectiveWard}
-        fixedWard={fixedWard}
-        pageSize={pageSize}
-        isFetching={isFetching}
-        summary={summary}
-        onViewChange={(nextView) => updateParams({ view: nextView }, { resetPage: true })}
-        onSearchChange={setSearchDraft}
-        onWardChange={(nextWard) => updateParams({ ward: nextWard.trim() }, { resetPage: true })}
-        onPageSizeChange={(nextPageSize) => updateParams({ page_size: nextPageSize }, { resetPage: true })}
-        onClearFilters={handleClearFilters}
-        onRefresh={() => refetch()}
-        onOpenSummary={() => setSummaryOpen((v) => !v)}
-      />
-
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <main className="flex min-w-0 flex-1 flex-col overflow-auto">
-          {isError ? (
-            <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {error?.message || 'Ward board refresh failed.'}
-            </div>
-          ) : null}
-
-          {orderedPatients.length === 0 ? (
-            <PageState
-              variant="empty"
-              title="No ward board patients"
-              description="No operational ward tasks match the current filters."
-              icon={ClipboardList}
-              fullHeight={false}
-              className="m-4 min-h-[360px] rounded-lg border border-dashed border-border bg-card/50"
-            />
-          ) : (
-            <PatientTable>
-              {orderedPatients.map((patient, index) => {
-                const patientId = patient?.patient_id ?? patient?.id ?? patient?.patient?.id ?? index;
-                return (
-                  <PatientRow
-                    key={patientId}
-                    patient={patient}
-                    expanded={expandedPatientId === patientId}
-                    onToggle={() => handleTogglePatient(patientId)}
-                    onTaskAction={handleTaskAction}
-                    pendingAction={pendingAction}
-                  />
-                );
-              })}
-            </PatientTable>
-          )}
-
-          <TablePagination
-            currentPage={page}
-            totalCount={totalCount}
+      {showBoardBody ? (
+        <>
+          <BoardToolbar
+            view={view}
+            searchValue={searchDraft}
+            patientValue={queryPatient}
+            wardValue={effectiveWard}
+            fixedWard={fixedWard}
             pageSize={pageSize}
-            onPageChange={(nextPage) => updateParams({ page: nextPage }, { resetPage: false })}
-            hasNextPage={Boolean(boardData?.next)}
-            hasPrevPage={Boolean(boardData?.previous) || page > 1}
-            itemLabel="patients"
-            className={cn('shrink-0 border-t border-border px-4 py-3', orderedPatients.length === 0 && 'hidden')}
+            isFetching={isFetching}
+            summary={summary}
+            onViewChange={(nextView) => updateParams({ view: nextView }, { resetPage: true })}
+            onSearchChange={setSearchDraft}
+            onWardChange={(nextWard) => updateParams({ ward: nextWard.trim() }, { resetPage: true })}
+            onPageSizeChange={(nextPageSize) => updateParams({ page_size: nextPageSize }, { resetPage: true })}
+            onClearFilters={handleClearFilters}
+            onRefresh={() => refetch()}
+            onOpenSummary={() => setSummaryOpen((v) => !v)}
           />
-        </main>
 
-        <WatchlistPanel
-          patients={watchlist}
-          boardData={boardData}
-          className="hidden w-72 shrink-0 overflow-hidden xl:flex xl:flex-col"
-        />
-      </div>
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <main className="flex min-w-0 flex-1 flex-col overflow-auto">
+              {isError ? (
+                <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {error?.message || 'Ward board refresh failed.'}
+                </div>
+              ) : null}
 
-      <BoardSummaryDrawer
-        open={summaryOpen}
-        onOpenChange={setSummaryOpen}
-        summary={summary}
-        patients={orderedPatients}
-      />
+              {orderedPatients.length === 0 ? (
+                <PageState
+                  variant="empty"
+                  title="No ward board patients"
+                  description="No operational ward tasks match the current filters."
+                  icon={ClipboardList}
+                  fullHeight={false}
+                  className="m-4 min-h-[360px] rounded-lg border border-dashed border-border bg-card/50"
+                />
+              ) : (
+                <PatientTable>
+                  {orderedPatients.map((patient, index) => {
+                    const patientId = patient?.patient_id ?? patient?.id ?? patient?.patient?.id ?? index;
+                    return (
+                      <PatientRow
+                        key={patientId}
+                        patient={patient}
+                        expanded={expandedPatientId === patientId}
+                        onToggle={() => handleTogglePatient(patientId)}
+                        onTaskAction={handleTaskAction}
+                        pendingAction={pendingAction}
+                      />
+                    );
+                  })}
+                </PatientTable>
+              )}
+
+              <TablePagination
+                currentPage={page}
+                totalCount={totalCount}
+                pageSize={pageSize}
+                onPageChange={(nextPage) => updateParams({ page: nextPage }, { resetPage: false })}
+                hasNextPage={Boolean(boardData?.next)}
+                hasPrevPage={Boolean(boardData?.previous) || page > 1}
+                itemLabel="patients"
+                className={cn('shrink-0 border-t border-border px-4 py-3', orderedPatients.length === 0 && 'hidden')}
+              />
+            </main>
+
+            <WatchlistPanel
+              patients={watchlist}
+              boardData={boardData}
+              className="hidden w-72 shrink-0 overflow-hidden xl:flex xl:flex-col"
+            />
+          </div>
+
+          <BoardSummaryDrawer
+            open={summaryOpen}
+            onOpenChange={setSummaryOpen}
+            summary={summary}
+            patients={orderedPatients}
+          />
+        </>
+      ) : (
+        <WardBoardBodyPlaceholder />
+      )}
     </div>
   );
 }

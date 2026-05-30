@@ -37,6 +37,7 @@ import { useAuth } from "@/lib/auth";
 import { usePaginatedLabOrders } from "@/features/laboratory/hooks";
 import { usePractitioners } from "@/features/staff/hooks";
 import { useDebounce } from '@/hooks/use-debounce';
+import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
 
 const ORDERS_PAGE_SIZE = 24;
 
@@ -503,6 +504,11 @@ export default function LabOrdersPage() {
 
   const stats = useLabOrderStats(orders, totalCount);
   const metrics = useLabOrderMetrics(stats);
+  const showOrdersBody = useAfterInitialPaint({
+    enabled: !isLoading,
+    minimumDelayMs: 200,
+    timeoutMs: 350,
+  });
 
   // Event handlers
   const handleSearchChange = (event) => {
@@ -554,51 +560,61 @@ export default function LabOrdersPage() {
     selectedDoctorFilter !== "all";
 
   return (
-    <PageShell data-perf-ready={isLoading ? undefined : 'lab-orders'}>
-      <LabOrdersHeader
-        isDoctor={isDoctor}
-        isFetching={isFetching}
-        metrics={metrics}
-        onRefresh={refetch}
-        stats={stats}
-      />
+    <PageShell>
+      <div data-perf-ready="lab-orders">
+        <LabOrdersHeader
+          isDoctor={isDoctor}
+          isFetching={isFetching}
+          metrics={metrics}
+          onRefresh={refetch}
+          stats={stats}
+        />
+      </div>
 
-      <LabOrdersFilters
-        hasActiveFilters={hasActiveFilters}
-        isLabStaff={isLabStaff}
-        onClearFilters={handleClearFilters}
-        onDoctorFilterChange={handleDoctorFilterChange}
-        onPriorityFilterChange={handlePriorityFilterChange}
-        onSearchChange={handleSearchChange}
-        onStatusFilterChange={handleStatusFilterChange}
-        practitioners={practitioners}
-        priorityFilter={priorityFilter}
-        searchQuery={searchQuery}
-        selectedDoctorFilter={selectedDoctorFilter}
-        statusFilter={statusFilter}
-      />
+      {showOrdersBody ? (
+        <>
+          <LabOrdersFilters
+            hasActiveFilters={hasActiveFilters}
+            isLabStaff={isLabStaff}
+            onClearFilters={handleClearFilters}
+            onDoctorFilterChange={handleDoctorFilterChange}
+            onPriorityFilterChange={handlePriorityFilterChange}
+            onSearchChange={handleSearchChange}
+            onStatusFilterChange={handleStatusFilterChange}
+            practitioners={practitioners}
+            priorityFilter={priorityFilter}
+            searchQuery={searchQuery}
+            selectedDoctorFilter={selectedDoctorFilter}
+            statusFilter={statusFilter}
+          />
 
-      <LabOrdersContent
-        hasActiveFilters={hasActiveFilters}
-        isDoctor={isDoctor}
-        isLoading={isLoading}
-        onClearFilters={handleClearFilters}
-        onOrderClick={handleOrderClick}
-        orders={orders}
-      />
+          <LabOrdersContent
+            hasActiveFilters={hasActiveFilters}
+            isDoctor={isDoctor}
+            isLoading={isLoading}
+            onClearFilters={handleClearFilters}
+            onOrderClick={handleOrderClick}
+            orders={orders}
+          />
 
-      <LabOrdersPagination
-        onPageChange={setPage}
-        page={page}
-        totalCount={totalCount}
-      />
+          <LabOrdersPagination
+            onPageChange={setPage}
+            page={page}
+            totalCount={totalCount}
+          />
 
-      <LabOrderDetailSlideOver
-        open={slideOverOpen}
-        onClose={handleSlideOverClose}
-        orderId={selectedOrderId}
-        onOrderCancelled={handleOrderCancelled}
-      />
+          <LabOrderDetailSlideOver
+            open={slideOverOpen}
+            onClose={handleSlideOverClose}
+            orderId={selectedOrderId}
+            onOrderCancelled={handleOrderCancelled}
+          />
+        </>
+      ) : (
+        <main className="p-4 sm:p-6">
+          <LabTableSkeleton rows={4} />
+        </main>
+      )}
     </PageShell>
   );
 }

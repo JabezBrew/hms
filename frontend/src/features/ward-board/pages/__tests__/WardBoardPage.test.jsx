@@ -102,7 +102,7 @@ describe('WardBoardPage', () => {
     });
   });
 
-  it('reads ward board filters from query params and renders patient rows', () => {
+  it('reads ward board filters from query params and renders patient rows', async () => {
     renderPage('/ward-board?ward=ward-1&view=results&search=cbc&page=2&page_size=10');
 
     expect(mockUseWardBoard).toHaveBeenCalledWith({
@@ -113,8 +113,8 @@ describe('WardBoardPage', () => {
       page_size: 10,
     });
     expect(screen.getByText('Ward Board')).toBeInTheDocument();
-    expect(screen.getAllByText('Ama Mensah')).toHaveLength(2);
-    expect(screen.getByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findAllByText('Ama Mensah')).toHaveLength(2);
+    expect(await screen.findByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('passes patient-scoped board query params into the ward board query', () => {
@@ -140,7 +140,7 @@ describe('WardBoardPage', () => {
     expect(screen.getByText(/ward-7/)).toBeInTheDocument();
   });
 
-  it('shows the empty board state when no patients match', () => {
+  it('shows the empty board state when no patients match', async () => {
     mockUseWardBoard.mockReturnValue({
       data: boardResponse({ count: 0, results: [] }),
       isLoading: false,
@@ -152,7 +152,7 @@ describe('WardBoardPage', () => {
 
     renderPage('/ward-board?view=my-work');
 
-    expect(screen.getByText('No ward board patients')).toBeInTheDocument();
+    expect(await screen.findByText('No ward board patients')).toBeInTheDocument();
     expect(mockUseWardBoard).toHaveBeenCalledWith({
       view: 'my-work',
       page: 1,
@@ -160,7 +160,7 @@ describe('WardBoardPage', () => {
     });
   });
 
-  it('renders lightweight backend count fields when rows do not include nested arrays', () => {
+  it('renders lightweight backend count fields when rows do not include nested arrays', async () => {
     mockUseWardBoard.mockReturnValue({
       data: boardResponse({
         summary: undefined,
@@ -189,9 +189,9 @@ describe('WardBoardPage', () => {
 
     renderPage('/ward-board');
 
-    expect(screen.getAllByText('Kofi Owusu')).not.toHaveLength(0);
-    expect(screen.getAllByText('urgent')).not.toHaveLength(0);
-    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(await screen.findAllByText('Kofi Owusu')).not.toHaveLength(0);
+    expect(await screen.findAllByText('urgent')).not.toHaveLength(0);
+    expect(await screen.findByText('Overdue')).toBeInTheDocument();
     expect(screen.getAllByText('4')).not.toHaveLength(0);
   });
 });

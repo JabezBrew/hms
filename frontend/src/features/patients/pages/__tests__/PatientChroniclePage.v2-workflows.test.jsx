@@ -376,12 +376,12 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(screen.getByTestId('ask-chronicle-action')).toHaveTextContent('false')
   })
 
-  it('keeps the clinical summary sticky without forcing it to fill the timeline height', () => {
+  it('keeps the clinical summary sticky without forcing it to fill the timeline height', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
 
     renderPage()
 
-    const summary = screen.getByTestId('clinical-summary')
+    const summary = await screen.findByTestId('clinical-summary')
     const summaryBoundary = summary.parentElement
     const chronicleRow = summaryBoundary?.parentElement
     const chroniclePage = chronicleRow?.parentElement
@@ -492,7 +492,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
     renderPage('/patients/patient-1?mode=ward-round')
 
-    expect(screen.getByText('Clinical summary')).toBeInTheDocument()
+    expect(await screen.findByText('Clinical summary')).toBeInTheDocument()
     expect(await screen.findByTestId('ward-round-mode')).toBeInTheDocument()
     expect(screen.queryByText('Clinical Chronicle')).not.toBeInTheDocument()
     expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
@@ -575,7 +575,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     )
   })
 
-  it('defaults Rust V2 Chronicle timeline scope to the current visit', () => {
+  it('defaults Rust V2 Chronicle timeline scope to the current visit', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
 
     renderPage()
@@ -587,10 +587,10 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
         }),
       }),
     )
-    expect(screen.getByText(/Focused on Current visit/)).toBeInTheDocument()
+    expect(await screen.findByText(/Focused on Current visit/)).toBeInTheDocument()
   })
 
-  it('renders the Rust startup all-history timeline when the disabled infinite query has no materialized pages', () => {
+  it('renders the Rust startup all-history timeline when the disabled infinite query has no materialized pages', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     timelineHookState.returnNoDataWhenDisabled = true
     chronicleStartupState.data = {
@@ -630,11 +630,11 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
         }),
       }),
     )
-    expect(screen.getByText('Timeline entry')).toBeInTheDocument()
-    expect(screen.getByText('20 entries')).toBeInTheDocument()
+    expect(await screen.findByText('Timeline entry')).toBeInTheDocument()
+    expect(await screen.findByText('20 entries')).toBeInTheDocument()
   })
 
-  it('uses the Rust startup encounter list for documented visit focus options', () => {
+  it('uses the Rust startup encounter list for documented visit focus options', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = {
       ...chronicleStartupState.data,
@@ -665,10 +665,10 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
         }),
       }),
     )
-    expect(screen.getByText(/Focused on Outpatient visit - Mar 21, 2026/)).toBeInTheDocument()
+    expect(await screen.findByText(/Focused on Outpatient visit - Mar 21, 2026/)).toBeInTheDocument()
   })
 
-  it('uses entry timestamps for visit group dates when encounter metadata has no start time', () => {
+  it('uses entry timestamps for visit group dates when encounter metadata has no start time', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     timelineHookState.entries = [{
       id: 'note-1',
@@ -683,11 +683,11 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
     renderPage()
 
-    expect(screen.getByText('May 12, 2026')).toBeInTheDocument()
+    expect(await screen.findByText('May 12, 2026')).toBeInTheDocument()
     expect(screen.queryByText('Unknown date')).not.toBeInTheDocument()
   })
 
-  it('orders all-history visit groups with the current visit first', () => {
+  it('orders all-history visit groups with the current visit first', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = {
       ...chronicleStartupState.data,
@@ -730,6 +730,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
     renderPage('/patients/patient-1?visit=all')
 
+    await screen.findByText('Inpatient Admission')
     const pageText = document.body.textContent
     expect(pageText.indexOf('Inpatient Admission')).toBeLessThan(pageText.indexOf('Outpatient Visit'))
   })

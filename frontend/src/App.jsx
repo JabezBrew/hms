@@ -28,7 +28,7 @@ function AppContent() {
   const { pathname } = useLocation()
   const isOpsHost = isStandaloneOpsDashboardHost()
   const isPublicAuthRoute = pathname === '/login' || pathname.startsWith('/reset-password')
-  const isProtectedDeepLink = !isPublicAuthRoute && pathname !== '/' && pathname !== '/dashboards/admin'
+  const isProtectedDeepLink = !isPublicAuthRoute && pathname !== '/'
 
   useEffect(() => {
     if (isOpsHost || !isProtectedDeepLink) {

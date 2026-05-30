@@ -39,6 +39,7 @@ import {
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 const WINDOW_OPTIONS = [
@@ -116,6 +117,24 @@ function MetricCard({ icon: Icon, label, value, subvalue, status = 'normal' }) {
   );
 }
 
+function AdminDashboardBodyPlaceholder() {
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="h-20 rounded-lg bg-muted" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Skeleton className="h-32 rounded-lg" />
+        <Skeleton className="h-32 rounded-lg" />
+        <Skeleton className="h-32 rounded-lg" />
+        <Skeleton className="h-32 rounded-lg" />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-48 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
 function SectionPanel({
   title,
   description,
@@ -178,7 +197,8 @@ export default function AdminDashboard() {
     compliance: false,
   });
   const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
-  const dashboardQueriesEnabled = Boolean(facilityCode) && moduleGate.hasFeatureMap;
+  const summaryQueryEnabled = Boolean(facilityCode);
+  const dashboardSectionQueriesEnabled = Boolean(facilityCode) && moduleGate.hasFeatureMap;
   const capacitySectionEnabled = moduleGate.wardsEnabled && moduleGate.inpatientAdmissionsEnabled;
   const workforceSectionEnabled = moduleGate.rostersEnabled;
   const complianceSectionEnabled = moduleGate.auditEnabled;
@@ -192,35 +212,35 @@ export default function AdminDashboard() {
   });
 
   const { isConnected: isLiveConnected } = useAdminDashboardLiveUpdates({
-    enabled: dashboardQueriesEnabled,
+    enabled: dashboardSectionQueriesEnabled,
   });
 
   const summaryQuery = useAdminDashboardV2Summary(
     { window },
     {
       refetchInterval: isLiveConnected ? false : 30000,
-      enabled: dashboardQueriesEnabled,
+      enabled: summaryQueryEnabled,
     },
   );
 
   const capacityQuery = useAdminDashboardV2Capacity(
     { window },
     {
-      enabled: dashboardQueriesEnabled && capacitySectionEnabled && expanded.capacity,
+      enabled: dashboardSectionQueriesEnabled && capacitySectionEnabled && expanded.capacity,
     },
   );
 
   const workforceQuery = useAdminDashboardV2Workforce(
     { window },
     {
-      enabled: dashboardQueriesEnabled && workforceSectionEnabled && expanded.workforce,
+      enabled: dashboardSectionQueriesEnabled && workforceSectionEnabled && expanded.workforce,
     },
   );
 
   const complianceQuery = useAdminDashboardV2Compliance(
     { window },
     {
-      enabled: dashboardQueriesEnabled && complianceSectionEnabled && expanded.compliance,
+      enabled: dashboardSectionQueriesEnabled && complianceSectionEnabled && expanded.compliance,
     },
   );
 
@@ -245,6 +265,11 @@ export default function AdminDashboard() {
     || capacityQuery.isFetching
     || workforceQuery.isFetching
     || complianceQuery.isFetching;
+  const showDashboardBody = useAfterInitialPaint({
+    enabled: Boolean(!summaryQuery.isLoading),
+    minimumDelayMs: 200,
+    timeoutMs: 400,
+  });
 
   const onRefresh = () => {
     summaryQuery.refetch();
@@ -363,10 +388,12 @@ export default function AdminDashboard() {
       <Layout>
         {pageMeta}
         <PageShell>
-          <PageHeader
-            title="Admin Dashboard"
-            description="Operational command center for capacity, workforce, and compliance"
-          />
+          <div data-perf-ready="admin-dashboard">
+            <PageHeader
+              title="Admin Dashboard"
+              description="Operational command center for capacity, workforce, and compliance"
+            />
+          </div>
           <PageState variant="loading" fullHeight={false} />
         </PageShell>
       </Layout>
@@ -399,50 +426,53 @@ export default function AdminDashboard() {
     <Layout>
       {pageMeta}
       <PageShell>
-        <PageHeader
-          title="Admin Dashboard"
-          description="Operational command center for capacity, workforce, and compliance"
-          actions={(
-            <AdminDashboardActions
-              window={window}
-              onWindowChange={setWindow}
-              onOpenSettings={() => navigate('/admin/settings')}
-              onRefresh={onRefresh}
-              anyFetching={anyFetching}
-            />
-          )}
-        />
-
-        <div
-          data-perf-ready={summaryQuery.isLoading ? undefined : 'admin-dashboard'}
-          className="space-y-6 p-4 sm:p-6"
-        >
-          <OperationalPostureCard
-            generatedAt={generatedAt}
-            isLiveConnected={isLiveConnected}
-            isStale={Boolean(dashboardData?.meta?.stale)}
-          />
-          <MetricCardsGrid
-            loading={summaryQuery.isLoading}
-            metricCards={metricCards}
-          />
-          <AlertsAndQueue
-            alerts={alerts}
-            actionQueue={actionQueue}
-            onNavigate={navigate}
-          />
-          <AdminDetailSections
-            capacitySectionEnabled={capacitySectionEnabled}
-            workforceSectionEnabled={workforceSectionEnabled}
-            complianceSectionEnabled={complianceSectionEnabled}
-            sectionSummaries={sectionSummaries}
-            expanded={expanded}
-            setExpanded={setExpanded}
-            capacityQuery={capacityQuery}
-            workforceQuery={workforceQuery}
-            complianceQuery={complianceQuery}
+        <div data-perf-ready="admin-dashboard">
+          <PageHeader
+            title="Admin Dashboard"
+            description="Operational command center for capacity, workforce, and compliance"
+            actions={(
+              <AdminDashboardActions
+                window={window}
+                onWindowChange={setWindow}
+                onOpenSettings={() => navigate('/admin/settings')}
+                onRefresh={onRefresh}
+                anyFetching={anyFetching}
+              />
+            )}
           />
         </div>
+
+        {showDashboardBody ? (
+          <div className="space-y-6 p-4 sm:p-6">
+            <OperationalPostureCard
+              generatedAt={generatedAt}
+              isLiveConnected={isLiveConnected}
+              isStale={Boolean(dashboardData?.meta?.stale)}
+            />
+            <MetricCardsGrid
+              loading={summaryQuery.isLoading}
+              metricCards={metricCards}
+            />
+            <AlertsAndQueue
+              alerts={alerts}
+              actionQueue={actionQueue}
+              onNavigate={navigate}
+            />
+            <AdminDetailSections
+              capacitySectionEnabled={capacitySectionEnabled}
+              workforceSectionEnabled={workforceSectionEnabled}
+              complianceSectionEnabled={complianceSectionEnabled}
+              sectionSummaries={sectionSummaries}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              capacityQuery={capacityQuery}
+              workforceQuery={workforceQuery}
+              complianceQuery={complianceQuery}
+            />
+          </div>
+        ) : (
+          <AdminDashboardBodyPlaceholder />
+        )}
       </PageShell>
     </Layout>
   );
