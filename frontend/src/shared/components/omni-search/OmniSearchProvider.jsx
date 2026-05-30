@@ -4,7 +4,6 @@ import { useLocation } from 'react-router-dom'
 import { safeStorage } from '@/lib/safe-storage'
 import { useAuth } from '@/lib/auth'
 
-import { OmniSearchDialog } from './OmniSearchDialog'
 import { OmniSearchContext } from './OmniSearchContext'
 import {
   getStaticPathLabelMapForRole,
@@ -13,6 +12,9 @@ import {
 
 const STORAGE_KEY = 'omni_recent_pages'
 const MAX_RECENT_PAGES = 8
+const OmniSearchDialog = React.lazy(() =>
+  import('./OmniSearchDialog').then((module) => ({ default: module.OmniSearchDialog }))
+)
 
 function normalizeRecentPages(value) {
   if (!Array.isArray(value)) return []
@@ -43,13 +45,20 @@ export function OmniSearchProvider({ children }) {
   const staticPaths = React.useMemo(() => getStaticPathSetForRole(role), [role])
   const labelMap = React.useMemo(() => getStaticPathLabelMapForRole(role), [role])
 
-  const [open, setOpen] = React.useState(false)
+  const [open, setOpenState] = React.useState(false)
+  const [dialogMounted, setDialogMounted] = React.useState(false)
   const [recentPages, setRecentPages] = React.useState(() =>
     normalizeRecentPages(safeStorage.getJSON(STORAGE_KEY, []))
   )
 
-  const openDialog = React.useCallback(() => setOpen(true), [])
-  const closeDialog = React.useCallback(() => setOpen(false), [])
+  const setOpen = React.useCallback((nextOpen) => {
+    if (nextOpen) {
+      setDialogMounted(true)
+    }
+    setOpenState(nextOpen)
+  }, [])
+  const openDialog = React.useCallback(() => setOpen(true), [setOpen])
+  const closeDialog = React.useCallback(() => setOpen(false), [setOpen])
 
   React.useEffect(() => {
     const onKeyDown = (e) => {
@@ -57,12 +66,12 @@ export function OmniSearchProvider({ children }) {
       if (e.key !== 'k' && e.key !== 'K') return
       if (!e.metaKey && !e.ctrlKey) return
       e.preventDefault()
-      setOpen((prev) => !prev)
+      setOpen(!open)
     }
 
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [open, setOpen])
 
   React.useEffect(() => {
     const path = location?.pathname
@@ -87,13 +96,17 @@ export function OmniSearchProvider({ children }) {
       closeDialog,
       recentPages,
     }),
-    [open, openDialog, closeDialog, recentPages]
+    [open, setOpen, openDialog, closeDialog, recentPages]
   )
 
   return (
     <OmniSearchContext.Provider value={value}>
       {children}
-      <OmniSearchDialog />
+      {dialogMounted && (
+        <React.Suspense fallback={null}>
+          <OmniSearchDialog />
+        </React.Suspense>
+      )}
     </OmniSearchContext.Provider>
   )
 }

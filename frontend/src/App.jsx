@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
@@ -10,13 +10,15 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import RuntimeErrorGuard from './app/RuntimeErrorGuard'
 import PublicAuthApp from './app/PublicAuthApp'
 import PublicAuthLoader from './app/PublicAuthLoader'
+import { preloadCriticalRouteForPath } from './app/preloadCriticalRoute'
 import { queryClient } from './lib/react-query'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
 import { PageLoader } from './shared/components/page/PageState'
 import { isStandaloneOpsDashboardHost } from './features/ops/host'
 
-const AuthenticatedApp = lazy(() => import('./app/AuthenticatedApp'))
+const loadAuthenticatedApp = () => import('./app/AuthenticatedApp')
+const AuthenticatedApp = lazy(loadAuthenticatedApp)
 const OpsDashboardApp = lazy(() => import('./app/OpsDashboardApp'))
 const PasswordChangeRequiredApp = lazy(() => import('./app/PasswordChangeRequiredApp'))
 
@@ -26,6 +28,17 @@ function AppContent() {
   const { pathname } = useLocation()
   const isOpsHost = isStandaloneOpsDashboardHost()
   const isPublicAuthRoute = pathname === '/login' || pathname.startsWith('/reset-password')
+  const isProtectedDeepLink = !isPublicAuthRoute && pathname !== '/' && pathname !== '/dashboards/admin'
+
+  useEffect(() => {
+    if (isOpsHost || !isProtectedDeepLink) {
+      return
+    }
+
+    void loadAuthenticatedApp()
+    void preloadCriticalRouteForPath(pathname)
+  }, [isOpsHost, isProtectedDeepLink, pathname])
+
   const appState = isOpsHost
     ? 'ops'
     : loading
