@@ -721,6 +721,7 @@ impl CareService {
             ApiError::conflict("encounter_create_failed", "Encounter could not be created.")
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(encounter))
     }
 
@@ -781,6 +782,7 @@ impl CareService {
             )
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(updated))
     }
 
@@ -861,6 +863,7 @@ impl CareService {
             )
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(assignment))
     }
 
@@ -889,6 +892,7 @@ impl CareService {
         })?
         .ok_or_else(|| ApiError::not_found("encounter_not_found", "Encounter was not found."))?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(updated))
     }
 }

@@ -227,6 +227,81 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
 }
 
 #[tokio::test]
+async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let claims = access_claims(&access_token);
+    let user = app
+        .state()
+        .auth_user_for_claims(&claims)
+        .await
+        .expect("auth user lookup succeeds")
+        .expect("auth user exists");
+    let ctx = hms_access::RequestContext::new(
+        "chronicle-cache-test".to_owned(),
+        claims.session_id,
+        user.clone(),
+        user.features.clone(),
+        hms_access::OffsiteState::Onsite,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=1")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient list succeeds");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = json_body(list_response).await;
+    let patient_id = Uuid::parse_str(
+        list_body["data"][0]["id"]
+            .as_str()
+            .expect("patient id exists"),
+    )
+    .expect("patient id is a uuid");
+    let query = hms_api::services::patients::ChronicleTimelineQuery {
+        cursor: None,
+        limit: Some(20),
+        entry_type: None,
+        search: None,
+        encounter_id: None,
+    };
+
+    let (first, first_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .patients_service()
+            .get_patient_chronicle(&ctx, patient_id, query.clone())
+            .await
+    })
+    .await;
+    first.expect("first Chronicle startup succeeds");
+    assert!(
+        first_queries > 0,
+        "first Chronicle startup should hydrate from the database"
+    );
+
+    let (second, second_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .patients_service()
+            .get_patient_chronicle(&ctx, patient_id, query)
+            .await
+    })
+    .await;
+    second.expect("cached Chronicle startup succeeds");
+    assert_eq!(
+        second_queries, 0,
+        "same scoped Chronicle startup should stay off the database while warm"
+    );
+}
+
+#[tokio::test]
 async fn patient_chronicle_startup_is_shaped_bounded_and_query_budgeted() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;

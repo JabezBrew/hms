@@ -109,6 +109,7 @@ impl LabResultsService {
             ApiError::conflict("lab_result_create_failed", "Lab result could not be saved.")
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(result))
     }
 
@@ -181,6 +182,7 @@ impl LabResultsService {
         })?;
         let created_count = created.len() as i64;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(BulkCreateLabResultsResponse {
             created_count,
             message: format!("{created_count} lab results saved"),
@@ -212,6 +214,7 @@ impl LabResultsService {
                     ApiError::not_found("lab_result_not_found", "Lab result was not found.")
                 })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(result))
     }
 
@@ -264,6 +267,7 @@ impl LabResultsService {
             )
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(BulkVerifyLabResultsResponse {
             verified_count,
             message: format!("{verified_count} lab results verified"),

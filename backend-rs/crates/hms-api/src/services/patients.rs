@@ -368,6 +368,7 @@ impl PatientsService {
         })?;
 
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(PatientDetail::from(&patient)))
     }
 
@@ -393,8 +394,18 @@ impl PatientsService {
         id: Uuid,
         query: ChronicleTimelineQuery,
     ) -> Result<ObjectResponse<PatientChronicleStartup>, ApiError> {
-        let (patient, decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
         let page = chronicle_timeline_page_request(&query)?;
+        let cacheable_startup = chronicle_startup_cacheable(&query);
+        if cacheable_startup {
+            if let Some(response) = self
+                .state
+                .cached_patient_chronicle_startup(ctx, id, page.limit)
+            {
+                return Ok(response);
+            }
+        }
+
+        let (patient, decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
         let filters = chronicle_timeline_filters(&query)?;
         let startup = hms_db::clinical::patient_chronicle_startup_for_patient(
             self.pool(),
@@ -422,7 +433,12 @@ impl PatientsService {
             self.facility_id(),
         );
 
-        Ok(object(response))
+        let response = object(response);
+        if cacheable_startup {
+            self.state
+                .put_cached_patient_chronicle_startup(ctx, id, page.limit, response.clone());
+        }
+        Ok(response)
     }
 
     pub async fn list_patient_chronicle_timeline(
@@ -513,7 +529,10 @@ impl PatientsService {
         })?;
 
         match outcome {
-            BreakGlassGrantOutcome::Granted(grant) => Ok(object(grant)),
+            BreakGlassGrantOutcome::Granted(grant) => {
+                self.state.invalidate_patient_chronicle_cache();
+                Ok(object(grant))
+            }
             BreakGlassGrantOutcome::Denied(reason) => Err(break_glass_denied(reason)),
         }
     }
@@ -542,6 +561,7 @@ impl PatientsService {
             )
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(EndBreakGlassGrantsResponse { ended_count }))
     }
 
@@ -595,6 +615,7 @@ impl PatientsService {
         .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
 
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         hms_access::require_patient_demographics_access(ctx, &patient).map_err(|_| {
             ApiError::forbidden(
                 "patient_access_denied",
@@ -785,6 +806,18 @@ fn chronicle_timeline_filters(
             .map(str::to_owned),
         encounter_id: query.encounter_id,
     })
+}
+
+fn chronicle_startup_cacheable(query: &ChronicleTimelineQuery) -> bool {
+    query.cursor.is_none()
+        && query.entry_type.is_none()
+        && query.encounter_id.is_none()
+        && query
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none()
 }
 
 fn normalize_chronicle_entry_filter(value: Option<&str>) -> Result<Option<String>, ApiError> {

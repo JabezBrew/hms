@@ -268,6 +268,7 @@ impl ClinicalService {
             )
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(note))
     }
 
@@ -346,6 +347,7 @@ impl ClinicalService {
                     )
                 })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(version))
     }
 
@@ -397,6 +399,7 @@ impl ClinicalService {
         .await
         .map_err(|_| ApiError::conflict("problem_create_failed", "Problem could not be saved."))?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(problem))
     }
 
@@ -430,6 +433,7 @@ impl ClinicalService {
                     ApiError::not_found("problem_not_found", "Problem was not found.")
                 })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(problem))
     }
 
@@ -456,6 +460,7 @@ impl ClinicalService {
         })?
         .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(problem))
     }
 
@@ -650,6 +655,7 @@ impl ClinicalService {
         .await
         .map_err(|_| ApiError::conflict("allergy_create_failed", "Allergy could not be saved."))?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(allergy))
     }
 
@@ -698,6 +704,7 @@ impl ClinicalService {
                     ApiError::not_found("allergy_not_found", "Allergy was not found.")
                 })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(allergy))
     }
 
@@ -718,6 +725,7 @@ impl ClinicalService {
             })?
             .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(allergy))
     }
 
@@ -783,6 +791,7 @@ impl ClinicalService {
             )
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(prescription))
     }
 
@@ -839,6 +848,7 @@ impl ClinicalService {
                     ApiError::not_found("prescription_not_found", "Prescription was not found.")
                 })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(prescription))
     }
 
@@ -903,6 +913,7 @@ impl ClinicalService {
             )
         })?;
 
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(entry))
     }
 }

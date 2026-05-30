@@ -167,6 +167,7 @@ impl AdmissionCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(admission_case))
     }
 
@@ -205,6 +206,7 @@ impl AdmissionCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(admission_case))
     }
 
@@ -241,6 +243,7 @@ impl AdmissionCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(admission_case))
     }
 
@@ -277,6 +280,7 @@ impl AdmissionCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(admission_case))
     }
 
@@ -310,6 +314,7 @@ impl AdmissionCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(admission))
     }
 }

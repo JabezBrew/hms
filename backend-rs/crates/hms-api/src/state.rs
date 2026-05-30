@@ -29,12 +29,14 @@ use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
 use crate::config::{Config, OpsAuthMode, OpsPrometheusConfig};
 use crate::ops_auth::{CloudflareAccessError, CloudflareAccessIdentity, CloudflareAccessVerifier};
 use crate::passwords::hash_password;
-use crate::response::ListResponse;
+use crate::response::{ListResponse, ObjectResponse};
+use crate::services::patients::PatientChronicleStartup;
 
 const HOT_READ_CACHE_MAX_ENTRIES: usize = 1024;
 const OMNI_SEARCH_CACHE_TTL: Duration = Duration::from_secs(30);
 const DASHBOARD_PROJECTION_CACHE_TTL: Duration = Duration::from_secs(30);
 const DASHBOARD_REFRESH_QUEUE_THROTTLE: Duration = Duration::from_secs(5);
+const PATIENT_CHRONICLE_STARTUP_CACHE_TTL: Duration = Duration::from_secs(30);
 const PATIENT_LIST_CACHE_TTL: Duration = Duration::from_secs(30);
 const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(30);
 
@@ -234,6 +236,8 @@ impl AuthCache {
 struct HotReadCache {
     omni_search: TimedLruCache<OmniSearchCacheKey, OmniSearchResult>,
     dashboard_projection: TimedLruCache<DashboardProjectionCacheKey, DashboardProjectionRead>,
+    patient_chronicle_startup:
+        TimedLruCache<PatientChronicleStartupCacheKey, ObjectResponse<PatientChronicleStartup>>,
     patient_list: TimedLruCache<PatientListCacheKey, ListResponse<PatientListItem>>,
     ward_board: TimedLruCache<WardBoardCacheKey, ListResponse<WardBoardItem>>,
 }
@@ -243,6 +247,7 @@ impl HotReadCache {
         Self {
             omni_search: TimedLruCache::new(max_entries),
             dashboard_projection: TimedLruCache::new(max_entries),
+            patient_chronicle_startup: TimedLruCache::new(max_entries),
             patient_list: TimedLruCache::new(max_entries),
             ward_board: TimedLruCache::new(max_entries),
         }
@@ -367,9 +372,50 @@ struct DashboardRefreshGateKey {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct PatientChronicleStartupCacheKey {
+    facility_id: Uuid,
+    user_id: Uuid,
+    session_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: DeploymentProfile,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+    patient_visibility: Vec<String>,
+    active_authorities: Vec<String>,
+    patient_id: Uuid,
+    page_size: u8,
+}
+
+impl PatientChronicleStartupCacheKey {
+    fn new(
+        facility_id: Uuid,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+        page_size: u8,
+    ) -> Self {
+        Self {
+            facility_id,
+            user_id: ctx.user_id,
+            session_id: ctx.session_id,
+            session_version: ctx.session_version,
+            permission_version: ctx.permission_version,
+            active_profile: ctx.active_profile,
+            permission_codes: enum_scope_key(&ctx.permissions),
+            feature_keys: enum_scope_key(&ctx.enabled_features),
+            patient_visibility: enum_scope_key(&ctx.patient_visibility),
+            active_authorities: enum_scope_key(&ctx.active_authorities),
+            patient_id,
+            page_size,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct PatientListCacheKey {
     facility_id: Uuid,
     user_id: Uuid,
+    session_id: Uuid,
     session_version: i64,
     permission_version: i64,
     active_profile: DeploymentProfile,
@@ -394,6 +440,7 @@ impl PatientListCacheKey {
         Self {
             facility_id,
             user_id: ctx.user_id,
+            session_id: ctx.session_id,
             session_version: ctx.session_version,
             permission_version: ctx.permission_version,
             active_profile: ctx.active_profile,
@@ -927,6 +974,48 @@ impl AppState {
 
     pub(crate) fn invalidate_patient_list_cache(&self) {
         self.inner.hot_read_cache.patient_list.clear();
+    }
+
+    pub(crate) fn cached_patient_chronicle_startup(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+        page_size: u8,
+    ) -> Option<ObjectResponse<PatientChronicleStartup>> {
+        let cache_key = PatientChronicleStartupCacheKey::new(
+            self.inner.facility_id,
+            ctx,
+            patient_id,
+            page_size,
+        );
+        self.inner
+            .hot_read_cache
+            .patient_chronicle_startup
+            .get(&cache_key)
+    }
+
+    pub(crate) fn put_cached_patient_chronicle_startup(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+        page_size: u8,
+        response: ObjectResponse<PatientChronicleStartup>,
+    ) {
+        let cache_key = PatientChronicleStartupCacheKey::new(
+            self.inner.facility_id,
+            ctx,
+            patient_id,
+            page_size,
+        );
+        self.inner.hot_read_cache.patient_chronicle_startup.put(
+            cache_key,
+            response,
+            PATIENT_CHRONICLE_STARTUP_CACHE_TTL,
+        );
+    }
+
+    pub(crate) fn invalidate_patient_chronicle_cache(&self) {
+        self.inner.hot_read_cache.patient_chronicle_startup.clear();
     }
 
     pub fn verify_access_token(

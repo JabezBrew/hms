@@ -107,6 +107,7 @@ impl DischargeCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(discharge))
     }
 
@@ -160,6 +161,7 @@ impl DischargeCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(discharge))
     }
 
@@ -368,6 +370,7 @@ impl DischargeCasesService {
 
         self.state.invalidate_ward_board_cache();
         self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(discharge))
     }
 }

@@ -81,6 +81,7 @@ impl WardRoundsService {
                 "Ward Round requires an active admission for this patient.",
             )
         })?;
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(self.with_permissions(round, &decision, ctx)))
     }
 
@@ -138,6 +139,7 @@ impl WardRoundsService {
                 "Ward Round draft version is stale or closed.",
             )
         })?;
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(self.with_permissions(round, &decision, ctx)))
     }
 
@@ -175,6 +177,7 @@ impl WardRoundsService {
         .ok_or_else(|| {
             ApiError::not_found("ward_round_not_found", "Ward Round draft was not found.")
         })?;
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(self.with_permissions(round, &decision, ctx)))
     }
 
@@ -242,6 +245,7 @@ impl WardRoundsService {
                 "Ward Round action was not found.",
             )
         })?;
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(self.with_permissions(round, &decision, ctx)))
     }
 
@@ -274,6 +278,7 @@ impl WardRoundsService {
                 "Ward Round action was not found.",
             )
         })?;
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(self.with_permissions(round, &decision, ctx)))
     }
 
@@ -328,6 +333,7 @@ impl WardRoundsService {
         .map_err(map_commit_error)?
         .ok_or_else(|| ApiError::not_found("ward_round_not_found", "Ward Round was not found."))?;
         let round = self.with_permissions(round, &decision, ctx);
+        self.state.invalidate_patient_chronicle_cache();
         Ok(object(CommitWardRoundResponse {
             created_artifacts: round.artifacts.clone(),
             ward_round: round,
