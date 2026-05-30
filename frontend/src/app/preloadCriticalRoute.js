@@ -8,7 +8,10 @@ const PRELOADERS = [
     load: () => Promise.all([
       import('@/features/patients/pages/PatientPage'),
       import('@/features/patients/pages/PatientChroniclePage'),
+      import('@/components/chronicle/ClinicalSummarySidebar'),
       import('@/components/chronicle/ChronicleNoteBody'),
+      import('@/features/patients/chronicle/ChronicleTimelinePanel'),
+      import('@/features/patients/components/ChronicleWorkspaceHost'),
     ]),
   },
   {

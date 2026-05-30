@@ -4,7 +4,10 @@ const ROUTE_CHUNK_LOADERS = [
   () => import('@/features/patients/pages/PatientChronicleListPage'),
   () => import('@/features/patients/pages/PatientPage'),
   () => import('@/features/patients/pages/PatientChroniclePage'),
+  () => import('@/components/chronicle/ClinicalSummarySidebar'),
   () => import('@/components/chronicle/ChronicleNoteBody'),
+  () => import('@/features/patients/chronicle/ChronicleTimelinePanel'),
+  () => import('@/features/patients/components/ChronicleWorkspaceHost'),
   () => import('@/features/ward-board/pages/WardBoardPage'),
   () => import('@/features/laboratory/pages/LabOrdersPage'),
   () => import('@/features/inventory/pages/ItemsPage'),
@@ -26,21 +29,16 @@ function scheduleIdle(callback) {
   return () => window.clearTimeout(id)
 }
 
-function waitForNextSlice() {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, 80)
-  })
-}
-
 async function warmRouteChunks(isCancelled) {
-  for (const loadRouteChunk of ROUTE_CHUNK_LOADERS) {
-    if (isCancelled()) {
-      return
-    }
-    await loadRouteChunk().catch(() => {})
-    await waitForNextSlice()
+  if (isCancelled()) {
+    return
   }
-  publishWarmupDone(true)
+
+  await Promise.all(ROUTE_CHUNK_LOADERS.map((loadRouteChunk) => loadRouteChunk().catch(() => null)))
+
+  if (!isCancelled()) {
+    publishWarmupDone(true)
+  }
 }
 
 export default function RouteChunkWarmup() {
