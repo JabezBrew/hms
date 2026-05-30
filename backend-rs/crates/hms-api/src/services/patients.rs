@@ -199,6 +199,17 @@ impl PatientsService {
             .filter(|value| !value.is_empty());
         let status = query.status.clone();
         let page = patient_page_request(&query)?;
+        let page_size = page.limit;
+        let cacheable_hot_page =
+            page.cursor.is_none() && query.patient_id.is_none() && !include_total;
+        if cacheable_hot_page {
+            if let Some(response) = self
+                .state
+                .cached_patient_list(ctx, search, &status, page_size)
+            {
+                return Ok(response);
+            }
+        }
         let fetch_limit = page.fetch_limit();
         let patients = hms_db::patients::list_patient_registry(
             self.pool(),
@@ -212,14 +223,19 @@ impl PatientsService {
         .map_err(|_| ApiError::conflict("patient_list_failed", "Patients could not be loaded."))?;
         let total_count = if include_total {
             Some(
-                hms_db::patients::count_patients(self.pool(), self.facility_id(), search, status)
-                    .await
-                    .map_err(|_| {
-                        ApiError::conflict(
-                            "patient_count_failed",
-                            "Patient registry count could not be loaded.",
-                        )
-                    })?,
+                hms_db::patients::count_patients(
+                    self.pool(),
+                    self.facility_id(),
+                    search,
+                    status.clone(),
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "patient_count_failed",
+                        "Patient registry count could not be loaded.",
+                    )
+                })?,
             )
         } else {
             None
@@ -248,6 +264,10 @@ impl PatientsService {
                 "count_exact": true,
                 "total_count": total_count,
             });
+        }
+        if cacheable_hot_page {
+            self.state
+                .put_cached_patient_list(ctx, search, &status, page_size, response.clone());
         }
         Ok(response)
     }
@@ -347,6 +367,7 @@ impl PatientsService {
             ApiError::conflict("patient_create_failed", "Patient could not be created.")
         })?;
 
+        self.state.invalidate_patient_list_cache();
         Ok(object(PatientDetail::from(&patient)))
     }
 
@@ -573,6 +594,7 @@ impl PatientsService {
         .map_err(|_| ApiError::conflict("patient_update_failed", "Patient could not be updated."))?
         .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
 
+        self.state.invalidate_patient_list_cache();
         hms_access::require_patient_demographics_access(ctx, &patient).map_err(|_| {
             ApiError::forbidden(
                 "patient_access_denied",

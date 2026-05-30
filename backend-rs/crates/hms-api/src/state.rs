@@ -15,6 +15,7 @@ use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::deployment::{DeploymentProfile, NavigationManifest};
+use hms_domain::patients::{PatientAdministrativeStatus, PatientListItem};
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::WardBoardItem;
 use hms_events::DomainEventKind;
@@ -31,9 +32,10 @@ use crate::passwords::hash_password;
 use crate::response::ListResponse;
 
 const HOT_READ_CACHE_MAX_ENTRIES: usize = 1024;
-const OMNI_SEARCH_CACHE_TTL: Duration = Duration::from_secs(2);
-const DASHBOARD_PROJECTION_CACHE_TTL: Duration = Duration::from_secs(2);
+const OMNI_SEARCH_CACHE_TTL: Duration = Duration::from_secs(30);
+const DASHBOARD_PROJECTION_CACHE_TTL: Duration = Duration::from_secs(30);
 const DASHBOARD_REFRESH_QUEUE_THROTTLE: Duration = Duration::from_secs(5);
+const PATIENT_LIST_CACHE_TTL: Duration = Duration::from_secs(30);
 const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(1);
 
 #[derive(Clone)]
@@ -232,6 +234,7 @@ impl AuthCache {
 struct HotReadCache {
     omni_search: TimedLruCache<OmniSearchCacheKey, OmniSearchResult>,
     dashboard_projection: TimedLruCache<DashboardProjectionCacheKey, DashboardProjectionRead>,
+    patient_list: TimedLruCache<PatientListCacheKey, ListResponse<PatientListItem>>,
     ward_board: TimedLruCache<WardBoardCacheKey, ListResponse<WardBoardItem>>,
 }
 
@@ -240,6 +243,7 @@ impl HotReadCache {
         Self {
             omni_search: TimedLruCache::new(max_entries),
             dashboard_projection: TimedLruCache::new(max_entries),
+            patient_list: TimedLruCache::new(max_entries),
             ward_board: TimedLruCache::new(max_entries),
         }
     }
@@ -363,6 +367,48 @@ struct DashboardRefreshGateKey {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct PatientListCacheKey {
+    facility_id: Uuid,
+    user_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: DeploymentProfile,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+    patient_visibility: Vec<String>,
+    search_fingerprint: [u8; 32],
+    search_present: bool,
+    status: Option<String>,
+    page_size: u8,
+}
+
+impl PatientListCacheKey {
+    fn new(
+        facility_id: Uuid,
+        ctx: &hms_access::RequestContext,
+        search: Option<&str>,
+        status: &Option<PatientAdministrativeStatus>,
+        page_size: u8,
+    ) -> Self {
+        let (search_fingerprint, search_present) = text_filter_fingerprint(search);
+        Self {
+            facility_id,
+            user_id: ctx.user_id,
+            session_version: ctx.session_version,
+            permission_version: ctx.permission_version,
+            active_profile: ctx.active_profile,
+            permission_codes: enum_scope_key(&ctx.permissions),
+            feature_keys: enum_scope_key(&ctx.enabled_features),
+            patient_visibility: enum_scope_key(&ctx.patient_visibility),
+            search_fingerprint,
+            search_present,
+            status: status.as_ref().map(|value| format!("{value:?}")),
+            page_size,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct WardBoardCacheKey {
     facility_id: Uuid,
     user_id: Uuid,
@@ -436,6 +482,22 @@ fn search_query_fingerprint(query: &Option<String>) -> [u8; 32] {
         None => hasher.update([0]),
     }
     hasher.finalize().into()
+}
+
+fn text_filter_fingerprint(value: Option<&str>) -> ([u8; 32], bool) {
+    let mut hasher = Sha256::new();
+    let normalized = value.map(str::trim).filter(|value| !value.is_empty());
+    match normalized {
+        Some(value) => {
+            hasher.update([1]);
+            hasher.update(value.to_lowercase().as_bytes());
+            (hasher.finalize().into(), true)
+        }
+        None => {
+            hasher.update([0]);
+            (hasher.finalize().into(), false)
+        }
+    }
 }
 
 fn cache_get<K, T>(
@@ -833,6 +895,38 @@ impl AppState {
 
     pub(crate) fn invalidate_ward_board_cache(&self) {
         self.inner.hot_read_cache.ward_board.clear();
+    }
+
+    pub(crate) fn cached_patient_list(
+        &self,
+        ctx: &hms_access::RequestContext,
+        search: Option<&str>,
+        status: &Option<PatientAdministrativeStatus>,
+        page_size: u8,
+    ) -> Option<ListResponse<PatientListItem>> {
+        let cache_key =
+            PatientListCacheKey::new(self.inner.facility_id, ctx, search, status, page_size);
+        self.inner.hot_read_cache.patient_list.get(&cache_key)
+    }
+
+    pub(crate) fn put_cached_patient_list(
+        &self,
+        ctx: &hms_access::RequestContext,
+        search: Option<&str>,
+        status: &Option<PatientAdministrativeStatus>,
+        page_size: u8,
+        response: ListResponse<PatientListItem>,
+    ) {
+        let cache_key =
+            PatientListCacheKey::new(self.inner.facility_id, ctx, search, status, page_size);
+        self.inner
+            .hot_read_cache
+            .patient_list
+            .put(cache_key, response, PATIENT_LIST_CACHE_TTL);
+    }
+
+    pub(crate) fn invalidate_patient_list_cache(&self) {
+        self.inner.hot_read_cache.patient_list.clear();
     }
 
     pub fn verify_access_token(

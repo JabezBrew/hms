@@ -145,6 +145,88 @@ async fn patient_list_records_stable_query_metrics_without_phi_labels() {
 }
 
 #[tokio::test]
+async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let claims = access_claims(&access_token);
+    let user = app
+        .state()
+        .auth_user_for_claims(&claims)
+        .await
+        .expect("auth user lookup succeeds")
+        .expect("auth user exists");
+    let ctx = hms_access::RequestContext::new(
+        "patient-list-cache-test".to_owned(),
+        claims.session_id,
+        user.clone(),
+        user.features.clone(),
+        hms_access::OffsiteState::Onsite,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+    let query = hms_domain::patients::PatientListQuery {
+        cursor: None,
+        limit: Some(5),
+        search: Some("Ama".to_owned()),
+        patient_id: None,
+        status: None,
+        include_total: Some(false),
+    };
+
+    let (first, first_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .patients_service()
+            .list_patients(&ctx, query.clone())
+            .await
+    })
+    .await;
+    first.expect("first patient list succeeds");
+    assert!(
+        first_queries > 0,
+        "first patient registry hot page should hydrate from the database"
+    );
+
+    let (second, second_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .patients_service()
+            .list_patients(&ctx, query.clone())
+            .await
+    })
+    .await;
+    second.expect("cached patient list succeeds");
+    assert_eq!(
+        second_queries, 0,
+        "same scoped patient registry hot page should stay off the database while warm"
+    );
+
+    app.state()
+        .patients_service()
+        .create_patient(
+            &ctx,
+            hms_domain::patients::CreatePatientRequest {
+                first_name: "Cache".to_owned(),
+                last_name: "Probe".to_owned(),
+                date_of_birth: chrono::NaiveDate::from_ymd_opt(1999, 1, 1).expect("valid date"),
+                sex: hms_domain::patients::Sex::Female,
+            },
+        )
+        .await
+        .expect("patient create succeeds");
+
+    let (after_write, after_write_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .patients_service()
+            .list_patients(&ctx, query)
+            .await
+    })
+    .await;
+    after_write.expect("patient list after write succeeds");
+    assert!(
+        after_write_queries > 0,
+        "patient registry hot-page cache should be invalidated after patient writes"
+    );
+}
+
+#[tokio::test]
 async fn patient_chronicle_startup_is_shaped_bounded_and_query_budgeted() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;

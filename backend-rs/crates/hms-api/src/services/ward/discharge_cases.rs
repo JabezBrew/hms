@@ -105,6 +105,8 @@ impl DischargeCasesService {
             )
         })?;
 
+        self.state.invalidate_ward_board_cache();
+        self.state.invalidate_patient_list_cache();
         Ok(object(discharge))
     }
 
@@ -156,6 +158,8 @@ impl DischargeCasesService {
                     )
                 })?;
 
+        self.state.invalidate_ward_board_cache();
+        self.state.invalidate_patient_list_cache();
         Ok(object(discharge))
     }
 
@@ -362,6 +366,8 @@ impl DischargeCasesService {
                     ApiError::not_found("discharge_not_found", "Discharge was not found.")
                 })?;
 
+        self.state.invalidate_ward_board_cache();
+        self.state.invalidate_patient_list_cache();
         Ok(object(discharge))
     }
 }
