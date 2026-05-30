@@ -66,6 +66,7 @@ pub struct Config {
     pub jwt_secret: String,
     pub access_token_ttl: Duration,
     pub refresh_token_ttl: Duration,
+    pub auth_cache_max_entries: usize,
     pub cookie_secure: bool,
     pub deployment_profile: DeploymentProfile,
     pub auto_migrate: bool,
@@ -98,6 +99,10 @@ impl Config {
         let jwt_secret = env::var("HMS_JWT_SECRET").unwrap_or_else(|_| {
             "development-only-hms-v2-jwt-secret-change-before-production".to_owned()
         });
+        let auth_cache_max_entries = match env::var("HMS_AUTH_CACHE_MAX_ENTRIES") {
+            Ok(value) => parse_usize(&value, "HMS_AUTH_CACHE_MAX_ENTRIES")?,
+            Err(_) => 16_384,
+        };
 
         if environment == "production" && jwt_secret.contains("development-only") {
             bail!("HMS_JWT_SECRET must be set to a production secret");
@@ -170,6 +175,7 @@ impl Config {
             jwt_secret,
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
+            auth_cache_max_entries,
             cookie_secure,
             deployment_profile,
             auto_migrate,
@@ -193,6 +199,7 @@ impl Config {
             jwt_secret: "test-only-hms-v2-jwt-secret".to_owned(),
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
+            auth_cache_max_entries: 16_384,
             cookie_secure: false,
             deployment_profile: DeploymentProfile::Hospital,
             auto_migrate: true,
@@ -228,6 +235,17 @@ fn parse_u64(value: &str, name: &str) -> anyhow::Result<u64> {
     let parsed = value
         .trim()
         .parse::<u64>()
+        .with_context(|| format!("{name} must be an integer"))?;
+    if parsed == 0 {
+        bail!("{name} must be greater than zero");
+    }
+    Ok(parsed)
+}
+
+fn parse_usize(value: &str, name: &str) -> anyhow::Result<usize> {
+    let parsed = value
+        .trim()
+        .parse::<usize>()
         .with_context(|| format!("{name} must be an integer"))?;
     if parsed == 0 {
         bail!("{name} must be greater than zero");

@@ -31,6 +31,7 @@ const TEST_JWT_SECRET: &str = "test-only-hms-v2-jwt-secret";
 #[derive(Clone)]
 pub(crate) struct TestApp {
     router: axum::Router,
+    state: AppState,
     _database: Arc<hms_db::test_support::TestDatabase>,
 }
 
@@ -100,6 +101,12 @@ impl Service<Request<Body>> for TestApp {
     }
 }
 
+impl TestApp {
+    pub(crate) fn state(&self) -> AppState {
+        self.state.clone()
+    }
+}
+
 pub(crate) async fn app() -> TestApp {
     let database =
         Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
@@ -116,7 +123,8 @@ pub(crate) async fn app_with_config(
 ) -> TestApp {
     let state = AppState::new(config).await.expect("test state initializes");
     TestApp {
-        router: build_app(state),
+        router: build_app(state.clone()),
+        state,
         _database: database,
     }
 }
@@ -136,11 +144,16 @@ pub(crate) async fn app_with_request_context_probe() -> TestApp {
         router: build_app(state.clone())
             .merge(probe)
             .layer(axum::middleware::from_fn_with_state(
-                state,
+                state.clone(),
                 request_id::layer,
             )),
+        state: state.clone(),
         _database: database,
     }
+}
+
+pub(crate) fn access_claims(token: &str) -> hms_api::auth::AccessClaims {
+    hms_api::auth::verify_access_token(TEST_JWT_SECRET, token).expect("test access token verifies")
 }
 
 async fn request_context_probe(RequestContext(ctx): RequestContext) -> axum::Json<Value> {

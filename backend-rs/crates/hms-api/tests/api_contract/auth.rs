@@ -310,6 +310,108 @@ async fn auth_me_user_cache_outlives_request_context_cache_without_db_hydration(
 }
 
 #[tokio::test]
+async fn auth_me_single_flights_cold_session_cache_hydration() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let claims = access_claims(&access_token);
+    let state = app.state();
+    state.invalidate_auth_cache_for_user(claims.facility_id, claims.sub);
+    let auth_user = || {
+        let state = state.clone();
+        let claims = claims.clone();
+        async move {
+            state
+                .auth_user_for_claims(&claims)
+                .await
+                .expect("auth user resolves")
+        }
+    };
+
+    let (users, observed_queries) = hms_observability::with_request_query_counter(async {
+        let (a, b, c, d, e, f, g, h) = tokio::join!(
+            auth_user(),
+            auth_user(),
+            auth_user(),
+            auth_user(),
+            auth_user(),
+            auth_user(),
+            auth_user(),
+            auth_user()
+        );
+        [a, b, c, d, e, f, g, h]
+    })
+    .await;
+
+    for user in users {
+        assert!(user.is_some());
+    }
+    assert_eq!(observed_queries, 1);
+}
+
+#[tokio::test]
+async fn bounded_auth_cache_eviction_preserves_recent_warm_sessions() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    config.auth_cache_max_entries = 2;
+    let app = app_with_config(config, database).await;
+
+    let (first_owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let limited_auth_header = format!("Bearer {limited_token}");
+
+    let warmed_limited = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, limited_auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("limited cache touch succeeds");
+    assert_eq!(warmed_limited.status(), StatusCode::OK);
+
+    let (_second_owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    let (cached_limited, observed_queries) = hms_observability::with_request_query_counter(async {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/v2/auth/me")
+                    .header(AUTHORIZATION, limited_auth_header)
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+    })
+    .await;
+    assert_eq!(
+        cached_limited
+            .expect("limited auth/me remains cached")
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(observed_queries, 0);
+
+    let evicted_owner = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, format!("Bearer {first_owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("evicted owner session still validates through DB");
+    assert_eq!(evicted_owner.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn logout_invalidates_warmed_auth_me_user_cache_for_session() {
     let app = app().await;
     let (access_token, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;

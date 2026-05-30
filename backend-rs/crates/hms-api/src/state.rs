@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -38,8 +39,6 @@ struct AppStateInner {
     cloudflare_access: Option<CloudflareAccessVerifier>,
 }
 
-const AUTH_FACT_CACHE_MAX_ENTRIES: usize = 1024;
-
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct AuthCacheKey {
     user_id: Uuid,
@@ -74,26 +73,45 @@ impl AuthCacheKey {
     }
 }
 
-#[derive(Default)]
 struct AuthCache {
+    max_entries: usize,
+    access_clock: AtomicU64,
     users: RwLock<HashMap<AuthCacheKey, CachedAuthValue<AuthUser>>>,
     request_contexts:
         RwLock<HashMap<AuthCacheKey, CachedAuthValue<hms_db::auth::RequestContextAuthFacts>>>,
-    request_context_hydration_locks: Mutex<HashMap<AuthCacheKey, Arc<tokio::sync::Mutex<()>>>>,
+    hydration_locks: Mutex<HashMap<AuthCacheKey, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 struct CachedAuthValue<T> {
     value: T,
     expires_at: Instant,
+    last_accessed_tick: AtomicU64,
 }
 
 impl AuthCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            max_entries,
+            access_clock: AtomicU64::new(0),
+            users: RwLock::new(HashMap::new()),
+            request_contexts: RwLock::new(HashMap::new()),
+            hydration_locks: Mutex::new(HashMap::new()),
+        }
+    }
+
     fn get_user(&self, key: &AuthCacheKey) -> Option<AuthUser> {
-        cache_get(&self.users, key)
+        cache_get(&self.users, key, self.next_access_tick())
     }
 
     fn put_user(&self, key: AuthCacheKey, user: AuthUser, ttl: Duration) {
-        cache_put(&self.users, key, user, ttl);
+        cache_put(
+            &self.users,
+            key,
+            user,
+            ttl,
+            self.max_entries,
+            self.next_access_tick(),
+        );
     }
 
     fn put_user_if_absent(&self, key: AuthCacheKey, user: AuthUser, ttl: Duration) {
@@ -106,7 +124,7 @@ impl AuthCache {
         &self,
         key: &AuthCacheKey,
     ) -> Option<hms_db::auth::RequestContextAuthFacts> {
-        cache_get(&self.request_contexts, key)
+        cache_get(&self.request_contexts, key, self.next_access_tick())
     }
 
     fn put_request_context(
@@ -115,18 +133,32 @@ impl AuthCache {
         facts: hms_db::auth::RequestContextAuthFacts,
         ttl: Duration,
     ) {
-        cache_put(&self.request_contexts, key, facts, ttl);
+        cache_put(
+            &self.request_contexts,
+            key,
+            facts,
+            ttl,
+            self.max_entries,
+            self.next_access_tick(),
+        );
     }
 
-    fn request_context_hydration_lock(&self, key: &AuthCacheKey) -> Arc<tokio::sync::Mutex<()>> {
-        let Ok(mut locks) = self.request_context_hydration_locks.lock() else {
+    fn next_access_tick(&self) -> u64 {
+        self.access_clock.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    fn hydration_lock(&self, key: &AuthCacheKey) -> Arc<tokio::sync::Mutex<()>> {
+        let Ok(mut locks) = self.hydration_locks.lock() else {
             return Arc::new(tokio::sync::Mutex::new(()));
         };
-        if locks.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+        if let Some(lock) = locks.get(key) {
+            return Arc::clone(lock);
+        }
+        if locks.len() >= self.max_entries {
             locks.retain(|_, lock| Arc::strong_count(lock) > 1);
-            if locks.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
-                locks.clear();
-            }
+        }
+        if locks.len() >= self.max_entries {
+            return Arc::new(tokio::sync::Mutex::new(()));
         }
         locks
             .entry(key.clone())
@@ -141,7 +173,7 @@ impl AuthCache {
         if let Ok(mut contexts) = self.request_contexts.write() {
             contexts.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
         }
-        if let Ok(mut locks) = self.request_context_hydration_locks.lock() {
+        if let Ok(mut locks) = self.hydration_locks.lock() {
             locks.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
         }
     }
@@ -161,7 +193,7 @@ impl AuthCache {
                     || key.session_id != session_id
             });
         }
-        if let Ok(mut locks) = self.request_context_hydration_locks.lock() {
+        if let Ok(mut locks) = self.hydration_locks.lock() {
             locks.retain(|key, _| {
                 key.facility_id != facility_id
                     || key.user_id != user_id
@@ -177,7 +209,7 @@ impl AuthCache {
         if let Ok(mut contexts) = self.request_contexts.write() {
             contexts.retain(|key, _| key.facility_id != facility_id);
         }
-        if let Ok(mut locks) = self.request_context_hydration_locks.lock() {
+        if let Ok(mut locks) = self.hydration_locks.lock() {
             locks.retain(|key, _| key.facility_id != facility_id);
         }
     }
@@ -186,11 +218,28 @@ impl AuthCache {
 fn cache_get<T: Clone>(
     cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
     key: &AuthCacheKey,
+    access_tick: u64,
 ) -> Option<T> {
     let now = Instant::now();
-    let cache = cache.read().ok()?;
-    let cached = cache.get(key)?;
-    (cached.expires_at > now).then(|| cached.value.clone())
+    {
+        let cache = cache.read().ok()?;
+        let cached = cache.get(key)?;
+        if cached.expires_at > now {
+            cached
+                .last_accessed_tick
+                .store(access_tick, Ordering::Relaxed);
+            return Some(cached.value.clone());
+        }
+    }
+
+    let mut cache = cache.write().ok()?;
+    if cache
+        .get(key)
+        .is_some_and(|cached| cached.expires_at <= now)
+    {
+        cache.remove(key);
+    }
+    None
 }
 
 fn cache_put<T>(
@@ -198,15 +247,29 @@ fn cache_put<T>(
     key: AuthCacheKey,
     value: T,
     ttl: Duration,
+    max_entries: usize,
+    access_tick: u64,
 ) {
     let Ok(mut cache) = cache.write() else {
         return;
     };
     let now = Instant::now();
-    if cache.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+    if cache.len() >= max_entries {
         cache.retain(|_, cached| cached.expires_at > now);
-        if cache.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
-            cache.clear();
+        while cache.len() >= max_entries {
+            let Some(evict_key) = cache
+                .iter()
+                .min_by_key(|(_, cached)| {
+                    (
+                        cached.last_accessed_tick.load(Ordering::Relaxed),
+                        cached.expires_at,
+                    )
+                })
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            cache.remove(&evict_key);
         }
     }
     cache.insert(
@@ -214,6 +277,7 @@ fn cache_put<T>(
         CachedAuthValue {
             value,
             expires_at: now + ttl,
+            last_accessed_tick: AtomicU64::new(access_tick),
         },
     );
 }
@@ -257,6 +321,7 @@ pub struct ReadinessSnapshot {
 impl AppState {
     pub async fn new(config: Config) -> Result<Self> {
         let started_at = Utc::now();
+        let auth_cache_max_entries = config.auth_cache_max_entries;
         let pool = hms_db::pool::connect_with_max_connections(
             &config.database_url,
             config.database_max_connections,
@@ -313,7 +378,7 @@ impl AppState {
                 facility_id,
                 pool,
                 auth_pool,
-                auth_cache: AuthCache::default(),
+                auth_cache: AuthCache::new(auth_cache_max_entries),
                 cloudflare_access,
             }),
         })
@@ -484,7 +549,13 @@ impl AppState {
         }
 
         let cache_key = AuthCacheKey::from_claims(claims);
-        if let Some(user) = self.inner.auth_cache.get_user(&cache_key) {
+        if let Some(user) = self.cached_auth_user_for_claims(&cache_key, claims) {
+            return Ok(Some(user));
+        }
+
+        let hydration_lock = self.inner.auth_cache.hydration_lock(&cache_key);
+        let _hydration_guard = hydration_lock.lock().await;
+        if let Some(user) = self.cached_auth_user_for_claims(&cache_key, claims) {
             return Ok(Some(user));
         }
 
@@ -506,6 +577,26 @@ impl AppState {
             }
         }
         Ok(user)
+    }
+
+    fn cached_auth_user_for_claims(
+        &self,
+        cache_key: &AuthCacheKey,
+        claims: &AccessClaims,
+    ) -> Option<AuthUser> {
+        if let Some(user) = self.inner.auth_cache.get_user(cache_key) {
+            return Some(user);
+        }
+        let facts = self.inner.auth_cache.get_request_context(cache_key)?;
+        if !auth_user_matches_claims(&facts.user, claims) {
+            return None;
+        }
+        self.inner.auth_cache.put_user_if_absent(
+            cache_key.clone(),
+            facts.user.clone(),
+            self.inner.config.access_token_ttl,
+        );
+        Some(facts.user)
     }
 
     pub async fn request_context_facts(
@@ -541,10 +632,7 @@ impl AppState {
             return Ok(Some(facts));
         }
 
-        let hydration_lock = self
-            .inner
-            .auth_cache
-            .request_context_hydration_lock(&cache_key);
+        let hydration_lock = self.inner.auth_cache.hydration_lock(&cache_key);
         let _hydration_guard = hydration_lock.lock().await;
         if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
             hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
