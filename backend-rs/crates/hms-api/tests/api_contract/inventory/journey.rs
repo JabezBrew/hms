@@ -1,6 +1,59 @@
 use super::*;
 
 #[tokio::test]
+async fn pharmacy_dispense_hot_page_reuses_scoped_cache() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let claims = access_claims(&access_token);
+    let user = app
+        .state()
+        .auth_user_for_claims(&claims)
+        .await
+        .expect("auth user lookup succeeds")
+        .expect("auth user exists");
+    let ctx = hms_access::RequestContext::new(
+        "pharmacy-dispense-cache-test".to_owned(),
+        claims.session_id,
+        user.clone(),
+        user.features.clone(),
+        hms_access::OffsiteState::Onsite,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+    let query = hms_domain::inventory::InventoryListQuery {
+        cursor: None,
+        limit: Some(10),
+    };
+
+    let (first, first_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .inventory_services()
+            .pharmacy()
+            .list_dispenses(&ctx, query.clone())
+            .await
+    })
+    .await;
+    first.expect("first pharmacy dispense list succeeds");
+    assert!(
+        first_queries > 0,
+        "first pharmacy dispense hot page should hydrate from the database"
+    );
+
+    let (second, second_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .inventory_services()
+            .pharmacy()
+            .list_dispenses(&ctx, query)
+            .await
+    })
+    .await;
+    second.expect("cached pharmacy dispense list succeeds");
+    assert_eq!(
+        second_queries, 0,
+        "same scoped pharmacy dispense hot page should stay off the database while warm"
+    );
+}
+
+#[tokio::test]
 async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_rules() {
     let app = app().await;
     enroll_owner_test_passkey(&app).await;

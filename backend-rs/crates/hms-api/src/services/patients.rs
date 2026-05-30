@@ -210,6 +210,21 @@ impl PatientsService {
                 return Ok(response);
             }
         }
+        let _cache_guard = if cacheable_hot_page {
+            let lock = self
+                .state
+                .patient_list_cache_lock(ctx, search, &status, page_size);
+            let guard = lock.lock_owned().await;
+            if let Some(response) = self
+                .state
+                .cached_patient_list(ctx, search, &status, page_size)
+            {
+                return Ok(response);
+            }
+            Some(guard)
+        } else {
+            None
+        };
         let fetch_limit = page.fetch_limit();
         let patients = hms_db::patients::list_patient_registry(
             self.pool(),
@@ -404,6 +419,21 @@ impl PatientsService {
                 return Ok(response);
             }
         }
+        let _cache_guard = if cacheable_startup {
+            let lock = self
+                .state
+                .patient_chronicle_startup_cache_lock(ctx, id, page.limit);
+            let guard = lock.lock_owned().await;
+            if let Some(response) = self
+                .state
+                .cached_patient_chronicle_startup(ctx, id, page.limit)
+            {
+                return Ok(response);
+            }
+            Some(guard)
+        } else {
+            None
+        };
 
         let (patient, decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
         let filters = chronicle_timeline_filters(&query)?;

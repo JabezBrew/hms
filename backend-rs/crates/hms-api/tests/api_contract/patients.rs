@@ -198,6 +198,28 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
         "same scoped patient registry hot page should stay off the database while warm"
     );
 
+    let cross_session_ctx = hms_access::RequestContext::new(
+        "patient-list-cross-session-cache-test".to_owned(),
+        Uuid::new_v4(),
+        user.clone(),
+        user.features.clone(),
+        hms_access::OffsiteState::Onsite,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+    let (cross_session, cross_session_queries) =
+        hms_observability::with_request_query_counter(async {
+            app.state()
+                .patients_service()
+                .list_patients(&cross_session_ctx, query.clone())
+                .await
+        })
+        .await;
+    cross_session.expect("cross-session cached patient list succeeds");
+    assert_eq!(
+        cross_session_queries, 0,
+        "patient registry hot-page cache should survive session refresh when access scope is unchanged"
+    );
+
     app.state()
         .patients_service()
         .create_patient(
@@ -290,7 +312,7 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
     let (second, second_queries) = hms_observability::with_request_query_counter(async {
         app.state()
             .patients_service()
-            .get_patient_chronicle(&ctx, patient_id, query)
+            .get_patient_chronicle(&ctx, patient_id, query.clone())
             .await
     })
     .await;
@@ -298,6 +320,53 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
     assert_eq!(
         second_queries, 0,
         "same scoped Chronicle startup should stay off the database while warm"
+    );
+
+    let cross_session_ctx = hms_access::RequestContext::new(
+        "chronicle-cross-session-cache-test".to_owned(),
+        Uuid::new_v4(),
+        user.clone(),
+        user.features.clone(),
+        hms_access::OffsiteState::Onsite,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+    let (cross_session, cross_session_queries) =
+        hms_observability::with_request_query_counter(async {
+            app.state()
+                .patients_service()
+                .get_patient_chronicle(&cross_session_ctx, patient_id, query.clone())
+                .await
+        })
+        .await;
+    cross_session.expect("cross-session cached Chronicle startup succeeds");
+    assert_eq!(
+        cross_session_queries, 0,
+        "Chronicle startup cache should survive session refresh when access scope is unchanged"
+    );
+
+    let offsite_ctx = hms_access::RequestContext::new(
+        "chronicle-offsite-cache-test".to_owned(),
+        Uuid::new_v4(),
+        user.clone(),
+        user.features.clone(),
+        hms_access::OffsiteState::OffsiteReadOnly,
+        hms_access::ReauthState::from_authentication_time(Utc::now()),
+    );
+    let (offsite, offsite_queries) = hms_observability::with_request_query_counter(async {
+        app.state()
+            .patients_service()
+            .get_patient_chronicle(&offsite_ctx, patient_id, query)
+            .await
+    })
+    .await;
+    let offsite = offsite.expect("offsite Chronicle startup succeeds");
+    assert!(
+        offsite_queries > 0,
+        "offsite Chronicle startup must not reuse an onsite write-capable cache entry"
+    );
+    assert!(
+        offsite.data.permissions.read_only,
+        "offsite Chronicle startup should remain read-only"
     );
 }
 

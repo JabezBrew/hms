@@ -15,13 +15,14 @@ use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::deployment::{DeploymentProfile, NavigationManifest};
+use hms_domain::inventory::PharmacyDispenseListItem;
 use hms_domain::patients::{PatientAdministrativeStatus, PatientListItem};
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::WardBoardItem;
 use hms_events::DomainEventKind;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
-use tokio::sync::Semaphore;
+use tokio::sync::{Mutex as TokioMutex, Semaphore};
 use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
@@ -39,6 +40,7 @@ const DASHBOARD_PROJECTION_CACHE_TTL: Duration = Duration::from_secs(30);
 const DASHBOARD_REFRESH_QUEUE_THROTTLE: Duration = Duration::from_secs(5);
 const PATIENT_CHRONICLE_STARTUP_CACHE_TTL: Duration = Duration::from_secs(30);
 const PATIENT_LIST_CACHE_TTL: Duration = Duration::from_secs(30);
+const PHARMACY_DISPENSE_CACHE_TTL: Duration = Duration::from_secs(30);
 const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
@@ -241,6 +243,8 @@ struct HotReadCache {
     patient_chronicle_startup:
         TimedLruCache<PatientChronicleStartupCacheKey, ObjectResponse<PatientChronicleStartup>>,
     patient_list: TimedLruCache<PatientListCacheKey, ListResponse<PatientListItem>>,
+    pharmacy_dispenses:
+        TimedLruCache<PharmacyDispenseCacheKey, ListResponse<PharmacyDispenseListItem>>,
     ward_board: TimedLruCache<WardBoardCacheKey, ListResponse<WardBoardItem>>,
 }
 
@@ -251,6 +255,7 @@ impl HotReadCache {
             dashboard_projection: TimedLruCache::new(max_entries),
             patient_chronicle_startup: TimedLruCache::new(max_entries),
             patient_list: TimedLruCache::new(max_entries),
+            pharmacy_dispenses: TimedLruCache::new(max_entries),
             ward_board: TimedLruCache::new(max_entries),
         }
     }
@@ -260,6 +265,7 @@ struct TimedLruCache<K, V> {
     max_entries: usize,
     access_clock: AtomicU64,
     entries: RwLock<HashMap<K, CachedValue<V>>>,
+    hydration_locks: Mutex<HashMap<K, Arc<TokioMutex<()>>>>,
 }
 
 impl<K, V> TimedLruCache<K, V>
@@ -272,6 +278,7 @@ where
             max_entries,
             access_clock: AtomicU64::new(0),
             entries: RwLock::new(HashMap::new()),
+            hydration_locks: Mutex::new(HashMap::new()),
         }
     }
 
@@ -290,9 +297,33 @@ where
         );
     }
 
+    fn hydration_lock(&self, key: &K) -> Arc<TokioMutex<()>> {
+        let Ok(mut locks) = self.hydration_locks.lock() else {
+            return Arc::new(TokioMutex::new(()));
+        };
+        if locks.len() >= self.max_entries.saturating_mul(2) {
+            let now = Instant::now();
+            if let Ok(entries) = self.entries.read() {
+                locks.retain(|key, lock| {
+                    Arc::strong_count(lock) > 1
+                        || entries
+                            .get(key)
+                            .is_some_and(|cached| cached.expires_at > now)
+                });
+            }
+        }
+        locks
+            .entry(key.clone())
+            .or_insert_with(|| Arc::new(TokioMutex::new(())))
+            .clone()
+    }
+
     fn clear(&self) {
         if let Ok(mut entries) = self.entries.write() {
             entries.clear();
+        }
+        if let Ok(mut locks) = self.hydration_locks.lock() {
+            locks.clear();
         }
     }
 
@@ -377,7 +408,6 @@ struct DashboardRefreshGateKey {
 struct PatientChronicleStartupCacheKey {
     facility_id: Uuid,
     user_id: Uuid,
-    session_id: Uuid,
     session_version: i64,
     permission_version: i64,
     active_profile: DeploymentProfile,
@@ -385,6 +415,7 @@ struct PatientChronicleStartupCacheKey {
     feature_keys: Vec<String>,
     patient_visibility: Vec<String>,
     active_authorities: Vec<String>,
+    offsite: String,
     patient_id: Uuid,
     page_size: u8,
 }
@@ -399,7 +430,6 @@ impl PatientChronicleStartupCacheKey {
         Self {
             facility_id,
             user_id: ctx.user_id,
-            session_id: ctx.session_id,
             session_version: ctx.session_version,
             permission_version: ctx.permission_version,
             active_profile: ctx.active_profile,
@@ -407,6 +437,7 @@ impl PatientChronicleStartupCacheKey {
             feature_keys: enum_scope_key(&ctx.enabled_features),
             patient_visibility: enum_scope_key(&ctx.patient_visibility),
             active_authorities: enum_scope_key(&ctx.active_authorities),
+            offsite: format!("{:?}", ctx.offsite),
             patient_id,
             page_size,
         }
@@ -417,13 +448,13 @@ impl PatientChronicleStartupCacheKey {
 struct PatientListCacheKey {
     facility_id: Uuid,
     user_id: Uuid,
-    session_id: Uuid,
     session_version: i64,
     permission_version: i64,
     active_profile: DeploymentProfile,
     permission_codes: Vec<String>,
     feature_keys: Vec<String>,
     patient_visibility: Vec<String>,
+    active_authorities: Vec<String>,
     search_fingerprint: [u8; 32],
     search_present: bool,
     status: Option<String>,
@@ -442,16 +473,47 @@ impl PatientListCacheKey {
         Self {
             facility_id,
             user_id: ctx.user_id,
-            session_id: ctx.session_id,
             session_version: ctx.session_version,
             permission_version: ctx.permission_version,
             active_profile: ctx.active_profile,
             permission_codes: enum_scope_key(&ctx.permissions),
             feature_keys: enum_scope_key(&ctx.enabled_features),
             patient_visibility: enum_scope_key(&ctx.patient_visibility),
+            active_authorities: enum_scope_key(&ctx.active_authorities),
             search_fingerprint,
             search_present,
             status: status.as_ref().map(|value| format!("{value:?}")),
+            page_size,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct PharmacyDispenseCacheKey {
+    facility_id: Uuid,
+    user_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: DeploymentProfile,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+    patient_visibility: Vec<String>,
+    active_authorities: Vec<String>,
+    page_size: u8,
+}
+
+impl PharmacyDispenseCacheKey {
+    fn new(facility_id: Uuid, ctx: &hms_access::RequestContext, page_size: u8) -> Self {
+        Self {
+            facility_id,
+            user_id: ctx.user_id,
+            session_version: ctx.session_version,
+            permission_version: ctx.permission_version,
+            active_profile: ctx.active_profile,
+            permission_codes: enum_scope_key(&ctx.permissions),
+            feature_keys: enum_scope_key(&ctx.enabled_features),
+            patient_visibility: enum_scope_key(&ctx.patient_visibility),
+            active_authorities: enum_scope_key(&ctx.active_authorities),
             page_size,
         }
     }
@@ -976,6 +1038,21 @@ impl AppState {
             .put(cache_key, response, PATIENT_LIST_CACHE_TTL);
     }
 
+    pub(crate) fn patient_list_cache_lock(
+        &self,
+        ctx: &hms_access::RequestContext,
+        search: Option<&str>,
+        status: &Option<PatientAdministrativeStatus>,
+        page_size: u8,
+    ) -> Arc<TokioMutex<()>> {
+        let cache_key =
+            PatientListCacheKey::new(self.inner.facility_id, ctx, search, status, page_size);
+        self.inner
+            .hot_read_cache
+            .patient_list
+            .hydration_lock(&cache_key)
+    }
+
     pub(crate) fn invalidate_patient_list_cache(&self) {
         self.inner.hot_read_cache.patient_list.clear();
     }
@@ -1018,8 +1095,65 @@ impl AppState {
         );
     }
 
+    pub(crate) fn patient_chronicle_startup_cache_lock(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+        page_size: u8,
+    ) -> Arc<TokioMutex<()>> {
+        let cache_key = PatientChronicleStartupCacheKey::new(
+            self.inner.facility_id,
+            ctx,
+            patient_id,
+            page_size,
+        );
+        self.inner
+            .hot_read_cache
+            .patient_chronicle_startup
+            .hydration_lock(&cache_key)
+    }
+
     pub(crate) fn invalidate_patient_chronicle_cache(&self) {
         self.inner.hot_read_cache.patient_chronicle_startup.clear();
+    }
+
+    pub(crate) fn cached_pharmacy_dispenses(
+        &self,
+        ctx: &hms_access::RequestContext,
+        page_size: u8,
+    ) -> Option<ListResponse<PharmacyDispenseListItem>> {
+        let cache_key = PharmacyDispenseCacheKey::new(self.inner.facility_id, ctx, page_size);
+        self.inner.hot_read_cache.pharmacy_dispenses.get(&cache_key)
+    }
+
+    pub(crate) fn put_cached_pharmacy_dispenses(
+        &self,
+        ctx: &hms_access::RequestContext,
+        page_size: u8,
+        response: ListResponse<PharmacyDispenseListItem>,
+    ) {
+        let cache_key = PharmacyDispenseCacheKey::new(self.inner.facility_id, ctx, page_size);
+        self.inner.hot_read_cache.pharmacy_dispenses.put(
+            cache_key,
+            response,
+            PHARMACY_DISPENSE_CACHE_TTL,
+        );
+    }
+
+    pub(crate) fn pharmacy_dispenses_cache_lock(
+        &self,
+        ctx: &hms_access::RequestContext,
+        page_size: u8,
+    ) -> Arc<TokioMutex<()>> {
+        let cache_key = PharmacyDispenseCacheKey::new(self.inner.facility_id, ctx, page_size);
+        self.inner
+            .hot_read_cache
+            .pharmacy_dispenses
+            .hydration_lock(&cache_key)
+    }
+
+    pub(crate) fn invalidate_pharmacy_dispense_cache(&self) {
+        self.inner.hot_read_cache.pharmacy_dispenses.clear();
     }
 
     pub fn verify_access_token(

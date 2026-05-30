@@ -38,6 +38,22 @@ impl PharmacyService {
     ) -> Result<ListResponse<PharmacyDispenseListItem>, ApiError> {
         require_pharmacy_dispense_list_access(ctx, self.facility_id())?;
         let (cursor, page_size) = page_request(query)?;
+        let cacheable_hot_page = cursor.is_none();
+        if cacheable_hot_page {
+            if let Some(response) = self.state.cached_pharmacy_dispenses(ctx, page_size) {
+                return Ok(response);
+            }
+        }
+        let _cache_guard = if cacheable_hot_page {
+            let lock = self.state.pharmacy_dispenses_cache_lock(ctx, page_size);
+            let guard = lock.lock_owned().await;
+            if let Some(response) = self.state.cached_pharmacy_dispenses(ctx, page_size) {
+                return Ok(response);
+            }
+            Some(guard)
+        } else {
+            None
+        };
         let rows = hms_db::inventory::list_dispenses(
             self.pool(),
             self.facility_id(),
@@ -51,9 +67,14 @@ impl PharmacyService {
                 "Dispenses could not be loaded.",
             )
         })?;
-        Ok(page_response(rows, page_size, |item| {
+        let response = page_response(rows, page_size, |item| {
             encode_cursor(item.dispensed_at, item.id)
-        }))
+        });
+        if cacheable_hot_page {
+            self.state
+                .put_cached_pharmacy_dispenses(ctx, page_size, response.clone());
+        }
+        Ok(response)
     }
 
     pub async fn create_dispense(
@@ -83,6 +104,7 @@ impl PharmacyService {
                 "Dispense could not be saved.",
             )
         })?;
+        self.state.invalidate_pharmacy_dispense_cache();
         Ok(object(dispense))
     }
 }
