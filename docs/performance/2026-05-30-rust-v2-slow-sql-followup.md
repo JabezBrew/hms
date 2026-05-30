@@ -2,10 +2,16 @@
 
 ## Current pause point
 
-Paused after deploying and validating commit `6f4354cf3c0a` in the GCP
-performance lab. The bounded startup warmup for the known hot read query shapes
-cleared the previously gated slow-SQL counters without changing PHI exposure,
-facility scoping, request authorization, payload shape, or cache scope.
+Paused after deploying commit `5b3d11bd6ada` in the GCP performance lab and
+deciding to stop the slow-SQL campaign for the day. The latest attempted
+origin regression is **not valid performance evidence**: the Rust API became
+unreachable during the run, the reporter could not scrape metrics afterward,
+and the app container was in a restart loop with `OOMKilled=true` / exit `137`.
+
+The latest fully valid backend pass remains commit `6f4354cf3c0a`. That run
+showed the bounded startup warmup for the known hot read query shapes clearing
+the previously gated slow-SQL counters without changing PHI exposure, facility
+scoping, request authorization, payload shape, or cache scope.
 
 The current backend evidence is good enough to preserve as the next-day starting
 point:
@@ -23,6 +29,60 @@ verified mitigation for rare cold-query-shape tails. The next pass should prove
 whether those tails were only PostgreSQL/app-plan cold start effects or whether a
 deeper query-plan/index issue can still be reproduced under a colder or larger
 data shape.
+
+## Latest invalid rerun
+
+After the dashboard refresh enqueue change in `5b3d11bd6ada`, the direct VPC
+origin regression was started against `http://10.10.0.2:8080`:
+
+```bash
+cd /opt/hms
+set -a && . ./.hms-gcp-load.env && set +a
+HMS_LOAD_BASE_URL=http://10.10.0.2:8080 \
+HMS_LOAD_METRICS_URL=http://10.10.0.2:8080/api/v2/metrics \
+HMS_LOAD_PROFILE=stress \
+HMS_LOAD_STAGE_DURATION_SCALE=0.1 \
+HMS_LOAD_THINK_TIME_SCALE=0.2 \
+HMS_LOAD_TOKEN_REFRESH_SECONDS=60 \
+HMS_LOAD_OUT_DIR=results/load/gcp-internal-direct-stress-5b3d11bd6ada-$(date -u +%Y%m%dT%H%M%SZ) \
+tests/load/scripts/run-rust-v2-regression.sh
+```
+
+Evidence:
+
+- Report: `results/load/gcp-internal-direct-stress-5b3d11bd6ada-20260530T092305Z/report.json`
+- Status: `FAIL`, but not a useful latency/slow-SQL failure.
+- Checks: 16,697 passed, 21,160 failed.
+- `hms_errors`: 55.89%.
+- Metrics scrape after the run failed because the API was not reachable.
+- App container state afterward: `Restarting (137)`, restart count `10`,
+  `OOMKilled=true`, health `unhealthy`.
+
+Do not compare the p95/p99 values from this run against product targets. Many
+samples are connection-refused artifacts and missing telemetry, not application
+latency. The next attempt should first stabilize or restore the API container,
+then rerun origin validation from a clean process.
+
+## Later dashboard slow-SQL miss
+
+Before the invalid rerun, commit `6c78bfe18de9` produced a narrow origin
+regression failure after the frontend route-chunk preload change:
+
+- Report: `results/load/gcp-internal-direct-stress-6c78bfe18de9-20260530T090808Z/report.json`
+- Status: `FAIL`, only because the dashboard slow-SQL budget is zero.
+- Checks: 50,861 passed, 0 failed.
+- `http_req_failed`: 0%.
+- `hms_errors`: 0%.
+- Pool wait p99: 0 ms on all reported hot surfaces.
+- Dashboard p99: 1.52 ms.
+- Dashboard slow SQL: 1 event across 3,077 dashboard requests.
+
+Safe ops fingerprint evidence pointed to
+`dashboard.queue_projection_refresh`. The code path returned the cached stale
+dashboard projection quickly, but still awaited the refresh-queue DB write in
+the request path. Commit `5b3d11bd6ada` moved that queue write out of the
+request path after the access/context checks and existing refresh gate, but the
+subsequent origin validation was invalidated by the API OOM/restart loop above.
 
 ## Latest passing evidence runs
 
@@ -282,30 +342,43 @@ statement-level evidence.
   shapes that had produced rare cold-tail slow SQL. The warmup is best treated
   as a mitigation until a colder-run root-cause pass proves the underlying
   mechanism.
+- Moved dashboard projection refresh enqueue out of the snapshot request path
+  after access/context resolution and the existing refresh gate. This is intended
+  to clear the rare `dashboard.queue_projection_refresh` slow-SQL counter, but it
+  still needs a clean origin rerun because the next validation attempt OOM-killed
+  the API process.
 
 ## Next investigation path
 
-1. Keep `6f4354cf3c0a` as the baseline and rerun a cold-start origin workload
+1. First stabilize the GCP app VM API container. The last run ended with
+   `OOMKilled=true`, exit `137`, restart count `10`, and failed metrics scrape.
+   Do not evaluate slow SQL or latency until the container is healthy for a clean
+   run.
+2. Verify `5b3d11bd6ada` with a direct VPC origin regression. This is the commit
+   that should prove whether moving `dashboard.queue_projection_refresh` out of
+   the request path clears the dashboard slow-SQL miss.
+3. Keep `6f4354cf3c0a` as the last known good slow-SQL baseline and rerun a
+   cold-start origin workload
    focused on `/api/v2/patients` and `/api/v2/search/omni`.
-2. Run one variant with the startup warmup enabled and, if safe in the lab, one
+4. Run one variant with the startup warmup enabled and, if safe in the lab, one
    variant with the warmup disabled to prove whether the slow events are
    startup-plan/cache tails rather than steady-state query-plan problems.
-3. Capture safe slow-query fingerprints for those two routes. Prefer the ops
+5. Capture safe slow-query fingerprints for those two routes. Prefer the ops
    fingerprint endpoint with a proper ops/admin identity, or `pg_stat_statements`
    with query text/binds handled PHI-safely. Do not store raw bind values,
    patient identifiers, request bodies, response bodies, MRNs, or raw URLs with
    IDs.
-4. For patient list, trace any reproduced slow event to the exact repository call
+6. For patient list, trace any reproduced slow event to the exact repository call
    in `hms_db::patients::list_patient_registry` or related hot-path query
    labels, then run `EXPLAIN (ANALYZE, BUFFERS)` with sanitized literals on the
    same data shape.
-5. For Omni search, trace any reproduced slow event to the exact search
+7. For Omni search, trace any reproduced slow event to the exact search
    repository label and query variant, then verify index usage and cache
    behavior under the same load shape.
-6. If query plans remain fast and the warmup-enabled run stays clean, document
+8. If query plans remain fast and the warmup-enabled run stays clean, document
    the slow-SQL risk as startup-only and keep the mitigation. If a warm run
    reproduces slow SQL, prioritize a real SQL/index/cache fix over adding more
    warmup.
-7. After backend evidence is stable, rerun public HTTPS regression and frontend
+9. After backend evidence is stable, rerun public HTTPS regression and frontend
    runtime probes to separate app latency from user-path network and browser
    timing.
