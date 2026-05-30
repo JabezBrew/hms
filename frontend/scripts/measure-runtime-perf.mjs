@@ -6,45 +6,47 @@ const BASE_URL = (process.env.HMS_FRONTEND_BASE_URL || 'http://127.0.0.1:4174').
 const EMAIL = process.env.HMS_FRONTEND_PERF_EMAIL || 'owner@hms.local'
 const PASSWORD = process.env.HMS_FRONTEND_PERF_PASSWORD || 'ChangeMe123!'
 const FACILITY_CODE = process.env.HMS_FRONTEND_PERF_FACILITY || 'HMS'
-const PATIENT_ID = process.env.HMS_FRONTEND_PERF_PATIENT_ID || '31000000-0000-0000-0000-000000000001'
+const CONFIGURED_PATIENT_ID = process.env.HMS_FRONTEND_PERF_PATIENT_ID || ''
 const CPU_THROTTLE_RATE = Number(process.env.HMS_FRONTEND_PERF_CPU_THROTTLE || 4)
 const OUTPUT_PATH = process.env.HMS_FRONTEND_PERF_OUT || '/private/tmp/hms-frontend-runtime-perf.json'
 const RUNTIME_CONFIG_MODE = process.env.HMS_FRONTEND_RUNTIME_CONFIG || 'local-rust-v2'
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
-const ROUTES = [
-  {
-    label: 'patient_registry',
-    path: '/patients',
-    waitText: /Patient Registry/i,
-    apiPattern: /\/api\/v2\/patients(?:\?|$)/,
-  },
-  {
-    label: 'patient_chronicle',
-    path: `/patients/${PATIENT_ID}`,
-    waitText: /Clinical Chronicle/i,
-    apiPattern: /\/api\/v2\/patients\/[^/]+\/chronicle(?:\?|$)/,
-  },
-  {
-    label: 'ward_board',
-    path: '/ward-board',
-    waitText: /Ward Board/i,
-    apiPattern: /\/api\/v2\/wards\/board(?:\?|$)/,
-  },
-  {
-    label: 'lab_orders',
-    path: '/laboratory/orders',
-    waitText: /Lab Orders/i,
-    apiPattern: /\/api\/v2\/lab/,
-  },
-  {
-    label: 'inventory_items',
-    path: '/inventory/items',
-    waitText: /Inventory Items/i,
-    apiPattern: /\/api\/v2\/inventory/,
-  },
-]
+function buildRoutes(patientId) {
+  return [
+    {
+      label: 'patient_registry',
+      path: '/patients',
+      waitText: /Patient Registry/i,
+      apiPattern: /\/api\/v2\/patients(?:\?|$)/,
+    },
+    {
+      label: 'patient_chronicle',
+      path: `/patients/${patientId}`,
+      waitText: /Clinical Chronicle/i,
+      apiPattern: /\/api\/v2\/patients\/[^/]+\/chronicle(?:\?|$)/,
+    },
+    {
+      label: 'ward_board',
+      path: '/ward-board',
+      waitText: /Ward Board/i,
+      apiPattern: /\/api\/v2\/wards\/board(?:\?|$)/,
+    },
+    {
+      label: 'lab_orders',
+      path: '/laboratory/orders',
+      waitText: /Lab Orders/i,
+      apiPattern: /\/api\/v2\/lab/,
+    },
+    {
+      label: 'inventory_items',
+      path: '/inventory/items',
+      waitText: /Inventory Items/i,
+      apiPattern: /\/api\/v2\/inventory/,
+    },
+  ]
+}
 
 function round(value) {
   return Number(Number(value || 0).toFixed(2))
@@ -177,6 +179,80 @@ async function fillOptional(locator, value) {
   return true
 }
 
+async function fetchJsonFromApi(pathName, token) {
+  const response = await fetch(new URL(pathName, BASE_URL), {
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+  })
+  if (!response.ok) {
+    return { ok: false, status: response.status, data: null }
+  }
+  return { ok: true, status: response.status, data: await response.json() }
+}
+
+async function createProbeAccessToken() {
+  const response = await fetch(new URL('/api/v2/auth/login', BASE_URL), {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      email: EMAIL,
+      password: PASSWORD,
+      facility_code: FACILITY_CODE,
+    }),
+  })
+  if (!response.ok) {
+    throw new Error('Unable to authenticate the frontend perf probe API session.')
+  }
+  const payload = await response.json()
+  const accessToken = payload?.data?.access_token
+  if (!accessToken) {
+    throw new Error('Frontend perf probe API session did not return an access token.')
+  }
+  return accessToken
+}
+
+function listPatientIds(payload) {
+  const candidates = [
+    payload?.data,
+    payload?.data?.items,
+    payload?.data?.results,
+    payload?.items,
+    payload?.results,
+  ]
+  return candidates
+    .find(Array.isArray)
+    ?.map((item) => item?.id)
+    .filter(Boolean) || []
+}
+
+async function canOpenChronicle(token, patientId) {
+  const encodedId = encodeURIComponent(patientId)
+  const result = await fetchJsonFromApi(`/api/v2/patients/${encodedId}/chronicle`, token)
+  return result.ok
+}
+
+async function discoverChroniclePatientId() {
+  const token = await createProbeAccessToken()
+  if (CONFIGURED_PATIENT_ID && await canOpenChronicle(token, CONFIGURED_PATIENT_ID)) {
+    return CONFIGURED_PATIENT_ID
+  }
+
+  const patients = await fetchJsonFromApi('/api/v2/patients?limit=50', token)
+  const patientIds = listPatientIds(patients.data)
+  for (const patientId of patientIds.slice(0, 20)) {
+    if (await canOpenChronicle(token, patientId)) {
+      return patientId
+    }
+  }
+
+  throw new Error('No chronicle-accessible patient was available for the frontend perf probe.')
+}
+
 async function navigateSpa(page, targetPath) {
   const url = new URL(targetPath, BASE_URL).toString()
   try {
@@ -241,9 +317,10 @@ async function main() {
   await page.waitForURL((url) => url.pathname !== '/login', { timeout: 15000 })
   await waitForSettled(page)
   const loginRaw = await collectMeasurement(page, loginStartedAt)
+  const chroniclePatientId = await discoverChroniclePatientId()
 
   const results = []
-  for (const route of ROUTES) {
+  for (const route of buildRoutes(chroniclePatientId)) {
     results.push(await measureRoute(page, route))
   }
 
