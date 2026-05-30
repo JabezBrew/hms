@@ -21,6 +21,7 @@ use hms_domain::ward::WardBoardItem;
 use hms_events::DomainEventKind;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
+use tokio::sync::Semaphore;
 use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
@@ -53,6 +54,7 @@ struct AppStateInner {
     auth_pool: hms_db::PgPool,
     auth_cache: AuthCache,
     hot_read_cache: HotReadCache,
+    password_work_limiter: Arc<Semaphore>,
     dashboard_refresh_gate: DashboardRefreshGate,
     cloudflare_access: Option<CloudflareAccessVerifier>,
 }
@@ -660,6 +662,7 @@ impl AppState {
     pub async fn new(config: Config) -> Result<Self> {
         let started_at = Utc::now();
         let auth_cache_max_entries = config.auth_cache_max_entries;
+        let password_work_max_concurrency = config.password_work_max_concurrency;
         let pool = hms_db::pool::connect_with_max_connections(
             &config.database_url,
             config.database_max_connections,
@@ -718,6 +721,7 @@ impl AppState {
                 auth_pool,
                 auth_cache: AuthCache::new(auth_cache_max_entries),
                 hot_read_cache: HotReadCache::new(HOT_READ_CACHE_MAX_ENTRIES),
+                password_work_limiter: Arc::new(Semaphore::new(password_work_max_concurrency)),
                 dashboard_refresh_gate: DashboardRefreshGate::default(),
                 cloudflare_access,
             }),
@@ -1224,7 +1228,10 @@ impl AppState {
             return Ok(None);
         };
 
-        if !verify_password(&user.password_hash, password) {
+        if !self
+            .verify_password_bounded(&user.password_hash, password)
+            .await?
+        {
             return Ok(None);
         }
 
@@ -1410,14 +1417,13 @@ impl AppState {
         let previous_hashes =
             hms_db::auth::password_hashes_for_user(&self.inner.pool, reset_token.user_id, 5)
                 .await?;
-        if previous_hashes
-            .iter()
-            .any(|hash| verify_password(hash, new_password))
-        {
-            return Ok(false);
+        for hash in &previous_hashes {
+            if self.verify_password_bounded(hash, new_password).await? {
+                return Ok(false);
+            }
         }
 
-        let new_password_hash = hash_password(new_password)?;
+        let new_password_hash = self.hash_password_bounded(new_password).await?;
         self.invalidate_auth_cache_for_user(reset_token.facility_id, reset_token.user_id);
         let completed = hms_db::auth::complete_password_reset(
             &self.inner.pool,
@@ -1466,20 +1472,22 @@ impl AppState {
         if user.facility_id != facility_id {
             return Ok(ChangePasswordOutcome::UserNotFound);
         }
-        if !verify_password(&user.password_hash, current_password) {
+        if !self
+            .verify_password_bounded(&user.password_hash, current_password)
+            .await?
+        {
             return Ok(ChangePasswordOutcome::InvalidCurrentPassword);
         }
 
         let previous_hashes =
             hms_db::auth::password_hashes_for_user(&self.inner.pool, user_id, 5).await?;
-        if previous_hashes
-            .iter()
-            .any(|hash| verify_password(hash, new_password))
-        {
-            return Ok(ChangePasswordOutcome::PasswordReused);
+        for hash in &previous_hashes {
+            if self.verify_password_bounded(hash, new_password).await? {
+                return Ok(ChangePasswordOutcome::PasswordReused);
+            }
         }
 
-        let new_password_hash = hash_password(new_password)?;
+        let new_password_hash = self.hash_password_bounded(new_password).await?;
         self.invalidate_auth_cache_for_user(facility_id, user_id);
         let changed = hms_db::auth::change_user_password(
             &self.inner.pool,
@@ -1652,6 +1660,41 @@ impl AppState {
             session_id,
             user: auth_user,
         }))
+    }
+
+    pub(crate) async fn hash_password_bounded(&self, password: &str) -> Result<String> {
+        let permit = self
+            .inner
+            .password_work_limiter
+            .clone()
+            .acquire_owned()
+            .await
+            .context("password work limiter closed")?;
+        let password = password.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            hash_password(&password)
+        })
+        .await
+        .context("password hash task failed")?
+    }
+
+    async fn verify_password_bounded(&self, hash: &str, password: &str) -> Result<bool> {
+        let permit = self
+            .inner
+            .password_work_limiter
+            .clone()
+            .acquire_owned()
+            .await
+            .context("password work limiter closed")?;
+        let hash = hash.to_owned();
+        let password = password.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            verify_password(&hash, &password)
+        })
+        .await
+        .context("password verify task failed")
     }
 }
 

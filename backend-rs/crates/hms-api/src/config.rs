@@ -67,6 +67,7 @@ pub struct Config {
     pub access_token_ttl: Duration,
     pub refresh_token_ttl: Duration,
     pub auth_cache_max_entries: usize,
+    pub password_work_max_concurrency: usize,
     pub cookie_secure: bool,
     pub deployment_profile: DeploymentProfile,
     pub auto_migrate: bool,
@@ -103,6 +104,11 @@ impl Config {
             Ok(value) => parse_usize(&value, "HMS_AUTH_CACHE_MAX_ENTRIES")?,
             Err(_) => 16_384,
         };
+        let password_work_max_concurrency = match env::var("HMS_PASSWORD_WORK_MAX_CONCURRENCY") {
+            Ok(value) => parse_usize(&value, "HMS_PASSWORD_WORK_MAX_CONCURRENCY")?,
+            Err(_) => 8,
+        }
+        .max(1);
 
         if environment == "production" && jwt_secret.contains("development-only") {
             bail!("HMS_JWT_SECRET must be set to a production secret");
@@ -176,6 +182,7 @@ impl Config {
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
             auth_cache_max_entries,
+            password_work_max_concurrency,
             cookie_secure,
             deployment_profile,
             auto_migrate,
@@ -200,6 +207,7 @@ impl Config {
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
             auth_cache_max_entries: 16_384,
+            password_work_max_concurrency: 8,
             cookie_secure: false,
             deployment_profile: DeploymentProfile::Hospital,
             auto_migrate: true,

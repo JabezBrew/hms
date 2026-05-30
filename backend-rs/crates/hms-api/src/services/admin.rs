@@ -20,7 +20,6 @@ use uuid::Uuid;
 
 use crate::cursor_list;
 use crate::error::ApiError;
-use crate::passwords::hash_password;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
@@ -615,9 +614,13 @@ impl AdminService {
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
         require_staff_access(ctx, self.facility_id())?;
         validate_staff_payload(&payload)?;
-        let password_hash = hash_password(&payload.temporary_password).map_err(|_| {
-            ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
-        })?;
+        let password_hash = self
+            .state
+            .hash_password_bounded(&payload.temporary_password)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
+            })?;
         let staff = hms_db::admin::create_staff_account(
             self.pool(),
             NewStaffAccount {
