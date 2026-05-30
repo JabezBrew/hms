@@ -12,9 +12,11 @@ use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::dashboard::DashboardProjectionRead;
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
-use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
+use hms_domain::auth::{
+    ActiveAuthority, AuthUser, PatientDataVisibility, UpdateAuthProfileRequest,
+};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
-use hms_domain::deployment::{DeploymentProfile, NavigationManifest};
+use hms_domain::deployment::{DeploymentProfile, FeatureKey, NavigationManifest, PermissionCode};
 use hms_domain::inventory::PharmacyDispenseListItem;
 use hms_domain::patients::{PatientAdministrativeStatus, PatientListItem};
 use hms_domain::search::SearchResourceType;
@@ -42,6 +44,7 @@ const PATIENT_CHRONICLE_STARTUP_CACHE_TTL: Duration = Duration::from_secs(30);
 const PATIENT_LIST_CACHE_TTL: Duration = Duration::from_secs(30);
 const PHARMACY_DISPENSE_CACHE_TTL: Duration = Duration::from_secs(30);
 const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(30);
+const HOT_READ_QUERY_SHAPE_WARMUP_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -748,6 +751,8 @@ impl AppState {
                 .await
                 .context("failed to rebuild OmniSearch index")?;
         }
+
+        warm_hot_read_query_shapes(&pool, facility_id).await;
 
         let cloudflare_access = if config.ops_auth_mode.allows_cloudflare_access() {
             Some(CloudflareAccessVerifier::new(
@@ -1855,6 +1860,54 @@ fn auth_pool_max_connections(database_max_connections: u32) -> u32 {
     (database_max_connections / 2)
         .clamp(2, 8)
         .min(database_max_connections.max(1))
+}
+
+async fn warm_hot_read_query_shapes(pool: &hms_db::PgPool, facility_id: Uuid) {
+    let warmup = async {
+        hms_db::patients::list_patient_registry(pool, facility_id, None, 21, None, None).await?;
+        hms_db::patients::list_patient_registry(pool, facility_id, None, 21, Some("hms"), None)
+            .await?;
+        hms_db::search::omni_search(
+            pool,
+            OmniSearchFilters {
+                facility_id,
+                user_id: Uuid::nil(),
+                query: Some("General".to_owned()),
+                types: vec![
+                    SearchResourceType::Patients,
+                    SearchResourceType::Appointments,
+                    SearchResourceType::Laboratory,
+                ],
+                limit_per_group: 8,
+                permission_codes: vec![
+                    PermissionCode::PatientDemographicsView,
+                    PermissionCode::AppointmentView,
+                    PermissionCode::LaboratoryOrderManage,
+                    PermissionCode::LaboratoryResultVerify,
+                    PermissionCode::ClinicalDocumentationView,
+                ],
+                feature_keys: vec![
+                    FeatureKey::Patients,
+                    FeatureKey::Appointments,
+                    FeatureKey::Encounters,
+                    FeatureKey::Laboratory,
+                ],
+                patient_visibility: vec![PatientDataVisibility::Demographics],
+            },
+        )
+        .await?;
+        anyhow::Ok(())
+    };
+
+    match timeout(HOT_READ_QUERY_SHAPE_WARMUP_TIMEOUT, warmup).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            warn!(error = %error, "hot read query shape warmup failed");
+        }
+        Err(_) => {
+            warn!("hot read query shape warmup timed out");
+        }
+    }
 }
 
 async fn redis_ready(redis_addr: &str) -> bool {
