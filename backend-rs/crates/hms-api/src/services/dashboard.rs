@@ -9,7 +9,7 @@ use hms_domain::dashboard::{
     NotificationCounts, NotificationListItem, NotificationListQuery, RealtimeChannelKind,
     RealtimeMessage, RealtimeSubscribeQuery, RealtimeSubscription,
 };
-use hms_domain::deployment::{FeatureKey, PermissionCode};
+use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use hms_events::RealtimeDeltaEnvelope;
 use serde_json::json;
 use sha2::Digest;
@@ -68,23 +68,10 @@ impl DashboardService {
             })?;
 
         let refresh_queued =
-            if projection.is_stale && self.state.claim_dashboard_projection_refresh_enqueue(ctx) {
-                match dashboard::queue_dashboard_projection_refresh(
-                    self.pool(),
-                    self.facility_id(),
-                    ctx.active_profile,
-                )
-                .await
-                {
-                    Ok(queue) => queue.queued,
-                    Err(error) => {
-                        tracing::warn!(%error, "dashboard projection refresh enqueue failed");
-                        false
-                    }
-                }
-            } else {
-                false
-            };
+            projection.is_stale && self.state.claim_dashboard_projection_refresh_enqueue(ctx);
+        if refresh_queued {
+            self.enqueue_dashboard_projection_refresh(ctx.active_profile);
+        }
 
         let mut snapshot = projection
             .snapshot
@@ -100,6 +87,18 @@ impl DashboardService {
                 "ttl_seconds": dashboard::DASHBOARD_PROJECTION_TTL_SECONDS,
             }),
         })
+    }
+
+    fn enqueue_dashboard_projection_refresh(&self, profile: DeploymentProfile) {
+        let pool = self.pool().clone();
+        let facility_id = self.facility_id();
+        tokio::spawn(async move {
+            if let Err(error) =
+                dashboard::queue_dashboard_projection_refresh(&pool, facility_id, profile).await
+            {
+                tracing::warn!(%error, "dashboard projection refresh enqueue failed");
+            }
+        });
     }
 
     pub async fn admin_capacity_summary(
