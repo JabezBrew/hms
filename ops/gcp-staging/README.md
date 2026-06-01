@@ -33,7 +33,7 @@ App VM:
 - Public IP: `34.35.148.55`
 - Machine type: `n2-standard-4`
 - Disk: `100G`
-- Current public URL: `https://34.35.148.55.sslip.io`
+- Current public URL: `https://staging.thehms.systems`
 - Current compose project: `hms-gcp-perf`
 - Current deployment profile: `hospital`
 - Current facility code: `MAIN`
@@ -47,7 +47,10 @@ Public edge:
 - HTTPS forwarding rule: `hms-staging-https-fr`
 - Target proxy: `hms-staging-https-proxy`
 - URL map: `hms-staging-url-map`
-- App backend: `hms-staging-app-backend`
+- App backend: `hms-staging-app-backend`, forwarding HTTP to Caddy on named
+  port `http:80`.
+- App backend health check: `hms-staging-http-ready-hc`, HTTP
+  `/api/v2/health/ready` with host `staging.thehms.systems`.
 - Static backend: `hms-staging-static-backend` with CDN enabled for
   `/assets/*` only.
 - Managed certificate: `hms-staging-managed-cert-v2`
@@ -81,6 +84,12 @@ stopped when not running tests.
 public Rust V2 readiness endpoint returns `200` at `/api/v2/health/ready`, and
 response headers include `via: 1.1 Caddy, 1.1 google`.
 
+TLS terminates at the GCP HTTPS load balancer. The VM-local Caddy instance uses
+`ops/gcp-staging/Caddyfile`, which is intentionally HTTP-only for
+`CLIENT_DOMAIN` so GCP backend requests do not get redirected from port 80 to
+443. The reusable `ops/compose-v2/Caddyfile` remains the direct single-VM TLS
+shape for non-GCP deployments.
+
 Current intended GCP runtime services:
 
 - `caddy`
@@ -112,6 +121,7 @@ That wrapper combines:
 
 - `ops/compose-v2/compose.yml`
 - `ops/gcp-staging/compose.cloudsql.yml`
+- `ops/gcp-staging/Caddyfile` mounted into the Caddy container
 
 Do not run bare `ops/compose-v2/deploy.sh` for current GCP staging unless
 `COMPOSE_FILES` includes the Cloud SQL override and `DATABASE_MODE` is
@@ -331,6 +341,9 @@ Before canceling Hetzner staging:
 
 5. Cut DNS
    - Point `staging.thehms.systems` at the GCP load-balancer IP.
+   - Confirm `hms-staging-app-backend` uses protocol `HTTP`, port name `http`,
+     and health check `hms-staging-http-ready-hc`; Caddy behind the LB should
+     serve HTTP on port 80, not redirect GCP backend traffic to HTTPS.
    - Keep Cloudflare DNS-only unless the proxied-vs-DNS-only timing/security
      comparison is being run intentionally.
    - Use public readiness as the cutover gate, not as the only deploy truth.
@@ -360,3 +373,19 @@ Before canceling Hetzner staging:
    `n2-standard-4`; run smoke and perf checks before keeping a smaller size.
 5. Keep Hetzner live until the GCP public path, Cloud SQL backup/restore path,
    and rollback assumptions are proven through the agreed window.
+
+## Public 503 triage
+
+If the browser shows `no healthy upstream` or `remote connection failure` from
+Google:
+
+```bash
+gcloud compute backend-services get-health hms-staging-app-backend \
+  --global --project hms-perf-lab
+```
+
+Expected healthy output is the `hms-gcp-app-1` instance on port `80`. If GCP
+marks the backend unhealthy and direct VM HTTP redirects to HTTPS, redeploy with
+the GCP override so Caddy mounts `ops/gcp-staging/Caddyfile`. If GCP marks the
+backend healthy but public requests still fail, verify the backend service did
+not drift to protocol `HTTPS` or port name `https`.

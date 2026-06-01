@@ -6,6 +6,13 @@
 # HMS_DATABASE_URL in a private env file, pointing at Cloud SQL private IP.
 
 services:
+  caddy:
+    ports: !override
+      - "80:80"
+    volumes: !override
+      - ../gcp-staging/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_config:/config
+
   hms-api:
     environment:
       HMS_DATABASE_URL: ${HMS_DATABASE_URL:?set HMS_DATABASE_URL to the Cloud SQL private IP URL in the private env}

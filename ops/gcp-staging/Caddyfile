@@ -1,0 +1,34 @@
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+(hms_secure_headers) {
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+}
+
+http://{$CLIENT_DOMAIN} {
+	encode zstd gzip
+	import hms_secure_headers
+
+	@publicMetrics path /api/v2/metrics
+	respond @publicMetrics 404
+
+	@opsApi path /api/v2/ops /api/v2/ops/*
+	respond @opsApi 404
+
+	@opsUi path /system/ops /system/ops/*
+	respond @opsUi 404
+
+	@api path /api/v2/*
+	reverse_proxy @api hms-api:8080
+
+	reverse_proxy frontend:80
+}

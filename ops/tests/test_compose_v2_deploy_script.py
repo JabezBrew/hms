@@ -14,6 +14,7 @@ COMPOSE_FILE = REPO_ROOT / 'ops' / 'compose-v2' / 'compose.yml'
 ENV_EXAMPLE = REPO_ROOT / 'ops' / 'compose-v2' / 'env.example'
 GCP_DEPLOY_SCRIPT = REPO_ROOT / 'ops' / 'gcp-staging' / 'deploy.sh'
 CLOUDSQL_OVERRIDE = REPO_ROOT / 'ops' / 'gcp-staging' / 'compose.cloudsql.yml'
+GCP_CADDYFILE = REPO_ROOT / 'ops' / 'gcp-staging' / 'Caddyfile'
 LEGACY_DEPLOY_SHIM = REPO_ROOT / 'ops' / 'hetzner-v2' / 'deploy.sh'
 LEGACY_GCP_DEPLOY_SHIM = REPO_ROOT / 'ops' / 'gcp-staging' / 'deploy-cloudsql-staging.sh'
 DUMMY_CLOUDSQL_URL = 'postgres://hms:secret@10.216.13.2:5432/hms'
@@ -81,11 +82,26 @@ def test_v2_deploy_has_external_postgres_guardrails():
 def test_gcp_cloudsql_override_requires_external_database_url():
     override = CLOUDSQL_OVERRIDE.read_text(encoding='utf-8')
 
+    assert '../gcp-staging/Caddyfile:/etc/caddy/Caddyfile:ro' in override
+    assert '"80:80"' in override
+    assert '"443:443"' not in override
     assert 'HMS_DATABASE_URL: ${HMS_DATABASE_URL:?set HMS_DATABASE_URL to the Cloud SQL private IP URL in the private env}' in override
     assert 'depends_on: !reset []' in override
     assert 'networks: !override' in override
     assert '- edge' in override
     assert 'local-postgres-disabled' in override
+
+
+def test_gcp_caddyfile_is_http_backend_for_gcp_https_load_balancer():
+    caddyfile = GCP_CADDYFILE.read_text(encoding='utf-8')
+    lines = [line.strip() for line in caddyfile.splitlines()]
+
+    assert 'http://{$CLIENT_DOMAIN}' in caddyfile
+    assert '{$CLIENT_DOMAIN} {' not in lines
+    assert 'reverse_proxy @api hms-api:8080' in caddyfile
+    assert 'reverse_proxy frontend:80' in caddyfile
+    assert '/api/v2/metrics' in caddyfile
+    assert 'respond @publicMetrics 404' in caddyfile
 
 
 @pytest.mark.skipif(shutil.which('docker') is None, reason='docker is not installed')
@@ -133,8 +149,12 @@ def test_gcp_cloudsql_compose_contract_disables_local_postgres_and_gives_migrato
         text=True,
         env=env,
     ).stdout
+    caddy_block = config.split('  caddy:', 1)[1].split('\n  frontend:', 1)[0]
     migrator_block = config.split('  hms-migrator:', 1)[1].split('\n  hms-worker:', 1)[0]
 
+    assert 'target: 80' in caddy_block
+    assert 'target: 443' not in caddy_block
+    assert 'ops/gcp-staging/Caddyfile' in caddy_block
     assert f'HMS_DATABASE_URL: {DUMMY_CLOUDSQL_URL}' in migrator_block
     assert 'edge: null' in migrator_block
     assert 'internal: null' in migrator_block
