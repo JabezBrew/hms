@@ -10,7 +10,7 @@
  * - Time ago formatting
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AlertsPanel } from '../AlertsPanel'
@@ -70,6 +70,12 @@ function renderAlertsPanel(props = {}) {
       <AlertsPanel alerts={[]} isLoading={false} {...props} />
     </QueryClientProvider>
   )
+}
+
+function getAlertButton(message) {
+  const button = screen.getByText(message).closest('button')
+  expect(button).not.toBeNull()
+  return button
 }
 
 describe('AlertsPanel', () => {
@@ -320,7 +326,7 @@ describe('AlertsPanel', () => {
       renderAlertsPanel({ alerts })
 
       // Click on alert to open dialog
-      const alertCard = screen.getByText('Test alert').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -340,7 +346,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Critical vital sign alert').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Critical vital sign alert')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -355,7 +361,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -369,7 +375,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -395,7 +401,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts: [alert] })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -418,7 +424,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts: [alert] })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -444,7 +450,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -466,7 +472,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -488,7 +494,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -521,7 +527,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {
@@ -540,7 +546,7 @@ describe('AlertsPanel', () => {
 
       renderAlertsPanel({ alerts })
 
-      const alertCard = screen.getByText('Test alert message').closest('div[class*="border"]')
+      const alertCard = getAlertButton('Test alert message')
       await user.click(alertCard)
 
       await waitFor(() => {

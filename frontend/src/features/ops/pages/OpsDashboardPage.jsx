@@ -913,8 +913,8 @@ function SlowQueryTable({ rows }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {slowRows.map((row) => {
-            const fingerprint = safeFingerprint(row.fingerprint, `${row.source || 'source'}-${row.status || 'status'}`)
+          {slowRows.map((row, index) => {
+            const fingerprint = safeFingerprint(row.fingerprint, index)
             return (
               <TableRow key={fingerprint}>
                 <TableCell className="max-w-[360px] truncate font-mono text-xs">{fingerprint}</TableCell>

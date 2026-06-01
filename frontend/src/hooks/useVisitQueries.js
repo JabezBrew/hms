@@ -14,6 +14,7 @@ import {
 } from '@/hooks/useDashboardQueries';
 import {
   invalidateQueryKeys,
+  invalidateQueriesMatching,
 } from '@/shared/lib/queryInvalidation';
 
 // =============================================================================
@@ -49,6 +50,12 @@ export function invalidateVisitMutationQueries(queryClient, encounterId) {
   const tasks = [
     invalidateOperationalDoctorDashboardQueries(queryClient),
     invalidateEncounterMutationQueries(queryClient, { encounterId }),
+    invalidateQueriesMatching(
+      queryClient,
+      ({ queryKey }) => Array.isArray(queryKey)
+        && queryKey[0] === 'visits'
+        && queryKey[1] === 'waiting-room',
+    ),
   ];
 
   if (encounterId) {

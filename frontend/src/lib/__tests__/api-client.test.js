@@ -133,9 +133,10 @@ describe('apiClient runtime config integration', () => {
     });
     expect(data).toEqual([{ id: 1 }]);
 
-    flushRum();
-
-    expect(globalThis.navigator.sendBeacon).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      flushRum();
+      expect(globalThis.navigator.sendBeacon).toHaveBeenCalledTimes(1);
+    });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     const [, request] = globalThis.fetch.mock.calls[1];
     expect(JSON.parse(request.body)).toMatchObject({
