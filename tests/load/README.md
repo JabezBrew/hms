@@ -1,5 +1,10 @@
 # HMS Load Testing
 
+Status: active performance harness
+Owner: Performance Engineering
+Last reviewed: 2026-06-01
+Scope: k6/Locust load tests, Rust V2 performance regression wrapper, reporter, and baselines.
+
 The active HMS backend is Rust V2. Use `k6-rust-v2-realistic.js` for current
 load testing. The older `k6-test.js`, `k6-smoke.js`, `k6-debug.js`, and
 `locustfile.py` still target legacy Django `/api/...` paths and should only be
@@ -194,7 +199,11 @@ Grafana metrics should still be judged against the real Rust V2 budget.
 
 ## Observability During Runs
 
-Open Grafana through the staging tunnel:
+For current GCP staging, use the Grafana/metrics access path documented in
+`ops/gcp-staging/README.md`.
+
+For a Hetzner V2 Compose rollback/reference host, open Grafana through the
+rollback/reference SSH tunnel:
 
 ```bash
 ssh -L 3001:127.0.0.1:3001 hms-staging

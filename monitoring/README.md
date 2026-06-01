@@ -1,6 +1,17 @@
 # HMS Self-Hosted Observability
 
-This bundle provides self-hosted observability for Hetzner VPS deployments:
+Status: active observability reference
+Owner: Operations/Performance Engineering
+Last reviewed: 2026-06-01
+Scope: Prometheus, Grafana, Loki, Tempo, Alertmanager, metrics proxy, and telemetry sidecars.
+
+This bundle provides the self-hosted observability stack used by the Rust V2
+Compose deployment profile. Current staging/performance validation is on GCP;
+use the current GCP runbook for that environment. The Hetzner V2 Compose path
+remains rollback/reference, and the legacy Django Hetzner kit is historical
+only.
+
+The monitoring bundle contains:
 
 - Prometheus metrics and alert rules.
 - Grafana dashboards backed by Prometheus and Loki.
@@ -14,7 +25,11 @@ what happened, why it matters, likely cause, first checks, and the runbook path.
 
 ## Open Grafana Dashboards
 
-Open Grafana through an SSH tunnel. For staging from this laptop:
+For current GCP staging, open Grafana through the access path documented in
+`ops/gcp-staging/README.md`.
+
+For a Hetzner V2 Compose rollback/reference host from this laptop, open Grafana
+through an SSH tunnel:
 
 ```bash
 ssh -L 3001:127.0.0.1:3001 hms-staging
@@ -70,11 +85,23 @@ Grafana container logs for dashboard JSON parse errors.
 - Treat browser telemetry as operational metadata only. RUM must not include page
   text, form values, patient names, or raw URLs containing identifiers.
 
-## Staging on the Same VPS
+## Metrics Proxy
 
-Run this after the main HMS stack is healthy. The staging bundle joins the HMS
-Docker networks and scrapes the API privately at `api:8000`.
+`monitoring/caddy/metrics-proxy.Caddyfile` exposes a private scrape surface on
+port `9188` inside the telemetry network:
 
+- `/api/metrics/` rewrites to `/api/v2/metrics` and proxies to `hms-api:8080`.
+- `/worker/metrics` rewrites to `/metrics` and proxies to `hms-worker:8081`.
+- all other paths return `404`.
+
+Do not expose this proxy on the public interface.
+
+## Compose Staging Or Rollback
+
+Run this after the main Rust V2 stack is healthy. For current GCP staging, use
+the GCP runbook first. For a Rust V2 Compose staging/rollback host, the
+monitoring bundle joins the HMS Docker networks and scrapes the private metrics
+proxy instead of public API endpoints.
 ```bash
 cd /opt/hms
 mkdir -p monitoring/alertmanager/secrets
@@ -84,13 +111,14 @@ chmod 600 monitoring/alertmanager/secrets/telegram_bot_token
 GF_SECURITY_ADMIN_USER=admin \
 GF_SECURITY_ADMIN_PASSWORD='<strong-password>' \
 TELEGRAM_CHAT_ID='<telegram-chat-id>' \
-HMS_EDGE_NETWORK="${COMPOSE_PROJECT_NAME:-hms-client}_edge" \
-HMS_INTERNAL_NETWORK="${COMPOSE_PROJECT_NAME:-hms-client}_internal" \
-docker compose --env-file ops/hetzner-client-vps/.env \
+HMS_EDGE_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_edge" \
+HMS_INTERNAL_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_internal" \
+docker compose --env-file ops/hetzner-v2/.env \
   -f monitoring/docker-compose.monitoring.yml up -d
 ```
 
-Open dashboards through an SSH tunnel:
+Open dashboards through an SSH tunnel on a Hetzner V2 Compose
+rollback/reference host:
 
 ```bash
 ssh -L 3001:127.0.0.1:3001 hms-staging

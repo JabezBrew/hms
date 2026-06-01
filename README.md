@@ -7,6 +7,16 @@ The active backend is `backend-rs/`. The old Django/DRF/Celery backend remains
 in `backend/` as legacy reference code only. Do not add new backend behavior to
 `backend/` unless the task explicitly says it is legacy Django maintenance.
 
+## Engineering Documentation
+
+Start with `CONTEXT.md` for product language, active architecture, and
+non-negotiable invariants. The concrete codebase map starts at `docs/README.md`
+and links to the backend crates, frontend modules, ops, tests, monitoring, and
+legacy reference areas.
+
+When older docs conflict with Rust V2 code, tests, generated OpenAPI, or active
+runbooks, prefer the newer source of truth.
+
 ## Architecture
 
 - **Backend (active): Rust V2**
@@ -105,18 +115,25 @@ npm run build
 
 ## Deployment
 
-The active Hetzner deployment path is the Rust V2 kit:
+The current staging and performance-validation path is GCP:
+
+```text
+ops/gcp-staging/README.md
+```
+
+GCP staging runs the same Rust V2 stack: `backend-rs/`, `hms-migrator`,
+`hms-api`, `hms-worker`, the React frontend in Rust V2 mode, PostgreSQL, Redis,
+PgBouncer, and Caddy. The standard readiness check is:
+
+```text
+https://<client-domain>/api/v2/health/ready
+```
+
+Hetzner remains the rollback and reusable Compose path while GCP proves out:
 
 ```text
 ops/hetzner-v2/README.md
 ops/hetzner-v2/compose.yml
-```
-
-It builds `backend-rs/`, runs `hms-migrator`, starts `hms-api` and
-`hms-worker`, serves the React frontend in Rust V2 mode, and checks:
-
-```text
-https://<client-domain>/api/v2/health/ready
 ```
 
 The older `ops/hetzner-client-vps/` kit is legacy Django deployment material.
@@ -159,6 +176,8 @@ backend/
   feature API adapters in `frontend/`.
 - Keep patient clinical data workflows inside the Patient Chronicle UI.
 - Keep PHI out of logs, metrics labels, query keys, and browser storage.
+- Include facility/user/profile/permission-version scope in cache and query keys
+  whenever authorization changes visibility.
 - Use bounded cursor lists for hot clinical endpoints.
 - Preserve AbortSignal support in frontend list/search calls.
 

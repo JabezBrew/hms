@@ -44,7 +44,9 @@ The system must support one codebase that can be deployed for different facility
 
 ## 2. Hard Assumptions
 
-- One client per VPS is the deployment target.
+- One client per isolated deployment is the product target. Current staging and
+  performance validation run on GCP; the Hetzner VPS Compose kit remains
+  rollback/reusable deployment reference.
 - A deployment may contain one facility or multiple facilities/branches for that one client.
 - True multi-tenant SaaS is not a V2 requirement.
 - PostgreSQL is the source of truth.
@@ -76,7 +78,8 @@ Auth: short-lived access JWT plus refresh session cookie
 Password hashing: argon2
 Logging/tracing: tracing with JSON logs
 Metrics: Prometheus-compatible /metrics endpoint
-Deployment: Docker Compose on Hetzner VPS
+Deployment: Docker Compose stack; current staging/performance path is GCP, with
+Hetzner V2 retained as rollback/reusable Compose reference.
 ```
 
 <a id="crate-layout"></a>
@@ -610,7 +613,8 @@ cross_facility_record_exchange_optional
 network_level_positions
 ```
 
-Network profile is still one client per VPS. It is not SaaS tenancy.
+Network profile is still one client per isolated deployment. It is not SaaS
+tenancy.
 
 Additional org unit types:
 
@@ -1577,7 +1581,8 @@ bulk patient export requires re-auth
 
 ## 20. Performance and Scalability Architecture
 
-The deployment target is a modest Hetzner VPS, so the design must be efficient by default.
+Deployment hardware can be modest in both the current GCP path and the reusable
+single-client Compose path, so the design must be efficient by default.
 
 Target budgets:
 
@@ -1867,7 +1872,8 @@ The seed path must be idempotent.
 14. Billing, NHIS, cash drawer, payments, remittances.
 15. Dashboards, notifications, realtime.
 16. TypeScript API client generation from OpenAPI.
-17. Hetzner staging deployment and production hardening.
+17. GCP staging/performance validation, Hetzner rollback validation, and
+    production hardening.
 
 <a id="non-negotiable-tests"></a>
 

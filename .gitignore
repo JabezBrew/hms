@@ -59,7 +59,12 @@ AGENTS.md
 
 # Docs
 .junie/
-docs/
+# Track Markdown documentation by default; keep generated/binary doc artifacts
+# ignored unless they are explicitly force-added for a release.
+docs/**
+!docs/
+!docs/**/
+!docs/**/*.md
 backend-rs/target/
 .claude/
 .codex/

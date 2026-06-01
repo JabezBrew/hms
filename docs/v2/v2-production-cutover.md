@@ -2,7 +2,12 @@
 
 HMS V2 production cutover uses the Rust backend in `backend-rs/`, the
 maintained React/Vite frontend in `frontend/`, generated JavaScript `/api/v2`
-helpers, and the Hetzner kit in `ops/hetzner-v2/`.
+helpers, and the current staging/performance path documented in
+`ops/gcp-staging/README.md`.
+
+The Rust V2 Compose kit in `ops/hetzner-v2/` remains the rollback and reusable
+single-client Compose reference. Do not treat Hetzner as the current staging
+authority while GCP is active.
 
 ## Required Services
 
@@ -18,71 +23,49 @@ helpers, and the Hetzner kit in `ops/hetzner-v2/`.
 
 ## Cutover Gates
 
-1. Generate and review `ops/hetzner-v2/.env` from `env.example`.
-2. Replace all `CHANGE_ME` values and keep the file mode at `0600`.
-3. Validate Compose with `docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml config -q`.
-4. Run `ops/hetzner-v2/deploy.sh`.
-5. Verify `/api/v2/health/ready` publicly.
-6. Verify internal `/api/v2/metrics` through the private Docker network; it is blocked by Caddy publicly.
-7. Run a successful `ops/hetzner-v2/backup-postgres.sh`.
-8. Complete a restore drill with `ops/hetzner-v2/restore-postgres.sh` before first real-client cutover.
+1. Review the current environment runbook in `ops/gcp-staging/README.md`.
+2. Generate and review private runtime env from the active environment's
+   approved env example.
+3. Replace all `CHANGE_ME` values and keep private env mode at `0600`.
+4. Validate the Compose file used by the active environment.
+5. Run the active environment deploy command.
+6. Verify `/api/v2/health/ready` publicly.
+7. Verify internal `/api/v2/metrics` through the private network; it must not be
+   public.
+8. Run a successful Postgres backup.
+9. Complete a restore drill before first real-client cutover.
 
 ## Deployment Proof Sequence
 
 Run this proof from a clean, pushed branch after local backend/frontend checks
-pass. The laptop should only use the SSH aliases documented in `AGENTS.md`;
-do not paste deployment secrets into shell history or repo files.
+pass. Use the host, SSH path, and deploy command from the current environment
+runbook. Do not paste deployment secrets into shell history or repo files.
 
-From the laptop:
+For current staging, start with `ops/gcp-staging/README.md`. If using Hetzner as
+rollback, use `ops/hetzner-v2/README.md` and explicitly label the run as
+rollback validation.
 
-```bash
-git status --branch --short
-git push
-ssh -o BatchMode=yes hms-staging 'cd /opt/hms && git status --branch --short'
-ssh hms-staging 'cd /opt/hms && git fetch origin && git checkout rust-v2-integration && git pull --ff-only'
-ssh hms-staging 'cd /opt/hms && docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml config -q'
-```
+The proof sequence is environment-independent:
 
-Deploy the V2 stack from `/opt/hms`:
-
-```bash
-ssh hms-staging 'cd /opt/hms && ops/hetzner-v2/deploy.sh'
-curl -i https://staging.thehms.systems/api/v2/health/ready
-```
-
-Capture container status and the Rust API image digest after the deploy:
-
-```bash
-ssh hms-staging 'cd /opt/hms && docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml ps'
-ssh hms-staging 'cd /opt/hms && docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml images hms-api'
-```
-
-Run the backup gate and record the produced dump path:
-
-```bash
-ssh hms-staging 'cd /opt/hms && ops/hetzner-v2/backup-postgres.sh'
-ssh hms-staging 'cd /opt/hms && ls -1t ops/hetzner-v2/backups/*.dump | head -1'
-```
-
-Restore drills are destructive. Do not run a restore against a live client
-database unless the service window and rollback owner are explicit. For staging,
-restore the latest staging backup with the required confirmation token and then
-rerun health and smoke checks:
-
-```bash
-ssh hms-staging 'cd /opt/hms && client_slug="$(awk -F= '\''$1=="CLIENT_SLUG"{gsub(/^["'\'']|["'\'']$/,"",$2); print $2; exit}'\'' ops/hetzner-v2/.env)" && latest="$(ls -1t ops/hetzner-v2/backups/*.dump | head -1)" && RESTORE_CONFIRM="restore-${client_slug:-hms-v2}" ops/hetzner-v2/restore-postgres.sh "$latest"'
-curl -i https://staging.thehms.systems/api/v2/health/ready
-```
+1. Verify local branch and remote branch/commit.
+2. Verify remote checkout branch and commit.
+3. Validate Compose/env for that environment.
+4. Deploy.
+5. Verify public `/api/v2/health/ready`.
+6. Capture container status and active image/tag/digest.
+7. Capture a successful backup path.
+8. Run smoke checks.
+9. Run a restore drill only with explicit confirmation and a safe target.
 
 Proof is complete only when the record contains:
 
 - deployed Git commit and branch
 - successful Compose validation
-- successful `ops/hetzner-v2/deploy.sh`
+- successful environment deploy command
 - public `/api/v2/health/ready` success
 - `docker compose ps` showing `hms-api`, `hms-worker`, `frontend`, `caddy`,
   `db`, `pgbouncer`, and `redis` healthy or running as expected
-- successful `ops/hetzner-v2/backup-postgres.sh` with backup file path
+- successful Postgres backup with backup file path
 - staging restore drill completion and post-restore readiness check
 
 ## Contract Boundary
