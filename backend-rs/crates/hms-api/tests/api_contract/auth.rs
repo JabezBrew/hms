@@ -95,6 +95,182 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
 }
 
 #[tokio::test]
+async fn server_idle_timeout_rejects_refresh_and_cached_access_sessions() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    config.session_idle_timeout = std::time::Duration::from_secs(1);
+    config.session_absolute_timeout = std::time::Duration::from_secs(5);
+    let app = app_with_config(config, database).await;
+
+    let (access_token, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;
+    tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
+
+    let stale_access = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale access request succeeds");
+    assert_eq!(stale_access.status(), StatusCode::UNAUTHORIZED);
+
+    let stale_refresh = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, cookie)
+                .header("x-hms-csrf", csrf_token)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale refresh request succeeds");
+    assert_eq!(stale_refresh.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn cached_request_context_cannot_extend_access_session_deadline() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    config.auth_cache_max_entries = 1;
+    let app = app_with_config_and_request_context_probe(config, Arc::clone(&database)).await;
+
+    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let owner_claims = access_claims(&owner_token);
+    let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("test database connects");
+    let session_deadline = Utc::now() + Duration::seconds(2);
+    sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET expires_at = $1,
+            idle_expires_at = $1
+        WHERE session_id = $2
+        "#,
+    )
+    .bind(session_deadline)
+    .bind(owner_claims.session_id)
+    .execute(&pool)
+    .await
+    .expect("session deadline updates");
+
+    let owner_auth = format!("Bearer {owner_token}");
+    let limited_auth = format!("Bearer {limited_token}");
+
+    let owner_context = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/__test/request-context")
+                .header(AUTHORIZATION, owner_auth.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("owner request-context probe succeeds");
+    assert_eq!(owner_context.status(), StatusCode::OK);
+
+    let limited_me = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, limited_auth)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("limited me request succeeds");
+    assert_eq!(limited_me.status(), StatusCode::OK);
+
+    let owner_near_deadline = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, owner_auth.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("owner near-deadline me request succeeds");
+    assert_eq!(owner_near_deadline.status(), StatusCode::OK);
+
+    tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
+
+    let owner_after_deadline = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, owner_auth)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("owner expired me request succeeds");
+    assert_eq!(owner_after_deadline.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn refresh_rotation_preserves_absolute_session_deadline() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    config.session_idle_timeout = std::time::Duration::from_secs(2);
+    config.session_absolute_timeout = std::time::Duration::from_secs(3);
+    let app = app_with_config(config, database).await;
+
+    let (_, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let refresh_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, cookie)
+                .header("x-hms-csrf", csrf_token)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("refresh request succeeds");
+    assert_eq!(refresh_response.status(), StatusCode::OK);
+    let (rotated_cookie, rotated_csrf) = auth_cookies(refresh_response.headers());
+
+    tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
+    let after_absolute_deadline = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, rotated_cookie)
+                .header("x-hms-csrf", rotated_csrf)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("absolute timeout refresh request succeeds");
+    assert_eq!(after_absolute_deadline.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn request_context_extractor_resolves_policy_state_before_handler() {
     let app = app_with_request_context_probe().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;

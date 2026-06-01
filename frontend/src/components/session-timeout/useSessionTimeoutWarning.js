@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
-import { getAuthValue } from '@/lib/auth-storage';
+import { getAuthValue, setAuthValue } from '@/lib/auth-storage';
 
 const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
 const WARNING_TIME = 2 * 60 * 1000;
@@ -43,37 +43,66 @@ function getSessionStartTime() {
   return sessionStart ? Number.parseInt(sessionStart, 10) : Date.now();
 }
 
+function getLastActivityAt() {
+  const lastActivityAt = getAuthValue('lastActivityAt');
+  return lastActivityAt ? Number.parseInt(lastActivityAt, 10) : getSessionStartTime();
+}
+
+function parseServerDeadline(value) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getIdleDeadline() {
+  const localIdleDeadline = getLastActivityAt() + INACTIVITY_TIMEOUT;
+  const serverIdleDeadline = parseServerDeadline(getAuthValue('sessionIdleExpiresAt'));
+  return serverIdleDeadline
+    ? Math.min(localIdleDeadline, serverIdleDeadline)
+    : localIdleDeadline;
+}
+
+function getAbsoluteDeadline() {
+  return parseServerDeadline(getAuthValue('sessionAbsoluteExpiresAt'))
+    || getSessionStartTime() + ABSOLUTE_SESSION_TIMEOUT;
+}
+
 function secondsFromMilliseconds(milliseconds) {
   return Math.floor(milliseconds / 1000);
 }
 
 export function useSessionTimeoutWarning() {
-  const { isAuthenticated, logout, isSessionValid } = useAuth();
+  const { isAuthenticated, logout, isSessionValid, refreshAccessToken } = useAuth();
   const [{ showWarning, timeLeft, timeoutType }, dispatchWarning] = useReducer(
     warningReducer,
     initialWarningState
   );
 
-  const lastActivityRef = useRef(Date.now());
-  const lastActivityUpdateRef = useRef(Date.now());
-  const updateActivityRef = useRef(null);
   const timeoutHandledRef = useRef(false);
+  const lastActivityWriteAtRef = useRef(0);
 
-  const updateActivity = useCallback(() => {
-    const now = Date.now();
-    if (now - lastActivityUpdateRef.current < ACTIVITY_THROTTLE_MS && !showWarning) {
+  useEffect(() => {
+    if (isAuthenticated) {
+      timeoutHandledRef.current = false;
       return;
     }
-    lastActivityUpdateRef.current = now;
-    lastActivityRef.current = now;
     dispatchWarning({ type: 'hide' });
-  }, [showWarning]);
-  updateActivityRef.current = updateActivity;
+  }, [isAuthenticated]);
 
-  const handleExtendSession = useCallback(() => {
-    updateActivity();
-    dispatchWarning({ type: 'hide' });
-  }, [updateActivity]);
+  const updateActivity = useCallback(({ force = false } = {}) => {
+    const now = Date.now();
+    if (now >= getIdleDeadline()) {
+      return false;
+    }
+    if (!force && now - lastActivityWriteAtRef.current < ACTIVITY_THROTTLE_MS) {
+      return true;
+    }
+    lastActivityWriteAtRef.current = now;
+    setAuthValue('lastActivityAt', now.toString());
+    return true;
+  }, []);
 
   const handleTimeout = useCallback(() => {
     if (timeoutHandledRef.current) {
@@ -84,6 +113,19 @@ export function useSessionTimeoutWarning() {
     void logout(false);
   }, [logout]);
 
+  const handleExtendSession = useCallback(async () => {
+    if (!updateActivity({ force: true })) {
+      handleTimeout();
+      return;
+    }
+    const token = await refreshAccessToken?.();
+    if (token) {
+      dispatchWarning({ type: 'hide' });
+      return;
+    }
+    dispatchWarning({ type: 'hide' });
+  }, [handleTimeout, refreshAccessToken, updateActivity]);
+
   const handleOpenChange = useCallback((open) => {
     if (!open) {
       dispatchWarning({ type: 'hide' });
@@ -93,7 +135,15 @@ export function useSessionTimeoutWarning() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const handleActivity = () => updateActivityRef.current?.();
+    const handleActivity = () => {
+      if (!updateActivity()) {
+        handleTimeout();
+        return;
+      }
+      if (getIdleDeadline() - Date.now() > WARNING_TIME) {
+        dispatchWarning({ type: 'hide' });
+      }
+    };
 
     ACTIVITY_EVENTS.forEach((event) => {
       const options = PASSIVE_ACTIVITY_EVENTS.has(event) ? { passive: true } : undefined;
@@ -106,41 +156,46 @@ export function useSessionTimeoutWarning() {
         window.removeEventListener(event, handleActivity, options);
       });
     };
-  }, [isAuthenticated]);
+  }, [handleTimeout, isAuthenticated, updateActivity]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const evaluateTimeout = () => {
       const now = Date.now();
-      const timeSinceActivity = now - lastActivityRef.current;
-      const totalSessionTime = now - getSessionStartTime();
+      const idleRemaining = getIdleDeadline() - now;
+      const absoluteRemaining = getAbsoluteDeadline() - now;
 
-      if (totalSessionTime >= ABSOLUTE_SESSION_TIMEOUT) {
+      if (absoluteRemaining <= 0) {
         handleTimeout();
         return;
       }
 
-      if (totalSessionTime >= ABSOLUTE_SESSION_TIMEOUT - WARNING_TIME && !showWarning) {
+      if (absoluteRemaining <= WARNING_TIME) {
         dispatchWarning({
           type: 'show',
           timeoutType: 'absolute',
-          timeLeft: secondsFromMilliseconds(ABSOLUTE_SESSION_TIMEOUT - totalSessionTime),
+          timeLeft: secondsFromMilliseconds(absoluteRemaining),
         });
         return;
       }
 
-      if (timeSinceActivity >= INACTIVITY_TIMEOUT - WARNING_TIME && timeSinceActivity < INACTIVITY_TIMEOUT) {
+      if (idleRemaining <= 0) {
+        handleTimeout();
+        return;
+      }
+
+      if (idleRemaining <= WARNING_TIME) {
         dispatchWarning({
           type: 'show',
           timeoutType: 'inactivity',
-          timeLeft: secondsFromMilliseconds(INACTIVITY_TIMEOUT - timeSinceActivity),
+          timeLeft: secondsFromMilliseconds(idleRemaining),
         });
+        return;
       }
 
-      if (timeSinceActivity >= INACTIVITY_TIMEOUT) {
-        handleTimeout();
-        return;
+      if (showWarning) {
+        dispatchWarning({ type: 'hide' });
       }
 
       if (!isSessionValid()) {
@@ -160,11 +215,9 @@ export function useSessionTimeoutWarning() {
 
     const timer = setInterval(() => {
       const now = Date.now();
-      const totalSessionTime = now - getSessionStartTime();
-      const timeSinceActivity = now - lastActivityRef.current;
       const remaining = timeoutType === 'absolute'
-        ? ABSOLUTE_SESSION_TIMEOUT - totalSessionTime
-        : INACTIVITY_TIMEOUT - timeSinceActivity;
+        ? getAbsoluteDeadline() - now
+        : getIdleDeadline() - now;
 
       if (remaining > 0) {
         dispatchWarning({ type: 'update_time_left', timeLeft: secondsFromMilliseconds(remaining) });

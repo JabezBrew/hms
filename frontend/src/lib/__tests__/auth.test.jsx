@@ -81,7 +81,10 @@ const authStorageKey = (key) => getStorageKey(AUTH_STORAGE_KEYS[key].current)
 const AUTH_STORAGE = {
   user: authStorageKey('user'),
   sessionStartTime: authStorageKey('sessionStartTime'),
+  lastActivityAt: authStorageKey('lastActivityAt'),
   refreshTokenIssuedAt: authStorageKey('refreshTokenIssuedAt'),
+  sessionIdleExpiresAt: authStorageKey('sessionIdleExpiresAt'),
+  sessionAbsoluteExpiresAt: authStorageKey('sessionAbsoluteExpiresAt'),
 }
 
 // Test component that uses useAuth
@@ -690,6 +693,34 @@ describe('AuthProvider', () => {
       const nineHoursAgo = Date.now() - 9 * 60 * 60 * 1000
       localStorageMock.store[AUTH_STORAGE.sessionStartTime] = nineHoursAgo.toString()
       localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
+
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: AuthProvider,
+      })
+
+      expect(result.current.isSessionValid()).toBe(false)
+    })
+
+    it('isSessionValid returns false when the server idle deadline has passed', () => {
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.sessionIdleExpiresAt] = new Date(Date.now() - 1000).toISOString()
+      localStorageMock.store[AUTH_STORAGE.sessionAbsoluteExpiresAt] = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: AuthProvider,
+      })
+
+      expect(result.current.isSessionValid()).toBe(false)
+    })
+
+    it('isSessionValid returns false when local inactivity has passed even if server idle was refreshed', () => {
+      const now = Date.now()
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = now.toString()
+      localStorageMock.store[AUTH_STORAGE.lastActivityAt] = (now - 31 * 60 * 1000).toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = now.toString()
+      localStorageMock.store[AUTH_STORAGE.sessionIdleExpiresAt] = new Date(now + 20 * 60 * 1000).toISOString()
+      localStorageMock.store[AUTH_STORAGE.sessionAbsoluteExpiresAt] = new Date(now + 60 * 60 * 1000).toISOString()
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,

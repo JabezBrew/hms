@@ -10,6 +10,92 @@ import { isRustV2ApiMode } from "../api/v2/runtime"
 import { queryClient } from '../react-query'
 import { getDefaultFacilityCode } from '../runtime-config'
 
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000
+const ABSOLUTE_SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000
+const REFRESH_TOKEN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000
+const ACTIVITY_THROTTLE_MS = 5000
+const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click']
+const PASSIVE_ACTIVITY_EVENTS = new Set(['scroll', 'touchstart', 'wheel'])
+
+function parseStoredTimestamp(value) {
+  if (!value) {
+    return null
+  }
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseServerDeadline(value) {
+  if (!value) {
+    return null
+  }
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function getStoredSessionStartTime() {
+  return parseStoredTimestamp(getAuthValue("sessionStartTime"))
+}
+
+function getStoredLastActivityAt(sessionStartTime = getStoredSessionStartTime()) {
+  return parseStoredTimestamp(getAuthValue("lastActivityAt")) || sessionStartTime
+}
+
+function isStoredSessionValid(now = Date.now()) {
+  const refreshTokenIssuedAt = parseStoredTimestamp(getAuthValue("refreshTokenIssuedAt"))
+  const sessionStartTime = getStoredSessionStartTime()
+
+  if (!refreshTokenIssuedAt || !sessionStartTime) {
+    return false
+  }
+
+  if (now - refreshTokenIssuedAt > REFRESH_TOKEN_LIFETIME_MS) {
+    return false
+  }
+
+  const lastActivityAt = getStoredLastActivityAt(sessionStartTime)
+  const localIdleExpiresAt = lastActivityAt + SESSION_IDLE_TIMEOUT_MS
+  if (now >= localIdleExpiresAt) {
+    return false
+  }
+
+  const serverIdleExpiresAt = parseServerDeadline(getAuthValue("sessionIdleExpiresAt"))
+  if (serverIdleExpiresAt && now >= serverIdleExpiresAt) {
+    return false
+  }
+
+  const absoluteExpiresAt = parseServerDeadline(getAuthValue("sessionAbsoluteExpiresAt"))
+    || sessionStartTime + ABSOLUTE_SESSION_TIMEOUT_MS
+  if (now >= absoluteExpiresAt) {
+    return false
+  }
+
+  return true
+}
+
+function recordSessionActivity(now = Date.now()) {
+  if (!isStoredSessionValid(now)) {
+    return false
+  }
+  setAuthValue("lastActivityAt", now.toString())
+  return true
+}
+
+function persistSessionTiming(response, now = Date.now(), options = {}) {
+  const nowString = now.toString()
+  setAuthValue("refreshTokenIssuedAt", nowString)
+  if (options.recordActivity) {
+    setAuthValue("lastActivityAt", nowString)
+  }
+
+  if (response?.session_idle_expires_at) {
+    setAuthValue("sessionIdleExpiresAt", response.session_idle_expires_at)
+  }
+  if (response?.session_absolute_expires_at) {
+    setAuthValue("sessionAbsoluteExpiresAt", response.session_absolute_expires_at)
+  }
+}
+
 export function useAuthProviderController() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -25,7 +111,7 @@ export function useAuthProviderController() {
   const justLoggedInRef = useRef(false)
 
   const getAccessToken = useCallback(() => {
-    return accessTokenRef.current
+    return isStoredSessionValid() ? accessTokenRef.current : null
   }, [])
 
   const setAccessToken = useCallback((token) => {
@@ -71,7 +157,10 @@ export function useAuthProviderController() {
   const clearLocalAuthState = useCallback(async (reason = 'auth-clear') => {
     removeAuthValue("user")
     removeAuthValue("sessionStartTime")
+    removeAuthValue("lastActivityAt")
     removeAuthValue("refreshTokenIssuedAt")
+    removeAuthValue("sessionIdleExpiresAt")
+    removeAuthValue("sessionAbsoluteExpiresAt")
     setUser(null)
     setAccessToken(null)
     setFacilityCodeState(null)
@@ -117,28 +206,7 @@ export function useAuthProviderController() {
   }, [clearLocalAuthState, notifyBackendLogout])
 
   const isSessionValid = useCallback(() => {
-    const refreshTokenIssuedAt = getAuthValue("refreshTokenIssuedAt")
-    const sessionStartTime = getAuthValue("sessionStartTime")
-
-    if (!refreshTokenIssuedAt || !sessionStartTime) {
-      return false
-    }
-
-    const now = Date.now()
-    const issuedAt = parseInt(refreshTokenIssuedAt, 10)
-    const startTime = parseInt(sessionStartTime, 10)
-
-    const REFRESH_TOKEN_LIFETIME = 7 * 24 * 60 * 60 * 1000
-    if (now - issuedAt > REFRESH_TOKEN_LIFETIME) {
-      return false
-    }
-
-    const ABSOLUTE_SESSION_TIMEOUT = 8 * 60 * 60 * 1000
-    if (now - startTime > ABSOLUTE_SESSION_TIMEOUT) {
-      return false
-    }
-
-    return true
+    return isStoredSessionValid()
   }, [])
 
   const handleRefreshFailure = useCallback(async () => {
@@ -153,13 +221,20 @@ export function useAuthProviderController() {
     }
 
     const tokenResponse = isRustV2ApiMode()
-      ? await performV2TokenRefresh()
+      ? await performV2TokenRefresh({ notifyFailure: false })
       : null
     const newToken = isRustV2ApiMode()
       ? tokenResponse?.access_token
       : await performTokenRefresh()
 
-    if (newToken) {
+    if (!newToken) {
+      await handleRefreshFailure()
+      return null
+    }
+
+    if (isRustV2ApiMode()) {
+      persistSessionTiming(tokenResponse)
+    } else {
       setAuthValue("refreshTokenIssuedAt", Date.now().toString())
     }
 
@@ -208,8 +283,40 @@ export function useAuthProviderController() {
       setAccessToken,
       onRefreshFailure: handleRefreshFailure,
       getFacilityCode: () => facilityCode,
+      canRefreshSession: isSessionValid,
     })
-  }, [getAccessToken, setAccessToken, handleRefreshFailure, facilityCode])
+  }, [getAccessToken, setAccessToken, handleRefreshFailure, facilityCode, isSessionValid])
+
+  useEffect(() => {
+    if (!user) {
+      return undefined
+    }
+
+    let lastActivityWriteAt = 0
+    const recordActivity = () => {
+      const now = Date.now()
+      if (now - lastActivityWriteAt < ACTIVITY_THROTTLE_MS) {
+        return
+      }
+      if (!recordSessionActivity(now)) {
+        return
+      }
+      lastActivityWriteAt = now
+    }
+
+    recordActivity()
+    ACTIVITY_EVENTS.forEach((event) => {
+      const options = PASSIVE_ACTIVITY_EVENTS.has(event) ? { passive: true } : undefined
+      window.addEventListener(event, recordActivity, options)
+    })
+
+    return () => {
+      ACTIVITY_EVENTS.forEach((event) => {
+        const options = PASSIVE_ACTIVITY_EVENTS.has(event) ? { passive: true } : undefined
+        window.removeEventListener(event, recordActivity, options)
+      })
+    }
+  }, [user])
 
   const applyAuthResponse = useCallback((response) => {
     if (!response?.access || !response?.user) {
@@ -220,7 +327,7 @@ export function useAuthProviderController() {
 
     const now = Date.now().toString()
     setAuthValue("sessionStartTime", now)
-    setAuthValue("refreshTokenIssuedAt", now)
+    persistSessionTiming(response, Number.parseInt(now, 10), { recordActivity: true })
 
     const passwordChangeRequired = Boolean(
       response.password_change_required ?? response?.user?.must_change_password

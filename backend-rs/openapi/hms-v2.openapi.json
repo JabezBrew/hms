@@ -679,6 +679,18 @@
             "minimum": 0,
             "type": "integer"
           },
+          "refresh_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "session_absolute_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "session_idle_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "token_type": {
             "type": "string"
           },
@@ -690,6 +702,9 @@
           "access_token",
           "token_type",
           "expires_in_seconds",
+          "refresh_expires_at",
+          "session_idle_expires_at",
+          "session_absolute_expires_at",
           "user"
         ],
         "type": "object"
@@ -9679,6 +9694,12 @@
                 "patient_code": {
                   "type": "string"
                 },
+                "patient_location": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "sex": {
                   "$ref": "#/components/schemas/Sex"
                 },
@@ -13043,6 +13064,18 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "refresh_expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "session_absolute_expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "session_idle_expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
               "token_type": {
                 "type": "string"
               },
@@ -13054,6 +13087,9 @@
               "access_token",
               "token_type",
               "expires_in_seconds",
+              "refresh_expires_at",
+              "session_idle_expires_at",
+              "session_absolute_expires_at",
               "user"
             ],
             "type": "object"
@@ -17186,6 +17222,12 @@
                 },
                 "type": "array"
               },
+              "encounters": {
+                "items": {
+                  "$ref": "#/components/schemas/PatientChronicleEncounterSummary"
+                },
+                "type": "array"
+              },
               "generated_at": {
                 "format": "date-time",
                 "type": "string"
@@ -17245,6 +17287,7 @@
               "identity",
               "generated_at",
               "active_context",
+              "encounters",
               "care_team",
               "summaries",
               "timeline",
@@ -21297,6 +21340,12 @@
             },
             "type": "array"
           },
+          "encounters": {
+            "items": {
+              "$ref": "#/components/schemas/PatientChronicleEncounterSummary"
+            },
+            "type": "array"
+          },
           "generated_at": {
             "format": "date-time",
             "type": "string"
@@ -21356,6 +21405,7 @@
           "identity",
           "generated_at",
           "active_context",
+          "encounters",
           "care_team",
           "summaries",
           "timeline",
@@ -21654,6 +21704,12 @@
           "patient_code": {
             "type": "string"
           },
+          "patient_location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sex": {
             "$ref": "#/components/schemas/Sex"
           },
@@ -21677,6 +21733,12 @@
           "cursor": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "include_total": {
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -44201,6 +44263,17 @@
                 }
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "include_total",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -44371,6 +44444,17 @@
                 {
                   "$ref": "#/components/schemas/PatientAdministrativeStatus"
                 }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_total",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
               ]
             }
           }

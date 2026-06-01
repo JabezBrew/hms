@@ -33,6 +33,9 @@ describe('Rust V2 auth bridge', () => {
             access_token: 'access-token-123',
             token_type: 'Bearer',
             expires_in_seconds: 600,
+            refresh_expires_at: '2026-06-01T12:30:00Z',
+            session_idle_expires_at: '2026-06-01T12:30:00Z',
+            session_absolute_expires_at: '2026-06-01T20:00:00Z',
             user: {
               id: 'user-1',
               email: 'owner@hms.local',
@@ -75,6 +78,8 @@ describe('Rust V2 auth bridge', () => {
     );
     expect(response).toMatchObject({
       access: 'access-token-123',
+      session_idle_expires_at: '2026-06-01T12:30:00Z',
+      session_absolute_expires_at: '2026-06-01T20:00:00Z',
       user: {
         id: 'user-1',
         email: 'owner@hms.local',

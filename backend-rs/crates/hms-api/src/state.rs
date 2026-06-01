@@ -45,6 +45,7 @@ const PATIENT_LIST_CACHE_TTL: Duration = Duration::from_secs(30);
 const PHARMACY_DISPENSE_CACHE_TTL: Duration = Duration::from_secs(30);
 const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(30);
 const HOT_READ_QUERY_SHAPE_WARMUP_TIMEOUT: Duration = Duration::from_secs(2);
+const AUTH_CACHE_MAX_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -676,7 +677,19 @@ pub struct LoginOutcome {
     pub refresh_token: String,
     pub csrf_token: String,
     pub session_id: Uuid,
+    pub refresh_expires_at: DateTime<Utc>,
+    pub session_idle_expires_at: DateTime<Utc>,
+    pub session_absolute_expires_at: DateTime<Utc>,
+    pub access_token_expires_in_seconds: u64,
     pub user: AuthUser,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SessionDeadlines {
+    session_started_at: DateTime<Utc>,
+    idle_expires_at: DateTime<Utc>,
+    absolute_expires_at: DateTime<Utc>,
+    refresh_expires_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug)]
@@ -1196,21 +1209,21 @@ impl AppState {
             return Ok(Some(user));
         }
 
-        let user = hms_db::auth::user_by_id_for_facility_session(
+        let session_user = hms_db::auth::user_by_id_for_facility_session_with_deadline(
             &self.inner.auth_pool,
             claims.sub,
             self.facility_id(),
             claims.session_id,
         )
-        .await?
-        .map(|user| user.to_auth_user());
-        if let Some(user) = &user {
+        .await?;
+        let user = session_user
+            .as_ref()
+            .map(|session_user| session_user.user.to_auth_user());
+        if let (Some(user), Some(session_user)) = (&user, &session_user) {
             if auth_user_matches_claims(user, claims) {
-                self.inner.auth_cache.put_user(
-                    cache_key,
-                    user.clone(),
-                    self.inner.config.access_token_ttl,
-                );
+                if let Some(ttl) = self.auth_cache_ttl_until(session_user.session_expires_at) {
+                    self.inner.auth_cache.put_user(cache_key, user.clone(), ttl);
+                }
             }
         }
         Ok(user)
@@ -1228,11 +1241,10 @@ impl AppState {
         if !auth_user_matches_claims(&facts.user, claims) {
             return None;
         }
-        self.inner.auth_cache.put_user_if_absent(
-            cache_key.clone(),
-            facts.user.clone(),
-            self.inner.config.access_token_ttl,
-        );
+        let ttl = self.auth_cache_ttl_until(facts.session_expires_at)?;
+        self.inner
+            .auth_cache
+            .put_user_if_absent(cache_key.clone(), facts.user.clone(), ttl);
         Some(facts.user)
     }
 
@@ -1288,16 +1300,16 @@ impl AppState {
         );
         if let Some(facts) = &facts {
             if auth_user_matches_claims(&facts.user, claims) {
-                self.inner.auth_cache.put_request_context(
-                    cache_key.clone(),
-                    facts.clone(),
-                    self.inner.config.access_token_ttl,
-                );
-                self.inner.auth_cache.put_user_if_absent(
-                    cache_key,
-                    facts.user.clone(),
-                    self.inner.config.access_token_ttl,
-                );
+                if let Some(ttl) = self.auth_cache_ttl_until(facts.session_expires_at) {
+                    self.inner.auth_cache.put_request_context(
+                        cache_key.clone(),
+                        facts.clone(),
+                        ttl,
+                    );
+                    self.inner
+                        .auth_cache
+                        .put_user_if_absent(cache_key, facts.user.clone(), ttl);
+                }
             }
         }
         Ok(facts)
@@ -1368,7 +1380,7 @@ impl AppState {
             return Ok(None);
         }
 
-        self.issue_session_for_user(&user, None, None, device_label)
+        self.issue_session_for_user(&user, None, None, device_label, None, None)
             .await
     }
 
@@ -1400,6 +1412,11 @@ impl AppState {
             return Ok(None);
         }
         if old_session.expires_at <= Utc::now() {
+            return Ok(None);
+        }
+        if old_session.idle_expires_at <= Utc::now()
+            || old_session.absolute_expires_at <= Utc::now()
+        {
             return Ok(None);
         }
         if old_session.csrf_token_hash != csrf_token_hash {
@@ -1439,6 +1456,8 @@ impl AppState {
             Some(old_session.session_family_id),
             Some(old_session.session_id),
             old_session.device_label.as_deref(),
+            Some(old_session.session_started_at),
+            Some(old_session.absolute_expires_at),
         )
         .await
     }
@@ -1718,20 +1737,79 @@ impl AppState {
         ))
     }
 
+    fn auth_cache_ttl_until(&self, session_expires_at: DateTime<Utc>) -> Option<Duration> {
+        let remaining = session_expires_at
+            .signed_duration_since(Utc::now())
+            .to_std()
+            .ok()?;
+        if remaining.is_zero() {
+            return None;
+        }
+        Some(
+            remaining
+                .min(self.inner.config.access_token_ttl)
+                .min(AUTH_CACHE_MAX_TTL),
+        )
+    }
+
+    fn session_deadlines(
+        &self,
+        existing_session_started_at: Option<DateTime<Utc>>,
+        existing_absolute_expires_at: Option<DateTime<Utc>>,
+    ) -> Result<Option<SessionDeadlines>> {
+        let now = Utc::now();
+        let session_started_at = existing_session_started_at.unwrap_or(now);
+        let absolute_expires_at = match existing_absolute_expires_at {
+            Some(expires_at) => expires_at,
+            None => {
+                now + chrono::Duration::from_std(self.inner.config.session_absolute_timeout)
+                    .context("session absolute timeout converts to chrono duration")?
+            }
+        };
+        if absolute_expires_at <= now {
+            return Ok(None);
+        }
+
+        let idle_window_expires_at = now
+            + chrono::Duration::from_std(self.inner.config.session_idle_timeout)
+                .context("session idle timeout converts to chrono duration")?;
+        let idle_expires_at = idle_window_expires_at.min(absolute_expires_at);
+        let refresh_window_expires_at = now
+            + chrono::Duration::from_std(self.inner.config.refresh_token_ttl)
+                .context("refresh token ttl converts to chrono duration")?;
+        let refresh_expires_at = refresh_window_expires_at
+            .min(idle_expires_at)
+            .min(absolute_expires_at);
+        if refresh_expires_at <= now {
+            return Ok(None);
+        }
+
+        Ok(Some(SessionDeadlines {
+            session_started_at,
+            idle_expires_at,
+            absolute_expires_at,
+            refresh_expires_at,
+        }))
+    }
+
     async fn issue_session_for_user(
         &self,
         user: &UserAccount,
         session_family_id: Option<Uuid>,
         rotated_from_session_id: Option<Uuid>,
         device_label: Option<&str>,
+        existing_session_started_at: Option<DateTime<Utc>>,
+        existing_absolute_expires_at: Option<DateTime<Utc>>,
     ) -> Result<Option<LoginOutcome>> {
         let session_id = Uuid::new_v4();
         let session_family_id = session_family_id.unwrap_or(session_id);
         let refresh_token = generate_secret_token();
         let csrf_token = generate_secret_token();
-        let expires_at = Utc::now()
-            + chrono::Duration::from_std(self.inner.config.refresh_token_ttl)
-                .context("refresh token ttl converts to chrono duration")?;
+        let Some(deadlines) =
+            self.session_deadlines(existing_session_started_at, existing_absolute_expires_at)?
+        else {
+            return Ok(None);
+        };
 
         hms_db::auth::insert_refresh_session(
             &self.inner.pool,
@@ -1745,7 +1823,10 @@ impl AppState {
                 session_version: user.session_version,
                 permission_version_at_issue: user.permission_version,
                 csrf_token_hash: hash_refresh_token(&csrf_token),
-                expires_at,
+                expires_at: deadlines.refresh_expires_at,
+                session_started_at: deadlines.session_started_at,
+                idle_expires_at: deadlines.idle_expires_at,
+                absolute_expires_at: deadlines.absolute_expires_at,
                 device_label: device_label.map(ToOwned::to_owned),
             },
         )
@@ -1769,20 +1850,20 @@ impl AppState {
 
         let auth_user = user.to_auth_user();
         if let Some(cache_key) = AuthCacheKey::from_user_account(user, session_id) {
-            self.inner.auth_cache.put_user(
-                cache_key.clone(),
-                auth_user.clone(),
-                self.inner.config.access_token_ttl,
-            );
+            if let Some(ttl) = self.auth_cache_ttl_until(deadlines.refresh_expires_at) {
+                self.inner
+                    .auth_cache
+                    .put_user(cache_key.clone(), auth_user.clone(), ttl);
+            }
             if let Some(facts) = self
                 .request_context_facts(user.id, user.facility_id, session_id)
                 .await?
             {
-                self.inner.auth_cache.put_request_context(
-                    cache_key,
-                    facts,
-                    self.inner.config.access_token_ttl,
-                );
+                if let Some(ttl) = self.auth_cache_ttl_until(facts.session_expires_at) {
+                    self.inner
+                        .auth_cache
+                        .put_request_context(cache_key, facts, ttl);
+                }
             }
         }
 
@@ -1791,6 +1872,10 @@ impl AppState {
             refresh_token,
             csrf_token,
             session_id,
+            refresh_expires_at: deadlines.refresh_expires_at,
+            session_idle_expires_at: deadlines.idle_expires_at,
+            session_absolute_expires_at: deadlines.absolute_expires_at,
+            access_token_expires_in_seconds: self.inner.config.access_token_ttl.as_secs(),
             user: auth_user,
         }))
     }

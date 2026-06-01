@@ -40,16 +40,20 @@ Object.defineProperty(window, 'localStorage', { value: localStorageMock })
 describe('SessionTimeoutWarning', () => {
   const mockLogout = vi.fn()
   const mockIsSessionValid = vi.fn()
+  const mockRefreshAccessToken = vi.fn()
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     localStorageMock.clear()
     mockLogout.mockClear()
     mockIsSessionValid.mockReturnValue(true)
+    mockRefreshAccessToken.mockReset()
+    mockRefreshAccessToken.mockResolvedValue('new-access-token')
 
     // Set session start time to "now"
     const now = Date.now()
     setAuthValue('sessionStartTime', now.toString())
+    setAuthValue('lastActivityAt', now.toString())
   })
 
   afterEach(() => {
@@ -79,6 +83,7 @@ describe('SessionTimeoutWarning', () => {
         isAuthenticated: true,
         logout: mockLogout,
         isSessionValid: mockIsSessionValid,
+        refreshAccessToken: mockRefreshAccessToken,
       })
 
       render(<SessionTimeoutWarning />)
@@ -98,6 +103,7 @@ describe('SessionTimeoutWarning', () => {
         isAuthenticated: true,
         logout: mockLogout,
         isSessionValid: mockIsSessionValid,
+        refreshAccessToken: mockRefreshAccessToken,
       })
     })
 
@@ -145,10 +151,35 @@ describe('SessionTimeoutWarning', () => {
         fireEvent.click(screen.getByText('Continue Session'))
       })
 
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+
       // Warning should be dismissed
       await waitFor(() => {
         expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
       })
+    })
+
+    it('does not run a second logout when session extension already failed closed', async () => {
+      mockRefreshAccessToken.mockImplementation(async () => {
+        await mockLogout(false)
+        return null
+      })
+      render(<SessionTimeoutWarning />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(28 * 60 * 1000)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Continue Session')).toBeInTheDocument()
+      })
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Continue Session'))
+      })
+
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+      expect(mockLogout).toHaveBeenCalledTimes(1)
     })
 
     it('logs out user after full inactivity timeout (30 minutes)', async () => {
@@ -277,6 +308,19 @@ describe('SessionTimeoutWarning', () => {
       })
 
       expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+    })
+
+    it('throttles local activity writes from repeated global events', async () => {
+      render(<SessionTimeoutWarning />)
+      localStorageMock.setItem.mockClear()
+
+      await act(async () => {
+        fireEvent.scroll(window)
+        fireEvent.scroll(window)
+        fireEvent.mouseDown(window)
+      })
+
+      expect(localStorageMock.setItem).toHaveBeenCalledTimes(1)
     })
 
     it('dismisses warning on user activity', async () => {
@@ -444,6 +488,44 @@ describe('SessionTimeoutWarning', () => {
 
       expect(mockLogout).toHaveBeenCalledTimes(1)
       expect(mockLogout).toHaveBeenCalledWith(false)
+    })
+
+    it('resets timeout handling after logout and re-authentication in the same mounted app', async () => {
+      const authState = {
+        isAuthenticated: true,
+        logout: mockLogout,
+        isSessionValid: mockIsSessionValid,
+        refreshAccessToken: mockRefreshAccessToken,
+      }
+      useAuth.mockImplementation(() => authState)
+
+      const { rerender } = render(<SessionTimeoutWarning />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(30 * 60 * 1000 + 1000)
+      })
+
+      await waitFor(() => {
+        expect(mockLogout).toHaveBeenCalledTimes(1)
+      })
+
+      authState.isAuthenticated = false
+      rerender(<SessionTimeoutWarning />)
+
+      mockLogout.mockClear()
+      const nextSessionStart = Date.now().toString()
+      setAuthValue('sessionStartTime', nextSessionStart)
+      setAuthValue('lastActivityAt', nextSessionStart)
+      authState.isAuthenticated = true
+      rerender(<SessionTimeoutWarning />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(30 * 60 * 1000 + 1000)
+      })
+
+      await waitFor(() => {
+        expect(mockLogout).toHaveBeenCalledTimes(1)
+      })
     })
   })
 

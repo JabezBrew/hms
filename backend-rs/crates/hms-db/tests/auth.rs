@@ -19,6 +19,7 @@ async fn insert_test_refresh_session(
     .await
     .expect("user auth versions exist");
     let session_id = Uuid::new_v4();
+    let now = Utc::now();
     hms_db::auth::insert_refresh_session(
         pool,
         &NewRefreshSession {
@@ -31,7 +32,10 @@ async fn insert_test_refresh_session(
             session_version,
             permission_version_at_issue: permission_version,
             csrf_token_hash: format!("test-csrf-{session_id}"),
-            expires_at: Utc::now() + Duration::hours(1),
+            expires_at: now + Duration::hours(1),
+            session_started_at: now,
+            idle_expires_at: now + Duration::hours(1),
+            absolute_expires_at: now + Duration::hours(8),
             device_label: Some("Auth contract".to_owned()),
         },
     )
@@ -411,24 +415,31 @@ async fn auth_sessions_are_listed_and_revoked_by_user_and_facility() {
     let other_session_id = Uuid::new_v4();
     let expired_session_id = Uuid::new_v4();
 
-    for (session_id, token_hash, device_label, expires_at) in [
+    let now = Utc::now();
+    for (session_id, token_hash, device_label, expires_at, idle_expires_at, absolute_expires_at) in [
         (
             current_session_id,
             "current-token",
             "Safari on macOS",
-            Utc::now() + chrono::Duration::hours(1),
+            now + chrono::Duration::hours(1),
+            now + chrono::Duration::hours(1),
+            now + chrono::Duration::hours(8),
         ),
         (
             other_session_id,
             "other-token",
             "Chrome on Windows",
-            Utc::now() + chrono::Duration::hours(1),
+            now + chrono::Duration::hours(1),
+            now + chrono::Duration::hours(1),
+            now + chrono::Duration::hours(8),
         ),
         (
             expired_session_id,
             "expired-token",
             "Old Browser",
-            Utc::now() - chrono::Duration::hours(1),
+            now - chrono::Duration::hours(1),
+            now - chrono::Duration::hours(1),
+            now + chrono::Duration::hours(8),
         ),
     ] {
         hms_db::auth::insert_refresh_session(
@@ -444,6 +455,9 @@ async fn auth_sessions_are_listed_and_revoked_by_user_and_facility() {
                 permission_version_at_issue: 1,
                 csrf_token_hash: format!("{token_hash}-csrf"),
                 expires_at,
+                session_started_at: now,
+                idle_expires_at,
+                absolute_expires_at,
                 device_label: Some(device_label.to_owned()),
             },
         )

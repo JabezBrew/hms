@@ -66,6 +66,8 @@ pub struct Config {
     pub jwt_secret: String,
     pub access_token_ttl: Duration,
     pub refresh_token_ttl: Duration,
+    pub session_idle_timeout: Duration,
+    pub session_absolute_timeout: Duration,
     pub auth_cache_max_entries: usize,
     pub password_work_max_concurrency: usize,
     pub cookie_secure: bool,
@@ -104,6 +106,21 @@ impl Config {
             Ok(value) => parse_usize(&value, "HMS_AUTH_CACHE_MAX_ENTRIES")?,
             Err(_) => 16_384,
         };
+        let session_idle_timeout = match env::var("HMS_SESSION_IDLE_TIMEOUT_SECONDS") {
+            Ok(value) => {
+                Duration::from_secs(parse_u64(&value, "HMS_SESSION_IDLE_TIMEOUT_SECONDS")?)
+            }
+            Err(_) => Duration::from_secs(30 * 60),
+        };
+        let session_absolute_timeout = match env::var("HMS_SESSION_ABSOLUTE_TIMEOUT_SECONDS") {
+            Ok(value) => {
+                Duration::from_secs(parse_u64(&value, "HMS_SESSION_ABSOLUTE_TIMEOUT_SECONDS")?)
+            }
+            Err(_) => Duration::from_secs(8 * 60 * 60),
+        };
+        if session_idle_timeout >= session_absolute_timeout {
+            bail!("HMS_SESSION_IDLE_TIMEOUT_SECONDS must be less than HMS_SESSION_ABSOLUTE_TIMEOUT_SECONDS");
+        }
         let password_work_max_concurrency = match env::var("HMS_PASSWORD_WORK_MAX_CONCURRENCY") {
             Ok(value) => parse_usize(&value, "HMS_PASSWORD_WORK_MAX_CONCURRENCY")?,
             Err(_) => 4,
@@ -181,6 +198,8 @@ impl Config {
             jwt_secret,
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
+            session_idle_timeout,
+            session_absolute_timeout,
             auth_cache_max_entries,
             password_work_max_concurrency,
             cookie_secure,
@@ -206,6 +225,8 @@ impl Config {
             jwt_secret: "test-only-hms-v2-jwt-secret".to_owned(),
             access_token_ttl: Duration::from_secs(10 * 60),
             refresh_token_ttl: Duration::from_secs(12 * 60 * 60),
+            session_idle_timeout: Duration::from_secs(30 * 60),
+            session_absolute_timeout: Duration::from_secs(8 * 60 * 60),
             auth_cache_max_entries: 16_384,
             password_work_max_concurrency: 8,
             cookie_secure: false,

@@ -54,6 +54,26 @@ struct UserRow {
 }
 
 #[derive(Clone, Debug, FromRow)]
+struct SessionUserRow {
+    id: Uuid,
+    email: String,
+    display_name: String,
+    facility_id: Uuid,
+    facility_code: String,
+    active_profile: String,
+    session_version: i64,
+    permission_version: i64,
+    password_change_required: bool,
+    password_hash: String,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+    visibility_codes: Vec<String>,
+    passkey_enrolled: bool,
+    recovery_codes_remaining: i64,
+    session_expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
 struct RequestContextFactsRow {
     id: Uuid,
     email: String,
@@ -72,6 +92,7 @@ struct RequestContextFactsRow {
     feature_flags: Value,
     active_authorities: Value,
     feature_entitlements_updated_at: Option<DateTime<Utc>>,
+    session_expires_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -88,6 +109,7 @@ pub struct RequestContextAuthFacts {
     pub feature_flags: HashMap<FeatureKey, bool>,
     pub active_authorities: Vec<ActiveAuthority>,
     pub feature_entitlements_updated_at: Option<DateTime<Utc>>,
+    pub session_expires_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -100,6 +122,9 @@ pub struct RefreshSessionRow {
     pub permission_version_at_issue: i64,
     pub csrf_token_hash: String,
     pub expires_at: DateTime<Utc>,
+    pub session_started_at: DateTime<Utc>,
+    pub idle_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub device_label: Option<String>,
 }
@@ -116,6 +141,9 @@ pub struct NewRefreshSession {
     pub permission_version_at_issue: i64,
     pub csrf_token_hash: String,
     pub expires_at: DateTime<Utc>,
+    pub session_started_at: DateTime<Utc>,
+    pub idle_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: DateTime<Utc>,
     pub device_label: Option<String>,
 }
 
@@ -126,7 +154,16 @@ pub struct UserSessionRow {
     pub created_at: DateTime<Utc>,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub expires_at: DateTime<Utc>,
+    pub session_started_at: DateTime<Utc>,
+    pub idle_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: DateTime<Utc>,
     pub is_current: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SessionUserAccount {
+    pub user: UserAccount,
+    pub session_expires_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug)]
@@ -338,14 +375,98 @@ pub async fn user_by_id_for_facility_session(
     facility_id: Uuid,
     session_id: Uuid,
 ) -> anyhow::Result<Option<UserAccount>> {
-    user_by_id_for_facility_with_session(
-        pool,
-        user_id,
-        facility_id,
-        Some(session_id),
-        "auth.user_by_id_for_facility_session",
+    Ok(
+        user_by_id_for_facility_session_with_deadline(pool, user_id, facility_id, session_id)
+            .await?
+            .map(|session_user| session_user.user),
     )
-    .await
+}
+
+pub async fn user_by_id_for_facility_session_with_deadline(
+    pool: &PgPool,
+    user_id: Uuid,
+    facility_id: Uuid,
+    session_id: Uuid,
+) -> anyhow::Result<Option<SessionUserAccount>> {
+    let row = hms_observability::observe_db_query(
+        "auth.user_by_id_for_facility_session",
+        sqlx::query_as::<_, SessionUserRow>(
+            r#"
+        SELECT users.id,
+               users.email,
+               users.display_name,
+               users.facility_id,
+               facilities.code AS facility_code,
+               facilities.deployment_profile AS active_profile,
+               users.session_version,
+               users.permission_version,
+               users.password_change_required,
+               users.password_hash,
+               COALESCE(user_permissions.permission_codes, ARRAY[]::text[]) AS permission_codes,
+               COALESCE(user_features.feature_keys, ARRAY[]::text[]) AS feature_keys,
+               COALESCE(user_patient_visibility.visibility_codes, ARRAY[]::text[]) AS visibility_codes,
+               EXISTS (
+                   SELECT 1
+                   FROM auth_webauthn_credentials
+                   WHERE auth_webauthn_credentials.facility_id = users.facility_id
+                     AND auth_webauthn_credentials.user_id = users.id
+                     AND auth_webauthn_credentials.disabled_at IS NULL
+               ) AS passkey_enrolled,
+               COALESCE(auth_recovery_codes.remaining, 0)::bigint AS recovery_codes_remaining,
+               LEAST(
+                   refresh_sessions.expires_at,
+                   refresh_sessions.idle_expires_at,
+                   refresh_sessions.absolute_expires_at
+               ) AS session_expires_at
+        FROM users
+        JOIN facilities ON facilities.id = users.facility_id
+        JOIN refresh_sessions
+          ON refresh_sessions.session_id = $3
+         AND refresh_sessions.user_id = users.id
+         AND refresh_sessions.facility_id = users.facility_id
+         AND refresh_sessions.session_version = users.session_version
+         AND refresh_sessions.permission_version_at_issue = users.permission_version
+         AND refresh_sessions.revoked_at IS NULL
+         AND refresh_sessions.expires_at > now()
+         AND refresh_sessions.idle_expires_at > now()
+         AND refresh_sessions.absolute_expires_at > now()
+        LEFT JOIN LATERAL (
+            SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
+            FROM user_permissions
+            WHERE user_id = users.id
+        ) user_permissions ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(feature_key ORDER BY feature_key) AS feature_keys
+            FROM user_features
+            WHERE user_id = users.id
+        ) user_features ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(visibility ORDER BY visibility) AS visibility_codes
+            FROM user_patient_visibility
+            WHERE user_id = users.id
+        ) user_patient_visibility ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*)::bigint AS remaining
+            FROM auth_recovery_codes
+            WHERE facility_id = users.facility_id
+              AND user_id = users.id
+              AND used_at IS NULL
+              AND invalidated_at IS NULL
+        ) auth_recovery_codes ON TRUE
+        WHERE users.id = $1
+          AND users.facility_id = $2
+          AND users.is_active = TRUE
+          AND facilities.is_active = TRUE
+        "#,
+        )
+        .bind(user_id)
+        .bind(facility_id)
+        .bind(session_id)
+        .fetch_optional(pool),
+    )
+    .await?;
+
+    hydrate_session_user(row)
 }
 
 async fn user_by_id_for_facility_with_session(
@@ -421,6 +542,8 @@ async fn user_by_id_for_facility_with_session(
                     AND refresh_sessions.permission_version_at_issue = users.permission_version
                     AND refresh_sessions.revoked_at IS NULL
                     AND refresh_sessions.expires_at > now()
+                    AND refresh_sessions.idle_expires_at > now()
+                    AND refresh_sessions.absolute_expires_at > now()
               )
           )
         "#,
@@ -581,17 +704,32 @@ pub async fn request_context_facts(
                          AND (delegations.ends_at IS NULL OR delegations.ends_at > now())
                        ) active_authorities
                    ), '[]'::jsonb) AS active_authorities,
-                   (
-                     SELECT MAX(facility_feature_entitlements.updated_at)
-                     FROM facility_feature_entitlements
-                     WHERE facility_feature_entitlements.facility_id = users.facility_id
-                   ) AS feature_entitlements_updated_at
-            FROM users
-            JOIN facilities ON facilities.id = users.facility_id
-            LEFT JOIN LATERAL (
-                SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
-                FROM user_permissions
-                WHERE user_id = users.id
+	                   (
+	                     SELECT MAX(facility_feature_entitlements.updated_at)
+	                     FROM facility_feature_entitlements
+	                     WHERE facility_feature_entitlements.facility_id = users.facility_id
+	                   ) AS feature_entitlements_updated_at,
+	                   LEAST(
+	                     refresh_sessions.expires_at,
+	                     refresh_sessions.idle_expires_at,
+	                     refresh_sessions.absolute_expires_at
+	                   ) AS session_expires_at
+	            FROM users
+	            JOIN facilities ON facilities.id = users.facility_id
+	            JOIN refresh_sessions
+	              ON refresh_sessions.session_id = $3
+	             AND refresh_sessions.user_id = users.id
+	             AND refresh_sessions.facility_id = users.facility_id
+	             AND refresh_sessions.session_version = users.session_version
+	             AND refresh_sessions.permission_version_at_issue = users.permission_version
+	             AND refresh_sessions.revoked_at IS NULL
+	             AND refresh_sessions.expires_at > now()
+	             AND refresh_sessions.idle_expires_at > now()
+	             AND refresh_sessions.absolute_expires_at > now()
+	            LEFT JOIN LATERAL (
+	                SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
+	                FROM user_permissions
+	                WHERE user_id = users.id
             ) user_permissions ON TRUE
             LEFT JOIN LATERAL (
                 SELECT array_agg(feature_key ORDER BY feature_key) AS feature_keys
@@ -611,22 +749,11 @@ pub async fn request_context_facts(
                   AND used_at IS NULL
                   AND invalidated_at IS NULL
             ) auth_recovery_codes ON TRUE
-            WHERE users.id = $1
-              AND users.facility_id = $2
-              AND users.is_active = TRUE
-              AND facilities.is_active = TRUE
-              AND EXISTS (
-                  SELECT 1
-                  FROM refresh_sessions
-                  WHERE refresh_sessions.session_id = $3
-                    AND refresh_sessions.user_id = users.id
-                    AND refresh_sessions.facility_id = users.facility_id
-                    AND refresh_sessions.session_version = users.session_version
-                    AND refresh_sessions.permission_version_at_issue = users.permission_version
-                    AND refresh_sessions.revoked_at IS NULL
-                    AND refresh_sessions.expires_at > now()
-              )
-            "#,
+	            WHERE users.id = $1
+	              AND users.facility_id = $2
+	              AND users.is_active = TRUE
+	              AND facilities.is_active = TRUE
+	            "#,
         )
         .bind(user_id)
         .bind(facility_id)
@@ -755,9 +882,12 @@ pub async fn insert_refresh_session(
             permission_version_at_issue,
             csrf_token_hash,
             expires_at,
+            session_started_at,
+            idle_expires_at,
+            absolute_expires_at,
             device_label
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         "#,
     )
     .bind(&session.token_hash)
@@ -770,6 +900,9 @@ pub async fn insert_refresh_session(
     .bind(session.permission_version_at_issue)
     .bind(&session.csrf_token_hash)
     .bind(session.expires_at)
+    .bind(session.session_started_at)
+    .bind(session.idle_expires_at)
+    .bind(session.absolute_expires_at)
     .bind(session.device_label.as_deref())
     .execute(pool)
     .await?;
@@ -790,6 +923,9 @@ pub async fn refresh_session_by_token_hash(
                permission_version_at_issue,
                csrf_token_hash,
                expires_at,
+               session_started_at,
+               idle_expires_at,
+               absolute_expires_at,
                revoked_at,
                device_label
         FROM refresh_sessions
@@ -815,12 +951,17 @@ pub async fn list_active_user_sessions(
                created_at,
                last_seen_at,
                expires_at,
+               session_started_at,
+               idle_expires_at,
+               absolute_expires_at,
                session_id = $3 AS is_current
         FROM refresh_sessions
         WHERE facility_id = $1
           AND user_id = $2
           AND revoked_at IS NULL
           AND expires_at > now()
+          AND idle_expires_at > now()
+          AND absolute_expires_at > now()
         ORDER BY (session_id = $3) DESC,
                  COALESCE(last_seen_at, created_at) DESC,
                  created_at DESC
@@ -1815,6 +1956,37 @@ fn hydrate_user(row: Option<UserRow>) -> anyhow::Result<Option<UserAccount>> {
     }))
 }
 
+fn hydrate_session_user(row: Option<SessionUserRow>) -> anyhow::Result<Option<SessionUserAccount>> {
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let session_expires_at = row.session_expires_at;
+    let user = hydrate_user(Some(UserRow {
+        id: row.id,
+        email: row.email,
+        display_name: row.display_name,
+        facility_id: row.facility_id,
+        facility_code: row.facility_code,
+        active_profile: row.active_profile,
+        session_version: row.session_version,
+        permission_version: row.permission_version,
+        password_change_required: row.password_change_required,
+        password_hash: row.password_hash,
+        permission_codes: row.permission_codes,
+        feature_keys: row.feature_keys,
+        visibility_codes: row.visibility_codes,
+        passkey_enrolled: row.passkey_enrolled,
+        recovery_codes_remaining: row.recovery_codes_remaining,
+    }))?
+    .expect("session row hydrates to a user");
+
+    Ok(Some(SessionUserAccount {
+        user,
+        session_expires_at,
+    }))
+}
+
 fn hydrate_request_context_facts(
     row: Option<RequestContextFactsRow>,
     fallback_profile: DeploymentProfile,
@@ -1867,6 +2039,7 @@ fn hydrate_request_context_facts(
         )?,
         active_authorities: crate::admin::active_authorities_from_rows(authority_rows)?,
         feature_entitlements_updated_at: row.feature_entitlements_updated_at,
+        session_expires_at: row.session_expires_at,
     }))
 }
 

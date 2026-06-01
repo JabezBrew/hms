@@ -3,7 +3,10 @@ import { safeStorage, rawStorage } from "@/lib/safe-storage";
 export const AUTH_STORAGE_KEYS = {
   user: { current: "auth_user", legacy: "user" },
   sessionStartTime: { current: "auth_session_start_time", legacy: "sessionStartTime" },
+  lastActivityAt: { current: "auth_last_activity_at", legacy: "lastActivityAt" },
   refreshTokenIssuedAt: { current: "auth_refresh_token_issued_at", legacy: "refreshTokenIssuedAt" },
+  sessionIdleExpiresAt: { current: "auth_session_idle_expires_at", legacy: "sessionIdleExpiresAt" },
+  sessionAbsoluteExpiresAt: { current: "auth_session_absolute_expires_at", legacy: "sessionAbsoluteExpiresAt" },
 };
 
 const getKeyPair = (key) => {

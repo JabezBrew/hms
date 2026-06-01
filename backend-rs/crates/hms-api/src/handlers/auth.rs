@@ -37,6 +37,9 @@ pub struct AuthTokenResponse {
     pub access_token: String,
     pub token_type: String,
     pub expires_in_seconds: u64,
+    pub refresh_expires_at: DateTime<Utc>,
+    pub session_idle_expires_at: DateTime<Utc>,
+    pub session_absolute_expires_at: DateTime<Utc>,
     pub user: AuthUser,
 }
 
@@ -908,46 +911,61 @@ fn auth_response(
     cookie_secure: bool,
 ) -> (HeaderMap, Json<ObjectResponse<AuthTokenResponse>>) {
     let mut headers = HeaderMap::new();
+    let cookie_max_age = cookie_max_age_until(outcome.refresh_expires_at);
     headers.append(
         SET_COOKIE,
-        refresh_cookie(&outcome.refresh_token, cookie_secure),
+        refresh_cookie(&outcome.refresh_token, cookie_secure, cookie_max_age),
     );
-    headers.append(SET_COOKIE, csrf_cookie(&outcome.csrf_token, cookie_secure));
+    headers.append(
+        SET_COOKIE,
+        csrf_cookie(&outcome.csrf_token, cookie_secure, cookie_max_age),
+    );
 
     (
         headers,
         Json(object(AuthTokenResponse {
             access_token: outcome.access_token,
             token_type: "Bearer".to_owned(),
-            expires_in_seconds: 600,
+            expires_in_seconds: outcome.access_token_expires_in_seconds,
+            refresh_expires_at: outcome.refresh_expires_at,
+            session_idle_expires_at: outcome.session_idle_expires_at,
+            session_absolute_expires_at: outcome.session_absolute_expires_at,
             user: outcome.user,
         })),
     )
 }
 
-fn refresh_cookie(token: &str, secure: bool) -> HeaderValue {
+fn refresh_cookie(token: &str, secure: bool, max_age: cookie::time::Duration) -> HeaderValue {
     Cookie::build((REFRESH_COOKIE_NAME, token.to_owned()))
         .http_only(true)
         .secure(secure)
         .same_site(SameSite::Lax)
         .path("/api/v2/auth")
-        .max_age(cookie::time::Duration::hours(12))
+        .max_age(max_age)
         .build()
         .to_string()
         .parse()
         .expect("refresh cookie value is valid")
 }
 
-fn csrf_cookie(token: &str, secure: bool) -> HeaderValue {
+fn csrf_cookie(token: &str, secure: bool, max_age: cookie::time::Duration) -> HeaderValue {
     Cookie::build((CSRF_COOKIE_NAME, token.to_owned()))
         .secure(secure)
         .same_site(SameSite::Lax)
         .path("/")
-        .max_age(cookie::time::Duration::hours(12))
+        .max_age(max_age)
         .build()
         .to_string()
         .parse()
         .expect("csrf cookie value is valid")
+}
+
+fn cookie_max_age_until(expires_at: DateTime<Utc>) -> cookie::time::Duration {
+    let seconds = expires_at
+        .signed_duration_since(Utc::now())
+        .num_seconds()
+        .max(1);
+    cookie::time::Duration::seconds(seconds)
 }
 
 fn expired_refresh_cookie(secure: bool) -> HeaderValue {

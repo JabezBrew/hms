@@ -7,6 +7,7 @@ let getAccessToken = () => null;
 let setAccessToken = () => {};
 let onRefreshFailure = async () => {};
 let getFacilityCode = () => null;
+let canRefreshSession = () => true;
 let isRefreshing = false;
 let refreshPromise = null;
 
@@ -15,6 +16,7 @@ export function configureV2ApiClient({
   setAccessToken: tokenSetter,
   onRefreshFailure: refreshFailureHandler,
   getFacilityCode: facilityGetter,
+  canRefreshSession: canRefreshSessionChecker,
 } = {}) {
   if (typeof tokenGetter === 'function') {
     getAccessToken = tokenGetter;
@@ -28,6 +30,9 @@ export function configureV2ApiClient({
   if (typeof facilityGetter === 'function') {
     getFacilityCode = facilityGetter;
   }
+  if (typeof canRefreshSessionChecker === 'function') {
+    canRefreshSession = canRefreshSessionChecker;
+  }
 }
 
 export function __resetV2ApiClientForTests() {
@@ -35,6 +40,7 @@ export function __resetV2ApiClientForTests() {
   setAccessToken = () => {};
   onRefreshFailure = async () => {};
   getFacilityCode = () => null;
+  canRefreshSession = () => true;
   isRefreshing = false;
   refreshPromise = null;
 }
@@ -43,7 +49,14 @@ export function hasV2RefreshSessionHint() {
   return Boolean(readCookie('hms_v2_csrf'));
 }
 
-export async function performV2TokenRefresh() {
+export async function performV2TokenRefresh({ notifyFailure = true } = {}) {
+  if (!canRefreshSession()) {
+    if (notifyFailure) {
+      await onRefreshFailure();
+    }
+    return null;
+  }
+
   if (isRefreshing && refreshPromise) {
     return refreshPromise;
   }
@@ -63,7 +76,9 @@ export async function performV2TokenRefresh() {
       }
       return response?.data || null;
     } catch {
-      await onRefreshFailure();
+      if (notifyFailure) {
+        await onRefreshFailure();
+      }
       return null;
     } finally {
       isRefreshing = false;
@@ -142,7 +157,12 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     return data;
   }
 
-  if (response.status === 401 && retryWithRefresh && !skipAuthRefresh) {
+  if (
+    response.status === 401
+    && retryWithRefresh
+    && !skipAuthRefresh
+    && resolvedPath !== '/api/v2/auth/logout'
+  ) {
     const refreshed = await performV2TokenRefresh();
     if (refreshed?.access_token) {
       return rawV2Request(requestConfig, false);

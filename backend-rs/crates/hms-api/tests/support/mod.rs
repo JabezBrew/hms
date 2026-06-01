@@ -132,11 +132,18 @@ pub(crate) async fn app_with_config(
 pub(crate) async fn app_with_request_context_probe() -> TestApp {
     let database =
         Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
-    let state = AppState::new(Config::for_tests_with_database_url(
-        database.database_url().to_owned(),
-    ))
+    app_with_config_and_request_context_probe(
+        Config::for_tests_with_database_url(database.database_url().to_owned()),
+        database,
+    )
     .await
-    .expect("test state initializes");
+}
+
+pub(crate) async fn app_with_config_and_request_context_probe(
+    config: Config,
+    database: Arc<hms_db::test_support::TestDatabase>,
+) -> TestApp {
+    let state = AppState::new(config).await.expect("test state initializes");
     let probe = Router::new()
         .route("/__test/request-context", get(request_context_probe))
         .with_state(state.clone());

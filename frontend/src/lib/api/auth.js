@@ -50,6 +50,10 @@ function adaptV2AuthTokenResponse(response) {
 
   return {
     access: token.access_token,
+    expires_in_seconds: token.expires_in_seconds,
+    refresh_expires_at: token.refresh_expires_at,
+    session_idle_expires_at: token.session_idle_expires_at,
+    session_absolute_expires_at: token.session_absolute_expires_at,
     password_change_required: Boolean(user.password_change_required),
     access_context: {
       permissions,
