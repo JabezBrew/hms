@@ -17,9 +17,12 @@ authority while GCP is active.
 - `hms-migrator`: one-shot sqlx migration and provisioning runner.
 - `frontend`: Nginx-served React/Vite build from `frontend/`.
 - `caddy`: public TLS edge.
-- `db`: Postgres with checksums.
-- `pgbouncer`: transaction-pool Postgres ingress for runtime services.
 - `redis`: durable Redis baseline for asynchronous/realtime infrastructure.
+
+Current GCP staging uses Cloud SQL PostgreSQL over private IP instead of the
+Compose `db` service. The Compose `db` and `pgbouncer` services are required
+for the Hetzner/single-VM rollback shape, but they are not proof of the active
+GCP staging database path.
 
 ## Cutover Gates
 
@@ -30,10 +33,12 @@ authority while GCP is active.
 4. Validate the Compose file used by the active environment.
 5. Run the active environment deploy command.
 6. Verify `/api/v2/health/ready` publicly.
-7. Verify internal `/api/v2/metrics` through the private network; it must not be
+7. For GCP staging, verify the redacted `HMS_DATABASE_URL` host/port inside
+   `hms-api` and `hms-worker` points at Cloud SQL private IP.
+8. Verify internal `/api/v2/metrics` through the private network; it must not be
    public.
-8. Run a successful Postgres backup.
-9. Complete a restore drill before first real-client cutover.
+9. Run or prove a successful Postgres backup.
+10. Complete a restore drill before first real-client cutover.
 
 ## Deployment Proof Sequence
 
@@ -64,7 +69,9 @@ Proof is complete only when the record contains:
 - successful environment deploy command
 - public `/api/v2/health/ready` success
 - `docker compose ps` showing `hms-api`, `hms-worker`, `frontend`, `caddy`,
-  `db`, `pgbouncer`, and `redis` healthy or running as expected
+  and `redis` healthy or running as expected. For Hetzner/single-VM rollback,
+  also verify `db` and `pgbouncer`. For GCP staging, verify Cloud SQL is the
+  active database host.
 - successful Postgres backup with backup file path
 - staging restore drill completion and post-restore readiness check
 

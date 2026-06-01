@@ -4,11 +4,14 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 KIT_DIR="$ROOT_DIR/ops/hetzner-v2"
 COMPOSE_FILE="${COMPOSE_FILE:-$KIT_DIR/compose.yml}"
+COMPOSE_FILES="${COMPOSE_FILES:-$COMPOSE_FILE}"
 ENV_FILE="${ENV_FILE:-$KIT_DIR/.env}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
 PUBLIC_HEALTH_TIMEOUT="${PUBLIC_HEALTH_TIMEOUT:-30}"
 PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-auto}"
+DATABASE_MODE="${DATABASE_MODE:-compose-postgres}"
+EXTERNAL_DB_BACKUP_CONFIRMED="${EXTERNAL_DB_BACKUP_CONFIRMED:-false}"
 SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_BACKUP="${SKIP_BACKUP:-false}"
 SKIP_HEALTHCHECK="${SKIP_HEALTHCHECK:-false}"
@@ -27,7 +30,11 @@ Options:
 
 Environment overrides:
   ENV_FILE             Default: ops/hetzner-v2/.env
-  COMPOSE_FILE         Default: ops/hetzner-v2/compose.yml
+  COMPOSE_FILE         Legacy single Compose file. Default: ops/hetzner-v2/compose.yml
+  COMPOSE_FILES        Space-separated Compose files. Default: $COMPOSE_FILE
+  DATABASE_MODE        compose-postgres|external-postgres. Default: compose-postgres
+  EXTERNAL_DB_BACKUP_CONFIRMED
+                       Set true after confirming managed external DB backups/PITR.
   HEALTH_TIMEOUT       Default: 180 seconds
   HEALTH_INTERVAL      Default: 5 seconds
   HEALTHCHECK_URL      Default: https://$CLIENT_DOMAIN/api/v2/health/ready
@@ -83,7 +90,13 @@ env_value() {
 }
 
 compose() {
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  compose_args=""
+  for compose_file in $COMPOSE_FILES; do
+    compose_args="$compose_args -f $compose_file"
+  done
+
+  # shellcheck disable=SC2086
+  docker compose --env-file "$ENV_FILE" $compose_args "$@"
 }
 
 require_command() {
@@ -184,11 +197,23 @@ require_command git
 require_command docker
 require_command curl
 require_file "$ENV_FILE"
-require_file "$COMPOSE_FILE"
+for compose_file in $COMPOSE_FILES; do
+  require_file "$compose_file"
+done
+
+case "$DATABASE_MODE" in
+  compose-postgres|external-postgres)
+    ;;
+  *)
+    printf 'Invalid DATABASE_MODE: %s (expected compose-postgres or external-postgres)\n' "$DATABASE_MODE" >&2
+    exit 1
+    ;;
+esac
 
 client_slug="$(env_value CLIENT_SLUG)"
 client_domain="$(env_value CLIENT_DOMAIN)"
 hms_env="$(env_value HMS_ENV)"
+external_database_url="${HMS_DATABASE_URL:-$(env_value HMS_DATABASE_URL)}"
 client_slug="${client_slug:-hms-v2}"
 hms_env="${hms_env:-production}"
 
@@ -197,7 +222,21 @@ if [ -z "$client_domain" ]; then
   exit 1
 fi
 
-step "Deploying $client_slug ($hms_env) from $ROOT_DIR"
+if [ "$DATABASE_MODE" = "external-postgres" ]; then
+  if [ -z "$external_database_url" ]; then
+    printf 'HMS_DATABASE_URL is required in the private env or shell when DATABASE_MODE=external-postgres.\n' >&2
+    exit 1
+  fi
+
+  case "$external_database_url" in
+    *@db:*|*@pgbouncer:*)
+      printf 'DATABASE_MODE=external-postgres cannot point HMS_DATABASE_URL at Compose db or pgbouncer.\n' >&2
+      exit 1
+      ;;
+  esac
+fi
+
+step "Deploying $client_slug ($hms_env, database: $DATABASE_MODE) from $ROOT_DIR"
 
 if [ "$SKIP_PULL" != "true" ]; then
   step 'Pulling latest code'
@@ -211,14 +250,30 @@ export HMS_BUILD_SHA HMS_DEPLOYED_AT
 step 'Validating Compose configuration'
 compose config -q
 
-step 'Ensuring database services are running'
-compose up -d db redis pgbouncer
-wait_for_service db "$HEALTH_TIMEOUT"
-wait_for_service redis "$HEALTH_TIMEOUT"
-wait_for_service pgbouncer "$HEALTH_TIMEOUT"
+step 'Ensuring infrastructure services are running'
+if [ "$DATABASE_MODE" = "compose-postgres" ]; then
+  compose up -d db redis pgbouncer
+  wait_for_service db "$HEALTH_TIMEOUT"
+  wait_for_service redis "$HEALTH_TIMEOUT"
+  wait_for_service pgbouncer "$HEALTH_TIMEOUT"
+else
+  printf 'Using external Postgres from HMS_DATABASE_URL; local db/pgbouncer are not started.\n'
+  compose up -d redis
+  wait_for_service redis "$HEALTH_TIMEOUT"
+fi
 
 if [ "$hms_env" = "production" ]; then
-  if [ "$SKIP_BACKUP" = "true" ]; then
+  if [ "$DATABASE_MODE" = "external-postgres" ]; then
+    if [ "$SKIP_BACKUP" = "true" ]; then
+      printf 'WARNING: skipping external database backup confirmation because --skip-backup was passed.\n' >&2
+    elif [ "$EXTERNAL_DB_BACKUP_CONFIRMED" = "true" ]; then
+      printf 'External database backup/PITR confirmation accepted for this deploy.\n'
+    else
+      printf 'Refusing production deploy with DATABASE_MODE=external-postgres until EXTERNAL_DB_BACKUP_CONFIRMED=true or --skip-backup is set.\n' >&2
+      printf 'Confirm managed backups/PITR for the external database before migrations.\n' >&2
+      exit 1
+    fi
+  elif [ "$SKIP_BACKUP" = "true" ]; then
     printf 'WARNING: skipping production backup gate because --skip-backup was passed.\n' >&2
   else
     step 'Running required production backup before migrations'

@@ -1,0 +1,30 @@
+# GCP staging override for the current Cloud SQL architecture.
+#
+# This file is intentionally separate from ops/hetzner-v2/compose.yml because
+# the base Compose file remains the reusable single-VM/rollback shape with
+# Docker Postgres and PgBouncer. Current GCP staging must provide
+# HMS_DATABASE_URL in a private env file, pointing at Cloud SQL private IP.
+
+services:
+  hms-api:
+    environment:
+      HMS_DATABASE_URL: ${HMS_DATABASE_URL:?set HMS_DATABASE_URL to the Cloud SQL private IP URL in the private env}
+    depends_on: !reset []
+
+  hms-worker:
+    environment:
+      HMS_DATABASE_URL: ${HMS_DATABASE_URL:?set HMS_DATABASE_URL to the Cloud SQL private IP URL in the private env}
+    depends_on: !reset []
+
+  hms-migrator:
+    environment:
+      HMS_DATABASE_URL: ${HMS_DATABASE_URL:?set HMS_DATABASE_URL to the Cloud SQL private IP URL in the private env}
+    depends_on: !reset []
+
+  db:
+    profiles:
+      - local-postgres-disabled
+
+  pgbouncer:
+    profiles:
+      - local-postgres-disabled

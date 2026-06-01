@@ -1,14 +1,15 @@
-# HMS GCP staging preparation
+# HMS GCP staging runbook
 
-This runbook prepares a reversible move of HMS Rust V2 staging and performance
-testing from the current Hetzner staging VPS to Google Cloud while the free
-trial credits are available.
+This runbook is the source of truth for current HMS Rust V2 staging on Google
+Cloud. Hetzner remains rollback, but `staging.thehms.systems` should not be
+reasoned about from the Hetzner Compose file alone.
 
 ## Current decision
 
-Use GCP for staging and performance testing during the free-trial window, but
-keep the migration reversible until DNS, backups, smoke tests, and performance
-evidence prove the GCP path is healthy.
+Use GCP for staging and performance testing during the free-trial window, with
+PostgreSQL on Cloud SQL and public traffic through the GCP global external
+HTTPS Load Balancer. Keep Hetzner reversible until DNS, backups, smoke tests,
+and performance evidence prove the GCP path is healthy for a rollback window.
 
 As of June 1, 2026, the billing console showed:
 
@@ -38,6 +39,30 @@ App VM:
 - Current facility code: `MAIN`
 - Current image tag observed: `gcp-perf-288e273b61ac`
 
+Public edge:
+
+- DNS: `staging.thehms.systems`
+- Cloudflare state: DNS-only to the GCP load balancer.
+- GCP global address: `hms-staging-lb-ip` / `35.190.19.91`
+- HTTPS forwarding rule: `hms-staging-https-fr`
+- Target proxy: `hms-staging-https-proxy`
+- URL map: `hms-staging-url-map`
+- App backend: `hms-staging-app-backend`
+- Static backend: `hms-staging-static-backend` with CDN enabled for
+  `/assets/*` only.
+- Managed certificate: `hms-staging-managed-cert-v2`
+
+Database:
+
+- Cloud SQL instance: `hms-staging-pg-1`
+- PostgreSQL major version: `16`
+- Region: `africa-south1`
+- Private IP: `10.216.13.2`
+- Availability: regional HA
+- Automated backups: enabled
+- Point-in-time recovery: enabled
+- Deletion protection: enabled
+
 Load VM:
 
 - Name: `hms-gcp-load-1`
@@ -47,25 +72,50 @@ Load VM:
 - Machine type: `e2-standard-2`
 - Disk: `50G`
 
-The app VM is intentionally oversized for a perf lab. At idle, the Docker stack
-was healthy and the HMS containers were using well under the available memory.
-The load VM should be stopped when not running tests.
+The app VM is intentionally oversized for a perf lab. The load VM should be
+stopped when not running tests.
 
 ## June 1, 2026 cutover status
 
-`staging.thehms.systems` now points at the GCP app VM through Cloudflare and the
-public Rust V2 readiness endpoint returns `200` at
-`/api/v2/health/ready`.
+`staging.thehms.systems` now points at the GCP global HTTPS load balancer. The
+public Rust V2 readiness endpoint returns `200` at `/api/v2/health/ready`, and
+response headers include `via: 1.1 Caddy, 1.1 google`.
 
-The GCP app stack is running:
+Current intended GCP runtime services:
 
 - `caddy`
-- `db`
 - `frontend`
 - `hms-api`
 - `hms-worker`
-- `pgbouncer`
 - `redis`
+
+PostgreSQL is Cloud SQL, not the Docker `db` service. PgBouncer is not on the
+active GCP staging request path. If old `db` or `pgbouncer` containers appear
+on the VM, do not treat them as proof that staging uses Docker Postgres. Verify
+the live runtime by checking the redacted database host inside `hms-api` and
+`hms-worker`.
+
+Expected redacted runtime proof:
+
+```text
+HMS_DATABASE_URL host=10.216.13.2 port=5432
+```
+
+Use the GCP staging wrapper for deploys:
+
+```bash
+EXTERNAL_DB_BACKUP_CONFIRMED=true \
+  ops/gcp-staging/deploy-cloudsql-staging.sh
+```
+
+That wrapper combines:
+
+- `ops/hetzner-v2/compose.yml`
+- `ops/gcp-staging/cloudsql.compose.override.yml`
+
+Do not run bare `ops/hetzner-v2/deploy.sh` for current GCP staging unless
+`COMPOSE_FILES` includes the Cloud SQL override and `DATABASE_MODE` is
+`external-postgres`.
 
 The load VM is stopped and should remain stopped except during explicit
 performance test windows.
@@ -80,6 +130,20 @@ available, and its Rust V2 Docker stack remains running. Do not cancel the
 Hetzner VPS until GCP staging has been stable through a rollback window.
 
 ## Verified backups and restore anchors
+
+Current Cloud SQL protection:
+
+- Automated backups: enabled.
+- Point-in-time recovery: enabled.
+- Deletion protection: enabled.
+- On-demand Cloud SQL backup observed after the restore drill:
+  `1780302451794`.
+- Restore drill to a temporary Cloud SQL instance completed successfully; the
+  temporary restore instance was deleted after validation.
+
+The following Docker dump and disk artifacts are rollback anchors from the
+GCP migration and Hetzner fallback path. They are not proof that current GCP
+staging uses Docker Postgres.
 
 Hetzner source backup:
 
@@ -101,7 +165,7 @@ GCP disk snapshot:
 - Size observed after completion: `8.98 GB`
 - Status observed: available
 
-Restore command for a DB dump on a prepared Rust V2 host:
+Rollback restore command for a DB dump on a prepared single-VM Rust V2 host:
 
 ```bash
 cd /opt/hms
@@ -180,10 +244,11 @@ Use three modes rather than one always-on expensive shape:
 
 1. Staging mode
    - One always-on app VM.
-   - Start with `e2-standard-2` for safety.
-   - Trial `e2-medium` later only if deploy/build and smoke checks stay stable.
-   - Keep Postgres, Redis, PgBouncer, Rust API, worker, frontend, and Caddy on
-     the same VM using `ops/hetzner-v2/compose.yml`.
+   - Keep Rust API, worker, frontend, Caddy, and Redis on the VM.
+   - Keep PostgreSQL on Cloud SQL over private IP.
+   - Deploy with `ops/gcp-staging/deploy-cloudsql-staging.sh`.
+   - Keep Docker Postgres/PgBouncer stopped unless explicitly validating the
+     Hetzner-style rollback shape.
 
 2. Load-test mode
    - Keep `hms-gcp-load-1` stopped by default.
@@ -234,7 +299,10 @@ Before canceling Hetzner staging:
    - Decide whether to reuse `hms-gcp-app-1` or create a new staging VM.
    - Prefer reusing only if the perf lab can tolerate staging naming and DNS.
    - For a cleaner setup, create a new VM named `hms-gcp-staging-1`.
-   - Use `ops/hetzner-v2/compose.yml` as the deployment stack.
+   - Use `ops/gcp-staging/deploy-cloudsql-staging.sh` as the deployment entry
+     point.
+   - Use `ops/hetzner-v2/compose.yml` only together with
+     `ops/gcp-staging/cloudsql.compose.override.yml` for current GCP staging.
    - Keep `ops/hetzner-client-vps/` out of the path; it is legacy Django.
 
 3. Right-size compute
@@ -245,13 +313,17 @@ Before canceling Hetzner staging:
 
 4. Deploy Rust V2
    - Configure private env for the GCP staging domain and facility.
-   - Run `ops/hetzner-v2/deploy.sh`.
+   - Set `HMS_DATABASE_URL` in the private env to the Cloud SQL private-IP
+     Postgres URL.
+   - Confirm Cloud SQL backups/PITR before migrations.
+   - Run `EXTERNAL_DB_BACKUP_CONFIRMED=true ops/gcp-staging/deploy-cloudsql-staging.sh`.
    - Verify Docker health and private readiness before checking public DNS.
    - Verify public readiness at `/api/v2/health/ready`.
 
 5. Cut DNS
-   - Point `staging.thehms.systems` at the GCP app public IP.
-   - Keep Cloudflare proxy/access policy consistent with current staging.
+   - Point `staging.thehms.systems` at the GCP load-balancer IP.
+   - Keep Cloudflare DNS-only unless the proxied-vs-DNS-only timing/security
+     comparison is being run intentionally.
    - Use public readiness as the cutover gate, not as the only deploy truth.
 
 6. Validate
@@ -268,15 +340,14 @@ Before canceling Hetzner staging:
    - Cancel Hetzner only after GCP staging has stable DNS, backups, smoke checks,
      and performance evidence.
 
-## First safe actions
-
-These can be done before DNS cutover:
+## Remaining safe actions
 
 1. Stop `hms-gcp-load-1` when no test run is active.
-2. Create GCP budget alerts.
-3. Decide whether staging should reuse `hms-gcp-app-1` or get a clean
-   `hms-gcp-staging-1` VM.
-4. If reusing the current app VM, snapshot the disk before resizing.
-5. Resize the app VM from `n2-standard-4` to `e2-standard-2`, then run smoke
-   and perf checks.
-6. Keep Hetzner live until the GCP public path is proven.
+2. Keep Docker `db` and `pgbouncer` stopped on GCP staging unless explicitly
+   validating the Hetzner-style rollback shape.
+3. Compare Cloudflare proxied versus DNS-only timing before changing the final
+   edge path.
+4. After the GCP path is stable, consider resizing the app VM down from
+   `n2-standard-4`; run smoke and perf checks before keeping a smaller size.
+5. Keep Hetzner live until the GCP public path, Cloud SQL backup/restore path,
+   and rollback assumptions are proven through the agreed window.
