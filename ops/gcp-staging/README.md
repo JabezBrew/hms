@@ -51,6 +51,129 @@ The app VM is intentionally oversized for a perf lab. At idle, the Docker stack
 was healthy and the HMS containers were using well under the available memory.
 The load VM should be stopped when not running tests.
 
+## June 1, 2026 cutover status
+
+`staging.thehms.systems` now points at the GCP app VM through Cloudflare and the
+public Rust V2 readiness endpoint returns `200` at
+`/api/v2/health/ready`.
+
+The GCP app stack is running:
+
+- `caddy`
+- `db`
+- `frontend`
+- `hms-api`
+- `hms-worker`
+- `pgbouncer`
+- `redis`
+
+The load VM is stopped and should remain stopped except during explicit
+performance test windows.
+
+`ops-staging.thehms.systems` is intentionally deferred. It still sits behind
+Cloudflare Access and returns the expected Access login redirect. Do not move
+the ops hostname during the app staging cutover unless Cloudflare Access, Caddy
+ACME, and the ops auth mode are validated together.
+
+Hetzner remains live as rollback. Direct SSH to the Hetzner origin is still
+available, and its Rust V2 Docker stack remains running. Do not cancel the
+Hetzner VPS until GCP staging has been stable through a rollback window.
+
+## Verified backups and restore anchors
+
+Hetzner source backup:
+
+- `/opt/hms/ops/hetzner-v2/backups/staging-20260601T054922Z.dump`
+
+GCP pre-restore backup:
+
+- `/opt/hms/ops/hetzner-v2/backups/gcp-perf-20260601T054922Z.dump`
+
+GCP post-auth-repair backup:
+
+- `/opt/hms/ops/hetzner-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump`
+
+GCP disk snapshot:
+
+- `hms-gcp-app-1-postrepair-20260601-0653`
+- Source disk: `hms-gcp-app-1`
+- Location: `africa-south1`
+- Size observed after completion: `8.98 GB`
+- Status observed: available
+
+Restore command for a DB dump on a prepared Rust V2 host:
+
+```bash
+cd /opt/hms
+RESTORE_CONFIRM=restore-staging \
+  ops/hetzner-v2/restore-postgres.sh \
+  ops/hetzner-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump
+```
+
+The disk snapshot is the VM-level rollback anchor. The DB dumps are the
+application-data rollback anchors.
+
+## Post-repair validation evidence
+
+Public HTTPS functional smoke after the admin credential repair:
+
+- login: `200`
+- auth/me: `200`
+- admin dashboard capacity: `200`
+- patient list: `200`
+- omni search: `200`
+- logout: `200`
+
+Browser smoke:
+
+- admin dashboard route: ready
+- patient registry route: ready
+- Chronicle route: loaded, but the selected patient was correctly blocked by
+  team-based access for the admin session. No temporary patient-access grants
+  were created.
+
+Public HTTPS k6 admin-only smoke:
+
+- checks: `117/117` passed
+- HTTP failures: `0`
+- app errors: `0`
+- auth/me p99: about `375 ms`
+- patient list p99: about `352 ms`
+
+Direct-origin k6 admin-only smoke from this laptop, bypassing Cloudflare:
+
+- checks: `131/131` passed
+- HTTP failures: `0`
+- app errors: `0`
+- auth/me p99: about `255 ms`
+- patient list p99: about `221 ms`
+
+App-local timing from the GCP VM through local Caddy:
+
+- login: about `34 ms`
+- auth/me: about `5 ms`
+- admin dashboard capacity: about `5 ms`
+- patient list: about `5 ms`
+
+The post-repair evidence shows auth/session state is healthy. The remaining
+public-path tail latency is network/edge distance, not local app execution.
+
+## Current cost guardrails
+
+The billing budget `hms-perf budgets` is scoped to project `hms-perf-lab`.
+
+- Budget amount: `$250`
+- Alert thresholds: `20%`, `60%`, `100%`
+- Dollar equivalents: `$50`, `$150`, `$250`
+- Email alerts to billing admins and users: enabled
+
+Operational cost rule:
+
+- Keep `hms-gcp-app-1` running for staging.
+- Keep `hms-gcp-load-1` stopped unless actively running tests.
+- Review free credits before the remaining credit drops below `$50` or before
+  August 15, 2026, whichever comes first.
+
 ## Target operating model
 
 Use three modes rather than one always-on expensive shape:
