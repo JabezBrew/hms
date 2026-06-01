@@ -51,6 +51,9 @@ Public edge:
   port `http:80`.
 - App backend health check: `hms-staging-http-ready-hc`, HTTP
   `/api/v2/health/ready` with host `staging.thehms.systems`.
+- App VM web firewall: allow only GCP GFE/health-check ranges
+  `35.191.0.0/16` and `130.211.0.0/22` to TCP port `80`; public clients should
+  reach the VM only through the HTTPS load balancer.
 - Static backend: `hms-staging-static-backend` with CDN enabled for
   `/assets/*` only.
 - Managed certificate: `hms-staging-managed-cert-v2`
