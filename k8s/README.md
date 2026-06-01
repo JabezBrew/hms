@@ -22,7 +22,8 @@ Scope: Kubernetes manifests retained in the repository.
 ## Current Role
 
 These manifests are not the current HMS deployment path. Current staging runs on
-GCP with the Rust V2 Compose stack; Hetzner V2 remains rollback/reference.
+GCP with the Rust V2 Compose stack; single-VM Compose remains the
+rollback/reference shape.
 
 ## Invariants
 

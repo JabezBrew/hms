@@ -1,5 +1,5 @@
 ## Legacy Django client VPS Caddyfile.
-## Active Rust V2 client deploys use ops/hetzner-v2/Caddyfile.
+## Active Rust V2 client deploys use ops/compose-v2/Caddyfile.
 
 {
 	email {$ACME_EMAIL}

@@ -7,23 +7,25 @@ Scope: deployment, rollback, and operations tooling under `ops/`.
 
 ## Current Role
 
-GCP is the current staging and performance-validation path. Hetzner remains the
-rollback and reusable Rust V2 Compose reference. The older Hetzner client VPS
-kit is legacy Django deployment material.
+GCP is the current staging and performance-validation path. `compose-v2/` is
+the reusable Rust V2 single-VM Compose kit for rollback and client VPS shapes.
+Hetzner remains an environment rollback option, not the name of the active kit.
+The older Hetzner client VPS kit is legacy Django deployment material.
 
 ## Map
 
 | Path | Role |
 | --- | --- |
 | `gcp-staging/README.md` | current GCP staging/perf-lab state, smoke evidence, rollback anchors, cost guardrails. |
-| `hetzner-v2/` | Rust V2 Docker Compose deployment kit and rollback reference. |
+| `compose-v2/` | reusable Rust V2 single-VM Docker Compose deployment kit and rollback reference. |
+| `hetzner-v2/` | deprecated compatibility shims that forward to `compose-v2/`. |
 | `hetzner-client-vps/` | legacy Django deployment kit; do not use for new Rust V2 deploys. |
 | `create-client-deployment.py` | client deployment generator/helper. |
 | `tests/` | Python tests for deployment scripts, Caddy routes, tracing config, monitoring config. |
 
-## Rust V2 Hetzner Kit
+## Rust V2 Compose Kit
 
-`hetzner-v2/` contains:
+`compose-v2/` contains:
 
 - `compose.yml`
 - `Caddyfile`

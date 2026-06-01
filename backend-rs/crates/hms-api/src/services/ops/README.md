@@ -24,8 +24,8 @@ It should expose operational state without leaking PHI or secrets.
 - Metric labels must use route templates and stable service/status labels.
 - Dashboard queries must be bounded and should not put external systems on hot
   request paths.
-- GCP staging is the current runtime authority; Hetzner V2 metrics behavior is
-  rollback/reference unless explicitly testing that path.
+- GCP staging is the current runtime authority; single-VM Compose metrics
+  behavior is rollback/reference unless explicitly testing that path.
 
 ## Verification
 

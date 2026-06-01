@@ -1,6 +1,6 @@
 # Legacy Kubernetes Deployment for the old Django HMS API.
 #
-# Active Rust V2 deploys use ops/hetzner-v2/compose.yml. Keep this manifest
+# Active Rust V2 deploys use ops/compose-v2/compose.yml. Keep this manifest
 # only for explicit legacy Kubernetes reference work.
 #
 # Django REST API served by Gunicorn

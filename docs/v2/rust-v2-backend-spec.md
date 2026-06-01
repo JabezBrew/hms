@@ -79,7 +79,7 @@ Password hashing: argon2
 Logging/tracing: tracing with JSON logs
 Metrics: Prometheus-compatible /metrics endpoint
 Deployment: Docker Compose stack; current staging/performance path is GCP, with
-Hetzner V2 retained as rollback/reusable Compose reference.
+single-VM Compose retained as rollback/reusable reference.
 ```
 
 <a id="crate-layout"></a>

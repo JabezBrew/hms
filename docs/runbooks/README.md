@@ -14,7 +14,8 @@ as rollback while GCP proves out.
 | --- | --- | --- |
 | Local dev | Developer loop with Docker Postgres/Redis | root `README.md`, `backend-rs/`, `frontend/` |
 | GCP staging | Current staging and perf-lab direction | `ops/gcp-staging/README.md` |
-| Hetzner staging | Rollback and historical staging path | `ops/hetzner-v2/README.md` |
+| Single-VM Compose | Rollback/client VPS deployment shape | `ops/compose-v2/README.md` |
+| Hetzner staging | Historical rollback environment | `ops/gcp-staging/README.md`, `ops/compose-v2/README.md` |
 | Legacy Django VPS kit | Historical only | `ops/hetzner-client-vps/README.md` |
 
 ## Deploy Runbook Shape
@@ -92,7 +93,7 @@ During incidents:
 ## Related Runbooks
 
 - GCP staging: `ops/gcp-staging/README.md`
-- Rust V2 Hetzner deployment: `ops/hetzner-v2/README.md`
+- Rust V2 single-VM Compose deployment: `ops/compose-v2/README.md`
 - Load tests: `tests/load/README.md`
 - Ops dashboard: `docs/performance/ops-dashboard.md`
 - Performance budget: `docs/performance/performance-budget.md`

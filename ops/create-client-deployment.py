@@ -2,7 +2,7 @@
 """
 Generate a private legacy Django HMS client VPS deployment environment file.
 
-Active Rust V2 deployments use ops/hetzner-v2/env.example directly. Keep this
+Active Rust V2 deployments use ops/compose-v2/env.example directly. Keep this
 script only for explicit legacy Django deployment maintenance/reference.
 
 The generated file is intentionally not committed. It contains application

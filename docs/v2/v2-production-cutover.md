@@ -5,7 +5,7 @@ maintained React/Vite frontend in `frontend/`, generated JavaScript `/api/v2`
 helpers, and the current staging/performance path documented in
 `ops/gcp-staging/README.md`.
 
-The Rust V2 Compose kit in `ops/hetzner-v2/` remains the rollback and reusable
+The Rust V2 Compose kit in `ops/compose-v2/` remains the rollback and reusable
 single-client Compose reference. Do not treat Hetzner as the current staging
 authority while GCP is active.
 
@@ -21,7 +21,7 @@ authority while GCP is active.
 
 Current GCP staging uses Cloud SQL PostgreSQL over private IP instead of the
 Compose `db` service. The Compose `db` and `pgbouncer` services are required
-for the Hetzner/single-VM rollback shape, but they are not proof of the active
+for the single-VM rollback shape, but they are not proof of the active
 GCP staging database path.
 
 ## Cutover Gates
@@ -31,7 +31,8 @@ GCP staging database path.
    approved env example.
 3. Replace all `CHANGE_ME` values and keep private env mode at `0600`.
 4. Validate the Compose file used by the active environment.
-5. Run the active environment deploy command.
+5. Run the active environment deploy command, including its pre-migration
+   database connectivity gate.
 6. Verify `/api/v2/health/ready` publicly.
 7. For GCP staging, verify the redacted `HMS_DATABASE_URL` host/port inside
    `hms-api` and `hms-worker` points at Cloud SQL private IP.
@@ -47,7 +48,7 @@ pass. Use the host, SSH path, and deploy command from the current environment
 runbook. Do not paste deployment secrets into shell history or repo files.
 
 For current staging, start with `ops/gcp-staging/README.md`. If using Hetzner as
-rollback, use `ops/hetzner-v2/README.md` and explicitly label the run as
+rollback, use `ops/compose-v2/README.md` and explicitly label the run as
 rollback validation.
 
 The proof sequence is environment-independent:
@@ -66,12 +67,13 @@ Proof is complete only when the record contains:
 
 - deployed Git commit and branch
 - successful Compose validation
+- successful pre-migration database connectivity check from the migrator
 - successful environment deploy command
 - public `/api/v2/health/ready` success
 - `docker compose ps` showing `hms-api`, `hms-worker`, `frontend`, `caddy`,
-  and `redis` healthy or running as expected. For Hetzner/single-VM rollback,
-  also verify `db` and `pgbouncer`. For GCP staging, verify Cloud SQL is the
-  active database host.
+  and `redis` healthy or running as expected. For single-VM rollback, also
+  verify `db` and `pgbouncer`. For GCP staging, verify Cloud SQL is the active
+  database host.
 - successful Postgres backup with backup file path
 - staging restore drill completion and post-restore readiness check
 

@@ -180,7 +180,7 @@ favor correctness, least privilege, and predictable performance.
 - Do not credit yourself in commit messages.
 
 ## Security and Configuration Notes
-- Never commit secrets. Use `ops/hetzner-v2/env.example` and `frontend/.env.example`.
+- Never commit secrets. Use `ops/compose-v2/env.example` and `frontend/.env.example`.
 - Ignore legacy `backend/credentials/` contents.
 - Ensure Redis is available before launching `hms-api` or `hms-worker`.
 - Document new dependencies or IAM needs in `docs/`.
@@ -190,17 +190,17 @@ favor correctness, least privilege, and predictable performance.
   source of truth for `staging.thehms.systems`.
 - Current GCP staging uses the GCP global HTTPS Load Balancer and Cloud SQL
   PostgreSQL over private IP. Do not infer the live staging database path from
-  `ops/hetzner-v2/compose.yml` alone; that file is also the reusable
+  `ops/compose-v2/compose.yml` alone; that file is also the reusable
   single-VM/rollback Compose baseline with Docker Postgres and PgBouncer.
 - For current GCP staging deploys, use
-  `ops/gcp-staging/deploy-cloudsql-staging.sh`, which combines the Hetzner V2
-  Compose baseline with `ops/gcp-staging/cloudsql.compose.override.yml`.
+  `ops/gcp-staging/deploy.sh`, which combines the reusable Compose baseline
+  with `ops/gcp-staging/compose.cloudsql.yml`.
 - To verify the live GCP staging database path, inspect only the redacted
   `HMS_DATABASE_URL` host/port inside `hms-api` and `hms-worker`; never print
   credentials, DB names, dumps, request bodies, raw PHI URLs, MRNs, or patient
   identifiers.
-- HMS Hetzner deploys one client per VPS with Docker Compose. The active Rust
-  V2 Hetzner/rollback runbook is `ops/hetzner-v2/README.md`.
+- HMS single-VM/rollback deploys one client per VPS with Docker Compose. The
+  active Rust V2 Compose runbook is `ops/compose-v2/README.md`.
 - For HMS Hetzner VPS access from this laptop, prefer `ssh hms-staging` when the
   staging hostname is DNS-only. If `staging.thehms.systems` is proxied through
   Cloudflare, SSH must bypass the hostname and use the Hetzner origin directly:
@@ -210,10 +210,10 @@ favor correctness, least privilege, and predictable performance.
   run as `deploy` from `/opt/hms` and do not require `sudo`.
 - Do not store deployment passwords in repo files, Codex memory, or shell history;
   use the SSH alias and local keychain/agent setup instead.
-- The reusable Rust V2 Compose profile is `ops/hetzner-v2/compose.yml`.
-- Create private client env files from `ops/hetzner-v2/env.example`.
+- The reusable Rust V2 Compose profile is `ops/compose-v2/compose.yml`.
+- Create private client env files from `ops/compose-v2/env.example`.
 - Deploy updates from `/opt/hms` on the VPS with:
-  `ops/hetzner-v2/deploy.sh`.
+  `ops/compose-v2/deploy.sh`.
 - `ops/hetzner-client-vps/` is the legacy Django deployment kit. Do not use it
   for new Rust V2 deploys.
 

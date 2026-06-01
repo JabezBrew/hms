@@ -1,6 +1,6 @@
 # Legacy Kubernetes Job for old Django schema migrations and bootstrap.
 #
-# Active Rust V2 deploys use hms-migrator in ops/hetzner-v2/compose.yml. Keep
+# Active Rust V2 deploys use hms-migrator in ops/compose-v2/compose.yml. Keep
 # this manifest only for explicit legacy Kubernetes reference work.
 #
 # Apply before API and Celery deployments:

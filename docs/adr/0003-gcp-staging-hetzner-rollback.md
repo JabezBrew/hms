@@ -17,13 +17,13 @@ GCP is the current staging and performance-validation path. The current runbook
 entry point is `ops/gcp-staging/README.md`.
 
 Current GCP staging uses the GCP global external HTTPS Load Balancer and Cloud
-SQL PostgreSQL over private IP. The reusable Hetzner V2 Compose file remains
-useful, but on GCP it must be paired with the Cloud SQL override documented in
+SQL PostgreSQL over private IP. The reusable Compose kit remains useful, but on
+GCP it must be paired with the Cloud SQL override documented in
 `ops/gcp-staging/README.md`.
 
-Hetzner remains the rollback and reusable Rust V2 Compose path through
-`ops/hetzner-v2/README.md` until a future ADR changes the production/staging
-direction.
+Hetzner remains an environment rollback option. The reusable Rust V2 Compose
+kit lives at `ops/compose-v2/README.md` until a future ADR changes the
+production/staging direction.
 
 ## Rejected Alternatives
 
@@ -37,7 +37,7 @@ direction.
 - Runbooks should name GCP first for staging.
 - GCP staging docs and deploy commands must distinguish Cloud SQL from the
   Docker `db`/`pgbouncer` rollback shape.
-- Hetzner docs should be framed as rollback or reusable Rust V2 Compose
-  material unless production direction changes.
+- Hetzner docs should be framed as environment rollback material unless
+  production direction changes; the reusable kit should be named Compose.
 - Deploy reports must verify the real remote environment, branch/commit, health,
   smoke, and rollback evidence.

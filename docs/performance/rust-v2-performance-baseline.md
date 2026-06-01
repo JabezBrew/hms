@@ -171,10 +171,10 @@ Staging smoke command shape:
 
 ```bash
 ssh hms-staging 'cd /opt/hms &&
-  set -a && . ops/hetzner-v2/.env && set +a &&
+  set -a && . ops/compose-v2/.env && set +a &&
   OUT=/tmp/hms-agent0-rust-v2-smoke-20260522T220500Z &&
   mkdir -p "$OUT" &&
-  docker compose -f ops/hetzner-v2/compose.yml exec -T hms-api sh -lc "curl -fsS http://127.0.0.1:8080/api/v2/metrics" > "$OUT/api-metrics-before.prom" &&
+  docker compose -f ops/compose-v2/compose.yml exec -T hms-api sh -lc "curl -fsS http://127.0.0.1:8080/api/v2/metrics" > "$OUT/api-metrics-before.prom" &&
   docker run --rm --network hms-v2-staging_internal -v /opt/hms:/work:ro -v "$OUT":/out -w /work
     -e HMS_LOAD_BASE_URL=http://hms-api:8080
     -e HMS_LOAD_FACILITY_CODE="$HMS_FACILITY_CODE"
@@ -205,10 +205,10 @@ Host-network baseline command shape:
 
 ```bash
 ssh hms-staging 'cd /opt/hms &&
-  set -a && . ops/hetzner-v2/.env && set +a &&
+  set -a && . ops/compose-v2/.env && set +a &&
   OUT=/tmp/hms-agent0-rust-v2-baseline-hostnet-20260522T221000Z &&
   mkdir -p "$OUT" && chmod 0777 "$OUT" &&
-  docker compose -f ops/hetzner-v2/compose.yml exec -T hms-api sh -lc "curl -fsS http://127.0.0.1:8080/api/v2/metrics" > "$OUT/api-metrics-before.prom" &&
+  docker compose -f ops/compose-v2/compose.yml exec -T hms-api sh -lc "curl -fsS http://127.0.0.1:8080/api/v2/metrics" > "$OUT/api-metrics-before.prom" &&
   docker run --rm --network host -v /opt/hms:/work:ro -v "$OUT":/out -w /work
     -e HMS_LOAD_BASE_URL=https://staging.thehms.systems
     -e HMS_LOAD_FACILITY_CODE="$HMS_FACILITY_CODE"

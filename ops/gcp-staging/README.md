@@ -2,7 +2,7 @@
 
 This runbook is the source of truth for current HMS Rust V2 staging on Google
 Cloud. Hetzner remains rollback, but `staging.thehms.systems` should not be
-reasoned about from the Hetzner Compose file alone.
+reasoned about from the reusable single-VM Compose file alone.
 
 ## Current decision
 
@@ -105,17 +105,25 @@ Use the GCP staging wrapper for deploys:
 
 ```bash
 EXTERNAL_DB_BACKUP_CONFIRMED=true \
-  ops/gcp-staging/deploy-cloudsql-staging.sh
+  ops/gcp-staging/deploy.sh --skip-pull
 ```
 
 That wrapper combines:
 
-- `ops/hetzner-v2/compose.yml`
-- `ops/gcp-staging/cloudsql.compose.override.yml`
+- `ops/compose-v2/compose.yml`
+- `ops/gcp-staging/compose.cloudsql.yml`
 
-Do not run bare `ops/hetzner-v2/deploy.sh` for current GCP staging unless
+Do not run bare `ops/compose-v2/deploy.sh` for current GCP staging unless
 `COMPOSE_FILES` includes the Cloud SQL override and `DATABASE_MODE` is
 `external-postgres`.
+
+The wrapper blocks unsafe Cloud SQL deploys before migrations. It validates the
+merged Compose contract, refuses active `db`/`pgbouncer` services in external
+Postgres mode, requires `hms-api`, `hms-worker`, and `hms-migrator` to use the
+external `HMS_DATABASE_URL`, requires migrator egress on the `edge` network, and
+runs `hms-migrator check-db` before migrations. It also refuses stale shell
+`HMS_DATABASE_URL` values that differ from the private env file and checks the
+database host against `GCP_CLOUDSQL_HOST` (`10.216.13.2` by default).
 
 The load VM is stopped and should remain stopped except during explicit
 performance test windows.
@@ -147,15 +155,15 @@ staging uses Docker Postgres.
 
 Hetzner source backup:
 
-- `/opt/hms/ops/hetzner-v2/backups/staging-20260601T054922Z.dump`
+- `/opt/hms/ops/compose-v2/backups/staging-20260601T054922Z.dump`
 
 GCP pre-restore backup:
 
-- `/opt/hms/ops/hetzner-v2/backups/gcp-perf-20260601T054922Z.dump`
+- `/opt/hms/ops/compose-v2/backups/gcp-perf-20260601T054922Z.dump`
 
 GCP post-auth-repair backup:
 
-- `/opt/hms/ops/hetzner-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump`
+- `/opt/hms/ops/compose-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump`
 
 GCP disk snapshot:
 
@@ -170,8 +178,8 @@ Rollback restore command for a DB dump on a prepared single-VM Rust V2 host:
 ```bash
 cd /opt/hms
 RESTORE_CONFIRM=restore-staging \
-  ops/hetzner-v2/restore-postgres.sh \
-  ops/hetzner-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump
+  ops/compose-v2/restore-postgres.sh \
+  ops/compose-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump
 ```
 
 The disk snapshot is the VM-level rollback anchor. The DB dumps are the
@@ -246,7 +254,7 @@ Use three modes rather than one always-on expensive shape:
    - One always-on app VM.
    - Keep Rust API, worker, frontend, Caddy, and Redis on the VM.
    - Keep PostgreSQL on Cloud SQL over private IP.
-   - Deploy with `ops/gcp-staging/deploy-cloudsql-staging.sh`.
+   - Deploy with `ops/gcp-staging/deploy.sh`.
    - Keep Docker Postgres/PgBouncer stopped unless explicitly validating the
      Hetzner-style rollback shape.
 
@@ -299,10 +307,10 @@ Before canceling Hetzner staging:
    - Decide whether to reuse `hms-gcp-app-1` or create a new staging VM.
    - Prefer reusing only if the perf lab can tolerate staging naming and DNS.
    - For a cleaner setup, create a new VM named `hms-gcp-staging-1`.
-   - Use `ops/gcp-staging/deploy-cloudsql-staging.sh` as the deployment entry
+   - Use `ops/gcp-staging/deploy.sh` as the deployment entry
      point.
-   - Use `ops/hetzner-v2/compose.yml` only together with
-     `ops/gcp-staging/cloudsql.compose.override.yml` for current GCP staging.
+   - Use `ops/compose-v2/compose.yml` only together with
+     `ops/gcp-staging/compose.cloudsql.yml` for current GCP staging.
    - Keep `ops/hetzner-client-vps/` out of the path; it is legacy Django.
 
 3. Right-size compute
@@ -316,7 +324,8 @@ Before canceling Hetzner staging:
    - Set `HMS_DATABASE_URL` in the private env to the Cloud SQL private-IP
      Postgres URL.
    - Confirm Cloud SQL backups/PITR before migrations.
-   - Run `EXTERNAL_DB_BACKUP_CONFIRMED=true ops/gcp-staging/deploy-cloudsql-staging.sh`.
+   - Run `EXTERNAL_DB_BACKUP_CONFIRMED=true ops/gcp-staging/deploy.sh --skip-pull`
+     when deploying from an archive/copy rather than a Git checkout.
    - Verify Docker health and private readiness before checking public DNS.
    - Verify public readiness at `/api/v2/health/ready`.
 

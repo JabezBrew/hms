@@ -845,6 +845,7 @@ dependencies = [
  "anyhow",
  "hms-db",
  "hms-domain",
+ "sqlx",
  "tokio",
  "uuid",
 ]

@@ -1,6 +1,6 @@
 # Legacy HMS Django Client VPS Deployment Runbook
 
-> Legacy note: the active deployment kit is `ops/hetzner-v2/` for the Rust V2
+> Legacy note: the active deployment kit is `ops/compose-v2/` for the Rust V2
 > backend. Use this directory only for explicit legacy Django deployment
 > maintenance or historical reference.
 

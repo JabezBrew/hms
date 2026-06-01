@@ -132,8 +132,8 @@ https://<client-domain>/api/v2/health/ready
 Hetzner remains the rollback and reusable Compose path while GCP proves out:
 
 ```text
-ops/hetzner-v2/README.md
-ops/hetzner-v2/compose.yml
+ops/compose-v2/README.md
+ops/compose-v2/compose.yml
 ```
 
 The older `ops/hetzner-client-vps/` kit is legacy Django deployment material.

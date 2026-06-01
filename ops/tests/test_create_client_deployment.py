@@ -7,7 +7,7 @@ import pytest
 
 
 # Legacy Django env-generator tests. Active Rust V2 deploy config lives under
-# ops/hetzner-v2/.
+# ops/compose-v2/.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / 'ops' / 'create-client-deployment.py'
 SPEC = importlib.util.spec_from_file_location('create_client_deployment', SCRIPT_PATH)

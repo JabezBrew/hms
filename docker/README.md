@@ -21,7 +21,7 @@ This directory contains older Docker assets for the Django-era stack:
 - Postgres primary/replica config under `postgres/`
 
 Active Rust V2 deployments should use `ops/gcp-staging/` for current staging and
-`ops/hetzner-v2/` for the reusable Rust V2 Compose kit.
+`ops/compose-v2/` for the reusable Rust V2 Compose kit.
 
 ## Invariants
 

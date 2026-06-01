@@ -19,6 +19,6 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 
 - `backend-rs/` and generated `/api/v2` contracts are the active backend path.
 - Current staging/performance validation uses GCP runbooks.
-- Hetzner V2 remains rollback/reusable Compose reference.
+- Single-VM Compose remains rollback/reusable reference.
 - Django behavior is reference only unless a task explicitly asks for legacy
   maintenance or parity research.

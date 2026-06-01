@@ -14,5 +14,6 @@ path = "src/main.rs"
 anyhow.workspace = true
 hms-db = { path = "../hms-db" }
 hms-domain = { path = "../hms-domain" }
+sqlx.workspace = true
 tokio.workspace = true
 uuid.workspace = true

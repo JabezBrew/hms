@@ -19,5 +19,5 @@ Scope: operations and deployment configuration tests.
 
 - Tests must not require production secrets.
 - Keep fixture output PHI-safe.
-- Deploy/config tests should track the active GCP path and the Hetzner V2
-  rollback path explicitly when they differ.
+- Deploy/config tests should track the active GCP path and the single-VM
+  Compose rollback path explicitly when they differ.

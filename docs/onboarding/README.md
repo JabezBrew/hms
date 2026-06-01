@@ -75,7 +75,7 @@ Frontend:
 Operations:
 
 - `ops/gcp-staging/README.md`
-- `ops/hetzner-v2/README.md`
+- `ops/compose-v2/README.md`
 - `tests/load/scripts/run-rust-v2-regression.sh`
 
 ## First Safe Change

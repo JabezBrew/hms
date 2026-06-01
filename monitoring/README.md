@@ -7,9 +7,8 @@ Scope: Prometheus, Grafana, Loki, Tempo, Alertmanager, metrics proxy, and teleme
 
 This bundle provides the self-hosted observability stack used by the Rust V2
 Compose deployment profile. Current staging/performance validation is on GCP;
-use the current GCP runbook for that environment. The Hetzner V2 Compose path
-remains rollback/reference, and the legacy Django Hetzner kit is historical
-only.
+use the current GCP runbook for that environment. The single-VM Compose path
+remains rollback/reference, and the legacy Django Hetzner kit is historical only.
 
 The monitoring bundle contains:
 
@@ -28,7 +27,7 @@ what happened, why it matters, likely cause, first checks, and the runbook path.
 For current GCP staging, open Grafana through the access path documented in
 `ops/gcp-staging/README.md`.
 
-For a Hetzner V2 Compose rollback/reference host from this laptop, open Grafana
+For a single-VM Compose rollback/reference host from this laptop, open Grafana
 through an SSH tunnel:
 
 ```bash
@@ -113,11 +112,11 @@ GF_SECURITY_ADMIN_PASSWORD='<strong-password>' \
 TELEGRAM_CHAT_ID='<telegram-chat-id>' \
 HMS_EDGE_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_edge" \
 HMS_INTERNAL_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_internal" \
-docker compose --env-file ops/hetzner-v2/.env \
+docker compose --env-file ops/compose-v2/.env \
   -f monitoring/docker-compose.monitoring.yml up -d
 ```
 
-Open dashboards through an SSH tunnel on a Hetzner V2 Compose
+Open dashboards through an SSH tunnel on a single-VM Compose
 rollback/reference host:
 
 ```bash
@@ -193,7 +192,7 @@ LOKI_WRITE_URL='http://10.90.0.1:3100/loki/api/v1/push' \
 OBS_ENVIRONMENT=production \
 HMS_EDGE_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_edge" \
 HMS_INTERNAL_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_internal" \
-docker compose --env-file ops/hetzner-v2/.env \
+docker compose --env-file ops/compose-v2/.env \
   -f monitoring/docker-compose.client-telemetry.yml up -d
 ```
 

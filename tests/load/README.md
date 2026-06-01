@@ -202,7 +202,7 @@ Grafana metrics should still be judged against the real Rust V2 budget.
 For current GCP staging, use the Grafana/metrics access path documented in
 `ops/gcp-staging/README.md`.
 
-For a Hetzner V2 Compose rollback/reference host, open Grafana through the
+For a single-VM Compose rollback/reference host, open Grafana through the
 rollback/reference SSH tunnel:
 
 ```bash

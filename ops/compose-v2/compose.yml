@@ -8,14 +8,14 @@ x-rust-image: &rust-image
   environment: &rust-environment
     HMS_ENV: ${HMS_ENV:-production}
     HMS_API_LISTEN_ADDR: 0.0.0.0:8080
-    HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}@pgbouncer:6432/${DB_NAME:-hms}
+    HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/compose-v2/.env}@pgbouncer:6432/${DB_NAME:-hms}
     HMS_DATABASE_MAX_CONNECTIONS: ${HMS_DATABASE_MAX_CONNECTIONS:-10}
     HMS_PASSWORD_WORK_MAX_CONCURRENCY: ${HMS_PASSWORD_WORK_MAX_CONCURRENCY:-4}
     HMS_REDIS_ADDR: ${HMS_REDIS_ADDR:-redis:6379}
-    HMS_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}
-    HMS_FACILITY_NAME: ${HMS_FACILITY_NAME:?set HMS_FACILITY_NAME in ops/hetzner-v2/.env}
-    HMS_DEPLOYMENT_PROFILE: ${HMS_DEPLOYMENT_PROFILE:?set HMS_DEPLOYMENT_PROFILE in ops/hetzner-v2/.env}
-    HMS_JWT_SECRET: ${HMS_JWT_SECRET:?set HMS_JWT_SECRET in ops/hetzner-v2/.env}
+    HMS_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/compose-v2/.env}
+    HMS_FACILITY_NAME: ${HMS_FACILITY_NAME:?set HMS_FACILITY_NAME in ops/compose-v2/.env}
+    HMS_DEPLOYMENT_PROFILE: ${HMS_DEPLOYMENT_PROFILE:?set HMS_DEPLOYMENT_PROFILE in ops/compose-v2/.env}
+    HMS_JWT_SECRET: ${HMS_JWT_SECRET:?set HMS_JWT_SECRET in ops/compose-v2/.env}
     HMS_COOKIE_SECURE: "true"
     HMS_RUM_ENABLED: ${HMS_RUM_ENABLED:-false}
     HMS_OPS_AUTH_MODE: ${HMS_OPS_AUTH_MODE:-hms_permission}
@@ -46,10 +46,10 @@ services:
   caddy:
     image: caddy:2-alpine
     environment:
-      CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN in ops/hetzner-v2/.env}
+      CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN in ops/compose-v2/.env}
       OPS_DOMAIN: ${OPS_DOMAIN:-localhost}
       OPS_DASHBOARD_UPSTREAM: ${OPS_DASHBOARD_UPSTREAM:-frontend:80}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in ops/hetzner-v2/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in ops/compose-v2/.env}
     ports:
       - "80:80"
       - "443:443"
@@ -91,7 +91,7 @@ services:
       HMS_API_MODE: rust-v2
       V2_API_BASE_URL: /api/v2
       WS_URL: ${FRONTEND_WS_URL:-}
-      DEFAULT_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}
+      DEFAULT_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/compose-v2/.env}
       MULTI_FACILITY_MODE: ${MULTI_FACILITY_MODE:-false}
       RUM_ENABLED: ${HMS_RUM_ENABLED:-false}
       OPS_DASHBOARD_HOSTS: ${OPS_DOMAIN:-localhost}
@@ -238,12 +238,12 @@ services:
     restart: "no"
     environment:
       <<: *rust-environment
-      HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}@db:5432/${DB_NAME:-hms}
+      HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/compose-v2/.env}@db:5432/${DB_NAME:-hms}
       HMS_DATABASE_MAX_CONNECTIONS: "2"
       HMS_PROVISION_BASELINE: ${HMS_PROVISION_BASELINE:-true}
-      HMS_BOOTSTRAP_ADMIN_EMAIL: ${HMS_BOOTSTRAP_ADMIN_EMAIL:?set HMS_BOOTSTRAP_ADMIN_EMAIL in ops/hetzner-v2/.env}
+      HMS_BOOTSTRAP_ADMIN_EMAIL: ${HMS_BOOTSTRAP_ADMIN_EMAIL:?set HMS_BOOTSTRAP_ADMIN_EMAIL in ops/compose-v2/.env}
       HMS_BOOTSTRAP_ADMIN_NAME: ${HMS_BOOTSTRAP_ADMIN_NAME:-HMS Administrator}
-      HMS_BOOTSTRAP_ADMIN_PASSWORD: ${HMS_BOOTSTRAP_ADMIN_PASSWORD:?set HMS_BOOTSTRAP_ADMIN_PASSWORD in ops/hetzner-v2/.env}
+      HMS_BOOTSTRAP_ADMIN_PASSWORD: ${HMS_BOOTSTRAP_ADMIN_PASSWORD:?set HMS_BOOTSTRAP_ADMIN_PASSWORD in ops/compose-v2/.env}
       HMS_SEED_DEMO_DATA: ${HMS_SEED_DEMO_DATA:-false}
       HMS_OPS_OPERATOR_EMAILS: ${HMS_OPS_OPERATOR_EMAILS:-}
     depends_on:
@@ -257,7 +257,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-hms}
       POSTGRES_USER: ${DB_USER:-hms}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/compose-v2/.env}
       POSTGRES_INITDB_ARGS: "--data-checksums"
     command:
       - postgres
@@ -319,7 +319,7 @@ services:
       POSTGRESQL_PORT: "5432"
       POSTGRESQL_DATABASE: ${DB_NAME:-hms}
       POSTGRESQL_USERNAME: ${DB_USER:-hms}
-      POSTGRESQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}
+      POSTGRESQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/compose-v2/.env}
       PGBOUNCER_PORT: "6432"
       PGBOUNCER_DATABASE: ${DB_NAME:-hms}
       PGBOUNCER_POOL_MODE: transaction

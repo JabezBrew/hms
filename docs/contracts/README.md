@@ -18,7 +18,7 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
 | Events and jobs | `backend-rs/crates/hms-events/`, `hms-worker` | Backend/worker owner | async workflows, projections, audits | worker tests and event contract tests |
 | Realtime subscriptions | Rust V2 WebSocket/realtime modules and `hms-access` guards | Security/backend owner | frontend realtime hooks, ward/patient dashboards, alerts | subscription authorization tests and PHI-safe channel tests |
 | Performance metrics | `docs/performance/performance-budget.md` | Performance owner | load harness, ops dashboard, deploy gates | `tests/load/scripts/run-rust-v2-regression.sh` |
-| Deployment runtime | `ops/gcp-staging/README.md`, `ops/hetzner-v2/README.md`, compose/env files | Operations owner | staging, rollback, smoke, incident response | health, smoke, logs, rollback evidence |
+| Deployment runtime | `ops/gcp-staging/README.md`, `ops/compose-v2/README.md`, compose/env files | Operations owner | staging, rollback, smoke, incident response | health, smoke, logs, rollback evidence |
 
 ## HTTP Contract Rules
 

@@ -10,14 +10,15 @@ use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let database_url = env::var("HMS_DATABASE_URL")
-        .map_err(|_| anyhow::anyhow!("HMS_DATABASE_URL is required"))?;
-    let max_connections = env::var("HMS_DATABASE_MAX_CONNECTIONS")
-        .ok()
-        .as_deref()
-        .map(|value| parse_u32(value, "HMS_DATABASE_MAX_CONNECTIONS"))
-        .transpose()?
-        .unwrap_or(2);
+    let command = env::args().nth(1);
+    if let Some(command) = command.as_deref() {
+        match command {
+            "check-db" => return check_database_connectivity().await,
+            _ => bail!("unsupported hms-migrator command: {command}"),
+        }
+    }
+
+    let (database_url, max_connections) = database_settings_from_env()?;
     let profile = env::var("HMS_DEPLOYMENT_PROFILE")
         .ok()
         .as_deref()
@@ -71,6 +72,48 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn database_settings_from_env() -> anyhow::Result<(String, u32)> {
+    let database_url = env::var("HMS_DATABASE_URL")
+        .map_err(|_| anyhow::anyhow!("HMS_DATABASE_URL is required"))?;
+    let max_connections = env::var("HMS_DATABASE_MAX_CONNECTIONS")
+        .ok()
+        .as_deref()
+        .map(|value| parse_u32(value, "HMS_DATABASE_MAX_CONNECTIONS"))
+        .transpose()?
+        .unwrap_or(2);
+
+    Ok((database_url, max_connections))
+}
+
+async fn check_database_connectivity() -> anyhow::Result<()> {
+    let (database_url, max_connections) = database_settings_from_env()?;
+    let target = database_target_summary(&database_url);
+    let pool = hms_db::pool::connect_with_max_connections(&database_url, max_connections).await?;
+
+    let _: i32 = sqlx::query_scalar("SELECT 1")
+        .fetch_one(&pool)
+        .await
+        .context("database connectivity check query failed")?;
+
+    println!("Database connectivity check passed: {target}");
+    Ok(())
+}
+
+fn database_target_summary(database_url: &str) -> String {
+    let without_scheme = database_url
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(database_url);
+    let without_credentials = without_scheme
+        .rsplit_once('@')
+        .map(|(_, rest)| rest)
+        .unwrap_or(without_scheme);
+    let (authority, _) = without_credentials
+        .split_once('/')
+        .unwrap_or((without_credentials, ""));
+    format!("target={authority}")
 }
 
 fn performance_seed_scale_from_env() -> anyhow::Result<Option<PerformanceSeedScale>> {
@@ -203,6 +246,25 @@ mod tests {
             Some(DemoSeedProfile::Small)
         ));
         assert!(!demo_seed_is_forbidden("production", None));
+    }
+
+    #[test]
+    fn database_target_summary_never_includes_credentials() {
+        let summary = database_target_summary(
+            "postgres://hms:super-secret@10.216.13.2:5432/hms?sslmode=require",
+        );
+
+        assert_eq!(summary, "target=10.216.13.2:5432");
+        assert!(!summary.contains("super-secret"));
+        assert!(!summary.contains("hms:"));
+        assert!(!summary.contains("database="));
+    }
+
+    #[test]
+    fn database_target_summary_handles_urls_without_credentials() {
+        let summary = database_target_summary("postgres://10.216.13.2:5432/hms");
+
+        assert_eq!(summary, "target=10.216.13.2:5432");
     }
 }
 
