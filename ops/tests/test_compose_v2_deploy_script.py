@@ -13,6 +13,7 @@ DEPLOY_SCRIPT = REPO_ROOT / 'ops' / 'compose-v2' / 'deploy.sh'
 COMPOSE_FILE = REPO_ROOT / 'ops' / 'compose-v2' / 'compose.yml'
 ENV_EXAMPLE = REPO_ROOT / 'ops' / 'compose-v2' / 'env.example'
 GCP_DEPLOY_SCRIPT = REPO_ROOT / 'ops' / 'gcp-staging' / 'deploy.sh'
+GCP_EDGE_VERIFY_SCRIPT = REPO_ROOT / 'ops' / 'gcp-staging' / 'verify-edge.sh'
 CLOUDSQL_OVERRIDE = REPO_ROOT / 'ops' / 'gcp-staging' / 'compose.cloudsql.yml'
 GCP_CADDYFILE = REPO_ROOT / 'ops' / 'gcp-staging' / 'Caddyfile'
 LEGACY_DEPLOY_SHIM = REPO_ROOT / 'ops' / 'hetzner-v2' / 'deploy.sh'
@@ -53,7 +54,7 @@ def test_v2_deploy_script_shell_syntax_is_valid():
 
 
 def test_gcp_cloudsql_wrapper_shell_syntax_is_valid():
-    for script in [GCP_DEPLOY_SCRIPT, LEGACY_DEPLOY_SHIM, LEGACY_GCP_DEPLOY_SHIM]:
+    for script in [GCP_DEPLOY_SCRIPT, GCP_EDGE_VERIFY_SCRIPT, LEGACY_DEPLOY_SHIM, LEGACY_GCP_DEPLOY_SHIM]:
         result = subprocess.run(
             ['sh', '-n', str(script)],
             check=False,
@@ -85,6 +86,7 @@ def test_gcp_cloudsql_override_requires_external_database_url():
     assert '../gcp-staging/Caddyfile:/etc/caddy/Caddyfile:ro' in override
     assert '"80:80"' in override
     assert '"443:443"' not in override
+    assert 'monitoring-disabled' in override
     assert 'HMS_DATABASE_URL: ${HMS_DATABASE_URL:?set HMS_DATABASE_URL to the Cloud SQL private IP URL in the private env}' in override
     assert 'depends_on: !reset []' in override
     assert 'networks: !override' in override
@@ -130,6 +132,8 @@ def test_gcp_cloudsql_compose_contract_disables_local_postgres_and_gives_migrato
 
     assert 'db' not in services
     assert 'pgbouncer' not in services
+    assert 'prometheus' not in services
+    assert 'grafana' not in services
     assert {'hms-api', 'hms-worker', 'hms-migrator'}.issubset(services)
 
     config = subprocess.run(
@@ -376,3 +380,11 @@ def test_gcp_wrapper_rejects_compose_postgres_mode(tmp_path):
 
     assert result.returncode == 1
     assert 'requires DATABASE_MODE=external-postgres' in result.stderr
+
+
+def test_gcp_wrapper_requires_public_edge_health_by_default():
+    wrapper = GCP_DEPLOY_SCRIPT.read_text(encoding='utf-8')
+
+    assert 'PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-required}"' in wrapper
+    assert 'GCP_EDGE_VERIFY' in wrapper
+    assert 'ops/gcp-staging/verify-edge.sh' in wrapper

@@ -120,6 +120,12 @@ EXTERNAL_DB_BACKUP_CONFIRMED=true \
   ops/gcp-staging/deploy.sh --skip-pull
 ```
 
+GCP deploys require the public edge readiness check by default
+(`PUBLIC_HEALTHCHECK_MODE=required`) and then run
+`ops/gcp-staging/verify-edge.sh` when `gcloud` is available. Use
+`GCP_EDGE_VERIFY=required` from an operator machine when the VM does not have
+`gcloud`; use `GCP_EDGE_VERIFY=skip` only for a documented incident workaround.
+
 That wrapper combines:
 
 - `ops/compose-v2/compose.yml`
@@ -231,6 +237,11 @@ Direct-origin k6 admin-only smoke from this laptop, bypassing Cloudflare:
 - HTTP failures: `0`
 - app errors: `0`
 - auth/me p99: about `255 ms`
+
+This historical direct-origin result predates the current origin-lockdown
+firewall. For new validation, bypass Cloudflare by targeting the GCP load
+balancer with DNS-only `staging.thehms.systems`, not by calling the VM public IP
+directly. Direct VM public-origin HTTP should time out by design.
 - patient list p99: about `221 ms`
 
 App-local timing from the GCP VM through local Caddy:

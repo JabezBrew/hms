@@ -38,3 +38,11 @@ services:
   pgbouncer:
     profiles:
       - local-postgres-disabled
+
+  prometheus:
+    profiles:
+      - monitoring-disabled
+
+  grafana:
+    profiles:
+      - monitoring-disabled

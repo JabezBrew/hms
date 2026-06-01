@@ -10,6 +10,7 @@ else
   ENV_FILE="${ENV_FILE:-$DEFAULT_ENV_FILE}"
 fi
 COMPOSE_FILES="${COMPOSE_FILES:-$ROOT_DIR/ops/compose-v2/compose.yml $ROOT_DIR/ops/gcp-staging/compose.cloudsql.yml}"
+PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-required}"
 
 if [ "${DATABASE_MODE:-external-postgres}" != "external-postgres" ]; then
   printf 'GCP staging deploy requires DATABASE_MODE=external-postgres.\n' >&2
@@ -88,6 +89,29 @@ fi
 
 EXTERNAL_DB_BACKUP_TARGET_HOST="${EXTERNAL_DB_BACKUP_TARGET_HOST:-$expected_host}"
 
-export ENV_FILE COMPOSE_FILES DATABASE_MODE HMS_DATABASE_URL EXTERNAL_DB_BACKUP_TARGET_HOST
+export ENV_FILE COMPOSE_FILES DATABASE_MODE HMS_DATABASE_URL EXTERNAL_DB_BACKUP_TARGET_HOST PUBLIC_HEALTHCHECK_MODE
 
-exec "$ROOT_DIR/ops/compose-v2/deploy.sh" "$@"
+"$ROOT_DIR/ops/compose-v2/deploy.sh" "$@"
+
+case "${GCP_EDGE_VERIFY:-auto}" in
+  auto|required|skip)
+    ;;
+  *)
+    printf 'Invalid GCP_EDGE_VERIFY: %s (expected auto, required, or skip)\n' "$GCP_EDGE_VERIFY" >&2
+    exit 1
+    ;;
+esac
+
+if [ "${GCP_EDGE_VERIFY:-auto}" = "skip" ]; then
+  exit 0
+fi
+
+if command -v gcloud >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  "$ROOT_DIR/ops/gcp-staging/verify-edge.sh"
+elif [ "${GCP_EDGE_VERIFY:-auto}" = "required" ]; then
+  printf 'GCP edge verification requires gcloud and curl. Run ops/gcp-staging/verify-edge.sh from an operator machine.\n' >&2
+  exit 1
+else
+  printf 'WARNING: skipped GCP edge verification because gcloud or curl is unavailable here.\n' >&2
+  printf 'Run ops/gcp-staging/verify-edge.sh from an operator machine before declaring deploy complete.\n' >&2
+fi
