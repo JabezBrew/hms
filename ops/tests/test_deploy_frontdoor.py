@@ -134,7 +134,10 @@ def test_deploy_frontdoor_preserves_safety_in_script_text():
     assert 'EXTERNAL_DB_BACKUP_CONFIRMED="true"' in installer
     assert 'restore_previous_tree' in installer
     assert 'Recreating runtime from restored tree' in installer
-    assert './deploy --in-place --skip-pull --skip-healthcheck' in installer
+    assert './deploy --in-place --skip-pull --skip-healthcheck --assume-managed-backup' in installer
+    assert './deploy --in-place --assume-managed-backup' in installer
+    assert 'legacy GCP deploy wrapper' in installer
+    assert 'ops/gcp-staging/deploy.sh --skip-pull --skip-healthcheck' in installer
     assert 'Refusing archive install into' in installer
     assert 'preserve_private_file ops/compose-v2/.env' in installer
     assert './deploy --in-place' in installer

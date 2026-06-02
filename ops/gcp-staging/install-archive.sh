@@ -105,14 +105,27 @@ restore_previous_tree() {
         HMS_BUILD_SHA="rollback-$stamp" \
           EXTERNAL_DB_BACKUP_CONFIRMED="true" \
           GCP_EDGE_VERIFY="skip" \
-          ./deploy --in-place --skip-pull --skip-healthcheck
+          ./deploy --in-place --skip-pull --skip-healthcheck --assume-managed-backup
       ); then
         printf 'Runtime restored from previous tree.\n' >&2
       else
         printf 'Runtime restore from previous tree failed; manual recovery required.\n' >&2
       fi
+    elif [ -x "$DEPLOY_ROOT/ops/gcp-staging/deploy.sh" ]; then
+      printf 'Recreating runtime from restored tree with legacy GCP deploy wrapper...\n' >&2
+      if (
+        cd "$DEPLOY_ROOT"
+        HMS_BUILD_SHA="rollback-$stamp" \
+          EXTERNAL_DB_BACKUP_CONFIRMED="true" \
+          GCP_EDGE_VERIFY="skip" \
+          ops/gcp-staging/deploy.sh --skip-pull --skip-healthcheck
+      ); then
+        printf 'Runtime restored from previous tree with legacy GCP deploy wrapper.\n' >&2
+      else
+        printf 'Legacy runtime restore from previous tree failed; manual recovery required.\n' >&2
+      fi
     else
-      printf 'Restored tree has no executable deploy front door; manual runtime recovery required.\n' >&2
+      printf 'Restored tree has no executable deploy entry point; manual runtime recovery required.\n' >&2
     fi
   else
     printf 'Rollback tree missing; manual recovery required for %s.\n' "$DEPLOY_ROOT" >&2
@@ -151,7 +164,7 @@ cd "$DEPLOY_ROOT"
 HMS_BUILD_SHA="$SHA" \
   EXTERNAL_DB_BACKUP_CONFIRMED="true" \
   GCP_EDGE_VERIFY="${GCP_EDGE_VERIFY:-skip}" \
-  ./deploy --in-place
+  ./deploy --in-place --assume-managed-backup
 
 DEPLOY_SWAPPED="false"
 printf 'Deploy %s installed successfully. Previous tree remains at %s for rollback.\n' "$SHA" "$ROLLBACK_ROOT"
