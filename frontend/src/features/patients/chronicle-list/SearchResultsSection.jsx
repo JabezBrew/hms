@@ -91,17 +91,27 @@ export function SearchResultsSection({
 }
 
 function SortableTableHead({ column, ordering, onOrderingChange }) {
+  if (column.sortable === false) {
+    return (
+      <TableHead className="h-11 text-xs font-mono uppercase tracking-wider text-muted-foreground">
+        {column.label}
+      </TableHead>
+    );
+  }
+
   const isDescending = ordering === `-${column.key}`;
   const isAscending = ordering === column.key;
   const isActive = isDescending || isAscending;
+  const ariaSort = isActive ? (isDescending ? 'descending' : 'ascending') : 'none';
+  const nextDirection = isActive && !isDescending ? 'descending' : 'ascending';
 
   return (
-    <TableHead className="h-11">
+    <TableHead className="h-11" aria-sort={ariaSort}>
       <button
         type="button"
         onClick={() => onOrderingChange(column.key)}
         className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-        aria-label={`Sort by ${column.label}`}
+        aria-label={`Sort by ${column.label} ${nextDirection}`}
       >
         <span>{column.label}</span>
         {isActive ? (

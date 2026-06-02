@@ -29,6 +29,79 @@ pub struct PatientContextFilters {
     pub search: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PatientListSortField {
+    RegisteredAt,
+    PatientCode,
+    DisplayName,
+    DateOfBirth,
+    Sex,
+    Status,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PatientListOrdering {
+    pub field: PatientListSortField,
+    pub direction: SortDirection,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PatientListOrderingParseError;
+
+impl PatientListOrdering {
+    pub fn parse(value: Option<&str>) -> Result<Self, PatientListOrderingParseError> {
+        let Some(raw) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(Self::default());
+        };
+        let (direction, field) = match raw.strip_prefix('-') {
+            Some(field) => (SortDirection::Desc, field),
+            None => (SortDirection::Asc, raw),
+        };
+        let field = match field {
+            "created_at" | "registered_at" => PatientListSortField::RegisteredAt,
+            "medical_record_number" | "mrn" | "patient_code" => PatientListSortField::PatientCode,
+            "name" | "display_name" => PatientListSortField::DisplayName,
+            "date_of_birth" | "birth_year" => PatientListSortField::DateOfBirth,
+            "gender" | "sex" => PatientListSortField::Sex,
+            "registry_status" | "status" => PatientListSortField::Status,
+            _ => return Err(PatientListOrderingParseError),
+        };
+        Ok(Self { field, direction })
+    }
+
+    pub fn cache_key(self) -> &'static str {
+        match (self.field, self.direction) {
+            (PatientListSortField::RegisteredAt, SortDirection::Asc) => "created_at",
+            (PatientListSortField::RegisteredAt, SortDirection::Desc) => "-created_at",
+            (PatientListSortField::PatientCode, SortDirection::Asc) => "patient_code",
+            (PatientListSortField::PatientCode, SortDirection::Desc) => "-patient_code",
+            (PatientListSortField::DisplayName, SortDirection::Asc) => "display_name",
+            (PatientListSortField::DisplayName, SortDirection::Desc) => "-display_name",
+            (PatientListSortField::DateOfBirth, SortDirection::Asc) => "date_of_birth",
+            (PatientListSortField::DateOfBirth, SortDirection::Desc) => "-date_of_birth",
+            (PatientListSortField::Sex, SortDirection::Asc) => "sex",
+            (PatientListSortField::Sex, SortDirection::Desc) => "-sex",
+            (PatientListSortField::Status, SortDirection::Asc) => "status",
+            (PatientListSortField::Status, SortDirection::Desc) => "-status",
+        }
+    }
+}
+
+impl Default for PatientListOrdering {
+    fn default() -> Self {
+        Self {
+            field: PatientListSortField::RegisteredAt,
+            direction: SortDirection::Desc,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PatientListRecord {
     pub patient: PatientRecord,
@@ -120,10 +193,34 @@ pub async fn list_patient_registry(
     limit: i64,
     search: Option<&str>,
     status: Option<PatientAdministrativeStatus>,
+    ordering: PatientListOrdering,
 ) -> anyhow::Result<Vec<PatientListRecord>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        WITH patient_page AS MATERIALIZED (
+        WITH cursor_patient AS MATERIALIZED (
+            SELECT patients.id,
+                   patients.patient_code,
+                   patients.first_name,
+                   patients.last_name,
+                   patients.date_of_birth,
+                   patients.sex,
+                   patients.status,
+                   patients.created_at
+            FROM patients
+            WHERE patients.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    if let Some(cursor) = cursor.as_ref() {
+        query.push(" AND patients.id = ");
+        query.push_bind(cursor.id);
+    } else {
+        query.push(" AND FALSE");
+    }
+    query.push(
+        r#"
+        ),
+        patient_page AS MATERIALIZED (
             SELECT patients.id,
                    patients.facility_id,
                    patients.patient_code,
@@ -140,28 +237,17 @@ pub async fn list_patient_registry(
     );
     query.push_bind(facility_id);
 
-    if let Some(cursor) = cursor {
-        query.push(" AND (patients.created_at, patients.id) > (");
-        query.push_bind(cursor.created_at);
-        query.push(", ");
-        query.push_bind(cursor.id);
-        query.push(")");
+    if cursor.is_some() {
+        push_patient_cursor_filter(&mut query, ordering);
     }
+    push_patient_registry_filters(&mut query, search, status.as_ref())?;
 
-    if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
-        let pattern = format!("%{}%", search.to_lowercase());
-        query.push(
-            " AND lower(patients.patient_code || ' ' || patients.first_name || ' ' || patients.last_name) LIKE ",
-        );
-        query.push_bind(pattern);
-    }
-
-    if let Some(status) = status {
-        query.push(" AND patients.status = ");
-        query.push_bind(codec::encode(status)?);
-    }
-
-    query.push(" ORDER BY patients.created_at ASC, patients.id ASC LIMIT ");
+    query.push(" ORDER BY ");
+    push_patient_sort_expression(&mut query, "patients", ordering.field);
+    push_sort_direction(&mut query, ordering.direction);
+    query.push(", patients.id");
+    push_sort_direction(&mut query, ordering.direction);
+    query.push(" LIMIT ");
     query.push_bind(limit);
     query.push(
         r#"
@@ -200,9 +286,13 @@ pub async fn list_patient_registry(
         LEFT JOIN beds current_bed
           ON current_bed.facility_id = current_admission.facility_id
          AND current_bed.id = current_admission.bed_id
-        ORDER BY patient_page.created_at ASC, patient_page.id ASC
         "#,
     );
+    query.push(" ORDER BY ");
+    push_patient_sort_expression(&mut query, "patient_page", ordering.field);
+    push_sort_direction(&mut query, ordering.direction);
+    query.push(", patient_page.id");
+    push_sort_direction(&mut query, ordering.direction);
 
     let rows = observe_db_query(
         "patient.registry.list_projection",
@@ -210,6 +300,96 @@ pub async fn list_patient_registry(
     )
     .await?;
     rows.into_iter().map(patient_list_from_row).collect()
+}
+
+fn push_patient_registry_filters(
+    query: &mut QueryBuilder<Postgres>,
+    search: Option<&str>,
+    status: Option<&PatientAdministrativeStatus>,
+) -> anyhow::Result<()> {
+    if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
+        let pattern = format!("%{}%", search.to_lowercase());
+        query.push(
+            " AND lower(patients.patient_code || ' ' || patients.first_name || ' ' || patients.last_name) LIKE ",
+        );
+        query.push_bind(pattern);
+    }
+
+    if let Some(status) = status {
+        query.push(" AND patients.status = ");
+        query.push_bind(codec::encode(status.clone())?);
+    }
+
+    Ok(())
+}
+
+fn push_patient_cursor_filter(query: &mut QueryBuilder<Postgres>, ordering: PatientListOrdering) {
+    let operator = sort_comparison_operator(ordering.direction);
+    query.push(" AND EXISTS (SELECT 1 FROM cursor_patient) AND (");
+    push_patient_sort_expression(query, "patients", ordering.field);
+    query.push(" ");
+    query.push(operator);
+    query.push(" (SELECT ");
+    push_patient_sort_expression(query, "cursor_patient", ordering.field);
+    query.push(" FROM cursor_patient) OR (");
+    push_patient_sort_expression(query, "patients", ordering.field);
+    query.push(" = (SELECT ");
+    push_patient_sort_expression(query, "cursor_patient", ordering.field);
+    query.push(" FROM cursor_patient) AND patients.id ");
+    query.push(operator);
+    query.push(" (SELECT cursor_patient.id FROM cursor_patient))");
+    query.push(")");
+}
+
+fn push_patient_sort_expression(
+    query: &mut QueryBuilder<Postgres>,
+    alias: &'static str,
+    field: PatientListSortField,
+) {
+    match field {
+        PatientListSortField::RegisteredAt => {
+            query.push(alias);
+            query.push(".created_at");
+        }
+        PatientListSortField::PatientCode => {
+            query.push("lower(");
+            query.push(alias);
+            query.push(".patient_code)");
+        }
+        PatientListSortField::DisplayName => {
+            query.push("lower(");
+            query.push(alias);
+            query.push(".first_name || ' ' || ");
+            query.push(alias);
+            query.push(".last_name)");
+        }
+        PatientListSortField::DateOfBirth => {
+            query.push(alias);
+            query.push(".date_of_birth");
+        }
+        PatientListSortField::Sex => {
+            query.push(alias);
+            query.push(".sex");
+        }
+        PatientListSortField::Status => {
+            query.push(alias);
+            query.push(".status");
+        }
+    }
+}
+
+fn push_sort_direction(query: &mut QueryBuilder<Postgres>, direction: SortDirection) {
+    match direction {
+        SortDirection::Asc => query.push(" ASC"),
+        SortDirection::Desc => query.push(" DESC"),
+    };
+}
+
+fn sort_comparison_operator(direction: SortDirection) -> &'static str {
+    match direction {
+        SortDirection::Asc => ">",
+        SortDirection::Desc => "<",
+    }
 }
 
 pub async fn list_patients(

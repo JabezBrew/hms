@@ -142,6 +142,15 @@ pub struct PatientListQuery {
     pub patient_id: Option<Uuid>,
     pub status: Option<PatientAdministrativeStatus>,
     pub include_total: Option<bool>,
+    pub ordering: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PatientContextListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub patient_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

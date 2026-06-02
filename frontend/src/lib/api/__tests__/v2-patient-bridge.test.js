@@ -206,6 +206,72 @@ describe('Rust V2 patient bridge', () => {
     expect(response.next).toBe('cursor-2');
   });
 
+  it('translates registry table ordering keys before calling Rust /api/v2 patients', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: {
+            limit: 25,
+            has_next: false,
+            next_cursor: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await patientsApi.searchPatientsWithMeta(
+      { page_size: 25, registry_scope: 'active', ordering: '-medical_record_number' },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients?limit=25&status=active&ordering=-patient_code',
+      expect.anything(),
+    );
+  });
+
+  it('does not forward registry-only params to Rust context patient lists', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: {
+            limit: 10,
+            has_next: false,
+            next_cursor: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await patientsApi.getContextPatients(
+      {
+        limit: 10,
+        query: 'Ama',
+        ordering: '-medical_record_number',
+        registry_scope: 'active',
+        include_total: 'true',
+      },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/context?limit=10&search=Ama',
+      expect.anything(),
+    );
+  });
+
   it('preserves AbortError from Rust patient list calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);

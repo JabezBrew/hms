@@ -1,7 +1,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_db::auth::{EndBreakGlassGrants, StartBreakGlassGrant};
 use hms_db::patients::{
-    NewPatient, PatientContextCursor, PatientContextFilters, PatientCursor, PatientUpdate,
+    NewPatient, PatientContextCursor, PatientContextFilters, PatientCursor, PatientListOrdering,
+    PatientUpdate,
 };
 use hms_domain::auth::{
     BreakGlassGrant, BreakGlassGrantDenialReason, BreakGlassGrantOutcome,
@@ -10,8 +11,9 @@ use hms_domain::auth::{
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use hms_domain::patients::{
-    CreatePatientRequest, PatientContextListItem, PatientDetail, PatientListItem, PatientListQuery,
-    PatientRecord, PatientRegistrationValidationRule, Sex, UpdatePatientRequest,
+    CreatePatientRequest, PatientContextListItem, PatientContextListQuery, PatientDetail,
+    PatientListItem, PatientListQuery, PatientRecord, PatientRegistrationValidationRule, Sex,
+    UpdatePatientRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -198,27 +200,38 @@ impl PatientsService {
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let status = query.status.clone();
+        let ordering = patient_list_ordering(&query)?;
         let page = patient_page_request(&query)?;
         let page_size = page.limit;
         let cacheable_hot_page =
             page.cursor.is_none() && query.patient_id.is_none() && !include_total;
         if cacheable_hot_page {
-            if let Some(response) = self
-                .state
-                .cached_patient_list(ctx, search, &status, page_size)
-            {
+            if let Some(response) = self.state.cached_patient_list(
+                ctx,
+                search,
+                &status,
+                ordering.cache_key(),
+                page_size,
+            ) {
                 return Ok(response);
             }
         }
         let _cache_guard = if cacheable_hot_page {
-            let lock = self
-                .state
-                .patient_list_cache_lock(ctx, search, &status, page_size);
+            let lock = self.state.patient_list_cache_lock(
+                ctx,
+                search,
+                &status,
+                ordering.cache_key(),
+                page_size,
+            );
             let guard = lock.lock_owned().await;
-            if let Some(response) = self
-                .state
-                .cached_patient_list(ctx, search, &status, page_size)
-            {
+            if let Some(response) = self.state.cached_patient_list(
+                ctx,
+                search,
+                &status,
+                ordering.cache_key(),
+                page_size,
+            ) {
                 return Ok(response);
             }
             Some(guard)
@@ -233,6 +246,7 @@ impl PatientsService {
             fetch_limit,
             search,
             status.clone(),
+            ordering,
         )
         .await
         .map_err(|_| ApiError::conflict("patient_list_failed", "Patients could not be loaded."))?;
@@ -281,8 +295,14 @@ impl PatientsService {
             });
         }
         if cacheable_hot_page {
-            self.state
-                .put_cached_patient_list(ctx, search, &status, page_size, response.clone());
+            self.state.put_cached_patient_list(
+                ctx,
+                search,
+                &status,
+                ordering.cache_key(),
+                page_size,
+                response.clone(),
+            );
         }
         Ok(response)
     }
@@ -290,7 +310,7 @@ impl PatientsService {
     pub async fn list_context_patients(
         &self,
         ctx: &hms_access::RequestContext,
-        query: PatientListQuery,
+        query: PatientContextListQuery,
     ) -> Result<ListResponse<PatientContextListItem>, ApiError> {
         require_patient_context_list_access(ctx, self.facility_id())?;
         let page = patient_context_page_request(&query)?;
@@ -790,8 +810,17 @@ fn patient_page_request(
     )?)
 }
 
+fn patient_list_ordering(query: &PatientListQuery) -> Result<PatientListOrdering, ApiError> {
+    PatientListOrdering::parse(query.ordering.as_deref()).map_err(|_| {
+        ApiError::bad_request(
+            "invalid_patient_ordering",
+            "Patient registry ordering is invalid.",
+        )
+    })
+}
+
 fn patient_context_page_request(
-    query: &PatientListQuery,
+    query: &PatientContextListQuery,
 ) -> Result<cursor_list::CursorPage<PatientContextCursor>, ApiError> {
     Ok(cursor_list::page_request(
         query.cursor.as_deref(),

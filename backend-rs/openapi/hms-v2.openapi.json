@@ -21618,6 +21618,38 @@
         ],
         "type": "object"
       },
+      "PatientContextListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PatientDataVisibility": {
         "enum": [
           "none",
@@ -21747,6 +21779,12 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "ordering": {
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -44274,6 +44312,17 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "ordering",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -44428,32 +44477,6 @@
               "format": "uuid",
               "type": [
                 "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/PatientAdministrativeStatus"
-                }
-              ]
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_total",
-            "required": false,
-            "schema": {
-              "type": [
-                "boolean",
                 "null"
               ]
             }

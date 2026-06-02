@@ -70,6 +70,26 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         .as_str()
         .expect("created patient id exists");
 
+    let newest = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=1")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("newest-first patient list succeeds");
+    assert_eq!(newest.status(), StatusCode::OK);
+    let newest_body = json_body(newest).await;
+    assert_eq!(
+        newest_body["data"][0]["id"].as_str(),
+        Some(registry_only_patient_id),
+        "patient registry should default to most recently registered first"
+    );
+
     let denied_chronicle = app
         .clone()
         .oneshot(
@@ -100,6 +120,120 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         .await
         .expect("patient denial succeeds");
     assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn patient_registry_honors_safe_server_side_ordering() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    for first_name in ["Alpha", "Zulu"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v2/patients")
+                    .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "first_name": first_name,
+                            "last_name": "Sortorderprobe",
+                            "date_of_birth": "1995-03-10",
+                            "sex": "female"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("patient create succeeds");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let first_page = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=1&search=Sortorderprobe&ordering=name")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ascending patient list succeeds");
+    assert_eq!(first_page.status(), StatusCode::OK);
+    let first_body = json_body(first_page).await;
+    assert_eq!(
+        first_body["data"][0]["display_name"],
+        "Alpha Sortorderprobe"
+    );
+    let cursor = first_body["page"]["next_cursor"]
+        .as_str()
+        .expect("cursor exists")
+        .to_owned();
+
+    let second_page = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients?limit=1&search=Sortorderprobe&ordering=name&cursor={cursor}"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("cursor patient list succeeds");
+    assert_eq!(second_page.status(), StatusCode::OK);
+    let second_body = json_body(second_page).await;
+    assert_eq!(
+        second_body["data"][0]["display_name"],
+        "Zulu Sortorderprobe"
+    );
+
+    let descending = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=1&search=Sortorderprobe&ordering=-name")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("descending patient list succeeds");
+    assert_eq!(descending.status(), StatusCode::OK);
+    let descending_body = json_body(descending).await;
+    assert_eq!(
+        descending_body["data"][0]["display_name"],
+        "Zulu Sortorderprobe"
+    );
+}
+
+#[tokio::test]
+async fn patient_registry_rejects_unknown_ordering() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=1&ordering=patient_location")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("invalid ordering request completes");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = json_body(response).await;
+    assert_eq!(body["error"]["code"], "invalid_patient_ordering");
 }
 
 #[tokio::test]
@@ -170,6 +304,7 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
         patient_id: None,
         status: None,
         include_total: Some(false),
+        ordering: None,
     };
 
     let (first, first_queries) = hms_observability::with_request_query_counter(async {

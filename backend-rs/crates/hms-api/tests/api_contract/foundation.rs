@@ -260,6 +260,12 @@ async fn openapi_contains_foundation_paths() {
             .any(|parameter| parameter["name"] == "status"),
         "patient list exposes status filter for registry scope tabs"
     );
+    assert!(
+        patient_parameters
+            .iter()
+            .any(|parameter| parameter["name"] == "ordering"),
+        "patient list exposes ordering for server-side registry table sorting"
+    );
     let appointment_parameters = paths["/api/v2/appointments"]["get"]["parameters"]
         .as_array()
         .expect("appointment list parameters exist");

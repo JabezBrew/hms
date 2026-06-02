@@ -3,8 +3,8 @@ use axum::Json;
 use hms_domain::auth::{BreakGlassGrant, EndBreakGlassGrantsResponse, StartBreakGlassGrantRequest};
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::patients::{
-    CreatePatientRequest, PatientContextListItem, PatientDetail, PatientListItem, PatientListQuery,
-    PatientRegistrationValidationRule, UpdatePatientRequest,
+    CreatePatientRequest, PatientContextListItem, PatientContextListQuery, PatientDetail,
+    PatientListItem, PatientListQuery, PatientRegistrationValidationRule, UpdatePatientRequest,
 };
 use uuid::Uuid;
 
@@ -45,7 +45,7 @@ pub async fn list_patients(
     operation_id = "getPatientContextList",
     tag = "patients",
     security(("bearerAuth" = [])),
-    params(PatientListQuery),
+    params(PatientContextListQuery),
     responses(
         (status = 200, description = "Current user's context patients", body = ListResponse<PatientContextListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -55,7 +55,7 @@ pub async fn list_patients(
 pub async fn list_context_patients(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<PatientListQuery>,
+    Query(query): Query<PatientContextListQuery>,
 ) -> Result<Json<ListResponse<PatientContextListItem>>, ApiError> {
     Ok(Json(
         state

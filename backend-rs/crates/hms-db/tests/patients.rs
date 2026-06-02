@@ -4,7 +4,9 @@ use hms_db::clinical::{
     NewProblem, UpdateClinicalNoteTemplate,
 };
 use hms_db::laboratory::{NewLabOrder, NewLabResult, NewSpecimen};
-use hms_db::patients::{PatientContextCursor, PatientContextFilters, PatientUpdate};
+use hms_db::patients::{
+    PatientContextCursor, PatientContextFilters, PatientListOrdering, PatientUpdate,
+};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::clinical::{
     AllergySeverity, AllergyStatus, ChartEntryType, PrescriptionStatus, ProblemStatus,
@@ -224,6 +226,7 @@ async fn patient_registry_projection_includes_current_location_and_opt_in_count(
             10,
             Some(&scenario.patient.patient_code),
             Some(PatientAdministrativeStatus::Active),
+            PatientListOrdering::default(),
         )
         .await
     })
@@ -258,6 +261,7 @@ async fn patient_registry_projection_includes_current_location_and_opt_in_count(
         10,
         Some(&scenario.patient.patient_code),
         Some(PatientAdministrativeStatus::Active),
+        PatientListOrdering::default(),
     )
     .await
     .expect("cross-facility registry projection succeeds");

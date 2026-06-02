@@ -702,6 +702,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::patients::PatientAdministrativeStatus,
         hms_domain::patients::PatientContextKind,
         hms_domain::patients::PatientContextListItem,
+        hms_domain::patients::PatientContextListQuery,
         hms_domain::patients::PatientDetail,
         hms_domain::patients::PatientListItem,
         hms_domain::patients::PatientListQuery,

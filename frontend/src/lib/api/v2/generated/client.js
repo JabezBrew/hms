@@ -1492,8 +1492,7 @@ export const operations = {
       "cursor",
       "limit",
       "search",
-      "patient_id",
-      "status"
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -1543,7 +1542,9 @@ export const operations = {
       "limit",
       "search",
       "patient_id",
-      "status"
+      "status",
+      "include_total",
+      "ordering"
     ],
     "hasBody": false
   },

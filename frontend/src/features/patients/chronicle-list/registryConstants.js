@@ -58,6 +58,6 @@ export const TABLE_COLUMNS = [
   { key: 'name', label: 'Name' },
   { key: 'date_of_birth', label: 'DOB / Age' },
   { key: 'gender', label: 'Sex' },
-  { key: 'patient_location', label: 'Patient Location' },
+  { key: 'patient_location', label: 'Patient Location', sortable: false },
   { key: 'registry_status', label: 'Status' },
 ];

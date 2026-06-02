@@ -32,6 +32,24 @@ async fn migrations_apply_to_fresh_database_and_seed_baseline() {
             .fetch_one(&pool)
             .await
             .expect("chronicle count query succeeds");
+    for index_name in [
+        "patients_registry_code_sort_idx",
+        "patients_registry_status_code_sort_idx",
+        "patients_registry_name_sort_idx",
+        "patients_registry_status_name_sort_idx",
+        "patients_registry_dob_sort_idx",
+        "patients_registry_status_dob_sort_idx",
+        "patients_registry_sex_sort_idx",
+        "patients_registry_status_sex_sort_idx",
+        "patients_registry_status_sort_idx",
+    ] {
+        let exists = sqlx::query_scalar::<_, bool>("SELECT to_regclass($1) IS NOT NULL")
+            .bind(index_name)
+            .fetch_one(&pool)
+            .await
+            .expect("index existence query succeeds");
+        assert!(exists, "patient registry sort index {index_name} exists");
+    }
 
     assert!(profile_count >= 8);
     assert_eq!(patient_count, 2);

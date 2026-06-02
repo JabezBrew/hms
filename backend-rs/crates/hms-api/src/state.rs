@@ -452,6 +452,7 @@ struct PatientListCacheKey {
     search_fingerprint: [u8; 32],
     search_present: bool,
     status: Option<String>,
+    ordering: String,
     page_size: u8,
 }
 
@@ -461,6 +462,7 @@ impl PatientListCacheKey {
         ctx: &hms_access::RequestContext,
         search: Option<&str>,
         status: &Option<PatientAdministrativeStatus>,
+        ordering: &str,
         page_size: u8,
     ) -> Self {
         let (search_fingerprint, search_present) = text_filter_fingerprint(search);
@@ -470,6 +472,7 @@ impl PatientListCacheKey {
             search_fingerprint,
             search_present,
             status: status.as_ref().map(|value| format!("{value:?}")),
+            ordering: ordering.to_owned(),
             page_size,
         }
     }
@@ -1027,10 +1030,17 @@ impl AppState {
         ctx: &hms_access::RequestContext,
         search: Option<&str>,
         status: &Option<PatientAdministrativeStatus>,
+        ordering: &str,
         page_size: u8,
     ) -> Option<ListResponse<PatientListItem>> {
-        let cache_key =
-            PatientListCacheKey::new(self.inner.facility_id, ctx, search, status, page_size);
+        let cache_key = PatientListCacheKey::new(
+            self.inner.facility_id,
+            ctx,
+            search,
+            status,
+            ordering,
+            page_size,
+        );
         self.inner.hot_read_cache.patient_list.get(&cache_key)
     }
 
@@ -1039,11 +1049,18 @@ impl AppState {
         ctx: &hms_access::RequestContext,
         search: Option<&str>,
         status: &Option<PatientAdministrativeStatus>,
+        ordering: &str,
         page_size: u8,
         response: ListResponse<PatientListItem>,
     ) {
-        let cache_key =
-            PatientListCacheKey::new(self.inner.facility_id, ctx, search, status, page_size);
+        let cache_key = PatientListCacheKey::new(
+            self.inner.facility_id,
+            ctx,
+            search,
+            status,
+            ordering,
+            page_size,
+        );
         self.inner
             .hot_read_cache
             .patient_list
@@ -1055,10 +1072,17 @@ impl AppState {
         ctx: &hms_access::RequestContext,
         search: Option<&str>,
         status: &Option<PatientAdministrativeStatus>,
+        ordering: &str,
         page_size: u8,
     ) -> Arc<TokioMutex<()>> {
-        let cache_key =
-            PatientListCacheKey::new(self.inner.facility_id, ctx, search, status, page_size);
+        let cache_key = PatientListCacheKey::new(
+            self.inner.facility_id,
+            ctx,
+            search,
+            status,
+            ordering,
+            page_size,
+        );
         self.inner
             .hot_read_cache
             .patient_list
@@ -1948,10 +1972,53 @@ fn auth_pool_max_connections(database_max_connections: u32) -> u32 {
 }
 
 async fn warm_hot_read_query_shapes(pool: &hms_db::PgPool, facility_id: Uuid) {
+    use hms_db::patients::{PatientListOrdering, PatientListSortField, SortDirection};
+
     let warmup = async {
-        hms_db::patients::list_patient_registry(pool, facility_id, None, 21, None, None).await?;
-        hms_db::patients::list_patient_registry(pool, facility_id, None, 21, Some("hms"), None)
-            .await?;
+        hms_db::patients::list_patient_registry(
+            pool,
+            facility_id,
+            None,
+            21,
+            None,
+            None,
+            hms_db::patients::PatientListOrdering::default(),
+        )
+        .await?;
+        hms_db::patients::list_patient_registry(
+            pool,
+            facility_id,
+            None,
+            21,
+            Some("hms"),
+            None,
+            hms_db::patients::PatientListOrdering::default(),
+        )
+        .await?;
+        let registry_sort_warmups = [
+            PatientListSortField::PatientCode,
+            PatientListSortField::DisplayName,
+            PatientListSortField::DateOfBirth,
+            PatientListSortField::Sex,
+            PatientListSortField::Status,
+        ];
+        for sort_field in registry_sort_warmups {
+            for direction in [SortDirection::Asc, SortDirection::Desc] {
+                hms_db::patients::list_patient_registry(
+                    pool,
+                    facility_id,
+                    None,
+                    21,
+                    None,
+                    Some(PatientAdministrativeStatus::Active),
+                    PatientListOrdering {
+                        field: sort_field,
+                        direction,
+                    },
+                )
+                .await?;
+            }
+        }
         hms_db::search::omni_search(
             pool,
             OmniSearchFilters {

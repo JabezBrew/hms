@@ -158,9 +158,27 @@ describe('PatientChronicleListPage registry scope behavior', () => {
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
     expect(firstCallParams.registry_scope).toBe('active')
+    expect(firstCallParams.ordering).toBe('-created_at')
     expect(firstCallParams.include_total).toBe('true')
     expect(screen.getByText('Active patients')).toBeInTheDocument()
     expect(screen.getByText('(2)')).toBeInTheDocument()
+  })
+
+  it('sends server-side ordering when sortable table headers are clicked', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Sort by Name ascending' }))
+    await waitFor(() => {
+      expect(mockUsePatientSearch.mock.calls.at(-1)[0].ordering).toBe('name')
+      expect(screen.getByRole('columnheader', { name: /Name/i })).toHaveAttribute('aria-sort', 'ascending')
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Sort by Name descending' }))
+    await waitFor(() => {
+      expect(mockUsePatientSearch.mock.calls.at(-1)[0].ordering).toBe('-name')
+      expect(screen.getByRole('columnheader', { name: /Name/i })).toHaveAttribute('aria-sort', 'descending')
+    })
   })
 
   it('forces registry_scope=all when search query has at least two characters', async () => {
@@ -212,7 +230,8 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     const user = userEvent.setup()
     renderPage()
 
-    expect(screen.getByRole('button', { name: 'Sort by Patient Location' })).toBeInTheDocument()
+    expect(screen.getByText('Patient Location')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sort by Patient Location' })).not.toBeInTheDocument()
     const clinicCellTrigger = screen.getByRole('button', { name: 'Clinic A +2' })
     expect(clinicCellTrigger).toBeInTheDocument()
 

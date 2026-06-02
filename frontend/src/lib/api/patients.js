@@ -10,6 +10,21 @@ function rethrowAbortError(error) {
 }
 
 const patientCursorCache = new Map();
+const PATIENT_ORDERING_FIELDS = {
+  created_at: 'created_at',
+  registered_at: 'created_at',
+  medical_record_number: 'patient_code',
+  mrn: 'patient_code',
+  patient_code: 'patient_code',
+  name: 'display_name',
+  display_name: 'display_name',
+  date_of_birth: 'date_of_birth',
+  birth_year: 'date_of_birth',
+  gender: 'sex',
+  sex: 'sex',
+  registry_status: 'status',
+  status: 'status',
+};
 
 function hashForCache(value) {
   let hash = 0;
@@ -167,7 +182,30 @@ function getV2PatientListQuery(params = {}) {
   if (params.include_total === true || params.include_total === 'true') {
     query.include_total = true;
   }
+  const ordering = normalizePatientOrdering(params.ordering || params.sort);
+  if (ordering) {
+    query.ordering = ordering;
+  }
   const cursor = getCursorForParams(params);
+  if (cursor) {
+    query.cursor = cursor;
+  }
+  return query;
+}
+
+function getV2PatientContextListQuery(params = {}) {
+  const limit = Number(params.page_size || params.limit || 10);
+  const query = {
+    limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : 10,
+  };
+  const search = typeof params === 'string' ? params : (params.query || params.search);
+  if (search) {
+    query.search = search;
+  }
+  if (params.patient_id) {
+    query.patient_id = params.patient_id;
+  }
+  const cursor = params.cursor || params.next_cursor;
   if (cursor) {
     query.cursor = cursor;
   }
@@ -223,6 +261,23 @@ function normalizePatientStatus(value) {
     return 'inactive';
   }
   return undefined;
+}
+
+function normalizePatientOrdering(value) {
+  if (!value) {
+    return undefined;
+  }
+  const raw = String(value).trim();
+  if (!raw) {
+    return undefined;
+  }
+  const isDescending = raw.startsWith('-');
+  const field = isDescending ? raw.slice(1) : raw;
+  const normalizedField = PATIENT_ORDERING_FIELDS[field];
+  if (!normalizedField) {
+    return undefined;
+  }
+  return `${isDescending ? '-' : ''}${normalizedField}`;
 }
 
 function pickPatientPayloadSource(data = {}) {
@@ -559,7 +614,7 @@ export const patientsApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getPatientContextList({
-          query: getV2PatientListQuery({ limit: 10, ...params }),
+          query: getV2PatientContextListQuery({ limit: 10, ...params }),
           signal: options.signal,
         });
         return adaptV2ContextPatientsResponse(response, params);
