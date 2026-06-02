@@ -16,6 +16,7 @@ The older Hetzner client VPS kit is legacy Django deployment material.
 
 | Path | Role |
 | --- | --- |
+| `../deploy` / `deploy.sh` | operator-friendly front door for staging deploys and edge verification. |
 | `gcp-staging/README.md` | current GCP staging/perf-lab state, smoke evidence, rollback anchors, cost guardrails. |
 | `compose-v2/` | reusable Rust V2 single-VM Docker Compose deployment kit and rollback reference. |
 | `hetzner-v2/` | deprecated compatibility shims that forward to `compose-v2/`. |
@@ -24,6 +25,16 @@ The older Hetzner client VPS kit is legacy Django deployment material.
 | `tests/` | Python tests for deployment scripts, Caddy routes, tracing config, monitoring config. |
 
 ## Rust V2 Compose Kit
+
+For the current GCP staging path, use the root front door:
+
+```bash
+./deploy staging
+```
+
+Use `./deploy --in-place` only when already SSH'd into `/opt/hms` on the VM, and
+`./deploy verify` for a quick GCP edge check. The lower-level scripts remain
+available for incident debugging and reusable client VPS shapes.
 
 `compose-v2/` contains:
 

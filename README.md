@@ -117,13 +117,18 @@ npm run build
 
 The current staging and performance-validation path is GCP:
 
-```text
-ops/gcp-staging/README.md
+```bash
+./deploy staging
 ```
 
+That command packages the committed checkout, uploads it to the GCP staging VM,
+deploys from `/opt/hms`, and verifies the GCP edge. If you are already on the
+VM in `/opt/hms`, use `./deploy --in-place`. See `ops/gcp-staging/README.md`
+for the full runbook.
+
 GCP staging runs the same Rust V2 stack: `backend-rs/`, `hms-migrator`,
-`hms-api`, `hms-worker`, the React frontend in Rust V2 mode, PostgreSQL, Redis,
-PgBouncer, and Caddy. The standard readiness check is:
+`hms-api`, `hms-worker`, the React frontend in Rust V2 mode, Cloud SQL
+PostgreSQL, Redis, and Caddy. The standard readiness check is:
 
 ```text
 https://<client-domain>/api/v2/health/ready

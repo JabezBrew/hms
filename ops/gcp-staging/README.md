@@ -113,11 +113,36 @@ Expected redacted runtime proof:
 HMS_DATABASE_URL host=10.216.13.2 port=5432
 ```
 
-Use the GCP staging wrapper for deploys:
+Use the root deploy front door for normal GCP staging deploys from this laptop:
 
 ```bash
-EXTERNAL_DB_BACKUP_CONFIRMED=true \
-  ops/gcp-staging/deploy.sh --skip-pull
+./deploy staging
+```
+
+That command archives the committed checkout, uploads it to `hms-gcp-app-1`,
+preserves the private env file on the VM, deploys from `/opt/hms`, and runs the
+GCP edge verifier from the operator machine. It refuses dirty working trees so
+uncommitted local changes do not accidentally become a staging release. It also
+verifies Cloud SQL backups, PITR, and deletion protection through GCP before
+allowing migrations. The backup gate also verifies that the Cloud SQL instance
+private IP matches the expected deployment database host and that there is a
+recent successful backup run. The default freshness window is 36 hours and can
+be adjusted with `GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS`.
+
+When already SSH'd into `/opt/hms` on the VM, use:
+
+```bash
+./deploy --in-place
+```
+
+The in-place path is deliberately VM-only. If `gcloud` is unavailable on the VM,
+use the laptop `./deploy staging` path, or pass `--assume-managed-backup` only
+after manually confirming Cloud SQL backups/PITR for that deploy.
+
+For a quick edge-only check from this laptop, use:
+
+```bash
+./deploy verify
 ```
 
 GCP deploys require the public edge readiness check by default
@@ -278,7 +303,8 @@ Use three modes rather than one always-on expensive shape:
    - One always-on app VM.
    - Keep Rust API, worker, frontend, Caddy, and Redis on the VM.
    - Keep PostgreSQL on Cloud SQL over private IP.
-   - Deploy with `ops/gcp-staging/deploy.sh`.
+   - Deploy from this laptop with `./deploy staging`; deploy in-place on the VM
+     with `./deploy --in-place`.
    - Keep Docker Postgres/PgBouncer stopped unless explicitly validating the
      Hetzner-style rollback shape.
 
@@ -331,8 +357,7 @@ Before canceling Hetzner staging:
    - Decide whether to reuse `hms-gcp-app-1` or create a new staging VM.
    - Prefer reusing only if the perf lab can tolerate staging naming and DNS.
    - For a cleaner setup, create a new VM named `hms-gcp-staging-1`.
-   - Use `ops/gcp-staging/deploy.sh` as the deployment entry
-     point.
+   - Use `./deploy staging` as the normal deployment entry point.
    - Use `ops/compose-v2/compose.yml` only together with
      `ops/gcp-staging/compose.cloudsql.yml` for current GCP staging.
    - Keep `ops/hetzner-client-vps/` out of the path; it is legacy Django.
@@ -348,8 +373,9 @@ Before canceling Hetzner staging:
    - Set `HMS_DATABASE_URL` in the private env to the Cloud SQL private-IP
      Postgres URL.
    - Confirm Cloud SQL backups/PITR before migrations.
-   - Run `EXTERNAL_DB_BACKUP_CONFIRMED=true ops/gcp-staging/deploy.sh --skip-pull`
-     when deploying from an archive/copy rather than a Git checkout.
+   - Run `./deploy staging` from this laptop or `./deploy --in-place` when
+     already on the VM in `/opt/hms`. The laptop path verifies Cloud SQL
+     backups/PITR before migrations.
    - Verify Docker health and private readiness before checking public DNS.
    - Verify public readiness at `/api/v2/health/ready`.
 

@@ -9,6 +9,7 @@ Scope: top-level helper scripts.
 
 | Script | Role |
 | --- | --- |
+| `../deploy` | root deploy front door; forwards to `ops/deploy.sh`. |
 | `seed_prod_test_users.py` | historical/support helper for seeding test users. |
 
 ## Invariants
