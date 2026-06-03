@@ -6657,7 +6657,13 @@ async fn seed_billing_baseline(
                 id, facility_id, patient_id, plan_id, policy_number, member_id,
                 subscriber_number, valid_from, valid_until, is_active
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $6, DATE '2026-01-01', $7, $8)
+            SELECT $1, $2, $3, $4, $5, $6, $6, DATE '2026-01-01', $7, $8
+            WHERE EXISTS (
+                SELECT 1
+                FROM patients
+                WHERE id = $3
+                  AND facility_id = $2
+            )
             ON CONFLICT (facility_id, policy_number) DO UPDATE
             SET id = EXCLUDED.id,
                 patient_id = EXCLUDED.patient_id,

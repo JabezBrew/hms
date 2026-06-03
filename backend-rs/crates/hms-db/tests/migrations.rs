@@ -91,6 +91,42 @@ async fn migrations_apply_to_fresh_database_and_seed_baseline() {
 }
 
 #[tokio::test]
+async fn baseline_without_demo_patients_skips_patient_insurance_seed_rows() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+    let baseline = BaselineProvisioning {
+        seed_demo_patients: false,
+        ..BaselineProvisioning::hms_local(DeploymentProfile::Hospital)
+    };
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(&pool, &baseline)
+        .await
+        .expect("baseline provisions without demo patients");
+
+    let patient_count = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM patients")
+        .fetch_one(&pool)
+        .await
+        .expect("patient count query succeeds");
+    let patient_insurance_count =
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM patient_insurances")
+            .fetch_one(&pool)
+            .await
+            .expect("patient insurance count query succeeds");
+    let insurance_plan_count = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM insurance_plans")
+        .fetch_one(&pool)
+        .await
+        .expect("insurance plan count query succeeds");
+
+    assert_eq!(patient_count, 0);
+    assert_eq!(patient_insurance_count, 0);
+    assert!(insurance_plan_count >= 2);
+}
+
+#[tokio::test]
 async fn performance_seed_is_synthetic_scoped_and_idempotent() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");
