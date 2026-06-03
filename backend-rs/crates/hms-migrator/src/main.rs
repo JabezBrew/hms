@@ -38,6 +38,12 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(false);
     let performance_seed_scale = performance_seed_scale_from_env()?;
     let demo_seed_profile = demo_seed_profile_from_env()?;
+    let search_rebuild_facility_id = search_rebuild_facility_scope(
+        provision_baseline_requested,
+        performance_seed_scale,
+        demo_seed_profile,
+        baseline.facility_id,
+    );
 
     let environment = env::var("HMS_ENV").unwrap_or_else(|_| "development".to_owned());
     if performance_seed_is_forbidden(&environment, performance_seed_scale) {
@@ -68,7 +74,11 @@ async fn main() -> anyhow::Result<()> {
         .transpose()?
         .unwrap_or(true)
     {
-        hms_db::search::rebuild_search_index_for_all_facilities(&pool).await?;
+        if let Some(facility_id) = search_rebuild_facility_id {
+            hms_db::search::rebuild_search_index_for_facility(&pool, facility_id).await?;
+        } else {
+            hms_db::search::rebuild_search_index_for_all_facilities(&pool).await?;
+        }
     }
 
     Ok(())
@@ -148,6 +158,16 @@ fn performance_seed_is_forbidden(
 
 fn demo_seed_is_forbidden(environment: &str, seed_profile: Option<DemoSeedProfile>) -> bool {
     seed_profile.is_some() && environment.eq_ignore_ascii_case("production")
+}
+
+fn search_rebuild_facility_scope(
+    provision_baseline_requested: bool,
+    seed_scale: Option<PerformanceSeedScale>,
+    seed_profile: Option<DemoSeedProfile>,
+    facility_id: Uuid,
+) -> Option<Uuid> {
+    (provision_baseline_requested || seed_scale.is_some() || seed_profile.is_some())
+        .then_some(facility_id)
 }
 
 fn baseline_from_env(profile: DeploymentProfile) -> anyhow::Result<BaselineProvisioning> {
@@ -245,7 +265,42 @@ mod tests {
             "development",
             Some(DemoSeedProfile::Small)
         ));
+        assert!(!demo_seed_is_forbidden(
+            "development",
+            Some(DemoSeedProfile::Medium)
+        ));
+        assert!(!demo_seed_is_forbidden(
+            "development",
+            Some(DemoSeedProfile::Large)
+        ));
         assert!(!demo_seed_is_forbidden("production", None));
+    }
+
+    #[test]
+    fn search_rebuild_scopes_to_seeded_facility_when_seed_or_baseline_runs() {
+        let facility_id = Uuid::from_u128(hms_db::provision::FACILITY_ID);
+
+        assert_eq!(
+            search_rebuild_facility_scope(false, None, None, facility_id),
+            None
+        );
+        assert_eq!(
+            search_rebuild_facility_scope(true, None, None, facility_id),
+            Some(facility_id)
+        );
+        assert_eq!(
+            search_rebuild_facility_scope(
+                false,
+                Some(PerformanceSeedScale::Small),
+                None,
+                facility_id
+            ),
+            Some(facility_id)
+        );
+        assert_eq!(
+            search_rebuild_facility_scope(false, None, Some(DemoSeedProfile::Large), facility_id),
+            Some(facility_id)
+        );
     }
 
     #[test]

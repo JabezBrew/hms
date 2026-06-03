@@ -4,7 +4,7 @@ Problem List API views.
 Performance:
 - list endpoint uses lightweight serializer + select_related on code.
 - search-codes endpoint hard-caps at 50 to prevent payload bloat.
-- All viewsets use StandardResultsSetPagination per CLAUDE.md.
+- All viewsets use StandardResultsSetPagination per AGENTS.md.
 - Feature-gated: declares `required_feature = 'problem_list'` to fail closed.
 """
 from django.db import transaction

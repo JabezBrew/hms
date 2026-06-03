@@ -1,7 +1,7 @@
 """
 Serializers for Problem List API.
 
-List endpoints return lightweight serializers (5-8 fields, flattened) per CLAUDE.md.
+List endpoints return lightweight serializers (5-8 fields, flattened) per AGENTS.md.
 Detail endpoints include full nested structure.
 """
 from rest_framework import serializers

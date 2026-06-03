@@ -2,6 +2,10 @@ use hms_db::provision::{
     provision_baseline, provision_demo_seed, BaselineProvisioning, DemoSeedProfile,
 };
 use hms_domain::deployment::DeploymentProfile;
+use hms_domain::ward::{
+    HandoffStatus, MonitoringEventKind, NursingAlertSeverity, NursingAlertStatus,
+    WardStockRequestStatus,
+};
 use sqlx::FromRow;
 
 #[derive(Debug, FromRow, PartialEq)]
@@ -17,6 +21,12 @@ struct DemoCounts {
     nursing_tasks: i64,
     medication_administrations: i64,
     treatment_sheets: i64,
+    patient_vitals: i64,
+    nursing_alerts: i64,
+    monitoring_events: i64,
+    fluid_balance_entries: i64,
+    ward_stock_requests: i64,
+    handoffs: i64,
     notes: i64,
     lab_orders: i64,
     lab_results: i64,
@@ -61,6 +71,12 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
     assert!(second_counts.nursing_tasks >= 12);
     assert!(second_counts.medication_administrations >= 8);
     assert!(second_counts.treatment_sheets >= 4);
+    assert!(second_counts.patient_vitals >= 30);
+    assert!(second_counts.nursing_alerts >= 3);
+    assert!(second_counts.monitoring_events >= 10);
+    assert!(second_counts.fluid_balance_entries >= 15);
+    assert!(second_counts.ward_stock_requests >= 5);
+    assert!(second_counts.handoffs >= 5);
     assert!(second_counts.lab_results >= 50);
     assert!(second_counts.invoices >= second_counts.appointments);
     assert!(second_counts.ward_rounds >= 6);
@@ -68,6 +84,67 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
         unsupported_appointment_status_count(&pool, baseline.facility_id).await,
         0
     );
+    let monitoring_events = hms_db::ward::list_monitoring_events(
+        &pool,
+        baseline.facility_id,
+        None,
+        second_counts.monitoring_events,
+    )
+    .await
+    .expect("seeded monitoring events decode through production repository");
+    assert!(monitoring_events
+        .iter()
+        .any(|event| matches!(event.event_kind, MonitoringEventKind::Observation)));
+    assert!(monitoring_events
+        .iter()
+        .any(|event| matches!(event.event_kind, MonitoringEventKind::Rounding)));
+
+    let handoffs =
+        hms_db::ward::list_handoffs(&pool, baseline.facility_id, None, second_counts.handoffs)
+            .await
+            .expect("seeded handoffs decode through production repository");
+    assert!(handoffs
+        .iter()
+        .any(|handoff| matches!(handoff.status, HandoffStatus::Draft)));
+    assert!(handoffs
+        .iter()
+        .any(|handoff| matches!(handoff.status, HandoffStatus::Completed)));
+
+    let nursing_alerts = hms_db::ward::list_nursing_alerts(
+        &pool,
+        baseline.facility_id,
+        None,
+        second_counts.nursing_alerts,
+    )
+    .await
+    .expect("seeded nursing alerts decode through production repository");
+    assert!(nursing_alerts
+        .iter()
+        .any(|alert| matches!(alert.severity, NursingAlertSeverity::High)));
+    assert!(nursing_alerts
+        .iter()
+        .any(|alert| matches!(alert.severity, NursingAlertSeverity::Medium)));
+    assert!(nursing_alerts
+        .iter()
+        .any(|alert| matches!(alert.status, NursingAlertStatus::Open)));
+    assert!(nursing_alerts
+        .iter()
+        .any(|alert| matches!(alert.status, NursingAlertStatus::Acknowledged)));
+
+    let ward_stock_requests = hms_db::ward::list_ward_stock_requests(
+        &pool,
+        baseline.facility_id,
+        None,
+        second_counts.ward_stock_requests,
+    )
+    .await
+    .expect("seeded ward stock requests decode through production repository");
+    assert!(ward_stock_requests
+        .iter()
+        .any(|request| matches!(request.status, WardStockRequestStatus::Approved)));
+    assert!(ward_stock_requests
+        .iter()
+        .any(|request| matches!(request.status, WardStockRequestStatus::Fulfilled)));
 
     let archetype_count = sqlx::query_scalar::<_, i64>(
         r#"
@@ -268,6 +345,10 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
     assert!(second_counts.appointments > 400);
     assert!(second_counts.encounters >= second_counts.appointments);
     assert_eq!(second_counts.notes, second_counts.encounter_linked_notes);
+    assert!(second_counts.patient_vitals >= 6 * second_counts.admissions);
+    assert!(second_counts.fluid_balance_entries >= 3 * second_counts.admissions);
+    assert!(second_counts.ward_stock_requests >= second_counts.admissions);
+    assert!(second_counts.handoffs >= second_counts.admissions);
     assert!(second_counts.ward_rounds >= 20);
     assert_eq!(
         unsupported_appointment_status_count(&pool, baseline.facility_id).await,
@@ -302,6 +383,12 @@ async fn demo_counts(pool: &hms_db::PgPool, facility_id: uuid::Uuid) -> DemoCoun
           (SELECT count(*) FROM nursing_tasks WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS nursing_tasks,
           (SELECT count(*) FROM medication_administrations WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS medication_administrations,
           (SELECT count(*) FROM treatment_sheets WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS treatment_sheets,
+          (SELECT count(*) FROM patient_vitals WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS patient_vitals,
+          (SELECT count(*) FROM nursing_alerts WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS nursing_alerts,
+          (SELECT count(*) FROM monitoring_events WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS monitoring_events,
+          (SELECT count(*) FROM fluid_balance_entries WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS fluid_balance_entries,
+          (SELECT count(*) FROM ward_stock_requests WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%')) AS ward_stock_requests,
+          (SELECT count(*) FROM handoffs WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%')) AS handoffs,
           (SELECT count(*) FROM clinical_notes WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS notes,
           (SELECT count(*) FROM lab_orders WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS lab_orders,
           (SELECT count(*) FROM lab_results WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS lab_results,

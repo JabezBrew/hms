@@ -6,9 +6,9 @@ Design notes:
   later by inserting rows with a different `code_system`. Linkages on Problem reference
   ProblemCode by FK, so changing terminology is additive.
 - ProblemLink uses explicit per-source FKs (one nullable column per linkable model)
-  rather than a generic ContentType FK. Per CLAUDE.md performance guidance: this lets
+  rather than a generic ContentType FK. Per AGENTS.md performance guidance: this lets
   Postgres use partial indexes and avoids extra joins on hot patient-chronicle reads.
-- All clinical patient data is owned by PatientChroniclePage per CLAUDE.md
+- All clinical patient data is owned by PatientChroniclePage per AGENTS.md
   architectural rule. The Problem List is a sidebar widget within that page.
 """
 import uuid

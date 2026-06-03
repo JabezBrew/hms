@@ -556,7 +556,7 @@ class TreatmentSheetEntrySerializer(serializers.ModelSerializer):
 
 class TreatmentSheetEntryListSerializer(serializers.ModelSerializer):
     """
-    Lightweight serializer for list views (following CLAUDE.md API optimization).
+    Lightweight serializer for list views (following AGENTS.md API optimization).
     """
     patient_name = serializers.SerializerMethodField()
     patient_mrn = serializers.SerializerMethodField()

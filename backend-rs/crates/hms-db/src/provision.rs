@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use anyhow::ensure;
@@ -15,7 +16,10 @@ use hms_domain::dashboard::NotificationPriority;
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use hms_domain::inventory::InventoryItemType;
 use hms_domain::patients::{PatientAdministrativeStatus, PatientContextKind, Sex};
-use hms_domain::ward::{BedStatus, WardStatus};
+use hms_domain::ward::{
+    BedStatus, HandoffStatus, MonitoringEventKind, NursingAlertSeverity, NursingAlertStatus,
+    WardStatus, WardStockRequestStatus,
+};
 use password_hash::SaltString;
 use rand_core::{OsRng, RngCore};
 use serde_json::json;
@@ -123,6 +127,12 @@ const DEMO_NHIS_CLAIM_BASE_ID: u128 = 0xd6400000000000000000000000000000;
 const DEMO_WARD_ROUND_BASE_ID: u128 = 0xd7000000000000000000000000000000;
 const DEMO_WARD_ROUND_ACTION_BASE_ID: u128 = 0xd7100000000000000000000000000000;
 const DEMO_WARD_ROUND_LINK_BASE_ID: u128 = 0xd7200000000000000000000000000000;
+const DEMO_PATIENT_VITAL_BASE_ID: u128 = 0xd8000000000000000000000000000000;
+const DEMO_NURSING_ALERT_BASE_ID: u128 = 0xd8100000000000000000000000000000;
+const DEMO_MONITORING_EVENT_BASE_ID: u128 = 0xd8200000000000000000000000000000;
+const DEMO_FLUID_BALANCE_BASE_ID: u128 = 0xd8300000000000000000000000000000;
+const DEMO_WARD_STOCK_REQUEST_BASE_ID: u128 = 0xd8400000000000000000000000000000;
+const DEMO_HANDOFF_BASE_ID: u128 = 0xd8500000000000000000000000000000;
 
 #[derive(Clone, Debug)]
 pub struct BaselineProvisioning {
@@ -264,6 +274,8 @@ pub enum DemoSeedProfile {
     Smoke,
     Staging,
     Small,
+    Medium,
+    Large,
 }
 
 impl DemoSeedProfile {
@@ -273,7 +285,11 @@ impl DemoSeedProfile {
             "1" | "true" | "yes" | "on" | "smoke" => Ok(Some(Self::Smoke)),
             "staging" => Ok(Some(Self::Staging)),
             "small" => Ok(Some(Self::Small)),
-            _ => anyhow::bail!("HMS_DEMO_SEED_PROFILE must be smoke, staging, small, or disabled"),
+            "medium" => Ok(Some(Self::Medium)),
+            "large" => Ok(Some(Self::Large)),
+            _ => anyhow::bail!(
+                "HMS_DEMO_SEED_PROFILE must be smoke, staging, small, medium, large, or disabled"
+            ),
         }
     }
 
@@ -296,6 +312,18 @@ impl DemoSeedProfile {
                 years: 2,
                 active_admission_target: 32,
                 beds_per_ward: 40,
+            },
+            Self::Medium => DemoSeedConfig {
+                patient_count: 900,
+                years: 3,
+                active_admission_target: 120,
+                beds_per_ward: 180,
+            },
+            Self::Large => DemoSeedConfig {
+                patient_count: 2_700,
+                years: 4,
+                active_admission_target: 360,
+                beds_per_ward: 480,
             },
         }
     }
@@ -369,10 +397,12 @@ pub async fn provision_demo_seed(
         .get_or_init(|| tokio::sync::Mutex::new(()))
         .lock()
         .await;
+    let journeys = build_chronicle_demo_patients(config);
+
     let mut tx = pool.begin().await?;
     delete_demo_seed_graph(&mut tx, baseline.facility_id).await?;
-    seed_chronicle_demo_ward_resources(&mut tx, baseline, config).await?;
-    seed_chronicle_demo_patient_graph(&mut tx, baseline, config).await?;
+    seed_chronicle_demo_ward_resources(&mut tx, baseline, config, &journeys).await?;
+    seed_chronicle_demo_patient_graph(&mut tx, baseline, &journeys).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -504,6 +534,62 @@ async fn delete_demo_seed_graph(
           AND patients.facility_id = $1
           AND ward_rounds.patient_id = patients.id
           AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        WITH demo_admissions AS (
+            SELECT admission_cases.id
+            FROM admission_cases
+            JOIN patients ON patients.id = admission_cases.patient_id
+            WHERE admission_cases.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        )
+        DELETE FROM patient_vitals
+        USING demo_admissions
+        WHERE patient_vitals.facility_id = $1
+          AND patient_vitals.admission_case_id = demo_admissions.id
+        "#,
+        r#"
+        WITH demo_admissions AS (
+            SELECT admission_cases.id
+            FROM admission_cases
+            JOIN patients ON patients.id = admission_cases.patient_id
+            WHERE admission_cases.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        )
+        DELETE FROM nursing_alerts
+        USING demo_admissions
+        WHERE nursing_alerts.facility_id = $1
+          AND nursing_alerts.admission_case_id = demo_admissions.id
+        "#,
+        r#"
+        WITH demo_admissions AS (
+            SELECT admission_cases.id
+            FROM admission_cases
+            JOIN patients ON patients.id = admission_cases.patient_id
+            WHERE admission_cases.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        )
+        DELETE FROM monitoring_events
+        USING demo_admissions
+        WHERE monitoring_events.facility_id = $1
+          AND monitoring_events.admission_case_id = demo_admissions.id
+        "#,
+        r#"
+        WITH demo_admissions AS (
+            SELECT admission_cases.id
+            FROM admission_cases
+            JOIN patients ON patients.id = admission_cases.patient_id
+            WHERE admission_cases.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        )
+        DELETE FROM fluid_balance_entries
+        USING demo_admissions
+        WHERE fluid_balance_entries.facility_id = $1
+          AND fluid_balance_entries.admission_case_id = demo_admissions.id
         "#,
         r#"
         DELETE FROM discharge_cases
@@ -640,33 +726,34 @@ async fn delete_demo_seed_graph(
           AND patient_code ~ '^DEMO-[0-9]{4}$'
         "#,
         r#"
+        DELETE FROM handoffs
+        WHERE handoffs.facility_id = $1
+          AND handoffs.id >= 'd8500000-0000-0000-0000-000000000000'::uuid
+          AND handoffs.id < 'd8500000-0000-0000-0000-000001000000'::uuid
+        "#,
+        r#"
+        DELETE FROM ward_stock_requests
+        WHERE ward_stock_requests.facility_id = $1
+          AND ward_stock_requests.id >= 'd8400000-0000-0000-0000-000000000000'::uuid
+          AND ward_stock_requests.id < 'd8400000-0000-0000-0000-000001000000'::uuid
+        "#,
+        r#"
         DELETE FROM beds
-        USING wards
         WHERE beds.facility_id = $1
-          AND wards.facility_id = $1
-          AND beds.ward_id = wards.id
-          AND wards.code LIKE 'demo-%'
-          AND (
-              beds.bed_code LIKE 'DEMO-%'
-              OR beds.bed_code LIKE 'MED-%'
-              OR beds.bed_code LIKE 'SURG-%'
-              OR beds.bed_code LIKE 'MAT-%'
-              OR beds.bed_code LIKE 'PAED-%'
-          )
+          AND beds.id >= 'd1100000-0000-0000-0000-000000000000'::uuid
+          AND beds.id < 'd1100000-0000-0000-0000-000000010000'::uuid
         "#,
         r#"
         DELETE FROM ward_sections
-        USING wards
         WHERE ward_sections.facility_id = $1
-          AND wards.facility_id = $1
-          AND ward_sections.ward_id = wards.id
-          AND wards.code LIKE 'demo-%'
-          AND ward_sections.code LIKE 'DEMO-%'
+          AND ward_sections.id >= 'd1000000-0000-0000-0000-000000000100'::uuid
+          AND ward_sections.id < 'd1000000-0000-0000-0000-000000000200'::uuid
         "#,
         r#"
         DELETE FROM wards
         WHERE facility_id = $1
-          AND code LIKE 'demo-%'
+          AND id >= 'd1000000-0000-0000-0000-000000000000'::uuid
+          AND id < 'd1000000-0000-0000-0000-000000000100'::uuid
         "#,
     ];
 
@@ -2281,7 +2368,7 @@ impl ChronicleDemoAdmission {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct ChronicleDemoWard {
     index: u32,
     code: &'static str,
@@ -2350,13 +2437,32 @@ struct ChronicleDemoVitals {
     temperature: String,
 }
 
+#[derive(Debug)]
+struct ChronicleDemoObservationValues {
+    systolic_bp: i32,
+    diastolic_bp: i32,
+    pulse: i32,
+    respiratory_rate: i32,
+    oxygen_saturation: i32,
+    temperature_c: f32,
+}
+
 async fn seed_chronicle_demo_ward_resources(
     transaction: &mut Transaction<'_, Postgres>,
     baseline: &BaselineProvisioning,
     config: DemoSeedConfig,
+    journeys: &[ChronicleDemoPatient],
 ) -> anyhow::Result<()> {
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
-    let journeys = build_chronicle_demo_patients(config);
+    let occupied_beds: HashSet<(ChronicleDemoWard, u32)> = journeys
+        .iter()
+        .filter_map(|journey| {
+            journey
+                .admission
+                .as_ref()
+                .and_then(|admission| admission.bed_ordinal.map(|bed| (admission.ward, bed)))
+        })
+        .collect();
 
     for ward in chronicle_demo_wards() {
         sqlx::query(
@@ -2407,11 +2513,7 @@ async fn seed_chronicle_demo_ward_resources(
         .await?;
 
         for bed_ordinal in 1..=config.beds_per_ward {
-            let occupied = journeys.iter().any(|journey| {
-                journey.admission.as_ref().is_some_and(|admission| {
-                    admission.ward == ward && admission.bed_ordinal == Some(bed_ordinal)
-                })
-            });
+            let occupied = occupied_beds.contains(&(ward, bed_ordinal));
             sqlx::query(
                 r#"
                 INSERT INTO beds (
@@ -2450,10 +2552,10 @@ async fn seed_chronicle_demo_ward_resources(
 async fn seed_chronicle_demo_patient_graph(
     transaction: &mut Transaction<'_, Postgres>,
     baseline: &BaselineProvisioning,
-    config: DemoSeedConfig,
+    journeys: &[ChronicleDemoPatient],
 ) -> anyhow::Result<()> {
-    for journey in build_chronicle_demo_patients(config) {
-        seed_chronicle_demo_patient_journey(transaction, baseline, &journey).await?;
+    for journey in journeys {
+        seed_chronicle_demo_patient_journey(transaction, baseline, journey).await?;
     }
     Ok(())
 }
@@ -3680,6 +3782,8 @@ async fn seed_chronicle_demo_admission(
     .execute(&mut **transaction)
     .await?;
 
+    seed_chronicle_demo_inpatient_operations(transaction, baseline, journey, admission).await?;
+
     for day in 1..=3 {
         seed_chronicle_demo_chart_entries(
             transaction,
@@ -3765,6 +3869,335 @@ async fn seed_chronicle_demo_discharge_case(
     .bind(Uuid::from_u128(OWNER_USER_ID))
     .execute(&mut **transaction)
     .await?;
+    Ok(())
+}
+
+async fn seed_chronicle_demo_inpatient_operations(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    journey: &ChronicleDemoPatient,
+    admission: &ChronicleDemoAdmission,
+) -> anyhow::Result<()> {
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let handoff_to_user_id = Uuid::from_u128(LIMITED_USER_ID);
+
+    for observation_index in 1..=6 {
+        let sequence = CHRONICLE_DEMO_INPATIENT_SEQUENCE + observation_index;
+        let recorded_at = admission.admitted_at + Duration::hours(i64::from(observation_index * 6));
+        let values = chronicle_demo_observation_values(journey, sequence);
+        sqlx::query(
+            r#"
+            INSERT INTO patient_vitals (
+                id,
+                facility_id,
+                admission_case_id,
+                patient_id,
+                recorded_at,
+                temperature_c,
+                systolic_bp,
+                diastolic_bp,
+                pulse,
+                respiratory_rate,
+                oxygen_saturation,
+                recorded_by_user_id,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $5)
+            ON CONFLICT (id) DO UPDATE
+            SET recorded_at = EXCLUDED.recorded_at,
+                temperature_c = EXCLUDED.temperature_c,
+                systolic_bp = EXCLUDED.systolic_bp,
+                diastolic_bp = EXCLUDED.diastolic_bp,
+                pulse = EXCLUDED.pulse,
+                respiratory_rate = EXCLUDED.respiratory_rate,
+                oxygen_saturation = EXCLUDED.oxygen_saturation,
+                recorded_by_user_id = EXCLUDED.recorded_by_user_id
+            "#,
+        )
+        .bind(demo_compound_uuid(
+            DEMO_PATIENT_VITAL_BASE_ID,
+            journey.ordinal,
+            CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+            observation_index,
+        ))
+        .bind(baseline.facility_id)
+        .bind(journey.admission_id())
+        .bind(journey.patient_id())
+        .bind(recorded_at)
+        .bind(values.temperature_c)
+        .bind(values.systolic_bp)
+        .bind(values.diastolic_bp)
+        .bind(values.pulse)
+        .bind(values.respiratory_rate)
+        .bind(values.oxygen_saturation)
+        .bind(owner_user_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    for (event_index, (event_kind, summary)) in [
+        (
+            MonitoringEventKind::Observation,
+            format!(
+                "Synthetic {} observations reviewed for ward escalation risk.",
+                journey.archetype.label
+            ),
+        ),
+        (
+            MonitoringEventKind::Rounding,
+            format!(
+                "Synthetic {} care plan updated after labs, medication, and nursing review.",
+                journey.archetype.label
+            ),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let recorded_at =
+            admission.admitted_at + Duration::hours(i64::try_from(event_index + 4).unwrap_or(4));
+        sqlx::query(
+            r#"
+            INSERT INTO monitoring_events (
+                id,
+                facility_id,
+                admission_case_id,
+                patient_id,
+                event_kind,
+                summary,
+                recorded_at,
+                recorded_by_user_id,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7)
+            ON CONFLICT (id) DO UPDATE
+            SET event_kind = EXCLUDED.event_kind,
+                summary = EXCLUDED.summary,
+                recorded_at = EXCLUDED.recorded_at,
+                recorded_by_user_id = EXCLUDED.recorded_by_user_id
+            "#,
+        )
+        .bind(demo_compound_uuid(
+            DEMO_MONITORING_EVENT_BASE_ID,
+            journey.ordinal,
+            CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+            event_index as u32 + 1,
+        ))
+        .bind(baseline.facility_id)
+        .bind(journey.admission_id())
+        .bind(journey.patient_id())
+        .bind(codec::encode(event_kind)?)
+        .bind(summary)
+        .bind(recorded_at)
+        .bind(owner_user_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    if journey.archetype.urgent_labs
+        || journey.archetype.spo2_base <= 94
+        || admission.status == "discharge_pending"
+    {
+        let alert_created_at = admission.admitted_at + Duration::hours(2);
+        let acknowledged_at =
+            (!admission.is_active()).then_some(alert_created_at + Duration::hours(3));
+        sqlx::query(
+            r#"
+            INSERT INTO nursing_alerts (
+                id,
+                facility_id,
+                admission_case_id,
+                patient_id,
+                severity,
+                title,
+                status,
+                created_by_user_id,
+                acknowledged_by_user_id,
+                acknowledged_at,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+            ON CONFLICT (id) DO UPDATE
+            SET severity = EXCLUDED.severity,
+                title = EXCLUDED.title,
+                status = EXCLUDED.status,
+                acknowledged_by_user_id = EXCLUDED.acknowledged_by_user_id,
+                acknowledged_at = EXCLUDED.acknowledged_at,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(demo_uuid(DEMO_NURSING_ALERT_BASE_ID, journey.ordinal))
+        .bind(baseline.facility_id)
+        .bind(journey.admission_id())
+        .bind(journey.patient_id())
+        .bind(codec::encode(if journey.archetype.urgent_labs {
+            NursingAlertSeverity::High
+        } else {
+            NursingAlertSeverity::Medium
+        })?)
+        .bind(format!(
+            "Synthetic {} ward follow-up",
+            journey.archetype.label
+        ))
+        .bind(codec::encode(if acknowledged_at.is_some() {
+            NursingAlertStatus::Acknowledged
+        } else {
+            NursingAlertStatus::Open
+        })?)
+        .bind(owner_user_id)
+        .bind(acknowledged_at.map(|_| owner_user_id))
+        .bind(acknowledged_at)
+        .bind(alert_created_at)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    for entry_index in 1..=3 {
+        let recorded_at = admission.admitted_at + Duration::hours(i64::from(entry_index * 8));
+        let intake_ml = 450 + i32::try_from((journey.ordinal + entry_index) % 4).unwrap_or(0) * 75;
+        let output_ml =
+            300 + i32::try_from((journey.ordinal + entry_index * 2) % 4).unwrap_or(0) * 60;
+        sqlx::query(
+            r#"
+            INSERT INTO fluid_balance_entries (
+                id,
+                facility_id,
+                admission_case_id,
+                patient_id,
+                recorded_at,
+                intake_ml,
+                output_ml,
+                recorded_by_user_id,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $5)
+            ON CONFLICT (id) DO UPDATE
+            SET recorded_at = EXCLUDED.recorded_at,
+                intake_ml = EXCLUDED.intake_ml,
+                output_ml = EXCLUDED.output_ml,
+                recorded_by_user_id = EXCLUDED.recorded_by_user_id
+            "#,
+        )
+        .bind(demo_compound_uuid(
+            DEMO_FLUID_BALANCE_BASE_ID,
+            journey.ordinal,
+            CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+            entry_index,
+        ))
+        .bind(baseline.facility_id)
+        .bind(journey.admission_id())
+        .bind(journey.patient_id())
+        .bind(recorded_at)
+        .bind(intake_ml)
+        .bind(output_ml)
+        .bind(owner_user_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    let stock_requested_at = admission.admitted_at + Duration::hours(4);
+    let stock_status = if admission.is_active() {
+        WardStockRequestStatus::Approved
+    } else {
+        WardStockRequestStatus::Fulfilled
+    };
+    let stock_fulfilled_at =
+        (!admission.is_active()).then_some(stock_requested_at + Duration::hours(2));
+    sqlx::query(
+        r#"
+        INSERT INTO ward_stock_requests (
+            id,
+            facility_id,
+            ward_id,
+            requested_item,
+            quantity_requested,
+            status,
+            requested_by_user_id,
+            approved_by_user_id,
+            fulfilled_by_user_id,
+            requested_at,
+            approved_at,
+            fulfilled_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, COALESCE($11, $10))
+        ON CONFLICT (id) DO UPDATE
+        SET requested_item = EXCLUDED.requested_item,
+            quantity_requested = EXCLUDED.quantity_requested,
+            status = EXCLUDED.status,
+            approved_by_user_id = EXCLUDED.approved_by_user_id,
+            fulfilled_by_user_id = EXCLUDED.fulfilled_by_user_id,
+            requested_at = EXCLUDED.requested_at,
+            approved_at = EXCLUDED.approved_at,
+            fulfilled_at = EXCLUDED.fulfilled_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(demo_uuid(DEMO_WARD_STOCK_REQUEST_BASE_ID, journey.ordinal))
+    .bind(baseline.facility_id)
+    .bind(admission.ward.id())
+    .bind(match journey.archetype.key {
+        "surgical" => "Sterile dressing pack",
+        "maternity" => "Maternity observation pack",
+        "pediatric" => "Paediatric oral rehydration pack",
+        _ => "General ward observation pack",
+    })
+    .bind(2 + i32::try_from(journey.ordinal % 3).unwrap_or(0))
+    .bind(codec::encode(stock_status)?)
+    .bind(owner_user_id)
+    .bind(stock_fulfilled_at.map(|_| owner_user_id))
+    .bind(stock_requested_at)
+    .bind(stock_requested_at + Duration::minutes(30))
+    .bind(stock_fulfilled_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    let handoff_created_at = admission.admitted_at + Duration::hours(12);
+    let handoff_completed_at =
+        (!admission.is_active()).then_some(handoff_created_at + Duration::minutes(45));
+    sqlx::query(
+        r#"
+        INSERT INTO handoffs (
+            id,
+            facility_id,
+            ward_id,
+            from_user_id,
+            to_user_id,
+            shift_label,
+            status,
+            created_at,
+            completed_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($9, $8))
+        ON CONFLICT (id) DO UPDATE
+        SET shift_label = EXCLUDED.shift_label,
+            status = EXCLUDED.status,
+            completed_at = EXCLUDED.completed_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(demo_uuid(DEMO_HANDOFF_BASE_ID, journey.ordinal))
+    .bind(baseline.facility_id)
+    .bind(admission.ward.id())
+    .bind(owner_user_id)
+    .bind(handoff_to_user_id)
+    .bind(if admission.is_active() {
+        "Demo day to night shift"
+    } else {
+        "Demo completed discharge handoff"
+    })
+    .bind(codec::encode(if handoff_completed_at.is_some() {
+        HandoffStatus::Completed
+    } else {
+        HandoffStatus::Draft
+    })?)
+    .bind(handoff_created_at)
+    .bind(handoff_completed_at)
+    .execute(&mut **transaction)
+    .await?;
+
     Ok(())
 }
 
@@ -4305,18 +4738,33 @@ fn chronicle_demo_note_body(journey: &ChronicleDemoPatient, sequence: u32) -> St
 }
 
 fn chronicle_demo_vitals(journey: &ChronicleDemoPatient, sequence: u32) -> ChronicleDemoVitals {
+    let values = chronicle_demo_observation_values(journey, sequence);
+    ChronicleDemoVitals {
+        blood_pressure: format!("{}/{}", values.systolic_bp, values.diastolic_bp),
+        pulse: values.pulse.to_string(),
+        respiratory_rate: values.respiratory_rate.to_string(),
+        oxygen_saturation: values.oxygen_saturation.to_string(),
+        temperature: format!("{:.1}", values.temperature_c),
+    }
+}
+
+fn chronicle_demo_observation_values(
+    journey: &ChronicleDemoPatient,
+    sequence: u32,
+) -> ChronicleDemoObservationValues {
     let seed = i32::try_from(journey.ordinal + sequence * 7).expect("demo seed fits i32");
     let sbp = chronicle_demo_range_value(journey.archetype.sbp, seed);
     let dbp = chronicle_demo_range_value(journey.archetype.dbp, seed / 2);
     let pulse = chronicle_demo_range_value(journey.archetype.pulse, seed / 3);
     let temp_tenths = chronicle_demo_range_value(journey.archetype.temp_tenths, seed / 4);
     let spo2 = (journey.archetype.spo2_base + (seed % 4)).min(100);
-    ChronicleDemoVitals {
-        blood_pressure: format!("{sbp}/{dbp}"),
-        pulse: pulse.to_string(),
-        respiratory_rate: (14 + (seed % 10)).to_string(),
-        oxygen_saturation: spo2.to_string(),
-        temperature: format!("{}.{}", temp_tenths / 10, temp_tenths % 10),
+    ChronicleDemoObservationValues {
+        systolic_bp: sbp,
+        diastolic_bp: dbp.min(sbp - 10),
+        pulse,
+        respiratory_rate: 14 + (seed % 10),
+        oxygen_saturation: spo2,
+        temperature_c: temp_tenths as f32 / 10.0,
     }
 }
 
@@ -4404,6 +4852,39 @@ fn demo_chronicle_anchor() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-05-20T08:00:00Z")
         .expect("static demo seed timestamp is valid")
         .with_timezone(&Utc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn medium_and_large_demo_profiles_plan_expected_active_beds() {
+        for profile in [DemoSeedProfile::Medium, DemoSeedProfile::Large] {
+            let config = profile.config();
+            let journeys = build_chronicle_demo_patients(config);
+            let active_admissions = journeys
+                .iter()
+                .filter_map(|journey| journey.admission.as_ref())
+                .filter(|admission| admission.is_active())
+                .count();
+            let occupied_beds: HashSet<(ChronicleDemoWard, u32)> = journeys
+                .iter()
+                .filter_map(|journey| {
+                    journey.admission.as_ref().and_then(|admission| {
+                        admission.bed_ordinal.map(|bed| (admission.ward, bed))
+                    })
+                })
+                .collect();
+
+            assert_eq!(journeys.len(), config.patient_count);
+            assert_eq!(active_admissions, config.active_admission_target);
+            assert_eq!(occupied_beds.len(), active_admissions);
+            assert!(occupied_beds
+                .iter()
+                .all(|(_, bed_ordinal)| *bed_ordinal <= config.beds_per_ward));
+        }
+    }
 }
 
 pub async fn provision_performance_seed(
