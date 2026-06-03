@@ -14,7 +14,6 @@ Scope: GitHub workflow configuration.
 | `frontend-codeql.yml` | security workflow triggers | frontend CodeQL security analysis. |
 | `backend-dependency-review.yml` | dependency-review triggers | backend dependency review. |
 | `frontend-dependency-review.yml` | dependency-review triggers | frontend dependency review. |
-| `legacy-django.yml` | legacy workflow triggers | legacy Django checks only. |
 
 ## `ci.yml` Job Map
 
