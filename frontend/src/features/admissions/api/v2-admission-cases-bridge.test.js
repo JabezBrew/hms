@@ -467,8 +467,11 @@ describe('Rust V2 admission cases bridge', () => {
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
-      'http://localhost:8080/api/v2/patients?limit=10&search=ako',
-      expect.objectContaining({ method: 'GET' }),
+      'http://localhost:8080/api/v2/patients/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 10, search: 'ako' }),
+      }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,

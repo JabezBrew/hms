@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { TablePagination } from '@/components/ui/table-pagination';
 
 import { usePatientMonitoring, useActiveAlerts } from '@/features/nursing/hooks';
 import { useWards } from '@/features/wards/hooks/useWardQueries';
@@ -23,6 +24,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 function filterMonitoringPatients(monitoringData, activeTab) {
   if (!monitoringData) return [];
@@ -53,6 +55,7 @@ function buildNursingStats({ monitoringData, totalCount, activeAlerts }) {
 }
 
 export default function NursingDashboardPage() {
+  const rustV2Mode = isRustV2ApiMode();
   const [selectedWard, setSelectedWard] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [wardSearchQuery, setWardSearchQuery] = useState('');
@@ -60,7 +63,8 @@ export default function NursingDashboardPage() {
   const [pageSize] = useState(20);
 
   const { data: wards, isLoading: wardsLoading } = useWards();
-  const { data: monitoringResponse, isLoading: monitoringLoading, refetch, isFetching, error: monitoringError } = usePatientMonitoring(selectedWard, currentPage, pageSize);
+  const monitoringFilter = rustV2Mode ? activeTab : 'all';
+  const { data: monitoringResponse, isLoading: monitoringLoading, refetch, isFetching, error: monitoringError } = usePatientMonitoring(selectedWard, currentPage, pageSize, monitoringFilter);
   const { data: activeAlerts, isLoading: alertsLoading, error: alertsError } = useActiveAlerts();
 
   // Extract monitoring data from paginated response
@@ -104,9 +108,14 @@ export default function NursingDashboardPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleTabChange = (nextTab) => {
+    setActiveTab(nextTab);
+    setCurrentPage(1);
+  };
+
   const filteredPatients = useMemo(
-    () => filterMonitoringPatients(monitoringData, activeTab),
-    [activeTab, monitoringData]
+    () => (rustV2Mode ? monitoringData : filterMonitoringPatients(monitoringData, activeTab)),
+    [activeTab, monitoringData, rustV2Mode]
   );
 
   const stats = useMemo(
@@ -150,15 +159,16 @@ export default function NursingDashboardPage() {
             alertsLoading={alertsLoading}
             currentPage={currentPage}
             filteredPatients={filteredPatients}
-            isFetching={isFetching}
             monitoringLoading={monitoringLoading}
             pageSize={pageSize}
             selectedWard={selectedWard}
             stats={stats}
             totalCount={totalCount}
             totalPages={totalPages}
+            monitoringResponse={monitoringResponse}
+            canJumpToPage={!rustV2Mode}
             onPageChange={handlePageChange}
-            onTabChange={setActiveTab}
+            onTabChange={handleTabChange}
           />
         </div>
       </PageShell>
@@ -314,13 +324,14 @@ function NursingDashboardGrid({
   alertsLoading,
   currentPage,
   filteredPatients,
-  isFetching,
   monitoringLoading,
   pageSize,
   selectedWard,
   stats,
   totalCount,
   totalPages,
+  monitoringResponse,
+  canJumpToPage,
   onPageChange,
   onTabChange,
 }) {
@@ -331,13 +342,14 @@ function NursingDashboardGrid({
           activeTab={activeTab}
           currentPage={currentPage}
           filteredPatients={filteredPatients}
-          isFetching={isFetching}
           monitoringLoading={monitoringLoading}
           pageSize={pageSize}
           selectedWard={selectedWard}
           stats={stats}
           totalCount={totalCount}
           totalPages={totalPages}
+          monitoringResponse={monitoringResponse}
+          canJumpToPage={canJumpToPage}
           onPageChange={onPageChange}
           onTabChange={onTabChange}
         />
@@ -354,13 +366,14 @@ function NursingPatientList({
   activeTab,
   currentPage,
   filteredPatients,
-  isFetching,
   monitoringLoading,
   pageSize,
   selectedWard,
   stats,
   totalCount,
   totalPages,
+  monitoringResponse,
+  canJumpToPage,
   onPageChange,
   onTabChange,
 }) {
@@ -391,8 +404,9 @@ function NursingPatientList({
         />
 
         <NursingPagination
+          canJumpToPage={canJumpToPage}
           currentPage={currentPage}
-          isFetching={isFetching}
+          data={monitoringResponse}
           pageSize={pageSize}
           totalCount={totalCount}
           totalPages={totalPages}
@@ -489,77 +503,27 @@ function NursingPatientEmptyState({ title, description }) {
 }
 
 function NursingPagination({
+  canJumpToPage,
   currentPage,
-  isFetching,
+  data,
   pageSize,
   totalCount,
   totalPages,
   onPageChange,
 }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
   return (
-    <div className="flex items-center justify-between mt-6">
-      <div className="text-sm text-muted-foreground">
-        Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalCount)} of {totalCount} patients
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage === 1 || isFetching}
-        >
-          Previous
-        </Button>
-        <NursingPageButtons
-          currentPage={currentPage}
-          isFetching={isFetching}
-          totalPages={totalPages}
-          onPageChange={onPageChange}
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage === totalPages || isFetching}
-        >
-          Next
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function NursingPageButtons({ currentPage, isFetching, totalPages, onPageChange }) {
-  return (
-    <div className="flex items-center gap-1">
-      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-        let pageNum;
-        if (totalPages <= 5) {
-          pageNum = i + 1;
-        } else if (currentPage <= 3) {
-          pageNum = i + 1;
-        } else if (currentPage >= totalPages - 2) {
-          pageNum = totalPages - 4 + i;
-        } else {
-          pageNum = currentPage - 2 + i;
-        }
-
-        return (
-          <Button
-            key={pageNum}
-            variant={currentPage === pageNum ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => onPageChange(pageNum)}
-            disabled={isFetching}
-          >
-            {pageNum}
-          </Button>
-        );
-      })}
-    </div>
+    <TablePagination
+      canJumpToPage={canJumpToPage}
+      className="mt-6"
+      countExact={data?.count_exact !== false && data?.total_is_lower_bound !== true}
+      currentPage={data?.page || currentPage}
+      hasNextPage={Boolean(data?.next) || currentPage < totalPages}
+      hasPrevPage={Boolean(data?.previous) || currentPage > 1}
+      itemLabel="patients"
+      onPageChange={onPageChange}
+      pageSize={pageSize}
+      totalCount={totalCount}
+      totalPages={totalPages}
+    />
   );
 }

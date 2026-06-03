@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   useSearchPractitioners,
   useSearchStaff,
+  useStaffFilterFacets,
   useStaffMember,
 } from '../useStaffQueries';
 import { staffApi } from '@/features/staff/api';
@@ -16,6 +17,7 @@ vi.mock('../use-debounce', () => ({
 vi.mock('@/features/staff/api', () => ({
   staffApi: {
     getStaffMember: vi.fn(),
+    getStaffFilterFacets: vi.fn(),
     searchPractitioners: vi.fn(),
     searchStaff: vi.fn(),
   },
@@ -40,6 +42,7 @@ describe('useStaffQueries Rust V2 behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     staffApi.getStaffMember.mockResolvedValue({ id: 'staff-1' });
+    staffApi.getStaffFilterFacets.mockResolvedValue({ departments: [], positions: [] });
     staffApi.searchPractitioners.mockResolvedValue([]);
     staffApi.searchStaff.mockResolvedValue([]);
   });
@@ -54,6 +57,20 @@ describe('useStaffQueries Rust V2 behavior', () => {
     });
 
     expect(staffApi.getStaffMember).toHaveBeenCalledWith('staff-1', {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it('threads React Query AbortSignal into staff filter facet reads', async () => {
+    const { result } = renderHook(() => useStaffFilterFacets({ is_active: true }), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(staffApi.getStaffFilterFacets).toHaveBeenCalledWith({ is_active: true }, {
       signal: expect.any(AbortSignal),
     });
   });

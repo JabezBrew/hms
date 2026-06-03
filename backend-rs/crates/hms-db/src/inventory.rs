@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_domain::inventory::{
-    ControlledDiscrepancyCategory, ControlledMovementType, StandingOrderFrequency,
-    StockMovementType,
+    ControlledDiscrepancyCategory, ControlledMovementType, GoodsReceivedStatus,
+    PurchaseOrderStatus, RequisitionStatus, StandingOrderFrequency, StandingOrderStatus,
+    StockMovementType, TransferStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -34,8 +35,9 @@ pub use stock_control::{
     create_standing_order, create_transfer, dispense_supply_request, enqueue_stock_check,
     fulfill_requisition, generate_draft_requisition_from_standing_order, get_requisition,
     get_transfer, list_batches, list_item_batches, list_item_movements,
-    list_item_stock_by_location, list_movements, list_requisitions, list_storage_location_stock,
-    list_transfers, reject_requisition, submit_requisition, transition_stock_check,
+    list_item_stock_by_location, list_movements, list_requisitions, list_standing_orders,
+    list_storage_location_stock, list_transfers, reject_requisition, submit_requisition,
+    transition_stock_check,
 };
 
 #[derive(Clone, Debug)]
@@ -50,6 +52,65 @@ pub struct InventoryItemFilters {
     pub category_id: Option<Uuid>,
     pub location_id: Option<Uuid>,
     pub stock_status: Option<String>,
+    pub supplier_id: Option<Uuid>,
+    pub ordering: InventoryItemOrdering,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InventoryItemSortField {
+    UpdatedAt,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InventorySortDirection {
+    Asc,
+    Desc,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InventoryItemOrdering {
+    pub field: InventoryItemSortField,
+    pub direction: InventorySortDirection,
+}
+
+impl Default for InventoryItemOrdering {
+    fn default() -> Self {
+        Self {
+            field: InventoryItemSortField::UpdatedAt,
+            direction: InventorySortDirection::Desc,
+        }
+    }
+}
+
+impl InventoryItemOrdering {
+    pub fn parse(value: Option<&str>) -> Option<Self> {
+        let value = value.map(str::trim).filter(|value| !value.is_empty())?;
+        let (direction, field) = if let Some(field) = value.strip_prefix('-') {
+            (InventorySortDirection::Desc, field)
+        } else {
+            (InventorySortDirection::Asc, value)
+        };
+        let field = match field {
+            "updated_at" => InventoryItemSortField::UpdatedAt,
+            _ => return None,
+        };
+        Some(Self { field, direction })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ControlledRegisterFilters {
+    pub search: Option<String>,
+    pub location_id: Option<Uuid>,
+    pub has_discrepancy: Option<bool>,
+    pub audit_due: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct StorageLocationFilters {
+    pub search: Option<String>,
+    pub location_type: Option<String>,
+    pub temperature_zone: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -62,6 +123,42 @@ pub struct SupplierFilters {
 pub struct StockBatchFilters {
     pub expired: Option<bool>,
     pub expiring_within_days: Option<i32>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PurchaseOrderFilters {
+    pub search: Option<String>,
+    pub status: Option<PurchaseOrderStatus>,
+    pub supplier: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GoodsReceivedNoteFilters {
+    pub search: Option<String>,
+    pub status: Option<GoodsReceivedStatus>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct StockTransferFilters {
+    pub search: Option<String>,
+    pub status: Option<TransferStatus>,
+    pub from_location_id: Option<Uuid>,
+    pub to_location_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct StockRequisitionFilters {
+    pub search: Option<String>,
+    pub status: Option<RequisitionStatus>,
+    pub priority: Option<String>,
+    pub requesting_location_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct StandingOrderFilters {
+    pub search: Option<String>,
+    pub status: Option<StandingOrderStatus>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Clone, Debug)]

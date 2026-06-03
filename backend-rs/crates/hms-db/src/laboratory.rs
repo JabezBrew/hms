@@ -71,14 +71,29 @@ pub struct NewLabResult {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct LabCatalogFilters {
+    pub search: Option<String>,
+    pub category: Option<String>,
+    pub is_active: Option<bool>,
+    pub is_system_default: Option<bool>,
+    pub is_facility_modified: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct LabOrderListFilters {
     pub status: Option<LabOrderStatus>,
+    pub search: Option<String>,
+    pub priority: Option<LabPriority>,
+    pub ordering_provider: Option<Uuid>,
+    pub ordered_by_user_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct LabResultListFilters {
     pub status: Option<LabResultStatus>,
     pub is_verified: Option<bool>,
+    pub search: Option<String>,
+    pub critical_only: bool,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -86,8 +101,13 @@ struct TestRow {
     id: Uuid,
     code: String,
     name: String,
+    category: Option<String>,
     specimen_type: String,
     result_unit: Option<String>,
+    is_active: bool,
+    is_system_default: bool,
+    is_facility_modified: bool,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -95,7 +115,11 @@ struct PanelRow {
     id: Uuid,
     code: String,
     name: String,
+    is_active: bool,
+    is_system_default: bool,
+    is_facility_modified: bool,
     test_count: i64,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -134,6 +158,7 @@ struct ResultRow {
     value: String,
     unit: Option<String>,
     status: String,
+    is_critical: bool,
     entered_at: DateTime<Utc>,
     verified_at: Option<DateTime<Utc>>,
 }
@@ -155,18 +180,48 @@ pub async fn list_test_catalog(
     pool: &PgPool,
     facility_id: Uuid,
 ) -> anyhow::Result<Vec<LabTestCatalogItem>> {
-    let rows = sqlx::query_as::<_, TestRow>(
-        r#"
-        SELECT id, code, name, specimen_type, result_unit
-        FROM lab_tests
-        WHERE facility_id = $1 AND is_active = TRUE
-        ORDER BY code ASC, id ASC
-        LIMIT 100
-        "#,
+    list_test_catalog_page(
+        pool,
+        facility_id,
+        None,
+        100,
+        LabCatalogFilters {
+            is_active: Some(true),
+            ..LabCatalogFilters::default()
+        },
     )
-    .bind(facility_id)
-    .fetch_all(pool)
-    .await?;
+    .await
+}
+
+pub async fn list_test_catalog_page(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<LabCursor>,
+    limit: i64,
+    filters: LabCatalogFilters,
+) -> anyhow::Result<Vec<LabTestCatalogItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT id,
+               code,
+               name,
+               category,
+               specimen_type,
+               result_unit,
+               is_active,
+               is_system_default,
+               is_facility_modified,
+               created_at
+        FROM lab_tests
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    push_catalog_filters(&mut query, "lab_tests", &filters, true);
+    apply_cursor(&mut query, "created_at", "id", cursor);
+    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query.build_query_as::<TestRow>().fetch_all(pool).await?;
     Ok(rows.into_iter().map(test_from_row).collect())
 }
 
@@ -177,7 +232,16 @@ pub async fn get_test_catalog_item(
 ) -> anyhow::Result<Option<LabTestCatalogItem>> {
     let row = sqlx::query_as::<_, TestRow>(
         r#"
-        SELECT id, code, name, specimen_type, result_unit
+        SELECT id,
+               code,
+               name,
+               category,
+               specimen_type,
+               result_unit,
+               is_active,
+               is_system_default,
+               is_facility_modified,
+               created_at
         FROM lab_tests
         WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
         "#,
@@ -193,23 +257,59 @@ pub async fn list_panels(
     pool: &PgPool,
     facility_id: Uuid,
 ) -> anyhow::Result<Vec<LabPanelListItem>> {
-    let rows = sqlx::query_as::<_, PanelRow>(
+    list_panels_page(
+        pool,
+        facility_id,
+        None,
+        100,
+        LabCatalogFilters {
+            is_active: Some(true),
+            ..LabCatalogFilters::default()
+        },
+    )
+    .await
+}
+
+pub async fn list_panels_page(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<LabCursor>,
+    limit: i64,
+    filters: LabCatalogFilters,
+) -> anyhow::Result<Vec<LabPanelListItem>> {
+    let mut query = QueryBuilder::new(
         r#"
         SELECT lab_panels.id,
                lab_panels.code,
                lab_panels.name,
-               COUNT(lab_panel_tests.test_id)::bigint AS test_count
+               lab_panels.is_active,
+               lab_panels.is_system_default,
+               lab_panels.is_facility_modified,
+               COUNT(lab_panel_tests.test_id)::bigint AS test_count,
+               lab_panels.created_at
         FROM lab_panels
         LEFT JOIN lab_panel_tests ON lab_panel_tests.panel_id = lab_panels.id
-        WHERE lab_panels.facility_id = $1 AND lab_panels.is_active = TRUE
-        GROUP BY lab_panels.id, lab_panels.code, lab_panels.name
-        ORDER BY lab_panels.code ASC, lab_panels.id ASC
-        LIMIT 100
+        WHERE lab_panels.facility_id =
         "#,
-    )
-    .bind(facility_id)
-    .fetch_all(pool)
-    .await?;
+    );
+    query.push_bind(facility_id);
+    push_catalog_filters(&mut query, "lab_panels", &filters, false);
+    apply_cursor(&mut query, "lab_panels.created_at", "lab_panels.id", cursor);
+    query.push(
+        r#"
+        GROUP BY lab_panels.id,
+                 lab_panels.code,
+                 lab_panels.name,
+                 lab_panels.is_active,
+                 lab_panels.is_system_default,
+                 lab_panels.is_facility_modified,
+                 lab_panels.created_at
+        ORDER BY lab_panels.created_at DESC, lab_panels.id DESC
+        LIMIT
+        "#,
+    );
+    query.push_bind(limit);
+    let rows = query.build_query_as::<PanelRow>().fetch_all(pool).await?;
     Ok(rows.into_iter().map(panel_from_row).collect())
 }
 
@@ -223,13 +323,23 @@ pub async fn get_panel_by_id(
         SELECT lab_panels.id,
                lab_panels.code,
                lab_panels.name,
-               COUNT(lab_panel_tests.test_id)::bigint AS test_count
+               lab_panels.is_active,
+               lab_panels.is_system_default,
+               lab_panels.is_facility_modified,
+               COUNT(lab_panel_tests.test_id)::bigint AS test_count,
+               lab_panels.created_at
         FROM lab_panels
         LEFT JOIN lab_panel_tests ON lab_panel_tests.panel_id = lab_panels.id
         WHERE lab_panels.facility_id = $1
           AND lab_panels.id = $2
           AND lab_panels.is_active = TRUE
-        GROUP BY lab_panels.id, lab_panels.code, lab_panels.name
+        GROUP BY lab_panels.id,
+                 lab_panels.code,
+                 lab_panels.name,
+                 lab_panels.is_active,
+                 lab_panels.is_system_default,
+                 lab_panels.is_facility_modified,
+                 lab_panels.created_at
         "#,
     )
     .bind(facility_id)
@@ -252,6 +362,23 @@ pub async fn list_orders(
     if let Some(status) = filters.status {
         query.push(" AND lab_orders.status = ");
         query.push_bind(codec::encode(status)?);
+    }
+    if let Some(priority) = filters.priority {
+        query.push(" AND lab_orders.priority = ");
+        query.push_bind(codec::encode(priority)?);
+    }
+    if let Some(ordering_provider) = filters.ordering_provider {
+        query.push(" AND lab_orders.ordered_by_user_id = ");
+        query.push_bind(ordering_provider);
+    }
+    if let Some(ordered_by_user_id) = filters.ordered_by_user_id {
+        query.push(" AND lab_orders.ordered_by_user_id = ");
+        query.push_bind(ordered_by_user_id);
+    }
+    if let Some(search) = normalized_search(filters.search.as_deref()) {
+        if let Some(pattern) = like_contains_pattern(Some(search)) {
+            push_order_search_filter(&mut query, search, pattern);
+        }
     }
     apply_cursor(&mut query, "lab_orders.ordered_at", "lab_orders.id", cursor);
     query.push(" ORDER BY lab_orders.ordered_at DESC, lab_orders.id DESC LIMIT ");
@@ -585,6 +712,14 @@ pub async fn list_results(
             query.push(" AND lab_results.verified_at IS NOT NULL");
         } else {
             query.push(" AND lab_results.verified_at IS NULL");
+        }
+    }
+    if filters.critical_only {
+        query.push(" AND lab_results.is_critical = TRUE");
+    }
+    if let Some(search) = normalized_search(filters.search.as_deref()) {
+        if let Some(pattern) = like_contains_pattern(Some(search)) {
+            push_result_search_filter(&mut query, search, pattern);
         }
     }
     apply_cursor(
@@ -1148,6 +1283,7 @@ fn result_query() -> QueryBuilder<'static, Postgres> {
                lab_results.value,
                lab_results.unit,
                lab_results.status,
+               lab_results.is_critical,
                lab_results.entered_at,
                lab_results.verified_at
         FROM lab_results
@@ -1176,13 +1312,153 @@ fn apply_cursor(
     }
 }
 
+fn push_catalog_filters(
+    query: &mut QueryBuilder<'static, Postgres>,
+    table_name: &'static str,
+    filters: &LabCatalogFilters,
+    include_category: bool,
+) {
+    if let Some(is_active) = filters.is_active {
+        query.push(" AND ");
+        query.push(table_name);
+        query.push(".is_active = ");
+        query.push_bind(is_active);
+    }
+    if let Some(is_system_default) = filters.is_system_default {
+        query.push(" AND ");
+        query.push(table_name);
+        query.push(".is_system_default = ");
+        query.push_bind(is_system_default);
+    }
+    if let Some(is_facility_modified) = filters.is_facility_modified {
+        query.push(" AND ");
+        query.push(table_name);
+        query.push(".is_facility_modified = ");
+        query.push_bind(is_facility_modified);
+    }
+    if include_category {
+        if let Some(category) = filters
+            .category
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+        {
+            query.push(" AND ");
+            query.push(table_name);
+            query.push(".category = ");
+            query.push_bind(category);
+        }
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (");
+        query.push(table_name);
+        query.push(".name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR ");
+        query.push(table_name);
+        query.push(".code ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+}
+
+fn push_order_search_filter(
+    query: &mut QueryBuilder<'static, Postgres>,
+    search: &str,
+    pattern: String,
+) {
+    query.push(
+        r#"
+        AND (
+            lab_orders.patient_id IN (
+                SELECT search_patients.id
+                FROM patients AS search_patients
+                WHERE search_patients.facility_id = lab_orders.facility_id
+                  AND lower(search_patients.patient_code || ' ' || search_patients.first_name || ' ' || search_patients.last_name) LIKE
+        "#,
+    );
+    query.push_bind(pattern.to_lowercase());
+    query.push(" ESCAPE '\\')");
+    if let Ok(order_id) = Uuid::parse_str(search) {
+        query.push(" OR lab_orders.id = ");
+        query.push_bind(order_id);
+    }
+    query.push(
+        r#"
+        OR EXISTS (
+            SELECT 1
+            FROM lab_order_tests search_order_tests
+            INNER JOIN lab_tests search_tests ON search_tests.id = search_order_tests.test_id
+            WHERE search_order_tests.order_id = lab_orders.id
+              AND (search_tests.name ILIKE
+        "#,
+    );
+    query.push_bind(pattern.clone());
+    query.push(" ESCAPE '\\' OR search_tests.code ILIKE ");
+    query.push_bind(pattern);
+    query.push(" ESCAPE '\\')))");
+}
+
+fn push_result_search_filter(
+    query: &mut QueryBuilder<'static, Postgres>,
+    search: &str,
+    pattern: String,
+) {
+    query.push(
+        r#"
+        AND (
+            lab_results.patient_id IN (
+                SELECT search_patients.id
+                FROM patients AS search_patients
+                WHERE search_patients.facility_id = lab_results.facility_id
+                  AND lower(search_patients.patient_code || ' ' || search_patients.first_name || ' ' || search_patients.last_name) LIKE
+        "#,
+    );
+    query.push_bind(pattern.to_lowercase());
+    query.push(" ESCAPE '\\')");
+    query.push(" OR lab_tests.name ILIKE ");
+    query.push_bind(pattern.clone());
+    query.push(" ESCAPE '\\' OR lab_tests.code ILIKE ");
+    query.push_bind(pattern.clone());
+    query.push(" ESCAPE '\\'");
+    if let Ok(order_id) = Uuid::parse_str(search) {
+        query.push(" OR lab_results.order_id = ");
+        query.push_bind(order_id);
+    }
+    query.push(")");
+}
+
+fn normalized_search(search: Option<&str>) -> Option<&str> {
+    search.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let search = normalized_search(search)?;
+    let mut escaped = String::with_capacity(search.len());
+    for ch in search.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '%' => escaped.push_str("\\%"),
+            '_' => escaped.push_str("\\_"),
+            _ => escaped.push(ch),
+        }
+    }
+    Some(format!("%{escaped}%"))
+}
+
 fn test_from_row(row: TestRow) -> LabTestCatalogItem {
     LabTestCatalogItem {
         id: row.id,
         code: row.code,
         name: row.name,
+        category: row.category,
         specimen_type: row.specimen_type,
         result_unit: row.result_unit,
+        is_active: row.is_active,
+        is_system_default: row.is_system_default,
+        is_facility_modified: row.is_facility_modified,
+        created_at: row.created_at,
     }
 }
 
@@ -1191,7 +1467,11 @@ fn panel_from_row(row: PanelRow) -> LabPanelListItem {
         id: row.id,
         code: row.code,
         name: row.name,
+        is_active: row.is_active,
+        is_system_default: row.is_system_default,
+        is_facility_modified: row.is_facility_modified,
         test_count: row.test_count,
+        created_at: row.created_at,
     }
 }
 
@@ -1233,6 +1513,7 @@ fn result_from_row(row: ResultRow) -> anyhow::Result<LabResultListItem> {
         value: row.value,
         unit: row.unit,
         status: codec::decode(&row.status)?,
+        is_critical: row.is_critical,
         entered_at: row.entered_at,
         verified_at: row.verified_at,
     })

@@ -18,17 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-
-const STATUS_OPTIONS = [
-  ['all', 'All Statuses'],
-  ['proposed', 'Proposed'],
-  ['pending', 'Pending'],
-  ['booked', 'Booked'],
-  ['arrived', 'Arrived'],
-  ['fulfilled', 'Fulfilled'],
-  ['cancelled', 'Cancelled'],
-  ['noshow', 'No Show'],
-];
+import { STATUS_OPTIONS } from './appointmentListConstants';
 
 export function AppointmentListFilters({
   date,
@@ -37,6 +27,8 @@ export function AppointmentListFilters({
   onDateChange,
   onStatusChange,
   status,
+  showStatus = true,
+  statusOptions = STATUS_OPTIONS,
 }) {
   return (
     <div className={cn('rounded-2xl border border-border bg-card p-6', 'animate-chronicle-enter')}>
@@ -55,26 +47,28 @@ export function AppointmentListFilters({
         )}
       </div>
       <div className="flex flex-wrap gap-4">
-        <div className="space-y-2">
-          <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">
-            Status
-          </span>
-          <Select value={status} onValueChange={onStatusChange}>
-            <SelectTrigger
-              aria-label="Filter appointments by status"
-              className="w-[180px] font-mono text-sm"
-            >
-              <SelectValue placeholder="All Statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {showStatus && (
+          <div className="space-y-2">
+            <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">
+              Status
+            </span>
+            <Select value={status} onValueChange={onStatusChange}>
+              <SelectTrigger
+                aria-label="Filter appointments by status"
+                className="w-[180px] font-mono text-sm"
+              >
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                {statusOptions.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="space-y-2">
           <span className="block font-mono text-xs uppercase tracking-wider text-muted-foreground">

@@ -37,6 +37,20 @@ import format from 'date-fns/format';
  * SortableHeader - Clickable column header with sort indicator
  */
 const SortableHeader = ({ field, label, currentSort, onSort, className }) => {
+  if (!onSort) {
+    return (
+      <div
+        role="columnheader"
+        className={cn(
+          "px-3 py-2 text-xs font-mono text-muted-foreground",
+          className
+        )}
+      >
+        {label}
+      </div>
+    );
+  }
+
   const isActive = currentSort === field || currentSort === `-${field}`;
   const isDesc = currentSort === `-${field}`;
 
@@ -81,9 +95,19 @@ const SortableHeader = ({ field, label, currentSort, onSort, className }) => {
 /**
  * AuditLogTable - Table view for audit logs
  */
-const AuditLogTable = ({ logs, className, sortBy, onSortChange }) => {
+const AuditLogTable = ({
+  logs,
+  className,
+  sortBy,
+  onSortChange,
+  sortable = true,
+  sortableFields = null,
+}) => {
   const [expandedRows, setExpandedRows] = useState(new Set());
   const gridClassName = "grid grid-cols-[40px_160px_200px_130px_110px_1fr_120px]";
+  const sortHandlerFor = (field) => (
+    sortable && (!sortableFields || sortableFields.includes(field)) ? onSortChange : null
+  );
 
   const toggleRow = (id) => {
     setExpandedRows((prev) => {
@@ -108,32 +132,32 @@ const AuditLogTable = ({ logs, className, sortBy, onSortChange }) => {
           field="timestamp"
           label="Timestamp"
           currentSort={sortBy}
-          onSort={onSortChange}
+          onSort={sortHandlerFor('timestamp')}
         />
         <SortableHeader
           field="user_email"
           label="User"
           currentSort={sortBy}
-          onSort={onSortChange}
+          onSort={sortHandlerFor('user_email')}
         />
         <SortableHeader
           field="action"
           label="Action"
           currentSort={sortBy}
-          onSort={onSortChange}
+          onSort={sortHandlerFor('action')}
         />
         <SortableHeader
           field="category"
           label="Category"
           currentSort={sortBy}
-          onSort={onSortChange}
+          onSort={sortHandlerFor('category')}
         />
         <div role="columnheader" className="px-3 py-2 text-muted-foreground">Resource</div>
         <SortableHeader
           field="ip_address"
           label="IP Address"
           currentSort={sortBy}
-          onSort={onSortChange}
+          onSort={sortHandlerFor('ip_address')}
         />
       </div>
       <div role="rowgroup">

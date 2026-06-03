@@ -2,55 +2,90 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/features/billing/api';
 import { hasMeaningfulQueryParams, immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 // Query keys
 const billingKeyFactory = createKeyFactory('billing');
+
+function normalizeKeyValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeKeyValue);
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((accumulator, key) => {
+        const normalized = normalizeKeyValue(value[key]);
+        if (normalized !== undefined) {
+          accumulator[key] = normalized;
+        }
+        return accumulator;
+      }, {});
+  }
+  if (value === undefined || typeof value === 'function') {
+    return undefined;
+  }
+  return value;
+}
+
+function fingerprintQueryParams(params = {}) {
+  const normalized = normalizeKeyValue(params) ?? {};
+  const stable = JSON.stringify(normalized);
+  return stable === '{}' ? 'empty' : hashQueryValue(stable);
+}
+
+function fingerprintPrivateScope(value) {
+  if (value === undefined || value === null || value === '') {
+    return 'none';
+  }
+  return hashQueryValue(String(value));
+}
 
 export const billingKeys = {
   all: billingKeyFactory.all,
   // Dashboard
   dashboard: () => [...billingKeys.all, 'dashboard'],
-  dashboardMetrics: (params) => [...billingKeys.dashboard(), 'metrics', params],
-  recentInvoices: (params) => [...billingKeys.dashboard(), 'recentInvoices', params],
-  recentPayments: (params) => [...billingKeys.dashboard(), 'recentPayments', params],
+  dashboardMetrics: (params) => [...billingKeys.dashboard(), 'metrics', fingerprintQueryParams(params)],
+  recentInvoices: (params) => [...billingKeys.dashboard(), 'recentInvoices', fingerprintQueryParams(params)],
+  recentPayments: (params) => [...billingKeys.dashboard(), 'recentPayments', fingerprintQueryParams(params)],
   // Invoices
   invoices: () => [...billingKeys.all, 'invoices'],
-  invoiceList: (filters) => [...billingKeys.invoices(), 'list', { filters }],
+  invoiceList: (filters) => [...billingKeys.invoices(), 'list', fingerprintQueryParams(filters)],
   invoiceDetail: (id) => [...billingKeys.invoices(), 'detail', id],
-  patientInvoices: (patientId, params) => [...billingKeys.invoices(), 'patient', patientId, params],
+  patientInvoices: (patientId, params) => [...billingKeys.invoices(), 'patient', fingerprintPrivateScope(patientId), fingerprintQueryParams(params)],
   // Claims
   claims: () => [...billingKeys.all, 'claims'],
-  claimList: (filters) => [...billingKeys.claims(), 'list', { filters }],
+  claimList: (filters) => [...billingKeys.claims(), 'list', fingerprintQueryParams(filters)],
   claimDetail: (id) => [...billingKeys.claims(), 'detail', id],
   // Payments
   payments: () => [...billingKeys.all, 'payments'],
-  paymentList: (filters) => [...billingKeys.payments(), 'list', { filters }],
+  paymentList: (filters) => [...billingKeys.payments(), 'list', fingerprintQueryParams(filters)],
   // PSP
   psp: () => [...billingKeys.all, 'psp'],
   paymentIntents: () => [...billingKeys.psp(), 'paymentIntents'],
-  paymentIntentList: (filters) => [...billingKeys.paymentIntents(), 'list', { filters }],
+  paymentIntentList: (filters) => [...billingKeys.paymentIntents(), 'list', fingerprintQueryParams(filters)],
   settlementBatches: () => [...billingKeys.psp(), 'settlements'],
-  settlementBatchList: (filters) => [...billingKeys.settlementBatches(), 'list', { filters }],
-  settlementLines: (batchId, filters) => [...billingKeys.settlementBatches(), batchId, 'lines', { filters }],
+  settlementBatchList: (filters) => [...billingKeys.settlementBatches(), 'list', fingerprintQueryParams(filters)],
+  settlementLines: (batchId, filters) => [...billingKeys.settlementBatches(), batchId, 'lines', fingerprintQueryParams(filters)],
   // Cash Controls
   cash: () => [...billingKeys.all, 'cash'],
   cashSessions: () => [...billingKeys.cash(), 'sessions'],
-  cashSessionList: (filters) => [...billingKeys.cashSessions(), 'list', { filters }],
+  cashSessionList: (filters) => [...billingKeys.cashSessions(), 'list', fingerprintQueryParams(filters)],
   currentCashSession: () => [...billingKeys.cashSessions(), 'current'],
   cashSessionTotals: (sessionId) => [...billingKeys.cashSessions(), 'totals', sessionId],
   cashMovements: () => [...billingKeys.cash(), 'movements'],
-  cashMovementList: (filters) => [...billingKeys.cashMovements(), 'list', { filters }],
+  cashMovementList: (filters) => [...billingKeys.cashMovements(), 'list', fingerprintQueryParams(filters)],
   // Services
   services: () => [...billingKeys.all, 'services'],
-  serviceList: (params) => [...billingKeys.services(), 'list', params],
+  serviceList: (params) => [...billingKeys.services(), 'list', fingerprintQueryParams(params)],
   servicesByCategory: () => [...billingKeys.services(), 'byCategory'],
   serviceCategories: () => [...billingKeys.services(), 'categories'],
-  serviceCategoryList: (params) => [...billingKeys.serviceCategories(), 'list', params],
+  serviceCategoryList: (params) => [...billingKeys.serviceCategories(), 'list', fingerprintQueryParams(params)],
   payerServiceCodes: () => [...billingKeys.services(), 'payerServiceCodes'],
-  payerServiceCodeList: (params) => [...billingKeys.payerServiceCodes(), 'list', params],
+  payerServiceCodeList: (params) => [...billingKeys.payerServiceCodes(), 'list', fingerprintQueryParams(params)],
   // Billing Rules
   billingRules: () => [...billingKeys.all, 'billingRules'],
-  billingRuleList: (filters) => [...billingKeys.billingRules(), 'list', { filters }],
+  billingRuleList: (filters) => [...billingKeys.billingRules(), 'list', fingerprintQueryParams(filters)],
   billingRuleDetail: (id) => [...billingKeys.billingRules(), 'detail', id],
   // Facility Settings
   facilitySettings: () => [...billingKeys.all, 'facilitySettings'],
@@ -59,26 +94,26 @@ export const billingKeys = {
   // Insurance
   insurance: () => [...billingKeys.all, 'insurance'],
   patientInsurances: () => [...billingKeys.insurance(), 'patientInsurances'],
-  patientInsuranceList: (filters) => [...billingKeys.patientInsurances(), 'list', { filters }],
+  patientInsuranceList: (filters) => [...billingKeys.patientInsurances(), 'list', fingerprintQueryParams(filters)],
   patientInsuranceDetail: (id) => [...billingKeys.patientInsurances(), 'detail', id],
-  patientInsurance: (patientId, params) => [...billingKeys.insurance(), 'patient', patientId, params],
-  insuranceProviders: (params) => [...billingKeys.insurance(), 'providers', params],
-  insurancePlans: (params) => [...billingKeys.insurance(), 'plans', params],
+  patientInsurance: (patientId, params) => [...billingKeys.insurance(), 'patient', fingerprintPrivateScope(patientId), fingerprintQueryParams(params)],
+  insuranceProviders: (params) => [...billingKeys.insurance(), 'providers', fingerprintQueryParams(params)],
+  insurancePlans: (params) => [...billingKeys.insurance(), 'plans', fingerprintQueryParams(params)],
   // NHIS / AR
   nhis: () => [...billingKeys.all, 'nhis'],
   nhisBatches: () => [...billingKeys.nhis(), 'batches'],
-  nhisBatchList: (filters) => [...billingKeys.nhisBatches(), 'list', { filters }],
+  nhisBatchList: (filters) => [...billingKeys.nhisBatches(), 'list', fingerprintQueryParams(filters)],
   nhisExports: () => [...billingKeys.nhis(), 'exports'],
-  nhisExportJobList: (filters) => [...billingKeys.nhisExports(), 'list', { filters }],
+  nhisExportJobList: (filters) => [...billingKeys.nhisExports(), 'list', fingerprintQueryParams(filters)],
   nhisRemittances: () => [...billingKeys.nhis(), 'remittances'],
-  nhisRemittanceJobList: (filters) => [...billingKeys.nhisRemittances(), 'list', { filters }],
-  nhisRemittanceLines: (jobId, filters) => [...billingKeys.nhisRemittances(), jobId, 'lines', { filters }],
+  nhisRemittanceJobList: (filters) => [...billingKeys.nhisRemittances(), 'list', fingerprintQueryParams(filters)],
+  nhisRemittanceLines: (jobId, filters) => [...billingKeys.nhisRemittances(), jobId, 'lines', fingerprintQueryParams(filters)],
   nhisMappingImports: () => [...billingKeys.nhis(), 'mappingImports'],
-  nhisMappingImportJobList: (filters) => [...billingKeys.nhisMappingImports(), 'list', { filters }],
+  nhisMappingImportJobList: (filters) => [...billingKeys.nhisMappingImports(), 'list', fingerprintQueryParams(filters)],
   nhisMappingImportJobDetail: (id) => [...billingKeys.nhisMappingImports(), 'detail', id],
   nhisAr: () => [...billingKeys.nhis(), 'ar'],
-  nhisInsuranceAging: (params) => [...billingKeys.nhisAr(), 'insuranceAging', params],
-  nhisInsuranceDso: (params) => [...billingKeys.nhisAr(), 'insuranceDso', params],
+  nhisInsuranceAging: (params) => [...billingKeys.nhisAr(), 'insuranceAging', fingerprintQueryParams(params)],
+  nhisInsuranceDso: (params) => [...billingKeys.nhisAr(), 'insuranceDso', fingerprintQueryParams(params)],
   nhisRemittanceQueue: () => [...billingKeys.nhisAr(), 'remittanceQueue'],
 };
 

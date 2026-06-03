@@ -1,9 +1,14 @@
 use chrono::Utc;
-use hms_db::billing::{NewInvoice, NewPayment, NewPaymentReversal};
+use hms_db::billing::{
+    InvoiceListFilters, NewInvoice, NewPayment, NewPaymentReversal, PaymentListFilters,
+    PspPaymentIntentFilters, PspSettlementBatchFilters, PspSettlementLineFilters,
+};
 use hms_domain::billing::{
     BillingDischargeClearance, BillingListQuery, CreateInvoiceRequest, CreatePaymentRequest,
-    FinalizeInvoiceRequest, InvoiceListItem, PaymentListItem, PaymentReversalLedgerEntry,
-    ReceiptListItem, ReversePaymentRequest,
+    FinalizeInvoiceRequest, InvoiceListItem, InvoiceListQuery, PaymentListItem, PaymentListQuery,
+    PaymentReversalLedgerEntry, PspPaymentIntentListItem, PspPaymentIntentListQuery,
+    PspSettlementBatchListItem, PspSettlementBatchListQuery, PspSettlementLineListItem,
+    PspSettlementLineListQuery, ReceiptListItem, ReversePaymentRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use uuid::Uuid;
@@ -34,18 +39,23 @@ impl FinancialWorkflowService {
     pub async fn list_invoices(
         &self,
         ctx: &hms_access::RequestContext,
-        query: BillingListQuery,
+        query: InvoiceListQuery,
     ) -> Result<ListResponse<InvoiceListItem>, ApiError> {
         common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
-        let patient_id = query.patient_id;
-        if let Some(patient_id) = patient_id {
+        if let Some(patient_id) = query.patient_id {
             let _patient = common::load_patient_for_access(&self.state, ctx, patient_id).await?;
         }
-        let (cursor, page_size) = common::page_request(query)?;
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::billing::list_invoices(
             self.pool(),
             self.facility_id(),
-            patient_id,
+            InvoiceListFilters {
+                patient_id: query.patient_id,
+                search: query.search,
+                status: query.status,
+                date_from: query.date_from,
+                date_to: query.date_to,
+            },
             cursor,
             page_size as i64 + 1,
         )
@@ -102,13 +112,24 @@ impl FinancialWorkflowService {
     pub async fn list_payments(
         &self,
         ctx: &hms_access::RequestContext,
-        query: BillingListQuery,
+        query: PaymentListQuery,
     ) -> Result<ListResponse<PaymentListItem>, ApiError> {
         common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
-        let (cursor, page_size) = common::page_request(query)?;
+        if let Some(patient_id) = query.patient_id {
+            let _patient = common::load_patient_for_access(&self.state, ctx, patient_id).await?;
+        }
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::billing::list_payments(
             self.pool(),
             self.facility_id(),
+            PaymentListFilters {
+                patient_id: query.patient_id,
+                search: query.search,
+                status: query.status,
+                payment_method: query.payment_method,
+                date_from: query.date_from,
+                date_to: query.date_to,
+            },
             cursor,
             page_size as i64 + 1,
         )
@@ -116,6 +137,95 @@ impl FinancialWorkflowService {
         .map_err(|_| ApiError::conflict("payment_list_failed", "Payments could not be loaded."))?;
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.paid_at, item.id)
+        }))
+    }
+
+    pub async fn list_payment_intents(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: PspPaymentIntentListQuery,
+    ) -> Result<ListResponse<PspPaymentIntentListItem>, ApiError> {
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
+        let rows = hms_db::billing::list_psp_payment_intents(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            PspPaymentIntentFilters {
+                status: query.status,
+                search: query.search,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "payment_intent_list_failed",
+                "Payment intents could not be loaded.",
+            )
+        })?;
+        Ok(common::page_response(rows, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn list_settlement_batches(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: PspSettlementBatchListQuery,
+    ) -> Result<ListResponse<PspSettlementBatchListItem>, ApiError> {
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
+        let rows = hms_db::billing::list_psp_settlement_batches(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            PspSettlementBatchFilters {
+                status: query.status,
+                search: query.search,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "settlement_batch_list_failed",
+                "Settlement batches could not be loaded.",
+            )
+        })?;
+        Ok(common::page_response(rows, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn list_settlement_lines(
+        &self,
+        ctx: &hms_access::RequestContext,
+        batch_id: Uuid,
+        query: PspSettlementLineListQuery,
+    ) -> Result<ListResponse<PspSettlementLineListItem>, ApiError> {
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
+        let rows = hms_db::billing::list_psp_settlement_lines(
+            self.pool(),
+            self.facility_id(),
+            batch_id,
+            cursor,
+            page_size as i64 + 1,
+            PspSettlementLineFilters {
+                match_status: query.match_status,
+                search: query.search,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "settlement_line_list_failed",
+                "Settlement lines could not be loaded.",
+            )
+        })?;
+        Ok(common::page_response(rows, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
         }))
     }
 

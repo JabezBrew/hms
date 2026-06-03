@@ -8,8 +8,8 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use super::{
-    apply_cursor, apply_forward_cursor, apply_stock_delta_tx, item_context, InventoryCursor,
-    NewControlledCount, NewControlledMovement,
+    apply_cursor, apply_forward_cursor, apply_stock_delta_tx, item_context,
+    ControlledRegisterFilters, InventoryCursor, NewControlledCount, NewControlledMovement,
 };
 use crate::codec;
 use crate::PgPool;
@@ -32,6 +32,7 @@ struct ControlledRow {
     total_wastage: i64,
     has_discrepancy: bool,
     discrepancy_count: i64,
+    last_counted_at: Option<DateTime<Utc>>,
     witness_user_id: Option<Uuid>,
     created_at: DateTime<Utc>,
 }
@@ -79,75 +80,105 @@ pub async fn list_controlled_register(
     facility_id: Uuid,
     cursor: Option<InventoryCursor>,
     limit: i64,
+    filters: ControlledRegisterFilters,
 ) -> anyhow::Result<Vec<ControlledSubstanceRegisterItem>> {
     let mut query = QueryBuilder::new(
         r#"
-        WITH register_stats AS (
-            SELECT facility_id,
-                   item_id,
-                   location_id,
-                   count(*)::bigint AS entry_count,
-                   coalesce(sum(CASE WHEN movement_type = 'dispense' THEN abs(quantity_delta) ELSE 0 END), 0)::bigint AS total_dispensed,
-                   coalesce(sum(CASE WHEN movement_type = 'receipt' THEN quantity_delta ELSE 0 END), 0)::bigint AS total_received,
-                   coalesce(sum(CASE WHEN movement_type = 'adjustment' AND quantity_delta < 0 THEN abs(quantity_delta) ELSE 0 END), 0)::bigint AS total_wastage,
-                   count(*) FILTER (WHERE movement_type = 'count' AND quantity_delta <> 0)::bigint AS discrepancy_count
-            FROM controlled_substance_register
-            WHERE facility_id = "#,
+        WITH candidate_registers AS (
+            SELECT csr.id,
+                   csr.facility_id,
+                   csr.item_id,
+                   inventory_items.name AS item_name,
+                   csr.location_id,
+                   storage_locations.name AS location_name,
+                   csr.movement_type,
+                   csr.quantity_delta,
+                   csr.balance_after,
+                   inventory_items.unit AS unit_of_measure,
+                   csr.witness_user_id,
+                   csr.created_at
+            FROM controlled_substance_register csr
+            INNER JOIN inventory_items
+                ON inventory_items.id = csr.item_id
+               AND inventory_items.facility_id = csr.facility_id
+            INNER JOIN storage_locations
+                ON storage_locations.id = csr.location_id
+               AND storage_locations.facility_id = csr.facility_id
+            WHERE csr.facility_id = "#,
     );
     query.push_bind(facility_id);
     query.push(
         r#"
-            GROUP BY facility_id, item_id, location_id
-        ),
-        latest AS (
-            SELECT DISTINCT ON (facility_id, item_id, location_id)
-                   id,
-                   facility_id,
-                   item_id,
-                   location_id,
-                   movement_type,
-                   quantity_delta,
-                   balance_after,
-                   witness_user_id,
-                   created_at
-            FROM controlled_substance_register
-            WHERE facility_id = "#,
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM controlled_substance_register newer
+                  WHERE newer.facility_id = csr.facility_id
+                    AND newer.item_id = csr.item_id
+                    AND newer.location_id = csr.location_id
+                    AND (newer.created_at, newer.id) > (csr.created_at, csr.id)
+              )
+        "#,
     );
-    query.push_bind(facility_id);
+    if let Some(pattern) = lower_like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (LOWER(inventory_items.name) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR storage_locations.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR LOWER(inventory_items.code) LIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    if let Some(location_id) = filters.location_id {
+        query.push(" AND csr.location_id = ");
+        query.push_bind(location_id);
+    }
+    if let Some(has_discrepancy) = filters.has_discrepancy {
+        push_controlled_discrepancy_filter(&mut query, has_discrepancy);
+    }
+    if let Some(audit_due) = filters.audit_due {
+        push_controlled_audit_due_filter(&mut query, audit_due);
+    }
+    apply_cursor(&mut query, "csr.created_at", "csr.id", cursor);
+    query.push(" ORDER BY csr.created_at DESC, csr.id DESC LIMIT ");
+    query.push_bind(limit);
     query.push(
         r#"
-            ORDER BY facility_id, item_id, location_id, created_at DESC, id DESC
         )
-        SELECT latest.id,
-               latest.item_id,
-               inventory_items.name AS item_name,
-               latest.location_id,
-               storage_locations.name AS location_name,
-               latest.movement_type,
-               latest.quantity_delta,
-               latest.balance_after,
-               latest.balance_after AS current_balance,
-               inventory_items.unit AS unit_of_measure,
+        SELECT csr.id,
+               csr.item_id,
+               csr.item_name,
+               csr.location_id,
+               csr.location_name,
+               csr.movement_type,
+               csr.quantity_delta,
+               csr.balance_after,
+               csr.balance_after AS current_balance,
+               csr.unit_of_measure,
                register_stats.entry_count,
                register_stats.total_dispensed,
                register_stats.total_received,
                register_stats.total_wastage,
                register_stats.discrepancy_count > 0 AS has_discrepancy,
                register_stats.discrepancy_count,
-               latest.witness_user_id,
-               latest.created_at
-        FROM latest
-        INNER JOIN inventory_items ON inventory_items.id = latest.item_id
-        INNER JOIN storage_locations ON storage_locations.id = latest.location_id
-        INNER JOIN register_stats ON register_stats.facility_id = latest.facility_id
-            AND register_stats.item_id = latest.item_id
-            AND register_stats.location_id = latest.location_id
-        WHERE latest.facility_id = "#,
+               register_stats.last_counted_at,
+               csr.witness_user_id,
+               csr.created_at
+        FROM candidate_registers csr
+        INNER JOIN LATERAL (
+            SELECT count(*)::bigint AS entry_count,
+                   coalesce(sum(CASE WHEN stats.movement_type = 'dispense' THEN abs(stats.quantity_delta) ELSE 0 END), 0)::bigint AS total_dispensed,
+                   coalesce(sum(CASE WHEN stats.movement_type = 'receipt' THEN stats.quantity_delta ELSE 0 END), 0)::bigint AS total_received,
+                   coalesce(sum(CASE WHEN stats.movement_type = 'adjustment' AND stats.quantity_delta < 0 THEN abs(stats.quantity_delta) ELSE 0 END), 0)::bigint AS total_wastage,
+                   count(*) FILTER (WHERE stats.movement_type = 'count' AND stats.quantity_delta <> 0)::bigint AS discrepancy_count,
+                   max(stats.created_at) FILTER (WHERE stats.movement_type = 'count') AS last_counted_at
+            FROM controlled_substance_register stats
+            WHERE stats.facility_id = csr.facility_id
+              AND stats.item_id = csr.item_id
+              AND stats.location_id = csr.location_id
+        ) register_stats ON TRUE
+        ORDER BY csr.created_at DESC, csr.id DESC
+        "#,
     );
-    query.push_bind(facility_id);
-    apply_cursor(&mut query, "latest.created_at", "latest.id", cursor);
-    query.push(" ORDER BY latest.created_at DESC, latest.id DESC LIMIT ");
-    query.push_bind(limit);
     let rows = hms_observability::observe_db_query(
         "inventory.controlled_register.list",
         query.build_query_as::<ControlledRow>().fetch_all(pool),
@@ -619,6 +650,14 @@ fn controlled_query() -> QueryBuilder<'static, Postgres> {
                      AND stats.movement_type = 'count'
                      AND stats.quantity_delta <> 0
                ) AS discrepancy_count,
+               (
+                   SELECT max(stats.created_at)
+                   FROM controlled_substance_register AS stats
+                   WHERE stats.facility_id = controlled_substance_register.facility_id
+                     AND stats.item_id = controlled_substance_register.item_id
+                     AND stats.location_id = controlled_substance_register.location_id
+                     AND stats.movement_type = 'count'
+               ) AS last_counted_at,
                controlled_substance_register.witness_user_id,
                controlled_substance_register.created_at
         FROM controlled_substance_register
@@ -629,6 +668,7 @@ fn controlled_query() -> QueryBuilder<'static, Postgres> {
 }
 
 fn controlled_from_row(row: ControlledRow) -> anyhow::Result<ControlledSubstanceRegisterItem> {
+    let _ = row.last_counted_at;
     Ok(ControlledSubstanceRegisterItem {
         id: row.id,
         item_id: row.item_id,
@@ -664,6 +704,61 @@ fn controlled_entry_from_row(
         witness_user_id: row.witness_user_id,
         created_at: row.created_at,
     })
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let trimmed = search?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let escaped = trimmed
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    Some(format!("%{escaped}%"))
+}
+
+fn lower_like_contains_pattern(search: Option<&str>) -> Option<String> {
+    like_contains_pattern(search).map(|pattern| pattern.to_lowercase())
+}
+
+fn push_controlled_discrepancy_filter(
+    query: &mut QueryBuilder<'_, Postgres>,
+    has_discrepancy: bool,
+) {
+    query.push(" AND ");
+    if !has_discrepancy {
+        query.push("NOT ");
+    }
+    query.push(
+        r#"EXISTS (
+            SELECT 1
+            FROM controlled_substance_register discrepancy
+            WHERE discrepancy.facility_id = csr.facility_id
+              AND discrepancy.item_id = csr.item_id
+              AND discrepancy.location_id = csr.location_id
+              AND discrepancy.movement_type = 'count'
+              AND discrepancy.quantity_delta <> 0
+        )"#,
+    );
+}
+
+fn push_controlled_audit_due_filter(query: &mut QueryBuilder<'_, Postgres>, audit_due: bool) {
+    query.push(" AND ");
+    if audit_due {
+        query.push("NOT ");
+    }
+    query.push(
+        r#"EXISTS (
+            SELECT 1
+            FROM controlled_substance_register count_entry
+            WHERE count_entry.facility_id = csr.facility_id
+              AND count_entry.item_id = csr.item_id
+              AND count_entry.location_id = csr.location_id
+              AND count_entry.movement_type = 'count'
+              AND count_entry.created_at >= now() - INTERVAL '7 days'
+        )"#,
+    );
 }
 
 fn discrepancy_from_row(

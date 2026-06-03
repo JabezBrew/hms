@@ -45,6 +45,8 @@ impl LabResultsService {
             LabResultListFilters {
                 status: query.status,
                 is_verified: query.is_verified,
+                search: query.search,
+                critical_only: query.critical_only.unwrap_or(false),
             },
         )
         .await

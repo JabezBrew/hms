@@ -2,6 +2,10 @@ import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 import { v2Api } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -37,6 +41,33 @@ function rustV2Unsupported(contractName) {
 function splitSignalParams(params = {}) {
   const { signal, ...queryParams } = params || {};
   return { queryParams, signal };
+}
+
+const inventoryCursorCache = new Map();
+const INVENTORY_LIST_SCOPES = Object.freeze({
+  controlledDiscrepancies: 'inventory:controlled-discrepancies',
+  controlledRegisterEntries: 'inventory:controlled-register-entries',
+  controlledRegisters: 'inventory:controlled-registers',
+  expiryTrackers: 'inventory:expiry-trackers',
+  goodsReceivedNotes: 'inventory:goods-received-notes',
+  internalRequisitions: 'inventory:internal-requisitions',
+  inventoryItems: 'inventory:items',
+  itemMovements: 'inventory:item-movements',
+  purchaseOrders: 'inventory:purchase-orders',
+  requisitions: 'inventory:requisitions',
+  stockMovements: 'inventory:stock-movements',
+  standingOrders: 'inventory:standing-orders',
+  storageLocations: 'inventory:storage-locations',
+  stockTransfers: 'inventory:stock-transfers',
+  suppliers: 'inventory:suppliers',
+});
+
+function resolveCursorPage(scope, params = {}) {
+  return resolveScopedCursorPage(inventoryCursorCache, scope, params);
+}
+
+function cacheCursorForNextPage(scope, params, response) {
+  cacheScopedCursorForNextPage(inventoryCursorCache, scope, params, response);
 }
 
 function pickEntityId(value) {
@@ -268,20 +299,27 @@ function adaptV2DashboardSummary(response) {
   };
 }
 
-function adaptV2PaginatedList(response, params = {}, adapter = (item) => item) {
+function adaptV2PaginatedList(response, params = {}, adapter = (item) => item, scope = 'default') {
   const results = Array.isArray(response?.data) ? response.data.map(adapter) : [];
   const limit = Number(response?.page?.limit || params.page_size || params.limit || results.length || 25);
-  const currentPage = Number(params.page || 1);
+  const resolvedPage = resolveCursorPage(scope, params);
+  const currentPage = resolvedPage.page;
   const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
   const estimatedTotal = response?.page
     ? ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0)
     : results.length;
+
+  cacheCursorForNextPage(scope, params, response);
 
   return {
     count: estimatedTotal,
     total: estimatedTotal,
     count_exact: !hasNext,
     page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
     page_size: limit,
     total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
     next: hasNext ? response.page.next_cursor : null,
@@ -295,13 +333,41 @@ function emptyPaginatedList(params = {}) {
   return adaptV2PaginatedList({ data: [], meta: {} }, params);
 }
 
-function buildV2CursorQuery(params = {}, fallback = 25) {
+function buildV2CursorQuery(params = {}, fallback = 25, scope = 'default') {
   const query = {};
-  const cursor = params.cursor || params.next_cursor;
+  const { cursor } = resolveCursorPage(scope, params);
   if (cursor) {
     query.cursor = cursor;
   }
   query.limit = boundedLimit(params.limit || params.page_size, fallback);
+  for (const key of [
+    'search',
+    'status',
+    'priority',
+    'supplier',
+    'location_type',
+    'temperature_zone',
+    'requesting_location',
+    'from_location',
+    'to_location',
+    'location',
+  ]) {
+    const value = params[key];
+    if (value !== undefined && value !== null) {
+      const normalized = String(value).trim();
+      if (normalized && normalized !== 'all') {
+        query[key] = normalized;
+      }
+    }
+  }
+  if (params.is_active !== undefined && params.is_active !== null && params.is_active !== '') {
+    query.is_active = params.is_active === true || params.is_active === 'true' || params.is_active === '1';
+  }
+  for (const booleanKey of ['has_discrepancy', 'audit_due']) {
+    if (params[booleanKey] !== undefined && params[booleanKey] !== null && params[booleanKey] !== '') {
+      query[booleanKey] = params[booleanKey] === true || params[booleanKey] === 'true' || params[booleanKey] === '1';
+    }
+  }
   return query;
 }
 
@@ -319,7 +385,13 @@ function buildV2InventoryItemsQuery(params = {}) {
   if (params.status || params.stock_status) {
     query.status = params.status || params.stock_status;
   }
-  Object.assign(query, buildV2CursorQuery(params, 24));
+  if (params.supplier) {
+    query.supplier = params.supplier;
+  }
+  if (params.ordering) {
+    query.ordering = params.ordering;
+  }
+  Object.assign(query, buildV2CursorQuery(params, 24, INVENTORY_LIST_SCOPES.inventoryItems));
   return query;
 }
 
@@ -331,7 +403,7 @@ function buildV2SuppliersQuery(params = {}) {
   if (params.is_active !== undefined) {
     query.is_active = params.is_active;
   }
-  Object.assign(query, buildV2CursorQuery(params, 25));
+  Object.assign(query, buildV2CursorQuery(params, 25, INVENTORY_LIST_SCOPES.suppliers));
   return query;
 }
 
@@ -620,7 +692,7 @@ export const inventoryApi = {
           query: buildV2SuppliersQuery(params),
           signal: options.signal,
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, (supplier) => supplier, INVENTORY_LIST_SCOPES.suppliers);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -708,10 +780,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStorageLocations({
-          query: buildV2CursorQuery(params),
+          query: buildV2CursorQuery(params, 25, INVENTORY_LIST_SCOPES.storageLocations),
           signal: options.signal,
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, (location) => location, INVENTORY_LIST_SCOPES.storageLocations);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -886,7 +958,7 @@ export const inventoryApi = {
           query: buildV2InventoryItemsQuery(params),
           signal: options.signal,
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, (item) => item, INVENTORY_LIST_SCOPES.inventoryItems);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -939,10 +1011,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getInventoryItemStockMovements({ id }, {
-          query: buildV2CursorQuery(params, 50),
+          query: buildV2CursorQuery(params, 50, `${INVENTORY_LIST_SCOPES.itemMovements}:${id}`),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, (movement) => movement, `${INVENTORY_LIST_SCOPES.itemMovements}:${id}`);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1085,10 +1157,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStockMovements({
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.stockMovements),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, (movement) => movement, INVENTORY_LIST_SCOPES.stockMovements);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1208,10 +1280,10 @@ export const inventoryApi = {
       const { queryParams, signal } = splitSignalParams(params);
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStockBatches({
-          query: buildV2CursorQuery(queryParams, 20),
+          query: buildV2CursorQuery(queryParams, 20, INVENTORY_LIST_SCOPES.expiryTrackers),
           signal,
         });
-        return adaptV2PaginatedList(response, queryParams, adaptV2StockBatch);
+        return adaptV2PaginatedList(response, queryParams, adaptV2StockBatch, INVENTORY_LIST_SCOPES.expiryTrackers);
       }
 
       const queryString = new URLSearchParams(queryParams).toString();
@@ -1330,10 +1402,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStockRequisitions({
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.requisitions),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params, adaptV2Requisition);
+        return adaptV2PaginatedList(response, params, adaptV2Requisition, INVENTORY_LIST_SCOPES.requisitions);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1535,10 +1607,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getPurchaseOrders({
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.purchaseOrders),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params, adaptV2PurchaseOrder);
+        return adaptV2PaginatedList(response, params, adaptV2PurchaseOrder, INVENTORY_LIST_SCOPES.purchaseOrders);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1693,10 +1765,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getGoodsReceivedNotes({
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.goodsReceivedNotes),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params, adaptV2GoodsReceivedNote);
+        return adaptV2PaginatedList(response, params, adaptV2GoodsReceivedNote, INVENTORY_LIST_SCOPES.goodsReceivedNotes);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1870,10 +1942,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStockRequisitions({
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.internalRequisitions),
           signal: options.signal,
         });
-        return adaptV2PaginatedList(response, params, adaptV2InternalRequisition);
+        return adaptV2PaginatedList(response, params, adaptV2InternalRequisition, INVENTORY_LIST_SCOPES.internalRequisitions);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -2094,7 +2166,11 @@ export const inventoryApi = {
     try {
       const { queryParams, signal } = splitSignalParams(params);
       if (isRustV2ApiMode()) {
-        return emptyPaginatedList(queryParams);
+        const response = await v2Api.getInventoryStandingOrders({
+          query: buildV2CursorQuery(queryParams, 20, INVENTORY_LIST_SCOPES.standingOrders),
+          signal,
+        });
+        return adaptV2PaginatedList(response, queryParams, (order) => order, INVENTORY_LIST_SCOPES.standingOrders);
       }
 
       const queryString = new URLSearchParams(queryParams).toString();
@@ -2231,10 +2307,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStockTransfers({
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.stockTransfers),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, (transfer) => transfer, INVENTORY_LIST_SCOPES.stockTransfers);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -2389,10 +2465,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getControlledSubstanceRegister({
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.controlledRegisters),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params, adaptV2ControlledRegister);
+        return adaptV2PaginatedList(response, params, adaptV2ControlledRegister, INVENTORY_LIST_SCOPES.controlledRegisters);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -2445,10 +2521,10 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getControlledSubstanceRegisterEntries({ id }, {
-          query: buildV2CursorQuery(params, 20),
+          query: buildV2CursorQuery(params, 20, `${INVENTORY_LIST_SCOPES.controlledRegisterEntries}:${id}`),
           signal: params.signal,
         });
-        return adaptV2PaginatedList(response, params, adaptV2ControlledEntry);
+        return adaptV2PaginatedList(response, params, adaptV2ControlledEntry, `${INVENTORY_LIST_SCOPES.controlledRegisterEntries}:${id}`);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -2606,7 +2682,7 @@ export const inventoryApi = {
           return emptyPaginatedList(params);
         }
         const response = await v2Api.getControlledSubstanceRegisterEntries({ id: registerId }, {
-          query: buildV2CursorQuery(params),
+          query: buildV2CursorQuery(params, 25, `${INVENTORY_LIST_SCOPES.controlledDiscrepancies}:${registerId}`),
           signal: options.signal || params.signal,
         });
         const discrepancies = [];
@@ -2618,7 +2694,7 @@ export const inventoryApi = {
         return adaptV2PaginatedList({
           ...response,
           data: discrepancies,
-        }, params);
+        }, params, (discrepancy) => discrepancy, `${INVENTORY_LIST_SCOPES.controlledDiscrepancies}:${registerId}`);
       }
 
       const queryString = new URLSearchParams(params).toString();

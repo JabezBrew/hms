@@ -90,6 +90,32 @@ describe('Rust V2 laboratory bridge', () => {
     });
   });
 
+  it('searches lab orders through the private Rust V2 search endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 24, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await laboratoryApi.getLabOrders({ search: 'Ama', status: 'ordered', page_size: 24 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/laboratory/orders/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 24, status: 'ordered', search: 'Ama' }),
+      }),
+    );
+  });
+
   it('loads unverified lab results through generated Rust V2 endpoints', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
@@ -199,12 +225,12 @@ describe('Rust V2 laboratory bridge', () => {
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
-      'http://localhost:8080/api/v2/laboratory/test-catalog',
+      'http://localhost:8080/api/v2/laboratory/test-catalog?limit=24',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      'http://localhost:8080/api/v2/laboratory/panels',
+      'http://localhost:8080/api/v2/laboratory/panels?limit=24',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(tests.results).toEqual([

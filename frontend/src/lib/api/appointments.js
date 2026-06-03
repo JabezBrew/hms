@@ -2,6 +2,10 @@ import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 import { v2Api, v2Request } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 
 const DEFAULT_APPOINTMENT_TYPES = [
   {
@@ -36,43 +40,16 @@ function rethrowAbortError(error) {
   }
 }
 
-function hashForCache(value) {
-  let hash = 0;
-  const input = JSON.stringify(value);
-  for (let index = 0; index < input.length; index += 1) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(index);
-    hash |= 0;
-  }
-  return String(hash);
-}
-
-function cursorCacheKey(params = {}) {
-  const scope = { ...(params || {}) };
-  delete scope.page;
-  delete scope.cursor;
-  delete scope.next_cursor;
-  delete scope.signal;
-  return hashForCache(scope);
+function resolveCursorPage(params = {}) {
+  return resolveScopedCursorPage(appointmentCursorCache, 'appointments', params);
 }
 
 function cacheCursorForNextPage(params, response) {
-  const currentPage = Number(params?.page || 1);
-  const nextCursor = response?.page?.next_cursor;
-  if (!nextCursor) {
-    return;
-  }
-  appointmentCursorCache.set(`${cursorCacheKey(params)}:${currentPage + 1}`, nextCursor);
+  cacheScopedCursorForNextPage(appointmentCursorCache, 'appointments', params, response);
 }
 
 function getCursorForParams(params = {}) {
-  if (params.cursor || params.next_cursor) {
-    return params.cursor || params.next_cursor;
-  }
-  const page = Number(params.page || 1);
-  if (page <= 1) {
-    return undefined;
-  }
-  return appointmentCursorCache.get(`${cursorCacheKey(params)}:${page}`);
+  return resolveCursorPage(params).cursor;
 }
 
 function normalizeV2Limit(params = {}, fallback = 25) {
@@ -113,6 +90,24 @@ function mapV2AppointmentStatus(status) {
       return 'cancelled';
     default:
       return status || 'pending';
+  }
+}
+
+function mapUiAppointmentStatus(status) {
+  switch (status) {
+    case 'booked':
+    case 'scheduled':
+      return 'scheduled';
+    case 'arrived':
+    case 'checked_in':
+      return 'checked_in';
+    case 'fulfilled':
+    case 'completed':
+      return 'completed';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return status;
   }
 }
 
@@ -217,7 +212,8 @@ function adaptV2Appointment(appointment) {
 
 function adaptV2AppointmentListResponse(response, params = {}) {
   const limit = Number(response?.page?.limit || params.page_size || params.limit || 25);
-  const currentPage = Number(params.page || 1);
+  const resolvedPage = resolveCursorPage(params);
+  const currentPage = resolvedPage.page;
   const results = Array.isArray(response?.data)
     ? response.data.map(adaptV2Appointment)
     : [];
@@ -229,10 +225,15 @@ function adaptV2AppointmentListResponse(response, params = {}) {
   return {
     results,
     page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
     page_size: limit,
     count: estimatedTotal,
     total: estimatedTotal,
-    count_exact: false,
+    count_exact: !hasNext,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
     next: hasNext ? response.page.next_cursor : null,
     previous: currentPage > 1 ? String(currentPage - 1) : null,
     next_cursor: response?.page?.next_cursor || null,
@@ -282,6 +283,12 @@ function getV2AppointmentListQuery(params = {}) {
   const clinicId = params.clinic_id || params.clinic;
   if (clinicId) {
     query.clinic_id = clinicId;
+  }
+  if (params.status && params.status !== 'all') {
+    query.status = mapUiAppointmentStatus(params.status);
+  }
+  if (params.search) {
+    query.search = String(params.search).trim();
   }
   const cursor = getCursorForParams(params);
   if (cursor) {
@@ -334,10 +341,18 @@ export const appointmentsApi = {
   getAppointments: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getAppointments({
-          query: getV2AppointmentListQuery(params),
-          signal: params.signal,
-        });
+        const query = getV2AppointmentListQuery(params);
+        const response = query.search
+          ? await v2Request({
+              method: 'POST',
+              path: '/api/v2/appointments/search',
+              body: query,
+              signal: params.signal,
+            })
+          : await v2Api.getAppointments({
+              query,
+              signal: params.signal,
+            });
         return adaptV2AppointmentListResponse(response, params);
       }
 

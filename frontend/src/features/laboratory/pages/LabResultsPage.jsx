@@ -13,7 +13,7 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
-import { useCallback, useState, useMemo, useRef } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import {
   LabEmptyState,
   LabMetricGrid,
@@ -1040,8 +1041,8 @@ function LabResultVerificationBadge({ isVerified }) {
   );
 }
 
-function LabResultsPagination({ onPageChange, page, totalCount }) {
-  if (totalCount <= RESULTS_PAGE_SIZE) return null;
+function LabResultsPagination({ countExact, hasNextPage, onPageChange, page, totalCount }) {
+  if (totalCount <= RESULTS_PAGE_SIZE && !hasNextPage) return null;
 
   return (
     <div className="px-4 sm:px-6 pb-6">
@@ -1050,6 +1051,9 @@ function LabResultsPagination({ onPageChange, page, totalCount }) {
         totalCount={totalCount}
         pageSize={RESULTS_PAGE_SIZE}
         onPageChange={onPageChange}
+        countExact={countExact}
+        hasNextPage={hasNextPage}
+        hasPrevPage={page > 1}
         itemLabel="results"
       />
     </div>
@@ -1410,6 +1414,12 @@ export default function LabResultsPage() {
   const { user } = useAuth();
   const userRole = user?.role || "";
   const aiInterpretationAvailable = !isRustV2ApiMode();
+  const [persistedResultsState, setPersistedResultsState] = useRouteTableState('laboratory:resultsTable', {
+    searchQuery: '',
+    verificationFilter: 'all',
+    activeTab: 'all',
+    page: 1,
+  });
 
   // Can verify results
   const canVerify = ["admin", "lab_technician", "doctor", "physician"].includes(
@@ -1417,11 +1427,13 @@ export default function LabResultsPage() {
   );
 
   // State
-  const [searchQuery, setSearchQuery] = useState("");
-  const [verificationFilter, setVerificationFilter] = useState("all");
-  const [activeTab, setActiveTab] = useState("all");
+  const [searchQuery, setSearchQuery] = useState(persistedResultsState.searchQuery || "");
+  const [verificationFilter, setVerificationFilter] = useState(
+    persistedResultsState.verificationFilter || "all"
+  );
+  const [activeTab, setActiveTab] = useState(persistedResultsState.activeTab || "all");
   const [expandedOrders, setExpandedOrders] = useState(new Set());
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(persistedResultsState.page || 1);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -1496,6 +1508,14 @@ export default function LabResultsPage() {
     return Array.isArray(data) ? data : [];
   }, [resultsData]);
   const totalCount = resultsData?.count || 0;
+  const resolvedPage = Number(resultsData?.page || page);
+
+  useEffect(() => {
+    if (resultsData?.cursor_missing && resolvedPage !== page) {
+      setPage(resolvedPage);
+      setPersistedResultsState({ page: resolvedPage });
+    }
+  }, [page, resolvedPage, resultsData?.cursor_missing, setPersistedResultsState]);
 
   const groupedResults = useGroupedLabResults(results);
 
@@ -1582,25 +1602,41 @@ export default function LabResultsPage() {
   const handleTabChange = (value) => {
     setActiveTab(value);
     setPage(1);
+    setPersistedResultsState({ activeTab: value, page: 1 });
   };
 
   const handleSearchChange = (event) => {
-    setSearchQuery(event.target.value);
+    const nextSearch = event.target.value;
+    setSearchQuery(nextSearch);
     setPage(1);
+    setPersistedResultsState({ searchQuery: nextSearch, page: 1 });
   };
 
   const handleVerificationFilterChange = (value) => {
     setVerificationFilter(value);
     setPage(1);
+    setPersistedResultsState({ verificationFilter: value, page: 1 });
   };
 
   const handleClearFilters = () => {
     setSearchQuery("");
     setVerificationFilter("all");
+    setActiveTab("all");
     setPage(1);
+    setPersistedResultsState({
+      searchQuery: "",
+      verificationFilter: "all",
+      activeTab: "all",
+      page: 1,
+    });
   };
 
-  const hasActiveFilters = searchQuery.trim() || verificationFilter !== "all";
+  const handlePageChange = (nextPage) => {
+    setPage(nextPage);
+    setPersistedResultsState({ page: nextPage });
+  };
+
+  const hasActiveFilters = searchQuery.trim() || verificationFilter !== "all" || activeTab !== "all";
 
   const closeInterpretationDialog = () => {
     setInterpretDialogOpen(false);
@@ -1660,8 +1696,10 @@ export default function LabResultsPage() {
       />
 
       <LabResultsPagination
-        onPageChange={setPage}
-        page={page}
+        countExact={resultsData?.count_exact !== false && resultsData?.total_is_lower_bound !== true}
+        hasNextPage={Boolean(resultsData?.next)}
+        onPageChange={handlePageChange}
+        page={resolvedPage}
         totalCount={totalCount}
       />
 

@@ -1,7 +1,9 @@
 import { keyWith } from '@/shared/lib/queryKeys';
 
 export const nursingKeys = {
-  patientMonitoring: (wardId, page, pageSize) => keyWith('patient-monitoring', wardId, page, pageSize),
+  patientMonitoring: (wardId, page, pageSize, monitoringFilter = 'all') => (
+    keyWith('patient-monitoring', wardId, page, pageSize, monitoringFilter)
+  ),
   patientMonitoringAll: () => keyWith('patient-monitoring'),
   patientDetail: (patientId) => keyWith('patient-detail', patientId),
   vitalSigns: (patient, admission, encounter, date, startDate, endDate) =>

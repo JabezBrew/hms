@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import { v2Api } from '@/lib/api/v2/client';
+import { v2Api, v2Request } from '@/lib/api/v2/client';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import {
@@ -86,32 +86,84 @@ export {
   useUpdateShiftHandoff,
 };
 
+const monitoringCursorCache = new Map();
+
+function normalizeMonitoringFilter(filter) {
+  return ['critical', 'alerts', 'tasks'].includes(filter) ? filter : 'all';
+}
+
+function monitoringCursorKey({ wardId, pageSize, monitoringFilter }) {
+  return `${wardId || 'all'}:${pageSize}:${normalizeMonitoringFilter(monitoringFilter)}`;
+}
+
+function resolveMonitoringCursor({ wardId, page, pageSize, monitoringFilter }) {
+  if (page <= 1) {
+    return { cursor: undefined, page: 1 };
+  }
+  const cursor = monitoringCursorCache.get(`${monitoringCursorKey({ wardId, pageSize, monitoringFilter })}:${page}`);
+  return {
+    cursor,
+    page: cursor ? page : 1,
+  };
+}
+
+function cacheMonitoringNextCursor({ wardId, page, pageSize, monitoringFilter, response }) {
+  const nextCursor = response?.page?.next_cursor;
+  if (!nextCursor) {
+    return;
+  }
+  monitoringCursorCache.set(`${monitoringCursorKey({ wardId, pageSize, monitoringFilter })}:${page + 1}`, nextCursor);
+}
+
 // ========== Patient Monitoring ==========
 
-export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => {
+export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20, monitoringFilter = 'all') => {
   const normalizedPageSize = Math.max(1, Math.min(pageSize, MAX_MONITORING_PAGE_SIZE));
+  const normalizedMonitoringFilter = normalizeMonitoringFilter(monitoringFilter);
 
   return useQuery({
-    queryKey: nursingKeys.patientMonitoring(wardId, page, normalizedPageSize),
+    queryKey: nursingKeys.patientMonitoring(wardId, page, normalizedPageSize, normalizedMonitoringFilter),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         try {
+          const resolved = resolveMonitoringCursor({
+            wardId,
+            page,
+            pageSize: normalizedPageSize,
+            monitoringFilter: normalizedMonitoringFilter,
+          });
           const response = await v2Api.getWardBoard({
             query: {
               limit: normalizedPageSize,
+              ...(resolved.cursor ? { cursor: resolved.cursor } : {}),
               ...(wardId ? { ward_id: wardId } : {}),
+              ...(normalizedMonitoringFilter !== 'all'
+                ? { monitoring_filter: normalizedMonitoringFilter }
+                : {}),
             },
             signal,
           });
           const results = Array.isArray(response?.data)
             ? response.data.map(adaptV2WardBoardMonitoringItem)
             : [];
-          const hasNext = Boolean(response?.page?.has_next);
+          const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
+          const knownCount = ((resolved.page - 1) * normalizedPageSize) + results.length;
+          cacheMonitoringNextCursor({
+            wardId,
+            page: resolved.page,
+            pageSize: normalizedPageSize,
+            monitoringFilter: normalizedMonitoringFilter,
+            response,
+          });
           return {
-            count: results.length + (hasNext ? 1 : 0),
-            page,
+            count: knownCount + (hasNext ? 1 : 0),
+            count_exact: !hasNext,
+            total_is_lower_bound: hasNext,
+            next: hasNext ? response.page.next_cursor : null,
+            previous: resolved.page > 1 ? String(resolved.page - 1) : null,
+            page: resolved.page,
             page_size: normalizedPageSize,
-            total_pages: hasNext ? page + 1 : Math.max(1, page),
+            total_pages: hasNext ? resolved.page + 1 : Math.max(1, resolved.page),
             results,
           };
         } catch (error) {
@@ -182,8 +234,10 @@ export const usePatientDetail = (patientId, options = {}) => {
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.getWardBoard({
-            query: { limit: 1, patient_id: patientId },
+          const response = await v2Request({
+            method: 'POST',
+            path: '/api/v2/wards/board/search',
+            body: { limit: 1, patient_id: patientId },
             signal,
           });
           const rows = Array.isArray(response?.data)

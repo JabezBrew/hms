@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -9,6 +9,7 @@ import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -22,8 +23,6 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
@@ -37,24 +36,16 @@ const VIEW_TABS = [
 
 function useControlledSubstanceFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
   const tab = searchParams.get('tab') || 'all';
   const location = searchParams.get('location') || '';
   const page = parseInt(searchParams.get('page') || '1', 10);
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
-      } else {
-        params.delete('search');
-      }
-      params.set('page', '1');
-      return params;
-    });
-  }, [debouncedSearch, setSearchParams]);
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
 
   const handleTabChange = (value) => {
     setSearchParams((prev) => {
@@ -89,6 +80,21 @@ function useControlledSubstanceFilters() {
     setSearchParams({});
   };
 
+  const handleSearchChange = (event) => {
+    const value = event.target.value;
+    setSearch(value);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value) {
+        params.set('search', value);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  };
+
   const queryParams = useMemo(() => ({
     page,
     page_size: 20,
@@ -105,7 +111,7 @@ function useControlledSubstanceFilters() {
     page,
     queryParams,
     hasActiveFilters: Boolean(debouncedSearch || tab !== 'all' || location),
-    handleSearchChange: (event) => setSearch(event.target.value),
+    handleSearchChange,
     handleTabChange,
     handleLocationChange,
     handlePageChange,
@@ -336,30 +342,6 @@ function ControlledSubstancesTable({
   );
 }
 
-function ControlledSubstancesPagination({ page, totalPages, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center justify-between pt-4 border-t">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages}
-      </p>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /**
  * ControlledSubstancesPage - Controlled substance registers page
  */
@@ -384,7 +366,6 @@ export default function ControlledSubstancesPage() {
 
   const registers = registersData?.results || [];
   const totalCount = registersData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
   const locations = locationsData?.results || locationsData || [];
 
   const handleClick = useCallback((id) => {
@@ -425,17 +406,19 @@ export default function ControlledSubstancesPage() {
       <ControlledSubstancesHeader totalCount={totalCount} isLoading={isLoading} onRefresh={refetch} />
 
       <div className="p-4 sm:p-6 space-y-6">
-        <ControlledSubstancesTabs tab={tab} onTabChange={handleTabChange} />
+        <>
+          <ControlledSubstancesTabs tab={tab} onTabChange={handleTabChange} />
 
-        <ControlledSubstancesFilters
-          search={search}
-          location={location}
-          locations={locations}
-          hasActiveFilters={hasActiveFilters}
-          onSearchChange={handleSearchChange}
-          onLocationChange={handleLocationChange}
-          onClearFilters={clearFilters}
-        />
+          <ControlledSubstancesFilters
+            search={search}
+            location={location}
+            locations={locations}
+            hasActiveFilters={hasActiveFilters}
+            onSearchChange={handleSearchChange}
+            onLocationChange={handleLocationChange}
+            onClearFilters={clearFilters}
+          />
+        </>
 
         <ControlledSubstancesTable
           registers={registers}
@@ -444,9 +427,11 @@ export default function ControlledSubstancesPage() {
           onOpenRegister={handleClick}
         />
 
-        <ControlledSubstancesPagination
+        <InventoryPagination
+          data={registersData}
+          itemLabel="registers"
           page={page}
-          totalPages={totalPages}
+          pageSize={20}
           onPageChange={handlePageChange}
         />
       </div>

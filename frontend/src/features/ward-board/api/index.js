@@ -1,12 +1,18 @@
 import { apiClient, handleApiError } from '@/lib/api-client';
-import { v2Api } from '@/lib/api/v2/client';
+import { v2Api, v2Request } from '@/lib/api/v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from '@/lib/api/v2/cursorCache';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 const BOARD_ENDPOINT = '/ward-board/';
 const TASK_ACTIONS = new Set(['acknowledge', 'complete', 'cancel', 'escalate']);
 const DEFAULT_BOARD_LIMIT = 25;
 const MAX_BOARD_LIMIT = 100;
+const boardCursorCache = new Map();
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -60,21 +66,58 @@ function normalizePositiveInteger(value, fallback) {
   return Math.min(parsed, MAX_BOARD_LIMIT);
 }
 
+function boardCursorCacheKey(_params = {}, limit) {
+  const patientId = _params.patient_id ?? _params.patient ?? '';
+  const filterKey = JSON.stringify({
+    limit,
+    ward_id: _params.ward_id ?? _params.ward ?? '',
+    view: _params.view ?? '',
+    monitoring_filter: _params.monitoring_filter ?? '',
+    search: _params.search ? 'search' : '',
+    patient_id: patientId ? hashQueryValue(patientId) : '',
+  });
+  return `ward-board:${filterKey}`;
+}
+
+function resolveBoardCursorPage(params = {}, limit) {
+  return resolveScopedCursorPage(boardCursorCache, boardCursorCacheKey(params, limit), params);
+}
+
+function cacheBoardNextCursor(params = {}, limit, page, response) {
+  cacheScopedCursorForNextPage(boardCursorCache, boardCursorCacheKey(params, limit), { ...params, page }, response);
+}
+
 function getV2BoardQuery(params = {}) {
   const limit = normalizePositiveInteger(
     params.limit ?? params.page_size ?? params.pageSize,
     DEFAULT_BOARD_LIMIT,
   );
-  const cursor = params.cursor ?? params.next_cursor;
+  const { cursor } = resolveBoardCursorPage(params, limit);
   const wardId = params.ward_id ?? params.ward;
   const patientId = params.patient_id ?? params.patient;
+  const monitoringFilter = params.monitoring_filter ?? viewToMonitoringFilter(params.view);
 
   return {
     limit,
     ...(cursor ? { cursor } : {}),
     ...(wardId && wardId !== 'all' ? { ward_id: wardId } : {}),
     ...(patientId ? { patient_id: patientId } : {}),
+    ...(params.search ? { search: String(params.search).trim() } : {}),
+    ...(monitoringFilter ? { monitoring_filter: monitoringFilter } : {}),
   };
+}
+
+function viewToMonitoringFilter(view) {
+  switch (view) {
+    case 'results':
+      return 'results';
+    case 'discharge':
+      return 'discharge';
+    case 'my-work':
+      return 'my_work';
+    default:
+      return null;
+  }
 }
 
 function adaptV2WardBoardItem(item = {}) {
@@ -105,13 +148,31 @@ function adaptV2WardBoardItem(item = {}) {
   };
 }
 
-function normalizeV2BoardResponse(response) {
+function normalizeV2BoardResponse(response, params = {}) {
   const rows = Array.isArray(response?.data) ? response.data.map(adaptV2WardBoardItem) : [];
+  const limit = normalizePositiveInteger(
+    params.limit ?? params.page_size ?? params.pageSize,
+    DEFAULT_BOARD_LIMIT,
+  );
+  const resolved = resolveBoardCursorPage(params, limit);
+  const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
+  const knownCount = ((resolved.page - 1) * limit) + rows.length;
   const nextCursor = response?.page?.next_cursor ?? null;
+  cacheBoardNextCursor(params, limit, resolved.page, response);
+
   return {
-    count: response?.meta?.total ?? rows.length + (response?.page?.has_next ? 1 : 0),
-    next: nextCursor,
-    previous: null,
+    count: response?.meta?.total ?? knownCount + (hasNext ? 1 : 0),
+    count_exact: response?.meta?.total !== undefined || !hasNext,
+    total_is_lower_bound: response?.meta?.total === undefined && hasNext,
+    page: resolved.page,
+    current_page: resolved.page,
+    requested_page: resolved.requestedPage ?? resolved.page,
+    resolved_page: resolved.page,
+    cursor_missing: Boolean(resolved.cursorMissing),
+    page_size: limit,
+    total_pages: hasNext ? resolved.page + 1 : Math.max(1, resolved.page),
+    next: hasNext ? nextCursor : null,
+    previous: resolved.page > 1 ? String(resolved.page - 1) : null,
     next_cursor: nextCursor,
     results: rows,
   };
@@ -131,11 +192,19 @@ export const wardBoardApi = {
   getBoard: async (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
-        const response = await v2Api.getWardBoard({
-          query: getV2BoardQuery(params),
-          signal: options.signal,
-        });
-        return normalizeV2BoardResponse(response);
+        const query = getV2BoardQuery(params);
+        const response = query.search || query.patient_id
+          ? await v2Request({
+              method: 'POST',
+              path: '/api/v2/wards/board/search',
+              body: query,
+              signal: options.signal,
+            })
+          : await v2Api.getWardBoard({
+              query,
+              signal: options.signal,
+            });
+        return normalizeV2BoardResponse(response, params);
       } catch (error) {
         wrapV2ApiError(error, 'Failed to fetch ward board');
       }

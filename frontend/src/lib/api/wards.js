@@ -243,6 +243,7 @@ export const wardsApi = {
           query: {
             cursor: params.cursor,
             limit: normalizeV2Limit(params),
+            search: params.search ? String(params.search).trim() : undefined,
           },
           signal: params.signal,
         });
@@ -419,7 +420,7 @@ export const wardsApi = {
         const wardId = params.ward;
 
         // Remove ward from params since it's now part of the URL
-        const { ward, ...restParams } = params;
+        const { ward: _ward, ...restParams } = params;
 
         // Use page_size=all to get all beds without pagination
         const paramsWithPageSize = { ...restParams, page_size: 'all' };

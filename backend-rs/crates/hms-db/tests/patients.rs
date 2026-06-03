@@ -1,11 +1,12 @@
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, Days, NaiveDate, Utc};
 use hms_db::clinical::{
     NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate, NewPrescription,
     NewProblem, UpdateClinicalNoteTemplate,
 };
 use hms_db::laboratory::{NewLabOrder, NewLabResult, NewSpecimen};
 use hms_db::patients::{
-    PatientContextCursor, PatientContextFilters, PatientListOrdering, PatientUpdate,
+    PatientContextCursor, PatientContextFilters, PatientListOrdering, PatientRegistryFilters,
+    PatientUpdate,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::clinical::{
@@ -15,6 +16,7 @@ use hms_domain::clinical::{
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::laboratory::LabPriority;
 use hms_domain::patients::{PatientAdministrativeStatus, Sex};
+use hms_domain::ward::AdmissionStatus;
 
 #[tokio::test]
 async fn patient_update_and_context_repository_keep_facility_scope() {
@@ -224,8 +226,11 @@ async fn patient_registry_projection_includes_current_location_and_opt_in_count(
             db.facility_id(),
             None,
             10,
-            Some(&scenario.patient.patient_code),
-            Some(PatientAdministrativeStatus::Active),
+            PatientRegistryFilters {
+                search: Some(scenario.patient.patient_code.clone()),
+                status: Some(PatientAdministrativeStatus::Active),
+                ..Default::default()
+            },
             PatientListOrdering::default(),
         )
         .await
@@ -247,8 +252,11 @@ async fn patient_registry_projection_includes_current_location_and_opt_in_count(
     let count = hms_db::patients::count_patients(
         db.pool(),
         db.facility_id(),
-        Some(&scenario.patient.patient_code),
-        Some(PatientAdministrativeStatus::Active),
+        PatientRegistryFilters {
+            search: Some(scenario.patient.patient_code.clone()),
+            status: Some(PatientAdministrativeStatus::Active),
+            ..Default::default()
+        },
     )
     .await
     .expect("patient count succeeds");
@@ -259,13 +267,100 @@ async fn patient_registry_projection_includes_current_location_and_opt_in_count(
         uuid::Uuid::new_v4(),
         None,
         10,
-        Some(&scenario.patient.patient_code),
-        Some(PatientAdministrativeStatus::Active),
+        PatientRegistryFilters {
+            search: Some(scenario.patient.patient_code.clone()),
+            status: Some(PatientAdministrativeStatus::Active),
+            ..Default::default()
+        },
         PatientListOrdering::default(),
     )
     .await
     .expect("cross-facility registry projection succeeds");
     assert!(cross_facility_rows.is_empty());
+}
+
+#[tokio::test]
+async fn patient_registry_filters_by_admission_and_age_without_duplication() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let scenario = db
+        .scenario("registry-filters")
+        .admission_case_with_available_bed()
+        .await
+        .expect("admission scenario builds");
+    hms_db::ward::activate_admission_case(
+        db.pool(),
+        db.facility_id(),
+        scenario.admission.id,
+        db.owner_user_id(),
+    )
+    .await
+    .expect("activation query succeeds")
+    .expect("admission activates");
+
+    let today = Utc::now().date_naive();
+    let admission_start_at = today
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is valid")
+        .and_utc();
+    let admission_end_before = today
+        .checked_add_days(Days::new(1))
+        .expect("tomorrow is valid")
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is valid")
+        .and_utc();
+    let matching_filters = PatientRegistryFilters {
+        search: Some(scenario.patient.patient_code.clone()),
+        patient_id: Some(scenario.patient.id),
+        status: Some(PatientAdministrativeStatus::Active),
+        admission_start_at: Some(admission_start_at),
+        admission_end_before: Some(admission_end_before),
+        ward_id: Some(scenario.ward.id),
+        admission_status: Some(AdmissionStatus::Admitted),
+        attending_id: Some(db.owner_user_id()),
+        date_of_birth_on_or_after: Some(
+            NaiveDate::from_ymd_opt(1980, 1, 1).expect("static date is valid"),
+        ),
+        date_of_birth_on_or_before: Some(
+            NaiveDate::from_ymd_opt(1995, 1, 1).expect("static date is valid"),
+        ),
+    };
+
+    let filtered_rows = hms_db::patients::list_patient_registry(
+        db.pool(),
+        db.facility_id(),
+        None,
+        10,
+        matching_filters.clone(),
+        PatientListOrdering::default(),
+    )
+    .await
+    .expect("filtered patient registry query succeeds");
+
+    assert_eq!(filtered_rows.len(), 1);
+    assert_eq!(filtered_rows[0].patient.id, scenario.patient.id);
+
+    let filtered_count =
+        hms_db::patients::count_patients(db.pool(), db.facility_id(), matching_filters)
+            .await
+            .expect("filtered patient registry count succeeds");
+    assert_eq!(filtered_count, 1);
+
+    let wrong_ward_rows = hms_db::patients::list_patient_registry(
+        db.pool(),
+        db.facility_id(),
+        None,
+        10,
+        PatientRegistryFilters {
+            ward_id: Some(uuid::Uuid::new_v4()),
+            ..Default::default()
+        },
+        PatientListOrdering::default(),
+    )
+    .await
+    .expect("wrong ward registry query succeeds");
+    assert!(wrong_ward_rows.is_empty());
 }
 
 #[tokio::test]

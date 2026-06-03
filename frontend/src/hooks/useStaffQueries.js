@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { staffApi } from '@/features/staff/api';
 import { useSearchQuery } from './useSearchQuery';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 // Query keys
 const staffKeyFactory = createKeyFactory('staff');
@@ -11,12 +12,25 @@ export const staffKeys = {
   lists: staffKeyFactory.lists,
   list: (filters) => staffKeyFactory.list(filters),
   search: () => keyWith('staff', 'search'),
+  facets: (filters) => keyWith('staff', 'facets', filters),
   details: staffKeyFactory.details,
   detail: (id) => staffKeyFactory.detail(id),
   practitioners: () => keyWith('staff', 'practitioners'),
   practitionersList: (filters) => keyWith('staff', 'practitioners', 'list', { filters }),
   practitioner: (id) => keyWith('staff', 'practitioners', id),
 };
+
+function sanitizeStaffFilters(filters = {}) {
+  if (!filters || typeof filters !== 'object') {
+    return filters;
+  }
+  const sanitized = { ...filters };
+  if (sanitized.search) {
+    sanitized.search_hash = hashQueryValue(sanitized.search);
+    delete sanitized.search;
+  }
+  return sanitized;
+}
 
 /**
  * Get staff list with optional filtering
@@ -25,8 +39,22 @@ export const staffKeys = {
  */
 export function useStaff(filters = {}, options = {}) {
   return useQuery({
-    queryKey: staffKeys.list(filters),
+    queryKey: staffKeys.list(sanitizeStaffFilters(filters)),
     queryFn: ({ signal }) => staffApi.getStaff(filters, { signal }),
+    ...options,
+  });
+}
+
+/**
+ * Get staff filter option facets.
+ * @param {Object} filters - Query parameters for filter scoping
+ * @returns {Object} Query result
+ */
+export function useStaffFilterFacets(filters = {}, options = {}) {
+  return useQuery({
+    queryKey: staffKeys.facets(filters),
+    queryFn: ({ signal }) => staffApi.getStaffFilterFacets(filters, { signal }),
+    staleTime: 5 * 60 * 1000,
     ...options,
   });
 }

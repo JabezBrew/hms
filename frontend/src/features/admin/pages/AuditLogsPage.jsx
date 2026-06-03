@@ -35,6 +35,8 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { useListFilters } from '@/shared/hooks/useListFilters';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import { toast } from 'sonner';
 import format from 'date-fns/format';
@@ -50,13 +52,26 @@ const AuditLogsPage = () => {
     page: currentPage,
     setPage: setCurrentPage,
     hasActiveFilters: hasBaseFilters,
-  } = useListFilters({ pageSize: 35 });
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedAction, setSelectedAction] = useState('all');
-  const [dateFrom, setDateFrom] = useState(null);
-  const [dateTo, setDateTo] = useState(null);
+  } = useListFilters({ pageSize: 35, persistKey: 'admin:auditLogsBase' });
+  const [persistedAuditFilters, setPersistedAuditFilters] = useRouteTableState('admin:auditLogsFilters', {
+    selectedCategory: 'all',
+    selectedAction: 'all',
+    dateFrom: null,
+    dateTo: null,
+    sortBy: '-timestamp',
+  });
+  const [selectedCategory, setSelectedCategory] = useState(persistedAuditFilters.selectedCategory || 'all');
+  const [selectedAction, setSelectedAction] = useState(persistedAuditFilters.selectedAction || 'all');
+  const [dateFrom, setDateFrom] = useState(() => (
+    persistedAuditFilters.dateFrom ? new Date(persistedAuditFilters.dateFrom) : null
+  ));
+  const [dateTo, setDateTo] = useState(() => (
+    persistedAuditFilters.dateTo ? new Date(persistedAuditFilters.dateTo) : null
+  ));
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [sortBy, setSortBy] = useState('-timestamp');
+  const [sortBy, setSortBy] = useState(persistedAuditFilters.sortBy || '-timestamp');
+  const rustV2Mode = isRustV2ApiMode();
+  const sortingEnabled = true;
 
   // Debounce search
   useEffect(() => {
@@ -74,9 +89,9 @@ const AuditLogsPage = () => {
     if (debouncedSearch) f.search = debouncedSearch;
     if (dateFrom) f.start_date = format(dateFrom, 'yyyy-MM-dd');
     if (dateTo) f.end_date = format(dateTo, 'yyyy-MM-dd');
-    if (sortBy) f.ordering = sortBy;
+    if (sortingEnabled && sortBy) f.ordering = sortBy;
     return f;
-  }, [selectedCategory, selectedAction, debouncedSearch, dateFrom, dateTo, sortBy]);
+  }, [selectedCategory, selectedAction, debouncedSearch, dateFrom, dateTo, sortBy, sortingEnabled]);
 
   // Fetch data
   const {
@@ -104,6 +119,13 @@ const AuditLogsPage = () => {
   const hasPrevPage = !!logsData?.previous;
   const totalCount = logsData?.count || allLogs.length;
   const pageSize = 35;
+  const resolvedPage = Number(logsData?.page || currentPage);
+
+  useEffect(() => {
+    if (logsData?.cursor_missing && resolvedPage !== currentPage) {
+      setCurrentPage(resolvedPage);
+    }
+  }, [currentPage, logsData?.cursor_missing, resolvedPage, setCurrentPage]);
 
   // Handlers
   const handleSearchChange = (event) => {
@@ -113,17 +135,23 @@ const AuditLogsPage = () => {
 
   const handleCategoryChange = (value) => {
     setSelectedCategory(value);
+    setPersistedAuditFilters({ selectedCategory: value });
     setCurrentPage(1);
   };
 
   const handleActionChange = (value) => {
     setSelectedAction(value);
+    setPersistedAuditFilters({ selectedAction: value });
     setCurrentPage(1);
   };
 
   const handleDateRangeChange = ({ from, to }) => {
     setDateFrom(from);
     setDateTo(to);
+    setPersistedAuditFilters({
+      dateFrom: from ? format(from, 'yyyy-MM-dd') : null,
+      dateTo: to ? format(to, 'yyyy-MM-dd') : null,
+    });
     setCurrentPage(1);
   };
 
@@ -134,11 +162,19 @@ const AuditLogsPage = () => {
     setDateFrom(null);
     setDateTo(null);
     setSortBy('-timestamp');
+    setPersistedAuditFilters({
+      selectedCategory: 'all',
+      selectedAction: 'all',
+      dateFrom: null,
+      dateTo: null,
+      sortBy: '-timestamp',
+    });
     setCurrentPage(1);
   };
 
   const handleSortChange = (nextSort) => {
     setSortBy(nextSort);
+    setPersistedAuditFilters({ sortBy: nextSort });
     setCurrentPage(1);
   };
 
@@ -320,16 +356,20 @@ const AuditLogsPage = () => {
                 logs={allLogs}
                 sortBy={sortBy}
                 onSortChange={handleSortChange}
+                sortable={sortingEnabled}
+                sortableFields={rustV2Mode ? ['timestamp'] : null}
               />
 
               {/* Pagination */}
               <TablePagination
-                currentPage={currentPage}
+                currentPage={resolvedPage}
                 totalCount={totalCount}
                 pageSize={pageSize}
                 onPageChange={setCurrentPage}
+                countExact={logsData?.count_exact !== false && logsData?.total_is_lower_bound !== true}
                 hasNextPage={hasNextPage}
-                hasPrevPage={hasPrevPage}
+                hasPrevPage={hasPrevPage || resolvedPage > 1}
+                canJumpToPage={!rustV2Mode}
                 itemLabel="logs"
                 className="mt-4"
               />

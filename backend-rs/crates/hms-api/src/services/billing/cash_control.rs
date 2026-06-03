@@ -60,6 +60,8 @@ impl CashControlService {
             page_size as i64 + 1,
             CashSessionFilters {
                 status: query.status,
+                search: query.search,
+                is_flagged: query.is_flagged,
             },
         )
         .await

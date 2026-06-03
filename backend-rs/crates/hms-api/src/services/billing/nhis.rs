@@ -1,12 +1,15 @@
 use chrono::Utc;
 use hms_db::billing::{
-    NewClaim, NewNhisArAdjustment, NewNhisBatch, NewNhisServiceMapping, NewRemittanceImport,
+    ClaimListFilters, NewClaim, NewNhisArAdjustment, NewNhisBatch, NewNhisServiceMapping,
+    NewRemittanceImport, NhisServiceMappingFilters, RemittanceLineFilters,
 };
 use hms_domain::billing::{
-    BillingListQuery, ClaimListItem, CreateClaimRequest, CreateNhisBatchRequest,
+    BillingListQuery, ClaimListItem, ClaimListQuery, CreateClaimRequest, CreateNhisBatchRequest,
     CreateNhisServiceMappingRequest, CreateRemittanceImportRequest, NhisArAdjustmentEntry,
-    NhisBatchExport, NhisBatchListItem, NhisClaimArState, NhisServiceMappingListItem,
-    RecordNhisArAdjustmentRequest, RemittanceImportListItem,
+    NhisBatchExport, NhisBatchListItem, NhisClaimArState, NhisExportJobListItem,
+    NhisExportJobListQuery, NhisServiceMappingListItem, NhisServiceMappingListQuery,
+    RecordNhisArAdjustmentRequest, RemittanceImportListItem, RemittanceLineListItem,
+    RemittanceLineListQuery,
 };
 use hms_domain::deployment::PermissionCode;
 use uuid::Uuid;
@@ -37,13 +40,23 @@ impl NhisService {
     pub async fn list_claims(
         &self,
         ctx: &hms_access::RequestContext,
-        query: BillingListQuery,
+        query: ClaimListQuery,
     ) -> Result<ListResponse<ClaimListItem>, ApiError> {
         common::require_nhis_access(ctx, self.facility_id())?;
-        let (cursor, page_size) = common::page_request(query)?;
+        if let Some(patient_id) = query.patient_id {
+            let _patient = common::load_patient_for_access(&self.state, ctx, patient_id).await?;
+        }
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::billing::list_claims(
             self.pool(),
             self.facility_id(),
+            ClaimListFilters {
+                patient_id: query.patient_id,
+                search: query.search,
+                status: query.status,
+                date_from: query.date_from,
+                date_to: query.date_to,
+            },
             cursor,
             page_size as i64 + 1,
         )
@@ -113,6 +126,7 @@ impl NhisService {
             NewNhisServiceMapping {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
+                payer_id: payload.payer_id,
                 service_id: payload.service_id,
                 nhis_code,
                 effective_from: payload.effective_from,
@@ -128,6 +142,36 @@ impl NhisService {
             )
         })?;
         Ok(object(mapping))
+    }
+
+    pub async fn list_service_mappings(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: NhisServiceMappingListQuery,
+    ) -> Result<ListResponse<NhisServiceMappingListItem>, ApiError> {
+        common::require_nhis_access(ctx, self.facility_id())?;
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
+        let rows = hms_db::billing::list_nhis_service_mappings(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            NhisServiceMappingFilters {
+                payer_id: query.payer_id.or(query.payer),
+                search: query.search,
+                active: query.active,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nhis_mapping_list_failed",
+                "NHIS service mappings could not be loaded.",
+            )
+        })?;
+        Ok(common::page_response(rows, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
+        }))
     }
 
     pub async fn list_batches(
@@ -222,6 +266,31 @@ impl NhisService {
         Ok(object(exported))
     }
 
+    pub async fn list_export_jobs(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: NhisExportJobListQuery,
+    ) -> Result<ListResponse<NhisExportJobListItem>, ApiError> {
+        common::require_nhis_access(ctx, self.facility_id())?;
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
+        let rows = hms_db::billing::list_nhis_export_jobs(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nhis_export_list_failed",
+                "NHIS export jobs could not be loaded.",
+            )
+        })?;
+        Ok(common::page_response(rows, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
+        }))
+    }
+
     pub async fn get_claim_ar_state(
         &self,
         ctx: &hms_access::RequestContext,
@@ -305,6 +374,37 @@ impl NhisService {
         })?;
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.imported_at, item.id)
+        }))
+    }
+
+    pub async fn list_remittance_lines(
+        &self,
+        ctx: &hms_access::RequestContext,
+        import_id: Uuid,
+        query: RemittanceLineListQuery,
+    ) -> Result<ListResponse<RemittanceLineListItem>, ApiError> {
+        common::require_nhis_access(ctx, self.facility_id())?;
+        let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
+        let rows = hms_db::billing::list_remittance_lines(
+            self.pool(),
+            self.facility_id(),
+            import_id,
+            cursor,
+            page_size as i64 + 1,
+            RemittanceLineFilters {
+                match_status: query.match_status,
+                search: query.search,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "remittance_line_list_failed",
+                "Remittance lines could not be loaded.",
+            )
+        })?;
+        Ok(common::page_response(rows, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
         }))
     }
 

@@ -80,9 +80,14 @@ describe('Rust V2 encounters bridge', () => {
         }),
       ],
       page: 1,
+      current_page: 1,
+      requested_page: 1,
+      resolved_page: 1,
+      cursor_missing: false,
       page_size: 25,
       count: 2,
       total: 2,
+      total_pages: 2,
       count_exact: false,
       next: 'cursor-2',
       previous: null,
@@ -120,8 +125,11 @@ describe('Rust V2 encounters bridge', () => {
     const response = await encountersApi.getEncountersForPatient('patient-1');
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/encounters?limit=50&patient_id=patient-1',
-      expect.objectContaining({ method: 'GET' }),
+      'http://localhost:8080/api/v2/encounters/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 50, patient_id: 'patient-1' }),
+      }),
     );
     expect(response).toEqual([
       expect.objectContaining({
@@ -245,6 +253,51 @@ describe('Rust V2 encounters bridge', () => {
         name: 'Ama Doctor',
         email: 'ama.doctor@hms.test',
         role: 'Doctor',
+      }),
+    ]);
+  });
+
+  it('searches encounter patients through the private Rust V2 patient search endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'patient-1',
+              patient_code: 'MRN-001',
+              display_name: 'Ama Mensah',
+              first_name: 'Ama',
+              last_name: 'Mensah',
+              sex: 'female',
+              date_of_birth: '1990-01-01',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await encountersApi.searchPatients('Ama', {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ search: 'Ama', limit: 20 }),
+      }),
+    );
+    expect(response).toEqual([
+      expect.objectContaining({
+        id: 'patient-1',
+        medical_record_number: 'MRN-001',
+        name: 'Ama Mensah',
       }),
     ]);
   });

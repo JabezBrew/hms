@@ -58,7 +58,10 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
-    const response = await staffApi.getStaff({ page_size: 25 }, { signal: new AbortController().signal });
+    const response = await staffApi.getStaff(
+      { page_size: 25, paginated: true },
+      { signal: new AbortController().signal },
+    );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/staff?limit=25',
@@ -71,18 +74,22 @@ describe('Rust V2 staff bridge', () => {
         }),
       }),
     );
-    expect(response).toEqual([
-      expect.objectContaining({
-        id: 'staff-1',
-        user_id: 'user-1',
-        name: 'Ama Mensah',
-        email: 'ama@example.test',
-        employee_id: 'EMP-001',
-        department: 'Nursing',
-        position: 'Ward Nurse',
-        is_active: true,
-      }),
-    ]);
+    expect(response).toEqual(expect.objectContaining({
+      page: 1,
+      page_size: 25,
+      results: [
+        expect.objectContaining({
+          id: 'staff-1',
+          user_id: 'user-1',
+          name: 'Ama Mensah',
+          email: 'ama@example.test',
+          employee_id: 'EMP-001',
+          department: 'Nursing',
+          position: 'Ward Nurse',
+          is_active: true,
+        }),
+      ],
+    }));
   });
 
   it('preserves AbortError from Rust staff directory calls', async () => {
@@ -92,6 +99,38 @@ describe('Rust V2 staff bridge', () => {
     await expect(
       staffApi.getStaff({}, { signal: new AbortController().signal }),
     ).rejects.toBe(abortError);
+  });
+
+  it('loads staff filter facets through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            departments: [{ value: 'Nursing', label: 'Nursing', count: 12 }],
+            positions: [{ value: 'Ward Nurse', label: 'Ward Nurse', count: 8 }],
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.getStaffFilterFacets(
+      { is_active: true },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff/filter-facets?is_active=true',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual({
+      departments: [{ value: 'Nursing', label: 'Nursing', count: 12 }],
+      positions: [{ value: 'Ward Nurse', label: 'Ward Nurse', count: 8 }],
+    });
   });
 
   it('loads practitioners through Rust /api/v2 and adapts legacy practitioner fields', async () => {

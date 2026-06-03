@@ -4,9 +4,22 @@
 import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
-import { v2Api } from './v2/client';
+import { v2Api, v2Request } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 
 const DEFAULT_ENCOUNTER_PAGE_SIZE = 50;
+const encounterCursorCache = new Map();
+
+function resolveCursorPage(params = {}) {
+  return resolveScopedCursorPage(encounterCursorCache, 'encounters', params);
+}
+
+function cacheCursorForNextPage(params, response) {
+  cacheScopedCursorForNextPage(encounterCursorCache, 'encounters', params, response);
+}
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -118,20 +131,28 @@ function adaptV2Encounter(encounter) {
 
 function adaptV2EncounterPage(response, params = {}) {
   const limit = Number(response?.page?.limit || normalizeLimit(params));
-  const currentPage = Number(params.page || 1);
+  const resolvedPage = resolveCursorPage(params);
+  const currentPage = resolvedPage.page;
   const results = Array.isArray(response?.data)
     ? response.data.map(adaptV2Encounter)
     : [];
   const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
   const estimatedTotal = ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0);
 
+  cacheCursorForNextPage(params, response);
+
   return {
     results,
     page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
     page_size: limit,
     count: estimatedTotal,
     total: estimatedTotal,
-    count_exact: false,
+    count_exact: !hasNext,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
     next: hasNext ? response.page.next_cursor : null,
     previous: currentPage > 1 ? String(currentPage - 1) : null,
     next_cursor: response?.page?.next_cursor || null,
@@ -142,11 +163,27 @@ function getV2EncounterListQuery(params = {}) {
   const query = {
     limit: normalizeLimit(params),
   };
-  if (params.cursor || params.next_cursor) {
-    query.cursor = params.cursor || params.next_cursor;
+  const { cursor } = resolveCursorPage(params);
+  if (cursor) {
+    query.cursor = cursor;
   }
   if (params.patient_id || params.patient) {
     query.patient_id = normalizeIdentifier(params.patient_id || params.patient);
+  }
+  if (params.patient_search) {
+    query.patient_search = String(params.patient_search).trim();
+  }
+  if (params.practitioner_search) {
+    query.practitioner_search = String(params.practitioner_search).trim();
+  }
+  if (params.date) {
+    query.date = String(params.date).slice(0, 10);
+  }
+  if (params.status && params.status !== 'all') {
+    query.status = mapUiEncounterStatus(params.status);
+  }
+  if (params.encounter_type && params.encounter_type !== 'all') {
+    query.encounter_type = String(params.encounter_type).replace(/-/g, '_').toLowerCase();
   }
   return query;
 }
@@ -222,10 +259,19 @@ export const encountersApi = {
   getEncounters: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getEncounters({
-          query: getV2EncounterListQuery(params),
-          signal: options.signal,
-        });
+        const query = getV2EncounterListQuery(params);
+        const hasPrivateSearch = Boolean(query.patient_id || query.patient_search || query.practitioner_search);
+        const response = hasPrivateSearch
+          ? await v2Request({
+              method: 'POST',
+              path: '/api/v2/encounters/search',
+              body: query,
+              signal: options.signal,
+            })
+          : await v2Api.getEncounters({
+              query,
+              signal: options.signal,
+            });
         return adaptV2EncounterPage(response, params);
       }
 
@@ -388,8 +434,10 @@ export const encountersApi = {
         return [];
       }
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatients({
-          query: { search: query, limit: 20 },
+        const response = await v2Request({
+          method: 'POST',
+          path: '/api/v2/patients/search',
+          body: { search: query, limit: 20 },
           signal: options.signal,
         });
         return Array.isArray(response?.data) ? response.data.map(adaptV2PatientSearchItem) : [];
@@ -469,8 +517,10 @@ export const encountersApi = {
   getEncountersForPatient: async (patientId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getEncounters({
-          query: {
+        const response = await v2Request({
+          method: 'POST',
+          path: '/api/v2/encounters/search',
+          body: {
             limit: DEFAULT_ENCOUNTER_PAGE_SIZE,
             patient_id: patientId,
           },

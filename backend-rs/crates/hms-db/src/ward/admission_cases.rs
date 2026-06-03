@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
-use hms_domain::ward::{AdmissionCaseListItem, AdmissionStatus, BedStatus, WardBoardItem};
+use hms_domain::ward::{
+    AdmissionCaseListItem, AdmissionStatus, BedStatus, WardBoardItem, WardBoardMonitoringFilter,
+};
 use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
@@ -50,6 +52,8 @@ struct WardBoardRow {
     admitted_at: DateTime<Utc>,
     open_nursing_task_count: i64,
     due_medication_count: i64,
+    active_alert_count: i64,
+    critical_alert_count: i64,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -73,6 +77,8 @@ pub async fn list_ward_board(
     facility_id: Uuid,
     ward_id: Option<Uuid>,
     patient_id: Option<Uuid>,
+    search: Option<String>,
+    monitoring_filter: Option<WardBoardMonitoringFilter>,
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<WardBoardItem>> {
@@ -89,6 +95,46 @@ pub async fn list_ward_board(
     if let Some(patient_id) = patient_id {
         query.push(" AND patient_id = ");
         query.push_bind(patient_id);
+    }
+
+    if let Some(pattern) = like_contains_pattern(search.as_deref()) {
+        query.push(
+            r#" AND (
+                EXISTS (
+                    SELECT 1
+                    FROM patients
+                    WHERE patients.id = admission_cases.patient_id
+                      AND patients.facility_id = admission_cases.facility_id
+                      AND lower(patients.patient_code || ' ' || patients.first_name || ' ' || patients.last_name) LIKE "#,
+        );
+        query.push_bind(pattern.to_lowercase());
+        query.push(
+            r#" ESCAPE '\')
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM wards
+                    WHERE wards.id = admission_cases.ward_id
+                      AND wards.facility_id = admission_cases.facility_id
+                      AND wards.name ILIKE "#,
+        );
+        query.push_bind(pattern.clone());
+        query.push(
+            r#" ESCAPE '\'
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM beds
+                    WHERE beds.id = admission_cases.bed_id
+                      AND beds.facility_id = admission_cases.facility_id
+                      AND beds.bed_code ILIKE "#,
+        );
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\'))");
+    }
+
+    if let Some(monitoring_filter) = monitoring_filter {
+        push_monitoring_filter(&mut query, monitoring_filter);
     }
 
     if let Some(cursor) = cursor {
@@ -639,7 +685,9 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
                admission_cases.status AS admission_status,
                admission_cases.admitted_at,
                COALESCE(task_counts.open_nursing_task_count, 0) AS open_nursing_task_count,
-               COALESCE(med_counts.due_medication_count, 0) AS due_medication_count
+               COALESCE(med_counts.due_medication_count, 0) AS due_medication_count,
+               COALESCE(alert_counts.active_alert_count, 0) AS active_alert_count,
+               COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count
         FROM admission_cases
         JOIN patients ON patients.id = admission_cases.patient_id
         JOIN wards ON wards.id = admission_cases.ward_id
@@ -656,6 +704,13 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
             WHERE status = 'scheduled' AND scheduled_at <= now()
             GROUP BY admission_case_id
         ) med_counts ON med_counts.admission_case_id = admission_cases.id
+        LEFT JOIN (
+            SELECT admission_case_id,
+                   count(*) FILTER (WHERE status = 'open') AS active_alert_count,
+                   count(*) FILTER (WHERE status = 'open' AND severity IN ('critical', 'high')) AS critical_alert_count
+            FROM nursing_alerts
+            GROUP BY admission_case_id
+        ) alert_counts ON alert_counts.admission_case_id = admission_cases.id
         "#,
     )
 }
@@ -690,7 +745,9 @@ fn ward_board_list_select() -> &'static str {
                admission_cases.status AS admission_status,
                admission_cases.admitted_at,
                COALESCE(task_counts.open_nursing_task_count, 0) AS open_nursing_task_count,
-               COALESCE(med_counts.due_medication_count, 0) AS due_medication_count
+               COALESCE(med_counts.due_medication_count, 0) AS due_medication_count,
+               COALESCE(alert_counts.active_alert_count, 0) AS active_alert_count,
+               COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count
         FROM selected_admissions admission_cases
         JOIN patients
           ON patients.id = admission_cases.patient_id
@@ -714,6 +771,15 @@ fn ward_board_list_select() -> &'static str {
               AND medication_administrations.status = 'scheduled'
               AND medication_administrations.scheduled_at <= now()
         ) med_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE nursing_alerts.status = 'open') AS active_alert_count,
+                   count(*) FILTER (
+                       WHERE nursing_alerts.status = 'open'
+                         AND nursing_alerts.severity IN ('critical', 'high')
+                   ) AS critical_alert_count
+            FROM nursing_alerts
+            WHERE nursing_alerts.admission_case_id = admission_cases.id
+        ) alert_counts ON true
         ORDER BY admission_cases.admitted_at ASC, admission_cases.id ASC
         "#
 }
@@ -873,7 +939,102 @@ fn ward_board_from_row(row: WardBoardRow) -> anyhow::Result<WardBoardItem> {
         admitted_at: row.admitted_at,
         open_nursing_task_count: row.open_nursing_task_count,
         due_medication_count: row.due_medication_count,
+        active_alert_count: row.active_alert_count,
+        critical_alert_count: row.critical_alert_count,
     })
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let trimmed = search?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let escaped = trimmed
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    Some(format!("%{escaped}%"))
+}
+
+fn push_monitoring_filter(
+    query: &mut QueryBuilder<'static, Postgres>,
+    monitoring_filter: WardBoardMonitoringFilter,
+) {
+    match monitoring_filter {
+        WardBoardMonitoringFilter::Critical => {
+            query.push(
+                r#" AND EXISTS (
+                    SELECT 1
+                    FROM nursing_alerts
+                    WHERE nursing_alerts.admission_case_id = admission_cases.id
+                      AND nursing_alerts.status = 'open'
+                      AND nursing_alerts.severity IN ('critical', 'high')
+                )"#,
+            );
+        }
+        WardBoardMonitoringFilter::Alerts => {
+            query.push(
+                r#" AND EXISTS (
+                    SELECT 1
+                    FROM nursing_alerts
+                    WHERE nursing_alerts.admission_case_id = admission_cases.id
+                      AND nursing_alerts.status = 'open'
+                )"#,
+            );
+        }
+        WardBoardMonitoringFilter::Tasks => {
+            query.push(
+                r#" AND EXISTS (
+                    SELECT 1
+                    FROM nursing_tasks
+                    WHERE nursing_tasks.admission_case_id = admission_cases.id
+                      AND nursing_tasks.status = 'open'
+                )"#,
+            );
+        }
+        WardBoardMonitoringFilter::Results => {
+            query.push(
+                r#" AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM lab_results
+                        WHERE lab_results.facility_id = admission_cases.facility_id
+                          AND lab_results.patient_id = admission_cases.patient_id
+                          AND lab_results.verified_at IS NULL
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM lab_orders
+                        WHERE lab_orders.facility_id = admission_cases.facility_id
+                          AND lab_orders.patient_id = admission_cases.patient_id
+                          AND lab_orders.status IN ('ordered', 'specimen_collected', 'result_entered')
+                    )
+                )"#,
+            );
+        }
+        WardBoardMonitoringFilter::Discharge => {
+            query.push(" AND admission_cases.status = 'discharge_pending'");
+        }
+        WardBoardMonitoringFilter::MyWork => {
+            query.push(
+                r#" AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM nursing_tasks
+                        WHERE nursing_tasks.admission_case_id = admission_cases.id
+                          AND nursing_tasks.status = 'open'
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM medication_administrations
+                        WHERE medication_administrations.admission_case_id = admission_cases.id
+                          AND medication_administrations.status = 'scheduled'
+                          AND medication_administrations.scheduled_at <= now()
+                    )
+                )"#,
+            );
+        }
+    }
 }
 
 fn admission_case_from_row(row: AdmissionCaseRow) -> anyhow::Result<AdmissionCaseListItem> {

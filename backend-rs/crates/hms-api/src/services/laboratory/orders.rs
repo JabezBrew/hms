@@ -42,6 +42,10 @@ impl LabOrdersService {
             page_size as i64 + 1,
             LabOrderListFilters {
                 status: query.status,
+                search: query.search,
+                priority: query.priority,
+                ordering_provider: query.ordering_provider,
+                ordered_by_user_id: query.my_orders.unwrap_or(false).then_some(ctx.user_id),
             },
         )
         .await

@@ -1,7 +1,7 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- The page owns independent search, pagination, and filter panel state; a reducer would not encode a shared transition invariant. */
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import { useCallback, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { PatientRegistryHeader } from '@/features/patients/chronicle-list/PatientRegistryHeader';
@@ -27,9 +27,85 @@ import { prefetchPatientChronicleData } from '@/features/patients/prefetch';
 import { usePatientSearch } from '@/features/patients/hooks/usePatientQueries';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useAuth } from '@/lib/auth';
+import { createReturnToLocation } from '@/shared/lib/returnTo';
 import { normalizeApiResults } from '@/lib/utils';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+
+const REGISTRY_HISTORY_STATE_KEY = 'patientRegistryState';
+
+function serializeFilterDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+function parseFilterDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function serializeFilters(filters) {
+  return {
+    admissionStart: serializeFilterDate(filters.admissionStart),
+    admissionEnd: serializeFilterDate(filters.admissionEnd),
+    wardId: filters.wardId || '',
+    admissionStatus: filters.admissionStatus || 'all',
+    attending: filters.attending?.id
+      ? { id: filters.attending.id, name: filters.attending.name || '' }
+      : null,
+    ageMin: filters.ageMin || '',
+    ageMax: filters.ageMax || '',
+  };
+}
+
+function hydrateFilters(value) {
+  const emptyFilters = createEmptyFilters();
+  if (!value || typeof value !== 'object') {
+    return emptyFilters;
+  }
+  return {
+    ...emptyFilters,
+    admissionStart: parseFilterDate(value.admissionStart),
+    admissionEnd: parseFilterDate(value.admissionEnd),
+    wardId: typeof value.wardId === 'string' ? value.wardId : '',
+    admissionStatus: typeof value.admissionStatus === 'string' ? value.admissionStatus : 'all',
+    attending: value.attending?.id
+      ? { id: value.attending.id, name: value.attending.name || '' }
+      : null,
+    ageMin: value.ageMin ? String(value.ageMin).replace(/[^\d]/g, '') : '',
+    ageMax: value.ageMax ? String(value.ageMax).replace(/[^\d]/g, '') : '',
+  };
+}
+
+function hydrateRegistryState(locationState) {
+  const persisted = locationState?.[REGISTRY_HISTORY_STATE_KEY];
+  if (!persisted || typeof persisted !== 'object') {
+    return {
+      searchQuery: '',
+      searchOrdering: DEFAULT_SEARCH_ORDERING,
+      searchPage: 1,
+      registryScope: DEFAULT_REGISTRY_SCOPE,
+      draftFilters: createEmptyFilters(),
+      appliedFilters: createEmptyFilters(),
+    };
+  }
+  const searchPage = Number.parseInt(String(persisted.searchPage || 1), 10);
+  return {
+    searchQuery: typeof persisted.searchQuery === 'string' ? persisted.searchQuery : '',
+    searchOrdering: typeof persisted.searchOrdering === 'string'
+      ? persisted.searchOrdering
+      : DEFAULT_SEARCH_ORDERING,
+    searchPage: Number.isFinite(searchPage) && searchPage > 0 ? searchPage : 1,
+    registryScope: typeof persisted.registryScope === 'string'
+      ? persisted.registryScope
+      : DEFAULT_REGISTRY_SCOPE,
+    draftFilters: hydrateFilters(persisted.draftFilters),
+    appliedFilters: hydrateFilters(persisted.appliedFilters),
+  };
+}
 
 /**
  * PatientChronicleListPage - table-first patient registry.
@@ -40,16 +116,25 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
  */
 const PatientChronicleListPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const {
+    pathname,
+    search: routeSearch,
+    state: routeState,
+  } = location;
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchOrdering, setSearchOrdering] = useState(DEFAULT_SEARCH_ORDERING);
-  const [searchPage, setSearchPage] = useState(1);
-  const [registryScope, setRegistryScope] = useState(DEFAULT_REGISTRY_SCOPE);
+  const [initialRegistryState] = useState(() => hydrateRegistryState(routeState));
+  const [searchQuery, setSearchQuery] = useState(initialRegistryState.searchQuery);
+  const [searchOrdering, setSearchOrdering] = useState(initialRegistryState.searchOrdering);
+  const [searchPage, setSearchPage] = useState(initialRegistryState.searchPage);
+  const [registryScope, setRegistryScope] = useState(initialRegistryState.registryScope);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [draftFilters, setDraftFilters] = useState(createEmptyFilters);
-  const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters);
+  const [draftFilters, setDraftFilters] = useState(initialRegistryState.draftFilters);
+  const [appliedFilters, setAppliedFilters] = useState(initialRegistryState.appliedFilters);
   const [wardLabels, setWardLabels] = useState(() => new Map());
+  const locationStateRef = useRef(routeState || {});
+  const lastPersistedRegistryStateRef = useRef('');
   const pageMeta = usePageMeta({
     title: 'Patients | Hospital Management System',
     breadcrumbs: [{ label: 'Patients', path: '/patients' }],
@@ -62,6 +147,34 @@ const PatientChronicleListPage = () => {
   const activeFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters]);
   const hasActiveFilters = activeFilterCount > 0;
   const hasSearchSignal = debouncedSearchQuery.length >= 2 || hasActiveFilters;
+  const registryHistoryState = useMemo(() => ({
+    searchQuery,
+    searchOrdering,
+    searchPage,
+    registryScope,
+    draftFilters: serializeFilters(draftFilters),
+    appliedFilters: serializeFilters(appliedFilters),
+  }), [appliedFilters, draftFilters, registryScope, searchOrdering, searchPage, searchQuery]);
+
+  useEffect(() => {
+    locationStateRef.current = routeState || {};
+  });
+
+  useEffect(() => {
+    const serialized = JSON.stringify(registryHistoryState);
+    if (lastPersistedRegistryStateRef.current === serialized) {
+      return;
+    }
+    lastPersistedRegistryStateRef.current = serialized;
+    navigate(`${pathname}${routeSearch}`, {
+      replace: true,
+      state: {
+        ...locationStateRef.current,
+        [REGISTRY_HISTORY_STATE_KEY]: registryHistoryState,
+      },
+      preventScrollReset: true,
+    });
+  }, [navigate, pathname, registryHistoryState, routeSearch]);
 
   const baseSearchParams = useMemo(
     () => buildSearchParams(debouncedSearchQuery, appliedFilters, effectiveRegistryScope),
@@ -144,7 +257,14 @@ const PatientChronicleListPage = () => {
     const patientId = getPatientId(patient);
     if (patientId) {
       prefetchPatientChronicleData(queryClient, patientId, { mode: 'navigation' });
-      navigate(`/patients/${patientId}`);
+      navigate(`/patients/${patientId}`, {
+        state: {
+          returnTo: createReturnToLocation({
+            ...location,
+            state: locationStateRef.current,
+          }),
+        },
+      });
     }
   };
 

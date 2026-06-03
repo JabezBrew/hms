@@ -1,8 +1,8 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Days, NaiveDate, Utc};
 use hms_db::auth::{AuditBreakGlassChronicleView, EndBreakGlassGrants, StartBreakGlassGrant};
 use hms_db::patients::{
     NewPatient, PatientContextCursor, PatientContextFilters, PatientCursor, PatientListOrdering,
-    PatientUpdate,
+    PatientRegistryFilters, PatientUpdate,
 };
 use hms_domain::auth::{
     BreakGlassGrant, BreakGlassGrantDenialReason, BreakGlassGrantOutcome,
@@ -29,6 +29,7 @@ use crate::state::AppState;
 const DEFAULT_LIMIT: u8 = 25;
 const DEFAULT_CONTEXT_LIMIT: u8 = 10;
 const MAX_LIMIT: u8 = 100;
+const MAX_PATIENT_REGISTRY_AGE_FILTER: u16 = 130;
 const VALIDATION_RULE_LIMIT: u8 = 50;
 const CHRONICLE_SUMMARY_LIMIT: i64 = 25;
 const CHRONICLE_STARTUP_SUMMARY_LIMIT: i64 = 5;
@@ -200,12 +201,15 @@ impl PatientsService {
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
-        let status = query.status.clone();
+        let filters = patient_registry_filters(&query)?;
+        let status = filters.status.clone();
         let ordering = patient_list_ordering(&query)?;
         let page = patient_page_request(&query)?;
         let page_size = page.limit;
-        let cacheable_hot_page =
-            page.cursor.is_none() && query.patient_id.is_none() && !include_total;
+        let cacheable_hot_page = page.cursor.is_none()
+            && filters.patient_id.is_none()
+            && !has_extended_patient_registry_filters(&filters)
+            && !include_total;
         if cacheable_hot_page {
             if let Some(response) = self.state.cached_patient_list(
                 ctx,
@@ -245,40 +249,27 @@ impl PatientsService {
             self.facility_id(),
             page.cursor,
             fetch_limit,
-            search,
-            status.clone(),
+            filters.clone(),
             ordering,
         )
         .await
         .map_err(|_| ApiError::conflict("patient_list_failed", "Patients could not be loaded."))?;
         let total_count = if include_total {
             Some(
-                hms_db::patients::count_patients(
-                    self.pool(),
-                    self.facility_id(),
-                    search,
-                    status.clone(),
-                )
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "patient_count_failed",
-                        "Patient registry count could not be loaded.",
-                    )
-                })?,
+                hms_db::patients::count_patients(self.pool(), self.facility_id(), filters)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict(
+                            "patient_count_failed",
+                            "Patient registry count could not be loaded.",
+                        )
+                    })?,
             )
         } else {
             None
         };
 
-        let mut visible = Vec::with_capacity(patients.len());
-        for patient in patients {
-            if hms_access::require_patient_demographics_access(ctx, &patient.patient).is_ok() {
-                visible.push(patient);
-            }
-        }
-
-        let page = cursor_list::page_response(visible, page.limit, |patient| {
+        let page = cursor_list::page_response(patients, page.limit, |patient| {
             cursor_list::encode_cursor(patient.patient.created_at, patient.patient.id)
         });
 
@@ -842,6 +833,122 @@ fn patient_page_request(
         MAX_LIMIT,
         |created_at, id| PatientCursor { created_at, id },
     )?)
+}
+
+fn patient_registry_filters(query: &PatientListQuery) -> Result<PatientRegistryFilters, ApiError> {
+    validate_patient_registry_date_range(query.admission_start, query.admission_end)?;
+    validate_patient_registry_age_range(query.age_min, query.age_max)?;
+
+    let today = Utc::now().date_naive();
+    let date_of_birth_on_or_before = query
+        .age_min
+        .map(|age| date_years_before(today, age))
+        .transpose()?;
+    let date_of_birth_on_or_after = query
+        .age_max
+        .map(|age| {
+            let next_age = age.checked_add(1).ok_or_else(|| invalid_patient_filter())?;
+            date_years_before(today, next_age)?
+                .checked_add_days(Days::new(1))
+                .ok_or_else(invalid_patient_filter)
+        })
+        .transpose()?;
+    let admission_start_at = query.admission_start.map(date_at_start_of_day_utc);
+    let admission_end_before = query
+        .admission_end
+        .map(|date| {
+            date.checked_add_days(Days::new(1))
+                .map(date_at_start_of_day_utc)
+                .ok_or_else(invalid_patient_filter)
+        })
+        .transpose()?;
+
+    Ok(PatientRegistryFilters {
+        search: query
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+        patient_id: query.patient_id,
+        status: query.status.clone(),
+        admission_start_at,
+        admission_end_before,
+        ward_id: query.ward_id,
+        admission_status: query.admission_status,
+        attending_id: query.attending_id,
+        date_of_birth_on_or_after,
+        date_of_birth_on_or_before,
+    })
+}
+
+fn validate_patient_registry_date_range(
+    start: Option<NaiveDate>,
+    end: Option<NaiveDate>,
+) -> Result<(), ApiError> {
+    if matches!((start, end), (Some(start), Some(end)) if start > end) {
+        return Err(ApiError::bad_request(
+            "invalid_patient_registry_filter",
+            "Admission start must be on or before admission end.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_patient_registry_age_range(min: Option<u16>, max: Option<u16>) -> Result<(), ApiError> {
+    if min
+        .into_iter()
+        .chain(max)
+        .any(|age| age > MAX_PATIENT_REGISTRY_AGE_FILTER)
+    {
+        return Err(ApiError::bad_request(
+            "invalid_patient_registry_filter",
+            "Patient age filter is outside the supported range.",
+        ));
+    }
+    if matches!((min, max), (Some(min), Some(max)) if min > max) {
+        return Err(ApiError::bad_request(
+            "invalid_patient_registry_filter",
+            "Minimum age must be less than or equal to maximum age.",
+        ));
+    }
+    Ok(())
+}
+
+fn has_extended_patient_registry_filters(filters: &PatientRegistryFilters) -> bool {
+    filters.admission_start_at.is_some()
+        || filters.admission_end_before.is_some()
+        || filters.ward_id.is_some()
+        || filters.admission_status.is_some()
+        || filters.attending_id.is_some()
+        || filters.date_of_birth_on_or_after.is_some()
+        || filters.date_of_birth_on_or_before.is_some()
+}
+
+fn date_years_before(date: NaiveDate, years: u16) -> Result<NaiveDate, ApiError> {
+    let target_year = date
+        .year()
+        .checked_sub(i32::from(years))
+        .ok_or_else(invalid_patient_filter)?;
+    date.with_year(target_year)
+        .or_else(|| {
+            date.with_day(28)
+                .and_then(|fallback| fallback.with_year(target_year))
+        })
+        .ok_or_else(invalid_patient_filter)
+}
+
+fn date_at_start_of_day_utc(date: NaiveDate) -> DateTime<Utc> {
+    date.and_hms_opt(0, 0, 0)
+        .expect("midnight is a valid time")
+        .and_utc()
+}
+
+fn invalid_patient_filter() -> ApiError {
+    ApiError::bad_request(
+        "invalid_patient_registry_filter",
+        "Patient registry filter is invalid.",
+    )
 }
 
 fn patient_list_ordering(query: &PatientListQuery) -> Result<PatientListOrdering, ApiError> {

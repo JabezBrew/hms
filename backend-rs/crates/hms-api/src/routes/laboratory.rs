@@ -20,6 +20,10 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/laboratory/orders",
             get(laboratory::list_orders).post(laboratory::create_order),
         )
+        .route(
+            "/api/v2/laboratory/orders/search",
+            post(laboratory::search_orders),
+        )
         .route("/api/v2/laboratory/orders/:id", get(laboratory::get_order))
         .route(
             "/api/v2/laboratory/orders/:id/submit",
@@ -52,6 +56,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/laboratory/results",
             get(laboratory::list_results).post(laboratory::create_result),
+        )
+        .route(
+            "/api/v2/laboratory/results/search",
+            post(laboratory::search_results),
         )
         .route(
             "/api/v2/laboratory/results/bulk",

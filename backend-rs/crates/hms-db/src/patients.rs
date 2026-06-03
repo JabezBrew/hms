@@ -3,6 +3,7 @@ use hms_domain::patients::{
     PatientAdministrativeStatus, PatientContextKind, PatientContextListItem, PatientRecord,
     PatientRegistrationValidationRule, Sex,
 };
+use hms_domain::ward::AdmissionStatus;
 use hms_observability::observe_db_query;
 use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -27,6 +28,30 @@ pub struct PatientContextCursor {
 pub struct PatientContextFilters {
     pub patient_id: Option<Uuid>,
     pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PatientRegistryFilters {
+    pub search: Option<String>,
+    pub patient_id: Option<Uuid>,
+    pub status: Option<PatientAdministrativeStatus>,
+    pub admission_start_at: Option<DateTime<Utc>>,
+    pub admission_end_before: Option<DateTime<Utc>>,
+    pub ward_id: Option<Uuid>,
+    pub admission_status: Option<AdmissionStatus>,
+    pub attending_id: Option<Uuid>,
+    pub date_of_birth_on_or_after: Option<NaiveDate>,
+    pub date_of_birth_on_or_before: Option<NaiveDate>,
+}
+
+impl PatientRegistryFilters {
+    fn has_admission_filters(&self) -> bool {
+        self.admission_start_at.is_some()
+            || self.admission_end_before.is_some()
+            || self.ward_id.is_some()
+            || self.admission_status.is_some()
+            || self.attending_id.is_some()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -191,8 +216,7 @@ pub async fn list_patient_registry(
     facility_id: Uuid,
     cursor: Option<PatientCursor>,
     limit: i64,
-    search: Option<&str>,
-    status: Option<PatientAdministrativeStatus>,
+    filters: PatientRegistryFilters,
     ordering: PatientListOrdering,
 ) -> anyhow::Result<Vec<PatientListRecord>> {
     let mut query = QueryBuilder::<Postgres>::new(
@@ -240,7 +264,7 @@ pub async fn list_patient_registry(
     if cursor.is_some() {
         push_patient_cursor_filter(&mut query, ordering);
     }
-    push_patient_registry_filters(&mut query, search, status.as_ref())?;
+    push_patient_registry_filters(&mut query, &filters)?;
 
     query.push(" ORDER BY ");
     push_patient_sort_expression(&mut query, "patients", ordering.field);
@@ -304,10 +328,14 @@ pub async fn list_patient_registry(
 
 fn push_patient_registry_filters(
     query: &mut QueryBuilder<Postgres>,
-    search: Option<&str>,
-    status: Option<&PatientAdministrativeStatus>,
+    filters: &PatientRegistryFilters,
 ) -> anyhow::Result<()> {
-    if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(search) = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         let pattern = format!("%{}%", search.to_lowercase());
         query.push(
             " AND lower(patients.patient_code || ' ' || patients.first_name || ' ' || patients.last_name) LIKE ",
@@ -315,9 +343,63 @@ fn push_patient_registry_filters(
         query.push_bind(pattern);
     }
 
-    if let Some(status) = status {
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND patients.id = ");
+        query.push_bind(patient_id);
+    }
+
+    if let Some(status) = filters.status.as_ref() {
         query.push(" AND patients.status = ");
         query.push_bind(codec::encode(status.clone())?);
+    }
+
+    if let Some(date_of_birth) = filters.date_of_birth_on_or_after {
+        query.push(" AND patients.date_of_birth >= ");
+        query.push_bind(date_of_birth);
+    }
+
+    if let Some(date_of_birth) = filters.date_of_birth_on_or_before {
+        query.push(" AND patients.date_of_birth <= ");
+        query.push_bind(date_of_birth);
+    }
+
+    if filters.has_admission_filters() {
+        query.push(
+            r#"
+            AND EXISTS (
+                SELECT 1
+                FROM admission_cases registry_admission
+                WHERE registry_admission.facility_id = patients.facility_id
+                  AND registry_admission.patient_id = patients.id
+            "#,
+        );
+
+        if let Some(ward_id) = filters.ward_id {
+            query.push(" AND registry_admission.ward_id = ");
+            query.push_bind(ward_id);
+        }
+
+        if let Some(admission_status) = filters.admission_status {
+            query.push(" AND registry_admission.status = ");
+            query.push_bind(codec::encode(admission_status)?);
+        }
+
+        if let Some(admitted_at) = filters.admission_start_at {
+            query.push(" AND registry_admission.admitted_at >= ");
+            query.push_bind(admitted_at);
+        }
+
+        if let Some(admitted_before) = filters.admission_end_before {
+            query.push(" AND registry_admission.admitted_at < ");
+            query.push_bind(admitted_before);
+        }
+
+        if let Some(attending_id) = filters.attending_id {
+            query.push(" AND registry_admission.attending_user_id = ");
+            query.push_bind(attending_id);
+        }
+
+        query.push(")");
     }
 
     Ok(())
@@ -451,8 +533,7 @@ pub async fn list_patients(
 pub async fn count_patients(
     pool: &PgPool,
     facility_id: Uuid,
-    search: Option<&str>,
-    status: Option<PatientAdministrativeStatus>,
+    filters: PatientRegistryFilters,
 ) -> anyhow::Result<i64> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
@@ -463,16 +544,7 @@ pub async fn count_patients(
     );
     query.push_bind(facility_id);
 
-    if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
-        let pattern = format!("%{}%", search.to_lowercase());
-        query.push(" AND lower(patient_code || ' ' || first_name || ' ' || last_name) LIKE ");
-        query.push_bind(pattern);
-    }
-
-    if let Some(status) = status {
-        query.push(" AND status = ");
-        query.push_bind(codec::encode(status)?);
-    }
+    push_patient_registry_filters(&mut query, &filters)?;
 
     let count = observe_db_query(
         "patient.registry.count",

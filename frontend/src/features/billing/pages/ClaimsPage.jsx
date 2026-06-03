@@ -1,7 +1,6 @@
 import FileSpreadsheet from 'lucide-react/dist/esm/icons/file-spreadsheet.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
@@ -10,7 +9,7 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import Send from 'lucide-react/dist/esm/icons/send.js';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +28,10 @@ import {
 } from '@/components/ui/select';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClaims } from '@/features/billing/hooks';
+import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 
 const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   style: 'currency',
@@ -37,7 +39,7 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   minimumFractionDigits: 2,
 });
 
-const STATUS_OPTIONS = [
+const LEGACY_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'draft', label: 'Draft' },
   { value: 'submitted', label: 'Submitted' },
@@ -48,17 +50,70 @@ const STATUS_OPTIONS = [
   { value: 'paid', label: 'Paid' },
 ];
 
+const RUST_V2_STATUS_OPTIONS = [
+  { value: 'all', label: 'All Status' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'ready', label: 'Ready' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'remitted', label: 'Remitted' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+const CLAIM_STATUS_BADGES = {
+  draft: { class: 'bg-muted text-muted-foreground', label: 'Draft', icon: Clock },
+  submitted: { class: 'badge-chronicle-sky', label: 'Submitted', icon: Send },
+  pending: { class: 'badge-chronicle-amber', label: 'Pending', icon: Clock },
+  approved: { class: 'badge-chronicle-emerald', label: 'Approved', icon: CheckCircle },
+  partially_approved: { class: 'badge-chronicle-sky', label: 'Partial', icon: CheckCircle },
+  rejected: { class: 'badge-chronicle-rose', label: 'Rejected', icon: XCircle },
+  paid: { class: 'badge-chronicle-emerald', label: 'Paid', icon: CheckCircle },
+};
+
+function getClaimStatusBadge(status) {
+  return CLAIM_STATUS_BADGES[status] || { class: 'bg-muted text-muted-foreground', label: status, icon: Clock };
+}
+
 export default function ClaimsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const rustV2Mode = isRustV2ApiMode();
+  const statusOptions = rustV2Mode ? RUST_V2_STATUS_OPTIONS : LEGACY_STATUS_OPTIONS;
 
   // Filters from URL
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const status = searchParams.get('status') || 'all';
+  const urlSearch = searchParams.get('search') || '';
+  const [privateFilters, setPrivateFilters] = useRouteTableState('billing:claimsPrivateFilters', {
+    search: '',
+  });
+  const [search, setSearch] = useState(privateFilters.search || urlSearch);
+  const rawStatus = searchParams.get('status') || 'all';
+  const status = statusOptions.some((option) => option.value === rawStatus) ? rawStatus : 'all';
   const page = parseInt(searchParams.get('page') || '1', 10);
 
   // Debounced search
   const debouncedSearch = useDebounce(search, 300);
+
+  useEffect(() => {
+    if (!urlSearch) return;
+    setPrivateFilters((current) => ({
+      ...current,
+      search: current.search || urlSearch,
+    }));
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('search');
+      return params;
+    }, { replace: true });
+  }, [setPrivateFilters, setSearchParams, urlSearch]);
+
+  useEffect(() => {
+    if (rawStatus === status) return;
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('status');
+      params.set('page', '1');
+      return params;
+    });
+  }, [rawStatus, setSearchParams, status]);
 
   // Build query params using debounced search
   const queryParams = {
@@ -77,7 +132,6 @@ export default function ClaimsPage() {
 
   const claims = claimsData?.results || [];
   const totalCount = claimsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
 
   const claimColumns = [
     {
@@ -161,7 +215,15 @@ export default function ClaimsPage() {
 
   // Update search input
   const handleSearchChange = (e) => {
-    setSearch(e.target.value);
+    const value = e.target.value;
+    setSearch(value);
+    setPrivateFilters({ search: value });
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('search');
+      params.set('page', '1');
+      return params;
+    });
   };
 
   const handleStatusChange = (value) => {
@@ -232,7 +294,6 @@ export default function ClaimsPage() {
         )}
       />
 
-      {/* Filters */}
       <div className="p-4 sm:px-6 bg-card/50 border-b border-border">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 max-w-md">
@@ -250,7 +311,7 @@ export default function ClaimsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {STATUS_OPTIONS.map((option) => (
+              {statusOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
                   {option.label}
                 </SelectItem>
@@ -289,56 +350,21 @@ export default function ClaimsPage() {
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6 pt-6 border-t border-border">
-            <p className="font-mono text-xs text-muted-foreground">
-              Page {page} of {totalPages}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(page - 1)}
-                disabled={page <= 1}
-                className="font-mono text-xs"
-              >
-                <ChevronLeft className="size-4 mr-1" />
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(page + 1)}
-                disabled={page >= totalPages}
-                className="font-mono text-xs"
-              >
-                Next
-                <ChevronRight className="size-4 ml-1" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <BillingPagination
+          canJumpToPage={!rustV2Mode}
+          data={claimsData}
+          itemLabel="claims"
+          onPageChange={handlePageChange}
+          page={page}
+          pageSize={20}
+        />
       </main>
     </PageShell>
   );
 }
 
 function ClaimCard({ claim, index, onClick }) {
-  const getStatusBadge = (status) => {
-    const statusMap = {
-      draft: { class: 'bg-muted text-muted-foreground', label: 'Draft', icon: Clock },
-      submitted: { class: 'badge-chronicle-sky', label: 'Submitted', icon: Send },
-      pending: { class: 'badge-chronicle-amber', label: 'Pending', icon: Clock },
-      approved: { class: 'badge-chronicle-emerald', label: 'Approved', icon: CheckCircle },
-      partially_approved: { class: 'badge-chronicle-sky', label: 'Partial', icon: CheckCircle },
-      rejected: { class: 'badge-chronicle-rose', label: 'Rejected', icon: XCircle },
-      paid: { class: 'badge-chronicle-emerald', label: 'Paid', icon: CheckCircle },
-    };
-    return statusMap[status] || { class: 'bg-muted text-muted-foreground', label: status, icon: Clock };
-  };
-
-  const badge = getStatusBadge(claim.status);
+  const badge = getClaimStatusBadge(claim.status);
   const StatusIcon = badge.icon;
   return (
     <button

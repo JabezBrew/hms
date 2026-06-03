@@ -17,6 +17,7 @@ export function BoardToolbar({
   fixedWard,
   pageSize,
   isFetching,
+  searchEnabled = true,
   summary,
   onViewChange,
   onSearchChange,
@@ -27,7 +28,7 @@ export function BoardToolbar({
   onOpenSummary,
   className,
 }) {
-  const hasFilters = Boolean(searchValue || patientValue || (!fixedWard && wardValue));
+  const hasFilters = Boolean((searchEnabled && searchValue) || patientValue || (!fixedWard && wardValue));
 
   const viewCounts = {
     'results': summary?.pendingResults,
@@ -38,28 +39,30 @@ export function BoardToolbar({
   return (
     <div className={cn('sticky top-0 z-20 border-b border-border bg-card/95 backdrop-blur-sm', className)}>
       <div className="flex h-12 items-center gap-3 px-4 sm:px-6">
-        <div className="relative min-w-0 flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input
-            id="ward-board-search"
-            type="search"
-            value={searchValue}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search patient, bed, MRN or task..."
-            className="h-8 pl-8 font-mono text-xs"
-            aria-label="Search ward board"
-          />
-          {searchValue ? (
-            <button
-              type="button"
-              onClick={() => onSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label="Clear search"
-            >
-              <X className="size-3" />
-            </button>
-          ) : null}
-        </div>
+        {searchEnabled && (
+          <div className="relative min-w-0 flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input
+              id="ward-board-search"
+              type="search"
+              value={searchValue}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search patient, bed, MRN or task..."
+              className="h-8 pl-8 font-mono text-xs"
+              aria-label="Search ward board"
+            />
+            {searchValue ? (
+              <button
+                type="button"
+                onClick={() => onSearchChange('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="size-3" />
+              </button>
+            ) : null}
+          </div>
+        )}
 
         {!fixedWard ? (
           <div className="relative shrink-0">

@@ -9,11 +9,12 @@ export function EncounterTabs({
   onCreateEncounter,
   onOpenEncounter,
   onTabChange,
+  tabs = ENCOUNTER_TABS,
 }) {
   return (
     <Tabs defaultValue="all" value={activeTab} onValueChange={onTabChange}>
       <TabsList className="bg-card border border-border rounded-xl p-1 h-auto">
-        {ENCOUNTER_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <TabsTrigger
             key={tab.value}
             value={tab.value}
@@ -24,7 +25,7 @@ export function EncounterTabs({
         ))}
       </TabsList>
 
-      {ENCOUNTER_TABS.map((tab) => (
+      {tabs.map((tab) => (
         <TabsContent key={tab.value} value={tab.value} className="mt-6">
           <EncounterTable
             encounters={encounters}

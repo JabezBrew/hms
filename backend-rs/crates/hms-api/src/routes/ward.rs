@@ -35,6 +35,7 @@ pub fn routes() -> Router<AppState> {
             get(ward::list_section_beds),
         )
         .route("/api/v2/wards/board", get(ward::ward_board))
+        .route("/api/v2/wards/board/search", post(ward::search_ward_board))
         .route(
             "/api/v2/admissions/cases",
             get(ward::list_admission_cases).post(ward::create_admission_case),

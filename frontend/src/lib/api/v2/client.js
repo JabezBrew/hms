@@ -3,6 +3,7 @@ import { v2Request } from './session';
 export {
   __resetV2ApiClientForTests,
   configureV2ApiClient,
+  getV2ClientScopeKey,
   hasV2RefreshSessionHint,
   performV2TokenRefresh,
   v2Request,

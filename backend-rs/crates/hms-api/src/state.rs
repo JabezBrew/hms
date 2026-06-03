@@ -2062,8 +2062,7 @@ async fn warm_hot_read_query_shapes(pool: &hms_db::PgPool, facility_id: Uuid) {
             facility_id,
             None,
             21,
-            None,
-            None,
+            hms_db::patients::PatientRegistryFilters::default(),
             hms_db::patients::PatientListOrdering::default(),
         )
         .await?;
@@ -2072,8 +2071,10 @@ async fn warm_hot_read_query_shapes(pool: &hms_db::PgPool, facility_id: Uuid) {
             facility_id,
             None,
             21,
-            Some("hms"),
-            None,
+            hms_db::patients::PatientRegistryFilters {
+                search: Some("hms".to_owned()),
+                ..Default::default()
+            },
             hms_db::patients::PatientListOrdering::default(),
         )
         .await?;
@@ -2091,8 +2092,10 @@ async fn warm_hot_read_query_shapes(pool: &hms_db::PgPool, facility_id: Uuid) {
                     facility_id,
                     None,
                     21,
-                    None,
-                    Some(PatientAdministrativeStatus::Active),
+                    hms_db::patients::PatientRegistryFilters {
+                        status: Some(PatientAdministrativeStatus::Active),
+                        ..Default::default()
+                    },
                     PatientListOrdering {
                         field: sort_field,
                         direction,

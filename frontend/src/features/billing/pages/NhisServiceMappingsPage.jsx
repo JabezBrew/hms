@@ -15,7 +15,9 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import { VirtualizedTable } from '@/components/ui/VirtualizedTable';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -527,7 +529,12 @@ function NhisMappingDialog({
 }
 
 export default function NhisServiceMappingsPage() {
-  const [search, setSearch] = useState('');
+  const [tableState, setTableState] = useRouteTableState('nhisServiceMappings', {
+    search: '',
+    selectedPayer: '',
+    page: 1,
+  });
+  const { search, selectedPayer, page } = tableState;
   const mappingMutationsAvailable = !isRustV2ApiMode();
   const debouncedSearch = useDebounce(search, 250);
 
@@ -538,15 +545,14 @@ export default function NhisServiceMappingsPage() {
     [allProviders]
   );
 
-  const [selectedPayer, setSelectedPayer] = useState('');
   const payerId = selectedPayer || nhisProviders?.[0]?.id || '';
 
   const servicesQuery = useServices({ page_size: 500, is_active: true });
   const services = normalizeResults(servicesQuery.data).results;
 
   const codesQuery = usePayerServiceCodes({
-    page: 1,
-    page_size: 200,
+    page,
+    page_size: 25,
     ...(payerId ? { payer: payerId } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   }, { enabled: !!payerId });
@@ -597,6 +603,18 @@ export default function NhisServiceMappingsPage() {
       codesQuery.refetch(),
     ]);
     toast.success('Refreshed');
+  };
+
+  const setSearch = (nextSearch) => {
+    setTableState({ search: nextSearch, page: 1 });
+  };
+
+  const setSelectedPayer = (nextPayer) => {
+    setTableState({ selectedPayer: nextPayer, page: 1 });
+  };
+
+  const setPage = (nextPage) => {
+    setTableState({ page: nextPage });
   };
 
   const downloadTemplate = () => {
@@ -784,6 +802,19 @@ export default function NhisServiceMappingsPage() {
           rows={codes}
           threshold={50}
           className="rounded-2xl border border-border bg-card"
+        />
+
+        <TablePagination
+          currentPage={codesQuery.data?.page || page}
+          totalCount={codesQuery.data?.count ?? codes.length}
+          pageSize={codesQuery.data?.page_size || 25}
+          countExact={codesQuery.data?.count_exact !== false && codesQuery.data?.total_is_lower_bound !== true}
+          totalPages={codesQuery.data?.total_pages}
+          hasNextPage={Boolean(codesQuery.data?.next)}
+          hasPrevPage={(codesQuery.data?.page || page) > 1}
+          canJumpToPage={false}
+          onPageChange={setPage}
+          itemLabel="mappings"
         />
       </main>
 

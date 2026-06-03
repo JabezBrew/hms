@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
-import { v2Api } from '@/lib/api/v2/client';
+import { v2Api, v2Request } from '@/lib/api/v2/client';
 import { keyWith } from '@/shared/lib/queryKeys';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 const AUDIT_EXPORT_LIMIT = 100;
 const auditCursorCache = new Map();
@@ -35,9 +36,13 @@ const CATEGORY_FILTERS = [
 ];
 
 function fingerprintFilters(filters = {}) {
-  const stable = Object.keys(filters)
+  const safeFilters = {
+    ...filters,
+    ...(filters.search ? { search: hashQueryValue(filters.search) } : {}),
+  };
+  const stable = Object.keys(safeFilters)
     .sort()
-    .map((key) => `${key}:${String(filters[key])}`)
+    .map((key) => `${key}:${String(safeFilters[key])}`)
     .join('|');
   let hash = 2166136261;
   for (let index = 0; index < stable.length; index += 1) {
@@ -119,18 +124,30 @@ function adaptV2AuditEvent(event) {
   };
 }
 
-function adaptV2AuditList(response, page) {
+function adaptV2AuditList(response, resolved) {
+  const page = resolved.page;
   const results = Array.isArray(response?.data)
     ? response.data.map(adaptV2AuditEvent)
     : [];
   const pageInfo = response?.page || {};
+  const limit = Number(pageInfo.limit || results.length || 1);
+  const hasNext = Boolean(pageInfo.has_next && pageInfo.next_cursor);
+  const estimatedTotal = ((page - 1) * limit) + results.length + (hasNext ? 1 : 0);
   return {
     results,
-    count: (page - 1) * Number(pageInfo.limit || results.length || 1) + results.length,
-    next: pageInfo.next_cursor || null,
+    count: estimatedTotal,
+    total: estimatedTotal,
+    next: hasNext ? pageInfo.next_cursor : null,
     previous: page > 1 ? 'previous' : null,
-    page: pageInfo,
-    count_exact: false,
+    page,
+    current_page: page,
+    requested_page: resolved.requestedPage ?? page,
+    resolved_page: page,
+    cursor_missing: Boolean(resolved.cursorMissing),
+    page_size: limit,
+    total_pages: hasNext ? page + 1 : Math.max(1, page),
+    count_exact: !hasNext,
+    next_cursor: pageInfo.next_cursor || null,
   };
 }
 
@@ -143,6 +160,25 @@ function cacheNextAuditCursor(filters, page, cursor) {
 function getAuditCursor(filters, page) {
   if (page <= 1) return undefined;
   return auditCursorCache.get(`${fingerprintFilters(filters)}:${page}`);
+}
+
+function resolveAuditPage(filters, requestedPage) {
+  const page = Math.max(1, Number(requestedPage || 1));
+  if (page <= 1) {
+    return {
+      page: 1,
+      cursor: undefined,
+      requestedPage: 1,
+      cursorMissing: false,
+    };
+  }
+  const cursor = getAuditCursor(filters, page);
+  return {
+    page: cursor ? page : 1,
+    cursor,
+    requestedPage: page,
+    cursorMissing: !cursor,
+  };
 }
 
 function isSameDay(a, b) {
@@ -190,10 +226,10 @@ function downloadAuditCsv(rows) {
  */
 const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 35, options = {}) => {
   if (isRustV2ApiMode()) {
-    const cursor = getAuditCursor(filters, page);
+    const resolved = resolveAuditPage(filters, page);
     const limit = Math.min(Number(pageSize) || 35, 100);
     const query = {
-      cursor,
+      cursor: resolved.cursor,
       limit,
     };
     if (filters.search) query.search = filters.search;
@@ -201,12 +237,20 @@ const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 35, options = {
     if (filters.action && filters.action !== 'all') query.action = filters.action;
     if (filters.start_date) query.start_date = filters.start_date;
     if (filters.end_date) query.end_date = filters.end_date;
-    const response = await v2Api.getAdminAuditEvents({
-      query,
-      signal: options.signal,
-    });
-    cacheNextAuditCursor(filters, page, response?.page?.next_cursor);
-    return adaptV2AuditList(response, page);
+    if (filters.ordering) query.ordering = filters.ordering;
+    const response = query.search
+      ? await v2Request({
+          method: 'POST',
+          path: '/api/v2/admin/audit-events/search',
+          body: query,
+          signal: options.signal,
+        })
+      : await v2Api.getAdminAuditEvents({
+          query,
+          signal: options.signal,
+        });
+    cacheNextAuditCursor(filters, resolved.page, response?.page?.next_cursor);
+    return adaptV2AuditList(response, resolved);
   }
 
   const params = new URLSearchParams();

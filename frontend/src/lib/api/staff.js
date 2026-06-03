@@ -1,10 +1,15 @@
 import { apiClient, handleApiError } from '../api-client';
 import { v2Api } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 
 const DEFAULT_STAFF_LIST_LIMIT = 25;
 const MAX_STAFF_LIST_LIMIT = 100;
+const staffCursorCache = new Map();
 
 function normalizePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -19,13 +24,16 @@ function getStaffListQuery(params = {}) {
     params.limit ?? params.page_size ?? params.pageSize,
     DEFAULT_STAFF_LIST_LIMIT,
   );
-  const cursor = params.cursor ?? params.next_cursor;
+  const resolvedPage = resolveScopedCursorPage(staffCursorCache, 'staff:list', params);
+  const cursor = params.cursor ?? params.next_cursor ?? resolvedPage.cursor;
   return compactObject({
     limit,
     ...(cursor ? { cursor } : {}),
     search: params.search ? String(params.search).trim() : undefined,
     is_active: params.is_active,
     practitioners_only: params.practitioners_only,
+    department: params.department && params.department !== 'all' ? params.department : undefined,
+    position: params.position && params.position !== 'all' ? params.position : undefined,
   });
 }
 
@@ -71,9 +79,57 @@ function adaptV2StaffListItem(item = {}) {
   };
 }
 
+function adaptV2StaffPage(response, params = {}) {
+  const resolvedPage = resolveScopedCursorPage(staffCursorCache, 'staff:list', params);
+  const currentPage = resolvedPage.page;
+  const results = Array.isArray(response?.data)
+    ? response.data.map(adaptV2StaffListItem)
+    : [];
+  const limit = Number(response?.page?.limit || params.page_size || params.limit || DEFAULT_STAFF_LIST_LIMIT);
+  const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
+  const knownCount = ((currentPage - 1) * limit) + results.length;
+  cacheScopedCursorForNextPage(staffCursorCache, 'staff:list', params, response);
+
+  return {
+    results,
+    count: knownCount + (hasNext ? 1 : 0),
+    total: knownCount + (hasNext ? 1 : 0),
+    count_exact: !hasNext,
+    total_is_lower_bound: hasNext,
+    page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
+    page_size: limit,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
+    next: hasNext ? response.page.next_cursor : null,
+    previous: currentPage > 1 ? String(currentPage - 1) : null,
+    next_cursor: response?.page?.next_cursor || null,
+  };
+}
+
+function adaptV2StaffFacetOptions(options = []) {
+  return Array.isArray(options)
+    ? options.map((option) => ({
+      value: option.value || '',
+      label: option.label || option.value || '',
+      count: Number(option.count || 0),
+    })).filter((option) => option.value)
+    : [];
+}
+
+function adaptV2StaffFilterFacets(response = {}) {
+  const data = response?.data || response || {};
+  return {
+    departments: adaptV2StaffFacetOptions(data.departments),
+    positions: adaptV2StaffFacetOptions(data.positions),
+  };
+}
+
 function compactObject(value) {
   return Object.fromEntries(
-    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined && entryValue !== null && entryValue !== ''),
   );
 }
 
@@ -199,9 +255,8 @@ export const staffApi = {
           query: getStaffListQuery(params),
           signal: options.signal,
         });
-        return Array.isArray(response?.data)
-          ? response.data.map(adaptV2StaffListItem)
-          : [];
+        const page = adaptV2StaffPage(response, params);
+        return params.paginated ? page : page.results;
       } catch (error) {
         if (error?.name === 'AbortError') {
           throw error;
@@ -217,6 +272,32 @@ export const staffApi = {
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch staff members'));
     }
+  },
+
+  /**
+   * Get server-backed staff filter option facets.
+   * @param {Object} params - Query parameters for filter scoping
+   * @returns {Promise<Object>} Department and position facet options
+   */
+  getStaffFilterFacets: async (params = {}, options = {}) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.getAdminStaffFilterFacets({
+          query: compactObject({
+            is_active: params.is_active,
+          }),
+          signal: options.signal,
+        });
+        return adaptV2StaffFilterFacets(response);
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to fetch staff filter options'));
+      }
+    }
+
+    return { departments: [], positions: [] };
   },
 
   /**

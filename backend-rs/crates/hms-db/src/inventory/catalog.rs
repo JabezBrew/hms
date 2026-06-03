@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::{
     apply_cursor, apply_forward_cursor, CatalogEditCommand, InventoryCursor, InventoryItemFilters,
-    SupplierFilters,
+    InventorySortDirection, StorageLocationFilters, SupplierFilters,
 };
 use crate::codec;
 use crate::PgPool;
@@ -42,6 +42,8 @@ struct LocationRow {
     id: Uuid,
     code: String,
     name: String,
+    location_type: String,
+    temperature_zone: String,
     created_at: DateTime<Utc>,
 }
 
@@ -109,71 +111,115 @@ pub async fn list_items(
     limit: i64,
     filters: InventoryItemFilters,
 ) -> anyhow::Result<Vec<InventoryItemListItem>> {
-    let mut query = item_query();
-    query.push(" WHERE inventory_items.facility_id = ");
+    let mut query = QueryBuilder::new(
+        r#"
+        WITH candidate_items AS (
+            SELECT inventory_items.id,
+                   inventory_items.facility_id,
+                   inventory_items.category_id,
+                   inventory_categories.name AS category_name,
+                   inventory_items.code,
+                   inventory_items.name,
+                   inventory_items.item_type,
+                   inventory_items.unit,
+                   inventory_items.controlled,
+                   inventory_items.updated_at
+            FROM inventory_items
+            INNER JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id
+            WHERE inventory_items.facility_id =
+        "#,
+    );
     query.push_bind(facility_id);
     query.push(" AND inventory_items.is_active = TRUE");
-    if let Some(search) = filters
-        .search
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        let search = format!("%{}%", search.to_lowercase());
+    if let Some(pattern) = lower_like_contains_pattern(filters.search.as_deref()) {
         query.push(" AND (LOWER(inventory_items.name) LIKE ");
-        query.push_bind(search.clone());
-        query.push(" OR LOWER(inventory_items.code) LIKE ");
-        query.push_bind(search);
-        query.push(")");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR LOWER(inventory_items.code) LIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
     }
     if let Some(category_id) = filters.category_id {
         query.push(" AND inventory_items.category_id = ");
         query.push_bind(category_id);
     }
+    if let Some(supplier_id) = filters.supplier_id {
+        query.push(" AND inventory_items.primary_supplier_id = ");
+        query.push_bind(supplier_id);
+    }
+    push_item_stock_filter(
+        &mut query,
+        filters.location_id,
+        filters.stock_status.as_deref(),
+    );
+    match filters.ordering.direction {
+        InventorySortDirection::Asc => {
+            apply_forward_cursor(
+                &mut query,
+                "inventory_items.updated_at",
+                "inventory_items.id",
+                cursor,
+            );
+        }
+        InventorySortDirection::Desc => {
+            apply_cursor(
+                &mut query,
+                "inventory_items.updated_at",
+                "inventory_items.id",
+                cursor,
+            );
+        }
+    }
+    match filters.ordering.direction {
+        InventorySortDirection::Asc => {
+            query.push(" ORDER BY inventory_items.updated_at ASC, inventory_items.id ASC LIMIT ");
+        }
+        InventorySortDirection::Desc => {
+            query.push(" ORDER BY inventory_items.updated_at DESC, inventory_items.id DESC LIMIT ");
+        }
+    }
+    query.push_bind(limit);
+    query.push(
+        r#"
+        )
+        SELECT candidate_items.id,
+               candidate_items.category_id,
+               candidate_items.category_name,
+               candidate_items.code,
+               candidate_items.name,
+               candidate_items.item_type,
+               candidate_items.unit,
+               candidate_items.controlled,
+               COALESCE(stock_summary.total_stock, 0)::BIGINT AS total_stock,
+               stock_summary.nearest_expiry,
+               candidate_items.updated_at
+        FROM candidate_items
+        LEFT JOIN LATERAL (
+            SELECT COALESCE(SUM(stock_batches.quantity_on_hand), 0)::BIGINT AS total_stock,
+                   MIN(stock_batches.expires_on) FILTER (
+                       WHERE stock_batches.quantity_on_hand > 0
+                   ) AS nearest_expiry
+            FROM stock_batches
+            WHERE stock_batches.facility_id = candidate_items.facility_id
+              AND stock_batches.item_id = candidate_items.id
+        "#,
+    );
     if let Some(location_id) = filters.location_id {
         query.push(" AND stock_batches.location_id = ");
         query.push_bind(location_id);
     }
-    apply_cursor(
-        &mut query,
-        "inventory_items.updated_at",
-        "inventory_items.id",
-        cursor,
-    );
     query.push(
         r#"
-        GROUP BY inventory_items.id,
-                 inventory_items.category_id,
-                 inventory_categories.name,
-                 inventory_items.code,
-                 inventory_items.name,
-                 inventory_items.item_type,
-                 inventory_items.unit,
-                 inventory_items.controlled,
-                 inventory_items.updated_at
+        ) AS stock_summary ON TRUE
         "#,
     );
-    match filters.stock_status.as_deref() {
-        Some("out_of_stock") => {
-            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) = 0");
+    match filters.ordering.direction {
+        InventorySortDirection::Asc => {
+            query.push(" ORDER BY candidate_items.updated_at ASC, candidate_items.id ASC");
         }
-        Some("low_stock") => {
-            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) <= 0");
+        InventorySortDirection::Desc => {
+            query.push(" ORDER BY candidate_items.updated_at DESC, candidate_items.id DESC");
         }
-        Some("in_stock") => {
-            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) > 0");
-        }
-        Some("expiring") => {
-            query
-                .push(" HAVING MIN(stock_batches.expires_on) <= CURRENT_DATE + INTERVAL '30 days'");
-        }
-        _ if filters.location_id.is_some() => {
-            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) > 0");
-        }
-        _ => {}
     }
-    query.push(" ORDER BY inventory_items.updated_at DESC, inventory_items.id DESC LIMIT ");
-    query.push_bind(limit);
 
     let rows = query.build_query_as::<ItemRow>().fetch_all(pool).await?;
     rows.into_iter().map(item_from_row).collect()
@@ -218,16 +264,42 @@ pub async fn list_locations(
     facility_id: Uuid,
     cursor: Option<InventoryCursor>,
     limit: i64,
+    filters: StorageLocationFilters,
 ) -> anyhow::Result<Vec<StorageLocationListItem>> {
     let mut query = QueryBuilder::new(
         r#"
-        SELECT id, code, name, created_at
+        SELECT id, code, name, location_type, temperature_zone, created_at
         FROM storage_locations
         WHERE facility_id =
         "#,
     );
     query.push_bind(facility_id);
     query.push(" AND is_active = TRUE");
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    if let Some(location_type) = filters
+        .location_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push(" AND location_type = ");
+        query.push_bind(location_type.to_owned());
+    }
+    if let Some(temperature_zone) = filters
+        .temperature_zone
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push(" AND temperature_zone = ");
+        query.push_bind(temperature_zone.to_owned());
+    }
     apply_forward_cursor(&mut query, "created_at", "id", cursor);
     query.push(" ORDER BY created_at ASC, id ASC LIMIT ");
     query.push_bind(limit);
@@ -283,7 +355,7 @@ pub async fn get_location(
 ) -> anyhow::Result<Option<StorageLocationListItem>> {
     let row = sqlx::query_as::<_, LocationRow>(
         r#"
-        SELECT id, code, name, created_at
+        SELECT id, code, name, location_type, temperature_zone, created_at
         FROM storage_locations
         WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
         LIMIT 1
@@ -521,6 +593,71 @@ fn like_contains_pattern(search: Option<&str>) -> Option<String> {
     Some(format!("%{escaped}%"))
 }
 
+fn lower_like_contains_pattern(search: Option<&str>) -> Option<String> {
+    like_contains_pattern(search).map(|pattern| pattern.to_lowercase())
+}
+
+fn push_item_stock_filter(
+    query: &mut QueryBuilder<'static, Postgres>,
+    location_id: Option<Uuid>,
+    stock_status: Option<&str>,
+) {
+    let normalized_status = stock_status
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != "all");
+
+    match normalized_status {
+        Some("in_stock") => {
+            query.push(" AND ");
+            push_stock_exists(query, location_id, true, false);
+        }
+        Some("expiring") => {
+            query.push(" AND ");
+            push_stock_exists(query, location_id, true, true);
+        }
+        Some("out_of_stock") | Some("low_stock") => {
+            if location_id.is_some() {
+                query.push(" AND ");
+                push_stock_exists(query, location_id, false, false);
+            }
+            query.push(" AND NOT ");
+            push_stock_exists(query, location_id, true, false);
+        }
+        _ if location_id.is_some() => {
+            query.push(" AND ");
+            push_stock_exists(query, location_id, true, false);
+        }
+        _ => {}
+    }
+}
+
+fn push_stock_exists(
+    query: &mut QueryBuilder<'static, Postgres>,
+    location_id: Option<Uuid>,
+    positive_only: bool,
+    expiring_only: bool,
+) {
+    query.push(
+        r#"EXISTS (
+            SELECT 1
+            FROM stock_batches
+            WHERE stock_batches.facility_id = inventory_items.facility_id
+              AND stock_batches.item_id = inventory_items.id"#,
+    );
+    if let Some(location_id) = location_id {
+        query.push(" AND stock_batches.location_id = ");
+        query.push_bind(location_id);
+    }
+    if positive_only {
+        query.push(" AND stock_batches.quantity_on_hand > 0");
+    }
+    if expiring_only {
+        query.push(" AND stock_batches.expires_on IS NOT NULL");
+        query.push(" AND stock_batches.expires_on <= CURRENT_DATE + INTERVAL '30 days'");
+    }
+    query.push(")");
+}
+
 async fn fetch_catalog_version_by_id(
     pool: &PgPool,
     facility_id: Uuid,
@@ -587,6 +724,8 @@ fn location_from_row(row: LocationRow) -> StorageLocationListItem {
         id: row.id,
         code: row.code,
         name: row.name,
+        location_type: row.location_type,
+        temperature_zone: row.temperature_zone,
         created_at: row.created_at,
     }
 }

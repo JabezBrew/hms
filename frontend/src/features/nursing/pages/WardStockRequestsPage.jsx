@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { useFieldArray, useForm } from 'react-hook-form';
@@ -50,8 +50,8 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
@@ -73,8 +73,20 @@ const STATUS_TABS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
+const RUST_V2_STATUS_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'requested', label: 'Requested' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
 const STATUS_CONFIG = {
   draft: { label: 'Draft', className: 'bg-muted text-muted-foreground border-border' },
+  requested: { label: 'Requested', className: 'bg-sky-500/10 text-sky-600 border-sky-500/30' },
+  pending: { label: 'Pending', className: 'bg-amber-500/10 text-amber-600 border-amber-500/30' },
   pending_approval: { label: 'Pending Approval', className: 'bg-amber-500/10 text-amber-600 border-amber-500/30' },
   approved: { label: 'Approved', className: 'bg-sky-500/10 text-sky-600 border-sky-500/30' },
   in_progress: { label: 'In Progress', className: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/30' },
@@ -481,7 +493,11 @@ function WardStockRequestForm({ open, onOpenChange }) {
 
 export default function WardStockRequestsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const rustV2Mode = isRustV2ApiMode();
+  const filtersEnabled = true;
+  const statusTabs = rustV2Mode ? RUST_V2_STATUS_TABS : STATUS_TABS;
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState(null);
 
@@ -489,17 +505,30 @@ export default function WardStockRequestsPage() {
   const page = Number.parseInt(searchParams.get('page') || '1', 10);
   const debouncedSearch = useDebounce(search, 300);
 
+  useEffect(() => {
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
+
+  useEffect(() => {
+    if (status === 'all' || statusTabs.some((tab) => tab.value === status)) return;
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('status');
+      params.set('page', '1');
+      return params;
+    });
+  }, [setSearchParams, status, statusTabs]);
+
   const queryParams = {
     page,
     page_size: PAGE_SIZE,
-    ...(status !== 'all' && { status }),
-    ...(debouncedSearch && { search: debouncedSearch }),
+    ...(filtersEnabled && status !== 'all' && { status }),
+    ...(filtersEnabled && debouncedSearch && { search: debouncedSearch }),
   };
 
   const { data, isLoading, error, refetch, isFetching } = useInternalRequisitions(queryParams);
   const requests = normalizeApiResults(data);
   const totalCount = data?.count || requests.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const pageMeta = usePageMeta({
     title: 'Ward Stock Requests | HMS',
@@ -590,27 +619,29 @@ export default function WardStockRequestsPage() {
       />
 
       <div className="space-y-5 p-4 sm:p-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <Tabs value={status} onValueChange={handleStatusChange}>
-            <TabsList className="w-full sm:w-auto">
-              {STATUS_TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+        {filtersEnabled && (
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <Tabs value={status} onValueChange={handleStatusChange}>
+              <TabsList className="w-full sm:w-auto">
+                {statusTabs.map((tab) => (
+                  <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
 
-          <div className="relative w-full lg:w-[360px]">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={handleSearchChange}
-              placeholder="Search request number or reason"
-              className="pl-9"
-            />
+            <div className="relative w-full lg:w-[360px]">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={handleSearchChange}
+                placeholder="Search request number or reason"
+                className="pl-9"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {requests.length > 0 ? (
           <div className="grid gap-3">
@@ -673,23 +704,14 @@ export default function WardStockRequestsPage() {
           </div>
         )}
 
-        {totalPages > 1 ? (
-          <div className="flex items-center justify-between border-t pt-4">
-            <p className="font-mono text-xs text-muted-foreground">
-              Page {page} of {totalPages}
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => handlePageChange(page - 1)} disabled={page <= 1}>
-                <ChevronLeft className="mr-1 size-4" />
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages}>
-                Next
-                <ChevronRight className="ml-1 size-4" />
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <InventoryPagination
+          canJumpToPage={!rustV2Mode}
+          data={data}
+          itemLabel="ward stock requests"
+          onPageChange={handlePageChange}
+          page={page}
+          pageSize={PAGE_SIZE}
+        />
       </div>
 
       <WardStockRequestForm open={createOpen} onOpenChange={setCreateOpen} />

@@ -1,13 +1,15 @@
-use hms_db::inventory::{NewGoodsReceivedNote, NewPurchaseOrder};
+use hms_db::inventory::{
+    GoodsReceivedNoteFilters, NewGoodsReceivedNote, NewPurchaseOrder, PurchaseOrderFilters,
+};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
     CreateGoodsReceivedNoteRequest, CreatePurchaseOrderRequest, GoodsReceivedNoteListItem,
-    InventoryListQuery, PurchaseOrderListItem,
+    GoodsReceivedNoteListQuery, PurchaseOrderListItem, PurchaseOrderListQuery,
 };
 use uuid::Uuid;
 
 use super::common::{
-    encode_cursor, normalize_text, page_request, page_response, require_inventory_access,
+    decode_page, encode_cursor, normalize_text, page_response, require_inventory_access,
     require_inventory_list_access,
 };
 use crate::error::ApiError;
@@ -35,15 +37,20 @@ impl ProcurementService {
     pub async fn list_purchase_orders(
         &self,
         ctx: &hms_access::RequestContext,
-        query: InventoryListQuery,
+        query: PurchaseOrderListQuery,
     ) -> Result<ListResponse<PurchaseOrderListItem>, ApiError> {
         require_inventory_list_access(ctx, self.facility_id())?;
-        let (cursor, page_size) = page_request(query)?;
+        let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::inventory::list_purchase_orders(
             self.pool(),
             self.facility_id(),
             cursor,
             i64::from(page_size) + 1,
+            PurchaseOrderFilters {
+                search: query.search,
+                status: query.status,
+                supplier: query.supplier,
+            },
         )
         .await
         .map_err(|_| {
@@ -133,15 +140,19 @@ impl ProcurementService {
     pub async fn list_grns(
         &self,
         ctx: &hms_access::RequestContext,
-        query: InventoryListQuery,
+        query: GoodsReceivedNoteListQuery,
     ) -> Result<ListResponse<GoodsReceivedNoteListItem>, ApiError> {
         require_inventory_list_access(ctx, self.facility_id())?;
-        let (cursor, page_size) = page_request(query)?;
+        let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::inventory::list_grns(
             self.pool(),
             self.facility_id(),
             cursor,
             i64::from(page_size) + 1,
+            GoodsReceivedNoteFilters {
+                search: query.search,
+                status: query.status,
+            },
         )
         .await
         .map_err(|_| {

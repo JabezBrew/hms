@@ -6,7 +6,7 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -23,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import {
   Select,
   SelectContent,
@@ -327,25 +328,29 @@ function CurrentSessionSection({
 function CashSessionsFilters({
   flagged,
   onFilterChange,
+  onSearchChange,
   search,
-  setSearch,
   status,
+  supportsFlagged,
+  supportsSearch,
 }) {
   return (
     <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <Label className="font-mono text-xs uppercase tracking-wider">Search</Label>
-          <div className="relative">
-            <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Drawer, notes, staff..."
-              className="pl-9 font-mono"
-            />
+      <div className={cn("grid grid-cols-1 gap-4", supportsSearch || supportsFlagged ? "md:grid-cols-3" : "md:grid-cols-2")}>
+        {supportsSearch && (
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider">Search</Label>
+            <div className="relative">
+              <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <Input
+                value={search}
+                onChange={onSearchChange}
+                placeholder="Drawer, notes, staff..."
+                className="pl-9 font-mono"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="space-y-2">
           <Label className="font-mono text-xs uppercase tracking-wider">Status</Label>
@@ -361,18 +366,20 @@ function CashSessionsFilters({
           </Select>
         </div>
 
-        <div className="space-y-2">
-          <Label className="font-mono text-xs uppercase tracking-wider">Flagged</Label>
-          <Select value={flagged} onValueChange={(value) => onFilterChange('flagged', value)}>
-            <SelectTrigger className="font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="font-mono text-sm">All</SelectItem>
-              <SelectItem value="flagged" className="font-mono text-sm">Flagged only</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {supportsFlagged && (
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider">Flagged</Label>
+            <Select value={flagged} onValueChange={(value) => onFilterChange('flagged', value)}>
+              <SelectTrigger className="font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="font-mono text-sm">All</SelectItem>
+                <SelectItem value="flagged" className="font-mono text-sm">Flagged only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -381,19 +388,19 @@ function CashSessionsFilters({
 function CashSessionsList({
   columns,
   currentPage,
-  hasNext,
-  hasPrev,
   onPageChange,
+  sessionsData,
   sessions,
   totalCount,
-  totalPages,
 }) {
+  const countExact = sessionsData?.count_exact !== false && sessionsData?.total_is_lower_bound !== true;
+
   return (
     <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-display text-lg text-foreground">Sessions</h2>
         <p className="font-mono text-xs text-muted-foreground">
-          {totalCount} total
+          {totalCount}{countExact ? '' : '+'} total
         </p>
       </div>
 
@@ -407,33 +414,13 @@ function CashSessionsList({
         />
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {currentPage} of {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs"
-              disabled={!hasPrev || currentPage <= 1}
-              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs"
-              disabled={!hasNext}
-              onClick={() => onPageChange(currentPage + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <BillingPagination
+        data={sessionsData}
+        itemLabel="sessions"
+        onPageChange={onPageChange}
+        page={currentPage}
+        pageSize={20}
+      />
     </section>
   );
 }
@@ -565,12 +552,18 @@ export default function CashSessionsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const rustV2Mode = isRustV2ApiMode();
 
   const currentPage = parseInt(searchParams.get('page') || '1', 10);
   const status = searchParams.get('status') || 'all';
   const flagged = searchParams.get('flagged') || 'all';
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
   const debouncedSearch = useDebounce(search, 250);
+
+  useEffect(() => {
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
 
   const filters = useMemo(() => {
     const params = { page: currentPage, page_size: 20 };
@@ -603,13 +596,21 @@ export default function CashSessionsPage() {
 
   const sessions = sessionsData?.results || [];
   const totalCount = sessionsData?.count || 0;
-  const pageSize = 20;
-  const totalPages = Math.ceil(totalCount / pageSize);
-  const hasNext = !!sessionsData?.next;
-  const hasPrev = !!sessionsData?.previous;
 
   const isAdmin = user?.role === 'admin';
-  const cashSessionReviewAvailable = !isRustV2ApiMode();
+  const cashSessionReviewAvailable = !rustV2Mode;
+
+  const handleSearchChange = useCallback((event) => {
+    const value = event.target.value;
+    setSearch(value);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set('search', value);
+      else next.delete('search');
+      next.set('page', '1');
+      return next;
+    });
+  }, [setSearchParams]);
 
   const handleFilterChange = useCallback((key, value) => {
     setSearchParams((prev) => {
@@ -735,20 +736,20 @@ export default function CashSessionsPage() {
         <CashSessionsFilters
           flagged={flagged}
           onFilterChange={handleFilterChange}
+          onSearchChange={handleSearchChange}
           search={search}
-          setSearch={setSearch}
           status={status}
+          supportsFlagged
+          supportsSearch
         />
 
         <CashSessionsList
           columns={columns}
           currentPage={currentPage}
-          hasNext={hasNext}
-          hasPrev={hasPrev}
           onPageChange={handlePageChange}
+          sessionsData={sessionsData}
           sessions={sessions}
           totalCount={totalCount}
-          totalPages={totalPages}
         />
       </main>
 

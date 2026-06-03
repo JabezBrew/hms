@@ -2,10 +2,8 @@
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -36,8 +34,10 @@ import {
   usePatientInsurances,
   useDeletePatientInsurance,
 } from '@/features/billing/hooks';
+import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import { toast } from 'sonner';
@@ -260,12 +260,12 @@ function InsuranceResults({
   columns,
   handlePageChange,
   hasActiveFilters,
+  insurancesData,
   insuranceMutationsAvailable,
   insurances,
   onAddInsurance,
   page,
   totalCount,
-  totalPages,
 }) {
   return (
     <>
@@ -295,35 +295,14 @@ function InsuranceResults({
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page <= 1}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className="font-mono text-xs"
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
+      <BillingPagination
+        canJumpToPage
+        data={insurancesData}
+        itemLabel="insurance records"
+        onPageChange={handlePageChange}
+        page={page}
+        pageSize={20}
+      />
     </>
   );
 }
@@ -381,9 +360,14 @@ function InsuranceMutations({
 
 export default function InsuranceManagementPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const insuranceMutationsAvailable = !isRustV2ApiMode();
+  const rustV2Mode = isRustV2ApiMode();
+  const insuranceMutationsAvailable = !rustV2Mode;
 
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [privateFilters, setPrivateFilters] = useRouteTableState('billing:insurancePrivateFilters', {
+    search: '',
+  });
+  const [search, setSearch] = useState(privateFilters.search || urlSearch);
   const activeFilter = searchParams.get('is_active') || 'all';
   const page = parseInt(searchParams.get('page') || '1', 10);
 
@@ -394,6 +378,19 @@ export default function InsuranceManagementPage() {
 
   const debouncedSearch = useDebounce(search, 300);
   const deleteMutation = useDeletePatientInsurance();
+
+  useEffect(() => {
+    if (!urlSearch) return;
+    setPrivateFilters((current) => ({
+      ...current,
+      search: current.search || urlSearch,
+    }));
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('search');
+      return params;
+    }, { replace: true });
+  }, [setPrivateFilters, setSearchParams, urlSearch]);
 
   const queryParams = {
     page,
@@ -411,10 +408,17 @@ export default function InsuranceManagementPage() {
 
   const insurances = insurancesData?.results || [];
   const totalCount = insurancesData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
 
   const handleSearchChange = (event) => {
-    setSearch(event.target.value);
+    const value = event.target.value;
+    setSearch(value);
+    setPrivateFilters({ search: value });
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('search');
+      params.set('page', '1');
+      return params;
+    });
   };
 
   const handleStatusChange = (value) => {
@@ -432,10 +436,11 @@ export default function InsuranceManagementPage() {
 
   const clearFilters = () => {
     setSearch('');
+    setPrivateFilters({ search: '' });
     setSearchParams({});
   };
 
-  const hasActiveFilters = activeFilter !== 'all' || debouncedSearch;
+  const hasActiveFilters = Boolean(activeFilter !== 'all' || debouncedSearch);
 
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
@@ -530,12 +535,12 @@ export default function InsuranceManagementPage() {
           columns={insuranceColumns}
           handlePageChange={handlePageChange}
           hasActiveFilters={hasActiveFilters}
+          insurancesData={insurancesData}
           insuranceMutationsAvailable={insuranceMutationsAvailable}
           insurances={insurances}
           onAddInsurance={handleAddInsurance}
           page={page}
           totalCount={totalCount}
-          totalPages={totalPages}
         />
       </main>
 

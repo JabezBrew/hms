@@ -41,8 +41,13 @@ pub struct LabTestCatalogItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    pub category: Option<String>,
     pub specimen_type: String,
     pub result_unit: Option<String>,
+    pub is_active: bool,
+    pub is_system_default: bool,
+    pub is_facility_modified: bool,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -50,7 +55,11 @@ pub struct LabPanelListItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    pub is_active: bool,
+    pub is_system_default: bool,
+    pub is_facility_modified: bool,
     pub test_count: i64,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -138,6 +147,7 @@ pub struct LabResultListItem {
     pub value: String,
     pub unit: Option<String>,
     pub status: LabResultStatus,
+    pub is_critical: bool,
     pub entered_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
 }
@@ -193,10 +203,49 @@ pub struct LaboratoryListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct LaboratoryCatalogQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub category: Option<String>,
+    pub is_active: Option<bool>,
+    pub is_system_default: Option<bool>,
+    pub is_facility_modified: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
 pub struct LaboratoryOrderListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub status: Option<LabOrderStatus>,
+    pub search: Option<String>,
+    pub priority: Option<LabPriority>,
+    pub ordering_provider: Option<Uuid>,
+    pub my_orders: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct LaboratoryOrderListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<LabOrderStatus>,
+    pub priority: Option<LabPriority>,
+    pub ordering_provider: Option<Uuid>,
+    pub my_orders: Option<bool>,
+}
+
+impl From<LaboratoryOrderListGetQuery> for LaboratoryOrderListQuery {
+    fn from(value: LaboratoryOrderListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            status: value.status,
+            search: None,
+            priority: value.priority,
+            ordering_provider: value.ordering_provider,
+            my_orders: value.my_orders,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
@@ -205,4 +254,28 @@ pub struct LaboratoryResultListQuery {
     pub limit: Option<u8>,
     pub status: Option<LabResultStatus>,
     pub is_verified: Option<bool>,
+    pub search: Option<String>,
+    pub critical_only: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct LaboratoryResultListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<LabResultStatus>,
+    pub is_verified: Option<bool>,
+    pub critical_only: Option<bool>,
+}
+
+impl From<LaboratoryResultListGetQuery> for LaboratoryResultListQuery {
+    fn from(value: LaboratoryResultListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            status: value.status,
+            is_verified: value.is_verified,
+            search: None,
+            critical_only: value.critical_only,
+        }
+    }
 }

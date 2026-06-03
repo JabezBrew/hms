@@ -110,6 +110,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
               admitted_at: '2026-05-12T08:00:00Z',
               open_nursing_task_count: 2,
               due_medication_count: 1,
+              active_alert_count: 2,
+              critical_alert_count: 1,
             },
           ],
           page: { limit: 20, has_next: false, next_cursor: null },
@@ -139,7 +141,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
         }),
       }),
     );
-    expect(result.current.data).toEqual({
+    expect(result.current.data).toMatchObject({
       count: 1,
       page: 1,
       page_size: 20,
@@ -161,10 +163,58 @@ describe('Rust V2 nursing dashboard hooks', () => {
             }),
           }),
           pending_tasks: expect.arrayContaining([expect.objectContaining({ status: 'open' })]),
+          active_alerts: expect.arrayContaining([expect.objectContaining({ severity: 'critical' })]),
           medications_due: expect.arrayContaining([expect.objectContaining({ status: 'scheduled' })]),
         }),
       ],
     });
+  });
+
+  it('passes Rust V2 nursing dashboard tab filters to ward board before pagination', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              admission_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              ward_id: 'ward-1',
+              ward_name: 'General Ward',
+              bed_id: 'bed-1',
+              bed_code: 'G-01',
+              admission_status: 'admitted',
+              admitted_at: '2026-05-12T08:00:00Z',
+              open_nursing_task_count: 0,
+              due_medication_count: 0,
+              active_alert_count: 1,
+              critical_alert_count: 1,
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => usePatientMonitoring('ward-1', 1, 20, 'critical'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data?.count).toBe(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/board?limit=20&ward_id=ward-1&monitoring_filter=critical',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data.results[0].active_alerts).toEqual([
+      expect.objectContaining({ severity: 'critical' }),
+    ]);
   });
 
   it('loads patient monitoring detail from a patient-scoped Rust ward board query', async () => {
@@ -204,8 +254,11 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data?.patient_id).toBe('patient-1'));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/wards/board?limit=1&patient_id=patient-1',
-      expect.objectContaining({ method: 'GET' }),
+      'http://localhost:8080/api/v2/wards/board/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 1, patient_id: 'patient-1' }),
+      }),
     );
     expect(result.current.data).toEqual(expect.objectContaining({
       patient_name: 'Ama Mensah',

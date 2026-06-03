@@ -40,13 +40,13 @@ import {
   getRequisitionStatusConfig,
 } from '@/components/inventory/requisition-card-utils';
 import { RequisitionForm } from '@/components/inventory';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { useRequisitions } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
@@ -55,12 +55,22 @@ import Check from 'lucide-react/dist/esm/icons/check.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import { format, parseISO } from 'date-fns';
 
-const STATUS_TABS = [
+const LEGACY_STATUS_TABS = [
   { value: 'all', label: 'All' },
   { value: 'draft', label: 'Draft' },
   { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
+];
+
+const RUST_V2_STATUS_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'requested', label: 'Requested' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -71,10 +81,12 @@ const PRIORITY_OPTIONS = [
   { value: 'urgent', label: 'Urgent' },
 ];
 
-function useRequisitionListFilters() {
+function useRequisitionListFilters({ statusTabs = LEGACY_STATUS_TABS } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const status = searchParams.get('status') || 'all';
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
+  const rawStatus = searchParams.get('status') || 'all';
+  const status = statusTabs.some((tab) => tab.value === rawStatus) ? rawStatus : 'all';
   const priority = searchParams.get('priority') || '';
   const action = searchParams.get('action');
   const initialItems = searchParams.get('items')?.split(',').filter(Boolean) || [];
@@ -82,17 +94,18 @@ function useRequisitionListFilters() {
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
+
+  useEffect(() => {
+    if (rawStatus === status) return;
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
-      } else {
-        params.delete('search');
-      }
+      params.delete('status');
       params.set('page', '1');
       return params;
     });
-  }, [debouncedSearch, setSearchParams]);
+  }, [rawStatus, setSearchParams, status]);
 
   const handleTabChange = useCallback((value) => {
     setSearchParams((prev) => {
@@ -133,6 +146,21 @@ function useRequisitionListFilters() {
     setSearchParams({});
   }, [setSearchParams]);
 
+  const handleSearchChange = useCallback((event) => {
+    const value = event.target.value;
+    setSearch(value);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value) {
+        params.set('search', value);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  }, [setSearchParams]);
+
   const queryParams = useMemo(() => ({
     page,
     page_size: 20,
@@ -150,7 +178,7 @@ function useRequisitionListFilters() {
     page,
     queryParams,
     hasActiveFilters: Boolean(debouncedSearch || status !== 'all' || priority),
-    handleSearchChange: (event) => setSearch(event.target.value),
+    handleSearchChange,
     handleTabChange,
     handlePriorityChange,
     handlePageChange,
@@ -362,11 +390,11 @@ function RequisitionsHeader({ totalCount, isLoading, onRefresh, onCreateRequisit
   );
 }
 
-function RequisitionStatusTabs({ status, onStatusChange }) {
+function RequisitionStatusTabs({ status, statusTabs, onStatusChange }) {
   return (
     <Tabs value={status} onValueChange={onStatusChange}>
       <TabsList className="w-full sm:w-auto">
-        {STATUS_TABS.map((tab) => (
+        {statusTabs.map((tab) => (
           <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
             {tab.label}
           </TabsTrigger>
@@ -490,42 +518,6 @@ function RequisitionsDisplay({
   );
 }
 
-function RequisitionsPagination({ page, totalPages, totalCount, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center justify-between pt-4 border-t border-border">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages} ({totalCount} requisitions)
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="font-mono text-xs"
-        >
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className="font-mono text-xs"
-        >
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function CreateRequisitionSheet({ isOpen, initialItems, onClose, onCreateSuccess }) {
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -553,6 +545,8 @@ function CreateRequisitionSheet({ isOpen, initialItems, onClose, onCreateSuccess
  */
 export default function RequisitionsPage() {
   const navigate = useNavigate();
+  const rustV2Mode = isRustV2ApiMode();
+  const statusTabs = rustV2Mode ? RUST_V2_STATUS_TABS : LEGACY_STATUS_TABS;
   const {
     search,
     status,
@@ -568,12 +562,11 @@ export default function RequisitionsPage() {
     handlePageChange,
     clearFilters,
     setSearchParams,
-  } = useRequisitionListFilters();
+  } = useRequisitionListFilters({ statusTabs });
   const isCreateOpen = action === 'create';
   const { data: requisitionsData, isLoading, error, refetch } = useRequisitions(queryParams);
   const requisitions = requisitionsData?.results || [];
   const totalCount = requisitionsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
 
   const handleRequisitionClick = useCallback((requisitionId) => {
     navigate(`/inventory/requisitions/${requisitionId}`);
@@ -638,16 +631,22 @@ export default function RequisitionsPage() {
       />
 
       <div className="p-4 sm:p-6 space-y-6">
-        <RequisitionStatusTabs status={status} onStatusChange={handleTabChange} />
+        <>
+          <RequisitionStatusTabs
+            status={status}
+            statusTabs={statusTabs}
+            onStatusChange={handleTabChange}
+          />
 
-        <RequisitionsFilters
-          search={search}
-          priority={priority}
-          hasActiveFilters={hasActiveFilters}
-          onSearchChange={handleSearchChange}
-          onPriorityChange={handlePriorityChange}
-          onClearFilters={clearFilters}
-        />
+          <RequisitionsFilters
+            search={search}
+            priority={priority}
+            hasActiveFilters={hasActiveFilters}
+            onSearchChange={handleSearchChange}
+            onPriorityChange={handlePriorityChange}
+            onClearFilters={clearFilters}
+          />
+        </>
 
         <RequisitionsDisplay
           requisitions={requisitions}
@@ -657,10 +656,11 @@ export default function RequisitionsPage() {
           onCreateRequisition={handleCreateRequisition}
         />
 
-        <RequisitionsPagination
+        <InventoryPagination
+          data={requisitionsData}
+          itemLabel="requisitions"
           page={page}
-          totalPages={totalPages}
-          totalCount={totalCount}
+          pageSize={20}
           onPageChange={handlePageChange}
         />
 

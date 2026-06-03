@@ -1,7 +1,7 @@
 import { apiClient, handleApiError } from '@/lib/api-client'
 import { handleV2ApiError } from '@/lib/api/v2/errors'
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
-import { v2Api } from '@/lib/api/v2/client'
+import { v2Api, v2Request } from '@/lib/api/v2/client'
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -466,8 +466,10 @@ export const admissionsApi = {
         return []
       }
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatients({
-          query: { limit: 10, search: query },
+        const response = await v2Request({
+          method: 'POST',
+          path: '/api/v2/patients/search',
+          body: { limit: 10, search: query },
           signal: options.signal,
         })
         return v2ListData(response).map(adaptV2PatientSearchItem)

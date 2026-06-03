@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LabCatalogPage from '../LabCatalogPage';
@@ -78,6 +79,14 @@ vi.mock('@/hooks/useSlideOver', () => ({
   useSlideOver: () => [false, vi.fn(), vi.fn()],
 }));
 
+function renderLabCatalogPage() {
+  return render(
+    <MemoryRouter>
+      <LabCatalogPage />
+    </MemoryRouter>,
+  );
+}
+
 describe('LabCatalogPage Rust V2 guards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -90,7 +99,7 @@ describe('LabCatalogPage Rust V2 guards', () => {
   it('renders the Rust V2 lab catalog as read-only because catalog mutations have no generated contract', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
 
-    render(<LabCatalogPage />);
+    renderLabCatalogPage();
 
     expect(screen.getByText('Full Blood Count')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add test/i })).not.toBeInTheDocument();
@@ -104,7 +113,7 @@ describe('LabCatalogPage Rust V2 guards', () => {
   it('keeps lab catalog mutation controls available outside Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' };
 
-    render(<LabCatalogPage />);
+    renderLabCatalogPage();
 
     expect(screen.getByRole('button', { name: /add test/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();

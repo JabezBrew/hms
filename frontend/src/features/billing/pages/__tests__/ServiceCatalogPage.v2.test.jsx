@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ServiceCatalogPage from '../ServiceCatalogPage';
@@ -61,7 +62,11 @@ vi.mock('@/components/ui/VirtualizedTable', () => ({
 }));
 
 function renderPage() {
-  return render(<ServiceCatalogPage />);
+  return render(
+    <MemoryRouter>
+      <ServiceCatalogPage />
+    </MemoryRouter>,
+  );
 }
 
 describe('ServiceCatalogPage Rust V2 guards', () => {

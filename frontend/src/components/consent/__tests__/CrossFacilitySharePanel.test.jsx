@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -98,16 +98,18 @@ describe('CrossFacilitySharePanel Rust V2 mode', () => {
     );
     await user.click(screen.getByRole('button', { name: /grant consent/i }));
 
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/consents',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          patient_id: 'patient-1',
-          scope: 'referral_coordination',
-          purpose: 'Transfer discussion',
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'http://localhost:8080/api/v2/consents',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            patient_id: 'patient-1',
+            scope: 'referral_coordination',
+            purpose: 'Transfer discussion',
+          }),
         }),
-      }),
-    );
+      );
+    });
   });
 });

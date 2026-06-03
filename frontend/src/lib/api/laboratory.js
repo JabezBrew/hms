@@ -4,7 +4,11 @@
 import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
-import { v2Api } from './v2/client';
+import { v2Api, v2Request } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -19,43 +23,16 @@ function rethrowV2Error(error, message) {
 
 const labCursorCache = new Map();
 
-function hashForCache(value) {
-  let hash = 0;
-  const input = JSON.stringify(value);
-  for (let index = 0; index < input.length; index += 1) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(index);
-    hash |= 0;
-  }
-  return String(hash);
-}
-
-function cursorCacheKey(scope, params = {}) {
-  const cacheParams = { ...(params || {}) };
-  delete cacheParams.page;
-  delete cacheParams.cursor;
-  delete cacheParams.next_cursor;
-  delete cacheParams.expand;
-  return `${scope}:${hashForCache(cacheParams)}`;
+function resolveCursorPage(scope, params = {}) {
+  return resolveScopedCursorPage(labCursorCache, `laboratory:${scope}`, params, ['expand']);
 }
 
 function getCursorForParams(scope, params = {}) {
-  if (params.cursor || params.next_cursor) {
-    return params.cursor || params.next_cursor;
-  }
-  const page = Number(params.page || 1);
-  if (page <= 1) {
-    return undefined;
-  }
-  return labCursorCache.get(`${cursorCacheKey(scope, params)}:${page}`);
+  return resolveCursorPage(scope, params).cursor;
 }
 
 function cacheCursorForNextPage(scope, params, response) {
-  const currentPage = Number(params?.page || 1);
-  const nextCursor = response?.page?.next_cursor;
-  if (!nextCursor) {
-    return;
-  }
-  labCursorCache.set(`${cursorCacheKey(scope, params)}:${currentPage + 1}`, nextCursor);
+  cacheScopedCursorForNextPage(labCursorCache, `laboratory:${scope}`, params, response, ['expand']);
 }
 
 function normalizeV2Limit(params = {}, fallback = 25) {
@@ -176,7 +153,8 @@ function adaptV2LabResult(item = {}) {
 
 function adaptV2PaginatedResponse(scope, response, params = {}, adapter) {
   const limit = Number(response?.page?.limit || normalizeV2Limit(params));
-  const currentPage = Number(params.page || 1);
+  const resolvedPage = resolveCursorPage(scope, params);
+  const currentPage = resolvedPage.page;
   const results = Array.isArray(response?.data) ? response.data.map(adapter) : [];
   const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
   const estimatedTotal = ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0);
@@ -186,8 +164,12 @@ function adaptV2PaginatedResponse(scope, response, params = {}, adapter) {
   return {
     count: estimatedTotal,
     total: estimatedTotal,
-    count_exact: false,
+    count_exact: !hasNext,
     page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
     page_size: limit,
     total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
     next: hasNext ? response.page.next_cursor : null,
@@ -203,6 +185,12 @@ function buildV2LabOrderQuery(params = {}) {
   const status = mapOrderStatusToV2(params.status);
   if (cursor) query.cursor = cursor;
   if (status) query.status = status;
+  if (params.search) query.search = String(params.search).trim();
+  if (params.priority) query.priority = params.priority;
+  if (params.ordering_provider) query.ordering_provider = params.ordering_provider;
+  if (params.my_orders !== undefined && params.my_orders !== null) {
+    query.my_orders = params.my_orders === true || params.my_orders === 'true';
+  }
   return query;
 }
 
@@ -214,6 +202,10 @@ function buildV2LabResultQuery(params = {}) {
   if (params.is_verified !== undefined && params.is_verified !== null) {
     query.is_verified = params.is_verified;
   }
+  if (params.search) query.search = String(params.search).trim();
+  if (params.critical_only !== undefined && params.critical_only !== null) {
+    query.critical_only = params.critical_only === true || params.critical_only === 'true';
+  }
   return query;
 }
 
@@ -222,6 +214,56 @@ function buildV2LabSpecimenQuery(params = {}) {
   const cursor = getCursorForParams('specimens', params);
   if (cursor) query.cursor = cursor;
   return query;
+}
+
+function buildV2LabCatalogQuery(scope, params = {}) {
+  const query = { limit: normalizeV2Limit(params, 24) };
+  const cursor = getCursorForParams(scope, params);
+  if (cursor) query.cursor = cursor;
+  if (params.search) query.search = String(params.search).trim();
+  if (params.category && params.category !== 'all') query.category = params.category;
+  if (params.is_active !== undefined && params.is_active !== null) {
+    query.is_active = params.is_active === true || params.is_active === 'true';
+  }
+  if (params.is_system_default !== undefined && params.is_system_default !== null) {
+    query.is_system_default = params.is_system_default === true || params.is_system_default === 'true';
+  }
+  if (params.is_facility_modified !== undefined && params.is_facility_modified !== null) {
+    query.is_facility_modified = params.is_facility_modified === true || params.is_facility_modified === 'true';
+  }
+  return query;
+}
+
+async function requestV2LabOrders(params = {}, options = {}) {
+  const query = buildV2LabOrderQuery(params);
+  if (query.search) {
+    return v2Request({
+      method: 'POST',
+      path: '/api/v2/laboratory/orders/search',
+      body: query,
+      signal: options.signal,
+    });
+  }
+  return v2Api.getLaboratoryOrders({
+    query,
+    signal: options.signal,
+  });
+}
+
+async function requestV2LabResults(params = {}, options = {}) {
+  const query = buildV2LabResultQuery(params);
+  if (query.search) {
+    return v2Request({
+      method: 'POST',
+      path: '/api/v2/laboratory/results/search',
+      body: query,
+      signal: options.signal,
+    });
+  }
+  return v2Api.getLaboratoryResults({
+    query,
+    signal: options.signal,
+  });
 }
 
 function pickEntityId(value) {
@@ -310,6 +352,7 @@ export const laboratoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getLaboratoryTestCatalog({
+          query: buildV2LabCatalogQuery('test-catalog', params),
           signal: options.signal,
         });
         return adaptV2PaginatedResponse('test-catalog', response, params, (item) => item);
@@ -439,6 +482,7 @@ export const laboratoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getLaboratoryPanels({
+          query: buildV2LabCatalogQuery('panels', params),
           signal: options.signal,
         });
         return adaptV2PaginatedResponse('panels', response, params, (item) => item);
@@ -567,10 +611,7 @@ export const laboratoryApi = {
   getLabOrders: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getLaboratoryOrders({
-          query: buildV2LabOrderQuery(params),
-          signal: options.signal,
-        });
+        const response = await requestV2LabOrders(params, options);
         return adaptV2PaginatedResponse('orders', response, params, adaptV2LabOrder);
       }
 
@@ -589,10 +630,7 @@ export const laboratoryApi = {
   getLabOrdersPaginated: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getLaboratoryOrders({
-          query: buildV2LabOrderQuery(params),
-          signal: options.signal,
-        });
+        const response = await requestV2LabOrders(params, options);
         return adaptV2PaginatedResponse('orders', response, params, adaptV2LabOrder);
       }
 
@@ -843,10 +881,7 @@ export const laboratoryApi = {
   getLabResults: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getLaboratoryResults({
-          query: buildV2LabResultQuery(params),
-          signal: options.signal,
-        });
+        const response = await requestV2LabResults(params, options);
         return adaptV2PaginatedResponse('results', response, params, adaptV2LabResult);
       }
 
@@ -865,10 +900,7 @@ export const laboratoryApi = {
   getLabResultsPaginated: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getLaboratoryResults({
-          query: buildV2LabResultQuery(params),
-          signal: options.signal,
-        });
+        const response = await requestV2LabResults(params, options);
         return adaptV2PaginatedResponse('results', response, params, adaptV2LabResult);
       }
 

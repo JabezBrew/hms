@@ -20,6 +20,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import {
   Dialog,
   DialogContent,
@@ -284,38 +285,6 @@ const SETTLEMENT_LINE_COLUMNS = [
   },
 ];
 
-function PaginationControls({ currentPage, totalPages, hasNextPage, onPageChange }) {
-  if (totalPages <= 1) return null;
-
-  return (
-    <div className="flex items-center justify-between mt-4">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {currentPage} of {totalPages}
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          disabled={currentPage <= 1}
-          onClick={() => onPageChange((page) => Math.max(1, page - 1))}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          disabled={!hasNextPage}
-          onClick={() => onPageChange((page) => page + 1)}
-        >
-          Next
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function PspCollectionsHeader({ onRefresh }) {
   return (
     <PageHeader
@@ -341,11 +310,11 @@ function PspCollectionsHeader({ onRefresh }) {
 }
 
 function PaymentIntentsSection({
+  canJumpToPage,
+  intentsData,
   intents,
   intentsTotal,
   intentPage,
-  intentPages,
-  hasNextPage,
   onPageChange,
 }) {
   return (
@@ -361,11 +330,13 @@ function PaymentIntentsSection({
         <VirtualizedTable rows={intents} columns={PAYMENT_INTENT_COLUMNS} threshold={50} />
       )}
 
-      <PaginationControls
-        currentPage={intentPage}
-        totalPages={intentPages}
-        hasNextPage={hasNextPage}
+      <BillingPagination
+        canJumpToPage={canJumpToPage}
+        data={intentsData}
+        itemLabel="payment intents"
         onPageChange={onPageChange}
+        page={intentPage}
+        pageSize={20}
       />
     </section>
   );
@@ -463,11 +434,11 @@ function SettlementImportsReadOnlyNotice() {
 }
 
 function SettlementBatchesSection({
+  canJumpToPage,
   settlementBatches,
+  settlementsData,
   settlementsTotal,
   settlementPage,
-  settlementPages,
-  hasNextPage,
   onPageChange,
   columns,
 }) {
@@ -484,17 +455,27 @@ function SettlementBatchesSection({
         <VirtualizedTable rows={settlementBatches} columns={columns} threshold={50} />
       )}
 
-      <PaginationControls
-        currentPage={settlementPage}
-        totalPages={settlementPages}
-        hasNextPage={hasNextPage}
+      <BillingPagination
+        canJumpToPage={canJumpToPage}
+        data={settlementsData}
+        itemLabel="settlement batches"
         onPageChange={onPageChange}
+        page={settlementPage}
+        pageSize={20}
       />
     </section>
   );
 }
 
-function SettlementLinesDialog({ linesDialog, onOpenChange, linesQuery, onClose }) {
+function SettlementLinesDialog({
+  canJumpToPage,
+  linesDialog,
+  linesPage,
+  linesQuery,
+  onClose,
+  onOpenChange,
+  onPageChange,
+}) {
   return (
     <Dialog
       open={linesDialog.open}
@@ -518,11 +499,21 @@ function SettlementLinesDialog({ linesDialog, onOpenChange, linesQuery, onClose 
           ) : linesQuery.error ? (
             <p className="text-sm text-destructive">{linesQuery.error.message}</p>
           ) : (
-            <VirtualizedTable
-              rows={linesQuery.data?.results || []}
-              threshold={50}
-              columns={SETTLEMENT_LINE_COLUMNS}
-            />
+            <>
+              <VirtualizedTable
+                rows={linesQuery.data?.results || []}
+                threshold={50}
+                columns={SETTLEMENT_LINE_COLUMNS}
+              />
+              <BillingPagination
+                canJumpToPage={canJumpToPage}
+                data={linesQuery.data}
+                itemLabel="settlement lines"
+                onPageChange={onPageChange}
+                page={linesPage}
+                pageSize={50}
+              />
+            </>
           )}
         </div>
 
@@ -542,7 +533,8 @@ function SettlementLinesDialog({ linesDialog, onOpenChange, linesQuery, onClose 
 
 export default function PspReconciliationPage() {
   const [tab, setTab] = useState('intents');
-  const settlementImportsAvailable = !isRustV2ApiMode();
+  const rustV2Mode = isRustV2ApiMode();
+  const settlementImportsAvailable = !rustV2Mode;
 
   // Intents
   const [intentPage, setIntentPage] = useState(1);
@@ -586,11 +578,9 @@ export default function PspReconciliationPage() {
 
   const intents = intentsQuery.data?.results || [];
   const intentsTotal = intentsQuery.data?.count || 0;
-  const intentPages = Math.ceil(intentsTotal / 20);
 
   const settlementBatches = settlementsQuery.data?.results || [];
   const settlementsTotal = settlementsQuery.data?.count || 0;
-  const settlementPages = Math.ceil(settlementsTotal / 20);
 
   const settlementColumns = useMemo(() => createSettlementColumns((row) => {
     setLinesPage(1);
@@ -663,11 +653,11 @@ export default function PspReconciliationPage() {
 
           <TabsContent value="intents" className="mt-6 space-y-6">
             <PaymentIntentsSection
+              canJumpToPage={!rustV2Mode}
+              intentsData={intentsQuery.data}
               intents={intents}
               intentsTotal={intentsTotal}
               intentPage={intentPage}
-              intentPages={intentPages}
-              hasNextPage={Boolean(intentsQuery.data?.next)}
               onPageChange={setIntentPage}
             />
           </TabsContent>
@@ -687,11 +677,11 @@ export default function PspReconciliationPage() {
             )}
 
             <SettlementBatchesSection
+              canJumpToPage={!rustV2Mode}
               settlementBatches={settlementBatches}
+              settlementsData={settlementsQuery.data}
               settlementsTotal={settlementsTotal}
               settlementPage={settlementPage}
-              settlementPages={settlementPages}
-              hasNextPage={Boolean(settlementsQuery.data?.next)}
               onPageChange={setSettlementPage}
               columns={settlementColumns}
             />
@@ -700,10 +690,13 @@ export default function PspReconciliationPage() {
       </main>
 
       <SettlementLinesDialog
+        canJumpToPage={!rustV2Mode}
         linesDialog={linesDialog}
+        linesPage={linesPage}
         onOpenChange={(next) => setLinesDialog((prev) => ({ ...prev, open: next }))}
         linesQuery={linesQuery}
         onClose={() => setLinesDialog({ open: false, batch: null })}
+        onPageChange={setLinesPage}
       />
     </PageShell>
   );

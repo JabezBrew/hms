@@ -1,11 +1,12 @@
 use hms_db::billing::{
-    BillingRuleFilters, CashSessionFilters, NewCashSession, NewClaim, NewInvoice,
-    NewNhisArAdjustment, NewNhisServiceMapping, NewPayment, NewPaymentReversal,
-    NhisBatchExportCommand, ServiceCatalogFilters,
+    BillingRuleFilters, CashSessionFilters, ClaimListFilters, InvoiceListFilters, NewCashSession,
+    NewClaim, NewInvoice, NewNhisArAdjustment, NewNhisServiceMapping, NewPayment,
+    NewPaymentReversal, NhisBatchExportCommand, PaymentListFilters, ServiceCatalogFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::billing::{
-    BillingRuleType, CashSessionStatus, NhisArAdjustmentKind, PaymentMethod, ReversalKind,
+    BillingRuleType, CashSessionStatus, ClaimStatus, InvoiceStatus, NhisArAdjustmentKind,
+    PaymentMethod, ReversalKind,
 };
 use hms_domain::deployment::DeploymentProfile;
 
@@ -252,14 +253,74 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
             .is_none()
     );
 
-    let patient_invoices =
-        hms_db::billing::list_invoices(&pool, facility_id, Some(patient_id), None, 25)
-            .await
-            .expect("patient invoice list succeeds");
+    let patient_invoices = hms_db::billing::list_invoices(
+        &pool,
+        facility_id,
+        InvoiceListFilters {
+            patient_id: Some(patient_id),
+            ..Default::default()
+        },
+        None,
+        25,
+    )
+    .await
+    .expect("patient invoice list succeeds");
 
     assert_eq!(patient_invoices.len(), 1);
     assert_eq!(patient_invoices[0].id, invoice.id);
     assert_ne!(patient_invoices[0].id, other_invoice.id);
+
+    let searched_paid_invoices = hms_db::billing::list_invoices(
+        &pool,
+        facility_id,
+        InvoiceListFilters {
+            search: Some("INV-TEST-1".to_owned()),
+            status: Some(InvoiceStatus::Paid),
+            ..Default::default()
+        },
+        None,
+        25,
+    )
+    .await
+    .expect("invoice search and status filters succeed");
+    assert_eq!(searched_paid_invoices.len(), 1);
+    assert_eq!(searched_paid_invoices[0].id, invoice.id);
+
+    let mobile_payments = hms_db::billing::list_payments(
+        &pool,
+        facility_id,
+        PaymentListFilters {
+            patient_id: Some(patient_id),
+            search: Some("RCT-TEST-1".to_owned()),
+            payment_method: Some(PaymentMethod::MobileMoney),
+            ..Default::default()
+        },
+        None,
+        25,
+    )
+    .await
+    .expect("payment search and method filters succeed");
+    assert_eq!(mobile_payments.len(), 1);
+    assert_eq!(mobile_payments[0].id, payment.id);
+    assert_eq!(mobile_payments[0].invoice_number, invoice.invoice_number);
+    assert_eq!(mobile_payments[0].patient_id, patient_id);
+
+    let draft_claims = hms_db::billing::list_claims(
+        &pool,
+        facility_id,
+        ClaimListFilters {
+            patient_id: Some(patient_id),
+            search: Some("CLM-TEST-1".to_owned()),
+            status: Some(ClaimStatus::Draft),
+            ..Default::default()
+        },
+        None,
+        25,
+    )
+    .await
+    .expect("claim search and status filters succeed");
+    assert_eq!(draft_claims.len(), 1);
+    assert_eq!(draft_claims[0].id, claim.id);
 }
 
 #[tokio::test]
@@ -482,6 +543,8 @@ async fn cash_session_repository_filters_open_sessions_and_loads_details() {
         10,
         CashSessionFilters {
             status: Some(CashSessionStatus::Open),
+            search: None,
+            is_flagged: None,
         },
     )
     .await

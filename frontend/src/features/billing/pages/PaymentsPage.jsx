@@ -1,15 +1,13 @@
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,9 +23,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import { usePayments } from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 
 const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   style: 'currency',
@@ -35,7 +36,7 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   minimumFractionDigits: 2,
 });
 
-const PAYMENT_METHODS = [
+const LEGACY_PAYMENT_METHODS = [
   { value: 'all', label: 'All Methods' },
   { value: 'cash', label: 'Cash' },
   { value: 'credit_card', label: 'Credit Card' },
@@ -43,6 +44,14 @@ const PAYMENT_METHODS = [
   { value: 'bank_transfer', label: 'Bank Transfer' },
   { value: 'mobile_money', label: 'Mobile Money' },
   { value: 'insurance', label: 'Insurance' },
+];
+
+const RUST_V2_PAYMENT_METHODS = [
+  { value: 'all', label: 'All Methods' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'mobile_money', label: 'Mobile Money' },
+  { value: 'card', label: 'Card' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
 ];
 
 const PAYMENTS_PAGE_SIZE = 20;
@@ -170,18 +179,50 @@ function getPaymentColumns({ navigate, printReceipt, printingId }) {
 export default function PaymentsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const rustV2Mode = isRustV2ApiMode();
+  const paymentMethodOptions = rustV2Mode ? RUST_V2_PAYMENT_METHODS : LEGACY_PAYMENT_METHODS;
 
   // Get filter values from URL
   const currentPage = parseInt(searchParams.get('page') || '1', 10);
-  const paymentMethod = searchParams.get('payment_method') || 'all';
+  const rawPaymentMethod = searchParams.get('payment_method') || 'all';
+  const paymentMethod = paymentMethodOptions.some((option) => option.value === rawPaymentMethod)
+    ? rawPaymentMethod
+    : 'all';
   const dateFrom = searchParams.get('date_from') || '';
   const dateTo = searchParams.get('date_to') || '';
 
   // Local state for search input
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [privateFilters, setPrivateFilters] = useRouteTableState('billing:paymentsPrivateFilters', {
+    search: '',
+  });
+  const [search, setSearch] = useState(privateFilters.search || urlSearch);
 
   // Debounce search value
   const debouncedSearch = useDebounce(search, 300);
+
+  useEffect(() => {
+    if (!urlSearch) return;
+    setPrivateFilters((current) => ({
+      ...current,
+      search: current.search || urlSearch,
+    }));
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('search');
+      return params;
+    }, { replace: true });
+  }, [setPrivateFilters, setSearchParams, urlSearch]);
+
+  useEffect(() => {
+    if (rawPaymentMethod === paymentMethod) return;
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('payment_method');
+      params.set('page', '1');
+      return params;
+    });
+  }, [paymentMethod, rawPaymentMethod, setSearchParams]);
 
   // Build filters object for API
   const filters = useMemo(() => {
@@ -201,15 +242,15 @@ export default function PaymentsPage() {
   } = usePayments(filters);
 
   const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-    // Reset to page 1 when search changes
-    if (currentPage !== 1) {
-      setSearchParams((prev) => {
-        const newParams = new URLSearchParams(prev);
-        newParams.set('page', '1');
-        return newParams;
-      });
-    }
+    const value = e.target.value;
+    setSearch(value);
+    setPrivateFilters({ search: value });
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev);
+      newParams.delete('search');
+      newParams.set('page', '1');
+      return newParams;
+    });
   };
 
   const handleFilterChange = useCallback((key, value) => {
@@ -244,13 +285,11 @@ export default function PaymentsPage() {
   // Pagination calculations
   const payments = paymentsData?.results || [];
   const totalCount = paymentsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / PAYMENTS_PAGE_SIZE);
-  const hasNext = !!paymentsData?.next;
-  const hasPrev = !!paymentsData?.previous;
-  const hasActiveFilters = !!(debouncedSearch || (paymentMethod && paymentMethod !== 'all') || dateFrom || dateTo);
+  const hasActiveFilters = Boolean(debouncedSearch || (paymentMethod && paymentMethod !== 'all') || dateFrom || dateTo);
 
   const handleClearFilters = () => {
     setSearch('');
+    setPrivateFilters({ search: '' });
     setSearchParams({});
   };
 
@@ -281,6 +320,7 @@ export default function PaymentsPage() {
         <PaymentsFilters
           search={search}
           paymentMethod={paymentMethod}
+          paymentMethodOptions={paymentMethodOptions}
           dateFrom={dateFrom}
           dateTo={dateTo}
           onSearchChange={handleSearchChange}
@@ -288,12 +328,10 @@ export default function PaymentsPage() {
         />
         <PaymentsTableSection
           payments={payments}
+          paymentsData={paymentsData}
+          canJumpToPage={!rustV2Mode}
           columns={columns}
           currentPage={currentPage}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          hasNext={hasNext}
-          hasPrev={hasPrev}
           hasActiveFilters={hasActiveFilters}
           onClearFilters={handleClearFilters}
           onPageChange={handlePageChange}
@@ -360,6 +398,7 @@ function PaymentsPageHeader({ totalCount, onBack, onRefresh }) {
 function PaymentsFilters({
   search,
   paymentMethod,
+  paymentMethodOptions,
   dateFrom,
   dateTo,
   onSearchChange,
@@ -392,7 +431,7 @@ function PaymentsFilters({
             <SelectValue placeholder="Payment Method" />
           </SelectTrigger>
           <SelectContent>
-            {PAYMENT_METHODS.map((method) => (
+            {paymentMethodOptions.map((method) => (
               <SelectItem key={method.value} value={method.value}>
                 {method.label}
               </SelectItem>
@@ -428,12 +467,10 @@ function PaymentsFilters({
 
 function PaymentsTableSection({
   payments,
+  paymentsData,
+  canJumpToPage,
   columns,
   currentPage,
-  totalPages,
-  totalCount,
-  hasNext,
-  hasPrev,
   hasActiveFilters,
   onClearFilters,
   onPageChange,
@@ -459,16 +496,16 @@ function PaymentsTableSection({
         </div>
       )}
 
-      {totalPages > 1 && (
-        <PaymentsPagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          hasNext={hasNext}
-          hasPrev={hasPrev}
+      <div className="px-4 sm:px-6">
+        <BillingPagination
+          canJumpToPage={canJumpToPage}
+          data={paymentsData}
+          itemLabel="payments"
+          page={currentPage}
+          pageSize={PAYMENTS_PAGE_SIZE}
           onPageChange={onPageChange}
         />
-      )}
+      </div>
     </section>
   );
 }
@@ -490,45 +527,6 @@ function PaymentsEmptyState({ hasActiveFilters, onClearFilters }) {
             Clear filters
           </Button>
         )}
-      </div>
-    </div>
-  );
-}
-
-function PaymentsPagination({
-  currentPage,
-  totalPages,
-  totalCount,
-  hasNext,
-  hasPrev,
-  onPageChange,
-}) {
-  return (
-    <div className="p-4 sm:px-6 border-t border-border flex items-center justify-between">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {currentPage} of {totalPages} ({totalCount} total)
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={!hasPrev}
-          className="font-mono text-xs"
-        >
-          <ChevronLeft className="size-4" />
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={!hasNext}
-          className="font-mono text-xs"
-        >
-          Next
-          <ChevronRight className="size-4" />
-        </Button>
       </div>
     </div>
   );

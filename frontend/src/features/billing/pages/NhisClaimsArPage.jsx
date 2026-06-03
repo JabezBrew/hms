@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import {
   Select,
   SelectContent,
@@ -517,15 +518,12 @@ export default function NhisClaimsArPage() {
 
   const batches = batchesQuery.data?.results || [];
   const batchesTotal = batchesQuery.data?.count || 0;
-  const batchesPages = Math.ceil(batchesTotal / 20);
 
   const exportJobs = exportsQuery.data?.results || [];
   const exportsTotal = exportsQuery.data?.count || 0;
-  const exportsPages = Math.ceil(exportsTotal / 20);
 
   const remittanceJobs = remittancesQuery.data?.results || [];
   const remittancesTotal = remittancesQuery.data?.count || 0;
-  const remittancesPages = Math.ceil(remittancesTotal / 20);
 
   const batchColumns = useMemo(
     () => createBatchColumns({
@@ -618,23 +616,23 @@ export default function NhisClaimsArPage() {
             setBatchNotes={setBatchNotes}
             createBatchMutation={createBatchMutation}
             batches={batches}
+            batchesData={batchesQuery.data}
             batchesTotal={batchesTotal}
-            batchesPages={batchesPages}
             batchPage={batchPage}
             setBatchPage={setBatchPage}
-            batchesQuery={batchesQuery}
             batchColumns={batchColumns}
+            canJumpToPage={!rustV2Mode}
           />
 
           <ExportsTab
             exportDownloadsAvailable={exportDownloadsAvailable}
             exportJobs={exportJobs}
             exportColumns={exportColumns}
+            exportsData={exportsQuery.data}
             exportsTotal={exportsTotal}
-            exportsPages={exportsPages}
             exportPage={exportPage}
             setExportPage={setExportPage}
-            exportsQuery={exportsQuery}
+            canJumpToPage={!rustV2Mode}
           />
 
           <RemittancesTab
@@ -646,11 +644,11 @@ export default function NhisClaimsArPage() {
             importRemittanceMutation={importRemittanceMutation}
             remittanceJobs={remittanceJobs}
             remittanceColumns={remittanceColumns}
+            remittancesData={remittancesQuery.data}
             remittancesTotal={remittancesTotal}
-            remittancesPages={remittancesPages}
             remittancePage={remittancePage}
             setRemittancePage={setRemittancePage}
-            remittancesQuery={remittancesQuery}
+            canJumpToPage={!rustV2Mode}
           />
 
           <ArTab
@@ -676,6 +674,7 @@ export default function NhisClaimsArPage() {
         linesPage={linesPage}
         setLinesPage={setLinesPage}
         remittanceLineColumns={remittanceLineColumns}
+        canJumpToPage={!rustV2Mode}
       />
     </PageShell>
   );
@@ -691,12 +690,12 @@ function BatchesTab({
   setBatchNotes,
   createBatchMutation,
   batches,
+  batchesData,
   batchesTotal,
-  batchesPages,
   batchPage,
   setBatchPage,
-  batchesQuery,
   batchColumns,
+  canJumpToPage,
 }) {
   return (
     <TabsContent value="batches" className="mt-6 space-y-6">
@@ -724,9 +723,10 @@ function BatchesTab({
         rows={batches}
         columns={batchColumns}
         page={batchPage}
-        pages={batchesPages}
-        hasNext={!!batchesQuery.data?.next}
+        data={batchesData}
+        pageSize={20}
         setPage={setBatchPage}
+        canJumpToPage={canJumpToPage}
       />
     </TabsContent>
   );
@@ -811,11 +811,11 @@ function ExportsTab({
   exportDownloadsAvailable,
   exportJobs,
   exportColumns,
+  exportsData,
   exportsTotal,
-  exportsPages,
   exportPage,
   setExportPage,
-  exportsQuery,
+  canJumpToPage,
 }) {
   return (
     <TabsContent value="exports" className="mt-6 space-y-6">
@@ -832,9 +832,10 @@ function ExportsTab({
         rows={exportJobs}
         columns={exportColumns}
         page={exportPage}
-        pages={exportsPages}
-        hasNext={!!exportsQuery.data?.next}
+        data={exportsData}
+        pageSize={20}
         setPage={setExportPage}
+        canJumpToPage={canJumpToPage}
       />
     </TabsContent>
   );
@@ -849,11 +850,11 @@ function RemittancesTab({
   importRemittanceMutation,
   remittanceJobs,
   remittanceColumns,
+  remittancesData,
   remittancesTotal,
-  remittancesPages,
   remittancePage,
   setRemittancePage,
-  remittancesQuery,
+  canJumpToPage,
 }) {
   return (
     <TabsContent value="remittances" className="mt-6 space-y-6">
@@ -878,9 +879,10 @@ function RemittancesTab({
         rows={remittanceJobs}
         columns={remittanceColumns}
         page={remittancePage}
-        pages={remittancesPages}
-        hasNext={!!remittancesQuery.data?.next}
+        data={remittancesData}
+        pageSize={20}
         setPage={setRemittancePage}
+        canJumpToPage={canJumpToPage}
       />
     </TabsContent>
   );
@@ -970,9 +972,10 @@ function PaginatedTableSection({
   rows,
   columns,
   page,
-  pages,
-  hasNext,
+  data,
+  pageSize,
   setPage,
+  canJumpToPage,
 }) {
   return (
     <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
@@ -987,40 +990,15 @@ function PaginatedTableSection({
         <VirtualizedTable rows={rows} columns={columns} threshold={50} />
       )}
 
-      {pages > 1 && (
-        <PaginationControls page={page} pages={pages} hasNext={hasNext} setPage={setPage} />
-      )}
+      <BillingPagination
+        canJumpToPage={canJumpToPage}
+        data={data}
+        itemLabel={title.toLowerCase()}
+        onPageChange={setPage}
+        page={page}
+        pageSize={pageSize}
+      />
     </section>
-  );
-}
-
-function PaginationControls({ page, pages, hasNext, setPage }) {
-  return (
-    <div className="flex items-center justify-between mt-4">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {pages}
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          disabled={page <= 1}
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          disabled={!hasNext}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          Next
-        </Button>
-      </div>
-    </div>
   );
 }
 
@@ -1200,9 +1178,8 @@ function RemittanceLinesDialog({
   linesPage,
   setLinesPage,
   remittanceLineColumns,
+  canJumpToPage,
 }) {
-  const pages = Math.ceil((linesQuery.data?.count || 0) / 50);
-
   return (
     <Dialog
       open={linesDialog.open}
@@ -1232,14 +1209,14 @@ function RemittanceLinesDialog({
                 threshold={50}
                 columns={remittanceLineColumns}
               />
-              {pages > 1 && (
-                <PaginationControls
-                  page={linesPage}
-                  pages={pages}
-                  hasNext={!!linesQuery.data?.next}
-                  setPage={setLinesPage}
-                />
-              )}
+              <BillingPagination
+                canJumpToPage={canJumpToPage}
+                data={linesQuery.data}
+                itemLabel="remittance lines"
+                onPageChange={setLinesPage}
+                page={linesPage}
+                pageSize={50}
+              />
             </>
           )}
         </div>

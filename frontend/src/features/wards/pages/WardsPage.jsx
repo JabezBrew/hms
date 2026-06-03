@@ -21,7 +21,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { useWards } from '@/features/wards/hooks/useWardQueries';
-import { useListFilters } from '@/shared/hooks/useListFilters';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 
 const WARD_TYPE_LABELS = {
   general: 'General',
@@ -70,17 +70,6 @@ function calculateWardStats(wards) {
     available: totals.available,
     avgOccupancy: avgOccupancy.toFixed(1),
   };
-}
-
-function filterWardsBySearch(wards, search) {
-  if (!search) return wards;
-
-  const term = search.toLowerCase();
-  return wards.filter(ward =>
-    ward.name.toLowerCase().includes(term) ||
-    ward.description?.toLowerCase().includes(term) ||
-    ward.ward_type?.toLowerCase().includes(term)
-  );
 }
 
 const WARD_COLUMNS = [
@@ -354,7 +343,7 @@ function WardsContent({ search, onSearchChange, wards, filteredWards, isAdmin, o
 
       {filteredWards.length === 0 ? (
         <EmptyWardsState
-          hasWards={wards.length > 0}
+          hasWards={Boolean(search) || wards.length > 0}
           isAdmin={isAdmin}
           onCreateWard={onCreateWard}
         />
@@ -375,7 +364,8 @@ function WardsContent({ search, onSearchChange, wards, filteredWards, isAdmin, o
  */
 export default function WardsPage() {
   const navigate = useNavigate();
-  const { search, updateSearch } = useListFilters();
+  const [tableState, setTableState] = useRouteTableState('wards:directoryTable', { search: '' });
+  const search = tableState.search || '';
   const [isAdmin] = useState(() => getAuthJSON('user')?.role === 'admin');
 
   const {
@@ -384,7 +374,9 @@ export default function WardsPage() {
     isError,
     error,
     refetch
-  } = useWards();
+  } = useWards({
+    search: search.trim() || undefined,
+  });
 
   const pageMeta = usePageMeta({
     title: 'Wards | Hospital Management System',
@@ -392,9 +384,14 @@ export default function WardsPage() {
   });
 
   const stats = useMemo(() => calculateWardStats(wards), [wards]);
-  const filteredWards = useMemo(() => filterWardsBySearch(wards, search), [wards, search]);
 
   const handleRefresh = () => refetch();
+  const handleSearchChange = (value) => {
+    setTableState((current) => ({
+      ...current,
+      search: value,
+    }));
+  };
   const handleOpenReports = () => navigate('/wards/reports');
   const handleCreateWard = () => navigate('/wards/new');
   const handleOpenWard = (ward) => navigate(`/wards/${ward.id}`);
@@ -427,9 +424,9 @@ export default function WardsPage() {
       />
       <WardsContent
         search={search}
-        onSearchChange={updateSearch}
+        onSearchChange={handleSearchChange}
         wards={wards}
-        filteredWards={filteredWards}
+        filteredWards={wards}
         isAdmin={isAdmin}
         onCreateWard={handleCreateWard}
         onOpenWard={handleOpenWard}

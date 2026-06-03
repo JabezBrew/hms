@@ -71,11 +71,11 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "search",
       "category",
       "action",
       "start_date",
-      "end_date"
+      "end_date",
+      "ordering"
     ],
     "hasBody": false
   },
@@ -257,7 +257,9 @@ export const operations = {
       "limit",
       "search",
       "is_active",
-      "practitioners_only"
+      "practitioners_only",
+      "department",
+      "position"
     ],
     "hasBody": false
   },
@@ -269,6 +271,16 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAdminStaffFilterFacets": {
+    "operationId": "getAdminStaffFilterFacets",
+    "method": "GET",
+    "path": "/api/v2/admin/staff/filter-facets",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "is_active"
+    ],
     "hasBody": false
   },
   "getAdmissionById": {
@@ -321,7 +333,8 @@ export const operations = {
       "cursor",
       "limit",
       "date",
-      "clinic_id"
+      "clinic_id",
+      "status"
     ],
     "hasBody": false
   },
@@ -368,6 +381,33 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getBillingInsurancePlans": {
+    "operationId": "getBillingInsurancePlans",
+    "method": "GET",
+    "path": "/api/v2/billing/insurance-plans",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "provider_id",
+      "search",
+      "is_active"
+    ],
+    "hasBody": false
+  },
+  "getBillingInsuranceProviders": {
+    "operationId": "getBillingInsuranceProviders",
+    "method": "GET",
+    "path": "/api/v2/billing/insurance-providers",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active"
+    ],
+    "hasBody": false
+  },
   "getBillingInvoiceById": {
     "operationId": "getBillingInvoiceById",
     "method": "GET",
@@ -386,7 +426,33 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "patient_id"
+      "status",
+      "date_from",
+      "date_to"
+    ],
+    "hasBody": false
+  },
+  "getBillingPatientInsurances": {
+    "operationId": "getBillingPatientInsurances",
+    "method": "GET",
+    "path": "/api/v2/billing/patient-insurances",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "is_active"
+    ],
+    "hasBody": false
+  },
+  "getBillingPaymentIntents": {
+    "operationId": "getBillingPaymentIntents",
+    "method": "GET",
+    "path": "/api/v2/billing/payment-intents",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "status"
     ],
     "hasBody": false
   },
@@ -398,7 +464,10 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "patient_id"
+      "status",
+      "payment_method",
+      "date_from",
+      "date_to"
     ],
     "hasBody": false
   },
@@ -439,8 +508,7 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit",
-      "patient_id"
+      "limit"
     ],
     "hasBody": false
   },
@@ -487,6 +555,32 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getBillingSettlementLines": {
+    "operationId": "getBillingSettlementLines",
+    "method": "GET",
+    "path": "/api/v2/billing/settlements/{id}/lines",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "match_status"
+    ],
+    "hasBody": false
+  },
+  "getBillingSettlements": {
+    "operationId": "getBillingSettlements",
+    "method": "GET",
+    "path": "/api/v2/billing/settlements",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "status"
+    ],
+    "hasBody": false
+  },
   "getCashDrawers": {
     "operationId": "getCashDrawers",
     "method": "GET",
@@ -513,7 +607,9 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "status"
+      "status",
+      "search",
+      "is_flagged"
     ],
     "hasBody": false
   },
@@ -658,7 +754,11 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "location",
+      "has_discrepancy",
+      "audit_due"
     ],
     "hasBody": false
   },
@@ -752,7 +852,9 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "patient_id"
+      "date",
+      "status",
+      "encounter_type"
     ],
     "hasBody": false
   },
@@ -784,7 +886,9 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "status"
     ],
     "hasBody": false
   },
@@ -854,7 +958,9 @@ export const operations = {
       "search",
       "category",
       "location",
-      "status"
+      "status",
+      "supplier",
+      "ordering"
     ],
     "hasBody": false
   },
@@ -891,6 +997,20 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit"
+    ],
+    "hasBody": false
+  },
+  "getInventoryStandingOrders": {
+    "operationId": "getInventoryStandingOrders",
+    "method": "GET",
+    "path": "/api/v2/inventory/standing-orders",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "status",
+      "is_active"
     ],
     "hasBody": false
   },
@@ -935,7 +1055,10 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "status"
+      "status",
+      "priority",
+      "ordering_provider",
+      "my_orders"
     ],
     "hasBody": false
   },
@@ -954,7 +1077,15 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/laboratory/panels",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "category",
+      "is_active",
+      "is_system_default",
+      "is_facility_modified"
+    ],
     "hasBody": false
   },
   "getLaboratoryResultById": {
@@ -976,7 +1107,8 @@ export const operations = {
       "cursor",
       "limit",
       "status",
-      "is_verified"
+      "is_verified",
+      "critical_only"
     ],
     "hasBody": false
   },
@@ -1006,7 +1138,15 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/laboratory/test-catalog",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "category",
+      "is_active",
+      "is_system_default",
+      "is_facility_modified"
+    ],
     "hasBody": false
   },
   "getLaboratoryTestCatalogById": {
@@ -1056,8 +1196,7 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit",
-      "patient_id"
+      "limit"
     ],
     "hasBody": false
   },
@@ -1089,7 +1228,20 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "patient_id"
+      "status",
+      "date_from",
+      "date_to"
+    ],
+    "hasBody": false
+  },
+  "getNhisExports": {
+    "operationId": "getNhisExports",
+    "method": "GET",
+    "path": "/api/v2/nhis/exports",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
     ],
     "hasBody": false
   },
@@ -1100,8 +1252,36 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getNhisRemittanceLines": {
+    "operationId": "getNhisRemittanceLines",
+    "method": "GET",
+    "path": "/api/v2/nhis/remittance-imports/{id}/lines",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
       "limit",
-      "patient_id"
+      "match_status"
+    ],
+    "hasBody": false
+  },
+  "getNhisServiceMappings": {
+    "operationId": "getNhisServiceMappings",
+    "method": "GET",
+    "path": "/api/v2/nhis/service-mappings",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "payer_id",
+      "payer",
+      "search",
+      "active"
     ],
     "hasBody": false
   },
@@ -1490,9 +1670,7 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit",
-      "search",
-      "patient_id"
+      "limit"
     ],
     "hasBody": false
   },
@@ -1540,9 +1718,14 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "search",
-      "patient_id",
       "status",
+      "admission_start",
+      "admission_end",
+      "ward_id",
+      "admission_status",
+      "attending_id",
+      "age_min",
+      "age_max",
       "include_total",
       "ordering"
     ],
@@ -1598,7 +1781,10 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "status",
+      "supplier"
     ],
     "hasBody": false
   },
@@ -1772,7 +1958,11 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "status",
+      "priority",
+      "requesting_location"
     ],
     "hasBody": false
   },
@@ -1793,7 +1983,11 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "status",
+      "from_location",
+      "to_location"
     ],
     "hasBody": false
   },
@@ -1814,7 +2008,10 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "location_type",
+      "temperature_zone"
     ],
     "hasBody": false
   },
@@ -1927,7 +2124,7 @@ export const operations = {
       "cursor",
       "limit",
       "ward_id",
-      "patient_id"
+      "monitoring_filter"
     ],
     "hasBody": false
   },
@@ -2327,6 +2524,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAppointmentsSearch": {
+    "operationId": "postAppointmentsSearch",
+    "method": "POST",
+    "path": "/api/v2/appointments/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAuthLogin": {
     "operationId": "postAuthLogin",
     "method": "POST",
@@ -2461,6 +2666,22 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postBillingInvoicesSearch": {
+    "operationId": "postBillingInvoicesSearch",
+    "method": "POST",
+    "path": "/api/v2/billing/invoices/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postBillingPatientInsurancesSearch": {
+    "operationId": "postBillingPatientInsurancesSearch",
+    "method": "POST",
+    "path": "/api/v2/billing/patient-insurances/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postBillingPaymentReverse": {
     "operationId": "postBillingPaymentReverse",
     "method": "POST",
@@ -2475,6 +2696,14 @@ export const operations = {
     "operationId": "postBillingPayments",
     "method": "POST",
     "path": "/api/v2/billing/payments",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postBillingPaymentsSearch": {
+    "operationId": "postBillingPaymentsSearch",
+    "method": "POST",
+    "path": "/api/v2/billing/payments/search",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -2709,6 +2938,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postEncountersSearch": {
+    "operationId": "postEncountersSearch",
+    "method": "POST",
+    "path": "/api/v2/encounters/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postFluidBalanceEntries": {
     "operationId": "postFluidBalanceEntries",
     "method": "POST",
@@ -2835,6 +3072,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postLaboratoryOrdersSearch": {
+    "operationId": "postLaboratoryOrdersSearch",
+    "method": "POST",
+    "path": "/api/v2/laboratory/orders/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postLaboratoryOrderStartProcessing": {
     "operationId": "postLaboratoryOrderStartProcessing",
     "method": "POST",
@@ -2875,6 +3120,14 @@ export const operations = {
     "operationId": "postLaboratoryResults",
     "method": "POST",
     "path": "/api/v2/laboratory/results",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postLaboratoryResultsSearch": {
+    "operationId": "postLaboratoryResultsSearch",
+    "method": "POST",
+    "path": "/api/v2/laboratory/results/search",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -2965,6 +3218,14 @@ export const operations = {
     "operationId": "postNhisClaims",
     "method": "POST",
     "path": "/api/v2/nhis/claims",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postNhisClaimsSearch": {
+    "operationId": "postNhisClaimsSearch",
+    "method": "POST",
+    "path": "/api/v2/nhis/claims/search",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -3123,6 +3384,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPatientContextSearch": {
+    "operationId": "postPatientContextSearch",
+    "method": "POST",
+    "path": "/api/v2/patients/context/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPatientPrescriptions": {
     "operationId": "postPatientPrescriptions",
     "method": "POST",
@@ -3147,6 +3416,14 @@ export const operations = {
     "operationId": "postPatients",
     "method": "POST",
     "path": "/api/v2/patients",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientsSearch": {
+    "operationId": "postPatientsSearch",
+    "method": "POST",
+    "path": "/api/v2/patients/search",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -3535,6 +3812,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postWardBoardSearch": {
+    "operationId": "postWardBoardSearch",
+    "method": "POST",
+    "path": "/api/v2/wards/board/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postWardSection": {
     "operationId": "postWardSection",
     "method": "POST",
@@ -3611,6 +3896,7 @@ export function createGeneratedClient(request) {
     getAdminPractitioners: createOperation(request, operations.getAdminPractitioners),
     getAdminStaff: createOperation(request, operations.getAdminStaff),
     getAdminStaffById: createOperation(request, operations.getAdminStaffById),
+    getAdminStaffFilterFacets: createOperation(request, operations.getAdminStaffFilterFacets),
     getAdmissionById: createOperation(request, operations.getAdmissionById),
     getAdmissionCaseById: createOperation(request, operations.getAdmissionCaseById),
     getAdmissionCases: createOperation(request, operations.getAdmissionCases),
@@ -3621,8 +3907,12 @@ export function createGeneratedClient(request) {
     getAuthMfaStatus: createOperation(request, operations.getAuthMfaStatus),
     getAuthSessions: createOperation(request, operations.getAuthSessions),
     getBillingDashboardSummary: createOperation(request, operations.getBillingDashboardSummary),
+    getBillingInsurancePlans: createOperation(request, operations.getBillingInsurancePlans),
+    getBillingInsuranceProviders: createOperation(request, operations.getBillingInsuranceProviders),
     getBillingInvoiceById: createOperation(request, operations.getBillingInvoiceById),
     getBillingInvoices: createOperation(request, operations.getBillingInvoices),
+    getBillingPatientInsurances: createOperation(request, operations.getBillingPatientInsurances),
+    getBillingPaymentIntents: createOperation(request, operations.getBillingPaymentIntents),
     getBillingPayments: createOperation(request, operations.getBillingPayments),
     getBillingReceiptById: createOperation(request, operations.getBillingReceiptById),
     getBillingReceiptByNumber: createOperation(request, operations.getBillingReceiptByNumber),
@@ -3632,6 +3922,8 @@ export function createGeneratedClient(request) {
     getBillingRules: createOperation(request, operations.getBillingRules),
     getBillingServiceCatalog: createOperation(request, operations.getBillingServiceCatalog),
     getBillingServicePrices: createOperation(request, operations.getBillingServicePrices),
+    getBillingSettlementLines: createOperation(request, operations.getBillingSettlementLines),
+    getBillingSettlements: createOperation(request, operations.getBillingSettlements),
     getCashDrawers: createOperation(request, operations.getCashDrawers),
     getCashSessionById: createOperation(request, operations.getCashSessionById),
     getCashSessions: createOperation(request, operations.getCashSessions),
@@ -3671,6 +3963,7 @@ export function createGeneratedClient(request) {
     getInventoryItemStockBatches: createOperation(request, operations.getInventoryItemStockBatches),
     getInventoryItemStockByLocation: createOperation(request, operations.getInventoryItemStockByLocation),
     getInventoryItemStockMovements: createOperation(request, operations.getInventoryItemStockMovements),
+    getInventoryStandingOrders: createOperation(request, operations.getInventoryStandingOrders),
     getInventorySuppliers: createOperation(request, operations.getInventorySuppliers),
     getLaboratoryOrderById: createOperation(request, operations.getLaboratoryOrderById),
     getLaboratoryOrderClinicalContext: createOperation(request, operations.getLaboratoryOrderClinicalContext),
@@ -3690,7 +3983,10 @@ export function createGeneratedClient(request) {
     getNhisClaimArState: createOperation(request, operations.getNhisClaimArState),
     getNhisClaimById: createOperation(request, operations.getNhisClaimById),
     getNhisClaims: createOperation(request, operations.getNhisClaims),
+    getNhisExports: createOperation(request, operations.getNhisExports),
     getNhisRemittanceImports: createOperation(request, operations.getNhisRemittanceImports),
+    getNhisRemittanceLines: createOperation(request, operations.getNhisRemittanceLines),
+    getNhisServiceMappings: createOperation(request, operations.getNhisServiceMappings),
     getNotificationCounts: createOperation(request, operations.getNotificationCounts),
     getNotifications: createOperation(request, operations.getNotifications),
     getNursingAlerts: createOperation(request, operations.getNursingAlerts),
@@ -3798,6 +4094,7 @@ export function createGeneratedClient(request) {
     postAdmissions: createOperation(request, operations.postAdmissions),
     postAppointmentCancel: createOperation(request, operations.postAppointmentCancel),
     postAppointments: createOperation(request, operations.postAppointments),
+    postAppointmentsSearch: createOperation(request, operations.postAppointmentsSearch),
     postAuthLogin: createOperation(request, operations.postAuthLogin),
     postAuthLogout: createOperation(request, operations.postAuthLogout),
     postAuthPassword: createOperation(request, operations.postAuthPassword),
@@ -3814,8 +4111,11 @@ export function createGeneratedClient(request) {
     postBillingDischargeClearance: createOperation(request, operations.postBillingDischargeClearance),
     postBillingInvoiceFinalize: createOperation(request, operations.postBillingInvoiceFinalize),
     postBillingInvoices: createOperation(request, operations.postBillingInvoices),
+    postBillingInvoicesSearch: createOperation(request, operations.postBillingInvoicesSearch),
+    postBillingPatientInsurancesSearch: createOperation(request, operations.postBillingPatientInsurancesSearch),
     postBillingPaymentReverse: createOperation(request, operations.postBillingPaymentReverse),
     postBillingPayments: createOperation(request, operations.postBillingPayments),
+    postBillingPaymentsSearch: createOperation(request, operations.postBillingPaymentsSearch),
     postCashSessionClose: createOperation(request, operations.postCashSessionClose),
     postCashSessions: createOperation(request, operations.postCashSessions),
     postClinicalNoteTemplates: createOperation(request, operations.postClinicalNoteTemplates),
@@ -3841,6 +4141,7 @@ export function createGeneratedClient(request) {
     postEncounterCareTeam: createOperation(request, operations.postEncounterCareTeam),
     postEncounterComplete: createOperation(request, operations.postEncounterComplete),
     postEncounters: createOperation(request, operations.postEncounters),
+    postEncountersSearch: createOperation(request, operations.postEncountersSearch),
     postFluidBalanceEntries: createOperation(request, operations.postFluidBalanceEntries),
     postGoodsReceivedNoteAccept: createOperation(request, operations.postGoodsReceivedNoteAccept),
     postGoodsReceivedNoteInspect: createOperation(request, operations.postGoodsReceivedNoteInspect),
@@ -3855,11 +4156,13 @@ export function createGeneratedClient(request) {
     postLaboratoryOrderCancel: createOperation(request, operations.postLaboratoryOrderCancel),
     postLaboratoryOrderCollect: createOperation(request, operations.postLaboratoryOrderCollect),
     postLaboratoryOrders: createOperation(request, operations.postLaboratoryOrders),
+    postLaboratoryOrdersSearch: createOperation(request, operations.postLaboratoryOrdersSearch),
     postLaboratoryOrderStartProcessing: createOperation(request, operations.postLaboratoryOrderStartProcessing),
     postLaboratoryOrderSubmit: createOperation(request, operations.postLaboratoryOrderSubmit),
     postLaboratoryResultBulkCreate: createOperation(request, operations.postLaboratoryResultBulkCreate),
     postLaboratoryResultBulkVerify: createOperation(request, operations.postLaboratoryResultBulkVerify),
     postLaboratoryResults: createOperation(request, operations.postLaboratoryResults),
+    postLaboratoryResultsSearch: createOperation(request, operations.postLaboratoryResultsSearch),
     postLaboratoryResultVerify: createOperation(request, operations.postLaboratoryResultVerify),
     postLaboratorySpecimenReceive: createOperation(request, operations.postLaboratorySpecimenReceive),
     postLaboratorySpecimens: createOperation(request, operations.postLaboratorySpecimens),
@@ -3870,6 +4173,7 @@ export function createGeneratedClient(request) {
     postNhisBatchExport: createOperation(request, operations.postNhisBatchExport),
     postNhisClaimArAdjustment: createOperation(request, operations.postNhisClaimArAdjustment),
     postNhisClaims: createOperation(request, operations.postNhisClaims),
+    postNhisClaimsSearch: createOperation(request, operations.postNhisClaimsSearch),
     postNhisRemittanceImports: createOperation(request, operations.postNhisRemittanceImports),
     postNhisServiceMappings: createOperation(request, operations.postNhisServiceMappings),
     postNotificationRead: createOperation(request, operations.postNotificationRead),
@@ -3886,9 +4190,11 @@ export function createGeneratedClient(request) {
     postPatientChronicleWardRoundCommit: createOperation(request, operations.postPatientChronicleWardRoundCommit),
     postPatientChronicleWardRounds: createOperation(request, operations.postPatientChronicleWardRounds),
     postPatientClinicalNotes: createOperation(request, operations.postPatientClinicalNotes),
+    postPatientContextSearch: createOperation(request, operations.postPatientContextSearch),
     postPatientPrescriptions: createOperation(request, operations.postPatientPrescriptions),
     postPatientProblems: createOperation(request, operations.postPatientProblems),
     postPatients: createOperation(request, operations.postPatients),
+    postPatientsSearch: createOperation(request, operations.postPatientsSearch),
     postPatientVitals: createOperation(request, operations.postPatientVitals),
     postPharmacyDispenses: createOperation(request, operations.postPharmacyDispenses),
     postPurchaseOrderApprove: createOperation(request, operations.postPurchaseOrderApprove),
@@ -3931,6 +4237,7 @@ export function createGeneratedClient(request) {
     postVisitStartConsultation: createOperation(request, operations.postVisitStartConsultation),
     postWard: createOperation(request, operations.postWard),
     postWardBed: createOperation(request, operations.postWardBed),
+    postWardBoardSearch: createOperation(request, operations.postWardBoardSearch),
     postWardSection: createOperation(request, operations.postWardSection),
     postWardStockRequestApprove: createOperation(request, operations.postWardStockRequestApprove),
     postWardStockRequestFulfill: createOperation(request, operations.postWardStockRequestFulfill),

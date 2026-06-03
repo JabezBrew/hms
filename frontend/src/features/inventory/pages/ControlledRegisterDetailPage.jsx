@@ -26,6 +26,7 @@ import {
   useControlledRegisterEntries,
   useControlledDiscrepancies,
 } from '@/features/inventory/hooks';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
@@ -42,8 +43,6 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Minus from 'lucide-react/dist/esm/icons/minus.js';
 
@@ -74,8 +73,6 @@ function EntriesTable({ registerId, page, onPageChange }) {
   const { data: entriesData, isLoading } = useControlledRegisterEntries(registerId, { page, page_size: 20 });
 
   const entries = entriesData?.results || entriesData || [];
-  const totalCount = entriesData?.count || entries.length;
-  const totalPages = Math.ceil(totalCount / 20);
 
   if (isLoading) {
     return (
@@ -189,23 +186,13 @@ function EntriesTable({ registerId, page, onPageChange }) {
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4">
-          <p className="font-mono text-xs text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
+      <InventoryPagination
+        data={entriesData}
+        itemLabel="entries"
+        page={page}
+        pageSize={20}
+        onPageChange={onPageChange}
+      />
     </div>
   );
 }

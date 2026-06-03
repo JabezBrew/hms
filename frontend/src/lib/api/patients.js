@@ -1,12 +1,20 @@
 import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
-import { v2Api } from './v2/client';
+import { v2Api, v2Request } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
     throw error;
   }
+}
+
+function hasQueryValue(value) {
+  return value !== undefined && value !== null && value !== '';
 }
 
 const patientCursorCache = new Map();
@@ -26,42 +34,12 @@ const PATIENT_ORDERING_FIELDS = {
   status: 'status',
 };
 
-function hashForCache(value) {
-  let hash = 0;
-  const input = JSON.stringify(value);
-  for (let index = 0; index < input.length; index += 1) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(index);
-    hash |= 0;
-  }
-  return String(hash);
-}
-
-function cursorCacheKey(params = {}) {
-  const scope = { ...(params || {}) };
-  delete scope.page;
-  delete scope.cursor;
-  delete scope.next_cursor;
-  return hashForCache(scope);
-}
-
 function cacheCursorForNextPage(params, response) {
-  const currentPage = Number(params?.page || 1);
-  const nextCursor = response?.page?.next_cursor;
-  if (!nextCursor) {
-    return;
-  }
-  patientCursorCache.set(`${cursorCacheKey(params)}:${currentPage + 1}`, nextCursor);
+  cacheScopedCursorForNextPage(patientCursorCache, 'patients', params, response);
 }
 
-function getCursorForParams(params = {}) {
-  if (params.cursor || params.next_cursor) {
-    return params.cursor || params.next_cursor;
-  }
-  const page = Number(params.page || 1);
-  if (page <= 1) {
-    return undefined;
-  }
-  return patientCursorCache.get(`${cursorCacheKey(params)}:${page}`);
+function resolvePatientCursorPage(params = {}) {
+  return resolveScopedCursorPage(patientCursorCache, 'patients', params);
 }
 
 function birthYearToDate(value) {
@@ -139,7 +117,8 @@ function adaptV2PatientDetail(patient) {
 
 function adaptV2PatientListResponse(response, params = {}) {
   const limit = Number(response?.page?.limit || params.page_size || params.limit || 25);
-  const currentPage = Number(params.page || 1);
+  const resolvedPage = resolvePatientCursorPage(params);
+  const currentPage = resolvedPage.page;
   const results = Array.isArray(response?.data)
     ? response.data.map(adaptV2PatientListItem)
     : [];
@@ -155,6 +134,10 @@ function adaptV2PatientListResponse(response, params = {}) {
   return {
     results,
     page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
     page_size: limit,
     count: hasExactTotal ? exactTotal : knownResultCount,
     total: hasExactTotal ? exactTotal : knownResultCount,
@@ -186,11 +169,52 @@ function getV2PatientListQuery(params = {}) {
   if (ordering) {
     query.ordering = ordering;
   }
-  const cursor = getCursorForParams(params);
+  if (hasQueryValue(params.patient_id)) {
+    query.patient_id = params.patient_id;
+  }
+  if (hasQueryValue(params.admission_start)) {
+    query.admission_start = params.admission_start;
+  }
+  if (hasQueryValue(params.admission_end)) {
+    query.admission_end = params.admission_end;
+  }
+  const wardId = params.ward_id || params.ward;
+  if (hasQueryValue(wardId)) {
+    query.ward_id = wardId;
+  }
+  if (hasQueryValue(params.admission_status)) {
+    query.admission_status = params.admission_status;
+  }
+  if (hasQueryValue(params.attending_id)) {
+    query.attending_id = params.attending_id;
+  }
+  if (hasQueryValue(params.age_min)) {
+    query.age_min = params.age_min;
+  }
+  if (hasQueryValue(params.age_max)) {
+    query.age_max = params.age_max;
+  }
+  const { cursor } = resolvePatientCursorPage(params);
   if (cursor) {
     query.cursor = cursor;
   }
   return query;
+}
+
+async function requestV2PatientList(params = {}, options = {}) {
+  const query = getV2PatientListQuery(params);
+  if (query.search || query.patient_id) {
+    return v2Request({
+      method: 'POST',
+      path: '/api/v2/patients/search',
+      body: query,
+      signal: options.signal,
+    });
+  }
+  return v2Api.getPatients({
+    query,
+    signal: options.signal,
+  });
 }
 
 function getV2PatientContextListQuery(params = {}) {
@@ -361,10 +385,7 @@ export const patientsApi = {
   getPatients: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatients({
-          query: getV2PatientListQuery(params),
-          signal: options.signal,
-        });
+        const response = await requestV2PatientList(params, options);
         return adaptV2PatientListResponse(response, params);
       }
 
@@ -514,10 +535,7 @@ export const patientsApi = {
     try {
       if (isRustV2ApiMode()) {
         const queryParams = typeof params === 'string' ? { query: params } : params;
-        const response = await v2Api.getPatients({
-          query: getV2PatientListQuery(queryParams),
-          signal: options.signal,
-        });
+        const response = await requestV2PatientList(queryParams, options);
         return adaptV2PatientListResponse(response, queryParams).results;
       }
 
@@ -544,10 +562,7 @@ export const patientsApi = {
     try {
       const queryParams = typeof params === 'string' ? { query: params } : params;
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatients({
-          query: getV2PatientListQuery(queryParams),
-          signal: options.signal,
-        });
+        const response = await requestV2PatientList(queryParams, options);
         return adaptV2PatientListResponse(response, queryParams);
       }
 
@@ -613,10 +628,18 @@ export const patientsApi = {
   getContextPatients: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatientContextList({
-          query: getV2PatientContextListQuery({ limit: 10, ...params }),
-          signal: options.signal,
-        });
+        const query = getV2PatientContextListQuery({ limit: 10, ...params });
+        const response = query.search || query.patient_id
+          ? await v2Request({
+              method: 'POST',
+              path: '/api/v2/patients/context/search',
+              body: query,
+              signal: options.signal,
+            })
+          : await v2Api.getPatientContextList({
+              query,
+              signal: options.signal,
+            });
         return adaptV2ContextPatientsResponse(response, params);
       }
       const queryString = new URLSearchParams(params).toString();

@@ -1,16 +1,19 @@
-use hms_db::inventory::{CatalogEditCommand, InventoryItemFilters, SupplierFilters};
+use hms_db::inventory::{
+    CatalogEditCommand, InventoryItemFilters, InventoryItemOrdering, StorageLocationFilters,
+    SupplierFilters,
+};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
     CreateInventoryCatalogEditRequest, InventoryCatalogVersionItem, InventoryCategoryListItem,
     InventoryDashboardSummary, InventoryDashboardSummaryQuery, InventoryItemListItem,
-    InventoryItemsQuery, InventoryListQuery, StorageLocationListItem, SupplierListItem,
+    InventoryItemsQuery, StorageLocationListItem, StorageLocationListQuery, SupplierListItem,
     SupplierListQuery,
 };
 use uuid::Uuid;
 
 use super::common::{
-    decode_page, encode_cursor, normalize_text, page_request, page_response,
-    require_inventory_access, static_list,
+    decode_page, encode_cursor, normalize_text, page_response, require_inventory_access,
+    static_list,
 };
 use crate::error::ApiError;
 use crate::response::{object, ListResponse, ObjectResponse};
@@ -57,11 +60,27 @@ impl InventoryCatalogService {
     ) -> Result<ListResponse<InventoryItemListItem>, ApiError> {
         require_catalog_access(ctx, self.facility_id())?;
         let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
+        let requested_ordering = query
+            .ordering
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let ordering = match requested_ordering {
+            Some(value) => InventoryItemOrdering::parse(Some(value)).ok_or_else(|| {
+                ApiError::bad_request(
+                    "invalid_inventory_item_ordering",
+                    "Inventory item ordering is invalid.",
+                )
+            })?,
+            None => InventoryItemOrdering::default(),
+        };
         let filters = InventoryItemFilters {
             search: query.search,
             category_id: query.category,
             location_id: query.location,
             stock_status: query.status,
+            supplier_id: query.supplier,
+            ordering,
         };
         let rows = hms_db::inventory::list_items(
             self.pool(),
@@ -121,15 +140,20 @@ impl InventoryCatalogService {
     pub async fn list_locations(
         &self,
         ctx: &hms_access::RequestContext,
-        query: InventoryListQuery,
+        query: StorageLocationListQuery,
     ) -> Result<ListResponse<StorageLocationListItem>, ApiError> {
         require_catalog_access(ctx, self.facility_id())?;
-        let (cursor, page_size) = page_request(query)?;
+        let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::inventory::list_locations(
             self.pool(),
             self.facility_id(),
             cursor,
             i64::from(page_size) + 1,
+            StorageLocationFilters {
+                search: query.search,
+                location_type: query.location_type,
+                temperature_zone: query.temperature_zone,
+            },
         )
         .await
         .map_err(|_| {

@@ -1,13 +1,14 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::admin::{
-    AdminLimitQuery, AdminListQuery, AuditEventListItem, AuditEventListQuery,
-    AuthorityAppointmentListItem, CommitteeListItem, CreateAuthorityAppointmentRequest,
-    CreateCommitteeRequest, CreateDelegationRequest, CreateOrganizationUnitRequest,
-    CreatePermissionAssignmentRequest, CreatePositionRequest, CreatePositionTemplateRequest,
-    CreateStaffRequest, DelegationListItem, FeatureEntitlementListItem, OrganizationUnitListItem,
-    OrganizationUnitListQuery, PermissionAssignmentListItem, PositionListItem,
-    PositionTemplateListItem, PractitionerListItem, PractitionerListQuery, StaffDirectoryItem,
+    AdminLimitQuery, AdminListQuery, AuditEventListGetQuery, AuditEventListItem,
+    AuditEventListQuery, AuthorityAppointmentListItem, CommitteeListItem,
+    CreateAuthorityAppointmentRequest, CreateCommitteeRequest, CreateDelegationRequest,
+    CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest, CreatePositionRequest,
+    CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
+    FeatureEntitlementListItem, OrganizationUnitListItem, OrganizationUnitListQuery,
+    PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
+    PractitionerListQuery, StaffDirectoryItem, StaffFilterFacetQuery, StaffFilterFacets,
     StaffListItem, StaffListQuery, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
     UpsertPractitionerProfileRequest,
 };
@@ -258,6 +259,20 @@ pub async fn list_staff(
     Ok(Json(state.admin_service().list_staff(&user, query).await?))
 }
 
+#[utoipa::path(get, path = "/api/v2/admin/staff/filter-facets", operation_id = "getAdminStaffFilterFacets", tag = "admin", security(("bearerAuth" = [])), params(StaffFilterFacetQuery), responses((status = 200, body = ObjectResponse<StaffFilterFacets>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn staff_filter_facets(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<StaffFilterFacetQuery>,
+) -> Result<Json<ObjectResponse<StaffFilterFacets>>, ApiError> {
+    Ok(Json(
+        state
+            .admin_service()
+            .staff_filter_facets(&user, query)
+            .await?,
+    ))
+}
+
 #[utoipa::path(get, path = "/api/v2/staff/directory", operation_id = "getStaffDirectory", tag = "staff", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<StaffDirectoryItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_staff_directory(
     State(state): State<AppState>,
@@ -433,11 +448,25 @@ pub async fn create_delegation(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/audit-events", operation_id = "getAdminAuditEvents", tag = "admin", security(("bearerAuth" = [])), params(AuditEventListQuery), responses((status = 200, body = ListResponse<AuditEventListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/audit-events", operation_id = "getAdminAuditEvents", tag = "admin", security(("bearerAuth" = [])), params(AuditEventListGetQuery), responses((status = 200, body = ListResponse<AuditEventListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_audit_events(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<AuditEventListQuery>,
+    Query(query): Query<AuditEventListGetQuery>,
+) -> Result<Json<ListResponse<AuditEventListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .admin_service()
+            .list_audit_events(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/admin/audit-events/search", operation_id = "postAdminAuditEventsSearch", tag = "admin", security(("bearerAuth" = [])), request_body = AuditEventListQuery, responses((status = 200, body = ListResponse<AuditEventListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_audit_events(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<AuditEventListQuery>,
 ) -> Result<Json<ListResponse<AuditEventListItem>>, ApiError> {
     Ok(Json(
         state

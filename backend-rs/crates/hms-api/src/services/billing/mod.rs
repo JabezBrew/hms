@@ -2,12 +2,14 @@ mod cash_control;
 mod catalog;
 mod common;
 mod financial_workflow;
+mod insurance;
 mod nhis;
 mod overview;
 
 pub use cash_control::CashControlService;
 pub use catalog::BillingCatalogService;
 pub use financial_workflow::FinancialWorkflowService;
+pub use insurance::InsuranceService;
 pub use nhis::NhisService;
 pub use overview::BillingOverviewService;
 
@@ -37,6 +39,10 @@ impl BillingServices {
 
     pub fn overview(&self) -> BillingOverviewService {
         BillingOverviewService::new(self.state.clone())
+    }
+
+    pub fn insurance(&self) -> InsuranceService {
+        InsuranceService::new(self.state.clone())
     }
 
     pub fn nhis(&self) -> NhisService {

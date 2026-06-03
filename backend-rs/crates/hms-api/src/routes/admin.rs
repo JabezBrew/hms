@@ -53,6 +53,10 @@ pub fn routes() -> Router<AppState> {
             get(admin::list_staff).post(admin::create_staff),
         )
         .route(
+            "/api/v2/admin/staff/filter-facets",
+            get(admin::staff_filter_facets),
+        )
+        .route(
             "/api/v2/admin/staff/:id",
             get(admin::get_staff).patch(admin::update_staff),
         )
@@ -89,4 +93,8 @@ pub fn routes() -> Router<AppState> {
             get(admin::list_delegations).post(admin::create_delegation),
         )
         .route("/api/v2/admin/audit-events", get(admin::list_audit_events))
+        .route(
+            "/api/v2/admin/audit-events/search",
+            post(admin::search_audit_events),
+        )
 }

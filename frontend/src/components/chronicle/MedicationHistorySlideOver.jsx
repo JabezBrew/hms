@@ -1,8 +1,6 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useMemo, useRef, useState } from 'react';
 import format from 'date-fns/format';
@@ -10,6 +8,7 @@ import format from 'date-fns/format';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { TablePagination } from '@/components/ui/table-pagination';
 import {
   Select,
   SelectContent,
@@ -214,36 +213,19 @@ const MedicationHistorySlideOver = ({
       </ScrollArea>
 
       <footer className="px-6 py-3 border-t border-border bg-card">
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-mono text-[10px] text-muted-foreground">
-            {data?.count ?? 0} records
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((current) => Math.max(current - 1, 1))}
-              disabled={!data?.has_previous}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Prev
-            </Button>
-            <span className="font-mono text-xs text-muted-foreground">
-              Page {data?.page ?? 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((current) => current + 1)}
-              disabled={!data?.has_next}
-              className="font-mono text-xs"
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          canJumpToPage={false}
+          className="border-t-0 py-0"
+          countExact={data?.count_exact !== false && data?.total_is_lower_bound !== true}
+          currentPage={data?.page ?? page}
+          hasNextPage={Boolean(data?.has_next || data?.next)}
+          hasPrevPage={Boolean(data?.has_previous || data?.previous) || page > 1}
+          itemLabel="records"
+          onPageChange={setPage}
+          pageSize={20}
+          totalCount={data?.count ?? 0}
+          totalPages={data?.total_pages}
+        />
       </footer>
     </div>
   );

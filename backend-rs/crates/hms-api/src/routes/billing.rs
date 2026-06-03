@@ -1,4 +1,4 @@
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
 use crate::handlers::billing;
@@ -21,8 +21,28 @@ pub fn routes() -> Router<AppState> {
             get(billing::dashboard_summary),
         )
         .route(
+            "/api/v2/billing/insurance-providers",
+            get(billing::list_insurance_providers),
+        )
+        .route(
+            "/api/v2/billing/insurance-plans",
+            get(billing::list_insurance_plans),
+        )
+        .route(
+            "/api/v2/billing/patient-insurances",
+            get(billing::list_patient_insurances),
+        )
+        .route(
+            "/api/v2/billing/patient-insurances/search",
+            post(billing::search_patient_insurances),
+        )
+        .route(
             "/api/v2/billing/invoices",
             get(billing::list_invoices).post(billing::create_invoice),
+        )
+        .route(
+            "/api/v2/billing/invoices/search",
+            post(billing::search_invoices),
         )
         .route("/api/v2/billing/invoices/:id", get(billing::get_invoice))
         .route(
@@ -32,6 +52,34 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/billing/payments",
             get(billing::list_payments).post(billing::create_payment),
+        )
+        .route(
+            "/api/v2/billing/payment-intents",
+            get(billing::list_payment_intents),
+        )
+        .route(
+            "/api/v2/billing/payment-intents/search",
+            post(billing::search_payment_intents),
+        )
+        .route(
+            "/api/v2/billing/settlements",
+            get(billing::list_settlement_batches),
+        )
+        .route(
+            "/api/v2/billing/settlements/search",
+            post(billing::search_settlement_batches),
+        )
+        .route(
+            "/api/v2/billing/settlements/:id/lines",
+            get(billing::list_settlement_lines),
+        )
+        .route(
+            "/api/v2/billing/settlements/:id/lines/search",
+            post(billing::search_settlement_lines),
+        )
+        .route(
+            "/api/v2/billing/payments/search",
+            post(billing::search_payments),
         )
         .route(
             "/api/v2/billing/payments/:id/reverse",
@@ -71,6 +119,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/nhis/claims",
             get(billing::list_claims).post(billing::create_claim),
         )
+        .route("/api/v2/nhis/claims/search", post(billing::search_claims))
         .route("/api/v2/nhis/claims/:id", get(billing::get_claim))
         .route(
             "/api/v2/nhis/claims/:id/ar-state",
@@ -82,12 +131,13 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/api/v2/nhis/service-mappings",
-            axum::routing::post(billing::create_nhis_service_mapping),
+            get(billing::list_nhis_service_mappings).post(billing::create_nhis_service_mapping),
         )
         .route(
             "/api/v2/nhis/batches",
             get(billing::list_batches).post(billing::create_batch),
         )
+        .route("/api/v2/nhis/exports", get(billing::list_nhis_export_jobs))
         .route(
             "/api/v2/nhis/batches/:id/export",
             axum::routing::post(billing::export_batch),
@@ -95,5 +145,13 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/nhis/remittance-imports",
             get(billing::list_remittance_imports).post(billing::create_remittance_import),
+        )
+        .route(
+            "/api/v2/nhis/remittance-imports/:id/lines",
+            get(billing::list_remittance_lines),
+        )
+        .route(
+            "/api/v2/nhis/remittance-imports/:id/lines/search",
+            post(billing::search_remittance_lines),
         )
 }

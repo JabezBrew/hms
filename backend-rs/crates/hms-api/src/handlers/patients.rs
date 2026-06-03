@@ -3,8 +3,9 @@ use axum::Json;
 use hms_domain::auth::{BreakGlassGrant, EndBreakGlassGrantsResponse, StartBreakGlassGrantRequest};
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::patients::{
-    CreatePatientRequest, PatientContextListItem, PatientContextListQuery, PatientDetail,
-    PatientListItem, PatientListQuery, PatientRegistrationValidationRule, UpdatePatientRequest,
+    CreatePatientRequest, PatientContextListGetQuery, PatientContextListItem,
+    PatientContextListQuery, PatientDetail, PatientListGetQuery, PatientListItem, PatientListQuery,
+    PatientRegistrationValidationRule, UpdatePatientRequest,
 };
 use uuid::Uuid;
 
@@ -22,7 +23,7 @@ use crate::state::AppState;
     operation_id = "getPatients",
     tag = "patients",
     security(("bearerAuth" = [])),
-    params(PatientListQuery),
+    params(PatientListGetQuery),
     responses(
         (status = 200, description = "Patient registry list", body = ListResponse<PatientListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -32,7 +33,33 @@ use crate::state::AppState;
 pub async fn list_patients(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<PatientListQuery>,
+    Query(query): Query<PatientListGetQuery>,
+) -> Result<Json<ListResponse<PatientListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .list_patients(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/patients/search",
+    operation_id = "postPatientsSearch",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    request_body = PatientListQuery,
+    responses(
+        (status = 200, description = "Patient registry search", body = ListResponse<PatientListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_patients(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<PatientListQuery>,
 ) -> Result<Json<ListResponse<PatientListItem>>, ApiError> {
     Ok(Json(
         state.patients_service().list_patients(&user, query).await?,
@@ -45,7 +72,7 @@ pub async fn list_patients(
     operation_id = "getPatientContextList",
     tag = "patients",
     security(("bearerAuth" = [])),
-    params(PatientContextListQuery),
+    params(PatientContextListGetQuery),
     responses(
         (status = 200, description = "Current user's context patients", body = ListResponse<PatientContextListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -55,7 +82,33 @@ pub async fn list_patients(
 pub async fn list_context_patients(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<PatientContextListQuery>,
+    Query(query): Query<PatientContextListGetQuery>,
+) -> Result<Json<ListResponse<PatientContextListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .list_context_patients(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/patients/context/search",
+    operation_id = "postPatientContextSearch",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    request_body = PatientContextListQuery,
+    responses(
+        (status = 200, description = "Current user's context patient search", body = ListResponse<PatientContextListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_context_patients(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<PatientContextListQuery>,
 ) -> Result<Json<ListResponse<PatientContextListItem>>, ApiError> {
     Ok(Json(
         state

@@ -13,7 +13,7 @@ import CalendarPlus from 'lucide-react/dist/esm/icons/calendar-plus.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { usePatientDemographics, useUpdatePatient, patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { usePatientInsurance } from '@/features/billing/hooks';
 import { useQueryClient } from '@tanstack/react-query';
+import { navigateToReturnTo } from '@/shared/lib/returnTo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -582,6 +583,7 @@ function DemographicsQuickActions({
 const PatientDemographicsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [walkInOpen, setWalkInOpen] = useState(false);
@@ -657,7 +659,7 @@ const PatientDemographicsPage = () => {
       <PatientDemographicsErrorState
         error={error}
         pageMeta={pageMeta}
-        onBack={() => navigate(-1)}
+        onBack={() => navigateToReturnTo(navigate, location, '/patients')}
       />
     );
   }
@@ -672,7 +674,7 @@ const PatientDemographicsPage = () => {
           isEditing={isEditing}
           isSaving={updateMutation.isPending}
           mrn={mrn}
-          onBack={() => navigate('/patients')}
+          onBack={() => navigateToReturnTo(navigate, location, '/patients')}
           onCancelEdit={handleCancelEdit}
           onEdit={() => setIsEditing(true)}
           onSave={form.handleSubmit(onSubmit)}

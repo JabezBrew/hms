@@ -6,6 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
+import {
+  ENCOUNTER_STATUS_OPTIONS,
+  ENCOUNTER_TYPE_OPTIONS,
+} from './encounterListConstants';
 
 export function EncounterFiltersPanel({
   activeTab,
@@ -13,6 +17,8 @@ export function EncounterFiltersPanel({
   hasActiveFilters,
   onFilterChange,
   onResetFilters,
+  statusOptions = ENCOUNTER_STATUS_OPTIONS,
+  typeOptions = ENCOUNTER_TYPE_OPTIONS,
 }) {
   return (
     <div className={cn(
@@ -82,11 +88,9 @@ export function EncounterFiltersPanel({
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="planned">Planned</SelectItem>
-              <SelectItem value="in-progress">In Progress</SelectItem>
-              <SelectItem value="finished">Finished</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
+              {statusOptions.map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -104,10 +108,9 @@ export function EncounterFiltersPanel({
                 <SelectValue placeholder="All types" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                <SelectItem value="inpatient">Inpatient</SelectItem>
-                <SelectItem value="outpatient">Outpatient</SelectItem>
-                <SelectItem value="emergency">Emergency</SelectItem>
+                {typeOptions.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

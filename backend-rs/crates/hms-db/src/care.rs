@@ -19,6 +19,24 @@ pub struct CareCursor {
     pub id: Uuid,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct AppointmentFilters {
+    pub date: Option<NaiveDate>,
+    pub clinic_id: Option<Uuid>,
+    pub status: Option<AppointmentStatus>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct EncounterFilters {
+    pub patient_id: Option<Uuid>,
+    pub patient_search: Option<String>,
+    pub practitioner_search: Option<String>,
+    pub date: Option<NaiveDate>,
+    pub status: Option<EncounterStatus>,
+    pub encounter_type: Option<EncounterType>,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TriageFilters {
     pub acuity: Option<TriageAcuity>,
@@ -334,8 +352,7 @@ pub async fn list_appointments(
     pool: &PgPool,
     facility_id: Uuid,
     cursor: Option<CareCursor>,
-    date: Option<NaiveDate>,
-    clinic_id: Option<Uuid>,
+    filters: AppointmentFilters,
     limit: i64,
 ) -> anyhow::Result<Vec<AppointmentListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
@@ -360,6 +377,7 @@ pub async fn list_appointments(
         JOIN patients ON patients.id = appointments.patient_id
         LEFT JOIN appointment_types ON appointment_types.id = appointments.appointment_type_id
              AND appointment_types.facility_id = appointments.facility_id
+        LEFT JOIN users AS practitioners ON practitioners.id = appointments.practitioner_user_id
         WHERE appointments.facility_id =
         "#,
     );
@@ -367,7 +385,7 @@ pub async fn list_appointments(
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
 
-    if let Some(date) = date {
+    if let Some(date) = filters.date {
         let starts_at = date
             .and_hms_opt(0, 0, 0)
             .expect("valid midnight for schedule date")
@@ -383,9 +401,32 @@ pub async fn list_appointments(
         query.push_bind(ends_before);
     }
 
-    if let Some(clinic_id) = clinic_id {
+    if let Some(clinic_id) = filters.clinic_id {
         query.push(" AND appointments.clinic_id = ");
         query.push_bind(clinic_id);
+    }
+
+    if let Some(status) = filters.status {
+        query.push(" AND appointments.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(
+            r#" AND (
+                appointments.patient_id IN (
+                    SELECT search_patients.id
+                    FROM patients AS search_patients
+                    WHERE search_patients.facility_id = appointments.facility_id
+                      AND lower(search_patients.patient_code || ' ' || search_patients.first_name || ' ' || search_patients.last_name) LIKE "#,
+        );
+        query.push_bind(pattern.to_lowercase());
+        query.push(" ESCAPE '\\')");
+        query.push(" OR appointment_types.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR practitioners.display_name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
     }
 
     if let Some(cursor) = cursor {
@@ -1823,7 +1864,7 @@ pub async fn get_triage(
 pub async fn list_encounters(
     pool: &PgPool,
     facility_id: Uuid,
-    patient_id: Option<Uuid>,
+    filters: EncounterFilters,
     cursor: Option<CareCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<EncounterListItem>> {
@@ -1847,9 +1888,63 @@ pub async fn list_encounters(
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
 
-    if let Some(patient_id) = patient_id {
+    if let Some(patient_id) = filters.patient_id {
         query.push(" AND encounters.patient_id = ");
         query.push_bind(patient_id);
+    }
+
+    if let Some(status) = filters.status {
+        query.push(" AND encounters.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+
+    if let Some(encounter_type) = filters.encounter_type {
+        query.push(" AND encounters.encounter_type = ");
+        query.push_bind(codec::encode(encounter_type)?);
+    }
+
+    if let Some(date) = filters.date {
+        let starts_at = date
+            .and_hms_opt(0, 0, 0)
+            .expect("valid encounter filter date")
+            .and_utc();
+        let ends_before = date
+            .succ_opt()
+            .and_then(|next_date| next_date.and_hms_opt(0, 0, 0))
+            .expect("valid next-day encounter filter date")
+            .and_utc();
+        query.push(" AND encounters.started_at >= ");
+        query.push_bind(starts_at);
+        query.push(" AND encounters.started_at < ");
+        query.push_bind(ends_before);
+    }
+
+    if let Some(pattern) = lower_like_contains_pattern(filters.patient_search.as_deref()) {
+        query.push(
+            r#" AND encounters.patient_id IN (
+                SELECT search_patients.id
+                FROM patients AS search_patients
+                WHERE search_patients.facility_id = encounters.facility_id
+                  AND lower(search_patients.patient_code || ' ' || search_patients.first_name || ' ' || search_patients.last_name) LIKE "#,
+        );
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+
+    if let Some(pattern) = like_contains_pattern(filters.practitioner_search.as_deref()) {
+        query.push(
+            r#" AND EXISTS (
+                SELECT 1
+                FROM care_team_assignments
+                INNER JOIN users ON users.id = care_team_assignments.user_id
+                WHERE care_team_assignments.encounter_id = encounters.id
+                  AND care_team_assignments.is_active = TRUE
+                  AND (users.display_name ILIKE "#,
+        );
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR users.email ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\'))");
     }
 
     if let Some(cursor) = cursor {
@@ -2538,6 +2633,22 @@ fn encounter_from_row(row: EncounterRow) -> anyhow::Result<EncounterListItem> {
         started_at: row.started_at,
         ended_at: row.ended_at,
     })
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let trimmed = search?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let escaped = trimmed
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    Some(format!("%{escaped}%"))
+}
+
+fn lower_like_contains_pattern(search: Option<&str>) -> Option<String> {
+    like_contains_pattern(search).map(|pattern| pattern.to_lowercase())
 }
 
 fn care_team_assignment_from_row(row: CareTeamAssignmentRow) -> anyhow::Result<CareTeamAssignment> {

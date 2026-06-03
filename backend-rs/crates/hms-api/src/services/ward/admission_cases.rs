@@ -38,7 +38,18 @@ impl AdmissionCasesService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let cacheable_hot_page = page.cursor.is_none() && query.patient_id.is_none();
+        let has_search = query
+            .search
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        if let Some(patient_id) = query.patient_id {
+            common::load_patient_for_access(&self.state, ctx, patient_id).await?;
+        }
+        let cacheable_hot_page = page.cursor.is_none()
+            && query.patient_id.is_none()
+            && query.monitoring_filter.is_none()
+            && !has_search;
         if cacheable_hot_page {
             if let Some(response) = self.state.cached_ward_board(ctx, query.ward_id, page_size) {
                 return Ok(response);
@@ -49,6 +60,8 @@ impl AdmissionCasesService {
             self.state.facility_id(),
             query.ward_id,
             query.patient_id,
+            query.search,
+            query.monitoring_filter,
             page.cursor,
             fetch_limit,
         )

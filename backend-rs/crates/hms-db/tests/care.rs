@@ -1,9 +1,9 @@
 use chrono::{NaiveDate, TimeZone, Utc};
 use hms_db::care::{
-    AppointmentUpdate, BlockedTimeScope, ClinicSessionMode, ClinicSessionOwnerType, ClinicUpdate,
-    EncounterUpdate, NewAppointmentSeries, NewAppointmentType, NewBlockedTime,
-    NewBookedAppointment, NewClinic, NewClinicSession, NewEncounter, NewTriage, NewVisit,
-    TriageFilters,
+    AppointmentFilters, AppointmentUpdate, BlockedTimeScope, ClinicSessionMode,
+    ClinicSessionOwnerType, ClinicUpdate, EncounterFilters, EncounterUpdate, NewAppointmentSeries,
+    NewAppointmentType, NewBlockedTime, NewBookedAppointment, NewClinic, NewClinicSession,
+    NewEncounter, NewTriage, NewVisit, TriageFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::care::{
@@ -711,8 +711,11 @@ async fn appointment_list_can_filter_by_schedule_date() {
         &pool,
         facility_id,
         None,
-        Some(NaiveDate::from_ymd_opt(2030, 5, 12).expect("static date is valid")),
-        Some(default_clinic_id),
+        AppointmentFilters {
+            date: Some(NaiveDate::from_ymd_opt(2030, 5, 12).expect("static date is valid")),
+            clinic_id: Some(default_clinic_id),
+            ..AppointmentFilters::default()
+        },
         25,
     )
     .await
@@ -811,10 +814,18 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
     .await
     .expect("other encounter is created");
 
-    let patient_encounters =
-        hms_db::care::list_encounters(&pool, facility_id, Some(patient_id), None, 25)
-            .await
-            .expect("patient encounter list succeeds");
+    let patient_encounters = hms_db::care::list_encounters(
+        &pool,
+        facility_id,
+        EncounterFilters {
+            patient_id: Some(patient_id),
+            ..EncounterFilters::default()
+        },
+        None,
+        25,
+    )
+    .await
+    .expect("patient encounter list succeeds");
     assert_eq!(patient_encounters.len(), 1);
     assert_eq!(patient_encounters[0].id, encounter.id);
     assert_ne!(patient_encounters[0].id, other_encounter.id);

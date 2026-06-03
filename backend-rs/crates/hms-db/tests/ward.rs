@@ -832,24 +832,41 @@ async fn ward_board_can_be_filtered_by_ward_and_patient() {
             .expect("case is activated");
     }
 
-    let all_board = hms_db::ward::list_ward_board(&pool, facility_id, None, None, None, 25)
-        .await
-        .expect("ward board list succeeds");
+    let all_board =
+        hms_db::ward::list_ward_board(&pool, facility_id, None, None, None, None, None, 25)
+            .await
+            .expect("ward board list succeeds");
     assert!(all_board.iter().any(|item| item.ward_id == ward_ids[0]));
     assert!(all_board.iter().any(|item| item.ward_id == ward_ids[1]));
 
-    let scoped_board =
-        hms_db::ward::list_ward_board(&pool, facility_id, Some(ward_ids[0]), None, None, 25)
-            .await
-            .expect("ward-scoped board list succeeds");
+    let scoped_board = hms_db::ward::list_ward_board(
+        &pool,
+        facility_id,
+        Some(ward_ids[0]),
+        None,
+        None,
+        None,
+        None,
+        25,
+    )
+    .await
+    .expect("ward-scoped board list succeeds");
     assert!(!scoped_board.is_empty());
     assert!(scoped_board.iter().all(|item| item.ward_id == ward_ids[0]));
     assert!(!scoped_board.iter().any(|item| item.ward_id == ward_ids[1]));
 
-    let patient_scoped_board =
-        hms_db::ward::list_ward_board(&pool, facility_id, None, Some(patient_ids[0]), None, 25)
-            .await
-            .expect("patient-scoped board list succeeds");
+    let patient_scoped_board = hms_db::ward::list_ward_board(
+        &pool,
+        facility_id,
+        None,
+        Some(patient_ids[0]),
+        None,
+        None,
+        None,
+        25,
+    )
+    .await
+    .expect("patient-scoped board list succeeds");
     assert!(!patient_scoped_board.is_empty());
     assert!(patient_scoped_board
         .iter()

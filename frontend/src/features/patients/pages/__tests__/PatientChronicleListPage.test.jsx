@@ -328,21 +328,52 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     expect(screen.getByText('Medical Ward / Bed A-12')).toBeInTheDocument()
   })
 
-  it('does not hydrate patient search or clinical filters from URL params', () => {
-    renderPage('/patients?q=akua&scope=all&admission_start=2026-06-01&admission_end=2026-06-03&ward=ward-1&admission_status=admitted&attending_id=staff-1&age_min=10&age_max=50')
+  it('restores patient search and clinical filters from history state without using URL query text', () => {
+    renderPage({
+      pathname: '/patients',
+      search: '?q=ignored&scope=deceased',
+      state: {
+        patientRegistryState: {
+          searchQuery: 'akua',
+          searchOrdering: 'name',
+          searchPage: 2,
+          registryScope: 'all',
+          draftFilters: {
+            admissionStart: '2026-06-01',
+            admissionEnd: '2026-06-03',
+            wardId: 'ward-1',
+            admissionStatus: 'admitted',
+            attending: { id: 'staff-1', name: 'Dr Attending' },
+            ageMin: '10',
+            ageMax: '50',
+          },
+          appliedFilters: {
+            admissionStart: '2026-06-01',
+            admissionEnd: '2026-06-03',
+            wardId: 'ward-1',
+            admissionStatus: 'admitted',
+            attending: { id: 'staff-1', name: 'Dr Attending' },
+            ageMin: '10',
+            ageMax: '50',
+          },
+        },
+      },
+    })
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
-    expect(firstCallParams.registry_scope).toBe('active')
-    expect(firstCallParams.query).toBeUndefined()
-    expect(firstCallParams.admission_start).toBeUndefined()
-    expect(firstCallParams.admission_end).toBeUndefined()
-    expect(firstCallParams.ward).toBeUndefined()
-    expect(firstCallParams.admission_status).toBeUndefined()
-    expect(firstCallParams.attending_id).toBeUndefined()
-    expect(firstCallParams.age_min).toBeUndefined()
-    expect(firstCallParams.age_max).toBeUndefined()
+    expect(firstCallParams.registry_scope).toBe('all')
+    expect(firstCallParams.query).toBe('akua')
+    expect(firstCallParams.ordering).toBe('name')
+    expect(firstCallParams.page).toBe(2)
+    expect(firstCallParams.admission_start).toBe('2026-06-01')
+    expect(firstCallParams.admission_end).toBe('2026-06-03')
+    expect(firstCallParams.ward).toBe('ward-1')
+    expect(firstCallParams.admission_status).toBe('admitted')
+    expect(firstCallParams.attending_id).toBe('staff-1')
+    expect(firstCallParams.age_min).toBe('10')
+    expect(firstCallParams.age_max).toBe('50')
     expect(screen.getByText('Filters')).toBeInTheDocument()
-    expect(screen.queryByText('5')).not.toBeInTheDocument()
+    expect(screen.getByText('5')).toBeInTheDocument()
   })
 })
 

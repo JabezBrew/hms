@@ -106,14 +106,49 @@ describe('Rust V2 appointments bridge', () => {
         },
       ],
       page: 1,
+      current_page: 1,
+      requested_page: 1,
+      resolved_page: 1,
+      cursor_missing: false,
       page_size: 10,
       count: 2,
       total: 2,
+      total_pages: 2,
       count_exact: false,
       next: 'cursor-2',
       previous: null,
       next_cursor: 'cursor-2',
     });
+  });
+
+  it('searches appointments through the private Rust V2 search endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 10, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await appointmentsApi.getAppointments({
+      limit: 10,
+      date: '2026-05-12',
+      search: 'Ama',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/appointments/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 10, date: '2026-05-12', search: 'Ama' }),
+      }),
+    );
   });
 
   it('loads an appointment detail through Rust /api/v2 and adapts it for the existing detail page', async () => {

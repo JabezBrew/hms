@@ -1,5 +1,4 @@
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useState } from 'react';
+import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -9,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { navigateToReturnTo } from '@/shared/lib/returnTo';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -489,6 +489,7 @@ function OrdersTab({ itemId, navigate }) {
 export default function ItemDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const itemMutationAvailable = !isRustV2ApiMode();
 
@@ -505,7 +506,7 @@ export default function ItemDetailPage() {
   };
 
   const handleBack = () => {
-    navigate('/inventory/items');
+    navigateToReturnTo(navigate, location, '/inventory/items');
   };
 
   const handleEdit = () => {

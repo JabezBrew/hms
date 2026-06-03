@@ -95,18 +95,24 @@ describe('Rust V2 audit log bridge', () => {
     await waitFor(() => expect(result.current.data?.results).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/audit-events?limit=35&search=permission',
+      'http://localhost:8080/api/v2/admin/audit-events/search',
       expect.objectContaining({
-        method: 'GET',
+        method: 'POST',
         credentials: 'include',
         signal: expect.any(AbortSignal),
+        body: JSON.stringify({
+          limit: 35,
+          search: 'permission',
+          ordering: '-timestamp',
+        }),
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
+          'Content-Type': 'application/json',
           'X-Facility-Code': 'HMS',
         }),
       }),
     );
-    expect(result.current.data).toEqual({
+    expect(result.current.data).toMatchObject({
       results: [
         expect.objectContaining({
           id: 'audit-1',
@@ -122,14 +128,14 @@ describe('Rust V2 audit log bridge', () => {
           request_id: 'req-1',
         }),
       ],
-      count: 1,
+      count: 2,
       next: 'cursor-next',
       previous: null,
-      page: {
-        limit: 35,
-        has_next: true,
-        next_cursor: 'cursor-next',
-      },
+      page: 1,
+      page_size: 35,
+      total: 2,
+      total_pages: 2,
+      next_cursor: 'cursor-next',
       count_exact: false,
     });
   });

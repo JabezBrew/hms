@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ import {
   getTempZoneConfig,
 } from '@/components/inventory/location-card-utils';
 import { LocationForm } from '@/components/inventory';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { useStorageLocations } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
@@ -47,8 +48,6 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
@@ -75,7 +74,8 @@ const TEMP_ZONE_OPTIONS = [
 
 function useStorageLocationFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
   const locationType = searchParams.get('type') || '';
   const tempZone = searchParams.get('temp_zone') || '';
   const action = searchParams.get('action');
@@ -83,17 +83,8 @@ function useStorageLocationFilters() {
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
-      } else {
-        params.delete('search');
-      }
-      params.set('page', '1');
-      return params;
-    });
-  }, [debouncedSearch, setSearchParams]);
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
 
   const handleTypeChange = useCallback((value) => {
     setSearchParams((prev) => {
@@ -134,6 +125,21 @@ function useStorageLocationFilters() {
     setSearchParams({});
   }, [setSearchParams]);
 
+  const handleSearchChange = useCallback((event) => {
+    const value = event.target.value;
+    setSearch(value);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value) {
+        params.set('search', value);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  }, [setSearchParams]);
+
   const queryParams = useMemo(() => ({
     page,
     page_size: 24,
@@ -150,7 +156,7 @@ function useStorageLocationFilters() {
     page,
     queryParams,
     hasActiveFilters: Boolean(debouncedSearch || locationType || tempZone),
-    handleSearchChange: (event) => setSearch(event.target.value),
+    handleSearchChange,
     handleTypeChange,
     handleTempZoneChange,
     handlePageChange,
@@ -493,42 +499,6 @@ function LocationsDisplay({
   );
 }
 
-function LocationsPagination({ page, totalPages, totalCount, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center justify-between pt-4 border-t border-border">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages} ({totalCount} locations)
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="font-mono text-xs"
-        >
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className="font-mono text-xs"
-        >
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function CreateLocationSheet({ isOpen, onClose, onCreateSuccess }) {
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -555,7 +525,8 @@ function CreateLocationSheet({ isOpen, onClose, onCreateSuccess }) {
  */
 export default function LocationsPage() {
   const navigate = useNavigate();
-  const locationMutationsAvailable = !isRustV2ApiMode();
+  const rustV2Mode = isRustV2ApiMode();
+  const locationMutationsAvailable = !rustV2Mode;
   const {
     search,
     locationType,
@@ -575,7 +546,6 @@ export default function LocationsPage() {
   const { data: locationsData, isLoading, error, refetch } = useStorageLocations(queryParams);
   const locations = locationsData?.results || locationsData || [];
   const totalCount = locationsData?.count || locations.length;
-  const totalPages = Math.ceil(totalCount / 24);
 
   const handleLocationClick = useCallback((locationId) => {
     navigate(`/inventory/locations/${locationId}`);
@@ -667,10 +637,11 @@ export default function LocationsPage() {
           onCreateLocation={handleCreateLocation}
         />
 
-        <LocationsPagination
+        <InventoryPagination
+          data={locationsData}
+          itemLabel="locations"
           page={page}
-          totalPages={totalPages}
-          totalCount={totalCount}
+          pageSize={24}
           onPageChange={handlePageChange}
         />
 

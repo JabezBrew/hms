@@ -38,13 +38,13 @@ import {
   PurchaseOrderForm,
 } from '@/components/inventory';
 import { formatPOCurrency, getPOStatusConfig } from '@/components/inventory/po-card-utils';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { usePurchaseOrders, useSuppliers } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
@@ -56,7 +56,7 @@ import Printer from 'lucide-react/dist/esm/icons/printer.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import { format, parseISO } from 'date-fns';
 
-const STATUS_TABS = [
+const LEGACY_STATUS_TABS = [
   { value: 'all', label: 'All' },
   { value: 'draft', label: 'Draft' },
   { value: 'pending', label: 'Pending' },
@@ -66,10 +66,21 @@ const STATUS_TABS = [
   { value: 'closed', label: 'Closed' },
 ];
 
-function usePurchaseOrderListFilters() {
+const RUST_V2_STATUS_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'sent', label: 'Sent' },
+  { value: 'ordered', label: 'Ordered' },
+  { value: 'closed', label: 'Closed' },
+];
+
+function usePurchaseOrderListFilters({ statusTabs = LEGACY_STATUS_TABS } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const status = searchParams.get('status') || 'all';
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
+  const rawStatus = searchParams.get('status') || 'all';
+  const status = statusTabs.some((tab) => tab.value === rawStatus) ? rawStatus : 'all';
   const supplier = searchParams.get('supplier') || '';
   const action = searchParams.get('action');
   const initialRequisitionId = searchParams.get('requisition') || '';
@@ -77,17 +88,18 @@ function usePurchaseOrderListFilters() {
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
+
+  useEffect(() => {
+    if (rawStatus === status) return;
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
-      } else {
-        params.delete('search');
-      }
+      params.delete('status');
       params.set('page', '1');
       return params;
     });
-  }, [debouncedSearch, setSearchParams]);
+  }, [rawStatus, setSearchParams, status]);
 
   const handleTabChange = useCallback((value) => {
     setSearchParams((prev) => {
@@ -128,6 +140,21 @@ function usePurchaseOrderListFilters() {
     setSearchParams({});
   }, [setSearchParams]);
 
+  const handleSearchChange = useCallback((event) => {
+    const value = event.target.value;
+    setSearch(value);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value) {
+        params.set('search', value);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  }, [setSearchParams]);
+
   const queryParams = useMemo(() => ({
     page,
     page_size: 20,
@@ -145,7 +172,7 @@ function usePurchaseOrderListFilters() {
     page,
     queryParams,
     hasActiveFilters: Boolean(debouncedSearch || status !== 'all' || supplier),
-    handleSearchChange: (event) => setSearch(event.target.value),
+    handleSearchChange,
     handleTabChange,
     handleSupplierChange,
     handlePageChange,
@@ -349,11 +376,11 @@ function PurchaseOrdersHeader({ totalCount, isLoading, onRefresh, onCreatePO }) 
   );
 }
 
-function PurchaseOrderStatusTabs({ status, onStatusChange }) {
+function PurchaseOrderStatusTabs({ status, statusTabs, onStatusChange }) {
   return (
     <Tabs value={status} onValueChange={onStatusChange}>
       <TabsList className="w-full sm:w-auto overflow-x-auto">
-        {STATUS_TABS.map((tab) => (
+        {statusTabs.map((tab) => (
           <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
             {tab.label}
           </TabsTrigger>
@@ -367,6 +394,7 @@ function PurchaseOrdersFilters({
   search,
   supplier,
   suppliers,
+  useSupplierNameValue,
   hasActiveFilters,
   onSearchChange,
   onSupplierChange,
@@ -394,7 +422,11 @@ function PurchaseOrdersFilters({
             All Suppliers
           </SelectItem>
           {suppliers.map((sup) => (
-            <SelectItem key={sup.id} value={sup.id.toString()} className="font-mono text-sm">
+            <SelectItem
+              key={sup.id}
+              value={useSupplierNameValue ? sup.name : sup.id.toString()}
+              className="font-mono text-sm"
+            >
               {sup.name}
             </SelectItem>
           ))}
@@ -477,42 +509,6 @@ function PurchaseOrdersDisplay({
   );
 }
 
-function PurchaseOrdersPagination({ page, totalPages, totalCount, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center justify-between pt-4 border-t border-border">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages} ({totalCount} purchase orders)
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="font-mono text-xs"
-        >
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className="font-mono text-xs"
-        >
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function CreatePurchaseOrderSheet({ isOpen, initialRequisitionId, onClose, onCreateSuccess }) {
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -540,6 +536,8 @@ function CreatePurchaseOrderSheet({ isOpen, initialRequisitionId, onClose, onCre
  */
 export default function PurchaseOrdersPage() {
   const navigate = useNavigate();
+  const rustV2Mode = isRustV2ApiMode();
+  const statusTabs = rustV2Mode ? RUST_V2_STATUS_TABS : LEGACY_STATUS_TABS;
   const {
     search,
     status,
@@ -555,12 +553,11 @@ export default function PurchaseOrdersPage() {
     handlePageChange,
     clearFilters,
     setSearchParams,
-  } = usePurchaseOrderListFilters();
+  } = usePurchaseOrderListFilters({ statusTabs });
   const { data: posData, isLoading, error, refetch } = usePurchaseOrders(queryParams);
   const { data: suppliersData } = useSuppliers();
   const purchaseOrders = posData?.results || [];
   const totalCount = posData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
   const suppliers = suppliersData?.results || suppliersData || [];
   const isCreateOpen = action === 'create';
 
@@ -627,17 +624,24 @@ export default function PurchaseOrdersPage() {
       />
 
       <div className="p-4 sm:p-6 space-y-6">
-        <PurchaseOrderStatusTabs status={status} onStatusChange={handleTabChange} />
+        <>
+          <PurchaseOrderStatusTabs
+            status={status}
+            statusTabs={statusTabs}
+            onStatusChange={handleTabChange}
+          />
 
-        <PurchaseOrdersFilters
-          search={search}
-          supplier={supplier}
-          suppliers={suppliers}
-          hasActiveFilters={hasActiveFilters}
-          onSearchChange={handleSearchChange}
-          onSupplierChange={handleSupplierChange}
-          onClearFilters={clearFilters}
-        />
+          <PurchaseOrdersFilters
+            search={search}
+            supplier={supplier}
+            suppliers={suppliers}
+            useSupplierNameValue={rustV2Mode}
+            hasActiveFilters={hasActiveFilters}
+            onSearchChange={handleSearchChange}
+            onSupplierChange={handleSupplierChange}
+            onClearFilters={clearFilters}
+          />
+        </>
 
         <PurchaseOrdersDisplay
           purchaseOrders={purchaseOrders}
@@ -647,10 +651,11 @@ export default function PurchaseOrdersPage() {
           onCreatePO={handleCreatePO}
         />
 
-        <PurchaseOrdersPagination
+        <InventoryPagination
+          data={posData}
+          itemLabel="purchase orders"
           page={page}
-          totalPages={totalPages}
-          totalCount={totalCount}
+          pageSize={20}
           onPageChange={handlePageChange}
         />
 

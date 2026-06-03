@@ -12,8 +12,8 @@ use hms_domain::admin::{
     CreateStaffRequest, DelegationListItem, FeatureEntitlementListItem, OrganizationUnitListItem,
     OrganizationUnitListQuery, PermissionAssignmentListItem, PositionListItem,
     PositionTemplateListItem, PractitionerListItem, PractitionerListQuery, StaffDirectoryItem,
-    StaffListItem, StaffListQuery, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
-    UpsertPractitionerProfileRequest,
+    StaffFilterFacetQuery, StaffFilterFacets, StaffListItem, StaffListQuery,
+    UpdateFeatureEntitlementRequest, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use uuid::Uuid;
@@ -572,6 +572,8 @@ impl AdminService {
         let search = query.search;
         let is_active = query.is_active;
         let practitioners_only = query.practitioners_only;
+        let department = query.department;
+        let position = query.position;
         let page = page_request(AdminListQuery {
             cursor: query.cursor,
             limit: query.limit,
@@ -585,12 +587,35 @@ impl AdminService {
             search,
             is_active,
             practitioners_only,
+            department,
+            position,
         )
         .await
         .map_err(|_| ApiError::conflict("staff_list_failed", "Staff could not be loaded."))?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
         }))
+    }
+
+    pub async fn staff_filter_facets(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: StaffFilterFacetQuery,
+    ) -> Result<ObjectResponse<StaffFilterFacets>, ApiError> {
+        require_staff_access(ctx, self.facility_id())?;
+        let facets = hms_db::admin::list_staff_filter_facets(
+            self.pool(),
+            self.facility_id(),
+            query.is_active,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "staff_facets_failed",
+                "Staff filter options could not be loaded.",
+            )
+        })?;
+        Ok(object(facets))
     }
 
     pub async fn list_staff_directory(
@@ -974,13 +999,15 @@ impl AdminService {
         query: AuditEventListQuery,
     ) -> Result<ListResponse<AuditEventListItem>, ApiError> {
         require_admin_access(ctx, self.facility_id())?;
-        let filters = AuditEventFilters {
-            search: query.search,
-            category: query.category,
-            action: query.action,
-            start_date: query.start_date,
-            end_date: query.end_date,
-        };
+        let timestamp_desc = audit_timestamp_desc(query.ordering.as_deref())?;
+        let filters = AuditEventFilters::new(
+            query.search,
+            query.category,
+            query.action,
+            query.start_date,
+            query.end_date,
+            timestamp_desc,
+        );
         let page = page_request(AdminListQuery {
             cursor: query.cursor,
             limit: query.limit,
@@ -1017,6 +1044,17 @@ fn require_admin_access(
     facility_id: Uuid,
 ) -> Result<(), ApiError> {
     hms_access::require_admin_authority_access(ctx, facility_id).map_err(ApiError::from)
+}
+
+fn audit_timestamp_desc(ordering: Option<&str>) -> Result<bool, ApiError> {
+    match ordering.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some("-timestamp") | Some("-occurred_at") => Ok(true),
+        Some("timestamp") | Some("occurred_at") => Ok(false),
+        Some(_) => Err(ApiError::bad_request(
+            "invalid_audit_ordering",
+            "Audit log ordering is invalid.",
+        )),
+    }
 }
 
 fn require_high_risk_admin_access(

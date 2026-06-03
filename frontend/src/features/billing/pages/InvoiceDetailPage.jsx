@@ -21,9 +21,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useInvoice, useGenerateClaim } from '@/features/billing/hooks';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
+import { navigateToReturnTo } from '@/shared/lib/returnTo';
 import { toast } from 'sonner';
 
 import RecordPaymentSlideOver from '@/components/billing/RecordPaymentSlideOver';
@@ -518,6 +519,7 @@ function InvoiceDetailContent({
 export default function InvoiceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showPaymentSlideOver, setShowPaymentSlideOver] = useState(false);
 
   const {
@@ -545,6 +547,10 @@ export default function InvoiceDetailPage() {
     printInvoice(id);
   };
 
+  const handleBack = () => {
+    navigateToReturnTo(navigate, location, '/billing/invoices');
+  };
+
   // Loading state
   if (isLoading) {
     return <InvoiceLoadingState />;
@@ -555,7 +561,7 @@ export default function InvoiceDetailPage() {
     return (
       <InvoiceErrorState
         error={error}
-        onBack={() => navigate('/billing/invoices')}
+        onBack={handleBack}
         onRetry={refetch}
       />
     );
@@ -572,7 +578,7 @@ export default function InvoiceDetailPage() {
         badge={badge}
         isGeneratingClaim={generateClaimMutation.isPending}
         isPrintingInvoice={printingId === id}
-        onBack={() => navigate('/billing/invoices')}
+        onBack={handleBack}
         onRecordPayment={() => setShowPaymentSlideOver(true)}
         onGenerateClaim={handleGenerateClaim}
         onPrint={handlePrint}

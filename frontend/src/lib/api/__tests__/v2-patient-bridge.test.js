@@ -61,10 +61,11 @@ describe('Rust V2 patient bridge', () => {
     );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients?limit=25&search=Ama&status=active',
+      'http://localhost:8080/api/v2/patients/search',
       expect.objectContaining({
-        method: 'GET',
+        method: 'POST',
         credentials: 'include',
+        body: JSON.stringify({ limit: 25, search: 'Ama', status: 'active' }),
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
           'X-Facility-Code': 'HMS',
@@ -91,6 +92,10 @@ describe('Rust V2 patient bridge', () => {
         },
       ],
       page: 1,
+      current_page: 1,
+      requested_page: 1,
+      resolved_page: 1,
+      cursor_missing: false,
       page_size: 25,
       count: 1,
       total: 1,
@@ -236,6 +241,97 @@ describe('Rust V2 patient bridge', () => {
     );
   });
 
+  it('forwards supported patient registry filters to Rust and drops unsupported UI-only filters', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: {
+            limit: 25,
+            has_next: false,
+            next_cursor: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await patientsApi.searchPatientsWithMeta(
+      {
+        query: 'Ama',
+        page_size: 25,
+        registry_scope: 'active',
+        admission_start: '2026-06-01',
+        admission_end: '2026-06-03',
+        ward: 'ward-1',
+        admission_status: 'admitted',
+        attending_id: 'staff-1',
+        age_min: '0',
+        age_max: '50',
+        department_id: 'department-1',
+        admission_type: 'emergency',
+        encounter_type: 'inpatient',
+      },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          limit: 25,
+          search: 'Ama',
+          status: 'active',
+          admission_start: '2026-06-01',
+          admission_end: '2026-06-03',
+          ward_id: 'ward-1',
+          admission_status: 'admitted',
+          attending_id: 'staff-1',
+          age_min: '0',
+          age_max: '50',
+        }),
+      }),
+    );
+  });
+
+  it('sends patient registry patient_id filters through the private Rust V2 search body', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: {
+            limit: 25,
+            has_next: false,
+            next_cursor: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await patientsApi.searchPatientsWithMeta(
+      { page_size: 25, patient_id: 'patient-1' },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 25, patient_id: 'patient-1' }),
+      }),
+    );
+  });
+
   it('does not forward registry-only params to Rust context patient lists', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
@@ -267,8 +363,44 @@ describe('Rust V2 patient bridge', () => {
     );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients/context?limit=10&search=Ama',
-      expect.anything(),
+      'http://localhost:8080/api/v2/patients/context/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 10, search: 'Ama' }),
+      }),
+    );
+  });
+
+  it('sends context patient_id filters through the private Rust V2 context search body', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: {
+            limit: 10,
+            has_next: false,
+            next_cursor: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await patientsApi.getContextPatients(
+      { limit: 10, patient_id: 'patient-1' },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/context/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 10, patient_id: 'patient-1' }),
+      }),
     );
   });
 

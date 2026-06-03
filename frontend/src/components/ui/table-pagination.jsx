@@ -28,6 +28,48 @@ function formatRange({ currentPage, pageSize, totalCount, countExact, hasNextPag
   };
 }
 
+function TablePageJump({ currentPage, exactTotalPages, onPageChange }) {
+  const pageJumpId = useId();
+  const [pageInput, setPageInput] = useState(String(currentPage));
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
+  const handleJumpSubmit = (event) => {
+    event.preventDefault();
+    const requestedPage = normalizePositiveInteger(pageInput, currentPage);
+    const boundedPage = Math.min(Math.max(requestedPage, 1), exactTotalPages);
+    setPageInput(String(boundedPage));
+    if (boundedPage !== currentPage) {
+      onPageChange(boundedPage);
+    }
+  };
+
+  return (
+    <form className="ml-2 flex items-center gap-2" onSubmit={handleJumpSubmit}>
+      <label htmlFor={pageJumpId} className="sr-only">Go to page</label>
+      <Input
+        id={pageJumpId}
+        type="number"
+        min="1"
+        max={exactTotalPages}
+        value={pageInput}
+        onChange={(event) => setPageInput(event.target.value)}
+        onBlur={() => {
+          if (!pageInput) {
+            setPageInput(String(currentPage));
+          }
+        }}
+        className="h-8 w-20 px-2 text-center font-mono text-xs"
+      />
+      <Button type="submit" variant="outline" size="sm" className="h-8 font-mono text-xs">
+        Go to page
+      </Button>
+    </form>
+  );
+}
+
 /**
  * TablePagination - Reusable pagination component for data tables
  *
@@ -79,24 +121,8 @@ export function TablePagination({
   });
   const showFirstLast = countExact && canRandomAccessPages;
   const showPageJump = countExact && canRandomAccessPages && exactTotalPages > 2;
-  const pageJumpId = useId();
-  const [pageInput, setPageInput] = useState(String(normalizedPage));
 
-  useEffect(() => {
-    setPageInput(String(normalizedPage));
-  }, [normalizedPage]);
-
-  const handleJumpSubmit = (event) => {
-    event.preventDefault();
-    const requestedPage = normalizePositiveInteger(pageInput, normalizedPage);
-    const boundedPage = Math.min(Math.max(requestedPage, 1), exactTotalPages);
-    setPageInput(String(boundedPage));
-    if (boundedPage !== normalizedPage) {
-      onPageChange(boundedPage);
-    }
-  };
-
-  if (normalizedTotal === 0) {
+  if (normalizedTotal === 0 && !hasPrevPage && normalizedPage <= 1) {
     return null;
   }
 
@@ -173,26 +199,12 @@ export function TablePagination({
           </Button>
         )}
         {showPageJump && (
-          <form className="ml-2 flex items-center gap-2" onSubmit={handleJumpSubmit}>
-            <label htmlFor={pageJumpId} className="sr-only">Go to page</label>
-            <Input
-              id={pageJumpId}
-              type="number"
-              min="1"
-              max={exactTotalPages}
-              value={pageInput}
-              onChange={(event) => setPageInput(event.target.value)}
-              onBlur={() => {
-                if (!pageInput) {
-                  setPageInput(String(normalizedPage));
-                }
-              }}
-              className="h-8 w-20 px-2 text-center font-mono text-xs"
-            />
-            <Button type="submit" variant="outline" size="sm" className="h-8 font-mono text-xs">
-              Go
-            </Button>
-          </form>
+          <TablePageJump
+            key={normalizedPage}
+            currentPage={normalizedPage}
+            exactTotalPages={exactTotalPages}
+            onPageChange={onPageChange}
+          />
         )}
       </div>
     </div>

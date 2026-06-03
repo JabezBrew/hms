@@ -5,7 +5,10 @@ use hms_domain::inventory::{
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
-use super::{apply_cursor, InventoryCursor, NewGoodsReceivedNote, NewPurchaseOrder};
+use super::{
+    apply_cursor, GoodsReceivedNoteFilters, InventoryCursor, NewGoodsReceivedNote,
+    NewPurchaseOrder, PurchaseOrderFilters,
+};
 use crate::codec;
 use crate::PgPool;
 
@@ -31,12 +34,38 @@ pub async fn list_purchase_orders(
     facility_id: Uuid,
     cursor: Option<InventoryCursor>,
     limit: i64,
+    filters: PurchaseOrderFilters,
 ) -> anyhow::Result<Vec<PurchaseOrderListItem>> {
     let mut query = purchase_order_query();
-    query.push(" WHERE facility_id = ");
+    query.push(" WHERE purchase_orders.facility_id = ");
     query.push_bind(facility_id);
-    apply_cursor(&mut query, "created_at", "id", cursor);
-    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    if let Some(status) = filters.status {
+        query.push(" AND purchase_orders.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.supplier.as_deref()) {
+        query.push(" AND purchase_orders.supplier_name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\'");
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        let search_id = uuid_search(filters.search.as_deref());
+        query.push(" AND (purchase_orders.supplier_name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\'");
+        if let Some(search_id) = search_id {
+            query.push(" OR purchase_orders.id = ");
+            query.push_bind(search_id);
+        }
+        query.push(")");
+    }
+    apply_cursor(
+        &mut query,
+        "purchase_orders.created_at",
+        "purchase_orders.id",
+        cursor,
+    );
+    query.push(" ORDER BY purchase_orders.created_at DESC, purchase_orders.id DESC LIMIT ");
     query.push_bind(limit);
     let rows = query
         .build_query_as::<PurchaseOrderRow>()
@@ -110,10 +139,28 @@ pub async fn list_grns(
     facility_id: Uuid,
     cursor: Option<InventoryCursor>,
     limit: i64,
+    filters: GoodsReceivedNoteFilters,
 ) -> anyhow::Result<Vec<GoodsReceivedNoteListItem>> {
     let mut query = grn_query();
     query.push(" WHERE goods_received_notes.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(status) = filters.status {
+        query.push(" AND goods_received_notes.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        let search_id = uuid_search(filters.search.as_deref());
+        query.push(" AND (purchase_orders.supplier_name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\'");
+        if let Some(search_id) = search_id {
+            query.push(" OR goods_received_notes.id = ");
+            query.push_bind(search_id);
+            query.push(" OR goods_received_notes.purchase_order_id = ");
+            query.push_bind(search_id);
+        }
+        query.push(")");
+    }
     apply_cursor(
         &mut query,
         "goods_received_notes.received_at",
@@ -203,9 +250,9 @@ async fn fetch_purchase_order_by_id(
     id: Uuid,
 ) -> anyhow::Result<Option<PurchaseOrderListItem>> {
     let mut query = purchase_order_query();
-    query.push(" WHERE facility_id = ");
+    query.push(" WHERE purchase_orders.facility_id = ");
     query.push_bind(facility_id);
-    query.push(" AND id = ");
+    query.push(" AND purchase_orders.id = ");
     query.push_bind(id);
     query
         .build_query_as::<PurchaseOrderRow>()
@@ -288,7 +335,9 @@ async fn transition_grn_status(
 }
 
 fn purchase_order_query() -> QueryBuilder<'static, Postgres> {
-    QueryBuilder::new("SELECT id, supplier_name, status, created_at FROM purchase_orders")
+    QueryBuilder::new(
+        "SELECT purchase_orders.id, purchase_orders.supplier_name, purchase_orders.status, purchase_orders.created_at FROM purchase_orders",
+    )
 }
 
 fn grn_query() -> QueryBuilder<'static, Postgres> {
@@ -300,9 +349,32 @@ fn grn_query() -> QueryBuilder<'static, Postgres> {
                goods_received_notes.status,
                goods_received_notes.received_at
         FROM goods_received_notes
-        INNER JOIN purchase_orders ON purchase_orders.id = goods_received_notes.purchase_order_id
+        INNER JOIN purchase_orders
+            ON purchase_orders.id = goods_received_notes.purchase_order_id
+           AND purchase_orders.facility_id = goods_received_notes.facility_id
         "#,
     )
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let search = search?.trim();
+    if search.is_empty() {
+        return None;
+    }
+    let mut escaped = String::with_capacity(search.len());
+    for ch in search.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '%' => escaped.push_str("\\%"),
+            '_' => escaped.push_str("\\_"),
+            _ => escaped.push(ch),
+        }
+    }
+    Some(format!("%{escaped}%"))
+}
+
+fn uuid_search(search: Option<&str>) -> Option<Uuid> {
+    Uuid::parse_str(search?.trim()).ok()
 }
 
 fn purchase_order_from_row(row: PurchaseOrderRow) -> anyhow::Result<PurchaseOrderListItem> {

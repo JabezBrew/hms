@@ -2,10 +2,13 @@ use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::billing::{
     BillingDashboardSummary, BillingDischargeClearance, BillingRuleListItem, BillingRuleType,
     CashDrawerListItem, CashSessionListItem, CashSessionStatus, ClaimListItem, ClaimStatus,
-    InvoiceListItem, InvoiceLockReason, InvoiceLockState, InvoiceStatus, NhisArAdjustmentEntry,
-    NhisArAdjustmentKind, NhisBatchExport, NhisBatchListItem, NhisBatchStatus, NhisClaimArState,
-    NhisServiceMappingListItem, PaymentListItem, PaymentMethod, PaymentReversalLedgerEntry,
-    PaymentStatus, ReceiptListItem, RemittanceImportListItem, RemittanceImportStatus, ReversalKind,
+    InsurancePlanListItem, InsuranceProviderListItem, InvoiceListItem, InvoiceLockReason,
+    InvoiceLockState, InvoiceStatus, NhisArAdjustmentEntry, NhisArAdjustmentKind, NhisBatchExport,
+    NhisBatchListItem, NhisBatchStatus, NhisClaimArState, NhisExportJobListItem,
+    NhisServiceMappingListItem, PatientInsuranceListItem, PaymentListItem, PaymentMethod,
+    PaymentReversalLedgerEntry, PaymentStatus, PspPaymentIntentListItem,
+    PspSettlementBatchListItem, PspSettlementLineListItem, ReceiptListItem,
+    RemittanceImportListItem, RemittanceImportStatus, RemittanceLineListItem, ReversalKind,
     ServiceCatalogItem, ServiceKind, ServicePriceListItem,
 };
 use sha2::{Digest, Sha256};
@@ -45,6 +48,34 @@ pub struct BillingRuleFilters {
     pub is_active: Option<bool>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct InvoiceListFilters {
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub status: Option<InvoiceStatus>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PaymentListFilters {
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub status: Option<PaymentStatus>,
+    pub payment_method: Option<PaymentMethod>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ClaimListFilters {
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub status: Option<ClaimStatus>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewInvoice {
     pub id: Uuid,
@@ -72,6 +103,60 @@ pub struct NewPayment {
 #[derive(Clone, Debug, Default)]
 pub struct CashSessionFilters {
     pub status: Option<CashSessionStatus>,
+    pub search: Option<String>,
+    pub is_flagged: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct InsuranceProviderFilters {
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct InsurancePlanFilters {
+    pub provider_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PatientInsuranceFilters {
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+    pub search_sensitive_identifiers: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct NhisServiceMappingFilters {
+    pub payer_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PspPaymentIntentFilters {
+    pub status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PspSettlementBatchFilters {
+    pub status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PspSettlementLineFilters {
+    pub match_status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RemittanceLineFilters {
+    pub match_status: Option<String>,
+    pub search: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -128,6 +213,7 @@ pub struct NhisBatchExportCommand {
 pub struct NewNhisServiceMapping {
     pub id: Uuid,
     pub facility_id: Uuid,
+    pub payer_id: Option<Uuid>,
     pub service_id: Uuid,
     pub nhis_code: String,
     pub effective_from: NaiveDate,
@@ -219,6 +305,9 @@ struct InvoiceRow {
 struct PaymentRow {
     id: Uuid,
     invoice_id: Uuid,
+    invoice_number: String,
+    patient_id: Uuid,
+    patient_code: String,
     receipt_number: String,
     amount_minor: i64,
     currency: String,
@@ -295,6 +384,7 @@ struct CashSessionRow {
     drawer_id: Uuid,
     drawer_code: String,
     opened_by_user_id: Uuid,
+    opened_by_display_name: Option<String>,
     status: String,
     opening_float_minor: i64,
     expected_cash_minor: i64,
@@ -303,6 +393,47 @@ struct CashSessionRow {
     currency: String,
     opened_at: DateTime<Utc>,
     closed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct InsuranceProviderRow {
+    id: Uuid,
+    code: String,
+    name: String,
+    payer_type: String,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct InsurancePlanRow {
+    id: Uuid,
+    provider_id: Uuid,
+    provider_name: String,
+    code: String,
+    name: String,
+    coverage_percentage: i32,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PatientInsuranceRow {
+    id: Uuid,
+    patient_id: Uuid,
+    patient_code: String,
+    patient_name: String,
+    provider_id: Uuid,
+    provider_name: String,
+    plan_id: Uuid,
+    plan_name: String,
+    policy_number: String,
+    member_id: Option<String>,
+    subscriber_number: Option<String>,
+    valid_from: NaiveDate,
+    valid_until: Option<NaiveDate>,
+    is_active: bool,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -368,6 +499,7 @@ struct PaymentReversalContextRow {
 #[derive(Clone, Debug, FromRow)]
 struct NhisServiceMappingRow {
     id: Uuid,
+    payer_id: Option<Uuid>,
     service_id: Uuid,
     service_code: String,
     service_name: String,
@@ -376,6 +508,73 @@ struct NhisServiceMappingRow {
     effective_from: NaiveDate,
     effective_until: Option<NaiveDate>,
     active: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PspPaymentIntentRow {
+    id: Uuid,
+    invoice_id: Option<Uuid>,
+    invoice_number: Option<String>,
+    provider: String,
+    provider_reference: Option<String>,
+    client_reference: Option<String>,
+    status: String,
+    payment_method: String,
+    amount_minor: i64,
+    currency: String,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PspSettlementBatchRow {
+    id: Uuid,
+    provider: String,
+    statement_date: Option<NaiveDate>,
+    file_name: Option<String>,
+    status: String,
+    line_count: i64,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PspSettlementLineRow {
+    id: Uuid,
+    batch_id: Uuid,
+    provider_reference: Option<String>,
+    client_reference: Option<String>,
+    amount_gross_minor: i64,
+    fee_amount_minor: i64,
+    amount_net_minor: i64,
+    paid_at: Option<DateTime<Utc>>,
+    status: String,
+    match_status: String,
+    mismatch_reason: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct NhisExportJobRow {
+    id: Uuid,
+    batch_id: Uuid,
+    batch_number: String,
+    status: String,
+    checksum: Option<String>,
+    created_at: DateTime<Utc>,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct RemittanceLineRow {
+    id: Uuid,
+    import_id: Uuid,
+    claim_number: Option<String>,
+    invoice_number: Option<String>,
+    paid_amount_minor: i64,
+    paid_date: Option<NaiveDate>,
+    match_status: String,
+    mismatch_reason: Option<String>,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -428,26 +627,16 @@ pub async fn list_service_catalog(
 ) -> anyhow::Result<Vec<ServiceCatalogItem>> {
     let mut query = QueryBuilder::new(
         r#"
-        SELECT service_catalog.id,
-               service_catalog.code,
-               service_catalog.name,
-               service_catalog.service_kind,
-               service_catalog.active,
-               active_prices.id AS active_price_id,
-               active_prices.amount_minor AS active_price_amount_minor,
-               active_prices.currency AS active_price_currency,
-               service_catalog.created_at
-        FROM service_catalog
-        LEFT JOIN LATERAL (
-            SELECT service_prices.id, service_prices.amount_minor, service_prices.currency
-            FROM service_prices
-            WHERE service_prices.facility_id = service_catalog.facility_id
-              AND service_prices.service_id = service_catalog.id
-              AND service_prices.active = TRUE
-            ORDER BY service_prices.created_at DESC, service_prices.id DESC
-            LIMIT 1
-        ) active_prices ON TRUE
-        WHERE service_catalog.facility_id =
+        WITH service_page AS MATERIALIZED (
+            SELECT service_catalog.id,
+                   service_catalog.facility_id,
+                   service_catalog.code,
+                   service_catalog.name,
+                   service_catalog.service_kind,
+                   service_catalog.active,
+                   service_catalog.created_at
+            FROM service_catalog
+            WHERE service_catalog.facility_id =
         "#,
     );
     query.push_bind(facility_id);
@@ -470,8 +659,38 @@ pub async fn list_service_catalog(
         "service_catalog.id",
         cursor,
     );
-    query.push(" ORDER BY service_catalog.created_at DESC, service_catalog.id DESC LIMIT ");
+    query.push(
+        r#"
+            ORDER BY service_catalog.created_at DESC, service_catalog.id DESC
+            LIMIT
+        "#,
+    );
     query.push_bind(limit);
+    query.push(
+        r#"
+        )
+        SELECT service_page.id,
+               service_page.code,
+               service_page.name,
+               service_page.service_kind,
+               service_page.active,
+               active_prices.id AS active_price_id,
+               active_prices.amount_minor AS active_price_amount_minor,
+               active_prices.currency AS active_price_currency,
+               service_page.created_at
+        FROM service_page
+        LEFT JOIN LATERAL (
+            SELECT service_prices.id, service_prices.amount_minor, service_prices.currency
+            FROM service_prices
+            WHERE service_prices.facility_id = service_page.facility_id
+              AND service_prices.service_id = service_page.id
+              AND service_prices.active = TRUE
+            ORDER BY service_prices.created_at DESC, service_prices.id DESC
+            LIMIT 1
+        ) active_prices ON TRUE
+        "#,
+    );
+    query.push(" ORDER BY service_page.created_at DESC, service_page.id DESC");
     let rows = query.build_query_as::<ServiceRow>().fetch_all(pool).await?;
     rows.into_iter().map(service_from_row).collect()
 }
@@ -658,17 +877,14 @@ pub async fn billing_dashboard_summary(
 pub async fn list_invoices(
     pool: &PgPool,
     facility_id: Uuid,
-    patient_id: Option<Uuid>,
+    filters: InvoiceListFilters,
     cursor: Option<BillingCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<InvoiceListItem>> {
     let mut query = invoice_query();
     query.push(" WHERE invoices.facility_id = ");
     query.push_bind(facility_id);
-    if let Some(patient_id) = patient_id {
-        query.push(" AND invoices.patient_id = ");
-        query.push_bind(patient_id);
-    }
+    push_invoice_filters(&mut query, filters)?;
     apply_cursor(&mut query, "invoices.issued_at", "invoices.id", cursor);
     query.push(" ORDER BY invoices.issued_at DESC, invoices.id DESC LIMIT ");
     query.push_bind(limit);
@@ -786,12 +1002,14 @@ pub async fn invoice_lock_state(
 pub async fn list_payments(
     pool: &PgPool,
     facility_id: Uuid,
+    filters: PaymentListFilters,
     cursor: Option<BillingCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<PaymentListItem>> {
     let mut query = payment_query();
     query.push(" WHERE payments.facility_id = ");
     query.push_bind(facility_id);
+    push_payment_filters(&mut query, filters)?;
     apply_cursor(&mut query, "payments.paid_at", "payments.id", cursor);
     query.push(" ORDER BY payments.paid_at DESC, payments.id DESC LIMIT ");
     query.push_bind(limit);
@@ -969,12 +1187,14 @@ pub async fn get_receipt_by_payment(
 pub async fn list_claims(
     pool: &PgPool,
     facility_id: Uuid,
+    filters: ClaimListFilters,
     cursor: Option<BillingCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<ClaimListItem>> {
     let mut query = claim_query();
     query.push(" WHERE nhis_claims.facility_id = ");
     query.push_bind(facility_id);
+    push_claim_filters(&mut query, filters)?;
     apply_cursor(
         &mut query,
         "nhis_claims.created_at",
@@ -1612,28 +1832,70 @@ pub async fn create_nhis_service_mapping(
     pool: &PgPool,
     mapping: NewNhisServiceMapping,
 ) -> anyhow::Result<NhisServiceMappingListItem> {
-    let version_number = sqlx::query_scalar::<_, i64>(
+    let service_exists = sqlx::query_scalar::<_, bool>(
         r#"
-        SELECT COALESCE(MAX(version_number), 0) + 1
-        FROM nhis_service_mappings
-        WHERE facility_id = $1 AND service_id = $2
+        SELECT EXISTS (
+            SELECT 1
+            FROM service_catalog
+            WHERE facility_id = $1
+              AND id = $2
+        )
         "#,
     )
     .bind(mapping.facility_id)
     .bind(mapping.service_id)
     .fetch_one(pool)
     .await?;
+    if !service_exists {
+        anyhow::bail!("NHIS service mapping references a service outside the facility");
+    }
+
+    if let Some(payer_id) = mapping.payer_id {
+        let payer_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM insurance_providers
+                WHERE facility_id = $1
+                  AND id = $2
+            )
+            "#,
+        )
+        .bind(mapping.facility_id)
+        .bind(payer_id)
+        .fetch_one(pool)
+        .await?;
+        if !payer_exists {
+            anyhow::bail!("NHIS service mapping references a payer outside the facility");
+        }
+    }
+
+    let version_number = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COALESCE(MAX(version_number), 0) + 1
+        FROM nhis_service_mappings
+        WHERE facility_id = $1
+          AND service_id = $2
+          AND payer_id IS NOT DISTINCT FROM $3
+        "#,
+    )
+    .bind(mapping.facility_id)
+    .bind(mapping.service_id)
+    .bind(mapping.payer_id)
+    .fetch_one(pool)
+    .await?;
     sqlx::query(
         r#"
         INSERT INTO nhis_service_mappings (
-            id, facility_id, service_id, nhis_code, version_number, effective_from,
+            id, facility_id, payer_id, service_id, nhis_code, version_number, effective_from,
             effective_until, active, created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9)
         "#,
     )
     .bind(mapping.id)
     .bind(mapping.facility_id)
+    .bind(mapping.payer_id)
     .bind(mapping.service_id)
     .bind(&mapping.nhis_code)
     .bind(version_number)
@@ -1645,6 +1907,299 @@ pub async fn create_nhis_service_mapping(
     fetch_nhis_service_mapping_by_id(pool, mapping.facility_id, mapping.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created NHIS mapping was not found"))
+}
+
+pub async fn list_nhis_service_mappings(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: NhisServiceMappingFilters,
+) -> anyhow::Result<Vec<NhisServiceMappingListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT nhis_service_mappings.id,
+               nhis_service_mappings.payer_id,
+               nhis_service_mappings.service_id,
+               service_catalog.code AS service_code,
+               service_catalog.name AS service_name,
+               nhis_service_mappings.nhis_code,
+               nhis_service_mappings.version_number,
+               nhis_service_mappings.effective_from,
+               nhis_service_mappings.effective_until,
+               nhis_service_mappings.active,
+               nhis_service_mappings.created_at
+        FROM nhis_service_mappings
+        INNER JOIN service_catalog
+          ON service_catalog.id = nhis_service_mappings.service_id
+         AND service_catalog.facility_id = nhis_service_mappings.facility_id
+        WHERE nhis_service_mappings.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    if let Some(payer_id) = filters.payer_id {
+        query.push(" AND nhis_service_mappings.payer_id = ");
+        query.push_bind(payer_id);
+    }
+    if let Some(active) = filters.active {
+        query.push(" AND nhis_service_mappings.active = ");
+        query.push_bind(active);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (nhis_service_mappings.nhis_code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR service_catalog.code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR service_catalog.name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(
+        &mut query,
+        "nhis_service_mappings.created_at",
+        "nhis_service_mappings.id",
+        cursor,
+    );
+    query.push(
+        " ORDER BY nhis_service_mappings.created_at DESC, nhis_service_mappings.id DESC LIMIT ",
+    );
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<NhisServiceMappingRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(nhis_service_mapping_from_row)
+        .collect())
+}
+
+pub async fn list_psp_payment_intents(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: PspPaymentIntentFilters,
+) -> anyhow::Result<Vec<PspPaymentIntentListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT psp_payment_intents.id,
+               psp_payment_intents.invoice_id,
+               invoices.invoice_number,
+               psp_payment_intents.provider,
+               psp_payment_intents.provider_reference,
+               psp_payment_intents.client_reference,
+               psp_payment_intents.status,
+               psp_payment_intents.payment_method,
+               psp_payment_intents.amount_minor,
+               psp_payment_intents.currency,
+               psp_payment_intents.created_at
+        FROM psp_payment_intents
+        LEFT JOIN invoices
+          ON invoices.id = psp_payment_intents.invoice_id
+         AND invoices.facility_id = psp_payment_intents.facility_id
+        WHERE psp_payment_intents.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    if let Some(status) = filters
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push(" AND psp_payment_intents.status = ");
+        query.push_bind(status.to_owned());
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        let lower_pattern = pattern.to_lowercase();
+        query.push(" AND (psp_payment_intents.provider_reference ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR psp_payment_intents.client_reference ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR lower(invoices.invoice_number) LIKE ");
+        query.push_bind(lower_pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(
+        &mut query,
+        "psp_payment_intents.created_at",
+        "psp_payment_intents.id",
+        cursor,
+    );
+    query.push(" ORDER BY psp_payment_intents.created_at DESC, psp_payment_intents.id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<PspPaymentIntentRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(psp_payment_intent_from_row).collect())
+}
+
+pub async fn list_psp_settlement_batches(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: PspSettlementBatchFilters,
+) -> anyhow::Result<Vec<PspSettlementBatchListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT id, provider, statement_date, file_name, status, line_count, created_at
+        FROM psp_settlement_batches
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    if let Some(status) = filters
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push(" AND status = ");
+        query.push_bind(status.to_owned());
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (file_name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR provider ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(&mut query, "created_at", "id", cursor);
+    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<PspSettlementBatchRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(psp_settlement_batch_from_row)
+        .collect())
+}
+
+pub async fn list_psp_settlement_lines(
+    pool: &PgPool,
+    facility_id: Uuid,
+    batch_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: PspSettlementLineFilters,
+) -> anyhow::Result<Vec<PspSettlementLineListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT id, batch_id, provider_reference, client_reference, amount_gross_minor,
+               fee_amount_minor, amount_net_minor, paid_at, status, match_status,
+               mismatch_reason, created_at
+        FROM psp_settlement_lines
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(" AND batch_id = ");
+    query.push_bind(batch_id);
+    if let Some(match_status) = filters
+        .match_status
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push(" AND match_status = ");
+        query.push_bind(match_status.to_owned());
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (provider_reference ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR client_reference ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(&mut query, "created_at", "id", cursor);
+    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<PspSettlementLineRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(psp_settlement_line_from_row).collect())
+}
+
+pub async fn list_nhis_export_jobs(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<NhisExportJobListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT id,
+               id AS batch_id,
+               batch_number,
+               CASE WHEN status = 'exported' THEN 'ready' ELSE status END AS status,
+               export_checksum AS checksum,
+               exported_at AS created_at,
+               exported_at + INTERVAL '7 days' AS expires_at
+        FROM nhis_batches
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(" AND exported_at IS NOT NULL");
+    apply_cursor(&mut query, "exported_at", "id", cursor);
+    query.push(" ORDER BY exported_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<NhisExportJobRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(nhis_export_job_from_row).collect())
+}
+
+pub async fn list_remittance_lines(
+    pool: &PgPool,
+    facility_id: Uuid,
+    import_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: RemittanceLineFilters,
+) -> anyhow::Result<Vec<RemittanceLineListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT id, import_id, claim_number, invoice_number, paid_amount_minor,
+               paid_date, match_status, mismatch_reason, created_at
+        FROM remittance_import_lines
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(" AND import_id = ");
+    query.push_bind(import_id);
+    if let Some(match_status) = filters
+        .match_status
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push(" AND match_status = ");
+        query.push_bind(match_status.to_owned());
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (claim_number ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR invoice_number ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(&mut query, "created_at", "id", cursor);
+    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<RemittanceLineRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(remittance_line_from_row).collect())
 }
 
 pub async fn record_nhis_ar_adjustment(
@@ -1830,6 +2385,185 @@ pub async fn list_cash_drawers(
     Ok(rows.into_iter().map(drawer_from_row).collect())
 }
 
+pub async fn list_insurance_providers(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: InsuranceProviderFilters,
+) -> anyhow::Result<Vec<InsuranceProviderListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT id, code, name, payer_type, is_active, created_at
+        FROM insurance_providers
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    if let Some(is_active) = filters.is_active {
+        query.push(" AND is_active = ");
+        query.push_bind(is_active);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR payer_type ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(&mut query, "created_at", "id", cursor);
+    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<InsuranceProviderRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(insurance_provider_from_row).collect())
+}
+
+pub async fn list_insurance_plans(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: InsurancePlanFilters,
+) -> anyhow::Result<Vec<InsurancePlanListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT insurance_plans.id,
+               insurance_plans.provider_id,
+               insurance_providers.name AS provider_name,
+               insurance_plans.code,
+               insurance_plans.name,
+               insurance_plans.coverage_percentage,
+               insurance_plans.is_active,
+               insurance_plans.created_at
+        FROM insurance_plans
+        INNER JOIN insurance_providers
+            ON insurance_providers.id = insurance_plans.provider_id
+           AND insurance_providers.facility_id = insurance_plans.facility_id
+        WHERE insurance_plans.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    if let Some(provider_id) = filters.provider_id {
+        query.push(" AND insurance_plans.provider_id = ");
+        query.push_bind(provider_id);
+    }
+    if let Some(is_active) = filters.is_active {
+        query.push(" AND insurance_plans.is_active = ");
+        query.push_bind(is_active);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (insurance_plans.code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR insurance_plans.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR insurance_providers.name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(
+        &mut query,
+        "insurance_plans.created_at",
+        "insurance_plans.id",
+        cursor,
+    );
+    query.push(" ORDER BY insurance_plans.created_at DESC, insurance_plans.id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<InsurancePlanRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(insurance_plan_from_row).collect())
+}
+
+pub async fn list_patient_insurances(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: PatientInsuranceFilters,
+) -> anyhow::Result<Vec<PatientInsuranceListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT patient_insurances.id,
+               patient_insurances.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_name,
+               insurance_providers.id AS provider_id,
+               insurance_providers.name AS provider_name,
+               insurance_plans.id AS plan_id,
+               insurance_plans.name AS plan_name,
+               patient_insurances.policy_number,
+               patient_insurances.member_id,
+               patient_insurances.subscriber_number,
+               patient_insurances.valid_from,
+               patient_insurances.valid_until,
+               patient_insurances.is_active,
+               patient_insurances.created_at
+        FROM patient_insurances
+        INNER JOIN patients
+            ON patients.id = patient_insurances.patient_id
+           AND patients.facility_id = patient_insurances.facility_id
+        INNER JOIN insurance_plans
+            ON insurance_plans.id = patient_insurances.plan_id
+           AND insurance_plans.facility_id = patient_insurances.facility_id
+        INNER JOIN insurance_providers
+            ON insurance_providers.id = insurance_plans.provider_id
+           AND insurance_providers.facility_id = patient_insurances.facility_id
+        WHERE patient_insurances.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND patient_insurances.patient_id = ");
+        query.push_bind(patient_id);
+    }
+    if let Some(is_active) = filters.is_active {
+        query.push(" AND patient_insurances.is_active = ");
+        query.push_bind(is_active);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (");
+        push_patient_search_subquery(
+            &mut query,
+            "patient_insurances.patient_id",
+            "patient_insurances.facility_id",
+            pattern.to_lowercase(),
+        );
+        if filters.search_sensitive_identifiers {
+            query.push(" OR patient_insurances.policy_number ILIKE ");
+            query.push_bind(pattern.clone());
+            query.push(" ESCAPE '\\' OR patient_insurances.member_id ILIKE ");
+            query.push_bind(pattern.clone());
+            query.push(" ESCAPE '\\' OR patient_insurances.subscriber_number ILIKE ");
+            query.push_bind(pattern.clone());
+            query.push(" ESCAPE '\\'");
+        }
+        query.push(" OR insurance_providers.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR insurance_plans.name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(
+        &mut query,
+        "patient_insurances.created_at",
+        "patient_insurances.id",
+        cursor,
+    );
+    query.push(" ORDER BY patient_insurances.created_at DESC, patient_insurances.id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<PatientInsuranceRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(patient_insurance_from_row).collect())
+}
+
 pub async fn list_cash_sessions(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1863,6 +2597,24 @@ fn apply_cash_session_filters(
     if let Some(status) = filters.status {
         query.push(" AND cash_sessions.status = ");
         query.push_bind(codec::encode(status)?);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (cash_drawers.code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR cash_drawers.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR users.display_name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    if let Some(is_flagged) = filters.is_flagged {
+        if is_flagged {
+            query.push(" AND cash_sessions.variance_minor IS NOT NULL AND cash_sessions.variance_minor <> 0");
+        } else {
+            query.push(
+                " AND (cash_sessions.variance_minor IS NULL OR cash_sessions.variance_minor = 0)",
+            );
+        }
     }
     Ok(())
 }
@@ -2038,7 +2790,9 @@ fn invoice_query() -> QueryBuilder<'static, Postgres> {
                invoices.currency,
                invoices.issued_at
         FROM invoices
-        INNER JOIN patients ON patients.id = invoices.patient_id
+        INNER JOIN patients
+            ON patients.id = invoices.patient_id
+           AND patients.facility_id = invoices.facility_id
         "#,
     )
 }
@@ -2046,8 +2800,24 @@ fn invoice_query() -> QueryBuilder<'static, Postgres> {
 fn payment_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::new(
         r#"
-        SELECT id, invoice_id, receipt_number, amount_minor, currency, method, status, paid_at
+        SELECT payments.id,
+               payments.invoice_id,
+               invoices.invoice_number,
+               invoices.patient_id,
+               patients.patient_code,
+               payments.receipt_number,
+               payments.amount_minor,
+               payments.currency,
+               payments.method,
+               payments.status,
+               payments.paid_at
         FROM payments
+        INNER JOIN invoices
+            ON invoices.id = payments.invoice_id
+           AND invoices.facility_id = payments.facility_id
+        INNER JOIN patients
+            ON patients.id = invoices.patient_id
+           AND patients.facility_id = payments.facility_id
         "#,
     )
 }
@@ -2081,7 +2851,12 @@ fn claim_query() -> QueryBuilder<'static, Postgres> {
                nhis_claims.reconciled_at,
                nhis_claims.created_at
         FROM nhis_claims
-        INNER JOIN patients ON patients.id = nhis_claims.patient_id
+        INNER JOIN invoices
+            ON invoices.id = nhis_claims.invoice_id
+           AND invoices.facility_id = nhis_claims.facility_id
+        INNER JOIN patients
+            ON patients.id = nhis_claims.patient_id
+           AND patients.facility_id = nhis_claims.facility_id
         "#,
     )
 }
@@ -2111,6 +2886,7 @@ fn cash_session_query() -> QueryBuilder<'static, Postgres> {
                cash_sessions.drawer_id,
                cash_drawers.code AS drawer_code,
                cash_sessions.opened_by_user_id,
+               users.display_name AS opened_by_display_name,
                cash_sessions.status,
                cash_sessions.opening_float_minor,
                cash_sessions.opening_float_minor
@@ -2129,6 +2905,8 @@ fn cash_session_query() -> QueryBuilder<'static, Postgres> {
                cash_sessions.closed_at
         FROM cash_sessions
         INNER JOIN cash_drawers ON cash_drawers.id = cash_sessions.drawer_id
+            AND cash_drawers.facility_id = cash_sessions.facility_id
+        LEFT JOIN users ON users.id = cash_sessions.opened_by_user_id
         "#,
     )
 }
@@ -2165,9 +2943,9 @@ async fn fetch_payment_by_id(
     id: Uuid,
 ) -> anyhow::Result<Option<PaymentListItem>> {
     let mut query = payment_query();
-    query.push(" WHERE facility_id = ");
+    query.push(" WHERE payments.facility_id = ");
     query.push_bind(facility_id);
-    query.push(" AND id = ");
+    query.push(" AND payments.id = ");
     query.push_bind(id);
     query
         .build_query_as::<PaymentRow>()
@@ -2274,6 +3052,7 @@ async fn fetch_nhis_service_mapping_by_id(
     let row = sqlx::query_as::<_, NhisServiceMappingRow>(
         r#"
         SELECT nhis_service_mappings.id,
+               nhis_service_mappings.payer_id,
                nhis_service_mappings.service_id,
                service_catalog.code AS service_code,
                service_catalog.name AS service_name,
@@ -2281,9 +3060,12 @@ async fn fetch_nhis_service_mapping_by_id(
                nhis_service_mappings.version_number,
                nhis_service_mappings.effective_from,
                nhis_service_mappings.effective_until,
-               nhis_service_mappings.active
+               nhis_service_mappings.active,
+               nhis_service_mappings.created_at
         FROM nhis_service_mappings
-        INNER JOIN service_catalog ON service_catalog.id = nhis_service_mappings.service_id
+        INNER JOIN service_catalog
+          ON service_catalog.id = nhis_service_mappings.service_id
+         AND service_catalog.facility_id = nhis_service_mappings.facility_id
         WHERE nhis_service_mappings.facility_id = $1
           AND nhis_service_mappings.id = $2
         "#,
@@ -2408,6 +3190,175 @@ fn apply_cursor(
     }
 }
 
+fn push_invoice_filters(
+    query: &mut QueryBuilder<'static, Postgres>,
+    filters: InvoiceListFilters,
+) -> anyhow::Result<()> {
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND invoices.patient_id = ");
+        query.push_bind(patient_id);
+    }
+    if let Some(status) = filters.status {
+        query.push(" AND invoices.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    push_timestamp_range(
+        query,
+        "invoices.issued_at",
+        filters.date_from,
+        filters.date_to,
+    );
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        push_billing_search_filter(
+            query,
+            &["invoices.invoice_number"],
+            "invoices.patient_id",
+            "invoices.facility_id",
+            pattern,
+        );
+    }
+    Ok(())
+}
+
+fn push_payment_filters(
+    query: &mut QueryBuilder<'static, Postgres>,
+    filters: PaymentListFilters,
+) -> anyhow::Result<()> {
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND invoices.patient_id = ");
+        query.push_bind(patient_id);
+    }
+    if let Some(status) = filters.status {
+        query.push(" AND payments.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    if let Some(method) = filters.payment_method {
+        query.push(" AND payments.method = ");
+        query.push_bind(codec::encode(method)?);
+    }
+    push_timestamp_range(
+        query,
+        "payments.paid_at",
+        filters.date_from,
+        filters.date_to,
+    );
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        push_billing_search_filter(
+            query,
+            &["payments.receipt_number", "invoices.invoice_number"],
+            "invoices.patient_id",
+            "invoices.facility_id",
+            pattern,
+        );
+    }
+    Ok(())
+}
+
+fn push_claim_filters(
+    query: &mut QueryBuilder<'static, Postgres>,
+    filters: ClaimListFilters,
+) -> anyhow::Result<()> {
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND nhis_claims.patient_id = ");
+        query.push_bind(patient_id);
+    }
+    if let Some(status) = filters.status {
+        query.push(" AND nhis_claims.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    push_timestamp_range(
+        query,
+        "nhis_claims.created_at",
+        filters.date_from,
+        filters.date_to,
+    );
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        push_billing_search_filter(
+            query,
+            &["nhis_claims.claim_number", "invoices.invoice_number"],
+            "nhis_claims.patient_id",
+            "nhis_claims.facility_id",
+            pattern,
+        );
+    }
+    Ok(())
+}
+
+fn push_timestamp_range(
+    query: &mut QueryBuilder<'static, Postgres>,
+    timestamp_column: &'static str,
+    date_from: Option<NaiveDate>,
+    date_to: Option<NaiveDate>,
+) {
+    if let Some(date_from) = date_from {
+        query.push(" AND ");
+        query.push(timestamp_column);
+        query.push(" >= ");
+        query.push_bind(start_of_day_utc(date_from));
+    }
+    if let Some(date_to) = date_to.and_then(|date| date.succ_opt()) {
+        query.push(" AND ");
+        query.push(timestamp_column);
+        query.push(" < ");
+        query.push_bind(start_of_day_utc(date_to));
+    }
+}
+
+fn push_billing_search_filter(
+    query: &mut QueryBuilder<'static, Postgres>,
+    expressions: &[&'static str],
+    patient_id_expression: &'static str,
+    facility_expression: &'static str,
+    pattern: String,
+) {
+    let pattern = pattern.to_lowercase();
+    query.push(" AND (");
+    for (index, expression) in expressions.iter().enumerate() {
+        if index > 0 {
+            query.push(" OR ");
+        }
+        query.push("lower(");
+        query.push(*expression);
+        query.push(") LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\'");
+    }
+    if !expressions.is_empty() {
+        query.push(" OR ");
+    }
+    push_patient_search_subquery(query, patient_id_expression, facility_expression, pattern);
+    query.push(")");
+}
+
+fn push_patient_search_subquery(
+    query: &mut QueryBuilder<'static, Postgres>,
+    patient_id_expression: &'static str,
+    facility_expression: &'static str,
+    pattern: String,
+) {
+    query.push(patient_id_expression);
+    query.push(
+        r#" IN (
+            SELECT search_patients.id
+            FROM patients AS search_patients
+            WHERE search_patients.facility_id = "#,
+    );
+    query.push(facility_expression);
+    query.push(
+        r#"
+              AND lower(search_patients.patient_code || ' ' || search_patients.first_name || ' ' || search_patients.last_name) LIKE "#,
+    );
+    query.push_bind(pattern);
+    query.push(" ESCAPE '\\')");
+}
+
+fn start_of_day_utc(date: NaiveDate) -> DateTime<Utc> {
+    DateTime::<Utc>::from_naive_utc_and_offset(
+        date.and_hms_opt(0, 0, 0).expect("midnight is valid"),
+        Utc,
+    )
+}
+
 fn like_contains_pattern(search: Option<&str>) -> Option<String> {
     let search = search?.trim();
     if search.is_empty() {
@@ -2480,6 +3431,9 @@ fn payment_from_row(row: PaymentRow) -> anyhow::Result<PaymentListItem> {
     Ok(PaymentListItem {
         id: row.id,
         invoice_id: row.invoice_id,
+        invoice_number: row.invoice_number,
+        patient_id: row.patient_id,
+        patient_code: row.patient_code,
         receipt_number: row.receipt_number,
         amount_minor: row.amount_minor,
         currency: row.currency,
@@ -2552,6 +3506,7 @@ fn payment_reversal_from_row(
 fn nhis_service_mapping_from_row(row: NhisServiceMappingRow) -> NhisServiceMappingListItem {
     NhisServiceMappingListItem {
         id: row.id,
+        payer_id: row.payer_id,
         service_id: row.service_id,
         service_code: row.service_code,
         service_name: row.service_name,
@@ -2560,6 +3515,79 @@ fn nhis_service_mapping_from_row(row: NhisServiceMappingRow) -> NhisServiceMappi
         effective_from: row.effective_from,
         effective_until: row.effective_until,
         active: row.active,
+        created_at: row.created_at,
+    }
+}
+
+fn psp_payment_intent_from_row(row: PspPaymentIntentRow) -> PspPaymentIntentListItem {
+    PspPaymentIntentListItem {
+        id: row.id,
+        invoice_id: row.invoice_id,
+        invoice_number: row.invoice_number,
+        provider: row.provider,
+        provider_reference: row.provider_reference,
+        client_reference: row.client_reference,
+        status: row.status,
+        payment_method: row.payment_method,
+        amount_minor: row.amount_minor,
+        currency: row.currency,
+        created_at: row.created_at,
+    }
+}
+
+fn psp_settlement_batch_from_row(row: PspSettlementBatchRow) -> PspSettlementBatchListItem {
+    PspSettlementBatchListItem {
+        id: row.id,
+        provider: row.provider,
+        statement_date: row.statement_date,
+        file_name: row.file_name,
+        status: row.status,
+        line_count: row.line_count,
+        created_at: row.created_at,
+    }
+}
+
+fn psp_settlement_line_from_row(row: PspSettlementLineRow) -> PspSettlementLineListItem {
+    PspSettlementLineListItem {
+        id: row.id,
+        batch_id: row.batch_id,
+        provider_reference: row.provider_reference,
+        client_reference: row.client_reference,
+        amount_gross_minor: row.amount_gross_minor,
+        fee_amount_minor: row.fee_amount_minor,
+        amount_net_minor: row.amount_net_minor,
+        paid_at: row.paid_at,
+        status: row.status,
+        match_status: row.match_status,
+        mismatch_reason: row.mismatch_reason,
+        created_at: row.created_at,
+    }
+}
+
+fn nhis_export_job_from_row(row: NhisExportJobRow) -> NhisExportJobListItem {
+    NhisExportJobListItem {
+        id: row.id,
+        batch_id: row.batch_id,
+        batch: row.batch_number.clone(),
+        batch_number: row.batch_number,
+        status: row.status,
+        checksum: row.checksum,
+        created_at: row.created_at,
+        expires_at: row.expires_at,
+    }
+}
+
+fn remittance_line_from_row(row: RemittanceLineRow) -> RemittanceLineListItem {
+    RemittanceLineListItem {
+        id: row.id,
+        import_id: row.import_id,
+        claim_number: row.claim_number,
+        invoice_number: row.invoice_number,
+        paid_amount_minor: row.paid_amount_minor,
+        paid_date: row.paid_date,
+        match_status: row.match_status,
+        mismatch_reason: row.mismatch_reason,
+        created_at: row.created_at,
     }
 }
 
@@ -2640,6 +3668,7 @@ fn cash_session_from_row(row: CashSessionRow) -> anyhow::Result<CashSessionListI
         drawer_id: row.drawer_id,
         drawer_code: row.drawer_code,
         opened_by_user_id: row.opened_by_user_id,
+        opened_by_display_name: row.opened_by_display_name,
         status: codec::decode::<CashSessionStatus>(&row.status)?,
         opening_float_minor: row.opening_float_minor,
         expected_cash_minor: row.expected_cash_minor,
@@ -2649,6 +3678,50 @@ fn cash_session_from_row(row: CashSessionRow) -> anyhow::Result<CashSessionListI
         opened_at: row.opened_at,
         closed_at: row.closed_at,
     })
+}
+
+fn insurance_provider_from_row(row: InsuranceProviderRow) -> InsuranceProviderListItem {
+    InsuranceProviderListItem {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        payer_type: row.payer_type,
+        is_active: row.is_active,
+        created_at: row.created_at,
+    }
+}
+
+fn insurance_plan_from_row(row: InsurancePlanRow) -> InsurancePlanListItem {
+    InsurancePlanListItem {
+        id: row.id,
+        provider_id: row.provider_id,
+        provider_name: row.provider_name,
+        code: row.code,
+        name: row.name,
+        coverage_percentage: row.coverage_percentage,
+        is_active: row.is_active,
+        created_at: row.created_at,
+    }
+}
+
+fn patient_insurance_from_row(row: PatientInsuranceRow) -> PatientInsuranceListItem {
+    PatientInsuranceListItem {
+        id: row.id,
+        patient_id: row.patient_id,
+        patient_code: row.patient_code,
+        patient_name: row.patient_name,
+        provider_id: row.provider_id,
+        provider_name: row.provider_name,
+        plan_id: row.plan_id,
+        plan_name: row.plan_name,
+        policy_number: row.policy_number,
+        member_id: row.member_id,
+        subscriber_number: row.subscriber_number,
+        valid_from: row.valid_from,
+        valid_until: row.valid_until,
+        is_active: row.is_active,
+        created_at: row.created_at,
+    }
 }
 
 fn export_checksum(

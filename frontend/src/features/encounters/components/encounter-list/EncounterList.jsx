@@ -20,6 +20,8 @@ export function EncounterList() {
   return (
     <div className="min-h-screen bg-background">
       <EncounterListHeader
+        canFilter={controller.canFilter}
+        countExact={controller.countExact}
         currentPage={controller.currentPage}
         hasActiveFilters={controller.hasActiveFilters}
         onCreateEncounter={() => controller.navigate('/encounters/new')}
@@ -29,13 +31,15 @@ export function EncounterList() {
       />
 
       <main className="p-6 space-y-6">
-        {controller.showFilters && (
+        {controller.canFilter && controller.showFilters && (
           <EncounterFiltersPanel
             activeTab={controller.activeTab}
             filters={controller.filters}
             hasActiveFilters={controller.hasActiveFilters}
             onFilterChange={controller.handleFilterChange}
             onResetFilters={controller.resetFilters}
+            statusOptions={controller.statusOptions}
+            typeOptions={controller.typeOptions}
           />
         )}
 
@@ -46,9 +50,12 @@ export function EncounterList() {
           onCreateEncounter={() => controller.navigate('/encounters/new')}
           onOpenEncounter={(encounter) => controller.navigate(`/encounters/${encounter.id}`)}
           onTabChange={controller.handleTabChange}
+          tabs={controller.visibleTabs}
         />
 
         <EncounterPagination
+          canJumpToPage={controller.canJumpToPage}
+          countExact={controller.countExact}
           currentPage={controller.currentPage}
           hasNextPage={controller.hasNextPage}
           hasPrevPage={controller.hasPrevPage}

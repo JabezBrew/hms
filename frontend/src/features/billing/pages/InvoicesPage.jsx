@@ -1,12 +1,10 @@
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,9 +22,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import { useInvoices } from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
+import { createReturnToLocation } from '@/shared/lib/returnTo';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 
@@ -39,7 +41,7 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   minimumFractionDigits: 2,
 });
 
-const STATUS_OPTIONS = [
+const LEGACY_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'draft', label: 'Draft' },
   { value: 'pending', label: 'Pending' },
@@ -49,29 +51,90 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
+const RUST_V2_STATUS_OPTIONS = [
+  { value: 'all', label: 'All Status' },
+  { value: 'issued', label: 'Issued' },
+  { value: 'partially_paid', label: 'Partially Paid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'void', label: 'Void' },
+];
+
 const STATUS_STYLES = {
+  issued: 'border-amber-200 bg-amber-50 text-amber-700',
   draft: 'border-border bg-muted text-muted-foreground',
   pending: 'border-amber-200 bg-amber-50 text-amber-700',
   partially_paid: 'border-sky-200 bg-sky-50 text-sky-700',
   paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   overdue: 'border-rose-200 bg-rose-50 text-rose-700',
   cancelled: 'border-border bg-muted text-muted-foreground',
+  void: 'border-border bg-muted text-muted-foreground',
 };
 
-function useInvoiceFilters() {
+function useInvoiceFilters({ statusOptions }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const urlSearch = searchParams.get('search') || '';
+  const urlPatientId = searchParams.get('patient') || '';
+  const [privateFilters, setPrivateFilters] = useRouteTableState('billing:invoicesPrivateFilters', {
+    search: urlSearch,
+    patientId: urlPatientId,
+  });
+  const [search, setSearch] = useState(privateFilters.search || urlSearch);
 
-  const status = searchParams.get('status') || 'all';
+  const rawStatus = searchParams.get('status') || 'all';
+  const status = statusOptions.some((option) => option.value === rawStatus) ? rawStatus : 'all';
   const dateFrom = searchParams.get('date_from') || '';
   const dateTo = searchParams.get('date_to') || '';
   const page = parseInt(searchParams.get('page') || '1', 10);
-  const patientId = searchParams.get('patient') || '';
+  const patientId = privateFilters.patientId || '';
   const debouncedSearch = useDebounce(search, 300);
+
+  useEffect(() => {
+    if (!urlSearch && !urlPatientId) return;
+    const nextPrivateFilters = {
+      ...privateFilters,
+      search: privateFilters.search || urlSearch,
+      patientId: privateFilters.patientId || urlPatientId,
+    };
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete('search');
+    nextParams.delete('patient');
+    const nextSearch = nextParams.toString();
+    navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash}`, {
+      replace: true,
+      state: {
+        ...(location.state || {}),
+        'billing:invoicesPrivateFilters': nextPrivateFilters,
+      },
+      preventScrollReset: true,
+    });
+  }, [
+    location.hash,
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+    privateFilters,
+    urlPatientId,
+    urlSearch,
+  ]);
+
+  useEffect(() => {
+    if (rawStatus === status) return;
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('status');
+      params.set('page', '1');
+      return params;
+    });
+  }, [rawStatus, setSearchParams, status]);
 
   const handleDateRangeChange = ({ from, to }) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
+      params.delete('search');
+      params.delete('patient');
       if (from && to) {
         params.set('date_from', format(from, 'yyyy-MM-dd'));
         params.set('date_to', format(to, 'yyyy-MM-dd'));
@@ -87,6 +150,8 @@ function useInvoiceFilters() {
   const handleStatusChange = (value) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
+      params.delete('search');
+      params.delete('patient');
       if (value !== 'all') {
         params.set('status', value);
       } else {
@@ -97,9 +162,23 @@ function useInvoiceFilters() {
     });
   };
 
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setPrivateFilters({ search: value });
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete('search');
+      params.delete('patient');
+      params.set('page', '1');
+      return params;
+    });
+  };
+
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
+      params.delete('search');
+      params.delete('patient');
       params.set('page', newPage.toString());
       return params;
     });
@@ -107,12 +186,15 @@ function useInvoiceFilters() {
 
   const clearFilters = () => {
     setSearch('');
+    setPrivateFilters({ search: '', patientId: '' });
     setSearchParams({});
   };
 
   const clearPatientFilter = () => {
+    setPrivateFilters({ patientId: '' });
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
+      params.delete('search');
       params.delete('patient');
       params.set('page', '1');
       return params;
@@ -135,8 +217,8 @@ function useInvoiceFilters() {
       ...(dateTo && { date_to: dateTo }),
       ...(patientId && { patient: patientId }),
     },
-    hasActiveFilters: status !== 'all' || dateFrom || dateTo || debouncedSearch || patientId,
-    setSearch,
+    hasActiveFilters: Boolean(patientId || status !== 'all' || dateFrom || dateTo || debouncedSearch),
+    handleSearchChange,
     handleDateRangeChange,
     handleStatusChange,
     handlePageChange,
@@ -227,6 +309,7 @@ function InvoicesHeader({
 function InvoiceFilters({
   search,
   status,
+  statusOptions,
   dateFrom,
   dateTo,
   hasActiveFilters,
@@ -254,7 +337,7 @@ function InvoiceFilters({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {STATUS_OPTIONS.map((option) => (
+              {statusOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
                   {option.label}
                 </SelectItem>
@@ -381,7 +464,7 @@ function createInvoiceColumns({ onOpenInvoice, onPatientContext }) {
   ];
 }
 
-function InvoicesTable({ invoices, columns, search, status, onOpenInvoice, onCreateInvoice }) {
+function InvoicesTable({ invoices, columns, hasActiveFilters, onOpenInvoice, onCreateInvoice }) {
   if (invoices.length === 0) {
     return (
       <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
@@ -390,11 +473,11 @@ function InvoicesTable({ invoices, columns, search, status, onOpenInvoice, onCre
         </div>
         <h3 className="font-display text-xl text-foreground mb-2">No Invoices Found</h3>
         <p className="text-muted-foreground text-sm mb-4">
-          {search || status !== 'all'
+          {hasActiveFilters
             ? 'Try adjusting your filters'
             : 'Create your first invoice to get started'}
         </p>
-        {!search && status === 'all' && (
+        {!hasActiveFilters && (
           <Button onClick={onCreateInvoice} className="font-mono text-xs">
             <Plus className="size-4 mr-2" />
             Create Invoice
@@ -420,44 +503,11 @@ function InvoicesTable({ invoices, columns, search, status, onOpenInvoice, onCre
   );
 }
 
-function InvoicesPagination({ page, totalPages, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center justify-between mt-6 pt-6 border-t border-border">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages}
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="font-mono text-xs"
-        >
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className="font-mono text-xs"
-        >
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export default function InvoicesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const rustV2Mode = isRustV2ApiMode();
+  const statusOptions = rustV2Mode ? RUST_V2_STATUS_OPTIONS : LEGACY_STATUS_OPTIONS;
   const [contextOpen, setContextOpen] = useState(false);
   const [contextInvoice, setContextInvoice] = useState(null);
   const {
@@ -469,13 +519,13 @@ export default function InvoicesPage() {
     patientId,
     queryParams,
     hasActiveFilters,
-    setSearch,
+    handleSearchChange,
     handleDateRangeChange,
     handleStatusChange,
     handlePageChange,
     clearFilters,
     clearPatientFilter,
-  } = useInvoiceFilters();
+  } = useInvoiceFilters({ statusOptions });
   const patientName = useFilteredPatientName(patientId);
 
   const {
@@ -487,13 +537,16 @@ export default function InvoicesPage() {
 
   const invoices = invoicesData?.results || [];
   const totalCount = invoicesData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
 
   const handlePatientContext = (invoice) => {
     setContextInvoice(invoice);
     setContextOpen(true);
   };
-  const handleOpenInvoice = (invoiceId) => navigate(`/billing/invoices/${invoiceId}`);
+  const handleOpenInvoice = (invoiceId) => navigate(`/billing/invoices/${invoiceId}`, {
+    state: {
+      returnTo: createReturnToLocation(location),
+    },
+  });
   const handleCreateInvoice = () => navigate('/billing/invoices/new');
   const invoiceColumns = createInvoiceColumns({
     onOpenInvoice: handleOpenInvoice,
@@ -530,10 +583,11 @@ export default function InvoicesPage() {
       <InvoiceFilters
         search={search}
         status={status}
+        statusOptions={statusOptions}
         dateFrom={dateFrom}
         dateTo={dateTo}
         hasActiveFilters={hasActiveFilters}
-        onSearchChange={setSearch}
+        onSearchChange={handleSearchChange}
         onStatusChange={handleStatusChange}
         onDateRangeChange={handleDateRangeChange}
         onClearFilters={clearFilters}
@@ -544,15 +598,17 @@ export default function InvoicesPage() {
         <InvoicesTable
           invoices={invoices}
           columns={invoiceColumns}
-          search={search}
-          status={status}
+          hasActiveFilters={hasActiveFilters}
           onOpenInvoice={handleOpenInvoice}
           onCreateInvoice={handleCreateInvoice}
         />
 
-        <InvoicesPagination
+        <BillingPagination
+          canJumpToPage={!rustV2Mode}
+          data={invoicesData}
+          itemLabel="invoices"
           page={page}
-          totalPages={totalPages}
+          pageSize={20}
           onPageChange={handlePageChange}
         />
       </main>

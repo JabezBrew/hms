@@ -11,6 +11,10 @@ pub fn routes() -> Router<AppState> {
             get(care::list_appointments).post(care::create_appointment),
         )
         .route(
+            "/api/v2/appointments/search",
+            post(care::search_appointments),
+        )
+        .route(
             "/api/v2/appointments/:id",
             get(care::get_appointment).patch(care::update_appointment),
         )
@@ -59,6 +63,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/encounters",
             get(care::list_encounters).post(care::create_encounter),
         )
+        .route("/api/v2/encounters/search", post(care::search_encounters))
         .route(
             "/api/v2/encounters/:id",
             get(care::get_encounter).patch(care::update_encounter),

@@ -20,6 +20,33 @@ pub struct AuditEventListQuery {
     pub action: Option<String>,
     pub start_date: Option<NaiveDate>,
     pub end_date: Option<NaiveDate>,
+    pub ordering: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct AuditEventListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub category: Option<String>,
+    pub action: Option<String>,
+    pub start_date: Option<NaiveDate>,
+    pub end_date: Option<NaiveDate>,
+    pub ordering: Option<String>,
+}
+
+impl From<AuditEventListGetQuery> for AuditEventListQuery {
+    fn from(value: AuditEventListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            search: None,
+            category: value.category,
+            action: value.action,
+            start_date: value.start_date,
+            end_date: value.end_date,
+            ordering: value.ordering,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -37,6 +64,13 @@ pub struct StaffListQuery {
     pub search: Option<String>,
     pub is_active: Option<bool>,
     pub practitioners_only: Option<bool>,
+    pub department: Option<String>,
+    pub position: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct StaffFilterFacetQuery {
+    pub is_active: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -247,6 +281,19 @@ pub struct StaffDirectoryItem {
     pub department: String,
     pub position: String,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct StaffFilterFacetOption {
+    pub value: String,
+    pub label: String,
+    pub count: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct StaffFilterFacets {
+    pub departments: Vec<StaffFilterFacetOption>,
+    pub positions: Vec<StaffFilterFacetOption>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

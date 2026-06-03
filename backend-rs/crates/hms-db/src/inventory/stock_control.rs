@@ -10,7 +10,8 @@ use uuid::Uuid;
 
 use super::{
     apply_cursor, apply_stock_delta_tx, insert_movement, InventoryCursor, NewStandingOrder,
-    NewStockBatch, NewStockRequisition, NewStockTransfer, StockBatchFilters, SupplyDispenseLine,
+    NewStockBatch, NewStockRequisition, NewStockTransfer, StandingOrderFilters, StockBatchFilters,
+    StockRequisitionFilters, StockTransferFilters, SupplyDispenseLine,
 };
 use crate::codec;
 use crate::PgPool;
@@ -59,6 +60,7 @@ struct RequisitionRow {
     requesting_location_id: Uuid,
     requesting_location_name: String,
     status: String,
+    priority: String,
     rejection_reason: Option<String>,
     rejected_at: Option<DateTime<Utc>>,
     cancelled_at: Option<DateTime<Utc>>,
@@ -89,6 +91,7 @@ struct StorageLocationStockRow {
 struct StandingOrderRow {
     id: Uuid,
     requesting_location_id: Uuid,
+    requesting_location_name: String,
     frequency: String,
     status: String,
     next_run_on: chrono::NaiveDate,
@@ -343,10 +346,36 @@ pub async fn list_transfers(
     facility_id: Uuid,
     cursor: Option<InventoryCursor>,
     limit: i64,
+    filters: StockTransferFilters,
 ) -> anyhow::Result<Vec<StockTransferListItem>> {
     let mut query = transfer_query();
     query.push(" WHERE stock_transfers.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(status) = filters.status {
+        query.push(" AND stock_transfers.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    if let Some(from_location_id) = filters.from_location_id {
+        query.push(" AND stock_transfers.from_location_id = ");
+        query.push_bind(from_location_id);
+    }
+    if let Some(to_location_id) = filters.to_location_id {
+        query.push(" AND stock_transfers.to_location_id = ");
+        query.push_bind(to_location_id);
+    }
+    if let Some(pattern) = lower_like_contains_pattern(filters.search.as_deref()) {
+        let search_id = uuid_search(filters.search.as_deref());
+        query.push(" AND (LOWER(inventory_items.name) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR LOWER(inventory_items.code) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\'");
+        if let Some(search_id) = search_id {
+            query.push(" OR stock_transfers.id = ");
+            query.push_bind(search_id);
+        }
+        query.push(")");
+    }
     apply_cursor(
         &mut query,
         "stock_transfers.created_at",
@@ -402,10 +431,41 @@ pub async fn list_requisitions(
     facility_id: Uuid,
     cursor: Option<InventoryCursor>,
     limit: i64,
+    filters: StockRequisitionFilters,
 ) -> anyhow::Result<Vec<StockRequisitionListItem>> {
     let mut query = requisition_query();
     query.push(" WHERE stock_requisitions.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(status) = filters.status {
+        query.push(" AND stock_requisitions.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    if let Some(requesting_location_id) = filters.requesting_location_id {
+        query.push(" AND stock_requisitions.requesting_location_id = ");
+        query.push_bind(requesting_location_id);
+    }
+    if let Some(priority) = filters
+        .priority
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        query.push(" AND stock_requisitions.priority = ");
+        query.push_bind(priority.to_owned());
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        let search_id = uuid_search(filters.search.as_deref());
+        query.push(" AND (storage_locations.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR storage_locations.code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\'");
+        if let Some(search_id) = search_id {
+            query.push(" OR stock_requisitions.id = ");
+            query.push_bind(search_id);
+        }
+        query.push(")");
+    }
     apply_cursor(
         &mut query,
         "stock_requisitions.created_at",
@@ -419,6 +479,60 @@ pub async fn list_requisitions(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(requisition_from_row).collect()
+}
+
+pub async fn list_standing_orders(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<InventoryCursor>,
+    limit: i64,
+    filters: StandingOrderFilters,
+) -> anyhow::Result<Vec<StandingOrderListItem>> {
+    let mut query = standing_order_query();
+    query.push(" WHERE inventory_standing_orders.facility_id = ");
+    query.push_bind(facility_id);
+    if let Some(status) = filters.status {
+        query.push(" AND inventory_standing_orders.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    if let Some(is_active) = filters.is_active {
+        query.push(" AND inventory_standing_orders.status ");
+        if is_active {
+            query.push("= ");
+            query.push_bind(codec::encode(StandingOrderStatus::Active)?);
+        } else {
+            query.push("<> ");
+            query.push_bind(codec::encode(StandingOrderStatus::Active)?);
+        }
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        let search_id = uuid_search(filters.search.as_deref());
+        query.push(" AND (storage_locations.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR storage_locations.code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\'");
+        if let Some(search_id) = search_id {
+            query.push(" OR inventory_standing_orders.id = ");
+            query.push_bind(search_id);
+        }
+        query.push(")");
+    }
+    apply_cursor(
+        &mut query,
+        "inventory_standing_orders.created_at",
+        "inventory_standing_orders.id",
+        cursor,
+    );
+    query.push(
+        " ORDER BY inventory_standing_orders.created_at DESC, inventory_standing_orders.id DESC LIMIT ",
+    );
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<StandingOrderRow>()
+        .fetch_all(pool)
+        .await?;
+    rows.into_iter().map(standing_order_from_row).collect()
 }
 
 pub async fn get_requisition(
@@ -867,20 +981,18 @@ async fn fetch_standing_order_by_id(
     facility_id: Uuid,
     id: Uuid,
 ) -> anyhow::Result<Option<StandingOrderListItem>> {
-    sqlx::query_as::<_, StandingOrderRow>(
-        r#"
-        SELECT id, requesting_location_id, frequency, status, next_run_on, created_at
-        FROM inventory_standing_orders
-        WHERE facility_id = $1 AND id = $2
-        LIMIT 1
-        "#,
-    )
-    .bind(facility_id)
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .map(standing_order_from_row)
-    .transpose()
+    let mut query = standing_order_query();
+    query.push(" WHERE inventory_standing_orders.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND inventory_standing_orders.id = ");
+    query.push_bind(id);
+    query.push(" LIMIT 1");
+    query
+        .build_query_as::<StandingOrderRow>()
+        .fetch_optional(pool)
+        .await?
+        .map(standing_order_from_row)
+        .transpose()
 }
 
 async fn fetch_supply_dispense_by_id(
@@ -1000,7 +1112,9 @@ fn transfer_query() -> QueryBuilder<'static, Postgres> {
                stock_transfers.status,
                stock_transfers.created_at
         FROM stock_transfers
-        INNER JOIN inventory_items ON inventory_items.id = stock_transfers.item_id
+        INNER JOIN inventory_items
+            ON inventory_items.id = stock_transfers.item_id
+           AND inventory_items.facility_id = stock_transfers.facility_id
         "#,
     )
 }
@@ -1012,14 +1126,60 @@ fn requisition_query() -> QueryBuilder<'static, Postgres> {
                stock_requisitions.requesting_location_id,
                storage_locations.name AS requesting_location_name,
                stock_requisitions.status,
+               stock_requisitions.priority,
                stock_requisitions.rejection_reason,
                stock_requisitions.rejected_at,
                stock_requisitions.cancelled_at,
                stock_requisitions.created_at
         FROM stock_requisitions
-        INNER JOIN storage_locations ON storage_locations.id = stock_requisitions.requesting_location_id
+        INNER JOIN storage_locations
+            ON storage_locations.id = stock_requisitions.requesting_location_id
+           AND storage_locations.facility_id = stock_requisitions.facility_id
         "#,
     )
+}
+
+fn standing_order_query() -> QueryBuilder<'static, Postgres> {
+    QueryBuilder::new(
+        r#"
+        SELECT inventory_standing_orders.id,
+               inventory_standing_orders.requesting_location_id,
+               storage_locations.name AS requesting_location_name,
+               inventory_standing_orders.frequency,
+               inventory_standing_orders.status,
+               inventory_standing_orders.next_run_on,
+               inventory_standing_orders.created_at
+        FROM inventory_standing_orders
+        INNER JOIN storage_locations
+            ON storage_locations.id = inventory_standing_orders.requesting_location_id
+           AND storage_locations.facility_id = inventory_standing_orders.facility_id
+        "#,
+    )
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let search = search?.trim();
+    if search.is_empty() {
+        return None;
+    }
+    let mut escaped = String::with_capacity(search.len());
+    for ch in search.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '%' => escaped.push_str("\\%"),
+            '_' => escaped.push_str("\\_"),
+            _ => escaped.push(ch),
+        }
+    }
+    Some(format!("%{escaped}%"))
+}
+
+fn lower_like_contains_pattern(search: Option<&str>) -> Option<String> {
+    like_contains_pattern(search).map(|pattern| pattern.to_lowercase())
+}
+
+fn uuid_search(search: Option<&str>) -> Option<Uuid> {
+    Uuid::parse_str(search?.trim()).ok()
 }
 
 fn batch_from_row(row: BatchRow) -> StockBatchListItem {
@@ -1091,6 +1251,7 @@ fn requisition_from_row(row: RequisitionRow) -> anyhow::Result<StockRequisitionL
         requesting_location_id: row.requesting_location_id,
         requesting_location_name: row.requesting_location_name,
         status: codec::decode(&row.status)?,
+        priority: row.priority,
         rejection_reason: row.rejection_reason,
         rejected_at: row.rejected_at,
         cancelled_at: row.cancelled_at,
@@ -1102,6 +1263,7 @@ fn standing_order_from_row(row: StandingOrderRow) -> anyhow::Result<StandingOrde
     Ok(StandingOrderListItem {
         id: row.id,
         requesting_location_id: row.requesting_location_id,
+        requesting_location_name: row.requesting_location_name,
         frequency: codec::decode(&row.frequency)?,
         status: codec::decode(&row.status)?,
         next_run_on: row.next_run_on,

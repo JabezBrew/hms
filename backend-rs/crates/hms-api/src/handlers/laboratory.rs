@@ -4,7 +4,8 @@ use hms_domain::laboratory::{
     BulkCreateLabResultsRequest, BulkCreateLabResultsResponse, BulkVerifyLabResultsRequest,
     BulkVerifyLabResultsResponse, CancelLabOrderRequest, CreateLabOrderRequest,
     CreateLabResultRequest, CreateSpecimenRequest, LabOrderListItem, LabPanelListItem,
-    LabResultListItem, LabTestCatalogItem, LaboratoryListQuery, LaboratoryOrderListQuery,
+    LabResultListItem, LabTestCatalogItem, LaboratoryCatalogQuery, LaboratoryListQuery,
+    LaboratoryOrderListGetQuery, LaboratoryOrderListQuery, LaboratoryResultListGetQuery,
     LaboratoryResultListQuery, SpecimenListItem,
 };
 use uuid::Uuid;
@@ -20,6 +21,7 @@ use crate::state::AppState;
     operation_id = "getLaboratoryTestCatalog",
     tag = "laboratory",
     security(("bearerAuth" = [])),
+    params(LaboratoryCatalogQuery),
     responses(
         (status = 200, description = "Laboratory test catalog", body = ListResponse<LabTestCatalogItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -29,12 +31,13 @@ use crate::state::AppState;
 pub async fn list_test_catalog(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
+    Query(query): Query<LaboratoryCatalogQuery>,
 ) -> Result<Json<ListResponse<LabTestCatalogItem>>, ApiError> {
     Ok(Json(
         state
             .laboratory_services()
             .catalog()
-            .list_test_catalog(&user)
+            .list_test_catalog(&user, query)
             .await?,
     ))
 }
@@ -73,6 +76,7 @@ pub async fn get_test_catalog_item(
     operation_id = "getLaboratoryPanels",
     tag = "laboratory",
     security(("bearerAuth" = [])),
+    params(LaboratoryCatalogQuery),
     responses(
         (status = 200, description = "Laboratory panels", body = ListResponse<LabPanelListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -82,12 +86,13 @@ pub async fn get_test_catalog_item(
 pub async fn list_panels(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
+    Query(query): Query<LaboratoryCatalogQuery>,
 ) -> Result<Json<ListResponse<LabPanelListItem>>, ApiError> {
     Ok(Json(
         state
             .laboratory_services()
             .catalog()
-            .list_panels(&user)
+            .list_panels(&user, query)
             .await?,
     ))
 }
@@ -126,7 +131,7 @@ pub async fn get_panel(
     operation_id = "getLaboratoryOrders",
     tag = "laboratory",
     security(("bearerAuth" = [])),
-    params(LaboratoryOrderListQuery),
+    params(LaboratoryOrderListGetQuery),
     responses(
         (status = 200, description = "Laboratory orders", body = ListResponse<LabOrderListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -136,7 +141,34 @@ pub async fn get_panel(
 pub async fn list_orders(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<LaboratoryOrderListQuery>,
+    Query(query): Query<LaboratoryOrderListGetQuery>,
+) -> Result<Json<ListResponse<LabOrderListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .laboratory_services()
+            .orders()
+            .list_orders(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/orders/search",
+    operation_id = "postLaboratoryOrdersSearch",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    request_body = LaboratoryOrderListQuery,
+    responses(
+        (status = 200, description = "Laboratory orders search", body = ListResponse<LabOrderListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_orders(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<LaboratoryOrderListQuery>,
 ) -> Result<Json<ListResponse<LabOrderListItem>>, ApiError> {
     Ok(Json(
         state
@@ -442,7 +474,7 @@ pub async fn receive_specimen(
     operation_id = "getLaboratoryResults",
     tag = "laboratory",
     security(("bearerAuth" = [])),
-    params(LaboratoryResultListQuery),
+    params(LaboratoryResultListGetQuery),
     responses(
         (status = 200, description = "Laboratory results", body = ListResponse<LabResultListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -452,7 +484,34 @@ pub async fn receive_specimen(
 pub async fn list_results(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<LaboratoryResultListQuery>,
+    Query(query): Query<LaboratoryResultListGetQuery>,
+) -> Result<Json<ListResponse<LabResultListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .laboratory_services()
+            .results()
+            .list_results(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/results/search",
+    operation_id = "postLaboratoryResultsSearch",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    request_body = LaboratoryResultListQuery,
+    responses(
+        (status = 200, description = "Laboratory results search", body = ListResponse<LabResultListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_results(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<LaboratoryResultListQuery>,
 ) -> Result<Json<ListResponse<LabResultListItem>>, ApiError> {
     Ok(Json(
         state

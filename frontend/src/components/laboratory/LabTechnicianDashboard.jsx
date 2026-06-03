@@ -609,6 +609,7 @@ function LabWorklistPanel({
         currentPage={activePage}
         totalCount={activeTotalCount}
         pageSize={LAB_WORKLIST_PAGE_SIZE}
+        countExact={activeOrdersResponse?.count_exact !== false && activeOrdersResponse?.total_is_lower_bound !== true}
         hasNextPage={Boolean(activeOrdersResponse?.next)}
         hasPrevPage={Boolean(activeOrdersResponse?.previous)}
         onPageChange={onPageChange}

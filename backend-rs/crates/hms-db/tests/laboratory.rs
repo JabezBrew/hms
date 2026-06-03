@@ -1,5 +1,6 @@
 use hms_db::laboratory::{
-    LabOrderListFilters, LabResultListFilters, NewLabOrder, NewLabResult, NewSpecimen,
+    LabCatalogFilters, LabOrderListFilters, LabResultListFilters, NewLabOrder, NewLabResult,
+    NewSpecimen,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::deployment::DeploymentProfile;
@@ -47,6 +48,41 @@ async fn laboratory_repository_filters_orders_and_results_for_worklists() {
     .await
     .expect("lab test exists");
 
+    let chemistry_catalog = hms_db::laboratory::list_test_catalog_page(
+        &pool,
+        facility_id,
+        None,
+        25,
+        LabCatalogFilters {
+            category: Some("chemistry".to_owned()),
+            is_active: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("catalog category filter loads");
+    assert!(!chemistry_catalog.is_empty());
+    assert!(chemistry_catalog
+        .iter()
+        .all(|test| test.category.as_deref() == Some("chemistry") && test.is_active));
+
+    let searched_catalog = hms_db::laboratory::list_test_catalog_page(
+        &pool,
+        facility_id,
+        None,
+        25,
+        LabCatalogFilters {
+            search: Some("glucose".to_owned()),
+            is_system_default: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("catalog search filter loads");
+    assert!(searched_catalog
+        .iter()
+        .any(|test| test.name.to_lowercase().contains("glucose")));
+
     let pending_order = create_order(&pool, facility_id, patient_id, test_id, owner_id)
         .await
         .expect("pending order is created");
@@ -91,6 +127,7 @@ async fn laboratory_repository_filters_orders_and_results_for_worklists() {
         25,
         LabOrderListFilters {
             status: Some(LabOrderStatus::Ordered),
+            ..Default::default()
         },
     )
     .await
@@ -109,6 +146,7 @@ async fn laboratory_repository_filters_orders_and_results_for_worklists() {
         25,
         LabOrderListFilters {
             status: Some(LabOrderStatus::ResultEntered),
+            ..Default::default()
         },
     )
     .await
@@ -135,6 +173,30 @@ async fn laboratory_repository_filters_orders_and_results_for_worklists() {
     assert!(!result_entered
         .iter()
         .any(|order| order.id == verified_order.id));
+
+    let provider_orders = hms_db::laboratory::list_orders(
+        &pool,
+        facility_id,
+        None,
+        25,
+        LabOrderListFilters {
+            priority: Some(LabPriority::Routine),
+            ordering_provider: Some(owner_id),
+            search: Some(pending_order.id.to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("provider/search filtered worklist loads");
+    assert!(provider_orders
+        .iter()
+        .any(|order| order.id == pending_order.id));
+
+    sqlx::query("UPDATE lab_results SET is_critical = TRUE WHERE id = $1")
+        .bind(entered_result.id)
+        .execute(&pool)
+        .await
+        .expect("critical result flag updates");
 
     let unverified_results = hms_db::laboratory::list_results(
         &pool,
@@ -173,6 +235,23 @@ async fn laboratory_repository_filters_orders_and_results_for_worklists() {
     assert!(!verified_results
         .iter()
         .any(|result| result.id == entered_result.id));
+
+    let critical_results = hms_db::laboratory::list_results(
+        &pool,
+        facility_id,
+        None,
+        25,
+        LabResultListFilters {
+            critical_only: true,
+            search: Some(entered_result.order_id.to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("critical result worklist loads");
+    assert!(critical_results
+        .iter()
+        .any(|result| result.id == entered_result.id && result.is_critical));
 }
 
 async fn create_order(

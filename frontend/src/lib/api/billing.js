@@ -1,7 +1,11 @@
 import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
-import { v2Api } from './v2/client';
+import { v2Api, v2Request } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 
 const DEFAULT_BILLING_PAGE_SIZE = 25;
 
@@ -16,7 +20,7 @@ function generateIdempotencyKey() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
-  } catch (_e) {
+  } catch {
     // ignore
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -106,6 +110,7 @@ function adaptV2CashSession(session) {
   }
   return {
     ...session,
+    opened_by_name: session.opened_by_display_name || session.opened_by_user_id,
     opening_float_amount: minorToMajor(session.opening_float_minor),
     expected_cash_amount: minorToMajor(session.expected_cash_minor),
     counted_cash_amount: session.counted_cash_minor === null || session.counted_cash_minor === undefined
@@ -114,6 +119,12 @@ function adaptV2CashSession(session) {
     variance_amount: session.variance_minor === null || session.variance_minor === undefined
       ? null
       : minorToMajor(session.variance_minor),
+    variance_cash_amount: session.variance_minor === null || session.variance_minor === undefined
+      ? null
+      : minorToMajor(session.variance_minor),
+    is_flagged: session.variance_minor !== null
+      && session.variance_minor !== undefined
+      && Number(session.variance_minor) !== 0,
   };
 }
 
@@ -121,12 +132,72 @@ function emptyPage() {
   return { count: 0, next: null, previous: null, results: [] };
 }
 
-function v2Page(response, mapper = (item) => item) {
+const billingCursorCache = new Map();
+
+const BILLING_LIST_SCOPES = Object.freeze({
+  billingRules: 'billing:rules',
+  cashSessions: 'billing:cash-sessions',
+  claims: 'billing:claims',
+  insurancePlans: 'billing:insurance-plans',
+  insuranceProviders: 'billing:insurance-providers',
+  invoices: 'billing:invoices',
+  nhisBatches: 'billing:nhis-batches',
+  nhisExports: 'billing:nhis-exports',
+  patientInsurances: 'billing:patient-insurances',
+  payerServiceCodes: 'billing:payer-service-codes',
+  payments: 'billing:payments',
+  paymentIntents: 'billing:payment-intents',
+  remittanceImports: 'billing:remittance-imports',
+  remittanceLines: 'billing:remittance-lines',
+  serviceCatalog: 'billing:service-catalog',
+  settlementBatches: 'billing:settlement-batches',
+  settlementLines: 'billing:settlement-lines',
+});
+
+const V2_SERVICE_CATEGORIES = [
+  'consultation',
+  'laboratory',
+  'pharmacy',
+  'procedure',
+  'admission',
+  'other',
+];
+
+function resolveBillingCursorPage(scope, params = {}) {
+  return resolveScopedCursorPage(billingCursorCache, scope, params);
+}
+
+function cacheBillingCursorForNextPage(scope, params, response) {
+  cacheScopedCursorForNextPage(billingCursorCache, scope, params, response);
+}
+
+function v2Page(response, params = {}, mapper = (item) => item, scope = 'default') {
+  if (typeof params === 'function') {
+    return v2Page(response, {}, params, scope);
+  }
   const results = v2List(response).map(mapper);
+  const limit = normalizeLimit(params, response?.page?.limit || DEFAULT_BILLING_PAGE_SIZE);
+  const resolvedPage = resolveBillingCursorPage(scope, params);
+  const currentPage = resolvedPage.page;
+  const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
+  const knownResultCount = ((currentPage - 1) * limit) + results.length;
+  cacheBillingCursorForNextPage(scope, params, response);
+
   return {
-    count: results.length + (response?.page?.has_next ? 1 : 0),
-    next: response?.page?.has_next ? response?.page?.next_cursor || null : null,
-    previous: null,
+    count: knownResultCount + (hasNext ? 1 : 0),
+    total: knownResultCount + (hasNext ? 1 : 0),
+    count_exact: !hasNext,
+    total_is_lower_bound: hasNext,
+    page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
+    page_size: limit,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
+    next: hasNext ? response.page.next_cursor : null,
+    previous: currentPage > 1 ? String(currentPage - 1) : null,
+    next_cursor: response?.page?.next_cursor || null,
     results,
   };
 }
@@ -143,12 +214,103 @@ function titleCase(value) {
     .join(' ');
 }
 
-function normalizeCursor(params = {}) {
-  return params.cursor || params.next_cursor || null;
+function normalizeCursor(params = {}, scope = 'default') {
+  return resolveBillingCursorPage(scope, params).cursor || null;
 }
 
 function normalizePatientId(params = {}) {
   return params.patient_id || params.patient || null;
+}
+
+function addStringQueryParam(query, params, sourceKey, targetKey = sourceKey) {
+  const value = params[sourceKey];
+  if (value === undefined || value === null) {
+    return;
+  }
+  const normalized = String(value).trim();
+  if (normalized && normalized !== 'all') {
+    query[targetKey] = normalized;
+  }
+}
+
+function buildBillingListQuery(params = {}, scope = 'default') {
+  const patientId = normalizePatientId(params);
+  const query = {
+    limit: normalizeLimit(params, 20),
+    cursor: normalizeCursor(params, scope),
+  };
+
+  if (patientId) {
+    query.patient_id = patientId;
+  }
+  addStringQueryParam(query, params, 'search');
+  addStringQueryParam(query, params, 'status');
+  addStringQueryParam(query, params, 'payment_method');
+  addStringQueryParam(query, params, 'date_from');
+  addStringQueryParam(query, params, 'date_to');
+  return query;
+}
+
+function buildSafeBillingCursorQuery(params = {}, scope = 'default') {
+  const query = {
+    limit: normalizeLimit(params),
+    cursor: normalizeCursor(params, scope),
+  };
+  addStringQueryParam(query, params, 'search');
+  addStringQueryParam(query, params, 'status');
+  addStringQueryParam(query, params, 'match_status');
+  return query;
+}
+
+function addActiveQueryParam(query, params, sourceKey = 'is_active', targetKey = 'active') {
+  const value = params[sourceKey];
+  if (value === undefined || value === null || value === '' || value === 'all') {
+    return;
+  }
+  query[targetKey] = value === true || value === 'true' || value === '1' || value === 'active';
+}
+
+function requiresPrivateBillingListRequest(query = {}) {
+  return Boolean(query.search || query.patient_id);
+}
+
+async function requestV2SearchableCursorList({
+  path,
+  searchPath,
+  query,
+  signal,
+}) {
+  if (query.search) {
+    return v2Request({
+      method: 'POST',
+      path: searchPath,
+      body: query,
+      signal,
+    });
+  }
+  return v2Request({
+    method: 'GET',
+    path,
+    query,
+    signal,
+  });
+}
+
+async function requestV2BillingList({
+  query,
+  signal,
+  searchPath,
+  getList,
+}) {
+  if (requiresPrivateBillingListRequest(query)) {
+    return v2Request({
+      method: 'POST',
+      path: searchPath,
+      body: query,
+      signal,
+    });
+  }
+  return getList({ query, signal });
 }
 
 function adaptV2Claim(claim) {
@@ -197,6 +359,74 @@ function adaptV2RemittanceImport(job) {
   };
 }
 
+function adaptV2PspPaymentIntent(intent) {
+  if (!intent) {
+    return intent;
+  }
+  return {
+    ...intent,
+    invoice: intent.invoice_id,
+    amount: minorToMajor(intent.amount_minor),
+    created_at: intent.created_at,
+  };
+}
+
+function adaptV2PspSettlementBatch(batch) {
+  if (!batch) {
+    return batch;
+  }
+  return {
+    ...batch,
+    uploaded_at: batch.created_at,
+    lines_count: batch.line_count,
+  };
+}
+
+function adaptV2PspSettlementLine(line) {
+  if (!line) {
+    return line;
+  }
+  return {
+    ...line,
+    amount_gross: minorToMajor(line.amount_gross_minor),
+    fee_amount: minorToMajor(line.fee_amount_minor),
+    amount_net: minorToMajor(line.amount_net_minor),
+  };
+}
+
+function adaptV2NhisExportJob(job) {
+  if (!job) {
+    return job;
+  }
+  return {
+    ...job,
+    batch: job.batch || job.batch_number,
+  };
+}
+
+function adaptV2RemittanceLine(line) {
+  if (!line) {
+    return line;
+  }
+  return {
+    ...line,
+    paid_amount: minorToMajor(line.paid_amount_minor),
+  };
+}
+
+function adaptV2PayerServiceCode(mapping) {
+  if (!mapping) {
+    return mapping;
+  }
+  return {
+    ...mapping,
+    payer: mapping.payer_id,
+    service: mapping.service_id,
+    external_code: mapping.nhis_code,
+    is_active: mapping.active !== false,
+  };
+}
+
 function adaptV2ServiceCatalogItem(item, price) {
   if (!item) {
     return item;
@@ -225,6 +455,7 @@ function adaptV2ServiceCatalogItem(item, price) {
 function serviceCatalogQuery(params = {}) {
   const query = {
     limit: normalizeLimit(params),
+    cursor: normalizeCursor(params, BILLING_LIST_SCOPES.serviceCatalog),
   };
   if (params.search) {
     query.search = String(params.search).trim();
@@ -240,23 +471,18 @@ async function getV2ServicesPage(params = {}, options = {}) {
     query: serviceCatalogQuery(params),
     signal: options.signal,
   });
-  const services = v2List(catalogResponse).map((item) => adaptV2ServiceCatalogItem(item));
-  return {
-    ...emptyPage(),
-    count: catalogResponse?.page?.has_next ? services.length + 1 : services.length,
-    next: catalogResponse?.page?.next_cursor || null,
-    results: services,
-  };
+  return v2Page(
+    catalogResponse,
+    params,
+    (item) => adaptV2ServiceCatalogItem(item),
+    BILLING_LIST_SCOPES.serviceCatalog,
+  );
 }
 
-function v2ServiceCategoriesPage(catalogResponse, params = {}) {
+function v2ServiceCategoriesPage(_catalogResponse, params = {}) {
   const search = String(params.search || '').trim().toLowerCase();
   const categories = [];
-  const seenKinds = new Set();
-  for (const item of v2List(catalogResponse)) {
-    const serviceKind = item.service_kind;
-    if (!serviceKind || seenKinds.has(serviceKind)) continue;
-    seenKinds.add(serviceKind);
+  for (const serviceKind of V2_SERVICE_CATEGORIES) {
     const category = {
       id: serviceKind,
       name: titleCase(serviceKind) || 'Other',
@@ -467,16 +693,14 @@ export const billingApi = {
   getInvoices: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const patientId = normalizePatientId(params);
-        const response = await v2Api.getBillingInvoices({
-          query: {
-            limit: normalizeLimit(params, 20),
-            cursor: normalizeCursor(params),
-            ...(patientId ? { patient_id: patientId } : {}),
-          },
-          signal: options.signal,
+        const query = buildBillingListQuery(params, BILLING_LIST_SCOPES.invoices);
+        const response = await requestV2BillingList({
+          query,
+          signal: options.signal || params.signal,
+          searchPath: '/api/v2/billing/invoices/search',
+          getList: (request) => v2Api.getBillingInvoices(request),
         });
-        return v2Page(response, adaptV2Invoice);
+        return v2Page(response, params, adaptV2Invoice, BILLING_LIST_SCOPES.invoices);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -541,13 +765,15 @@ export const billingApi = {
   getPatientInvoices: async (patientId, params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getBillingInvoices({
-          query: {
+        const response = await v2Request({
+          method: 'POST',
+          path: '/api/v2/billing/invoices/search',
+          body: {
             limit: normalizeLimit(params),
             cursor: params.cursor || params.next_cursor,
             patient_id: patientId,
           },
-          signal: options.signal,
+          signal: options.signal || params.signal,
         });
         return Array.isArray(response?.data) ? response.data.map(adaptV2Invoice) : [];
       }
@@ -694,13 +920,22 @@ export const billingApi = {
   getPaymentIntents: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const response = await requestV2SearchableCursorList({
+          path: '/api/v2/billing/payment-intents',
+          searchPath: '/api/v2/billing/payment-intents/search',
+          query: buildSafeBillingCursorQuery(params, BILLING_LIST_SCOPES.paymentIntents),
+          signal: params.signal,
+        });
+        return v2Page(response, params, adaptV2PspPaymentIntent, BILLING_LIST_SCOPES.paymentIntents);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payment-intents/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch payment intents');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch payment intents'));
     }
   },
@@ -729,13 +964,22 @@ export const billingApi = {
   getSettlementBatches: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const response = await requestV2SearchableCursorList({
+          path: '/api/v2/billing/settlements',
+          searchPath: '/api/v2/billing/settlements/search',
+          query: buildSafeBillingCursorQuery(params, BILLING_LIST_SCOPES.settlementBatches),
+          signal: params.signal,
+        });
+        return v2Page(response, params, adaptV2PspSettlementBatch, BILLING_LIST_SCOPES.settlementBatches);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/settlements/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch settlement batches');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch settlement batches'));
     }
   },
@@ -764,13 +1008,23 @@ export const billingApi = {
   getSettlementLines: async (batchId, params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const scope = `${BILLING_LIST_SCOPES.settlementLines}:${batchId}`;
+        const response = await requestV2SearchableCursorList({
+          path: `/api/v2/billing/settlements/${batchId}/lines`,
+          searchPath: `/api/v2/billing/settlements/${batchId}/lines/search`,
+          query: buildSafeBillingCursorQuery(params, scope),
+          signal: params.signal,
+        });
+        return v2Page(response, params, adaptV2PspSettlementLine, scope);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/settlements/${batchId}/lines/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch settlement lines');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch settlement lines'));
     }
   },
@@ -785,17 +1039,16 @@ export const billingApi = {
         const response = await v2Api.getCashSessions({
           query: {
             limit: normalizeLimit(params),
-            cursor: params.cursor || params.next_cursor,
+            cursor: normalizeCursor(params, BILLING_LIST_SCOPES.cashSessions),
+            ...(params.status && params.status !== 'all' ? { status: params.status } : {}),
+            ...(params.search ? { search: String(params.search).trim() } : {}),
+            ...(params.is_flagged !== undefined && params.is_flagged !== null && params.is_flagged !== ''
+              ? { is_flagged: params.is_flagged === true || params.is_flagged === 'true' || params.is_flagged === '1' }
+              : {}),
           },
           signal: params.signal,
         });
-        const results = v2List(response).map(adaptV2CashSession);
-        return {
-          count: results.length + (response?.page?.has_next ? 1 : 0),
-          next: response?.page?.next_cursor || null,
-          previous: null,
-          results,
-        };
+        return v2Page(response, params, adaptV2CashSession, BILLING_LIST_SCOPES.cashSessions);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -954,16 +1207,14 @@ export const billingApi = {
   getClaims: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const patientId = normalizePatientId(params);
-        const response = await v2Api.getNhisClaims({
-          query: {
-            limit: normalizeLimit(params, 20),
-            cursor: normalizeCursor(params),
-            ...(patientId ? { patient_id: patientId } : {}),
-          },
-          signal: options.signal,
+        const query = buildBillingListQuery(params, BILLING_LIST_SCOPES.claims);
+        const response = await requestV2BillingList({
+          query,
+          signal: options.signal || params.signal,
+          searchPath: '/api/v2/nhis/claims/search',
+          getList: (request) => v2Api.getNhisClaims(request),
         });
-        return v2Page(response, adaptV2Claim);
+        return v2Page(response, params, adaptV2Claim, BILLING_LIST_SCOPES.claims);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1029,16 +1280,14 @@ export const billingApi = {
   getNhisClaimBatches: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const patientId = normalizePatientId(params);
         const response = await v2Api.getNhisBatches({
           query: {
             limit: normalizeLimit(params, 20),
-            cursor: normalizeCursor(params),
-            ...(patientId ? { patient_id: patientId } : {}),
+            cursor: normalizeCursor(params, BILLING_LIST_SCOPES.nhisBatches),
           },
           signal: options.signal,
         });
-        return v2Page(response, adaptV2NhisBatch);
+        return v2Page(response, params, adaptV2NhisBatch, BILLING_LIST_SCOPES.nhisBatches);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1112,13 +1361,25 @@ export const billingApi = {
   getNhisExportJobs: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const response = await v2Request({
+          method: 'GET',
+          path: '/api/v2/nhis/exports',
+          query: {
+            limit: normalizeLimit(params, 20),
+            cursor: normalizeCursor(params, BILLING_LIST_SCOPES.nhisExports),
+          },
+          signal: params.signal,
+        });
+        return v2Page(response, params, adaptV2NhisExportJob, BILLING_LIST_SCOPES.nhisExports);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/exports/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch NHIS export jobs');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch NHIS export jobs'));
     }
   },
@@ -1141,16 +1402,14 @@ export const billingApi = {
   getRemittanceImportJobs: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const patientId = normalizePatientId(params);
         const response = await v2Api.getNhisRemittanceImports({
           query: {
             limit: normalizeLimit(params, 20),
-            cursor: normalizeCursor(params),
-            ...(patientId ? { patient_id: patientId } : {}),
+            cursor: normalizeCursor(params, BILLING_LIST_SCOPES.remittanceImports),
           },
           signal: options.signal,
         });
-        return v2Page(response, adaptV2RemittanceImport);
+        return v2Page(response, params, adaptV2RemittanceImport, BILLING_LIST_SCOPES.remittanceImports);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1188,13 +1447,23 @@ export const billingApi = {
   getRemittanceLines: async (jobId, params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const scope = `${BILLING_LIST_SCOPES.remittanceLines}:${jobId}`;
+        const response = await requestV2SearchableCursorList({
+          path: `/api/v2/nhis/remittance-imports/${jobId}/lines`,
+          searchPath: `/api/v2/nhis/remittance-imports/${jobId}/lines/search`,
+          query: buildSafeBillingCursorQuery(params, scope),
+          signal: params.signal,
+        });
+        return v2Page(response, params, adaptV2RemittanceLine, scope);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/remittances/${jobId}/lines/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch remittance lines');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch remittance lines'));
     }
   },
@@ -1251,16 +1520,14 @@ export const billingApi = {
   getPayments: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const patientId = normalizePatientId(params);
-        const response = await v2Api.getBillingPayments({
-          query: {
-            limit: normalizeLimit(params, 20),
-            cursor: normalizeCursor(params),
-            ...(patientId ? { patient_id: patientId } : {}),
-          },
-          signal: options.signal,
+        const query = buildBillingListQuery(params, BILLING_LIST_SCOPES.payments);
+        const response = await requestV2BillingList({
+          query,
+          signal: options.signal || params.signal,
+          searchPath: '/api/v2/billing/payments/search',
+          getList: (request) => v2Api.getBillingPayments(request),
         });
-        return v2Page(response, adaptV2Payment);
+        return v2Page(response, params, adaptV2Payment, BILLING_LIST_SCOPES.payments);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1340,14 +1607,10 @@ export const billingApi = {
   // Services
   // =========================================================================
 
-  getServiceCategories: async (params = {}, options = {}) => {
+  getServiceCategories: async (params = {}, _options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getBillingServiceCatalog({
-          query: serviceCatalogQuery(params),
-          signal: options.signal,
-        });
-        return v2ServiceCategoriesPage(response, params);
+        return v2ServiceCategoriesPage(null, params);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1483,13 +1746,31 @@ export const billingApi = {
   getPayerServiceCodes: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const query = {
+          limit: normalizeLimit(params),
+          cursor: normalizeCursor(params, BILLING_LIST_SCOPES.payerServiceCodes),
+        };
+        addStringQueryParam(query, params, 'search');
+        addActiveQueryParam(query, params);
+        if (params.payer || params.payer_id) {
+          query.payer_id = params.payer || params.payer_id;
+        }
+        const response = await v2Request({
+          method: 'GET',
+          path: '/api/v2/nhis/service-mappings',
+          query,
+          signal: params.signal,
+        });
+        return v2Page(response, params, adaptV2PayerServiceCode, BILLING_LIST_SCOPES.payerServiceCodes);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payer-service-codes/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch payer service codes');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch payer service codes'));
     }
   },
@@ -1497,7 +1778,19 @@ export const billingApi = {
   createPayerServiceCode: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('payer service code mutations');
+        const response = await v2Request({
+          method: 'POST',
+          path: '/api/v2/nhis/service-mappings',
+          body: {
+            payer_id: data.payer_id || data.payer || null,
+            service_id: data.service_id || data.service,
+            nhis_code: data.nhis_code || data.external_code,
+            effective_from: data.effective_from,
+            effective_until: data.effective_until || null,
+          },
+          signal: data.signal,
+        });
+        return adaptV2PayerServiceCode(response?.data);
       }
 
       return await apiClient.post('/billing/payer-service-codes/', data, {
@@ -1812,13 +2105,36 @@ export const billingApi = {
   getPatientInsurances: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const query = {
+          limit: normalizeLimit(params),
+          cursor: normalizeCursor(params, BILLING_LIST_SCOPES.patientInsurances),
+          ...(params.patient_id ? { patient_id: params.patient_id } : {}),
+          ...(params.search ? { search: String(params.search).trim() } : {}),
+          ...(params.is_active !== undefined && params.is_active !== null && params.is_active !== ''
+            ? { is_active: params.is_active === true || params.is_active === 'true' || params.is_active === 'active' }
+            : {}),
+        };
+        const response = requiresPrivateBillingListRequest(query)
+          ? await v2Request({
+              method: 'POST',
+              path: '/api/v2/billing/patient-insurances/search',
+              body: query,
+              signal: params.signal,
+            })
+          : await v2Api.getBillingPatientInsurances({
+              query,
+              signal: params.signal,
+            });
+        return v2Page(response, params, (insurance) => insurance, BILLING_LIST_SCOPES.patientInsurances);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/patient-insurances/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch patient insurances');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch patient insurances'));
     }
   },
@@ -1832,7 +2148,18 @@ export const billingApi = {
   getPatientInsurance: async (patientId, params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return [];
+        const scope = `${BILLING_LIST_SCOPES.patientInsurances}:${patientId}`;
+        const response = await v2Request({
+          method: 'POST',
+          path: '/api/v2/billing/patient-insurances/search',
+          body: {
+            limit: normalizeLimit(params),
+            cursor: normalizeCursor(params, scope),
+            patient_id: patientId,
+          },
+          signal: params.signal,
+        });
+        return v2Page(response, params, (insurance) => insurance, scope);
       }
 
       const queryParams = { patient_id: patientId, ...params };
@@ -1938,7 +2265,18 @@ export const billingApi = {
   getInsuranceProviders: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const response = await v2Api.getBillingInsuranceProviders({
+          query: {
+            limit: normalizeLimit(params),
+            cursor: normalizeCursor(params, BILLING_LIST_SCOPES.insuranceProviders),
+            ...(params.search ? { search: String(params.search).trim() } : {}),
+            ...(params.is_active !== undefined && params.is_active !== null && params.is_active !== ''
+              ? { is_active: params.is_active === true || params.is_active === 'true' || params.is_active === 'active' }
+              : {}),
+          },
+          signal: params.signal,
+        });
+        return v2Page(response, params, (provider) => provider, BILLING_LIST_SCOPES.insuranceProviders);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1957,7 +2295,19 @@ export const billingApi = {
   getInsurancePlans: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPage();
+        const response = await v2Api.getBillingInsurancePlans({
+          query: {
+            limit: normalizeLimit(params),
+            cursor: normalizeCursor(params, BILLING_LIST_SCOPES.insurancePlans),
+            ...(params.provider_id || params.provider ? { provider_id: params.provider_id || params.provider } : {}),
+            ...(params.search ? { search: String(params.search).trim() } : {}),
+            ...(params.is_active !== undefined && params.is_active !== null && params.is_active !== ''
+              ? { is_active: params.is_active === true || params.is_active === 'true' || params.is_active === 'active' }
+              : {}),
+          },
+          signal: params.signal,
+        });
+        return v2Page(response, params, (plan) => plan, BILLING_LIST_SCOPES.insurancePlans);
       }
 
       const queryString = new URLSearchParams(params).toString();

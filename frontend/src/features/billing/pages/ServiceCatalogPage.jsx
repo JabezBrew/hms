@@ -13,7 +13,9 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import { VirtualizedTable } from '@/components/ui/VirtualizedTable';
+import { TablePagination } from '@/components/ui/table-pagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -243,11 +245,18 @@ function ServiceCatalogReadOnlyNotice() {
 function ServicesTab({
   activeFilter,
   serviceColumns,
+  serviceData,
   serviceSearch,
   services,
+  setServicePage,
   setActiveFilter,
   setServiceSearch,
 }) {
+  const servicePage = Number(serviceData?.page || 1);
+  const serviceCount = Number(serviceData?.count || services.length);
+  const servicePageSize = Number(serviceData?.page_size || 25);
+  const serviceCountExact = serviceData?.count_exact !== false && serviceData?.total_is_lower_bound !== true;
+
   return (
     <TabsContent value="services" className="mt-4 space-y-3">
       <div className="flex flex-col sm:flex-row gap-2">
@@ -276,6 +285,19 @@ function ServicesTab({
         rows={services}
         threshold={50}
         className="rounded-2xl border border-border bg-card"
+      />
+
+      <TablePagination
+        currentPage={servicePage}
+        totalCount={serviceCount}
+        pageSize={servicePageSize}
+        countExact={serviceCountExact}
+        totalPages={serviceData?.total_pages}
+        hasNextPage={Boolean(serviceData?.next)}
+        hasPrevPage={servicePage > 1}
+        canJumpToPage={false}
+        onPageChange={setServicePage}
+        itemLabel="services"
       />
     </TabsContent>
   );
@@ -522,25 +544,37 @@ function ServiceDialog({
 }
 
 export default function ServiceCatalogPage() {
-  const [tab, setTab] = useState('services');
+  const [catalogState, setCatalogState] = useRouteTableState('billingServiceCatalog', {
+    tab: 'services',
+    categorySearch: '',
+    serviceSearch: '',
+    activeFilter: 'active',
+    categoryPage: 1,
+    servicePage: 1,
+  });
+  const {
+    tab,
+    categorySearch,
+    serviceSearch,
+    activeFilter,
+    categoryPage,
+    servicePage,
+  } = catalogState;
   const catalogMutationsAvailable = !isRustV2ApiMode();
 
   // Categories query
-  const [categorySearch, setCategorySearch] = useState('');
   const debouncedCategorySearch = useDebounce(categorySearch, 250);
   const categoriesQuery = useServiceCategories({
-    page: 1,
-    page_size: 200,
+    page: categoryPage,
+    page_size: 25,
     ...(debouncedCategorySearch ? { search: debouncedCategorySearch } : {}),
   });
 
   // Services query
-  const [serviceSearch, setServiceSearch] = useState('');
   const debouncedServiceSearch = useDebounce(serviceSearch, 250);
-  const [activeFilter, setActiveFilter] = useState('active');
   const servicesQuery = useServices({
-    page: 1,
-    page_size: 200,
+    page: servicePage,
+    page_size: 25,
     ...(debouncedServiceSearch ? { search: debouncedServiceSearch } : {}),
     ...(activeFilter === 'active' ? { is_active: true } : {}),
   });
@@ -576,6 +610,26 @@ export default function ServiceCatalogPage() {
   const handleRefresh = async () => {
     await Promise.allSettled([categoriesQuery.refetch(), servicesQuery.refetch()]);
     toast.success('Refreshed');
+  };
+
+  const setTab = (nextTab) => {
+    setCatalogState({ tab: nextTab });
+  };
+
+  const setCategorySearch = (nextSearch) => {
+    setCatalogState({ categorySearch: nextSearch, categoryPage: 1 });
+  };
+
+  const setServiceSearch = (nextSearch) => {
+    setCatalogState({ serviceSearch: nextSearch, servicePage: 1 });
+  };
+
+  const setActiveFilter = (nextFilter) => {
+    setCatalogState({ activeFilter: nextFilter, servicePage: 1 });
+  };
+
+  const setServicePage = (nextPage) => {
+    setCatalogState({ servicePage: nextPage });
   };
 
   const openNewCategoryDialog = () => {
@@ -751,8 +805,10 @@ export default function ServiceCatalogPage() {
           <ServicesTab
             activeFilter={activeFilter}
             serviceColumns={serviceColumns}
+            serviceData={servicesQuery.data}
             serviceSearch={serviceSearch}
             services={services}
+            setServicePage={setServicePage}
             setActiveFilter={setActiveFilter}
             setServiceSearch={setServiceSearch}
           />

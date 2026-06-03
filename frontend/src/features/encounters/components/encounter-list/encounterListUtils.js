@@ -4,7 +4,7 @@ import isValid from 'date-fns/isValid';
 
 import { ENCOUNTER_PAGE_SIZE } from './encounterListConstants';
 
-export function buildEncounterQueryParams({ activeTab, currentPage, filters }) {
+export function buildEncounterQueryParams({ activeTab, currentPage, filters, rustV2Mode = false }) {
   const queryParams = {
     page: currentPage,
     page_size: ENCOUNTER_PAGE_SIZE,
@@ -16,14 +16,20 @@ export function buildEncounterQueryParams({ activeTab, currentPage, filters }) {
     queryParams.encounter_type = 'outpatient';
   } else if (activeTab === 'emergency') {
     queryParams.encounter_type = 'emergency';
+  } else if (activeTab === 'triage') {
+    queryParams.encounter_type = 'triage';
   }
 
   if (filters.patient) {
-    queryParams.patient_id = filters.patient;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(filters.patient)) {
+      queryParams.patient_id = filters.patient;
+    } else {
+      queryParams.patient_search = filters.patient;
+    }
   }
 
   if (filters.practitioner) {
-    queryParams.practitioner_id = filters.practitioner;
+    queryParams.practitioner_search = filters.practitioner;
   }
 
   if (filters.date) {

@@ -1,15 +1,24 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::billing::{
-    BillingDashboardSummary, BillingDischargeClearance, BillingListQuery, BillingRuleListItem,
+    BillingDashboardSummary, BillingDischargeClearance, BillingListGetQuery, BillingRuleListItem,
     BillingRuleListQuery, CashDrawerListItem, CashSessionListItem, CashSessionListQuery,
-    ClaimListItem, CloseCashSessionRequest, CreateClaimRequest, CreateInvoiceRequest,
-    CreateNhisBatchRequest, CreateNhisServiceMappingRequest, CreatePaymentRequest,
-    CreateRemittanceImportRequest, FinalizeInvoiceRequest, InvoiceListItem, NhisArAdjustmentEntry,
-    NhisBatchExport, NhisBatchListItem, NhisClaimArState, NhisServiceMappingListItem,
-    OpenCashSessionRequest, PaymentListItem, PaymentReversalLedgerEntry, ReceiptListItem,
-    RecordNhisArAdjustmentRequest, RemittanceImportListItem, ReversePaymentRequest,
-    ServiceCatalogItem, ServiceCatalogQuery, ServicePriceListItem,
+    ClaimListGetQuery, ClaimListItem, ClaimListQuery, CloseCashSessionRequest, CreateClaimRequest,
+    CreateInvoiceRequest, CreateNhisBatchRequest, CreateNhisServiceMappingRequest,
+    CreatePaymentRequest, CreateRemittanceImportRequest, FinalizeInvoiceRequest,
+    InsurancePlanListItem, InsurancePlanListQuery, InsuranceProviderListItem,
+    InsuranceProviderListQuery, InvoiceListGetQuery, InvoiceListItem, InvoiceListQuery,
+    NhisArAdjustmentEntry, NhisBatchExport, NhisBatchListItem, NhisClaimArState,
+    NhisExportJobListItem, NhisExportJobListQuery, NhisServiceMappingListItem,
+    NhisServiceMappingListQuery, OpenCashSessionRequest, PatientInsuranceListGetQuery,
+    PatientInsuranceListItem, PatientInsuranceListQuery, PaymentListGetQuery, PaymentListItem,
+    PaymentListQuery, PaymentReversalLedgerEntry, PspPaymentIntentListGetQuery,
+    PspPaymentIntentListItem, PspPaymentIntentListQuery, PspSettlementBatchListGetQuery,
+    PspSettlementBatchListItem, PspSettlementBatchListQuery, PspSettlementLineListGetQuery,
+    PspSettlementLineListItem, PspSettlementLineListQuery, ReceiptListItem,
+    RecordNhisArAdjustmentRequest, RemittanceImportListItem, RemittanceLineListGetQuery,
+    RemittanceLineListItem, RemittanceLineListQuery, ReversePaymentRequest, ServiceCatalogItem,
+    ServiceCatalogQuery, ServicePriceListItem,
 };
 use uuid::Uuid;
 
@@ -77,6 +86,66 @@ pub async fn get_billing_rule(
     ))
 }
 
+#[utoipa::path(get, path = "/api/v2/billing/insurance-providers", operation_id = "getBillingInsuranceProviders", tag = "billing", security(("bearerAuth" = [])), params(InsuranceProviderListQuery), responses((status = 200, body = ListResponse<InsuranceProviderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_insurance_providers(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<InsuranceProviderListQuery>,
+) -> Result<Json<ListResponse<InsuranceProviderListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .insurance()
+            .list_providers(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/insurance-plans", operation_id = "getBillingInsurancePlans", tag = "billing", security(("bearerAuth" = [])), params(InsurancePlanListQuery), responses((status = 200, body = ListResponse<InsurancePlanListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_insurance_plans(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<InsurancePlanListQuery>,
+) -> Result<Json<ListResponse<InsurancePlanListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .insurance()
+            .list_plans(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/patient-insurances", operation_id = "getBillingPatientInsurances", tag = "billing", security(("bearerAuth" = [])), params(PatientInsuranceListGetQuery), responses((status = 200, body = ListResponse<PatientInsuranceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_patient_insurances(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<PatientInsuranceListGetQuery>,
+) -> Result<Json<ListResponse<PatientInsuranceListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .insurance()
+            .list_patient_insurances(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/patient-insurances/search", operation_id = "postBillingPatientInsurancesSearch", tag = "billing", security(("bearerAuth" = [])), request_body = PatientInsuranceListQuery, responses((status = 200, body = ListResponse<PatientInsuranceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_patient_insurances(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<PatientInsuranceListQuery>,
+) -> Result<Json<ListResponse<PatientInsuranceListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .insurance()
+            .list_patient_insurances(&user, query)
+            .await?,
+    ))
+}
+
 #[utoipa::path(get, path = "/api/v2/billing/dashboard-summary", operation_id = "getBillingDashboardSummary", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<BillingDashboardSummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn dashboard_summary(
     State(state): State<AppState>,
@@ -91,11 +160,26 @@ pub async fn dashboard_summary(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/billing/invoices", operation_id = "getBillingInvoices", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/billing/invoices", operation_id = "getBillingInvoices", tag = "billing", security(("bearerAuth" = [])), params(InvoiceListGetQuery), responses((status = 200, body = ListResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_invoices(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<BillingListQuery>,
+    Query(query): Query<InvoiceListGetQuery>,
+) -> Result<Json<ListResponse<InvoiceListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_invoices(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/invoices/search", operation_id = "postBillingInvoicesSearch", tag = "billing", security(("bearerAuth" = [])), request_body = InvoiceListQuery, responses((status = 200, body = ListResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_invoices(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<InvoiceListQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItem>>, ApiError> {
     Ok(Json(
         state
@@ -152,11 +236,26 @@ pub async fn finalize_invoice(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/billing/payments", operation_id = "getBillingPayments", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<PaymentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/billing/payments", operation_id = "getBillingPayments", tag = "billing", security(("bearerAuth" = [])), params(PaymentListGetQuery), responses((status = 200, body = ListResponse<PaymentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_payments(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<BillingListQuery>,
+    Query(query): Query<PaymentListGetQuery>,
+) -> Result<Json<ListResponse<PaymentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_payments(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/payments/search", operation_id = "postBillingPaymentsSearch", tag = "billing", security(("bearerAuth" = [])), request_body = PaymentListQuery, responses((status = 200, body = ListResponse<PaymentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_payments(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<PaymentListQuery>,
 ) -> Result<Json<ListResponse<PaymentListItem>>, ApiError> {
     Ok(Json(
         state
@@ -178,6 +277,98 @@ pub async fn create_payment(
             .billing_services()
             .financial_workflow()
             .create_payment(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/payment-intents", operation_id = "getBillingPaymentIntents", tag = "billing", security(("bearerAuth" = [])), params(PspPaymentIntentListGetQuery), responses((status = 200, body = ListResponse<PspPaymentIntentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_payment_intents(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<PspPaymentIntentListGetQuery>,
+) -> Result<Json<ListResponse<PspPaymentIntentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_payment_intents(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/payment-intents/search", operation_id = "postBillingPaymentIntentsSearch", tag = "billing", security(("bearerAuth" = [])), request_body = PspPaymentIntentListQuery, responses((status = 200, body = ListResponse<PspPaymentIntentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_payment_intents(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<PspPaymentIntentListQuery>,
+) -> Result<Json<ListResponse<PspPaymentIntentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_payment_intents(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/settlements", operation_id = "getBillingSettlements", tag = "billing", security(("bearerAuth" = [])), params(PspSettlementBatchListGetQuery), responses((status = 200, body = ListResponse<PspSettlementBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_settlement_batches(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<PspSettlementBatchListGetQuery>,
+) -> Result<Json<ListResponse<PspSettlementBatchListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_settlement_batches(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/settlements/search", operation_id = "postBillingSettlementsSearch", tag = "billing", security(("bearerAuth" = [])), request_body = PspSettlementBatchListQuery, responses((status = 200, body = ListResponse<PspSettlementBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_settlement_batches(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<PspSettlementBatchListQuery>,
+) -> Result<Json<ListResponse<PspSettlementBatchListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_settlement_batches(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/settlements/{id}/lines", operation_id = "getBillingSettlementLines", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Settlement batch id"), PspSettlementLineListGetQuery), responses((status = 200, body = ListResponse<PspSettlementLineListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_settlement_lines(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Query(query): Query<PspSettlementLineListGetQuery>,
+) -> Result<Json<ListResponse<PspSettlementLineListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_settlement_lines(&user, id, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/settlements/{id}/lines/search", operation_id = "postBillingSettlementLinesSearch", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Settlement batch id")), request_body = PspSettlementLineListQuery, responses((status = 200, body = ListResponse<PspSettlementLineListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_settlement_lines(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(query): Json<PspSettlementLineListQuery>,
+) -> Result<Json<ListResponse<PspSettlementLineListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_settlement_lines(&user, id, query)
             .await?,
     ))
 }
@@ -213,17 +404,17 @@ pub async fn record_discharge_clearance(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/billing/receipts", operation_id = "getBillingReceipts", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/billing/receipts", operation_id = "getBillingReceipts", tag = "billing", security(("bearerAuth" = [])), params(BillingListGetQuery), responses((status = 200, body = ListResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_receipts(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<BillingListQuery>,
+    Query(query): Query<BillingListGetQuery>,
 ) -> Result<Json<ListResponse<ReceiptListItem>>, ApiError> {
     Ok(Json(
         state
             .billing_services()
             .financial_workflow()
-            .list_receipts(&user, query)
+            .list_receipts(&user, query.into())
             .await?,
     ))
 }
@@ -348,11 +539,26 @@ pub async fn close_cash_session(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/nhis/claims", operation_id = "getNhisClaims", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/nhis/claims", operation_id = "getNhisClaims", tag = "nhis", security(("bearerAuth" = [])), params(ClaimListGetQuery), responses((status = 200, body = ListResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_claims(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<BillingListQuery>,
+    Query(query): Query<ClaimListGetQuery>,
+) -> Result<Json<ListResponse<ClaimListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_claims(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/nhis/claims/search", operation_id = "postNhisClaimsSearch", tag = "nhis", security(("bearerAuth" = [])), request_body = ClaimListQuery, responses((status = 200, body = ListResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_claims(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<ClaimListQuery>,
 ) -> Result<Json<ListResponse<ClaimListItem>>, ApiError> {
     Ok(Json(
         state
@@ -389,6 +595,21 @@ pub async fn create_claim(
     ))
 }
 
+#[utoipa::path(get, path = "/api/v2/nhis/service-mappings", operation_id = "getNhisServiceMappings", tag = "nhis", security(("bearerAuth" = [])), params(NhisServiceMappingListQuery), responses((status = 200, body = ListResponse<NhisServiceMappingListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_nhis_service_mappings(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<NhisServiceMappingListQuery>,
+) -> Result<Json<ListResponse<NhisServiceMappingListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_service_mappings(&user, query)
+            .await?,
+    ))
+}
+
 #[utoipa::path(post, path = "/api/v2/nhis/service-mappings", operation_id = "postNhisServiceMappings", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateNhisServiceMappingRequest, responses((status = 200, body = ObjectResponse<NhisServiceMappingListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
 pub async fn create_nhis_service_mapping(
     State(state): State<AppState>,
@@ -400,6 +621,21 @@ pub async fn create_nhis_service_mapping(
             .billing_services()
             .nhis()
             .create_service_mapping(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/nhis/exports", operation_id = "getNhisExports", tag = "nhis", security(("bearerAuth" = [])), params(NhisExportJobListQuery), responses((status = 200, body = ListResponse<NhisExportJobListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_nhis_export_jobs(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<NhisExportJobListQuery>,
+) -> Result<Json<ListResponse<NhisExportJobListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_export_jobs(&user, query)
             .await?,
     ))
 }
@@ -435,17 +671,17 @@ pub async fn record_claim_ar_adjustment(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/nhis/batches", operation_id = "getNhisBatches", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<NhisBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/nhis/batches", operation_id = "getNhisBatches", tag = "nhis", security(("bearerAuth" = [])), params(BillingListGetQuery), responses((status = 200, body = ListResponse<NhisBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_batches(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<BillingListQuery>,
+    Query(query): Query<BillingListGetQuery>,
 ) -> Result<Json<ListResponse<NhisBatchListItem>>, ApiError> {
     Ok(Json(
         state
             .billing_services()
             .nhis()
-            .list_batches(&user, query)
+            .list_batches(&user, query.into())
             .await?,
     ))
 }
@@ -480,17 +716,49 @@ pub async fn export_batch(
     ))
 }
 
-#[utoipa::path(get, path = "/api/v2/nhis/remittance-imports", operation_id = "getNhisRemittanceImports", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<RemittanceImportListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/nhis/remittance-imports", operation_id = "getNhisRemittanceImports", tag = "nhis", security(("bearerAuth" = [])), params(BillingListGetQuery), responses((status = 200, body = ListResponse<RemittanceImportListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_remittance_imports(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<BillingListQuery>,
+    Query(query): Query<BillingListGetQuery>,
 ) -> Result<Json<ListResponse<RemittanceImportListItem>>, ApiError> {
     Ok(Json(
         state
             .billing_services()
             .nhis()
-            .list_remittance_imports(&user, query)
+            .list_remittance_imports(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/nhis/remittance-imports/{id}/lines", operation_id = "getNhisRemittanceLines", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Remittance import id"), RemittanceLineListGetQuery), responses((status = 200, body = ListResponse<RemittanceLineListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_remittance_lines(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Query(query): Query<RemittanceLineListGetQuery>,
+) -> Result<Json<ListResponse<RemittanceLineListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_remittance_lines(&user, id, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/nhis/remittance-imports/{id}/lines/search", operation_id = "postNhisRemittanceLinesSearch", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Remittance import id")), request_body = RemittanceLineListQuery, responses((status = 200, body = ListResponse<RemittanceLineListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn search_remittance_lines(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(query): Json<RemittanceLineListQuery>,
+) -> Result<Json<ListResponse<RemittanceLineListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_remittance_lines(&user, id, query)
             .await?,
     ))
 }

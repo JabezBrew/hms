@@ -97,6 +97,30 @@ pub struct AppointmentListQuery {
     pub limit: Option<u8>,
     pub date: Option<NaiveDate>,
     pub clinic_id: Option<Uuid>,
+    pub status: Option<AppointmentStatus>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct AppointmentListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub date: Option<NaiveDate>,
+    pub clinic_id: Option<Uuid>,
+    pub status: Option<AppointmentStatus>,
+}
+
+impl From<AppointmentListGetQuery> for AppointmentListQuery {
+    fn from(value: AppointmentListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            date: value.date,
+            clinic_id: value.clinic_id,
+            status: value.status,
+            search: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -120,6 +144,35 @@ pub struct EncounterListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub patient_id: Option<Uuid>,
+    pub patient_search: Option<String>,
+    pub practitioner_search: Option<String>,
+    pub date: Option<NaiveDate>,
+    pub status: Option<EncounterStatus>,
+    pub encounter_type: Option<EncounterType>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct EncounterListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub date: Option<NaiveDate>,
+    pub status: Option<EncounterStatus>,
+    pub encounter_type: Option<EncounterType>,
+}
+
+impl From<EncounterListGetQuery> for EncounterListQuery {
+    fn from(value: EncounterListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            patient_id: None,
+            patient_search: None,
+            practitioner_search: None,
+            date: value.date,
+            status: value.status,
+            encounter_type: value.encounter_type,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

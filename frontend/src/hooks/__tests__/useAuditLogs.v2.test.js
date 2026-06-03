@@ -67,11 +67,19 @@ describe('Rust V2 audit log bridge', () => {
     );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/audit-events?limit=35&search=invoice&category=BILLING&action=UPDATE&start_date=2026-05-12&end_date=2026-05-12',
+      'http://localhost:8080/api/v2/admin/audit-events/search',
       expect.objectContaining({
-        method: 'GET',
+        method: 'POST',
         credentials: 'include',
         signal: controller.signal,
+        body: JSON.stringify({
+          limit: 35,
+          search: 'invoice',
+          category: 'BILLING',
+          action: 'UPDATE',
+          start_date: '2026-05-12',
+          end_date: '2026-05-12',
+        }),
       }),
     );
     expect(response.results).toEqual([

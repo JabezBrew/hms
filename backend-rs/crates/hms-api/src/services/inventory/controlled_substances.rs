@@ -1,11 +1,11 @@
 use chrono::Utc;
-use hms_db::inventory::{NewControlledCount, NewControlledMovement};
+use hms_db::inventory::{ControlledRegisterFilters, NewControlledCount, NewControlledMovement};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
-    ControlledDiscrepancyListItem, ControlledSubstanceBalanceValidation,
-    ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
-    CreateControlledSubstanceCountRequest, CreateControlledSubstanceMovementRequest,
-    InventoryListQuery,
+    ControlledDiscrepancyListItem, ControlledRegisterListQuery,
+    ControlledSubstanceBalanceValidation, ControlledSubstanceRegisterEntryItem,
+    ControlledSubstanceRegisterItem, CreateControlledSubstanceCountRequest,
+    CreateControlledSubstanceMovementRequest, InventoryListQuery,
 };
 use uuid::Uuid;
 
@@ -38,15 +38,24 @@ impl ControlledSubstancesService {
     pub async fn list_register(
         &self,
         ctx: &hms_access::RequestContext,
-        query: InventoryListQuery,
+        query: ControlledRegisterListQuery,
     ) -> Result<ListResponse<ControlledSubstanceRegisterItem>, ApiError> {
         require_controlled_access(ctx, self.facility_id())?;
-        let (cursor, page_size) = page_request(query)?;
+        let (cursor, page_size) = page_request(InventoryListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
         let rows = hms_db::inventory::list_controlled_register(
             self.pool(),
             self.facility_id(),
             cursor,
             i64::from(page_size) + 1,
+            ControlledRegisterFilters {
+                search: query.search,
+                location_id: query.location,
+                has_discrepancy: query.has_discrepancy,
+                audit_due: query.audit_due,
+            },
         )
         .await
         .map_err(|_| {

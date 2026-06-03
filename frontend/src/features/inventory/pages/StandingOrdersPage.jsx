@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { useStandingOrders } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
@@ -18,8 +19,6 @@ import { format, parseISO } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Repeat from 'lucide-react/dist/esm/icons/repeat.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 
@@ -36,23 +35,15 @@ function getFrequencyConfig(frequency) {
 
 function useStandingOrderFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
   const showInactive = searchParams.get('show_inactive') === 'true';
   const page = parseInt(searchParams.get('page') || '1', 10);
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
-      } else {
-        params.delete('search');
-      }
-      params.set('page', '1');
-      return params;
-    });
-  }, [debouncedSearch, setSearchParams]);
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
 
   const handleToggleInactive = useCallback(() => {
     setSearchParams((prev) => {
@@ -80,6 +71,21 @@ function useStandingOrderFilters() {
     setSearchParams({});
   }, [setSearchParams]);
 
+  const handleSearchChange = useCallback((event) => {
+    const value = event.target.value;
+    setSearch(value);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value) {
+        params.set('search', value);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  }, [setSearchParams]);
+
   const queryParams = useMemo(() => ({
     page,
     page_size: 20,
@@ -93,7 +99,7 @@ function useStandingOrderFilters() {
     page,
     queryParams,
     hasActiveFilters: Boolean(debouncedSearch || showInactive),
-    handleSearchChange: (event) => setSearch(event.target.value),
+    handleSearchChange,
     handleToggleInactive,
     handlePageChange,
     clearFilters,
@@ -371,36 +377,13 @@ function StandingOrdersDisplay({
   );
 }
 
-function StandingOrdersPagination({ page, totalPages, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center justify-between pt-4 border-t">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages}
-      </p>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /**
  * StandingOrdersPage - Recurring order templates page
  */
 export default function StandingOrdersPage() {
   const navigate = useNavigate();
-  const standingOrderManagementAvailable = !isRustV2ApiMode();
+  const rustV2Mode = isRustV2ApiMode();
+  const standingOrderManagementAvailable = !rustV2Mode;
   const {
     search,
     showInactive,
@@ -415,7 +398,6 @@ export default function StandingOrdersPage() {
   const { data: ordersData, isLoading, error, refetch } = useStandingOrders(queryParams);
   const orders = ordersData?.results || [];
   const totalCount = ordersData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
 
   const handleClick = useCallback((id) => {
     navigate(`/inventory/standing-orders/${id}`);
@@ -487,9 +469,11 @@ export default function StandingOrdersPage() {
           onCreate={handleCreate}
         />
 
-        <StandingOrdersPagination
+        <InventoryPagination
+          data={ordersData}
+          itemLabel="standing orders"
           page={page}
-          totalPages={totalPages}
+          pageSize={20}
           onPageChange={handlePageChange}
         />
       </div>

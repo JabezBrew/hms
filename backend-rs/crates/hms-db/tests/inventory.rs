@@ -1,8 +1,8 @@
 use chrono::{Duration, Utc};
 use hms_db::inventory::{
-    CatalogEditCommand, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
-    NewPurchaseOrder, NewStandingOrder, NewStockBatch, NewStockRequisition, StockBatchFilters,
-    SupplyDispenseLine,
+    CatalogEditCommand, GoodsReceivedNoteFilters, NewControlledCount, NewControlledMovement,
+    NewGoodsReceivedNote, NewPurchaseOrder, NewStandingOrder, NewStockBatch, NewStockRequisition,
+    PurchaseOrderFilters, StockBatchFilters, StorageLocationFilters, SupplyDispenseLine,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::deployment::DeploymentProfile;
@@ -72,9 +72,15 @@ async fn storage_location_list_respects_requested_limit() {
         .expect("facility query succeeds")
         .expect("facility exists");
 
-    let rows = hms_db::inventory::list_locations(&pool, facility_id, None, 1)
-        .await
-        .expect("storage locations list");
+    let rows = hms_db::inventory::list_locations(
+        &pool,
+        facility_id,
+        None,
+        1,
+        StorageLocationFilters::default(),
+    )
+    .await
+    .expect("storage locations list");
 
     assert_eq!(rows.len(), 1);
 }
@@ -247,9 +253,15 @@ async fn procurement_repositories_manage_purchase_orders_and_grns() {
         .expect("purchase order detail loads")
         .expect("purchase order exists");
     assert_eq!(order_detail.supplier_name, "Procurement Supplier");
-    let listed_orders = hms_db::inventory::list_purchase_orders(&pool, facility_id, None, 25)
-        .await
-        .expect("purchase orders list");
+    let listed_orders = hms_db::inventory::list_purchase_orders(
+        &pool,
+        facility_id,
+        None,
+        25,
+        PurchaseOrderFilters::default(),
+    )
+    .await
+    .expect("purchase orders list");
     assert!(listed_orders.iter().any(|row| row.id == order.id));
 
     let approved = hms_db::inventory::approve_purchase_order(&pool, facility_id, order.id)
@@ -281,9 +293,15 @@ async fn procurement_repositories_manage_purchase_orders_and_grns() {
         .expect("GRN detail loads")
         .expect("GRN exists");
     assert_eq!(grn_detail.purchase_order_id, order.id);
-    let listed_grns = hms_db::inventory::list_grns(&pool, facility_id, None, 25)
-        .await
-        .expect("GRNs list");
+    let listed_grns = hms_db::inventory::list_grns(
+        &pool,
+        facility_id,
+        None,
+        25,
+        GoodsReceivedNoteFilters::default(),
+    )
+    .await
+    .expect("GRNs list");
     assert!(listed_grns.iter().any(|row| row.id == grn.id));
 
     let inspected = hms_db::inventory::inspect_grn(&pool, facility_id, grn.id)

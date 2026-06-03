@@ -7,7 +7,7 @@ use hms_domain::admin::{
     FeatureEntitlementListItem, OrgUnitType, OrganizationUnitListItem,
     PermissionAssignmentListItem, PermissionAssignmentStatus, PositionListItem, PositionStatus,
     PositionTemplateListItem, PractitionerListItem, PractitionerProfileSummary, StaffDirectoryItem,
-    StaffListItem, UpdateStaffRequest,
+    StaffFilterFacetOption, StaffFilterFacets, StaffListItem, UpdateStaffRequest,
 };
 use hms_domain::auth::{ActiveAuthority, AuthorityScope, AuthoritySource};
 use hms_domain::capabilities::{feature_flags_for_profile, ALL_FEATURES};
@@ -102,13 +102,47 @@ pub struct NewAuditEvent {
     pub metadata: Value,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AuditEventFilters {
     pub search: Option<String>,
     pub category: Option<String>,
     pub action: Option<String>,
     pub start_date: Option<NaiveDate>,
     pub end_date: Option<NaiveDate>,
+    pub timestamp_desc: bool,
+}
+
+impl Default for AuditEventFilters {
+    fn default() -> Self {
+        Self {
+            search: None,
+            category: None,
+            action: None,
+            start_date: None,
+            end_date: None,
+            timestamp_desc: true,
+        }
+    }
+}
+
+impl AuditEventFilters {
+    pub fn new(
+        search: Option<String>,
+        category: Option<String>,
+        action: Option<String>,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+        timestamp_desc: bool,
+    ) -> Self {
+        Self {
+            search,
+            category,
+            action,
+            start_date,
+            end_date,
+            timestamp_desc,
+        }
+    }
 }
 
 pub struct NewPractitionerProfile {
@@ -257,6 +291,12 @@ struct StaffRow {
     qualification: Option<String>,
     fhir_practitioner_id: Option<String>,
     created_at: DateTime<Utc>,
+}
+
+#[derive(FromRow)]
+struct StaffFacetRow {
+    value: String,
+    count: i64,
 }
 
 #[derive(FromRow)]
@@ -1179,6 +1219,8 @@ pub async fn list_staff_accounts(
     search: Option<String>,
     is_active: Option<bool>,
     practitioners_only: Option<bool>,
+    department: Option<String>,
+    position: Option<String>,
 ) -> anyhow::Result<Vec<StaffListItem>> {
     let mut query = QueryBuilder::new(staff_query());
     query.push(" WHERE staff_profiles.facility_id = ");
@@ -1203,6 +1245,22 @@ pub async fn list_staff_accounts(
     if practitioners_only == Some(true) {
         query.push(" AND practitioner_profiles.id IS NOT NULL");
     }
+    if let Some(department) = department
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != "all")
+    {
+        query.push(" AND staff_profiles.department = ");
+        query.push_bind(department.to_owned());
+    }
+    if let Some(position) = position
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != "all")
+    {
+        query.push(" AND staff_profiles.position = ");
+        query.push_bind(position.to_owned());
+    }
     append_cursor(
         &mut query,
         "staff_profiles.created_at",
@@ -1213,6 +1271,67 @@ pub async fn list_staff_accounts(
     query.push_bind(limit);
     let rows = query.build_query_as::<StaffRow>().fetch_all(pool).await?;
     rows.into_iter().map(staff_from_row).collect()
+}
+
+pub async fn list_staff_filter_facets(
+    pool: &PgPool,
+    facility_id: Uuid,
+    is_active: Option<bool>,
+) -> anyhow::Result<StaffFilterFacets> {
+    let departments = list_staff_facet_options(pool, facility_id, is_active, "department").await?;
+    let positions = list_staff_facet_options(pool, facility_id, is_active, "position").await?;
+    Ok(StaffFilterFacets {
+        departments,
+        positions,
+    })
+}
+
+async fn list_staff_facet_options(
+    pool: &PgPool,
+    facility_id: Uuid,
+    is_active: Option<bool>,
+    column_name: &'static str,
+) -> anyhow::Result<Vec<StaffFilterFacetOption>> {
+    let column_sql = match column_name {
+        "department" => "staff_profiles.department",
+        "position" => "staff_profiles.position",
+        _ => anyhow::bail!("unsupported staff facet column"),
+    };
+    let mut query = QueryBuilder::new("SELECT ");
+    query.push(column_sql);
+    query.push(
+        " AS value,
+                COUNT(*)::bigint AS count
+         FROM staff_profiles
+         JOIN users ON users.id = staff_profiles.user_id
+         WHERE staff_profiles.facility_id = ",
+    );
+    query.push_bind(facility_id);
+    query.push(" AND btrim(");
+    query.push(column_sql);
+    query.push(") <> ''");
+    if let Some(is_active) = is_active {
+        query.push(" AND users.is_active = ");
+        query.push_bind(is_active);
+    }
+    query.push(" GROUP BY ");
+    query.push(column_sql);
+    query.push(" ORDER BY lower(");
+    query.push(column_sql);
+    query.push(") ASC LIMIT 100");
+
+    let rows = query
+        .build_query_as::<StaffFacetRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| StaffFilterFacetOption {
+            label: row.value.clone(),
+            value: row.value,
+            count: row.count,
+        })
+        .collect())
 }
 
 pub async fn list_staff_directory(
@@ -1780,13 +1899,21 @@ pub async fn list_audit_events(
     push_audit_category_filter(&mut query, filters.category.as_deref());
     push_audit_action_filter(&mut query, filters.action.as_deref());
     if let Some(cursor) = cursor {
-        query.push(" AND (audit_events.occurred_at, audit_events.id) < (");
+        if filters.timestamp_desc {
+            query.push(" AND (audit_events.occurred_at, audit_events.id) < (");
+        } else {
+            query.push(" AND (audit_events.occurred_at, audit_events.id) > (");
+        }
         query.push_bind(cursor.occurred_at);
         query.push(", ");
         query.push_bind(cursor.id);
         query.push(")");
     }
-    query.push(" ORDER BY audit_events.occurred_at DESC, audit_events.id DESC LIMIT ");
+    if filters.timestamp_desc {
+        query.push(" ORDER BY audit_events.occurred_at DESC, audit_events.id DESC LIMIT ");
+    } else {
+        query.push(" ORDER BY audit_events.occurred_at ASC, audit_events.id ASC LIMIT ");
+    }
     query.push_bind(limit);
     let rows = query
         .build_query_as::<AuditEventRow>()

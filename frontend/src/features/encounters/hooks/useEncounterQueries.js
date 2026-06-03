@@ -3,16 +3,33 @@ import { encountersApi } from '@/features/encounters/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 // Query keys
 const baseKeys = createKeyFactory('encounters');
 
 export const encounterKeys = {
   ...baseKeys,
-  forPatient: (patientId) => [...encounterKeys.all, 'forPatient', patientId],
+  forPatient: (patientId) => [...encounterKeys.all, 'forPatient', hashQueryValue(String(patientId || 'none'))],
+  listFingerprint: (fingerprint) => [...encounterKeys.lists(), fingerprint],
   patients: () => [...encounterKeys.all, 'patients'],
   practitioners: () => [...encounterKeys.all, 'practitioners'],
 };
+
+function fingerprintFilters(filters = {}) {
+  const stable = JSON.stringify(Object.keys(filters)
+    .sort()
+    .reduce((accumulator, key) => {
+      accumulator[key] = filters[key];
+      return accumulator;
+    }, {}));
+  let hash = 2166136261;
+  for (let index = 0; index < stable.length; index += 1) {
+    hash ^= stable.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash.toString(36);
+}
 
 function normalizeIdentifier(value) {
   if (!value) return null;
@@ -87,7 +104,7 @@ export function invalidateEncounterMutationQueries(queryClient, { encounterId, p
  */
 export function useEncounters(filters = {}) {
   return useQuery({
-    queryKey: encounterKeys.list(filters),
+    queryKey: encounterKeys.listFingerprint(fingerprintFilters(filters)),
     queryFn: ({ signal }) => encountersApi.getEncounters(filters, { signal }),
     staleTime: 60 * 1000, // 60 seconds - matches backend cache timeout
   });

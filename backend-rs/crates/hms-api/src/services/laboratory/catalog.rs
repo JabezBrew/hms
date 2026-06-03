@@ -1,5 +1,6 @@
+use hms_db::laboratory::LabCatalogFilters;
 use hms_domain::deployment::PermissionCode;
-use hms_domain::laboratory::{LabPanelListItem, LabTestCatalogItem};
+use hms_domain::laboratory::{LabPanelListItem, LabTestCatalogItem, LaboratoryCatalogQuery};
 use uuid::Uuid;
 
 use super::common;
@@ -28,22 +29,38 @@ impl LabCatalogService {
     pub async fn list_test_catalog(
         &self,
         ctx: &hms_access::RequestContext,
+        query: LaboratoryCatalogQuery,
     ) -> Result<ListResponse<LabTestCatalogItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
             self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
-        let tests = hms_db::laboratory::list_test_catalog(self.pool(), self.facility_id())
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_catalog_list_failed",
-                    "Laboratory test catalog could not be loaded.",
-                )
-            })?;
+        let (cursor, page_size) = common::page_request(query.cursor, query.limit)?;
+        let tests = hms_db::laboratory::list_test_catalog_page(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            LabCatalogFilters {
+                search: query.search,
+                category: query.category,
+                is_active: query.is_active,
+                is_system_default: query.is_system_default,
+                is_facility_modified: query.is_facility_modified,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_catalog_list_failed",
+                "Laboratory test catalog could not be loaded.",
+            )
+        })?;
 
-        Ok(common::static_list(tests))
+        Ok(common::page_response(tests, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
+        }))
     }
 
     pub async fn get_test_catalog_item(
@@ -77,22 +94,38 @@ impl LabCatalogService {
     pub async fn list_panels(
         &self,
         ctx: &hms_access::RequestContext,
+        query: LaboratoryCatalogQuery,
     ) -> Result<ListResponse<LabPanelListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
             self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
-        let panels = hms_db::laboratory::list_panels(self.pool(), self.facility_id())
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_panel_list_failed",
-                    "Laboratory panels could not be loaded.",
-                )
-            })?;
+        let (cursor, page_size) = common::page_request(query.cursor, query.limit)?;
+        let panels = hms_db::laboratory::list_panels_page(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            LabCatalogFilters {
+                search: query.search,
+                category: None,
+                is_active: query.is_active,
+                is_system_default: query.is_system_default,
+                is_facility_modified: query.is_facility_modified,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_panel_list_failed",
+                "Laboratory panels could not be loaded.",
+            )
+        })?;
 
-        Ok(common::static_list(panels))
+        Ok(common::page_response(panels, page_size, |item| {
+            common::encode_cursor(item.created_at, item.id)
+        }))
     }
 
     pub async fn get_panel(

@@ -344,6 +344,33 @@ async fn patient_registry_rejects_unknown_ordering() {
 }
 
 #[tokio::test]
+async fn patient_registry_rejects_invalid_filter_ranges() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    for uri in [
+        "/api/v2/patients?limit=1&age_min=80&age_max=20",
+        "/api/v2/patients?limit=1&admission_start=2026-06-03&admission_end=2026-06-01",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(uri)
+                    .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("invalid filter request completes");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = json_body(response).await;
+        assert_eq!(body["error"]["code"], "invalid_patient_registry_filter");
+    }
+}
+
+#[tokio::test]
 async fn patient_list_records_stable_query_metrics_without_phi_labels() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
@@ -410,6 +437,13 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
         search: Some("Ama".to_owned()),
         patient_id: None,
         status: None,
+        admission_start: None,
+        admission_end: None,
+        ward_id: None,
+        admission_status: None,
+        attending_id: None,
+        age_min: None,
+        age_max: None,
         include_total: Some(false),
         ordering: None,
     };

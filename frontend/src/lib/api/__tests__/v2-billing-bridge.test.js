@@ -57,14 +57,15 @@ describe('Rust V2 billing bridge', () => {
     const response = await billingApi.getPatientInvoices('patient-1', { page_size: 25 });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/billing/invoices?limit=25&patient_id=patient-1',
+      'http://localhost:8080/api/v2/billing/invoices/search',
       expect.objectContaining({
-        method: 'GET',
+        method: 'POST',
         credentials: 'include',
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
           'X-Facility-Code': 'HMS',
         }),
+        body: JSON.stringify({ limit: 25, patient_id: 'patient-1' }),
       }),
     );
     expect(response).toEqual([
@@ -290,18 +291,144 @@ describe('Rust V2 billing bridge', () => {
       'http://localhost:8080/api/v2/nhis/claims?limit=20',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
-    expect(invoices).toEqual({
+    expect(invoices).toEqual(expect.objectContaining({
       count: 2,
       next: 'next-invoice',
       previous: null,
       results: [expect.objectContaining({ id: 'invoice-1', total_amount: 100 })],
-    });
+    }));
     expect(payments.results).toEqual([
       expect.objectContaining({ id: 'payment-1', amount: 40, payment_method: 'cash' }),
     ]);
     expect(claims.results).toEqual([
       expect.objectContaining({ id: 'claim-1', claimed_amount: 30, patient_name: 'P-0001' }),
     ]);
+  });
+
+  it('sends sensitive billing search and patient filters through Rust V2 POST bodies', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: [],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }));
+
+    await billingApi.getInvoices({ page_size: 20, search: 'Demo Patient' });
+    await billingApi.getPayments({ page_size: 20, patient_id: 'patient-1' });
+    await billingApi.getClaims({ page_size: 20, search: 'CLM-1', patient: 'patient-1' });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/invoices/search',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ limit: 20, cursor: null, search: 'Demo Patient' }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/payments/search',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ limit: 20, cursor: null, patient_id: 'patient-1' }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/nhis/claims/search',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          limit: 20,
+          cursor: null,
+          patient_id: 'patient-1',
+          search: 'CLM-1',
+        }),
+      }),
+    );
+  });
+
+  it('threads cached Rust V2 billing cursors into numeric page requests', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'invoice-1',
+              patient_id: 'patient-1',
+              patient_code: 'P-0001',
+              invoice_number: 'INV-1',
+              status: 'issued',
+              gross_amount_minor: 10000,
+              paid_amount_minor: 4000,
+              balance_minor: 6000,
+              currency: 'GHS',
+              issued_at: '2026-05-12T08:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: true, next_cursor: 'invoice-page-2' },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'invoice-2',
+              patient_id: 'patient-2',
+              patient_code: 'P-0002',
+              invoice_number: 'INV-2',
+              status: 'issued',
+              gross_amount_minor: 5000,
+              paid_amount_minor: 0,
+              balance_minor: 5000,
+              currency: 'GHS',
+              issued_at: '2026-05-13T08:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      );
+
+    const firstPage = await billingApi.getInvoices({ page: 1, page_size: 20 });
+    const secondPage = await billingApi.getInvoices({ page: 2, page_size: 20 });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/invoices?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/invoices?limit=20&cursor=invoice-page-2',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(firstPage).toEqual(expect.objectContaining({
+      count_exact: false,
+      next: 'invoice-page-2',
+      page: 1,
+    }));
+    expect(secondPage).toEqual(expect.objectContaining({
+      count: 21,
+      count_exact: true,
+      page: 2,
+      previous: '1',
+      results: [expect.objectContaining({ id: 'invoice-2' })],
+    }));
   });
 
   it('loads NHIS batches and remittance imports through Rust V2', async () => {
@@ -751,9 +878,6 @@ describe('Rust V2 billing bridge', () => {
     await expect(billingApi.createService({ name: 'Consultation' })).rejects.toThrow(
       /Rust V2 .* service catalog mutations/i,
     );
-    await expect(billingApi.createPayerServiceCode({ code: 'A1' })).rejects.toThrow(
-      /Rust V2 .* payer service code mutations/i,
-    );
     await expect(billingApi.createPatientInsurance({ patient: 'patient-1' })).rejects.toThrow(
       /Rust V2 .* patient insurance mutations/i,
     );
@@ -762,43 +886,24 @@ describe('Rust V2 billing bridge', () => {
   });
 
   it('loads billing services and synthesizes service categories from Rust V2 catalog data', async () => {
-    globalThis.fetch
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'service-1',
-              code: 'CONS-GEN',
+    globalThis.fetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: [
+          {
+            id: 'service-1',
+            code: 'CONS-GEN',
             name: 'General Consultation',
             service_kind: 'consultation',
             active: true,
-              active_price_id: 'price-1',
-              active_price_amount_minor: 7500,
-              active_price_currency: 'GHS',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'service-1',
-              code: 'CONS-GEN',
-              name: 'General Consultation',
-              service_kind: 'consultation',
-              active: true,
-              active_price_id: 'price-1',
-              active_price_amount_minor: 7500,
-              active_price_currency: 'GHS',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      );
+            active_price_id: 'price-1',
+            active_price_amount_minor: 7500,
+            active_price_currency: 'GHS',
+          },
+        ],
+        page: { limit: 100, has_next: false, next_cursor: null },
+        meta: {},
+      }),
+    );
 
     const services = await billingApi.getServices({ page_size: 200, is_active: true });
     const categories = await billingApi.getServiceCategories({ page_size: 200 });
@@ -808,12 +913,7 @@ describe('Rust V2 billing bridge', () => {
       'http://localhost:8080/api/v2/billing/service-catalog?limit=100&is_active=true',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:8080/api/v2/billing/service-catalog?limit=100',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
-    );
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(services.results).toEqual([
       expect.objectContaining({
         id: 'service-1',
@@ -824,34 +924,376 @@ describe('Rust V2 billing bridge', () => {
         is_active: true,
       }),
     ]);
-    expect(categories.results).toEqual([
+    expect(categories.results).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'consultation', name: 'Consultation', is_active: true }),
-    ]);
+      expect.objectContaining({ id: 'laboratory', name: 'Laboratory', is_active: true }),
+    ]));
   });
 
-  it('uses V2-safe empty shapes for billing surfaces that do not have Rust contracts yet', async () => {
-    const [paymentIntents, settlements, exports, aging, dso, queue, providers, plans, insurances] = await Promise.all([
-      billingApi.getPaymentIntents({ page_size: 20 }),
-      billingApi.getSettlementBatches({ page_size: 20 }),
-      billingApi.getNhisExportJobs({ page_size: 20 }),
+  it('loads PSP and NHIS auxiliary table read models through Rust V2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'intent-1',
+              invoice_id: 'invoice-1',
+              invoice_number: 'INV-1',
+              provider: 'hubtel',
+              provider_reference: 'PSP-1',
+              client_reference: 'INV-1',
+              status: 'succeeded',
+              payment_method: 'mobile_money',
+              amount_minor: 12000,
+              currency: 'GHS',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'settlement-1',
+              provider: 'hubtel',
+              statement_date: '2026-05-12',
+              file_name: 'settlement.csv',
+              status: 'ready',
+              line_count: 2,
+              created_at: '2026-05-12T09:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'settlement-line-1',
+              batch_id: 'settlement-1',
+              provider_reference: 'PSP-1',
+              client_reference: 'INV-1',
+              amount_gross_minor: 12000,
+              fee_amount_minor: 250,
+              amount_net_minor: 11750,
+              paid_at: '2026-05-12T09:30:00Z',
+              status: 'paid',
+              match_status: 'matched',
+              mismatch_reason: null,
+              created_at: '2026-05-12T09:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'export-1',
+              batch_id: 'batch-1',
+              batch: 'BATCH-1',
+              batch_number: 'BATCH-1',
+              status: 'ready',
+              checksum: 'abc123',
+              created_at: '2026-05-12T10:00:00Z',
+              expires_at: '2026-05-19T10:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'remittance-line-1',
+              import_id: 'remit-1',
+              claim_number: 'CLM-1',
+              invoice_number: 'INV-1',
+              paid_amount_minor: 9000,
+              paid_date: '2026-05-12',
+              match_status: 'matched',
+              mismatch_reason: null,
+              created_at: '2026-05-12T11:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'mapping-1',
+              payer_id: 'provider-1',
+              service_id: 'service-1',
+              service_code: 'CONS-GEN',
+              service_name: 'General Consultation',
+              nhis_code: 'NHIS-CONS',
+              version_number: 1,
+              effective_from: '2026-01-01',
+              effective_until: null,
+              active: true,
+              created_at: '2026-05-12T12:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            id: 'mapping-2',
+            payer_id: 'provider-1',
+            service_id: 'service-1',
+            service_code: 'CONS-GEN',
+            service_name: 'General Consultation',
+            nhis_code: 'NHIS-CONS-2',
+            version_number: 2,
+            effective_from: '2026-02-01',
+            effective_until: null,
+            active: true,
+            created_at: '2026-05-13T12:00:00Z',
+          },
+          meta: {},
+        }),
+      );
+
+    const paymentIntents = await billingApi.getPaymentIntents({ page_size: 20, status: 'succeeded' });
+    const settlements = await billingApi.getSettlementBatches({ page_size: 20, status: 'ready' });
+    const settlementLines = await billingApi.getSettlementLines('settlement-1', {
+      page_size: 20,
+      match_status: 'matched',
+    });
+    const exports = await billingApi.getNhisExportJobs({ page_size: 20 });
+    const remittanceLines = await billingApi.getRemittanceLines('remit-1', {
+      page_size: 20,
+      match_status: 'matched',
+    });
+    const mappings = await billingApi.getPayerServiceCodes({
+      page_size: 20,
+      search: 'CONS',
+      is_active: 'active',
+      payer: 'provider-1',
+    });
+    const createdMapping = await billingApi.createPayerServiceCode({
+      payer: 'provider-1',
+      service: 'service-1',
+      external_code: 'NHIS-CONS-2',
+      effective_from: '2026-02-01',
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/payment-intents?limit=20&status=succeeded',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/settlements?limit=20&status=ready',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/billing/settlements/settlement-1/lines?limit=20&match_status=matched',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      4,
+      'http://localhost:8080/api/v2/nhis/exports?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      5,
+      'http://localhost:8080/api/v2/nhis/remittance-imports/remit-1/lines?limit=20&match_status=matched',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      6,
+      'http://localhost:8080/api/v2/nhis/service-mappings?limit=20&search=CONS&active=true&payer_id=provider-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      7,
+      'http://localhost:8080/api/v2/nhis/service-mappings',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          payer_id: 'provider-1',
+          service_id: 'service-1',
+          nhis_code: 'NHIS-CONS-2',
+          effective_from: '2026-02-01',
+          effective_until: null,
+        }),
+      }),
+    );
+    expect(paymentIntents.results).toEqual([
+      expect.objectContaining({ id: 'intent-1', amount: 120, invoice: 'invoice-1' }),
+    ]);
+    expect(settlements.results).toEqual([
+      expect.objectContaining({ id: 'settlement-1', lines_count: 2 }),
+    ]);
+    expect(settlementLines.results).toEqual([
+      expect.objectContaining({ id: 'settlement-line-1', amount_gross: 120, fee_amount: 2.5, amount_net: 117.5 }),
+    ]);
+    expect(exports.results).toEqual([
+      expect.objectContaining({ id: 'export-1', batch: 'BATCH-1' }),
+    ]);
+    expect(remittanceLines.results).toEqual([
+      expect.objectContaining({ id: 'remittance-line-1', paid_amount: 90 }),
+    ]);
+    expect(mappings.results).toEqual([
+      expect.objectContaining({
+        id: 'mapping-1',
+        payer: 'provider-1',
+        service: 'service-1',
+        external_code: 'NHIS-CONS',
+        is_active: true,
+      }),
+    ]);
+    expect(createdMapping).toEqual(expect.objectContaining({
+      id: 'mapping-2',
+      external_code: 'NHIS-CONS-2',
+      is_active: true,
+    }));
+  });
+
+  it('uses V2-safe empty shapes for billing summary surfaces that do not have Rust contracts yet', async () => {
+    const [aging, dso, queue] = await Promise.all([
       billingApi.getInsuranceAging(),
       billingApi.getInsuranceDSO(),
       billingApi.getRemittanceQueue(),
-      billingApi.getInsuranceProviders({ page_size: 200 }),
-      billingApi.getInsurancePlans({ page_size: 200 }),
-      billingApi.getPatientInsurances({ page_size: 20 }),
     ]);
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(paymentIntents).toEqual({ count: 0, next: null, previous: null, results: [] });
-    expect(settlements).toEqual({ count: 0, next: null, previous: null, results: [] });
-    expect(exports).toEqual({ count: 0, next: null, previous: null, results: [] });
     expect(aging).toEqual({ bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0, total: 0 });
     expect(dso).toEqual({ dso_days: null, total_balance: 0 });
     expect(queue).toEqual({ summary: [] });
-    expect(providers).toEqual({ count: 0, next: null, previous: null, results: [] });
-    expect(plans).toEqual({ count: 0, next: null, previous: null, results: [] });
-    expect(insurances).toEqual({ count: 0, next: null, previous: null, results: [] });
+  });
+
+  it('loads insurance providers, plans, and patient policies through Rust V2 read endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'provider-1',
+              code: 'NHIS',
+              name: 'National Health Insurance',
+              payer_type: 'public',
+              is_active: true,
+            },
+          ],
+          page: { limit: 200, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'plan-1',
+              provider_id: 'provider-1',
+              provider_name: 'National Health Insurance',
+              code: 'NHIS-STD',
+              name: 'NHIS Standard',
+              plan_type: 'public',
+              is_active: true,
+            },
+          ],
+          page: { limit: 200, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'insurance-1',
+              patient_id: 'patient-1',
+              patient_name: 'Demo Patient',
+              patient_code: 'P-0001',
+              plan_id: 'plan-1',
+              plan_name: 'NHIS Standard',
+              provider_id: 'provider-1',
+              provider_name: 'National Health Insurance',
+              policy_number: 'POL-1',
+              member_id: 'MEM-1',
+              subscriber_number: 'SUB-1',
+              valid_from: '2026-01-01',
+              valid_until: null,
+              is_active: true,
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      );
+
+    const providers = await billingApi.getInsuranceProviders({ page_size: 200, search: 'National' });
+    const plans = await billingApi.getInsurancePlans({ page_size: 200, provider: 'provider-1', is_active: 'active' });
+    const insurances = await billingApi.getPatientInsurances({ page_size: 20, search: 'POL-1', is_active: true });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/insurance-providers?limit=100&search=National',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/insurance-plans?limit=100&provider_id=provider-1&is_active=true',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/billing/patient-insurances/search',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ limit: 20, cursor: null, search: 'POL-1', is_active: true }),
+      }),
+    );
+    expect(providers.results).toEqual([
+      expect.objectContaining({ id: 'provider-1', name: 'National Health Insurance', is_active: true }),
+    ]);
+    expect(plans.results).toEqual([
+      expect.objectContaining({ id: 'plan-1', provider_name: 'National Health Insurance', is_active: true }),
+    ]);
+    expect(insurances.results).toEqual([
+      expect.objectContaining({ id: 'insurance-1', patient_name: 'Demo Patient', policy_number: 'POL-1' }),
+    ]);
+  });
+
+  it('sends patient insurance patient scope through a Rust V2 POST body', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: [],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }),
+    );
+
+    await billingApi.getPatientInsurance('patient-1', { page_size: 20 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/billing/patient-insurances/search',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ limit: 20, cursor: null, patient_id: 'patient-1' }),
+      }),
+    );
   });
 
   it('loads billing settings and current cash session from Rust V2 cash controls', async () => {

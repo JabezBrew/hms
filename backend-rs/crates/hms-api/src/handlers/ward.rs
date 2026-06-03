@@ -12,8 +12,8 @@ use hms_domain::ward::{
     MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, PatientVitalsListItem,
     PatientVitalsListQuery, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
     ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
-    UpdateWardRequest, UpdateWardSectionRequest, WardBoardItem, WardBoardQuery, WardListItem,
-    WardListQuery, WardSectionListItem, WardStockRequestListItem,
+    UpdateWardRequest, UpdateWardSectionRequest, WardBoardGetQuery, WardBoardItem, WardBoardQuery,
+    WardListItem, WardListQuery, WardSectionListItem, WardStockRequestListItem,
 };
 use uuid::Uuid;
 
@@ -409,7 +409,7 @@ pub async fn create_bed(
     operation_id = "getWardBoard",
     tag = "wards",
     security(("bearerAuth" = [])),
-    params(WardBoardQuery),
+    params(WardBoardGetQuery),
     responses(
         (status = 200, description = "Ward board", body = ListResponse<WardBoardItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -419,7 +419,34 @@ pub async fn create_bed(
 pub async fn ward_board(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<WardBoardQuery>,
+    Query(query): Query<WardBoardGetQuery>,
+) -> Result<Json<ListResponse<WardBoardItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .ward_board(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/wards/board/search",
+    operation_id = "postWardBoardSearch",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    request_body = WardBoardQuery,
+    responses(
+        (status = 200, description = "Ward board search", body = ListResponse<WardBoardItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_ward_board(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<WardBoardQuery>,
 ) -> Result<Json<ListResponse<WardBoardItem>>, ApiError> {
     Ok(Json(
         state

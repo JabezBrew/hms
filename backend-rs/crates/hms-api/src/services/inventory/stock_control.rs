@@ -1,21 +1,23 @@
 use hms_db::inventory::{
-    NewStandingOrder, NewStockBatch, NewStockRequisition, NewStockTransfer, SupplyDispenseLine,
+    NewStandingOrder, NewStockBatch, NewStockRequisition, NewStockTransfer, StandingOrderFilters,
+    StockRequisitionFilters, StockTransferFilters, SupplyDispenseLine,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
     CreateStandingOrderRequest, CreateStockBatchRequest, CreateStockCheckRequest,
     CreateStockRequisitionRequest, CreateStockTransferRequest, DispenseSupplyRequest,
     InventoryItemStockLocationItem, InventoryListQuery, RejectStockRequisitionRequest,
-    StandingOrderListItem, StockBatchListItem, StockBatchListQuery, StockCheckQueueItem,
-    StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
+    StandingOrderListItem, StandingOrderListQuery, StockBatchListItem, StockBatchListQuery,
+    StockCheckQueueItem, StockMovementListItem, StockRequisitionListItem,
+    StockRequisitionListQuery, StockTransferListItem, StockTransferListQuery,
     StorageLocationStockItem, SupplyRequestDispenseResult, UpdateStockCheckStatusRequest,
 };
 use uuid::Uuid;
 
 use super::common::{
-    encode_cursor, ensure_item_exists, ensure_location_exists, normalize_text, page_request,
-    page_response, require_inventory_access, require_inventory_list_access, require_positive,
-    static_list, stock_batch_page_request,
+    decode_page, encode_cursor, ensure_item_exists, ensure_location_exists, normalize_text,
+    page_request, page_response, require_inventory_access, require_inventory_list_access,
+    require_positive, static_list, stock_batch_page_request,
 };
 use crate::error::ApiError;
 use crate::response::{object, ListResponse, ObjectResponse};
@@ -227,15 +229,21 @@ impl StockControlService {
     pub async fn list_transfers(
         &self,
         ctx: &hms_access::RequestContext,
-        query: InventoryListQuery,
+        query: StockTransferListQuery,
     ) -> Result<ListResponse<StockTransferListItem>, ApiError> {
         require_inventory_list_access(ctx, self.facility_id())?;
-        let (cursor, page_size) = page_request(query)?;
+        let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::inventory::list_transfers(
             self.pool(),
             self.facility_id(),
             cursor,
             i64::from(page_size) + 1,
+            StockTransferFilters {
+                search: query.search,
+                status: query.status,
+                from_location_id: query.from_location,
+                to_location_id: query.to_location,
+            },
         )
         .await
         .map_err(|_| {
@@ -301,15 +309,21 @@ impl StockControlService {
     pub async fn list_requisitions(
         &self,
         ctx: &hms_access::RequestContext,
-        query: InventoryListQuery,
+        query: StockRequisitionListQuery,
     ) -> Result<ListResponse<StockRequisitionListItem>, ApiError> {
         require_inventory_list_access(ctx, self.facility_id())?;
-        let (cursor, page_size) = page_request(query)?;
+        let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
         let rows = hms_db::inventory::list_requisitions(
             self.pool(),
             self.facility_id(),
             cursor,
             i64::from(page_size) + 1,
+            StockRequisitionFilters {
+                search: query.search,
+                status: query.status,
+                priority: query.priority,
+                requesting_location_id: query.requesting_location,
+            },
         )
         .await
         .map_err(|_| {
@@ -482,6 +496,36 @@ impl StockControlService {
             )
         })?;
         Ok(object(order))
+    }
+
+    pub async fn list_standing_orders(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: StandingOrderListQuery,
+    ) -> Result<ListResponse<StandingOrderListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.facility_id())?;
+        let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
+        let rows = hms_db::inventory::list_standing_orders(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            i64::from(page_size) + 1,
+            StandingOrderFilters {
+                search: query.search,
+                status: query.status,
+                is_active: query.is_active,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "standing_order_list_failed",
+                "Standing orders could not be loaded.",
+            )
+        })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
     }
 
     pub async fn generate_standing_order_requisition(

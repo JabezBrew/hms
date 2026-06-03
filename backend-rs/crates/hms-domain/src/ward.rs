@@ -242,6 +242,19 @@ pub struct WardBoardItem {
     pub admitted_at: DateTime<Utc>,
     pub open_nursing_task_count: i64,
     pub due_medication_count: i64,
+    pub active_alert_count: i64,
+    pub critical_alert_count: i64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WardBoardMonitoringFilter {
+    Critical,
+    Alerts,
+    Tasks,
+    Results,
+    Discharge,
+    MyWork,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -259,6 +272,30 @@ pub struct WardBoardQuery {
     pub limit: Option<u8>,
     pub ward_id: Option<Uuid>,
     pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub monitoring_filter: Option<WardBoardMonitoringFilter>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct WardBoardGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub ward_id: Option<Uuid>,
+    pub monitoring_filter: Option<WardBoardMonitoringFilter>,
+}
+
+impl From<WardBoardGetQuery> for WardBoardQuery {
+    fn from(value: WardBoardGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            ward_id: value.ward_id,
+            patient_id: None,
+            search: None,
+            monitoring_filter: value.monitoring_filter,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

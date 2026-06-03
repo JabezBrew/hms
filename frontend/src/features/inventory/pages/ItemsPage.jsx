@@ -1,15 +1,17 @@
-import { useCallback, useState, useEffect, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
+import { createReturnToLocation } from '@/shared/lib/returnTo';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -51,8 +53,6 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.js';
@@ -82,6 +82,11 @@ const SORT_OPTIONS = [
   { value: '-unit_price', label: 'Price (High to Low)' },
   { value: 'unit_price', label: 'Price (Low to High)' },
   { value: '-updated_at', label: 'Recently Updated' },
+];
+
+const RUST_V2_SORT_OPTIONS = [
+  { value: '-updated_at', label: 'Recently Updated' },
+  { value: 'updated_at', label: 'Oldest Updated' },
 ];
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
@@ -360,7 +365,10 @@ function ItemsFilters({
   sortBy,
   categories,
   suppliers,
+  sortOptions = SORT_OPTIONS,
   hasActiveFilters,
+  showSort = true,
+  showSupplier = true,
   onSearchChange,
   onCategoryChange,
   onSupplierChange,
@@ -396,35 +404,39 @@ function ItemsFilters({
         </SelectContent>
       </Select>
 
-      <Select value={supplier || 'all'} onValueChange={onSupplierChange}>
-        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-          <SelectValue placeholder="Supplier" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all" className="font-mono text-sm">
-            All Suppliers
-          </SelectItem>
-          {suppliers.map((sup) => (
-            <SelectItem key={sup.id} value={sup.id.toString()} className="font-mono text-sm">
-              {sup.name}
+      {showSupplier && (
+        <Select value={supplier || 'all'} onValueChange={onSupplierChange}>
+          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+            <SelectValue placeholder="Supplier" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="font-mono text-sm">
+              All Suppliers
             </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+            {suppliers.map((sup) => (
+              <SelectItem key={sup.id} value={sup.id.toString()} className="font-mono text-sm">
+                {sup.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
-      <Select value={sortBy} onValueChange={onSortChange}>
-        <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
-          <ArrowUpDown className="size-4 mr-2 text-muted-foreground" />
-          <SelectValue placeholder="Sort by" />
-        </SelectTrigger>
-        <SelectContent>
-          {SORT_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {showSort && (
+        <Select value={sortBy} onValueChange={onSortChange}>
+          <SelectTrigger className="w-full lg:w-[180px] font-mono text-sm">
+            <ArrowUpDown className="size-4 mr-2 text-muted-foreground" />
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            {sortOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value} className="font-mono text-sm">
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {hasActiveFilters && (
         <Button
@@ -559,39 +571,29 @@ function ItemsDisplay({
   );
 }
 
-function ItemsPagination({ page, totalPages, totalCount, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
+function ItemsPagination({
+  canJumpToPage,
+  countExact,
+  hasNextPage,
+  page,
+  pageSize,
+  totalPages,
+  totalCount,
+  onPageChange,
+}) {
   return (
-    <div className="flex items-center justify-between pt-4 border-t border-border">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages} ({totalCount} items)
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="font-mono text-xs"
-        >
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className="font-mono text-xs"
-        >
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
+    <TablePagination
+      currentPage={page}
+      totalCount={totalCount}
+      pageSize={pageSize}
+      totalPages={totalPages}
+      countExact={countExact}
+      hasNextPage={hasNextPage}
+      hasPrevPage={page > 1}
+      canJumpToPage={canJumpToPage && countExact}
+      onPageChange={onPageChange}
+      itemLabel="items"
+    />
   );
 }
 
@@ -616,34 +618,42 @@ function CreateItemSheet({ isOpen, onClose, onSuccess }) {
   );
 }
 
-function useInventoryItemsUrlState({ onClearSelection }) {
+function useInventoryItemsUrlState({
+  onClearSelection,
+  sortOptions = SORT_OPTIONS,
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
 
   const tab = searchParams.get('status') || 'all';
   const category = searchParams.get('category') || '';
   const supplier = searchParams.get('supplier') || '';
   const location = searchParams.get('location') || '';
-  const sortBy = searchParams.get('ordering') || '-updated_at';
+  const sortOptionValues = useMemo(() => sortOptions.map((option) => option.value), [sortOptions]);
+  const rawSortBy = searchParams.get('ordering') || '-updated_at';
+  const sortBy = sortOptionValues.includes(rawSortBy) ? rawSortBy : '-updated_at';
   const page = parseInt(searchParams.get('page') || '1', 10);
   const pageSize = parseInt(searchParams.get('page_size') || String(DEFAULT_PAGE_SIZE), 10);
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
+
+  const handleSearchChange = (event) => {
+    const value = event.target.value;
+    setSearch(value);
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
+      if (value) {
+        params.set('search', value);
       } else {
         params.delete('search');
       }
       params.set('page', '1');
       return params;
     });
-  }, [debouncedSearch, setSearchParams]);
-
-  const handleSearchChange = (event) => {
-    setSearch(event.target.value);
   };
 
   const handleTabChange = (value) => {
@@ -687,9 +697,13 @@ function useInventoryItemsUrlState({ onClearSelection }) {
   };
 
   const handleSortChange = (value) => {
+    if (!sortOptionValues.includes(value)) {
+      return;
+    }
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.set('ordering', value);
+      params.set('page', '1');
       return params;
     });
   };
@@ -703,13 +717,21 @@ function useInventoryItemsUrlState({ onClearSelection }) {
     });
   };
 
-  const handlePageChange = (newPage) => {
+  const handlePageChange = useCallback((newPage) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.set('page', newPage.toString());
       return params;
     });
-  };
+  }, [setSearchParams]);
+
+  const replacePage = useCallback((newPage) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('page', newPage.toString());
+      return params;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const clearFilters = () => {
     setSearch('');
@@ -753,7 +775,11 @@ function useInventoryItemsUrlState({ onClearSelection }) {
       ...(supplier && { supplier }),
       ...(location && { location }),
     },
-    hasActiveFilters: debouncedSearch || tab !== 'all' || category || supplier || location,
+    hasActiveFilters: debouncedSearch
+      || tab !== 'all'
+      || category
+      || supplier
+      || location,
     isCreateAction: searchParams.get('action') === 'create',
     handleSearchChange,
     handleTabChange,
@@ -762,6 +788,7 @@ function useInventoryItemsUrlState({ onClearSelection }) {
     handleSortChange,
     handlePageSizeChange,
     handlePageChange,
+    replacePage,
     clearFilters,
     openCreateAction,
     closeAction,
@@ -773,7 +800,9 @@ function useInventoryItemsUrlState({ onClearSelection }) {
  */
 export default function ItemsPage() {
   const navigate = useNavigate();
-  const itemMutationsAvailable = !isRustV2ApiMode();
+  const location = useLocation();
+  const rustV2Mode = isRustV2ApiMode();
+  const itemMutationsAvailable = !rustV2Mode;
 
   // Selection state for bulk actions
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -802,10 +831,14 @@ export default function ItemsPage() {
     handleSortChange,
     handlePageSizeChange,
     handlePageChange,
+    replacePage,
     clearFilters,
     openCreateAction,
     closeAction,
-  } = useInventoryItemsUrlState({ onClearSelection: handleClearSelection });
+  } = useInventoryItemsUrlState({
+    onClearSelection: handleClearSelection,
+    sortOptions: rustV2Mode ? RUST_V2_SORT_OPTIONS : SORT_OPTIONS,
+  });
 
   const isCreateOpen = itemMutationsAvailable && isCreateAction;
 
@@ -822,7 +855,17 @@ export default function ItemsPage() {
 
   const items = useMemo(() => itemsData?.results || [], [itemsData]);
   const totalCount = itemsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / pageSize);
+  const countExact = itemsData?.count_exact ?? true;
+  const resolvedPage = Number(itemsData?.page || page);
+  const totalPages = itemsData?.total_pages
+    || (countExact ? Math.ceil(totalCount / pageSize) : Math.max(1, resolvedPage));
+  const hasNextPage = Boolean(itemsData?.next);
+
+  useEffect(() => {
+    if (itemsData?.cursor_missing && resolvedPage !== page) {
+      replacePage(resolvedPage);
+    }
+  }, [itemsData?.cursor_missing, page, replacePage, resolvedPage]);
 
   const categories = categoriesData?.results || categoriesData || [];
   const suppliers = suppliersData?.results || suppliersData || [];
@@ -862,8 +905,12 @@ export default function ItemsPage() {
 
   // Navigate to item
   const handleItemClick = useCallback((itemId) => {
-    navigate(`/inventory/items/${itemId}`);
-  }, [navigate]);
+    navigate(`/inventory/items/${itemId}`, {
+      state: {
+        returnTo: createReturnToLocation(location),
+      },
+    });
+  }, [location, navigate]);
 
   const handleEditItem = useCallback((itemId) => {
     if (!itemMutationsAvailable) {
@@ -961,6 +1008,7 @@ export default function ItemsPage() {
             sortBy={sortBy}
             categories={categories}
             suppliers={suppliers}
+            sortOptions={rustV2Mode ? RUST_V2_SORT_OPTIONS : SORT_OPTIONS}
             hasActiveFilters={hasActiveFilters}
             onSearchChange={handleSearchChange}
             onCategoryChange={handleCategoryChange}
@@ -991,7 +1039,11 @@ export default function ItemsPage() {
           />
 
           <ItemsPagination
-            page={page}
+            canJumpToPage={!rustV2Mode}
+            countExact={countExact}
+            hasNextPage={hasNextPage}
+            page={resolvedPage}
+            pageSize={pageSize}
             totalPages={totalPages}
             totalCount={totalCount}
             onPageChange={handlePageChange}

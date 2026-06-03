@@ -1,7 +1,5 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- These components keep independent UI states; a reducer would add dispatch indirection without a shared transition invariant. */
 import History from 'lucide-react/dist/esm/icons/history.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
@@ -19,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TablePagination } from '@/components/ui/table-pagination';
 import {
   Select,
   SelectContent,
@@ -28,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useAuditLogs, useAuditFilters, exportAuditLogs } from '@/features/admin/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 const PAGE_SIZE = 10;
 const ACTIVITY_SKELETON_KEYS = ['row-1', 'row-2', 'row-3', 'row-4', 'row-5'];
@@ -78,6 +78,25 @@ function getCategoryStyle(category) {
  * - Relative timestamps
  */
 const StaffActivityLog = ({ userId }) => {
+  if (isRustV2ApiMode()) {
+    return <StaffActivityUnavailable />;
+  }
+
+  return <StaffActivityLogLegacy userId={userId} />;
+};
+
+function StaffActivityUnavailable() {
+  return (
+    <div className="p-6 rounded-xl bg-muted/30 border border-border text-center">
+      <History className="size-8 text-muted-foreground mx-auto mb-2" />
+      <p className="text-sm text-muted-foreground">
+        Staff-specific activity logs are not available in Rust V2 mode yet.
+      </p>
+    </div>
+  );
+}
+
+function StaffActivityLogLegacy({ userId }) {
   const [page, setPage] = useState(1);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [actionFilter, setActionFilter] = useState('all');
@@ -162,12 +181,18 @@ const StaffActivityLog = ({ userId }) => {
         totalCount={totalCount}
       />
       <ActivityLogList isLoading={isLoading} logs={logs} />
-      {totalPages > 1 && (
-        <ActivityPagination page={page} setPage={setPage} totalPages={totalPages} />
-      )}
+      <TablePagination
+        canJumpToPage
+        currentPage={page}
+        totalCount={totalCount}
+        pageSize={PAGE_SIZE}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        itemLabel="entries"
+      />
     </div>
   );
-};
+}
 
 function ActivityLogToolbar({
   actionFilter,
@@ -428,34 +453,6 @@ function ActivityEntryMeta({ log }) {
       {log.ip_address && (
         <span className="font-mono">{log.ip_address}</span>
       )}
-    </div>
-  );
-}
-
-function ActivityPagination({ page, setPage, totalPages }) {
-  return (
-    <div className="flex items-center justify-between">
-      <p className="text-xs text-muted-foreground">
-        Page {page} of {totalPages}
-      </p>
-      <div className="flex gap-1">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setPage(p => Math.max(1, p - 1))}
-          disabled={page === 1}
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-          disabled={page === totalPages}
-        >
-          <ChevronRight className="size-4" />
-        </Button>
-      </div>
     </div>
   );
 }

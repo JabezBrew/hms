@@ -5,7 +5,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   LabEmptyState,
@@ -360,6 +361,8 @@ function CatalogRowActions({ item, onCustomize, onDelete, onReset, type }) {
 }
 
 function LabCatalogView({
+  activeCountExact,
+  activeHasNextPage,
   activeTab,
   activeTotalCount,
   addItemType,
@@ -461,13 +464,16 @@ function LabCatalogView({
             rows={panels}
           />
 
-          {activeTotalCount > CATALOG_PAGE_SIZE ? (
+          {activeTotalCount > CATALOG_PAGE_SIZE || activeHasNextPage ? (
             <div className="pt-4">
               <TablePagination
                 currentPage={page}
                 totalCount={activeTotalCount}
                 pageSize={CATALOG_PAGE_SIZE}
                 onPageChange={setPage}
+                countExact={activeCountExact}
+                hasNextPage={activeHasNextPage}
+                hasPrevPage={page > 1}
                 itemLabel={activeTab === "tests" ? "tests" : "panels"}
               />
             </div>
@@ -847,15 +853,22 @@ function useLabCatalogMetrics({
  */
 const LabCatalogPage = () => {
   const catalogMutationsAvailable = !isRustV2ApiMode();
+  const [persistedCatalogState, setPersistedCatalogState] = useRouteTableState('laboratory:catalogTable', {
+    activeTab: 'tests',
+    searchQuery: '',
+    categoryFilter: 'all',
+    statusFilter: 'all',
+    page: 1,
+  });
 
   // Tab state
-  const [activeTab, setActiveTab] = useState("tests");
+  const [activeTab, setActiveTab] = useState(persistedCatalogState.activeTab || "tests");
 
   // Search and filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState(persistedCatalogState.searchQuery || "");
+  const [categoryFilter, setCategoryFilter] = useState(persistedCatalogState.categoryFilter || "all");
+  const [statusFilter, setStatusFilter] = useState(persistedCatalogState.statusFilter || "all");
+  const [page, setPage] = useState(persistedCatalogState.page || 1);
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   // Customize SlideOver state
@@ -920,8 +933,19 @@ const LabCatalogPage = () => {
     return Array.isArray(results) ? results : [];
   }, [panelsData]);
 
-  const activeTotalCount = activeTab === "tests" ? testsData?.count || 0 : panelsData?.count || 0;
+  const activeData = activeTab === "tests" ? testsData : panelsData;
+  const activeTotalCount = activeData?.count || 0;
+  const activeCountExact = activeData?.count_exact !== false && activeData?.total_is_lower_bound !== true;
+  const activeHasNextPage = Boolean(activeData?.next);
+  const resolvedPage = Number(activeData?.page || page);
   const isActiveFetching = activeTab === "tests" ? testsFetching : panelsFetching;
+
+  useEffect(() => {
+    if (activeData?.cursor_missing && resolvedPage !== page) {
+      setPage(resolvedPage);
+      setPersistedCatalogState({ page: resolvedPage });
+    }
+  }, [activeData?.cursor_missing, page, resolvedPage, setPersistedCatalogState]);
 
   const metrics = useLabCatalogMetrics({
     customPanelsData,
@@ -1014,21 +1038,26 @@ const LabCatalogPage = () => {
   const handleTabChange = (value) => {
     setActiveTab(value);
     setPage(1);
+    setPersistedCatalogState({ activeTab: value, page: 1 });
   };
 
   const handleSearchChange = (event) => {
-    setSearchQuery(event.target.value);
+    const nextSearch = event.target.value;
+    setSearchQuery(nextSearch);
     setPage(1);
+    setPersistedCatalogState({ searchQuery: nextSearch, page: 1 });
   };
 
   const handleCategoryFilterChange = (value) => {
     setCategoryFilter(value);
     setPage(1);
+    setPersistedCatalogState({ categoryFilter: value, page: 1 });
   };
 
   const handleStatusFilterChange = (value) => {
     setStatusFilter(value);
     setPage(1);
+    setPersistedCatalogState({ statusFilter: value, page: 1 });
   };
 
   const clearFilters = () => {
@@ -1036,6 +1065,17 @@ const LabCatalogPage = () => {
     setCategoryFilter("all");
     setStatusFilter("all");
     setPage(1);
+    setPersistedCatalogState({
+      searchQuery: "",
+      categoryFilter: "all",
+      statusFilter: "all",
+      page: 1,
+    });
+  };
+
+  const handlePageChange = (nextPage) => {
+    setPage(nextPage);
+    setPersistedCatalogState({ page: nextPage });
   };
 
   const hasActiveFilters =
@@ -1078,6 +1118,8 @@ const LabCatalogPage = () => {
 
   return (
     <LabCatalogView
+      activeCountExact={activeCountExact}
+      activeHasNextPage={activeHasNextPage}
       activeTab={activeTab}
       activeTotalCount={activeTotalCount}
       addItemType={addItemType}
@@ -1104,14 +1146,14 @@ const LabCatalogPage = () => {
       itemType={itemType}
       metrics={metrics}
       openAddCatalogItem={openAddCatalogItem}
-      page={page}
+      page={resolvedPage}
       panels={panels}
       panelsColumns={panelsColumns}
       panelsLoading={panelsLoading}
       searchQuery={searchQuery}
       selectedItem={selectedItem}
       setDeleteDialogOpen={setDeleteDialogOpen}
-      setPage={setPage}
+      setPage={handlePageChange}
       slideOverOpen={slideOverOpen}
       statusFilter={statusFilter}
       tests={tests}

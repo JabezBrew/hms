@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 export function EncounterListHeader({
+  canFilter = true,
+  countExact = true,
   currentPage,
   hasActiveFilters,
   onCreateEncounter,
@@ -23,8 +25,8 @@ export function EncounterListHeader({
             Encounters
           </h1>
           <p className="text-muted-foreground mt-2">
-            {totalCount} encounter{totalCount !== 1 ? 's' : ''} found
-            {totalPages > 1 && (
+            {totalCount}{countExact ? '' : '+'} encounter{totalCount !== 1 ? 's' : ''} found
+            {countExact && totalPages > 1 && (
               <span className="font-mono text-xs ml-2">
                 (Page {currentPage} of {totalPages})
               </span>
@@ -32,18 +34,20 @@ export function EncounterListHeader({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onToggleFilters}
-            className={cn("font-mono text-xs", hasActiveFilters && "border-primary text-primary")}
-          >
-            <Filter className="size-4 mr-2" />
-            Filters
-            {hasActiveFilters && (
-              <span className="ml-2 size-2 rounded-full bg-primary" />
-            )}
-          </Button>
+          {canFilter && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggleFilters}
+              className={cn("font-mono text-xs", hasActiveFilters && "border-primary text-primary")}
+            >
+              <Filter className="size-4 mr-2" />
+              Filters
+              {hasActiveFilters && (
+                <span className="ml-2 size-2 rounded-full bg-primary" />
+              )}
+            </Button>
+          )}
           <Button onClick={onCreateEncounter} className="font-mono text-xs">
             <PlusCircle className="size-4 mr-2" />
             New Encounter

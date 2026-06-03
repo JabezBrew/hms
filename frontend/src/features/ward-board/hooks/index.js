@@ -5,14 +5,25 @@ import { wardBoardApi } from '@/features/ward-board/api';
 import { useAuth } from '@/lib/auth';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { WardBoardWebSocket } from '@/lib/websocket';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 const baseKeys = createKeyFactory('ward-board');
 
+function sanitizeBoardFiltersForKey(filters = {}) {
+  const patientFilter = filters.patient_id ?? filters.patient;
+  return {
+    ...filters,
+    search: filters.search ? hashQueryValue(String(filters.search).trim()) : '',
+    patient: patientFilter ? hashQueryValue(patientFilter) : '',
+    patient_id: undefined,
+  };
+}
+
 export const wardBoardKeys = {
   ...baseKeys,
-  board: (filters) => [...baseKeys.lists(), { filters }],
+  board: (filters) => [...baseKeys.lists(), { filters: sanitizeBoardFiltersForKey(filters) }],
   patients: () => [...baseKeys.all, 'patients'],
-  patient: (patientId) => [...baseKeys.all, 'patients', patientId],
+  patient: (patientId) => [...baseKeys.all, 'patients', hashQueryValue(patientId)],
 };
 
 const WARD_BOARD_ROLES = new Set([

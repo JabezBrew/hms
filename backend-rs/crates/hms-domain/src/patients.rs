@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::ward::AdmissionStatus;
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PatientAdministrativeStatus {
@@ -141,8 +143,54 @@ pub struct PatientListQuery {
     pub search: Option<String>,
     pub patient_id: Option<Uuid>,
     pub status: Option<PatientAdministrativeStatus>,
+    pub admission_start: Option<NaiveDate>,
+    pub admission_end: Option<NaiveDate>,
+    #[serde(alias = "ward")]
+    pub ward_id: Option<Uuid>,
+    pub admission_status: Option<AdmissionStatus>,
+    pub attending_id: Option<Uuid>,
+    pub age_min: Option<u16>,
+    pub age_max: Option<u16>,
     pub include_total: Option<bool>,
     pub ordering: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PatientListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<PatientAdministrativeStatus>,
+    pub admission_start: Option<NaiveDate>,
+    pub admission_end: Option<NaiveDate>,
+    #[serde(alias = "ward")]
+    pub ward_id: Option<Uuid>,
+    pub admission_status: Option<AdmissionStatus>,
+    pub attending_id: Option<Uuid>,
+    pub age_min: Option<u16>,
+    pub age_max: Option<u16>,
+    pub include_total: Option<bool>,
+    pub ordering: Option<String>,
+}
+
+impl From<PatientListGetQuery> for PatientListQuery {
+    fn from(value: PatientListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            search: None,
+            patient_id: None,
+            status: value.status,
+            admission_start: value.admission_start,
+            admission_end: value.admission_end,
+            ward_id: value.ward_id,
+            admission_status: value.admission_status,
+            attending_id: value.attending_id,
+            age_min: value.age_min,
+            age_max: value.age_max,
+            include_total: value.include_total,
+            ordering: value.ordering,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -151,6 +199,23 @@ pub struct PatientContextListQuery {
     pub limit: Option<u8>,
     pub search: Option<String>,
     pub patient_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PatientContextListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+}
+
+impl From<PatientContextListGetQuery> for PatientContextListQuery {
+    fn from(value: PatientContextListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            search: None,
+            patient_id: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

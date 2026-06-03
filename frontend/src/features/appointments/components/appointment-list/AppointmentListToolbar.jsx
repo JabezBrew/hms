@@ -12,20 +12,23 @@ export function AppointmentListToolbar({
   onSearchChange,
   onToggleFilters,
   search,
+  showSearch = true,
 }) {
   const { hasActiveFilters, showFilters } = filtersState;
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
-      <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search appointments..."
-          className="pl-10 font-mono text-sm"
-          value={search}
-          onChange={onSearchChange}
-        />
-      </div>
+      {showSearch && (
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search appointments..."
+            className="pl-10 font-mono text-sm"
+            value={search}
+            onChange={onSearchChange}
+          />
+        </div>
+      )}
 
       <Button
         variant="outline"

@@ -5,7 +5,7 @@ import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import format from 'date-fns/format';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import {
   LabEmptyState,
   LabMetricGrid,
@@ -43,7 +44,6 @@ const ORDERS_PAGE_SIZE = 24;
 
 const LAB_ORDER_STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
-  { value: "draft", label: "Draft" },
   { value: "ordered", label: "Ordered" },
   { value: "collected", label: "Collected" },
   { value: "received", label: "Received" },
@@ -149,7 +149,6 @@ const LAB_ORDER_COLUMNS = [
 
 function getLabOrderStatusConfig(status) {
   const configs = {
-    draft: { label: "Draft", className: "border-stone-300 bg-stone-100 text-stone-700" },
     ordered: { label: "Ordered", className: "border-sky-300 bg-sky-100 text-sky-700" },
     collected: { label: "Collected", className: "border-amber-300 bg-amber-100 text-amber-700" },
     received: { label: "Received", className: "border-violet-300 bg-violet-100 text-violet-700" },
@@ -157,7 +156,7 @@ function getLabOrderStatusConfig(status) {
     completed: { label: "Completed", className: "border-emerald-300 bg-emerald-100 text-emerald-700" },
     cancelled: { label: "Cancelled", className: "border-rose-300 bg-rose-100 text-rose-700" },
   };
-  return configs[status] || configs.draft;
+  return configs[status] || { label: status || "Unknown", className: "border-stone-300 bg-stone-100 text-stone-700" };
 }
 
 function getLabOrderPriorityConfig(priority) {
@@ -392,8 +391,8 @@ function LabOrdersContent({
   );
 }
 
-function LabOrdersPagination({ onPageChange, page, totalCount }) {
-  if (totalCount <= ORDERS_PAGE_SIZE) return null;
+function LabOrdersPagination({ countExact, hasNextPage, onPageChange, page, totalCount }) {
+  if (totalCount <= ORDERS_PAGE_SIZE && !hasNextPage) return null;
 
   return (
     <div className="px-4 sm:px-6 pb-6">
@@ -402,6 +401,9 @@ function LabOrdersPagination({ onPageChange, page, totalCount }) {
         totalCount={totalCount}
         pageSize={ORDERS_PAGE_SIZE}
         onPageChange={onPageChange}
+        countExact={countExact}
+        hasNextPage={hasNextPage}
+        hasPrevPage={page > 1}
         itemLabel="orders"
       />
     </div>
@@ -422,17 +424,26 @@ function LabOrdersPagination({ onPageChange, page, totalCount }) {
 export default function LabOrdersPage() {
   const { user } = useAuth();
   const userRole = user?.role || "";
+  const [persistedOrdersState, setPersistedOrdersState] = useRouteTableState('laboratory:ordersTable', {
+    searchQuery: '',
+    statusFilter: 'all',
+    priorityFilter: 'all',
+    selectedDoctorFilter: 'all',
+    page: 1,
+  });
 
   // Determine user type
   const isDoctor = ["doctor", "physician", "practitioner", "inpatient_doctor"].includes(userRole);
   const isLabStaff = ["lab_technician", "lab_tech", "laboratory", "admin"].includes(userRole);
 
   // State
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [selectedDoctorFilter, setSelectedDoctorFilter] = useState("all");
-  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState(persistedOrdersState.searchQuery || "");
+  const [statusFilter, setStatusFilter] = useState(persistedOrdersState.statusFilter || "all");
+  const [priorityFilter, setPriorityFilter] = useState(persistedOrdersState.priorityFilter || "all");
+  const [selectedDoctorFilter, setSelectedDoctorFilter] = useState(
+    persistedOrdersState.selectedDoctorFilter || "all"
+  );
+  const [page, setPage] = useState(persistedOrdersState.page || 1);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -501,6 +512,14 @@ export default function LabOrdersPage() {
     return Array.isArray(data) ? data : [];
   }, [ordersData]);
   const totalCount = ordersData?.count || 0;
+  const resolvedPage = Number(ordersData?.page || page);
+
+  useEffect(() => {
+    if (ordersData?.cursor_missing && resolvedPage !== page) {
+      setPage(resolvedPage);
+      setPersistedOrdersState({ page: resolvedPage });
+    }
+  }, [ordersData?.cursor_missing, page, resolvedPage, setPersistedOrdersState]);
 
   const stats = useLabOrderStats(orders, totalCount);
   const metrics = useLabOrderMetrics(stats);
@@ -512,23 +531,28 @@ export default function LabOrdersPage() {
 
   // Event handlers
   const handleSearchChange = (event) => {
-    setSearchQuery(event.target.value);
+    const nextSearch = event.target.value;
+    setSearchQuery(nextSearch);
     setPage(1);
+    setPersistedOrdersState({ searchQuery: nextSearch, page: 1 });
   };
 
   const handleStatusFilterChange = (value) => {
     setStatusFilter(value);
     setPage(1);
+    setPersistedOrdersState({ statusFilter: value, page: 1 });
   };
 
   const handlePriorityFilterChange = (value) => {
     setPriorityFilter(value);
     setPage(1);
+    setPersistedOrdersState({ priorityFilter: value, page: 1 });
   };
 
   const handleDoctorFilterChange = (value) => {
     setSelectedDoctorFilter(value);
     setPage(1);
+    setPersistedOrdersState({ selectedDoctorFilter: value, page: 1 });
   };
 
   const handleClearFilters = () => {
@@ -537,6 +561,18 @@ export default function LabOrdersPage() {
     setPriorityFilter("all");
     setSelectedDoctorFilter("all");
     setPage(1);
+    setPersistedOrdersState({
+      searchQuery: "",
+      statusFilter: "all",
+      priorityFilter: "all",
+      selectedDoctorFilter: "all",
+      page: 1,
+    });
+  };
+
+  const handlePageChange = (nextPage) => {
+    setPage(nextPage);
+    setPersistedOrdersState({ page: nextPage });
   };
 
   const handleOrderClick = (order) => {
@@ -598,8 +634,10 @@ export default function LabOrdersPage() {
           />
 
           <LabOrdersPagination
-            onPageChange={setPage}
-            page={page}
+            countExact={ordersData?.count_exact !== false && ordersData?.total_is_lower_bound !== true}
+            hasNextPage={Boolean(ordersData?.next)}
+            onPageChange={handlePageChange}
+            page={resolvedPage}
             totalCount={totalCount}
           />
 

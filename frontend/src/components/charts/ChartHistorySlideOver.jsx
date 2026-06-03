@@ -10,6 +10,7 @@ import format from 'date-fns/format';
 
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { TablePagination } from '@/components/ui/table-pagination';
 import {
   Select,
   SelectContent,
@@ -227,8 +228,8 @@ function ChartHistoryListView({
   data,
   isLoading,
   statusFilter,
-  onPageNext,
-  onPagePrevious,
+  page,
+  onPageChange,
   onSelectAssignment,
   onStatusFilterChange,
 }) {
@@ -287,36 +288,19 @@ function ChartHistoryListView({
       </ScrollArea>
 
       <footer className="px-6 py-3 border-t border-border bg-card">
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-mono text-[10px] text-muted-foreground">
-            {data?.count ?? 0} charts
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onPagePrevious}
-              disabled={!data?.has_previous}
-              className="font-mono text-xs"
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Prev
-            </Button>
-            <span className="font-mono text-xs text-muted-foreground">
-              Page {data?.page ?? 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onPageNext}
-              disabled={!data?.has_next}
-              className="font-mono text-xs"
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          canJumpToPage={false}
+          className="border-t-0 py-0"
+          countExact={data?.count_exact !== false && data?.total_is_lower_bound !== true}
+          currentPage={data?.page ?? page}
+          hasNextPage={Boolean(data?.has_next || data?.next)}
+          hasPrevPage={Boolean(data?.has_previous || data?.previous) || page > 1}
+          itemLabel="charts"
+          onPageChange={onPageChange}
+          pageSize={12}
+          totalCount={data?.count ?? 0}
+          totalPages={data?.total_pages}
+        />
       </footer>
     </>
   );
@@ -429,14 +413,6 @@ const ChartHistorySlideOver = ({
     setSelectedAssignmentId(null);
   }, []);
 
-  const handlePreviousPage = useCallback(() => {
-    setPage((current) => Math.max(current - 1, 1));
-  }, []);
-
-  const handleNextPage = useCallback(() => {
-    setPage((current) => current + 1);
-  }, []);
-
   return (
     <div
       className={cn(
@@ -469,9 +445,9 @@ const ChartHistorySlideOver = ({
           chartContextLabel={chartContextLabel}
           data={data}
           isLoading={isLoading}
+          page={page}
           statusFilter={statusFilter}
-          onPageNext={handleNextPage}
-          onPagePrevious={handlePreviousPage}
+          onPageChange={setPage}
           onSelectAssignment={setSelectedAssignmentId}
           onStatusFilterChange={setStatusFilter}
         />

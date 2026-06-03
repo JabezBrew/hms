@@ -133,10 +133,6 @@ pub(super) fn page_request(
     Ok((page.cursor, page.limit))
 }
 
-pub(super) fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
-    cursor_list::static_list(items, MAX_LIMIT)
-}
-
 pub(super) fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,

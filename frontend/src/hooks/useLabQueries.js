@@ -3,6 +3,7 @@ import { laboratoryApi } from '@/features/laboratory/api';
 import { aiAssistantApi } from '@/shared/api/aiAssistant';
 import { hasMeaningfulQueryParams, immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 // Query keys
 const labKeyFactory = createKeyFactory('laboratory');
@@ -44,6 +45,18 @@ const SAFE_LAB_ORDER_STATUS_FIELDS = new Set([
   'completed_at',
   'cancelled_at',
 ]);
+
+function sanitizeLabListFilters(filters = {}) {
+  if (!filters || typeof filters !== 'object') {
+    return filters;
+  }
+  const sanitized = { ...filters };
+  if (sanitized.search) {
+    sanitized.search_hash = hashQueryValue(sanitized.search);
+    delete sanitized.search;
+  }
+  return sanitized;
+}
 
 function normalizeOrderId(value) {
   return value == null ? null : String(value);
@@ -334,15 +347,17 @@ export function useDeleteLabPanel() {
 // ========== Lab Orders ==========
 
 export function useLabOrders(filters = {}) {
+  const queryKeyFilters = sanitizeLabListFilters(filters);
   return useQuery({
-    queryKey: labKeys.ordersList(filters),
+    queryKey: labKeys.ordersList(queryKeyFilters),
     queryFn: ({ signal }) => laboratoryApi.getLabOrders(filters, { signal }),
   });
 }
 
 export function usePaginatedLabOrders(filters = {}) {
+  const queryKeyFilters = sanitizeLabListFilters(filters);
   return useQuery({
-    queryKey: labKeys.ordersPaginatedList(filters),
+    queryKey: labKeys.ordersPaginatedList(queryKeyFilters),
     queryFn: ({ signal }) => laboratoryApi.getLabOrdersPaginated(filters, { signal }),
   });
 }
@@ -516,15 +531,17 @@ export function useReceiveLabSpecimen() {
 // ========== Lab Results ==========
 
 export function useLabResults(filters = {}) {
+  const queryKeyFilters = sanitizeLabListFilters(filters);
   return useQuery({
-    queryKey: labKeys.resultsList(filters),
+    queryKey: labKeys.resultsList(queryKeyFilters),
     queryFn: ({ signal }) => laboratoryApi.getLabResults(filters, { signal }),
   });
 }
 
 export function usePaginatedLabResults(filters = {}) {
+  const queryKeyFilters = sanitizeLabListFilters(filters);
   return useQuery({
-    queryKey: labKeys.resultsPaginatedList(filters),
+    queryKey: labKeys.resultsPaginatedList(queryKeyFilters),
     queryFn: ({ signal }) => laboratoryApi.getLabResultsPaginated(filters, { signal }),
   });
 }

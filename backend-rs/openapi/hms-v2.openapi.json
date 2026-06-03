@@ -340,6 +340,49 @@
         ],
         "type": "object"
       },
+      "AppointmentListGetQuery": {
+        "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AppointmentStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "AppointmentListItem": {
         "properties": {
           "appointment_type_id": {
@@ -465,6 +508,22 @@
             "type": [
               "integer",
               "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AppointmentStatus"
+              }
             ]
           }
         },
@@ -1130,6 +1189,25 @@
           "recorded_by_user_id",
           "created_at"
         ],
+        "type": "object"
+      },
+      "BillingListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "BillingListQuery": {
@@ -2075,6 +2153,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "opened_by_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "opened_by_user_id": {
             "format": "uuid",
             "type": "string"
@@ -2262,6 +2346,49 @@
         },
         "type": "object"
       },
+      "ClaimListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_from": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_to": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClaimStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ClaimListItem": {
         "properties": {
           "amount_minor": {
@@ -2350,6 +2477,62 @@
           "written_off_minor",
           "created_at"
         ],
+        "type": "object"
+      },
+      "ClaimListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_from": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_to": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClaimStatus"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "ClaimStatus": {
@@ -2881,6 +3064,50 @@
           "count"
         ],
         "type": "string"
+      },
+      "ControlledRegisterListQuery": {
+        "properties": {
+          "audit_due": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_discrepancy": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "location": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "ControlledSubstanceBalanceValidation": {
         "properties": {
@@ -3984,6 +4211,13 @@
           },
           "nhis_code": {
             "type": "string"
+          },
+          "payer_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "service_id": {
             "format": "uuid",
@@ -5200,6 +5434,52 @@
         ],
         "type": "object"
       },
+      "EncounterListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EncounterType"
+              }
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EncounterStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "EncounterListItem": {
         "properties": {
           "encounter_type": {
@@ -5250,6 +5530,71 @@
           "status",
           "started_at"
         ],
+        "type": "object"
+      },
+      "EncounterListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EncounterType"
+              }
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "practitioner_search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EncounterStatus"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "EncounterStatus": {
@@ -5485,6 +5830,41 @@
         ],
         "type": "object"
       },
+      "GoodsReceivedNoteListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GoodsReceivedStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "GoodsReceivedStatus": {
         "enum": [
           "received",
@@ -5591,6 +5971,151 @@
           "started_at",
           "dependencies"
         ],
+        "type": "object"
+      },
+      "InsurancePlanListItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "coverage_percentage": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "provider_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider_id",
+          "provider_name",
+          "code",
+          "name",
+          "coverage_percentage",
+          "is_active",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "InsurancePlanListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "provider_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "InsuranceProviderListItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "payer_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "payer_type",
+          "is_active",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "InsuranceProviderListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "InventoryCatalogVersionItem": {
@@ -5849,6 +6374,12 @@
               "null"
             ]
           },
+          "ordering": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "search": {
             "type": [
               "string",
@@ -5856,6 +6387,13 @@
             ]
           },
           "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplier": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -5878,6 +6416,49 @@
             "type": [
               "integer",
               "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "InvoiceListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_from": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_to": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InvoiceStatus"
+              }
             ]
           }
         },
@@ -5934,6 +6515,62 @@
           "currency",
           "issued_at"
         ],
+        "type": "object"
+      },
+      "InvoiceListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_from": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_to": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InvoiceStatus"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "InvoiceStatus": {
@@ -6117,9 +6754,22 @@
           "code": {
             "type": "string"
           },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "is_facility_modified": {
+            "type": "boolean"
+          },
+          "is_system_default": {
+            "type": "boolean"
           },
           "name": {
             "type": "string"
@@ -6133,7 +6783,11 @@
           "id",
           "code",
           "name",
-          "test_count"
+          "is_active",
+          "is_system_default",
+          "is_facility_modified",
+          "test_count",
+          "created_at"
         ],
         "type": "object"
       },
@@ -6154,6 +6808,9 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "is_critical": {
+            "type": "boolean"
           },
           "order_id": {
             "format": "uuid",
@@ -6207,6 +6864,7 @@
           "test_name",
           "value",
           "status",
+          "is_critical",
           "entered_at"
         ],
         "type": "object"
@@ -6220,12 +6878,31 @@
       },
       "LabTestCatalogItem": {
         "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
             "type": "string"
           },
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "is_facility_modified": {
+            "type": "boolean"
+          },
+          "is_system_default": {
+            "type": "boolean"
           },
           "name": {
             "type": "string"
@@ -6244,8 +6921,61 @@
           "id",
           "code",
           "name",
-          "specimen_type"
+          "specimen_type",
+          "is_active",
+          "is_system_default",
+          "is_facility_modified",
+          "created_at"
         ],
+        "type": "object"
+      },
+      "LaboratoryCatalogQuery": {
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "is_facility_modified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "is_system_default": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "LaboratoryClinicalContext": {
@@ -6286,6 +7016,204 @@
             "type": [
               "integer",
               "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "LaboratoryOrderListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "my_orders": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ordering_provider": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabPriority"
+              }
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabOrderStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "LaboratoryOrderListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "my_orders": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ordering_provider": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabPriority"
+              }
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabOrderStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "LaboratoryResultListGetQuery": {
+        "properties": {
+          "critical_only": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_verified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabResultStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "LaboratoryResultListQuery": {
+        "properties": {
+          "critical_only": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_verified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabResultStatus"
+              }
             ]
           }
         },
@@ -7280,6 +8208,12 @@
                 "opened_at": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "opened_by_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "opened_by_user_id": {
                   "format": "uuid",
@@ -8607,6 +9541,116 @@
         ],
         "type": "object"
       },
+      "ListResponse_InsurancePlanListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "coverage_percentage": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "provider_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "provider_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "provider_id",
+                "provider_name",
+                "code",
+                "name",
+                "coverage_percentage",
+                "is_active",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_InsuranceProviderListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "payer_type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "payer_type",
+                "is_active",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_InventoryCategoryListItem": {
         "properties": {
           "data": {
@@ -8922,9 +9966,22 @@
                 "code": {
                   "type": "string"
                 },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "is_facility_modified": {
+                  "type": "boolean"
+                },
+                "is_system_default": {
+                  "type": "boolean"
                 },
                 "name": {
                   "type": "string"
@@ -8938,7 +9995,11 @@
                 "id",
                 "code",
                 "name",
-                "test_count"
+                "is_active",
+                "is_system_default",
+                "is_facility_modified",
+                "test_count",
+                "created_at"
               ],
               "type": "object"
             },
@@ -8968,6 +10029,9 @@
                 "id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "is_critical": {
+                  "type": "boolean"
                 },
                 "order_id": {
                   "format": "uuid",
@@ -9021,6 +10085,7 @@
                 "test_name",
                 "value",
                 "status",
+                "is_critical",
                 "entered_at"
               ],
               "type": "object"
@@ -9044,12 +10109,31 @@
           "data": {
             "items": {
               "properties": {
+                "category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
                   "type": "string"
                 },
                 "id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "is_facility_modified": {
+                  "type": "boolean"
+                },
+                "is_system_default": {
+                  "type": "boolean"
                 },
                 "name": {
                   "type": "string"
@@ -9068,7 +10152,11 @@
                 "id",
                 "code",
                 "name",
-                "specimen_type"
+                "specimen_type",
+                "is_active",
+                "is_system_default",
+                "is_facility_modified",
+                "created_at"
               ],
               "type": "object"
             },
@@ -9258,6 +10346,149 @@
                 "claim_count",
                 "total_amount_minor",
                 "currency",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_NhisExportJobListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "batch": {
+                  "type": "string"
+                },
+                "batch_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "batch_number": {
+                  "type": "string"
+                },
+                "checksum": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "expires_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "batch_id",
+                "batch",
+                "batch_number",
+                "status",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_NhisServiceMappingListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "effective_from": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "effective_until": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "nhis_code": {
+                  "type": "string"
+                },
+                "payer_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "service_code": {
+                  "type": "string"
+                },
+                "service_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "service_name": {
+                  "type": "string"
+                },
+                "version_number": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "service_id",
+                "service_code",
+                "service_name",
+                "nhis_code",
+                "version_number",
+                "effective_from",
+                "active",
                 "created_at"
               ],
               "type": "object"
@@ -9671,6 +10902,103 @@
         ],
         "type": "object"
       },
+      "ListResponse_PatientInsuranceListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "member_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "patient_code": {
+                  "type": "string"
+                },
+                "patient_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "patient_name": {
+                  "type": "string"
+                },
+                "plan_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "plan_name": {
+                  "type": "string"
+                },
+                "policy_number": {
+                  "type": "string"
+                },
+                "provider_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "provider_name": {
+                  "type": "string"
+                },
+                "subscriber_number": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "valid_from": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "valid_until": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "patient_id",
+                "patient_code",
+                "patient_name",
+                "provider_id",
+                "provider_name",
+                "plan_id",
+                "plan_name",
+                "policy_number",
+                "valid_from",
+                "is_active",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_PatientListItem": {
         "properties": {
           "data": {
@@ -9907,11 +11235,21 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "invoice_number": {
+                  "type": "string"
+                },
                 "method": {
                   "$ref": "#/components/schemas/PaymentMethod"
                 },
                 "paid_at": {
                   "format": "date-time",
+                  "type": "string"
+                },
+                "patient_code": {
+                  "type": "string"
+                },
+                "patient_id": {
+                  "format": "uuid",
                   "type": "string"
                 },
                 "receipt_number": {
@@ -9924,6 +11262,9 @@
               "required": [
                 "id",
                 "invoice_id",
+                "invoice_number",
+                "patient_id",
+                "patient_code",
                 "receipt_number",
                 "amount_minor",
                 "currency",
@@ -10438,6 +11779,233 @@
         ],
         "type": "object"
       },
+      "ListResponse_PspPaymentIntentListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "amount_minor": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "client_reference": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "invoice_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "invoice_number": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "payment_method": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "provider_reference": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "provider",
+                "status",
+                "payment_method",
+                "amount_minor",
+                "currency",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_PspSettlementBatchListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "file_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "line_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "statement_date": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "provider",
+                "status",
+                "line_count",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_PspSettlementLineListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "amount_gross_minor": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "amount_net_minor": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "batch_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "client_reference": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "fee_amount_minor": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "match_status": {
+                  "type": "string"
+                },
+                "mismatch_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "paid_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider_reference": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "batch_id",
+                "amount_gross_minor",
+                "fee_amount_minor",
+                "amount_net_minor",
+                "status",
+                "match_status",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_PurchaseOrderListItem": {
         "properties": {
           "data": {
@@ -10743,6 +12311,79 @@
                 "total_paid_minor",
                 "currency",
                 "imported_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_RemittanceLineListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "claim_number": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "import_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "invoice_number": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "match_status": {
+                  "type": "string"
+                },
+                "mismatch_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "paid_amount_minor": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "paid_date": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "import_id",
+                "paid_amount_minor",
+                "match_status",
+                "created_at"
               ],
               "type": "object"
             },
@@ -11149,6 +12790,62 @@
         ],
         "type": "object"
       },
+      "ListResponse_StandingOrderListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "frequency": {
+                  "$ref": "#/components/schemas/StandingOrderFrequency"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "next_run_on": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "requesting_location_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "requesting_location_name": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/StandingOrderStatus"
+                }
+              },
+              "required": [
+                "id",
+                "requesting_location_id",
+                "requesting_location_name",
+                "frequency",
+                "status",
+                "next_run_on",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_StockBatchListItem": {
         "properties": {
           "data": {
@@ -11303,6 +13000,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "priority": {
+                  "type": "string"
+                },
                 "rejected_at": {
                   "format": "date-time",
                   "type": [
@@ -11332,6 +13032,7 @@
                 "requesting_location_id",
                 "requesting_location_name",
                 "status",
+                "priority",
                 "created_at"
               ],
               "type": "object"
@@ -11428,7 +13129,13 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "location_type": {
+                  "type": "string"
+                },
                 "name": {
+                  "type": "string"
+                },
+                "temperature_zone": {
                   "type": "string"
                 }
               },
@@ -11436,6 +13143,8 @@
                 "id",
                 "code",
                 "name",
+                "location_type",
+                "temperature_zone",
                 "created_at"
               ],
               "type": "object"
@@ -11779,6 +13488,10 @@
           "data": {
             "items": {
               "properties": {
+                "active_alert_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "admission_id": {
                   "format": "uuid",
                   "type": "string"
@@ -11802,6 +13515,10 @@
                     "string",
                     "null"
                   ]
+                },
+                "critical_alert_count": {
+                  "format": "int64",
+                  "type": "integer"
                 },
                 "due_medication_count": {
                   "format": "int64",
@@ -11839,7 +13556,9 @@
                 "admission_status",
                 "admitted_at",
                 "open_nursing_task_count",
-                "due_medication_count"
+                "due_medication_count",
+                "active_alert_count",
+                "critical_alert_count"
               ],
               "type": "object"
             },
@@ -12472,10 +14191,80 @@
         ],
         "type": "object"
       },
+      "NhisExportJobListItem": {
+        "properties": {
+          "batch": {
+            "type": "string"
+          },
+          "batch_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "batch_number": {
+            "type": "string"
+          },
+          "checksum": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "batch_id",
+          "batch",
+          "batch_number",
+          "status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "NhisExportJobListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "NhisServiceMappingListItem": {
         "properties": {
           "active": {
             "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
           },
           "effective_from": {
             "format": "date",
@@ -12494,6 +14283,13 @@
           },
           "nhis_code": {
             "type": "string"
+          },
+          "payer_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "service_code": {
             "type": "string"
@@ -12518,8 +14314,54 @@
           "nhis_code",
           "version_number",
           "effective_from",
-          "active"
+          "active",
+          "created_at"
         ],
+        "type": "object"
+      },
+      "NhisServiceMappingListQuery": {
+        "properties": {
+          "active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "payer": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payer_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "NotificationCounts": {
@@ -13999,6 +15841,12 @@
               "opened_at": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "opened_by_display_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "opened_by_user_id": {
                 "format": "uuid",
@@ -15775,9 +17623,22 @@
               "code": {
                 "type": "string"
               },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "is_facility_modified": {
+                "type": "boolean"
+              },
+              "is_system_default": {
+                "type": "boolean"
               },
               "name": {
                 "type": "string"
@@ -15791,7 +17652,11 @@
               "id",
               "code",
               "name",
-              "test_count"
+              "is_active",
+              "is_system_default",
+              "is_facility_modified",
+              "test_count",
+              "created_at"
             ],
             "type": "object"
           },
@@ -15814,6 +17679,9 @@
               "id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "is_critical": {
+                "type": "boolean"
               },
               "order_id": {
                 "format": "uuid",
@@ -15867,6 +17735,7 @@
               "test_name",
               "value",
               "status",
+              "is_critical",
               "entered_at"
             ],
             "type": "object"
@@ -15883,12 +17752,31 @@
         "properties": {
           "data": {
             "properties": {
+              "category": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "code": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
                 "type": "string"
               },
               "id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "is_facility_modified": {
+                "type": "boolean"
+              },
+              "is_system_default": {
+                "type": "boolean"
               },
               "name": {
                 "type": "string"
@@ -15907,7 +17795,11 @@
               "id",
               "code",
               "name",
-              "specimen_type"
+              "specimen_type",
+              "is_active",
+              "is_system_default",
+              "is_facility_modified",
+              "created_at"
             ],
             "type": "object"
           },
@@ -16334,6 +18226,10 @@
               "active": {
                 "type": "boolean"
               },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
               "effective_from": {
                 "format": "date",
                 "type": "string"
@@ -16351,6 +18247,13 @@
               },
               "nhis_code": {
                 "type": "string"
+              },
+              "payer_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "service_code": {
                 "type": "string"
@@ -16375,7 +18278,8 @@
               "nhis_code",
               "version_number",
               "effective_from",
-              "active"
+              "active",
+              "created_at"
             ],
             "type": "object"
           },
@@ -17538,11 +19442,21 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "invoice_number": {
+                "type": "string"
+              },
               "method": {
                 "$ref": "#/components/schemas/PaymentMethod"
               },
               "paid_at": {
                 "format": "date-time",
+                "type": "string"
+              },
+              "patient_code": {
+                "type": "string"
+              },
+              "patient_id": {
+                "format": "uuid",
                 "type": "string"
               },
               "receipt_number": {
@@ -17555,6 +19469,9 @@
             "required": [
               "id",
               "invoice_id",
+              "invoice_number",
+              "patient_id",
+              "patient_code",
               "receipt_number",
               "amount_minor",
               "currency",
@@ -18610,6 +20527,37 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_StaffFilterFacets": {
+        "properties": {
+          "data": {
+            "properties": {
+              "departments": {
+                "items": {
+                  "$ref": "#/components/schemas/StaffFilterFacetOption"
+                },
+                "type": "array"
+              },
+              "positions": {
+                "items": {
+                  "$ref": "#/components/schemas/StaffFilterFacetOption"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "departments",
+              "positions"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_StaffListItem": {
         "properties": {
           "data": {
@@ -18718,6 +20666,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "requesting_location_name": {
+                "type": "string"
+              },
               "status": {
                 "$ref": "#/components/schemas/StandingOrderStatus"
               }
@@ -18725,6 +20676,7 @@
             "required": [
               "id",
               "requesting_location_id",
+              "requesting_location_name",
               "frequency",
               "status",
               "next_run_on",
@@ -18860,6 +20812,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "priority": {
+                "type": "string"
+              },
               "rejected_at": {
                 "format": "date-time",
                 "type": [
@@ -18889,6 +20844,7 @@
               "requesting_location_id",
               "requesting_location_name",
               "status",
+              "priority",
               "created_at"
             ],
             "type": "object"
@@ -18971,7 +20927,13 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "location_type": {
+                "type": "string"
+              },
               "name": {
+                "type": "string"
+              },
+              "temperature_zone": {
                 "type": "string"
               }
             },
@@ -18979,6 +20941,8 @@
               "id",
               "code",
               "name",
+              "location_type",
+              "temperature_zone",
               "created_at"
             ],
             "type": "object"
@@ -19218,6 +21182,10 @@
         "properties": {
           "data": {
             "properties": {
+              "active_alert_count": {
+                "format": "int64",
+                "type": "integer"
+              },
               "admission_id": {
                 "format": "uuid",
                 "type": "string"
@@ -19241,6 +21209,10 @@
                   "string",
                   "null"
                 ]
+              },
+              "critical_alert_count": {
+                "format": "int64",
+                "type": "integer"
               },
               "due_medication_count": {
                 "format": "int64",
@@ -19278,7 +21250,9 @@
               "admission_status",
               "admitted_at",
               "open_nursing_task_count",
-              "due_medication_count"
+              "due_medication_count",
+              "active_alert_count",
+              "critical_alert_count"
             ],
             "type": "object"
           },
@@ -21576,6 +23550,25 @@
         ],
         "type": "string"
       },
+      "PatientContextListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PatientContextListItem": {
         "properties": {
           "birth_year": {
@@ -21716,6 +23709,244 @@
         ],
         "type": "object"
       },
+      "PatientInsuranceListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PatientInsuranceListItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "member_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_code": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_name": {
+            "type": "string"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "plan_name": {
+            "type": "string"
+          },
+          "policy_number": {
+            "type": "string"
+          },
+          "provider_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "provider_name": {
+            "type": "string"
+          },
+          "subscriber_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid_from": {
+            "format": "date",
+            "type": "string"
+          },
+          "valid_until": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "patient_code",
+          "patient_name",
+          "provider_id",
+          "provider_name",
+          "plan_id",
+          "plan_name",
+          "policy_number",
+          "valid_from",
+          "is_active",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PatientInsuranceListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PatientListGetQuery": {
+        "properties": {
+          "admission_end": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "admission_start": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "admission_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdmissionStatus"
+              }
+            ]
+          },
+          "age_max": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "age_min": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "attending_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include_total": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ordering": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientAdministrativeStatus"
+              }
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PatientListItem": {
         "properties": {
           "birth_year": {
@@ -21762,6 +23993,53 @@
       },
       "PatientListQuery": {
         "properties": {
+          "admission_end": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "admission_start": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "admission_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdmissionStatus"
+              }
+            ]
+          },
+          "age_max": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "age_min": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "attending_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cursor": {
             "type": [
               "string",
@@ -21809,6 +24087,13 @@
               {
                 "$ref": "#/components/schemas/PatientAdministrativeStatus"
               }
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -21935,6 +24220,59 @@
         ],
         "type": "object"
       },
+      "PaymentListGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_from": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_to": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "payment_method": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              }
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PaymentListItem": {
         "properties": {
           "amount_minor": {
@@ -21952,11 +24290,21 @@
             "format": "uuid",
             "type": "string"
           },
+          "invoice_number": {
+            "type": "string"
+          },
           "method": {
             "$ref": "#/components/schemas/PaymentMethod"
           },
           "paid_at": {
             "format": "date-time",
+            "type": "string"
+          },
+          "patient_code": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
             "type": "string"
           },
           "receipt_number": {
@@ -21969,6 +24317,9 @@
         "required": [
           "id",
           "invoice_id",
+          "invoice_number",
+          "patient_id",
+          "patient_code",
           "receipt_number",
           "amount_minor",
           "currency",
@@ -21976,6 +24327,72 @@
           "status",
           "paid_at"
         ],
+        "type": "object"
+      },
+      "PaymentListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_from": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_to": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payment_method": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              }
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "PaymentMethod": {
@@ -22679,6 +25096,275 @@
         ],
         "type": "object"
       },
+      "PspPaymentIntentListItem": {
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "client_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "invoice_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invoice_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payment_method": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "provider_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "status",
+          "payment_method",
+          "amount_minor",
+          "currency",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PspPaymentIntentListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PspSettlementBatchListItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "file_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "line_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "statement_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "status",
+          "line_count",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PspSettlementBatchListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PspSettlementLineListItem": {
+        "properties": {
+          "amount_gross_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "amount_net_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "batch_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "client_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fee_amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "match_status": {
+            "type": "string"
+          },
+          "mismatch_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paid_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "batch_id",
+          "amount_gross_minor",
+          "fee_amount_minor",
+          "amount_net_minor",
+          "status",
+          "match_status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PspSettlementLineListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "match_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PurchaseOrderListItem": {
         "properties": {
           "created_at": {
@@ -22702,6 +25388,47 @@
           "status",
           "created_at"
         ],
+        "type": "object"
+      },
+      "PurchaseOrderListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseOrderStatus"
+              }
+            ]
+          },
+          "supplier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "PurchaseOrderStatus": {
@@ -23168,6 +25895,93 @@
           "imported"
         ],
         "type": "string"
+      },
+      "RemittanceLineListItem": {
+        "properties": {
+          "claim_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "import_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "invoice_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "match_status": {
+            "type": "string"
+          },
+          "mismatch_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paid_amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "paid_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "import_id",
+          "paid_amount_minor",
+          "match_status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "RemittanceLineListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "match_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "RequisitionStatus": {
         "enum": [
@@ -23796,6 +26610,47 @@
         ],
         "type": "object"
       },
+      "StaffFilterFacetOption": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "count"
+        ],
+        "type": "object"
+      },
+      "StaffFilterFacets": {
+        "properties": {
+          "departments": {
+            "items": {
+              "$ref": "#/components/schemas/StaffFilterFacetOption"
+            },
+            "type": "array"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/StaffFilterFacetOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "departments",
+          "positions"
+        ],
+        "type": "object"
+      },
       "StaffListItem": {
         "properties": {
           "created_at": {
@@ -23900,6 +26755,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "requesting_location_name": {
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/StandingOrderStatus"
           }
@@ -23907,11 +26765,53 @@
         "required": [
           "id",
           "requesting_location_id",
+          "requesting_location_name",
           "frequency",
           "status",
           "next_run_on",
           "created_at"
         ],
+        "type": "object"
+      },
+      "StandingOrderListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StandingOrderStatus"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "StandingOrderStatus": {
@@ -24105,6 +27005,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "priority": {
+            "type": "string"
+          },
           "rejected_at": {
             "format": "date-time",
             "type": [
@@ -24134,8 +27037,57 @@
           "requesting_location_id",
           "requesting_location_name",
           "status",
+          "priority",
           "created_at"
         ],
+        "type": "object"
+      },
+      "StockRequisitionListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "priority": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requesting_location": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RequisitionStatus"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "StockTransferListItem": {
@@ -24183,6 +27135,55 @@
         ],
         "type": "object"
       },
+      "StockTransferListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from_location": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransferStatus"
+              }
+            ]
+          },
+          "to_location": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "StorageLocationListItem": {
         "properties": {
           "code": {
@@ -24196,7 +27197,13 @@
             "format": "uuid",
             "type": "string"
           },
+          "location_type": {
+            "type": "string"
+          },
           "name": {
+            "type": "string"
+          },
+          "temperature_zone": {
             "type": "string"
           }
         },
@@ -24204,8 +27211,47 @@
           "id",
           "code",
           "name",
+          "location_type",
+          "temperature_zone",
           "created_at"
         ],
+        "type": "object"
+      },
+      "StorageLocationListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "location_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "temperature_zone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "StorageLocationStockItem": {
@@ -25123,8 +28169,48 @@
         ],
         "type": "string"
       },
+      "WardBoardGetQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "monitoring_filter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardBoardMonitoringFilter"
+              }
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "WardBoardItem": {
         "properties": {
+          "active_alert_count": {
+            "format": "int64",
+            "type": "integer"
+          },
           "admission_id": {
             "format": "uuid",
             "type": "string"
@@ -25148,6 +28234,10 @@
               "string",
               "null"
             ]
+          },
+          "critical_alert_count": {
+            "format": "int64",
+            "type": "integer"
           },
           "due_medication_count": {
             "format": "int64",
@@ -25185,8 +28275,70 @@
           "admission_status",
           "admitted_at",
           "open_nursing_task_count",
-          "due_medication_count"
+          "due_medication_count",
+          "active_alert_count",
+          "critical_alert_count"
         ],
+        "type": "object"
+      },
+      "WardBoardMonitoringFilter": {
+        "enum": [
+          "critical",
+          "alerts",
+          "tasks",
+          "results",
+          "discharge",
+          "my_work"
+        ],
+        "type": "string"
+      },
+      "WardBoardQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "monitoring_filter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardBoardMonitoringFilter"
+              }
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "WardListItem": {
@@ -25855,17 +29007,6 @@
           },
           {
             "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "query",
             "name": "category",
             "required": false,
             "schema": {
@@ -25904,6 +29045,17 @@
             "required": false,
             "schema": {
               "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "ordering",
+            "required": false,
+            "schema": {
               "type": [
                 "string",
                 "null"
@@ -27651,6 +30803,28 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "department",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "position",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -27748,6 +30922,64 @@
             "description": ""
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/staff/filter-facets": {
+      "get": {
+        "operationId": "getAdminStaffFilterFacets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StaffFilterFacets"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -28914,6 +32146,21 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/AppointmentStatus"
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -28989,6 +32236,61 @@
               }
             },
             "description": "Invalid appointment request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
+    "/api/v2/appointments/search": {
+      "post": {
+        "operationId": "postAppointmentsSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_AppointmentListItem"
+                }
+              }
+            },
+            "description": "Appointments search"
           },
           "401": {
             "content": {
@@ -30149,6 +33451,28 @@
                 }
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_flagged",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -30532,6 +33856,204 @@
         ]
       }
     },
+    "/api/v2/billing/insurance-plans": {
+      "get": {
+        "operationId": "getBillingInsurancePlans",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_InsurancePlanListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/insurance-providers": {
+      "get": {
+        "operationId": "getBillingInsuranceProviders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_InsuranceProviderListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v2/billing/invoices": {
       "get": {
         "operationId": "getBillingInvoices",
@@ -30562,10 +34084,37 @@
           },
           {
             "in": "query",
-            "name": "patient_id",
+            "name": "status",
             "required": false,
             "schema": {
-              "format": "uuid",
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/InvoiceStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "format": "date",
               "type": [
                 "string",
                 "null"
@@ -30668,6 +34217,61 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/invoices/search": {
+      "post": {
+        "operationId": "postBillingInvoicesSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_InvoiceListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -30852,6 +34456,225 @@
         ]
       }
     },
+    "/api/v2/billing/patient-insurances": {
+      "get": {
+        "operationId": "getBillingPatientInsurances",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientInsuranceListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/patient-insurances/search": {
+      "post": {
+        "operationId": "postBillingPatientInsurancesSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientInsuranceListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientInsuranceListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/payment-intents": {
+      "get": {
+        "operationId": "getBillingPaymentIntents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PspPaymentIntentListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v2/billing/payments": {
       "get": {
         "operationId": "getBillingPayments",
@@ -30882,10 +34705,52 @@
           },
           {
             "in": "query",
-            "name": "patient_id",
+            "name": "status",
             "required": false,
             "schema": {
-              "format": "uuid",
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PaymentStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "payment_method",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PaymentMethod"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "format": "date",
               "type": [
                 "string",
                 "null"
@@ -30988,6 +34853,61 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/payments/search": {
+      "post": {
+        "operationId": "postBillingPaymentsSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PaymentListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -31196,18 +35116,6 @@
               "minimum": 0,
               "type": [
                 "integer",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "query",
-            "name": "patient_id",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": [
-                "string",
                 "null"
               ]
             }
@@ -31643,6 +35551,180 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListResponse_ServicePriceListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/settlements": {
+      "get": {
+        "operationId": "getBillingSettlements",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PspSettlementBatchListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/settlements/{id}/lines": {
+      "get": {
+        "operationId": "getBillingSettlementLines",
+        "parameters": [
+          {
+            "description": "Settlement batch id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "match_status",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PspSettlementLineListItem"
                 }
               }
             },
@@ -34476,13 +38558,43 @@
           },
           {
             "in": "query",
-            "name": "patient_id",
+            "name": "date",
             "required": false,
             "schema": {
-              "format": "uuid",
+              "format": "date",
               "type": [
                 "string",
                 "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/EncounterStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "encounter_type",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/EncounterType"
+                }
               ]
             }
           }
@@ -34550,6 +38662,61 @@
               }
             },
             "description": "Encounter created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
+    "/api/v2/encounters/search": {
+      "post": {
+        "operationId": "postEncountersSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EncounterListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_EncounterListItem"
+                }
+              }
+            },
+            "description": "Encounters search"
           },
           "401": {
             "content": {
@@ -35287,6 +39454,32 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/GoodsReceivedStatus"
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -35651,6 +39844,29 @@
           {
             "in": "query",
             "name": "status",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "supplier",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "ordering",
             "required": false,
             "schema": {
               "type": [
@@ -36045,6 +40261,43 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PurchaseOrderStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "supplier",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -36377,6 +40630,55 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/RequisitionStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "requesting_location",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
                 "null"
               ]
             }
@@ -36997,6 +41299,112 @@
       }
     },
     "/api/v2/inventory/standing-orders": {
+      "get": {
+        "operationId": "getInventoryStandingOrders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/StandingOrderStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_StandingOrderListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      },
       "post": {
         "operationId": "postInventoryStandingOrders",
         "requestBody": {
@@ -37596,6 +42004,39 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_type",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "temperature_zone",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -37918,6 +42359,56 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/TransferStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_location",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_location",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -38134,6 +42625,44 @@
                 }
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/LabPriority"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "ordering_provider",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "my_orders",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -38239,6 +42768,61 @@
               }
             },
             "description": "Patient not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
+    "/api/v2/laboratory/orders/search": {
+      "post": {
+        "operationId": "postLaboratoryOrdersSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaboratoryOrderListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_LabOrderListItem"
+                }
+              }
+            },
+            "description": "Laboratory orders search"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
           }
         },
         "security": [
@@ -38716,6 +43300,87 @@
     "/api/v2/laboratory/panels": {
       "get": {
         "operationId": "getLaboratoryPanels",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_system_default",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_facility_modified",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -38871,6 +43536,17 @@
           {
             "in": "query",
             "name": "is_verified",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "critical_only",
             "required": false,
             "schema": {
               "type": [
@@ -39143,6 +43819,61 @@
               }
             },
             "description": "Order or result not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
+    "/api/v2/laboratory/results/search": {
+      "post": {
+        "operationId": "postLaboratoryResultsSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaboratoryResultListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_LabResultListItem"
+                }
+              }
+            },
+            "description": "Laboratory results search"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
           }
         },
         "security": [
@@ -39580,6 +44311,87 @@
     "/api/v2/laboratory/test-catalog": {
       "get": {
         "operationId": "getLaboratoryTestCatalog",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_system_default",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_facility_modified",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -39733,18 +44545,6 @@
               "minimum": 0,
               "type": [
                 "integer",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "query",
-            "name": "patient_id",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": [
-                "string",
                 "null"
               ]
             }
@@ -39962,10 +44762,37 @@
           },
           {
             "in": "query",
-            "name": "patient_id",
+            "name": "status",
             "required": false,
             "schema": {
-              "format": "uuid",
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/ClaimStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "format": "date",
               "type": [
                 "string",
                 "null"
@@ -40058,6 +44885,61 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nhis"
+        ]
+      }
+    },
+    "/api/v2/nhis/claims/search": {
+      "post": {
+        "operationId": "postNhisClaimsSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_ClaimListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -40319,9 +45201,9 @@
         ]
       }
     },
-    "/api/v2/nhis/remittance-imports": {
+    "/api/v2/nhis/exports": {
       "get": {
-        "operationId": "getNhisRemittanceImports",
+        "operationId": "getNhisExports",
         "parameters": [
           {
             "in": "query",
@@ -40346,15 +45228,74 @@
                 "null"
               ]
             }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_NhisExportJobListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nhis"
+        ]
+      }
+    },
+    "/api/v2/nhis/remittance-imports": {
+      "get": {
+        "operationId": "getNhisRemittanceImports",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           },
           {
             "in": "query",
-            "name": "patient_id",
+            "name": "limit",
             "required": false,
             "schema": {
-              "format": "uuid",
+              "format": "int32",
+              "minimum": 0,
               "type": [
-                "string",
+                "integer",
                 "null"
               ]
             }
@@ -40475,7 +45416,214 @@
         ]
       }
     },
+    "/api/v2/nhis/remittance-imports/{id}/lines": {
+      "get": {
+        "operationId": "getNhisRemittanceLines",
+        "parameters": [
+          {
+            "description": "Remittance import id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "match_status",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_RemittanceLineListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nhis"
+        ]
+      }
+    },
     "/api/v2/nhis/service-mappings": {
+      "get": {
+        "operationId": "getNhisServiceMappings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "payer_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "payer",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_NhisServiceMappingListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nhis"
+        ]
+      },
       "post": {
         "operationId": "postNhisServiceMappings",
         "requestBody": {
@@ -44266,9 +49414,25 @@
           },
           {
             "in": "query",
-            "name": "search",
+            "name": "status",
             "required": false,
             "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_start",
+            "required": false,
+            "schema": {
+              "format": "date",
               "type": [
                 "string",
                 "null"
@@ -44277,7 +49441,19 @@
           },
           {
             "in": "query",
-            "name": "patient_id",
+            "name": "admission_end",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "ward_id",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -44289,7 +49465,7 @@
           },
           {
             "in": "query",
-            "name": "status",
+            "name": "admission_status",
             "required": false,
             "schema": {
               "oneOf": [
@@ -44297,8 +49473,46 @@
                   "type": "null"
                 },
                 {
-                  "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                  "$ref": "#/components/schemas/AdmissionStatus"
                 }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "attending_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "age_min",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "age_max",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
               ]
             }
           },
@@ -44457,29 +49671,6 @@
                 "null"
               ]
             }
-          },
-          {
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "in": "query",
-            "name": "patient_id",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
-            }
           }
         ],
         "responses": {
@@ -44492,6 +49683,116 @@
               }
             },
             "description": "Current user's context patients"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v2/patients/context/search": {
+      "post": {
+        "operationId": "postPatientContextSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientContextListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientContextListItem"
+                }
+              }
+            },
+            "description": "Current user's context patient search"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v2/patients/search": {
+      "post": {
+        "operationId": "postPatientsSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientListQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientListItem"
+                }
+              }
+            },
+            "description": "Patient registry search"
           },
           "401": {
             "content": {
@@ -46876,6 +52177,51 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_discrepancy",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "audit_due",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
                 "null"
               ]
             }
@@ -51266,11 +56612,10 @@
           },
           {
             "in": "query",
-            "name": "patient_id",
+            "name": "monitoring_filter",
             "required": false,
             "schema": {
-              "format": "uuid",
-              "type": "string"
+              "$ref": "#/components/schemas/WardBoardMonitoringFilter"
             }
           }
         ],
@@ -51284,6 +56629,61 @@
               }
             },
             "description": "Ward board"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/board/search": {
+      "post": {
+        "operationId": "postWardBoardSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WardBoardQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_WardBoardItem"
+                }
+              }
+            },
+            "description": "Ward board search"
           },
           "401": {
             "content": {

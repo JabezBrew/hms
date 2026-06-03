@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::{
-    AppointmentUpdate, CareCursor, ClinicUpdate, EncounterUpdate, NewBookedAppointment,
-    NewCareTeamAssignment, NewClinic, NewEncounter, NewTriage, NewVisit, TriageFilters,
+    AppointmentFilters, AppointmentUpdate, CareCursor, ClinicUpdate, EncounterFilters,
+    EncounterUpdate, NewBookedAppointment, NewCareTeamAssignment, NewClinic, NewEncounter,
+    NewTriage, NewVisit, TriageFilters,
 };
 use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem, AssignTriageRequest,
@@ -52,8 +53,6 @@ impl CareService {
         query: AppointmentListQuery,
     ) -> Result<ListResponse<AppointmentListItem>, ApiError> {
         require_workflow_list_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
-        let date = query.date;
-        let clinic_id = query.clinic_id;
         let (cursor, page_size) = page_request(CursorListQuery {
             cursor: query.cursor,
             limit: query.limit,
@@ -62,8 +61,12 @@ impl CareService {
             self.pool(),
             self.facility_id(),
             cursor,
-            date,
-            clinic_id,
+            AppointmentFilters {
+                date: query.date,
+                clinic_id: query.clinic_id,
+                status: query.status,
+                search: query.search,
+            },
             page_size as i64 + 1,
         )
         .await
@@ -675,7 +678,14 @@ impl CareService {
         let rows = hms_db::care::list_encounters(
             self.pool(),
             self.facility_id(),
-            query.patient_id,
+            EncounterFilters {
+                patient_id: query.patient_id,
+                patient_search: query.patient_search,
+                practitioner_search: query.practitioner_search,
+                date: query.date,
+                status: query.status,
+                encounter_type: query.encounter_type,
+            },
             cursor,
             page_size as i64 + 1,
         )

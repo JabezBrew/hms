@@ -292,6 +292,7 @@ async fn audit_events_are_filtered_server_side() {
         category: Some("BILLING".to_owned()),
         start_date: Some(chrono::Utc::now().date_naive()),
         end_date: Some(chrono::Utc::now().date_naive()),
+        timestamp_desc: true,
     };
     let events = hms_db::admin::list_audit_events(&pool, facility_id, None, 10, filters)
         .await

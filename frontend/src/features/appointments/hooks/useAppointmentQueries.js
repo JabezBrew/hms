@@ -2,20 +2,49 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appointmentsApi } from '@/features/appointments/api';
 import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 // Query keys
 const baseKeys = createKeyFactory('appointments');
 
+function normalizeKeyValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeKeyValue);
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((accumulator, key) => {
+        const normalized = normalizeKeyValue(value[key]);
+        if (normalized !== undefined) {
+          accumulator[key] = normalized;
+        }
+        return accumulator;
+      }, {});
+  }
+  if (value === undefined || typeof value === 'function') {
+    return undefined;
+  }
+  return value;
+}
+
+function fingerprintQueryParams(params = {}) {
+  const normalized = normalizeKeyValue(params) ?? {};
+  const stable = JSON.stringify(normalized);
+  return stable === '{}' ? 'empty' : hashQueryValue(stable);
+}
+
 export const appointmentKeys = {
   ...baseKeys,
+  list: (filters) => [...appointmentKeys.lists(), fingerprintQueryParams(filters)],
   types: () => [...appointmentKeys.all, 'types'],
   type: (id) => [...appointmentKeys.types(), id],
-  availableSlots: (params) => [...appointmentKeys.all, 'availableSlots', params],
-  scheduleSlots: (scheduleId, params) => [...appointmentKeys.all, 'scheduleSlots', scheduleId, params],
+  availableSlots: (params) => [...appointmentKeys.all, 'availableSlots', fingerprintQueryParams(params)],
+  scheduleSlots: (scheduleId, params) => [...appointmentKeys.all, 'scheduleSlots', scheduleId, fingerprintQueryParams(params)],
   availabilityRules: () => [...appointmentKeys.all, 'availabilityRules'],
   availabilityRule: (id) => [...appointmentKeys.availabilityRules(), id],
   scheduleMappings: () => [...appointmentKeys.all, 'scheduleMappings'],
-  blockedTimes: (params) => [...appointmentKeys.all, 'blockedTimes', params],
+  blockedTimes: (params) => [...appointmentKeys.all, 'blockedTimes', fingerprintQueryParams(params)],
   upcoming: () => [...appointmentKeys.all, 'upcoming'],
 };
 

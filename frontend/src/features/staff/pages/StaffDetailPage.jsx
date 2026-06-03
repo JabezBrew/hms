@@ -1,6 +1,6 @@
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { usePractitioner, useStaffMember } from '@/features/staff/hooks';
 import StaffDetail from '@/components/staff/StaffDetail';
@@ -9,10 +9,12 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { navigateToReturnTo } from '@/shared/lib/returnTo';
 
 const StaffDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Use React Query hooks for data fetching
   const {
@@ -45,11 +47,11 @@ const StaffDetailPage = () => {
   }, [isStaffError, staffError]);
 
   const handleBack = () => {
-    navigate('/staff');
+    navigateToReturnTo(navigate, location, '/staff');
   };
 
   const handleDeleted = () => {
-    navigate('/staff');
+    navigateToReturnTo(navigate, location, '/staff');
   };
 
   if (loading) {

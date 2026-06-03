@@ -3,14 +3,15 @@ import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Wifi from 'lucide-react/dist/esm/icons/wifi.js';
 import WifiOff from 'lucide-react/dist/esm/icons/wifi-off.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
+import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import { useDebounce } from '@/hooks/use-debounce';
-import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   BoardSummaryDrawer,
   BoardToolbar,
@@ -102,7 +103,10 @@ function WardBoardBodyPlaceholder() {
 }
 
 export default function WardBoardPage() {
+  const rustV2Mode = isRustV2ApiMode();
   const { wardId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [expandedPatientId, setExpandedPatientId] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -115,8 +119,14 @@ export default function WardBoardPage() {
   const view = VIEW_VALUES.has(viewParam) ? viewParam : DEFAULT_BOARD_VIEW;
   const page = parsePositiveInt(searchParams.get('page'), 1);
   const pageSize = parsePositiveInt(searchParams.get('page_size'), DEFAULT_PAGE_SIZE);
-  const searchParam = searchParams.get('search') || '';
-  const queryPatient = searchParams.get('patient') || '';
+  const legacySearchParam = searchParams.get('search') || '';
+  const legacyPatientParam = searchParams.get('patient') || '';
+  const [privateFilters, setPrivateFilters] = useRouteTableState('wardBoard:privateFilters', {
+    search: legacySearchParam,
+    patient: legacyPatientParam,
+  });
+  const searchParam = privateFilters.search || '';
+  const queryPatient = privateFilters.patient || '';
   const [searchDraft, setSearchDraft] = useUrlSyncedDraft(searchParam);
   const debouncedSearch = useDebounce(searchDraft, 300);
 
@@ -133,6 +143,8 @@ export default function WardBoardPage() {
   const updateParams = useCallback((changes, { resetPage = true, replace = true } = {}) => {
     setSearchParams((previous) => {
       const next = new URLSearchParams(previous);
+      next.delete('search');
+      next.delete('patient');
       Object.entries(changes).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') {
           next.delete(key);
@@ -151,11 +163,48 @@ export default function WardBoardPage() {
   }, [fixedWard, setSearchParams]);
 
   useEffect(() => {
-    if (debouncedSearch === searchParam) {
+    if (!legacySearchParam && !legacyPatientParam) {
       return;
     }
-    updateParams({ search: debouncedSearch.trim() }, { resetPage: true });
-  }, [debouncedSearch, searchParam, updateParams]);
+    const nextPrivateFilters = {
+      ...privateFilters,
+      search: privateFilters.search || legacySearchParam,
+      patient: privateFilters.patient || legacyPatientParam,
+    };
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete('search');
+    nextParams.delete('patient');
+    const nextSearch = nextParams.toString();
+    navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash}`, {
+      replace: true,
+      state: {
+        ...(location.state || {}),
+        'wardBoard:privateFilters': nextPrivateFilters,
+      },
+      preventScrollReset: true,
+    });
+  }, [
+    legacyPatientParam,
+    legacySearchParam,
+    location.hash,
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+    privateFilters,
+  ]);
+
+  useEffect(() => {
+    const nextSearch = debouncedSearch.trim();
+    if (nextSearch === searchParam) {
+      return;
+    }
+    setPrivateFilters((current) => ({
+      ...current,
+      search: nextSearch,
+    }));
+    updateParams({}, { resetPage: true });
+  }, [debouncedSearch, searchParam, setPrivateFilters, updateParams]);
 
   const queryFilters = useMemo(() => compactParams({
     ward: effectiveWard,
@@ -180,6 +229,14 @@ export default function WardBoardPage() {
   const summary = useMemo(() => getBoardSummary(boardData, patients), [boardData, patients]);
   const watchlist = useMemo(() => getWatchlist(boardData, patients), [boardData, patients]);
   const totalCount = boardData?.count ?? patients.length;
+  const resolvedPage = Number(boardData?.page || page);
+
+  useEffect(() => {
+    if (boardData?.cursor_missing && resolvedPage !== page) {
+      updateParams({ page: resolvedPage }, { resetPage: false });
+    }
+  }, [boardData?.cursor_missing, page, resolvedPage, updateParams]);
+
   const showBoardBody = useAfterInitialPaint({
     enabled: Boolean(boardData && !isLoading),
     minimumDelayMs: 200,
@@ -215,8 +272,13 @@ export default function WardBoardPage() {
 
   const handleClearFilters = useCallback(() => {
     setSearchDraft('');
-    updateParams({ search: '', ward: '', patient: '' }, { resetPage: true });
-  }, [setSearchDraft, updateParams]);
+    setPrivateFilters((current) => ({
+      ...current,
+      search: '',
+      patient: '',
+    }));
+    updateParams({ ward: '' }, { resetPage: true });
+  }, [setPrivateFilters, setSearchDraft, updateParams]);
 
   if (isLoading && !boardData) {
     return (
@@ -273,6 +335,7 @@ export default function WardBoardPage() {
             fixedWard={fixedWard}
             pageSize={pageSize}
             isFetching={isFetching}
+            searchEnabled
             summary={summary}
             onViewChange={(nextView) => updateParams({ view: nextView }, { resetPage: true })}
             onSearchChange={setSearchDraft}
@@ -319,14 +382,16 @@ export default function WardBoardPage() {
               )}
 
               <TablePagination
-                currentPage={page}
+                currentPage={resolvedPage}
                 totalCount={totalCount}
                 pageSize={pageSize}
                 onPageChange={(nextPage) => updateParams({ page: nextPage }, { resetPage: false })}
+                canJumpToPage={!rustV2Mode}
+                countExact={boardData?.count_exact !== false && boardData?.total_is_lower_bound !== true}
                 hasNextPage={Boolean(boardData?.next)}
-                hasPrevPage={Boolean(boardData?.previous) || page > 1}
+                hasPrevPage={Boolean(boardData?.previous) || resolvedPage > 1}
                 itemLabel="patients"
-                className={cn('shrink-0 border-t border-border px-4 py-3', orderedPatients.length === 0 && 'hidden')}
+                className="shrink-0 border-t border-border px-4 py-3"
               />
             </main>
 

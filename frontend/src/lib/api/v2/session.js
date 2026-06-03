@@ -11,6 +11,16 @@ let canRefreshSession = () => true;
 let isRefreshing = false;
 let refreshPromise = null;
 
+function hashScopeValue(value) {
+  let hash = 0;
+  const input = String(value || '');
+  for (let index = 0; index < input.length; index += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
 export function configureV2ApiClient({
   getAccessToken: tokenGetter,
   setAccessToken: tokenSetter,
@@ -47,6 +57,13 @@ export function __resetV2ApiClientForTests() {
 
 export function hasV2RefreshSessionHint() {
   return Boolean(readCookie('hms_v2_csrf'));
+}
+
+export function getV2ClientScopeKey() {
+  return [
+    `facility:${hashScopeValue(getFacilityCode())}`,
+    `token:${hashScopeValue(getAccessToken())}`,
+  ].join(':');
 }
 
 export async function performV2TokenRefresh({ notifyFailure = true } = {}) {

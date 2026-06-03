@@ -98,7 +98,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/api/v2/inventory/standing-orders",
-            post(inventory::create_standing_order),
+            get(inventory::list_standing_orders).post(inventory::create_standing_order),
         )
         .route(
             "/api/v2/inventory/standing-orders/:id/generate-requisition",

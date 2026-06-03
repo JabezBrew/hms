@@ -357,7 +357,7 @@ describe('Rust V2 inventory bridge', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/pharmacy/controlled-substances/register?limit=20',
+      'http://localhost:8080/api/v2/pharmacy/controlled-substances/register?limit=20&location=loc-1',
       expect.objectContaining({
         method: 'GET',
         signal: controller.signal,
@@ -381,7 +381,7 @@ describe('Rust V2 inventory bridge', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/inventory/transfers?limit=20',
+      'http://localhost:8080/api/v2/inventory/transfers?limit=20&status=requested',
       expect.objectContaining({
         method: 'GET',
         signal: controller.signal,
@@ -458,6 +458,11 @@ describe('Rust V2 inventory bridge', () => {
         data: [{ id: 'register-1', item_name: 'Morphine', balance_on_hand: 5 }],
         page: { limit: 20, has_next: false, next_cursor: null },
         meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'standing-1', status: 'active', requesting_location_name: 'Ward A' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
       }));
 
     await expect(inventoryApi.getCategories()).resolves.toEqual([
@@ -490,6 +495,9 @@ describe('Rust V2 inventory bridge', () => {
     await expect(inventoryApi.getControlledRegisters({ page_size: 20 })).resolves.toMatchObject({
       results: [expect.objectContaining({ id: 'register-1' })],
     });
+    await expect(inventoryApi.getStandingOrders({ page_size: 20, search: 'Ward', is_active: true })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'standing-1' })],
+    });
 
     expect(globalThis.fetch.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:8080/api/v2/inventory/categories',
@@ -502,6 +510,7 @@ describe('Rust V2 inventory bridge', () => {
       'http://localhost:8080/api/v2/inventory/requisitions?limit=20',
       'http://localhost:8080/api/v2/inventory/transfers?limit=20',
       'http://localhost:8080/api/v2/pharmacy/controlled-substances/register?limit=20',
+      'http://localhost:8080/api/v2/inventory/standing-orders?limit=20&search=Ward&is_active=true',
     ]);
   });
 
@@ -1021,7 +1030,6 @@ describe('Rust V2 inventory bridge', () => {
   });
 
   it('returns safe local fallbacks for inventory screens without a Rust V2 contract', async () => {
-    await expect(inventoryApi.getStandingOrders()).resolves.toMatchObject({ results: [], count: 0 });
     await expect(inventoryApi.getConsumptionAnalytics()).resolves.toMatchObject({
       period: '30d',
       results: [],

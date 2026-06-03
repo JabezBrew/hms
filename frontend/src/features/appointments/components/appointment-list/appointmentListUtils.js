@@ -90,10 +90,13 @@ function matchesSearch(appointment, normalizedSearch) {
 
 export function normalizeAppointmentListData(appointmentsData, search, pageSize) {
   let appointments = [];
+  let totalCount = 0;
   let totalPages = 1;
+  let countExact = true;
+  let hasNextPage = false;
 
   if (!appointmentsData) {
-    return { appointments, totalPages };
+    return { appointments, countExact, hasNextPage, totalCount, totalPages };
   }
 
   if (appointmentsData.entry) {
@@ -116,8 +119,11 @@ export function normalizeAppointmentListData(appointmentsData, search, pageSize)
     );
   }
 
-  const totalCount = appointmentsData.total || appointments.length;
-  totalPages = Math.ceil(totalCount / pageSize);
+  totalCount = appointmentsData.count ?? appointmentsData.total ?? appointments.length;
+  countExact = appointmentsData.count_exact ?? true;
+  hasNextPage = Boolean(appointmentsData.next);
+  totalPages = appointmentsData.total_pages
+    || (countExact ? Math.max(1, Math.ceil(totalCount / pageSize)) : Math.max(1, appointmentsData.page || 1));
 
-  return { appointments, totalPages };
+  return { appointments, countExact, hasNextPage, totalCount, totalPages };
 }

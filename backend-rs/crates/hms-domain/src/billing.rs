@@ -112,6 +112,127 @@ pub struct BillingListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct BillingListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+}
+
+impl From<BillingListGetQuery> for BillingListQuery {
+    fn from(value: BillingListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            patient_id: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct InvoiceListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub status: Option<InvoiceStatus>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct InvoiceListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<InvoiceStatus>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+impl From<InvoiceListGetQuery> for InvoiceListQuery {
+    fn from(value: InvoiceListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            patient_id: None,
+            search: None,
+            status: value.status,
+            date_from: value.date_from,
+            date_to: value.date_to,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PaymentListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub status: Option<PaymentStatus>,
+    pub payment_method: Option<PaymentMethod>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PaymentListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<PaymentStatus>,
+    pub payment_method: Option<PaymentMethod>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+impl From<PaymentListGetQuery> for PaymentListQuery {
+    fn from(value: PaymentListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            patient_id: None,
+            search: None,
+            status: value.status,
+            payment_method: value.payment_method,
+            date_from: value.date_from,
+            date_to: value.date_to,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct ClaimListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub status: Option<ClaimStatus>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct ClaimListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<ClaimStatus>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+}
+
+impl From<ClaimListGetQuery> for ClaimListQuery {
+    fn from(value: ClaimListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            patient_id: None,
+            search: None,
+            status: value.status,
+            date_from: value.date_from,
+            date_to: value.date_to,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 pub struct BillingRuleListQuery {
     pub limit: Option<u8>,
     pub rule_type: Option<BillingRuleType>,
@@ -123,6 +244,53 @@ pub struct CashSessionListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub status: Option<CashSessionStatus>,
+    pub search: Option<String>,
+    pub is_flagged: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct InsuranceProviderListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct InsurancePlanListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub provider_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PatientInsuranceListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PatientInsuranceListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub is_active: Option<bool>,
+}
+
+impl From<PatientInsuranceListGetQuery> for PatientInsuranceListQuery {
+    fn from(value: PatientInsuranceListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            patient_id: None,
+            search: None,
+            is_active: value.is_active,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -213,6 +381,9 @@ pub struct CreateInvoiceRequest {
 pub struct PaymentListItem {
     pub id: Uuid,
     pub invoice_id: Uuid,
+    pub invoice_number: String,
+    pub patient_id: Uuid,
+    pub patient_code: String,
     pub receipt_number: String,
     pub amount_minor: i64,
     pub currency: String,
@@ -249,10 +420,132 @@ pub struct FinalizeInvoiceRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateNhisServiceMappingRequest {
+    pub payer_id: Option<Uuid>,
     pub service_id: Uuid,
     pub nhis_code: String,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct NhisServiceMappingListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub payer_id: Option<Uuid>,
+    #[serde(alias = "payer")]
+    pub payer: Option<Uuid>,
+    pub search: Option<String>,
+    pub active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PspPaymentIntentListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PspPaymentIntentListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<String>,
+}
+
+impl From<PspPaymentIntentListGetQuery> for PspPaymentIntentListQuery {
+    fn from(value: PspPaymentIntentListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            status: value.status,
+            search: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PspSettlementBatchListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PspSettlementBatchListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<String>,
+}
+
+impl From<PspSettlementBatchListGetQuery> for PspSettlementBatchListQuery {
+    fn from(value: PspSettlementBatchListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            status: value.status,
+            search: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PspSettlementLineListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub match_status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PspSettlementLineListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub match_status: Option<String>,
+}
+
+impl From<PspSettlementLineListGetQuery> for PspSettlementLineListQuery {
+    fn from(value: PspSettlementLineListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            match_status: value.match_status,
+            search: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct NhisExportJobListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct RemittanceLineListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub match_status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct RemittanceLineListGetQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub match_status: Option<String>,
+}
+
+impl From<RemittanceLineListGetQuery> for RemittanceLineListQuery {
+    fn from(value: RemittanceLineListGetQuery) -> Self {
+        Self {
+            cursor: value.cursor,
+            limit: value.limit,
+            match_status: value.match_status,
+            search: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -311,6 +604,7 @@ pub struct PaymentReversalLedgerEntry {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct NhisServiceMappingListItem {
     pub id: Uuid,
+    pub payer_id: Option<Uuid>,
     pub service_id: Uuid,
     pub service_code: String,
     pub service_name: String,
@@ -319,6 +613,74 @@ pub struct NhisServiceMappingListItem {
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
     pub active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PspPaymentIntentListItem {
+    pub id: Uuid,
+    pub invoice_id: Option<Uuid>,
+    pub invoice_number: Option<String>,
+    pub provider: String,
+    pub provider_reference: Option<String>,
+    pub client_reference: Option<String>,
+    pub status: String,
+    pub payment_method: String,
+    pub amount_minor: i64,
+    pub currency: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PspSettlementBatchListItem {
+    pub id: Uuid,
+    pub provider: String,
+    pub statement_date: Option<NaiveDate>,
+    pub file_name: Option<String>,
+    pub status: String,
+    pub line_count: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PspSettlementLineListItem {
+    pub id: Uuid,
+    pub batch_id: Uuid,
+    pub provider_reference: Option<String>,
+    pub client_reference: Option<String>,
+    pub amount_gross_minor: i64,
+    pub fee_amount_minor: i64,
+    pub amount_net_minor: i64,
+    pub paid_at: Option<DateTime<Utc>>,
+    pub status: String,
+    pub match_status: String,
+    pub mismatch_reason: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct NhisExportJobListItem {
+    pub id: Uuid,
+    pub batch_id: Uuid,
+    pub batch: String,
+    pub batch_number: String,
+    pub status: String,
+    pub checksum: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct RemittanceLineListItem {
+    pub id: Uuid,
+    pub import_id: Uuid,
+    pub claim_number: Option<String>,
+    pub invoice_number: Option<String>,
+    pub paid_amount_minor: i64,
+    pub paid_date: Option<NaiveDate>,
+    pub match_status: String,
+    pub mismatch_reason: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -419,6 +781,7 @@ pub struct CashSessionListItem {
     pub drawer_id: Uuid,
     pub drawer_code: String,
     pub opened_by_user_id: Uuid,
+    pub opened_by_display_name: Option<String>,
     pub status: CashSessionStatus,
     pub opening_float_minor: i64,
     pub expected_cash_minor: i64,
@@ -427,6 +790,47 @@ pub struct CashSessionListItem {
     pub currency: String,
     pub opened_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct InsuranceProviderListItem {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub payer_type: String,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct InsurancePlanListItem {
+    pub id: Uuid,
+    pub provider_id: Uuid,
+    pub provider_name: String,
+    pub code: String,
+    pub name: String,
+    pub coverage_percentage: i32,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PatientInsuranceListItem {
+    pub id: Uuid,
+    pub patient_id: Uuid,
+    pub patient_code: String,
+    pub patient_name: String,
+    pub provider_id: Uuid,
+    pub provider_name: String,
+    pub plan_id: Uuid,
+    pub plan_name: String,
+    pub policy_number: String,
+    pub member_id: Option<String>,
+    pub subscriber_number: Option<String>,
+    pub valid_from: NaiveDate,
+    pub valid_until: Option<NaiveDate>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

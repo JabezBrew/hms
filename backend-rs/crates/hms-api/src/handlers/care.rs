@@ -1,12 +1,13 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::care::{
-    AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem, CancelAppointmentRequest,
-    CareTeamAssignment, CheckInVisitRequest, ClinicListItem, CreateAppointmentRequest,
-    CreateCareTeamAssignmentRequest, CreateClinicRequest, CreateEncounterRequest,
-    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery,
-    TriageAssessmentRequest, TriageListItem, TriageListQuery, UpdateAppointmentRequest,
-    UpdateClinicRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery,
+    AppointmentListGetQuery, AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem,
+    CancelAppointmentRequest, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
+    CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
+    CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListGetQuery,
+    EncounterListItem, EncounterListQuery, TriageAssessmentRequest, TriageListItem,
+    TriageListQuery, UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest,
+    VisitListItem, VisitListQuery,
 };
 use uuid::Uuid;
 
@@ -21,7 +22,7 @@ use crate::state::AppState;
     operation_id = "getAppointments",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(AppointmentListQuery),
+    params(AppointmentListGetQuery),
     responses(
         (status = 200, description = "Appointments list", body = ListResponse<AppointmentListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -31,7 +32,33 @@ use crate::state::AppState;
 pub async fn list_appointments(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<AppointmentListQuery>,
+    Query(query): Query<AppointmentListGetQuery>,
+) -> Result<Json<ListResponse<AppointmentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .care_service()
+            .list_appointments(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/appointments/search",
+    operation_id = "postAppointmentsSearch",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    request_body = AppointmentListQuery,
+    responses(
+        (status = 200, description = "Appointments search", body = ListResponse<AppointmentListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_appointments(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<AppointmentListQuery>,
 ) -> Result<Json<ListResponse<AppointmentListItem>>, ApiError> {
     Ok(Json(
         state.care_service().list_appointments(&user, query).await?,
@@ -654,7 +681,7 @@ pub async fn cancel_triage(
     operation_id = "getEncounters",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(EncounterListQuery),
+    params(EncounterListGetQuery),
     responses(
         (status = 200, description = "Encounters list", body = ListResponse<EncounterListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -664,7 +691,33 @@ pub async fn cancel_triage(
 pub async fn list_encounters(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<EncounterListQuery>,
+    Query(query): Query<EncounterListGetQuery>,
+) -> Result<Json<ListResponse<EncounterListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .care_service()
+            .list_encounters(&user, query.into())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/encounters/search",
+    operation_id = "postEncountersSearch",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    request_body = EncounterListQuery,
+    responses(
+        (status = 200, description = "Encounters search", body = ListResponse<EncounterListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_encounters(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(query): Json<EncounterListQuery>,
 ) -> Result<Json<ListResponse<EncounterListItem>>, ApiError> {
     Ok(Json(
         state.care_service().list_encounters(&user, query).await?,

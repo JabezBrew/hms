@@ -141,6 +141,8 @@ pub struct StorageLocationListItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    pub location_type: String,
+    pub temperature_zone: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -250,6 +252,7 @@ pub struct StockRequisitionListItem {
     pub requesting_location_id: Uuid,
     pub requesting_location_name: String,
     pub status: RequisitionStatus,
+    pub priority: String,
     pub rejection_reason: Option<String>,
     pub rejected_at: Option<DateTime<Utc>>,
     pub cancelled_at: Option<DateTime<Utc>>,
@@ -395,6 +398,7 @@ pub struct InventoryCatalogVersionItem {
 pub struct StandingOrderListItem {
     pub id: Uuid,
     pub requesting_location_id: Uuid,
+    pub requesting_location_name: String,
     pub frequency: StandingOrderFrequency,
     pub status: StandingOrderStatus,
     pub next_run_on: NaiveDate,
@@ -477,6 +481,71 @@ pub struct InventoryListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct ControlledRegisterListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub location: Option<Uuid>,
+    pub has_discrepancy: Option<bool>,
+    pub audit_due: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct StorageLocationListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub location_type: Option<String>,
+    pub temperature_zone: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct PurchaseOrderListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub status: Option<PurchaseOrderStatus>,
+    pub supplier: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct GoodsReceivedNoteListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub status: Option<GoodsReceivedStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct StockTransferListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub status: Option<TransferStatus>,
+    pub from_location: Option<Uuid>,
+    pub to_location: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct StockRequisitionListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub status: Option<RequisitionStatus>,
+    pub priority: Option<String>,
+    pub requesting_location: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct StandingOrderListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub status: Option<StandingOrderStatus>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
 pub struct SupplierListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
@@ -500,6 +569,8 @@ pub struct InventoryItemsQuery {
     pub category: Option<Uuid>,
     pub location: Option<Uuid>,
     pub status: Option<String>,
+    pub supplier: Option<Uuid>,
+    pub ordering: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]

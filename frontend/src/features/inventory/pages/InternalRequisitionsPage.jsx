@@ -25,14 +25,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { useInternalRequisitions, useStorageLocations } from '@/features/inventory/hooks';
 import { InternalRequisitionDetailDialog } from '@/components/inventory/InternalRequisitionDetailDialog';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { format, parseISO } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
@@ -46,7 +46,7 @@ import User from 'lucide-react/dist/esm/icons/user.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Repeat from 'lucide-react/dist/esm/icons/repeat.js';
 
-const STATUS_TABS = [
+const LEGACY_STATUS_TABS = [
   { value: 'all', label: 'All' },
   { value: 'draft', label: 'Draft' },
   { value: 'pending_approval', label: 'Pending' },
@@ -58,7 +58,29 @@ const STATUS_TABS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
+const RUST_V2_STATUS_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'requested', label: 'Requested' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
 const STATUS_CONFIG = {
+  requested: {
+    label: 'Requested',
+    bgColor: 'bg-muted',
+    textColor: 'text-muted-foreground',
+    borderColor: 'border-border',
+  },
+  pending: {
+    label: 'Pending',
+    bgColor: 'bg-amber-500/10',
+    textColor: 'text-amber-500',
+    borderColor: 'border-amber-500/30',
+  },
   draft: {
     label: 'Draft',
     bgColor: 'bg-muted',
@@ -249,27 +271,30 @@ function InternalRequisitionCard({
   );
 }
 
-function useInternalRequisitionFilters() {
+function useInternalRequisitionFilters({ statusTabs = LEGACY_STATUS_TABS } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
 
-  const status = searchParams.get('status') || 'all';
+  const rawStatus = searchParams.get('status') || 'all';
+  const status = statusTabs.some((tab) => tab.value === rawStatus) ? rawStatus : 'all';
   const location = searchParams.get('location') || '';
   const page = parseInt(searchParams.get('page') || '1', 10);
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
+
+  useEffect(() => {
+    if (rawStatus === status) return;
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (debouncedSearch) {
-        params.set('search', debouncedSearch);
-      } else {
-        params.delete('search');
-      }
+      params.delete('status');
       params.set('page', '1');
       return params;
     });
-  }, [debouncedSearch, setSearchParams]);
+  }, [rawStatus, setSearchParams, status]);
 
   const handleTabChange = (value) => {
     setSearchParams((prev) => {
@@ -304,6 +329,20 @@ function useInternalRequisitionFilters() {
     setSearchParams({});
   };
 
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value) {
+        params.set('search', value);
+      } else {
+        params.delete('search');
+      }
+      params.set('page', '1');
+      return params;
+    });
+  };
+
   return {
     search,
     status,
@@ -316,8 +355,8 @@ function useInternalRequisitionFilters() {
       ...(status !== 'all' && { status }),
       ...(location && { requesting_location: location }),
     },
-    hasActiveFilters: debouncedSearch || status !== 'all' || location,
-    setSearch,
+    hasActiveFilters: Boolean(debouncedSearch || status !== 'all' || location),
+    handleSearchChange,
     handleTabChange,
     handleLocationChange,
     handlePageChange,
@@ -370,11 +409,11 @@ function InternalRequisitionsLoadingState() {
   );
 }
 
-function InternalRequisitionStatusTabs({ status, onTabChange }) {
+function InternalRequisitionStatusTabs({ status, statusTabs, onTabChange }) {
   return (
     <Tabs value={status} onValueChange={onTabChange}>
       <TabsList className="w-full sm:w-auto">
-        {STATUS_TABS.map((tab) => (
+        {statusTabs.map((tab) => (
           <TabsTrigger key={tab.value} value={tab.value} className="font-mono text-xs">
             {tab.label}
           </TabsTrigger>
@@ -544,35 +583,13 @@ function InternalRequisitionsTable({
   );
 }
 
-function InternalRequisitionsPagination({ page, totalPages, onPageChange }) {
-  if (totalPages <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center justify-between pt-4 border-t">
-      <p className="font-mono text-xs text-muted-foreground">
-        Page {page} of {totalPages}
-      </p>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
-          <ChevronLeft className="size-4 mr-1" />
-          Previous
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
-          Next
-          <ChevronRight className="size-4 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /**
  * InternalRequisitionsPage - Internal department requisitions page
  */
 export default function InternalRequisitionsPage() {
   const [selectedRequisitionId, setSelectedRequisitionId] = useState(null);
+  const rustV2Mode = isRustV2ApiMode();
+  const statusTabs = rustV2Mode ? RUST_V2_STATUS_TABS : LEGACY_STATUS_TABS;
   const {
     search,
     status,
@@ -580,19 +597,18 @@ export default function InternalRequisitionsPage() {
     page,
     queryParams,
     hasActiveFilters,
-    setSearch,
+    handleSearchChange,
     handleTabChange,
     handleLocationChange,
     handlePageChange,
     clearFilters,
-  } = useInternalRequisitionFilters();
+  } = useInternalRequisitionFilters({ statusTabs });
 
   const { data: requisitionsData, isLoading, error, refetch } = useInternalRequisitions(queryParams);
   const { data: locationsData } = useStorageLocations();
 
   const requisitions = requisitionsData?.results || [];
   const totalCount = requisitionsData?.count || 0;
-  const totalPages = Math.ceil(totalCount / 20);
   const locations = locationsData?.results || locationsData || [];
 
   const handleClick = (id) => setSelectedRequisitionId(id);
@@ -628,20 +644,23 @@ export default function InternalRequisitionsPage() {
       />
 
       <div className="p-4 sm:p-6 space-y-6">
-        <InternalRequisitionStatusTabs
-          status={status}
-          onTabChange={handleTabChange}
-        />
+        <>
+          <InternalRequisitionStatusTabs
+            status={status}
+            statusTabs={statusTabs}
+            onTabChange={handleTabChange}
+          />
 
-        <InternalRequisitionFilters
-          search={search}
-          location={location}
-          locations={locations}
-          hasActiveFilters={hasActiveFilters}
-          onSearchChange={setSearch}
-          onLocationChange={handleLocationChange}
-          onClearFilters={clearFilters}
-        />
+          <InternalRequisitionFilters
+            search={search}
+            location={location}
+            locations={locations}
+            hasActiveFilters={hasActiveFilters}
+            onSearchChange={handleSearchChange}
+            onLocationChange={handleLocationChange}
+            onClearFilters={clearFilters}
+          />
+        </>
 
         <InternalRequisitionsTable
           requisitions={requisitions}
@@ -650,9 +669,11 @@ export default function InternalRequisitionsPage() {
           onOpen={handleClick}
         />
 
-        <InternalRequisitionsPagination
+        <InventoryPagination
+          data={requisitionsData}
+          itemLabel="requisitions"
           page={page}
-          totalPages={totalPages}
+          pageSize={20}
           onPageChange={handlePageChange}
         />
       </div>

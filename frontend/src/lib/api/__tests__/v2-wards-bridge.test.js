@@ -128,6 +128,29 @@ describe('Rust V2 wards bridge', () => {
     ]);
   });
 
+  it('forwards table search through the main Rust V2 wards list', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await wardsApi.getWards({ search: 'maternity' });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards?limit=100&search=maternity',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
   it('threads AbortSignal into Rust V2 ward detail reads', async () => {
     const controller = new AbortController();
     globalThis.fetch.mockResolvedValueOnce(

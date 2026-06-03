@@ -5,8 +5,21 @@ import { apiClient } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 import { v2Api } from './v2/client';
+import {
+  cacheCursorForNextPage as cacheScopedCursorForNextPage,
+  resolveCursorPage as resolveScopedCursorPage,
+} from './v2/cursorCache';
 
 const DEFAULT_VISIT_PAGE_SIZE = 50;
+const triageCursorCache = new Map();
+
+function resolveCursorPage(scope, params = {}) {
+  return resolveScopedCursorPage(triageCursorCache, `visits:${scope}`, params);
+}
+
+function cacheCursorForNextPage(scope, params, response) {
+  cacheScopedCursorForNextPage(triageCursorCache, `visits:${scope}`, params, response);
+}
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -136,18 +149,26 @@ function adaptV2TriageEntry(entry) {
 
 function adaptV2TriageListResponse(response, params = {}) {
   const limit = Number(response?.page?.limit || params.page_size || params.limit || DEFAULT_VISIT_PAGE_SIZE);
-  const currentPage = Number(params.page || 1);
+  const resolvedPage = resolveCursorPage('triage', params);
+  const currentPage = resolvedPage.page;
   const results = Array.isArray(response?.data) ? response.data.map(adaptV2TriageEntry) : [];
   const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
   const estimatedTotal = ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0);
 
+  cacheCursorForNextPage('triage', params, response);
+
   return {
     results,
     page: currentPage,
+    current_page: currentPage,
+    requested_page: resolvedPage.requestedPage ?? currentPage,
+    resolved_page: currentPage,
+    cursor_missing: Boolean(resolvedPage.cursorMissing),
     page_size: limit,
     count: estimatedTotal,
     total: estimatedTotal,
-    count_exact: false,
+    count_exact: !hasNext,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
     next: hasNext ? response.page.next_cursor : null,
     previous: currentPage > 1 ? String(currentPage - 1) : null,
     next_cursor: response?.page?.next_cursor || null,
@@ -381,10 +402,11 @@ export const triageApi = {
   list: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
+        const { cursor } = resolveCursorPage('triage', params);
         const response = await v2Api.getTriageQueue({
           query: {
             limit: normalizeLimit(params),
-            cursor: params.cursor || params.next_cursor,
+            cursor,
             status: v2TriageStatusFromUi(params.status),
             acuity: v2TriageAcuityFromUi(params.priority || params.acuity),
           },

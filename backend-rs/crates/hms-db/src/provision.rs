@@ -81,6 +81,12 @@ pub const DEFAULT_PRICE_MEDICATION_ID: u128 = 0x90000000000000000000000000000012
 pub const DEFAULT_BILLING_RULE_CASH_ID: u128 = 0x90000000000000000000000000000020;
 pub const DEFAULT_BILLING_RULE_NHIS_ID: u128 = 0x90000000000000000000000000000021;
 pub const DEFAULT_CASH_DRAWER_ID: u128 = 0x90000000000000000000000000000030;
+pub const DEFAULT_INSURANCE_PROVIDER_NHIS_ID: u128 = 0x90000000000000000000000000000040;
+pub const DEFAULT_INSURANCE_PROVIDER_PRIVATE_ID: u128 = 0x90000000000000000000000000000041;
+pub const DEFAULT_INSURANCE_PLAN_NHIS_ID: u128 = 0x90000000000000000000000000000042;
+pub const DEFAULT_INSURANCE_PLAN_PRIVATE_ID: u128 = 0x90000000000000000000000000000043;
+pub const DEFAULT_PATIENT_INSURANCE_ONE_ID: u128 = 0x90000000000000000000000000000044;
+pub const DEFAULT_PATIENT_INSURANCE_TWO_ID: u128 = 0x90000000000000000000000000000045;
 pub const DEFAULT_ORG_UNIT_ADMIN_ID: u128 = 0xa0000000000000000000000000000001;
 pub const DEFAULT_ORG_UNIT_CLINICAL_ID: u128 = 0xa0000000000000000000000000000002;
 pub const DEFAULT_ORG_UNIT_OPD_ID: u128 = 0xa0000000000000000000000000000003;
@@ -5560,6 +5566,7 @@ pub async fn provision_performance_seed(
             item_type,
             unit,
             controlled,
+            primary_supplier_id,
             is_active,
             created_at,
             updated_at
@@ -5572,6 +5579,14 @@ pub async fn provision_performance_seed(
                'medication',
                'unit',
                FALSE,
+               (
+                   SELECT inventory_suppliers.id
+                   FROM inventory_suppliers
+                   WHERE inventory_suppliers.facility_id = $1
+                     AND inventory_suppliers.is_active = TRUE
+                   ORDER BY inventory_suppliers.code ASC
+                   LIMIT 1
+               ),
                TRUE,
                TIMESTAMPTZ '2026-06-01 00:00:00+00' + (i * INTERVAL '1 minute'),
                TIMESTAMPTZ '2026-06-01 00:00:00+00' + (i * INTERVAL '1 minute')
@@ -5581,6 +5596,7 @@ pub async fn provision_performance_seed(
             item_type = EXCLUDED.item_type,
             unit = EXCLUDED.unit,
             controlled = EXCLUDED.controlled,
+            primary_supplier_id = EXCLUDED.primary_supplier_id,
             is_active = TRUE,
             updated_at = EXCLUDED.updated_at
         "#,
@@ -6180,12 +6196,38 @@ async fn seed_lab_catalog(pool: &PgPool, baseline: &BaselineProvisioning) -> any
 
     sqlx::query(
         r#"
+        UPDATE lab_tests
+        SET category = CASE
+                WHEN code IN ('FBC', 'GS', 'COAG') THEN 'hematology'
+                WHEN code IN ('RBG', 'FBS', 'HBA1C', 'U&E', 'CRE', 'LFT', 'LIPID', 'TSH', 'CRP') THEN 'chemistry'
+                WHEN code IN ('MP', 'WIDAL', 'AFB') THEN 'microbiology'
+                WHEN code IN ('HBS', 'HIV') THEN 'serology'
+                WHEN code = 'URE' THEN 'urinalysis'
+                ELSE COALESCE(category, 'other')
+            END,
+            is_system_default = TRUE,
+            is_facility_modified = FALSE
+        WHERE facility_id = $1
+          AND code IN (
+              'FBC', 'MP', 'RBG', 'FBS', 'HBA1C', 'U&E', 'CRE', 'LFT', 'LIPID',
+              'TSH', 'WIDAL', 'HBS', 'HIV', 'URE', 'GS', 'CRP', 'COAG', 'AFB'
+          )
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
         INSERT INTO lab_panels (id, facility_id, code, name)
         VALUES ($1, $2, 'BASIC_HEME', 'Basic Hematology')
         ON CONFLICT (facility_id, code) DO UPDATE
         SET id = EXCLUDED.id,
             name = EXCLUDED.name,
-            is_active = TRUE
+            is_active = TRUE,
+            is_system_default = TRUE,
+            is_facility_modified = FALSE
         "#,
     )
     .bind(Uuid::from_u128(DEFAULT_LAB_PANEL_BASIC_ID))
@@ -6211,6 +6253,25 @@ async fn seed_lab_catalog(pool: &PgPool, baseline: &BaselineProvisioning) -> any
         .execute(pool)
         .await?;
     }
+
+    sqlx::query(
+        r#"
+        UPDATE inventory_items
+        SET primary_supplier_id = CASE
+            WHEN code = 'PARA500' THEN $2
+            WHEN code = 'MOR10' THEN $3
+            ELSE primary_supplier_id
+        END,
+        updated_at = now()
+        WHERE facility_id = $1
+          AND code IN ('PARA500', 'MOR10')
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(Uuid::from_u128(DEFAULT_SUPPLIER_ACME_ID))
+    .bind(Uuid::from_u128(DEFAULT_SUPPLIER_CITY_ID))
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
@@ -6280,21 +6341,33 @@ async fn seed_inventory_baseline(
         .await?;
     }
 
-    for (id, code, name) in [
-        (Uuid::from_u128(DEFAULT_MAIN_STORE_ID), "MAIN", "Main Store"),
+    for (id, code, name, location_type, temperature_zone) in [
+        (
+            Uuid::from_u128(DEFAULT_MAIN_STORE_ID),
+            "MAIN",
+            "Main Store",
+            "store",
+            "ambient",
+        ),
         (
             Uuid::from_u128(DEFAULT_PHARMACY_STORE_ID),
             "PHARM",
             "Pharmacy Store",
+            "pharmacy",
+            "ambient",
         ),
     ] {
         sqlx::query(
             r#"
-            INSERT INTO storage_locations (id, facility_id, code, name)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO storage_locations (
+                id, facility_id, code, name, location_type, temperature_zone
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (facility_id, code) DO UPDATE
             SET id = EXCLUDED.id,
                 name = EXCLUDED.name,
+                location_type = EXCLUDED.location_type,
+                temperature_zone = EXCLUDED.temperature_zone,
                 is_active = TRUE
             "#,
         )
@@ -6302,6 +6375,8 @@ async fn seed_inventory_baseline(
         .bind(baseline.facility_id)
         .bind(code)
         .bind(name)
+        .bind(location_type)
+        .bind(temperature_zone)
         .execute(pool)
         .await?;
     }
@@ -6479,6 +6554,133 @@ async fn seed_billing_baseline(
     .bind(baseline.facility_id)
     .execute(pool)
     .await?;
+
+    for (id, code, name, payer_type) in [
+        (
+            DEFAULT_INSURANCE_PROVIDER_NHIS_ID,
+            "NHIS",
+            "National Health Insurance Scheme",
+            "nhis",
+        ),
+        (
+            DEFAULT_INSURANCE_PROVIDER_PRIVATE_ID,
+            "AKWAABA",
+            "Akwaaba Health Assurance",
+            "commercial",
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO insurance_providers (id, facility_id, code, name, payer_type)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (facility_id, code) DO UPDATE
+            SET id = EXCLUDED.id,
+                name = EXCLUDED.name,
+                payer_type = EXCLUDED.payer_type,
+                is_active = TRUE,
+                updated_at = now()
+            "#,
+        )
+        .bind(Uuid::from_u128(id))
+        .bind(baseline.facility_id)
+        .bind(code)
+        .bind(name)
+        .bind(payer_type)
+        .execute(pool)
+        .await?;
+    }
+
+    for (id, provider_id, code, name, coverage_percentage) in [
+        (
+            DEFAULT_INSURANCE_PLAN_NHIS_ID,
+            DEFAULT_INSURANCE_PROVIDER_NHIS_ID,
+            "NHIS-STANDARD",
+            "NHIS Standard Cover",
+            100_i32,
+        ),
+        (
+            DEFAULT_INSURANCE_PLAN_PRIVATE_ID,
+            DEFAULT_INSURANCE_PROVIDER_PRIVATE_ID,
+            "AKWAABA-FAMILY",
+            "Akwaaba Family Plan",
+            80_i32,
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO insurance_plans (
+                id, facility_id, provider_id, code, name, coverage_percentage
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (facility_id, code) DO UPDATE
+            SET id = EXCLUDED.id,
+                provider_id = EXCLUDED.provider_id,
+                name = EXCLUDED.name,
+                coverage_percentage = EXCLUDED.coverage_percentage,
+                is_active = TRUE,
+                updated_at = now()
+            "#,
+        )
+        .bind(Uuid::from_u128(id))
+        .bind(baseline.facility_id)
+        .bind(Uuid::from_u128(provider_id))
+        .bind(code)
+        .bind(name)
+        .bind(coverage_percentage)
+        .execute(pool)
+        .await?;
+    }
+
+    for (id, patient_id, plan_id, policy_number, member_id, valid_until, is_active) in [
+        (
+            DEFAULT_PATIENT_INSURANCE_ONE_ID,
+            PATIENT_ONE_ID,
+            DEFAULT_INSURANCE_PLAN_NHIS_ID,
+            "NHIS-000001",
+            "NHIS-000001",
+            Some(NaiveDate::from_ymd_opt(2027, 12, 31).expect("valid seed date")),
+            true,
+        ),
+        (
+            DEFAULT_PATIENT_INSURANCE_TWO_ID,
+            PATIENT_TWO_ID,
+            DEFAULT_INSURANCE_PLAN_PRIVATE_ID,
+            "AKW-000002",
+            "AKW-000002",
+            Some(NaiveDate::from_ymd_opt(2026, 12, 31).expect("valid seed date")),
+            false,
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO patient_insurances (
+                id, facility_id, patient_id, plan_id, policy_number, member_id,
+                subscriber_number, valid_from, valid_until, is_active
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $6, DATE '2026-01-01', $7, $8)
+            ON CONFLICT (facility_id, policy_number) DO UPDATE
+            SET id = EXCLUDED.id,
+                patient_id = EXCLUDED.patient_id,
+                plan_id = EXCLUDED.plan_id,
+                member_id = EXCLUDED.member_id,
+                subscriber_number = EXCLUDED.subscriber_number,
+                valid_from = EXCLUDED.valid_from,
+                valid_until = EXCLUDED.valid_until,
+                is_active = EXCLUDED.is_active,
+                updated_at = now()
+            "#,
+        )
+        .bind(Uuid::from_u128(id))
+        .bind(baseline.facility_id)
+        .bind(Uuid::from_u128(patient_id))
+        .bind(Uuid::from_u128(plan_id))
+        .bind(policy_number)
+        .bind(member_id)
+        .bind(valid_until)
+        .bind(is_active)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }

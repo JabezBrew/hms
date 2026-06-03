@@ -72,7 +72,7 @@ describe('Rust V2 ward-board bridge', () => {
         }),
       }),
     );
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       count: 1,
       next: null,
       previous: null,
@@ -115,9 +115,36 @@ describe('Rust V2 ward-board bridge', () => {
     await wardBoardApi.getBoard({ patient: 'patient-1', page_size: 25 });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/wards/board?limit=25&patient_id=patient-1',
+      'http://localhost:8080/api/v2/wards/board/search',
       expect.objectContaining({
-        method: 'GET',
+        method: 'POST',
+        body: JSON.stringify({ limit: 25, patient_id: 'patient-1' }),
+      }),
+    );
+  });
+
+  it('searches ward board rows through the private Rust V2 search endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await wardBoardApi.getBoard({ search: 'Ama', ward: 'ward-1', page_size: 25 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/board/search',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ limit: 25, ward_id: 'ward-1', search: 'Ama' }),
       }),
     );
   });

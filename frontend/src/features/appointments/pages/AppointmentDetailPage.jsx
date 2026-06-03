@@ -1,8 +1,9 @@
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { navigateToReturnTo } from '@/shared/lib/returnTo';
 import AppointmentDetail from '@/features/appointments/components/AppointmentDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button';
 const AppointmentDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const pageMeta = usePageMeta({
     title: 'Appointment Details | Hospital Management System',
@@ -30,7 +32,7 @@ const AppointmentDetailPage = () => {
 
   // Handle back navigation
   const handleBack = () => {
-    navigate('/appointments');
+    navigateToReturnTo(navigate, location, '/appointments');
   };
 
   return (

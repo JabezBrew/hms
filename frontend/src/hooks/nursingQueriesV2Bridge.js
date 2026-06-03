@@ -40,6 +40,23 @@ function repeatedItems(count, factory) {
 export function adaptV2WardBoardMonitoringItem(item = {}) {
   const patientName = item.patient_display_name || item.patient_name || item.name || 'Unknown Patient';
   const bedNumber = item.bed_code || item.bed_number || '';
+  const activeAlertCount = Math.max(0, Number.parseInt(item.active_alert_count, 10) || 0);
+  const criticalAlertCount = Math.min(
+    activeAlertCount,
+    Math.max(0, Number.parseInt(item.critical_alert_count, 10) || 0),
+  );
+  const activeAlerts = [
+    ...repeatedItems(criticalAlertCount, (index) => ({
+      id: `${item.admission_id || item.patient_id}-critical-alert-${index + 1}`,
+      severity: 'critical',
+      status: 'open',
+    })),
+    ...repeatedItems(activeAlertCount - criticalAlertCount, (index) => ({
+      id: `${item.admission_id || item.patient_id}-alert-${index + 1}`,
+      severity: 'medium',
+      status: 'open',
+    })),
+  ];
 
   return {
     patient_id: item.patient_id,
@@ -76,7 +93,9 @@ export function adaptV2WardBoardMonitoringItem(item = {}) {
       },
     },
     latest_vitals: null,
-    active_alerts: [],
+    active_alert_count: activeAlertCount,
+    critical_alert_count: criticalAlertCount,
+    active_alerts: activeAlerts,
     pending_tasks: repeatedItems(item.open_nursing_task_count, (index) => ({
       id: `${item.admission_id || item.patient_id}-task-${index + 1}`,
       status: 'open',
