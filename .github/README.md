@@ -2,14 +2,14 @@
 
 Status: active
 Owner: Engineering
-Last reviewed: 2026-06-01
+Last reviewed: 2026-06-03
 Scope: GitHub workflow configuration.
 
 ## Workflows
 
 | Workflow | Trigger | Role |
 | --- | --- | --- |
-| `ci.yml` | pushes and pull requests to `main`/`develop`, manual dispatch, nightly `03:00 UTC` cron | main Rust V2/backend/frontend validation. |
+| `ci.yml` | pushes and pull requests to `main`/`develop`, manual dispatch, nightly `03:00 UTC` cron | path-aware Rust V2/backend/frontend validation. |
 | `backend-codeql.yml` | security workflow triggers | backend CodeQL security analysis. |
 | `frontend-codeql.yml` | security workflow triggers | frontend CodeQL security analysis. |
 | `backend-dependency-review.yml` | dependency-review triggers | backend dependency review. |
@@ -19,10 +19,26 @@ Scope: GitHub workflow configuration.
 
 | Job | Checks |
 | --- | --- |
+| `changes` | classifies changed paths and chooses backend, frontend, and Docker gates; manual/nightly/workflow changes fail open to full CI. |
 | `rust-backend-tests` | starts Postgres 16 and Redis 7, runs `cargo fmt --all --check`, then `cargo test --workspace` in `backend-rs/`. |
 | `frontend-tests` | runs `npm ci`, lint, Rust V2 API client generation check, unit tests with coverage, build, bundle budget, and coverage/artifact upload. |
 | `docker-builds` | builds `backend-rs/Dockerfile` and `frontend/Dockerfile` with Rust V2 API build args. |
-| `build-and-deploy` | runs only on push to `main` after the validation jobs; builds release backend/frontend and currently contains a placeholder deploy step. Real GCP deploy behavior lives in `ops/gcp-staging/`. |
+| `ci-summary` | reports selected/skipped gates and fails if any selected gate failed. |
+
+## `ci.yml` Path Policy
+
+- Manual dispatches, nightly schedules, and workflow-file changes run full CI.
+- Rust backend checks run for `backend-rs/**`, contract/OpenAPI paths, and
+  workflow changes.
+- Frontend checks run for `frontend/**`, contract/OpenAPI paths, and workflow
+  changes.
+- Docker builds run for Dockerfiles, lockfiles, `deploy`, `ops/deploy.sh`,
+  `ops/gcp-staging/**`, `ops/compose-v2/**`, deprecated `ops/hetzner-v2/**`
+  forwarding paths, workflow changes, full CI, and backend/frontend changes
+  pushed to `main`.
+- Docs-only changes skip heavy app CI unless they touch `docs/contracts/**`.
+- Real GCP deploy behavior lives behind `./deploy staging` and
+  `ops/gcp-staging/`; CI does not perform deployments.
 
 ## Invariants
 

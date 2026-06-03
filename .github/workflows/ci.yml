@@ -15,9 +15,138 @@ env:
 
 jobs:
   # ==========================================================================
+  # CI Policy
+  # ==========================================================================
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+      docker: ${{ steps.classify.outputs.docker }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      changed_files: ${{ steps.classify.outputs.changed_files }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Classify changed paths
+      id: classify
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        REF_NAME: ${{ github.ref }}
+        BEFORE_SHA: ${{ github.event.before || '' }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        HEAD_SHA: ${{ github.sha }}
+      run: |
+        python3 - <<'PY'
+        import os
+        import subprocess
+        import sys
+
+        event_name = os.environ["EVENT_NAME"]
+        ref_name = os.environ["REF_NAME"]
+        before_sha = os.environ.get("BEFORE_SHA", "")
+        base_sha = os.environ.get("BASE_SHA", "")
+        head_sha = os.environ.get("HEAD_SHA", "HEAD")
+
+        full_ci = event_name in {"schedule", "workflow_dispatch"}
+        compare_base = base_sha if event_name == "pull_request" else before_sha
+        if not compare_base or compare_base.startswith("000000"):
+            full_ci = True
+
+        changed = []
+        if not full_ci:
+            try:
+                diff = subprocess.check_output(
+                    ["git", "diff", "--name-only", compare_base, head_sha],
+                    text=True,
+                )
+                changed = [line.strip() for line in diff.splitlines() if line.strip()]
+            except subprocess.CalledProcessError:
+                print("Unable to compute changed paths; running full CI.", file=sys.stderr)
+                full_ci = True
+
+        def starts_any(path, prefixes):
+            return any(path.startswith(prefix) for prefix in prefixes)
+
+        workflow_changed = full_ci or any(
+            starts_any(path, (".github/workflows/",)) for path in changed
+        )
+        contract_changed = any(
+            starts_any(path, ("docs/contracts/", "backend-rs/openapi/"))
+            or path in {
+                "backend-rs/crates/hms-api/src/openapi.rs",
+                "frontend/scripts/generate-v2-api-client.mjs",
+            }
+            for path in changed
+        )
+        backend_changed = full_ci or workflow_changed or contract_changed or any(
+            starts_any(path, ("backend-rs/",)) for path in changed
+        )
+        frontend_changed = full_ci or workflow_changed or contract_changed or any(
+            starts_any(path, ("frontend/",)) for path in changed
+        )
+        docker_runtime_changed = full_ci or workflow_changed or any(
+            starts_any(
+                path,
+                (
+                    "ops/compose-v2/",
+                    "ops/gcp-staging/",
+                    "ops/hetzner-v2/",
+                    "monitoring/",
+                ),
+            )
+            or path
+            in {
+                "compose.yml",
+                "deploy",
+                "ops/deploy.sh",
+                "ops/create-client-deployment.py",
+                "backend-rs/Dockerfile",
+                "backend-rs/Cargo.lock",
+                "frontend/Dockerfile",
+                "frontend/package.json",
+                "frontend/package-lock.json",
+            }
+            for path in changed
+        )
+        main_push = event_name == "push" and ref_name == "refs/heads/main"
+        docker_changed = docker_runtime_changed or (
+            main_push and (backend_changed or frontend_changed)
+        )
+        docs_only = bool(changed) and not workflow_changed and not contract_changed and all(
+            starts_any(path, ("docs/",))
+            or path.endswith(".md")
+            or path in {"AGENTS.md", "CONTEXT.md"}
+            for path in changed
+        )
+
+        outputs = {
+            "backend": backend_changed,
+            "frontend": frontend_changed,
+            "docker": docker_changed,
+            "docs_only": docs_only,
+            "changed_files": ",".join(changed) if changed else "full-ci",
+        }
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+            for name, value in outputs.items():
+                if isinstance(value, bool):
+                    value = str(value).lower()
+                print(f"{name}={value}", file=out)
+
+        for name, value in outputs.items():
+            print(f"{name}: {value}")
+        PY
+
+  # ==========================================================================
   # Active Rust Backend Tests
   # ==========================================================================
   rust-backend-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -67,6 +196,8 @@ jobs:
   # Frontend Tests
   # ==========================================================================
   frontend-tests:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -130,6 +261,8 @@ jobs:
   # Docker Build Validation
   # ==========================================================================
   docker-builds:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -157,44 +290,40 @@ jobs:
           frontend
 
   # ==========================================================================
-  # Build and Deploy (only on main branch push)
+  # Summary
   # ==========================================================================
-  build-and-deploy:
-    needs: [rust-backend-tests, frontend-tests, docker-builds]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  ci-summary:
+    needs: [changes, rust-backend-tests, frontend-tests, docker-builds]
+    if: always()
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Rust
-      run: rustup toolchain install ${{ env.RUST_TOOLCHAIN }} --profile minimal
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-
-    - name: Build Rust backend
+    - name: Report CI policy decisions
+      shell: bash
       run: |
-        cd backend-rs
-        cargo +${{ env.RUST_TOOLCHAIN }} build --release --workspace --bins
+        echo "Changed files: ${{ needs.changes.outputs.changed_files }}"
+        echo "Run backend checks: ${{ needs.changes.outputs.backend }}"
+        echo "Run frontend checks: ${{ needs.changes.outputs.frontend }}"
+        echo "Run Docker builds: ${{ needs.changes.outputs.docker }}"
+        echo "Docs-only change: ${{ needs.changes.outputs.docs_only }}"
 
-    - name: Build frontend
+    - name: Fail if a selected job failed
+      shell: bash
       run: |
-        cd frontend
-        npm ci
-        npm run build
+        check_result() {
+          local job="$1"
+          local result="$2"
+          case "$result" in
+            success|skipped)
+              ;;
+            *)
+              echo "$job finished with result: $result" >&2
+              exit 1
+              ;;
+          esac
+        }
 
-    - name: Deploy
-      run: |
-        echo "Deployment would happen here"
-
-    - name: Upload frontend build artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: frontend-build
-        path: frontend/dist/
-        retention-days: 30
+        check_result "changes" "${{ needs.changes.result }}"
+        check_result "rust-backend-tests" "${{ needs.rust-backend-tests.result }}"
+        check_result "frontend-tests" "${{ needs.frontend-tests.result }}"
+        check_result "docker-builds" "${{ needs.docker-builds.result }}"
