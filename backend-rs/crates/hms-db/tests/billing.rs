@@ -826,6 +826,7 @@ async fn nhis_claim_captures_effective_mapping_version_and_ar_adjustments() {
         NewNhisServiceMapping {
             id: uuid::Uuid::new_v4(),
             facility_id: fixture.facility_id,
+            payer_id: None,
             service_id,
             nhis_code: "OLD-CODE".to_owned(),
             effective_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
@@ -840,6 +841,7 @@ async fn nhis_claim_captures_effective_mapping_version_and_ar_adjustments() {
         NewNhisServiceMapping {
             id: uuid::Uuid::new_v4(),
             facility_id: fixture.facility_id,
+            payer_id: None,
             service_id,
             nhis_code: "NHIS-CURRENT".to_owned(),
             effective_from: chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),

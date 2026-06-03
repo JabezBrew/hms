@@ -402,9 +402,19 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     .expect("cross-facility update succeeds")
     .is_none());
 
-    let listed = hms_db::admin::list_staff_accounts(&pool, facility_id, None, 10, None, None, None)
-        .await
-        .expect("staff list succeeds");
+    let listed = hms_db::admin::list_staff_accounts(
+        &pool,
+        facility_id,
+        None,
+        10,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("staff list succeeds");
     assert!(listed
         .iter()
         .any(|item| item.id == staff.id && item.display_name == "Akosua Updated"));
@@ -415,12 +425,20 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     assert!(directory
         .iter()
         .any(|item| item.user_id == staff.user_id && item.display_name == "Akosua Updated"));
-    assert!(
-        hms_db::admin::list_staff_accounts(&pool, Uuid::new_v4(), None, 10, None, None, None)
-            .await
-            .expect("cross-facility list succeeds")
-            .is_empty()
-    );
+    assert!(hms_db::admin::list_staff_accounts(
+        &pool,
+        Uuid::new_v4(),
+        None,
+        10,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("cross-facility list succeeds")
+    .is_empty());
 
     let forced_reset = hms_db::admin::force_staff_password_reset(
         &pool,
@@ -484,6 +502,8 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
         Some("akosua".to_owned()),
         Some(true),
         Some(true),
+        None,
+        None,
     )
     .await
     .expect("staff search succeeds");
