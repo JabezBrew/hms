@@ -2,6 +2,40 @@ use hms_db::provision::{
     provision_baseline, provision_performance_seed, BaselineProvisioning, PerformanceSeedConfig,
 };
 use hms_domain::deployment::DeploymentProfile;
+use std::collections::BTreeMap;
+
+#[test]
+fn migration_versions_are_unique() {
+    let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let mut versions: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    for entry in std::fs::read_dir(&migrations_dir).expect("migrations directory is readable") {
+        let entry = entry.expect("migration directory entry is readable");
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        if !file_name.ends_with(".sql") {
+            continue;
+        }
+
+        let Some((version, _description)) = file_name.split_once('_') else {
+            continue;
+        };
+        if version.chars().all(|ch| ch.is_ascii_digit()) {
+            versions
+                .entry(version.to_owned())
+                .or_default()
+                .push(file_name);
+        }
+    }
+
+    let duplicates: Vec<_> = versions
+        .into_iter()
+        .filter(|(_version, files)| files.len() > 1)
+        .collect();
+    assert!(
+        duplicates.is_empty(),
+        "duplicate migration versions found: {duplicates:?}"
+    );
+}
 
 #[tokio::test]
 async fn migrations_apply_to_fresh_database_and_seed_baseline() {

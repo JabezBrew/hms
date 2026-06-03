@@ -169,6 +169,18 @@ runs `hms-migrator check-db` before migrations. It also refuses stale shell
 `HMS_DATABASE_URL` values that differ from the private env file and checks the
 database host against `GCP_CLOUDSQL_HOST` (`10.216.13.2` by default).
 
+The lower-level Compose deploy also validates that every SQL migration version
+prefix under `backend-rs/migrations/` is unique before it builds images or runs
+`hms-migrator`. If an archive deploy fails after schema history has moved
+forward, `ops/gcp-staging/install-archive.sh` restores the previous tree and
+uses the rollback-only `--skip-migrations` path so runtime recreation does not
+fail because the old code lacks newly applied migration files. If the restored
+tree predates that flag, the archive installer rebuilds and restarts the
+restored runtime services directly without invoking `hms-migrator`, then waits
+for Redis, API, worker, frontend, and Caddy health. Manual use of
+`--skip-migrations` is refused unless
+`HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true` is set for this recovery path.
+
 The load VM is stopped and should remain stopped except during explicit
 performance test windows.
 

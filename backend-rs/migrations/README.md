@@ -19,10 +19,13 @@ backend.
 | `202605170001` | omni search |
 | `202605190101` to `202605190107` | break-glass, scheduling, discharge blockers, billing controls, inventory workflows, referrals context, passkeys |
 | `202605220404` to `202605300002` | dashboard projection refresh, ops permission, scheduling indexes/templates, appointment status, hot-path performance indexes |
+| `202606010001` to `202606030012` | auth session deadlines, patient-registry/search indexes, table-filter support, billing read models, audit/search indexes, auth login failure counters |
 
 ## Invariants
 
 - Migrations must be safe for fresh database provisioning.
+- Migration version prefixes must be unique. Reusing a version can partially
+  advance Cloud SQL and strand rollback code at schema-history validation.
 - Hot-path indexes should be justified by measured query behavior.
 - Avoid table-scan-prone patterns such as date functions in predicates.
 - Production/demo/performance seed behavior belongs in `hms-migrator` and

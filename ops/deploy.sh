@@ -8,8 +8,10 @@ MODE="auto"
 DRY_RUN="false"
 FORCE_SKIP_PULL=""
 SKIP_HEALTHCHECK="false"
+SKIP_MIGRATIONS="false"
 VERIFY_APPLY="false"
 ASSUME_MANAGED_BACKUP="false"
+HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED="${HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED:-false}"
 
 GCP_PROJECT="${GCP_PROJECT:-hms-perf-lab}"
 GCP_ZONE="${GCP_ZONE:-africa-south1-a}"
@@ -18,6 +20,7 @@ GCP_REMOTE_ROOT="${GCP_REMOTE_ROOT:-/opt/hms}"
 GCP_CLOUDSQL_INSTANCE="${GCP_CLOUDSQL_INSTANCE:-hms-staging-pg-1}"
 GCP_CLOUDSQL_HOST="${GCP_CLOUDSQL_HOST:-10.216.13.2}"
 GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS="${GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS:-36}"
+GCP_SSH_MODE="${GCP_SSH_MODE:-iap}"
 
 usage() {
   cat <<'EOF'
@@ -38,8 +41,13 @@ Options:
   --skip-pull                     Do not pull before in-place deploy.
   --pull                          Pull before in-place deploy when this is a Git checkout.
   --skip-healthcheck              Forward to the lower-level deploy script.
+  --skip-migrations               Forward rollback-only migration skip to the
+                                  lower-level deploy script. Requires
+                                  HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true.
   --edge-verify=auto|required|skip
                                   Override GCP edge verification after deploy.
+  --ssh-mode=iap|direct           Use IAP tunneling or direct SSH/SCP for GCP
+                                  staging archive upload. Default: iap.
   --assume-managed-backup         Skip live Cloud SQL backup/PITR verification after
                                   explicitly confirming managed backups.
   --apply                         With "verify", reconcile GCP backend/firewall first.
@@ -48,7 +56,7 @@ Options:
 
 Environment:
   GCP_PROJECT, GCP_ZONE, GCP_APP_INSTANCE, GCP_CLOUDSQL_INSTANCE,
-  GCP_CLOUDSQL_HOST, GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS
+  GCP_CLOUDSQL_HOST, GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS, GCP_SSH_MODE
 EOF
 }
 
@@ -86,9 +94,15 @@ while [ "$#" -gt 0 ]; do
     --skip-healthcheck)
       SKIP_HEALTHCHECK="true"
       ;;
+    --skip-migrations)
+      SKIP_MIGRATIONS="true"
+      ;;
     --edge-verify=auto|--edge-verify=required|--edge-verify=skip)
       GCP_EDGE_VERIFY="${1#*=}"
       export GCP_EDGE_VERIFY
+      ;;
+    --ssh-mode=iap|--ssh-mode=direct)
+      GCP_SSH_MODE="${1#*=}"
       ;;
     --assume-managed-backup)
       ASSUME_MANAGED_BACKUP="true"
@@ -156,6 +170,56 @@ validate_gcp_remote_root() {
   fi
 }
 
+require_rollback_skip_migrations_gate() {
+  if [ "$SKIP_MIGRATIONS" = "true" ] && [ "$HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED" != "true" ]; then
+    printf 'Refusing --skip-migrations without HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true.\n' >&2
+    printf 'This option is only for rollback runtime recreation after a failed migration-forward deploy.\n' >&2
+    exit 2
+  fi
+}
+
+gcp_compute_ssh() {
+  case "$GCP_SSH_MODE" in
+    iap)
+      gcloud compute ssh "$GCP_APP_INSTANCE" \
+        --project "$GCP_PROJECT" \
+        --zone "$GCP_ZONE" \
+        --tunnel-through-iap \
+        "$@"
+      ;;
+    direct)
+      gcloud compute ssh "$GCP_APP_INSTANCE" \
+        --project "$GCP_PROJECT" \
+        --zone "$GCP_ZONE" \
+        "$@"
+      ;;
+    *)
+      printf 'Invalid GCP_SSH_MODE: %s (expected iap or direct)\n' "$GCP_SSH_MODE" >&2
+      exit 2
+      ;;
+  esac
+}
+
+gcp_compute_scp() {
+  case "$GCP_SSH_MODE" in
+    iap)
+      gcloud compute scp "$@" \
+        --project "$GCP_PROJECT" \
+        --zone "$GCP_ZONE" \
+        --tunnel-through-iap
+      ;;
+    direct)
+      gcloud compute scp "$@" \
+        --project "$GCP_PROJECT" \
+        --zone "$GCP_ZONE"
+      ;;
+    *)
+      printf 'Invalid GCP_SSH_MODE: %s (expected iap or direct)\n' "$GCP_SSH_MODE" >&2
+      exit 2
+      ;;
+  esac
+}
+
 require_deploy_host_path() {
   if is_deploy_host_path; then
     return 0
@@ -163,6 +227,35 @@ require_deploy_host_path() {
 
   printf './deploy --in-place is only allowed from /opt/hms on the deploy host.\n' >&2
   printf 'From this laptop, use ./deploy staging so the archive deploy and edge verification run safely.\n' >&2
+  exit 1
+}
+
+validate_migration_versions_in() {
+  migrations_dir="$1/backend-rs/migrations"
+  if [ ! -d "$migrations_dir" ]; then
+    printf 'Missing migrations directory: %s\n' "$migrations_dir" >&2
+    exit 1
+  fi
+
+  duplicates="$(
+    find "$migrations_dir" -maxdepth 1 -type f -name '[0-9]*_*.sql' -exec basename {} \; |
+      sed -n 's/^\([0-9][0-9]*\)_.*/\1/p' |
+      sort |
+      uniq -d
+  )"
+
+  if [ -z "$duplicates" ]; then
+    return 0
+  fi
+
+  printf 'Duplicate SQL migration versions found in %s:\n' "$migrations_dir" >&2
+  for version in $duplicates; do
+    printf '  version %s\n' "$version" >&2
+    find "$migrations_dir" -maxdepth 1 -type f -name "${version}_*.sql" -exec basename {} \; |
+      sort |
+      sed 's/^/    /' >&2
+  done
+  printf 'Refusing remote deploy before upload so schema history cannot be partially advanced.\n' >&2
   exit 1
 }
 
@@ -291,6 +384,7 @@ run_gcp_in_place() {
   if [ "$MODE" = "auto" ]; then
     MODE="in-place"
   fi
+  require_rollback_skip_migrations_gate
 
   if [ "$DRY_RUN" != "true" ]; then
     require_deploy_host_path
@@ -310,6 +404,9 @@ run_gcp_in_place() {
   fi
   if [ "$SKIP_HEALTHCHECK" = "true" ]; then
     set -- "$@" --skip-healthcheck
+  fi
+  if [ "$SKIP_MIGRATIONS" = "true" ]; then
+    set -- "$@" --skip-migrations
   fi
 
   if [ "$DRY_RUN" = "true" ]; then
@@ -340,6 +437,10 @@ ensure_clean_committed_checkout() {
 run_gcp_remote() {
   require_command git
   validate_gcp_remote_root
+  if [ "$SKIP_MIGRATIONS" = "true" ]; then
+    printf '%s\n' '--skip-migrations is only allowed for in-place rollback runtime recreation.' >&2
+    exit 2
+  fi
   if ! has_git_checkout; then
     printf 'Remote staging deploy requires a local Git checkout. Use --in-place on the VM.\n' >&2
     exit 1
@@ -350,6 +451,7 @@ run_gcp_remote() {
   if [ "$DRY_RUN" = "true" ]; then
     print_selected
     printf 'Would archive committed SHA: %s\n' "$sha"
+    printf 'Would use GCP SSH mode: %s\n' "$GCP_SSH_MODE"
     printf 'Would upload to: %s:%s\n' "$GCP_APP_INSTANCE" "/tmp/hms-deploy-$sha"
     printf 'Would deploy into: %s\n' "$GCP_REMOTE_ROOT"
     printf 'Would verify Cloud SQL backups/PITR before migrations.\n'
@@ -368,6 +470,7 @@ run_gcp_remote() {
   require_command gzip
   require_command mktemp
   ensure_clean_committed_checkout
+  validate_migration_versions_in "$ROOT_DIR"
   confirm_external_database_backup
 
   archive="$(mktemp "${TMPDIR:-/tmp}/hms-${sha}.XXXXXX.tgz")"
@@ -383,23 +486,13 @@ run_gcp_remote() {
   git -C "$ROOT_DIR" archive --format=tar HEAD | gzip >"$archive"
 
   printf 'Uploading deploy archive to %s...\n' "$GCP_APP_INSTANCE"
-  gcloud compute ssh "$GCP_APP_INSTANCE" \
-    --project "$GCP_PROJECT" \
-    --zone "$GCP_ZONE" \
+  gcp_compute_ssh \
     --command "rm -rf '$remote_tmp' && mkdir -p '$remote_tmp'"
-  gcloud compute scp "$archive" \
-    "$GCP_APP_INSTANCE:$remote_tmp/$archive_name" \
-    --project "$GCP_PROJECT" \
-    --zone "$GCP_ZONE"
-  gcloud compute scp "$ROOT_DIR/ops/gcp-staging/install-archive.sh" \
-    "$GCP_APP_INSTANCE:$remote_tmp/install-archive.sh" \
-    --project "$GCP_PROJECT" \
-    --zone "$GCP_ZONE"
+  gcp_compute_scp "$archive" "$GCP_APP_INSTANCE:$remote_tmp/$archive_name"
+  gcp_compute_scp "$ROOT_DIR/ops/gcp-staging/install-archive.sh" "$GCP_APP_INSTANCE:$remote_tmp/install-archive.sh"
 
   printf 'Installing archive and running deploy on %s...\n' "$GCP_APP_INSTANCE"
-  gcloud compute ssh "$GCP_APP_INSTANCE" \
-    --project "$GCP_PROJECT" \
-    --zone "$GCP_ZONE" \
+  gcp_compute_ssh \
     --command "cd '$remote_tmp' && EXTERNAL_DB_BACKUP_CONFIRMED='true' GCP_EDGE_VERIFY='skip' sh ./install-archive.sh './$archive_name' '$sha' '/opt/hms'"
 
   case "${GCP_EDGE_VERIFY:-required}" in
@@ -422,6 +515,7 @@ run_compose_in_place() {
     printf 'compose-v2 deploy is an in-place host deploy. Use ./deploy compose --in-place.\n' >&2
     exit 1
   fi
+  require_rollback_skip_migrations_gate
 
   set -- "$ROOT_DIR/ops/compose-v2/deploy.sh"
   if [ "$FORCE_SKIP_PULL" = "true" ] || { [ -z "$FORCE_SKIP_PULL" ] && ! has_git_checkout; }; then
@@ -429,6 +523,9 @@ run_compose_in_place() {
   fi
   if [ "$SKIP_HEALTHCHECK" = "true" ]; then
     set -- "$@" --skip-healthcheck
+  fi
+  if [ "$SKIP_MIGRATIONS" = "true" ]; then
+    set -- "$@" --skip-migrations
   fi
 
   if [ "$DRY_RUN" = "true" ]; then

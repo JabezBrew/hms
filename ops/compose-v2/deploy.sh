@@ -21,6 +21,8 @@ EXTERNAL_DB_BACKUP_TARGET_HOST="${EXTERNAL_DB_BACKUP_TARGET_HOST:-}"
 ALLOW_UNSAFE_SKIP_EXTERNAL_DB_BACKUP="${ALLOW_UNSAFE_SKIP_EXTERNAL_DB_BACKUP:-false}"
 EXTERNAL_DB_STOP_LOCAL_SERVICES="${EXTERNAL_DB_STOP_LOCAL_SERVICES:-true}"
 DB_CONNECTIVITY_CHECK="${DB_CONNECTIVITY_CHECK:-true}"
+SKIP_MIGRATIONS="${SKIP_MIGRATIONS:-false}"
+HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED="${HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED:-false}"
 SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_BACKUP="${SKIP_BACKUP:-false}"
 SKIP_HEALTHCHECK="${SKIP_HEALTHCHECK:-false}"
@@ -35,6 +37,10 @@ Deploy the Rust HMS V2 stack from /opt/hms.
 Options:
   --skip-pull          Do not run git pull --ff-only.
   --skip-backup        Skip the required production backup gate.
+  --skip-migrations    Skip hms-migrator. Requires
+                       HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true and is only
+                       for rollback runtime recreation after a failed
+                       migration-forward deploy.
   --skip-healthcheck   Skip the public HTTPS edge readiness check.
   -h, --help           Show this help.
 
@@ -53,6 +59,9 @@ Environment overrides:
                        Stop stale local db/pgbouncer containers in external-postgres mode. Default: true
   DB_CONNECTIVITY_CHECK
                        Run hms-migrator check-db before migrations. Default: true
+  SKIP_MIGRATIONS      Skip hms-migrator. Default: false
+  HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED
+                       Required true with SKIP_MIGRATIONS=true. Default: false
   HEALTH_TIMEOUT       Default: 180 seconds
   HEALTH_INTERVAL      Default: 5 seconds
   HEALTHCHECK_URL      Default: https://$CLIENT_DOMAIN/api/v2/health/ready
@@ -68,6 +77,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-backup)
       SKIP_BACKUP=true
+      ;;
+    --skip-migrations)
+      SKIP_MIGRATIONS=true
       ;;
     --skip-healthcheck)
       SKIP_HEALTHCHECK=true
@@ -183,6 +195,35 @@ require_file() {
     printf 'Missing required file: %s\n' "$1" >&2
     exit 1
   fi
+}
+
+validate_migration_versions() {
+  migrations_dir="$ROOT_DIR/backend-rs/migrations"
+  if [ ! -d "$migrations_dir" ]; then
+    printf 'Missing migrations directory: %s\n' "$migrations_dir" >&2
+    exit 1
+  fi
+
+  duplicates="$(
+    find "$migrations_dir" -maxdepth 1 -type f -name '[0-9]*_*.sql' -exec basename {} \; |
+      sed -n 's/^\([0-9][0-9]*\)_.*/\1/p' |
+      sort |
+      uniq -d
+  )"
+
+  if [ -z "$duplicates" ]; then
+    return 0
+  fi
+
+  printf 'Duplicate SQL migration versions found in %s:\n' "$migrations_dir" >&2
+  for version in $duplicates; do
+    printf '  version %s\n' "$version" >&2
+    find "$migrations_dir" -maxdepth 1 -type f -name "${version}_*.sql" -exec basename {} \; |
+      sort |
+      sed 's/^/    /' >&2
+  done
+  printf 'Refusing deploy before database migrations so schema history cannot be partially advanced.\n' >&2
+  exit 1
 }
 
 compose_config_file() {
@@ -386,6 +427,12 @@ case "$DATABASE_MODE" in
     ;;
 esac
 
+if [ "$SKIP_MIGRATIONS" = "true" ] && [ "$HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED" != "true" ]; then
+  printf 'Refusing --skip-migrations without HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true.\n' >&2
+  printf 'This option is only for rollback runtime recreation after a failed migration-forward deploy.\n' >&2
+  exit 2
+fi
+
 client_slug="$(env_value CLIENT_SLUG)"
 client_domain="$(env_value CLIENT_DOMAIN)"
 hms_env="$(env_value HMS_ENV)"
@@ -417,6 +464,9 @@ if [ "$SKIP_PULL" != "true" ]; then
 else
   step "Deploying $client_slug ($hms_env, database: $DATABASE_MODE) from $ROOT_DIR"
 fi
+
+step 'Validating SQL migration versions'
+validate_migration_versions
 
 if [ -z "${HMS_BUILD_SHA:-}" ] && command -v git >/dev/null 2>&1; then
   HMS_BUILD_SHA="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
@@ -490,7 +540,11 @@ else
 fi
 
 step 'Running database migrations and baseline provisioning'
-compose run --rm hms-migrator
+if [ "$SKIP_MIGRATIONS" = "true" ]; then
+  printf 'Skipped database migrations because SKIP_MIGRATIONS=true.\n'
+else
+  compose run --rm hms-migrator
+fi
 
 step 'Starting application services'
 compose up -d --no-deps hms-api hms-worker frontend
