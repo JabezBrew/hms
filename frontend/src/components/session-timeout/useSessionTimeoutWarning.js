@@ -6,6 +6,7 @@ const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
 const WARNING_TIME = 2 * 60 * 1000;
 const ABSOLUTE_SESSION_TIMEOUT = 8 * 60 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 5000;
+const SERVER_REFRESH_COOLDOWN_MS = WARNING_TIME;
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
 const PASSIVE_ACTIVITY_EVENTS = new Set(['scroll', 'touchstart', 'wheel']);
 
@@ -13,6 +14,7 @@ const initialWarningState = {
   showWarning: false,
   timeLeft: 0,
   timeoutType: 'inactivity',
+  isExtending: false,
 };
 
 function warningReducer(state, action) {
@@ -22,6 +24,7 @@ function warningReducer(state, action) {
         showWarning: true,
         timeoutType: action.timeoutType,
         timeLeft: action.timeLeft,
+        isExtending: false,
       };
     case 'update_time_left':
       return {
@@ -29,9 +32,24 @@ function warningReducer(state, action) {
         timeLeft: action.timeLeft,
       };
     case 'hide':
+      if (!state.showWarning) {
+        return state;
+      }
       return {
         ...state,
         showWarning: false,
+      };
+    case 'begin_extend':
+      return {
+        ...state,
+        showWarning: false,
+        isExtending: true,
+      };
+    case 'finish_extend':
+      return {
+        ...state,
+        showWarning: false,
+        isExtending: false,
       };
     default:
       return state;
@@ -56,12 +74,26 @@ function parseServerDeadline(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getIdleDeadline() {
-  const localIdleDeadline = getLastActivityAt() + INACTIVITY_TIMEOUT;
-  const serverIdleDeadline = parseServerDeadline(getAuthValue('sessionIdleExpiresAt'));
-  return serverIdleDeadline
-    ? Math.min(localIdleDeadline, serverIdleDeadline)
-    : localIdleDeadline;
+function getLocalIdleDeadline() {
+  return getLastActivityAt() + INACTIVITY_TIMEOUT;
+}
+
+function getServerIdleDeadline() {
+  return parseServerDeadline(getAuthValue('sessionIdleExpiresAt'));
+}
+
+function getIdleStatus(now = Date.now()) {
+  const localDeadline = getLocalIdleDeadline();
+  const serverDeadline = getServerIdleDeadline();
+  const effectiveDeadline = serverDeadline
+    ? Math.min(localDeadline, serverDeadline)
+    : localDeadline;
+
+  return {
+    localRemaining: localDeadline - now,
+    serverRemaining: serverDeadline ? serverDeadline - now : null,
+    effectiveRemaining: effectiveDeadline - now,
+  };
 }
 
 function getAbsoluteDeadline() {
@@ -75,25 +107,40 @@ function secondsFromMilliseconds(milliseconds) {
 
 export function useSessionTimeoutWarning() {
   const { isAuthenticated, logout, isSessionValid, refreshAccessToken } = useAuth();
-  const [{ showWarning, timeLeft, timeoutType }, dispatchWarning] = useReducer(
+  const [{ showWarning, timeLeft, timeoutType, isExtending }, dispatchWarning] = useReducer(
     warningReducer,
     initialWarningState
   );
 
   const timeoutHandledRef = useRef(false);
   const lastActivityWriteAtRef = useRef(0);
+  const serverRefreshPromiseRef = useRef(null);
+  const lastServerRefreshSuccessAtRef = useRef(0);
+  const mountedRef = useRef(false);
+  const authGenerationRef = useRef(0);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      authGenerationRef.current += 1;
+      serverRefreshPromiseRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    authGenerationRef.current += 1;
     if (isAuthenticated) {
       timeoutHandledRef.current = false;
       return;
     }
-    dispatchWarning({ type: 'hide' });
+    serverRefreshPromiseRef.current = null;
+    dispatchWarning({ type: 'finish_extend' });
   }, [isAuthenticated]);
 
   const updateActivity = useCallback(({ force = false } = {}) => {
     const now = Date.now();
-    if (now >= getIdleDeadline()) {
+    if (now >= getLocalIdleDeadline()) {
       return false;
     }
     if (!force && now - lastActivityWriteAtRef.current < ACTIVITY_THROTTLE_MS) {
@@ -113,18 +160,62 @@ export function useSessionTimeoutWarning() {
     void logout(false);
   }, [logout]);
 
+  const refreshServerDeadline = useCallback(() => {
+    if (!refreshAccessToken) {
+      return null;
+    }
+    if (serverRefreshPromiseRef.current) {
+      return serverRefreshPromiseRef.current;
+    }
+
+    let refreshPromise;
+    refreshPromise = Promise.resolve()
+      .then(() => refreshAccessToken())
+      .then((token) => {
+        if (token) {
+          lastServerRefreshSuccessAtRef.current = Date.now();
+        }
+        return token;
+      })
+      .finally(() => {
+        if (serverRefreshPromiseRef.current === refreshPromise) {
+          serverRefreshPromiseRef.current = null;
+        }
+      });
+    serverRefreshPromiseRef.current = refreshPromise;
+    return refreshPromise;
+  }, [refreshAccessToken]);
+
   const handleExtendSession = useCallback(async () => {
     if (!updateActivity({ force: true })) {
       handleTimeout();
       return;
     }
-    const token = await refreshAccessToken?.();
-    if (token) {
-      dispatchWarning({ type: 'hide' });
+    dispatchWarning({ type: 'begin_extend' });
+    const refreshGeneration = authGenerationRef.current;
+    let token = null;
+    try {
+      token = await refreshServerDeadline();
+    } catch {
+      if (!mountedRef.current || authGenerationRef.current !== refreshGeneration) {
+        return;
+      }
+      dispatchWarning({ type: 'finish_extend' });
+      handleTimeout();
       return;
     }
-    dispatchWarning({ type: 'hide' });
-  }, [handleTimeout, refreshAccessToken, updateActivity]);
+    if (!mountedRef.current || authGenerationRef.current !== refreshGeneration) {
+      return;
+    }
+    if (token) {
+      dispatchWarning({ type: 'finish_extend' });
+      return;
+    }
+    dispatchWarning({ type: 'finish_extend' });
+    if (isSessionValid()) {
+      handleTimeout();
+    }
+  }, [handleTimeout, isSessionValid, refreshServerDeadline, updateActivity]);
 
   const handleOpenChange = useCallback((open) => {
     if (!open) {
@@ -140,7 +231,7 @@ export function useSessionTimeoutWarning() {
         handleTimeout();
         return;
       }
-      if (getIdleDeadline() - Date.now() > WARNING_TIME) {
+      if (getIdleStatus().localRemaining > WARNING_TIME) {
         dispatchWarning({ type: 'hide' });
       }
     };
@@ -163,8 +254,14 @@ export function useSessionTimeoutWarning() {
 
     const evaluateTimeout = () => {
       const now = Date.now();
-      const idleRemaining = getIdleDeadline() - now;
+      const {
+        localRemaining,
+        serverRemaining,
+        effectiveRemaining,
+      } = getIdleStatus(now);
       const absoluteRemaining = getAbsoluteDeadline() - now;
+      const recentlyRefreshedServerDeadline =
+        now - lastServerRefreshSuccessAtRef.current < SERVER_REFRESH_COOLDOWN_MS;
 
       if (absoluteRemaining <= 0) {
         handleTimeout();
@@ -180,17 +277,78 @@ export function useSessionTimeoutWarning() {
         return;
       }
 
-      if (idleRemaining <= 0) {
+      if (localRemaining <= 0) {
         handleTimeout();
         return;
       }
 
-      if (idleRemaining <= WARNING_TIME) {
+      if (localRemaining <= WARNING_TIME) {
+        if (effectiveRemaining <= 0) {
+          handleTimeout();
+          return;
+        }
         dispatchWarning({
           type: 'show',
           timeoutType: 'inactivity',
-          timeLeft: secondsFromMilliseconds(idleRemaining),
+          timeLeft: secondsFromMilliseconds(effectiveRemaining),
         });
+        return;
+      }
+
+      if (serverRemaining !== null && serverRemaining <= 0) {
+        handleTimeout();
+        return;
+      }
+
+      if (serverRefreshPromiseRef.current) {
+        if (showWarning) {
+          dispatchWarning({ type: 'hide' });
+        }
+        return;
+      }
+
+      if (serverRemaining !== null && serverRemaining <= WARNING_TIME) {
+        if (recentlyRefreshedServerDeadline) {
+          if (showWarning) {
+            dispatchWarning({ type: 'hide' });
+          }
+          return;
+        }
+
+        const refreshPromise = refreshServerDeadline();
+        if (!refreshPromise) {
+          if (serverRemaining <= 0) {
+            handleTimeout();
+            return;
+          }
+          dispatchWarning({
+            type: 'show',
+            timeoutType: 'inactivity',
+            timeLeft: secondsFromMilliseconds(serverRemaining),
+          });
+          return;
+        }
+
+        if (showWarning) {
+          dispatchWarning({ type: 'hide' });
+        }
+        const refreshGeneration = authGenerationRef.current;
+        refreshPromise.then(
+          (token) => {
+            if (!mountedRef.current || authGenerationRef.current !== refreshGeneration) {
+              return;
+            }
+            if (!token) {
+              handleTimeout();
+            }
+          },
+          () => {
+            if (!mountedRef.current || authGenerationRef.current !== refreshGeneration) {
+              return;
+            }
+            handleTimeout();
+          }
+        );
         return;
       }
 
@@ -208,7 +366,7 @@ export function useSessionTimeoutWarning() {
     const checkTimeout = setInterval(evaluateTimeout, showWarning ? 1000 : 30000);
 
     return () => clearInterval(checkTimeout);
-  }, [isAuthenticated, handleTimeout, showWarning, isSessionValid]);
+  }, [isAuthenticated, handleTimeout, refreshServerDeadline, showWarning, isSessionValid]);
 
   useEffect(() => {
     if (!showWarning) return;
@@ -217,7 +375,7 @@ export function useSessionTimeoutWarning() {
       const now = Date.now();
       const remaining = timeoutType === 'absolute'
         ? getAbsoluteDeadline() - now
-        : getIdleDeadline() - now;
+        : getIdleStatus(now).effectiveRemaining;
 
       if (remaining > 0) {
         dispatchWarning({ type: 'update_time_left', timeLeft: secondsFromMilliseconds(remaining) });
@@ -234,6 +392,7 @@ export function useSessionTimeoutWarning() {
     showWarning,
     timeLeft,
     timeoutType,
+    isExtending,
     handleExtendSession,
     handleTimeout,
     handleOpenChange,

@@ -159,8 +159,166 @@ describe('SessionTimeoutWarning', () => {
       })
     })
 
+    it('refreshes a near server idle deadline instead of warning when local activity is fresh', async () => {
+      setAuthValue('sessionIdleExpiresAt', new Date(Date.now() + 60 * 1000).toISOString())
+      mockRefreshAccessToken.mockImplementation(async () => {
+        setAuthValue('sessionIdleExpiresAt', new Date(Date.now() + 30 * 60 * 1000).toISOString())
+        return 'new-access-token'
+      })
+
+      render(<SessionTimeoutWarning />)
+
+      await waitFor(() => {
+        expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+      })
+
+      expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+
+      expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+    })
+
+    it('keeps the warning closed while continue-session refresh is pending', async () => {
+      const sessionStart = Date.now()
+      setAuthValue('sessionIdleExpiresAt', new Date(sessionStart + 30 * 60 * 1000).toISOString())
+
+      let resolveRefresh
+      mockRefreshAccessToken.mockImplementation(() => new Promise((resolve) => {
+        resolveRefresh = () => {
+          setAuthValue('sessionIdleExpiresAt', new Date(Date.now() + 30 * 60 * 1000).toISOString())
+          resolve('new-access-token')
+        }
+      }))
+
+      render(<SessionTimeoutWarning />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(28 * 60 * 1000)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Continue Session')).toBeInTheDocument()
+      })
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Continue Session'))
+      })
+
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+
+      await waitFor(() => {
+        expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+      })
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+
+      expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+
+      await act(async () => {
+        resolveRefresh()
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+      })
+    })
+
+    it('fails closed when a proactive server refresh is still pending at the server deadline', async () => {
+      setAuthValue('sessionIdleExpiresAt', new Date(Date.now() + 30 * 1000).toISOString())
+      mockRefreshAccessToken.mockImplementation(() => new Promise(() => {}))
+
+      render(<SessionTimeoutWarning />)
+
+      await waitFor(() => {
+        expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+      })
+
+      await act(async () => {
+        vi.advanceTimersByTime(30 * 1000)
+      })
+
+      await waitFor(() => {
+        expect(mockLogout).toHaveBeenCalledWith(false)
+      })
+    })
+
+    it('deduplicates proactive refresh while the server deadline refresh is pending', async () => {
+      setAuthValue('sessionIdleExpiresAt', new Date(Date.now() + 90 * 1000).toISOString())
+
+      let resolveRefresh
+      mockRefreshAccessToken.mockImplementation(() => new Promise((resolve) => {
+        resolveRefresh = () => {
+          setAuthValue('sessionIdleExpiresAt', new Date(Date.now() + 30 * 60 * 1000).toISOString())
+          resolve('new-access-token')
+        }
+      }))
+
+      render(<SessionTimeoutWarning />)
+
+      await waitFor(() => {
+        expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+      })
+
+      await act(async () => {
+        vi.advanceTimersByTime(31 * 1000)
+      })
+
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+
+      await act(async () => {
+        resolveRefresh()
+      })
+    })
+
+    it('does not immediately retry a successful server refresh when stored server deadline remains stale', async () => {
+      setAuthValue('sessionIdleExpiresAt', new Date(Date.now() + 90 * 1000).toISOString())
+      mockRefreshAccessToken.mockResolvedValue('new-access-token')
+
+      render(<SessionTimeoutWarning />)
+
+      await waitFor(() => {
+        expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+      })
+
+      await act(async () => {
+        vi.advanceTimersByTime(31 * 1000)
+      })
+
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText('Session Expiring Soon')).not.toBeInTheDocument()
+    })
+
+    it('logs out when continue-session refresh returns no token and the session still appears valid', async () => {
+      mockRefreshAccessToken.mockResolvedValue(null)
+
+      render(<SessionTimeoutWarning />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(28 * 60 * 1000)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Continue Session')).toBeInTheDocument()
+      })
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Continue Session'))
+      })
+
+      await waitFor(() => {
+        expect(mockLogout).toHaveBeenCalledWith(false)
+      })
+    })
+
     it('does not run a second logout when session extension already failed closed', async () => {
       mockRefreshAccessToken.mockImplementation(async () => {
+        mockIsSessionValid.mockReturnValue(false)
         await mockLogout(false)
         return null
       })

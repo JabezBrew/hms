@@ -37,6 +37,7 @@ export function SessionTimeoutWarning() {
     showWarning,
     timeLeft,
     timeoutType,
+    isExtending,
     handleExtendSession,
     handleTimeout,
     handleOpenChange,
@@ -86,7 +87,7 @@ export function SessionTimeoutWarning() {
             Logout Now
           </AlertDialogCancel>
           {warningMessage.canExtend && (
-            <AlertDialogAction onClick={handleExtendSession}>
+            <AlertDialogAction disabled={isExtending} onClick={handleExtendSession}>
               Continue Session
             </AlertDialogAction>
           )}
