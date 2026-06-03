@@ -183,4 +183,92 @@ async fn omni_search_index_backfills_and_filters_before_ranking() {
         .iter()
         .any(|item| item.title.contains("Paracetamol")));
     assert!(inventory_results.groups.patients.is_empty());
+
+    let custom_inventory_title = "Qaxorz Lens";
+    sqlx::query(
+        r#"
+        INSERT INTO search_documents (
+            id,
+            facility_id,
+            resource_type,
+            resource_id,
+            title,
+            route_path,
+            feature_key,
+            permission_code,
+            search_text,
+            rank_boost,
+            source_updated_at,
+            occurred_at,
+            metadata,
+            is_active
+        )
+        VALUES (
+            $1,
+            $2,
+            'inventory',
+            $3,
+            $4,
+            '/inventory/items/qaxorz-lens',
+            'inventory',
+            'inventory.view',
+            'Qaxorz Lens optical supply',
+            20,
+            now(),
+            now(),
+            '{}'::jsonb,
+            true
+        )
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(uuid::Uuid::new_v4())
+    .bind(custom_inventory_title)
+    .execute(&pool)
+    .await
+    .expect("custom search fixture inserts");
+
+    let inventory_filters = |query: &str| OmniSearchFilters {
+        facility_id,
+        user_id: owner_id,
+        query: Some(query.to_owned()),
+        types: vec![SearchResourceType::Inventory],
+        limit_per_group: 5,
+        permission_codes: vec![PermissionCode::InventoryView],
+        feature_keys: vec![FeatureKey::Inventory],
+        patient_visibility: vec![PatientDataVisibility::None],
+    };
+    let has_custom_inventory_title = |results: &hms_domain::search::OmniSearchGroups| {
+        results
+            .inventory
+            .iter()
+            .any(|item| item.title == custom_inventory_title)
+    };
+
+    let short_prefix_results = hms_db::search::omni_search(&pool, inventory_filters("Qa"))
+        .await
+        .expect("short prefix inventory search succeeds");
+    assert!(has_custom_inventory_title(&short_prefix_results.groups));
+
+    let short_later_token_prefix_results =
+        hms_db::search::omni_search(&pool, inventory_filters("Le"))
+            .await
+            .expect("short later-token prefix inventory search succeeds");
+    assert!(has_custom_inventory_title(
+        &short_later_token_prefix_results.groups
+    ));
+
+    let short_middle_substring_results =
+        hms_db::search::omni_search(&pool, inventory_filters("xo"))
+            .await
+            .expect("short middle substring inventory search succeeds");
+    assert!(!has_custom_inventory_title(
+        &short_middle_substring_results.groups
+    ));
+
+    let broad_substring_results = hms_db::search::omni_search(&pool, inventory_filters("xorz"))
+        .await
+        .expect("broad substring inventory search succeeds");
+    assert!(has_custom_inventory_title(&broad_substring_results.groups));
 }

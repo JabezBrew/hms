@@ -1,6 +1,6 @@
 /* oxlint-disable react-doctor/prefer-useReducer -- The page owns independent search, pagination, and filter panel state; a reducer would not encode a shared transition invariant. */
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -25,9 +25,6 @@ import {
 } from '@/features/patients/chronicle-list/registryHelpers';
 import { prefetchPatientChronicleData } from '@/features/patients/prefetch';
 import { usePatientSearch } from '@/features/patients/hooks/usePatientQueries';
-import { useWards } from '@/features/wards/hooks/useWardQueries';
-import { useClinicalUnits } from '@/hooks/useOrganization';
-import { useSearchPractitioners } from '@/hooks/useStaffQueries';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useAuth } from '@/lib/auth';
 import { normalizeApiResults } from '@/lib/utils';
@@ -52,6 +49,7 @@ const PatientChronicleListPage = () => {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState(createEmptyFilters);
   const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters);
+  const [wardLabels, setWardLabels] = useState(() => new Map());
   const pageMeta = usePageMeta({
     title: 'Patients | Hospital Management System',
     breadcrumbs: [{ label: 'Patients', path: '/patients' }],
@@ -76,9 +74,9 @@ const PatientChronicleListPage = () => {
       ordering: searchOrdering,
       page: searchPage,
       page_size: SEARCH_TABLE_PAGE_SIZE,
-      include_total: hasSearchSignal ? 'false' : 'true',
+      include_total: 'false',
     }),
-    [baseSearchParams, hasSearchSignal, searchOrdering, searchPage]
+    [baseSearchParams, searchOrdering, searchPage]
   );
 
   const {
@@ -86,20 +84,6 @@ const PatientChronicleListPage = () => {
     isLoading: isSearchLoading,
     refetch: refetchSearch,
   } = usePatientSearch(searchParams, { enabled: true });
-
-  const { data: departmentsData, isLoading: isDepartmentsLoading } = useClinicalUnits({
-    unit_type_code: 'department',
-    unit_category: 'clinical',
-    is_active: true,
-  });
-
-  const { data: wardsData, isLoading: isWardsLoading } = useWards({ is_active: true });
-
-  const {
-    data: practitionerResults = [],
-    isLoading: isPractitionersLoading,
-    setSearchTerm: setPractitionerSearch,
-  } = useSearchPractitioners(false, { minLength: 2 });
 
   const hasSearchQuery = searchQuery.length > 0;
   const searchPatients = useMemo(() => normalizeApiResults(searchResults), [searchResults]);
@@ -110,43 +94,6 @@ const PatientChronicleListPage = () => {
     hasSearchSignal,
     effectiveSearchQuery,
   }), [effectiveSearchQuery, hasSearchSignal, searchPage, searchPatients, searchResults]);
-
-  const departments = useMemo(() => normalizeApiResults(departmentsData), [departmentsData]);
-  const wards = useMemo(() => normalizeApiResults(wardsData), [wardsData]);
-
-  const departmentOptions = useMemo(
-    () => departments
-      .map((unit) => ({ value: unit.id, label: unit.name }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
-    [departments]
-  );
-
-  const wardOptions = useMemo(
-    () => wards
-      .map((ward) => ({ value: ward.id, label: ward.name }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
-    [wards]
-  );
-
-  const departmentLabels = useMemo(
-    () => new Map(departmentOptions.map((opt) => [opt.value, opt.label])),
-    [departmentOptions]
-  );
-
-  const wardLabels = useMemo(
-    () => new Map(wardOptions.map((opt) => [opt.value, opt.label])),
-    [wardOptions]
-  );
-
-  const practitionerOptions = useMemo(
-    () => (practitionerResults || []).map((practitioner) => ({
-      value: practitioner.id,
-      label: practitioner.specialization
-        ? `${practitioner.name} · ${practitioner.specialization}`
-        : practitioner.name,
-    })),
-    [practitionerResults]
-  );
 
   const handleSearchChange = (event) => {
     setSearchQuery(event.target.value);
@@ -165,15 +112,17 @@ const PatientChronicleListPage = () => {
   };
 
   const handleClearFilters = () => {
-    setDraftFilters(createEmptyFilters());
-    setAppliedFilters(createEmptyFilters());
+    const emptyFilters = createEmptyFilters();
+    setDraftFilters(emptyFilters);
+    setAppliedFilters(emptyFilters);
     setSearchPage(1);
   };
 
   const handleClearAll = () => {
+    const emptyFilters = createEmptyFilters();
+    setDraftFilters(emptyFilters);
     setSearchQuery('');
-    setDraftFilters(createEmptyFilters());
-    setAppliedFilters(createEmptyFilters());
+    setAppliedFilters(emptyFilters);
     setSearchPage(1);
   };
 
@@ -182,16 +131,12 @@ const PatientChronicleListPage = () => {
       ...appliedFilters,
       ...(key === 'admissionRange' ? { admissionStart: null, admissionEnd: null } : {}),
       ...(key === 'ageRange' ? { ageMin: '', ageMax: '' } : {}),
-      ...(key === 'departmentId' ? { departmentId: '' } : {}),
       ...(key === 'wardId' ? { wardId: '' } : {}),
       ...(key === 'admissionStatus' ? { admissionStatus: 'all' } : {}),
-      ...(key === 'admissionType' ? { admissionType: 'all' } : {}),
-      ...(key === 'encounterType' ? { encounterType: 'all' } : {}),
       ...(key === 'attending' ? { attending: null } : {}),
-      ...(key === 'myPatients' ? { myPatients: false } : {}),
     };
-    setAppliedFilters(cleared);
     setDraftFilters(cleared);
+    setAppliedFilters(cleared);
     setSearchPage(1);
   };
 
@@ -211,13 +156,11 @@ const PatientChronicleListPage = () => {
   };
 
   const handleSearchOrderingChange = (field) => {
-    setSearchOrdering((current) => {
-      const currentField = current.startsWith('-') ? current.slice(1) : current;
-      if (currentField !== field) {
-        return field;
-      }
-      return current.startsWith('-') ? field : `-${field}`;
-    });
+    const currentField = searchOrdering.startsWith('-') ? searchOrdering.slice(1) : searchOrdering;
+    const nextOrdering = currentField !== field
+      ? field
+      : (searchOrdering.startsWith('-') ? field : `-${field}`);
+    setSearchOrdering(nextOrdering);
     setSearchPage(1);
   };
 
@@ -234,6 +177,20 @@ const PatientChronicleListPage = () => {
     if (!nextScope || nextScope === registryScope) return;
     setRegistryScope(nextScope);
     setSearchPage(1);
+  };
+
+  const handleWardLabelsChange = useCallback((nextWardLabels) => {
+    setWardLabels(nextWardLabels);
+  }, []);
+
+  const handleToggleFilters = () => {
+    setFiltersOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) {
+        setDraftFilters(appliedFilters);
+      }
+      return nextOpen;
+    });
   };
 
   const listHeaderLabel = effectiveSearchQuery
@@ -258,21 +215,15 @@ const PatientChronicleListPage = () => {
           hasSearchSignal,
           searchSummary: searchMeta.summary,
         }}
-        loading={{
-          departments: isDepartmentsLoading,
-          wards: isWardsLoading,
-          practitioners: isPractitionersLoading,
-        }}
-        options={{ departmentOptions, wardOptions, practitionerOptions }}
-        labels={{ departmentLabels, wardLabels }}
+        labels={{ wardLabels }}
         handlers={{
           onAddPatient: () => navigate('/patients/create'),
           onRegistryScopeChange: handleRegistryScopeChange,
           onSearchChange: handleSearchChange,
           onClearSearch: handleClearSearch,
-          onToggleFilters: () => setFiltersOpen((open) => !open),
+          onToggleFilters: handleToggleFilters,
           onDraftFiltersChange: setDraftFilters,
-          onPractitionerSearch: setPractitionerSearch,
+          onWardLabelsChange: handleWardLabelsChange,
           onClearFilters: handleClearFilters,
           onApplyFilters: handleApplyFilters,
           onRemoveFilter: handleRemoveFilter,

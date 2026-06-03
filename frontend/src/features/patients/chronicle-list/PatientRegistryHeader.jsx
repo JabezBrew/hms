@@ -4,6 +4,7 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import Filter from 'lucide-react/dist/esm/icons/filter.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
+import { lazy, Suspense } from 'react';
 import { NavLink } from 'react-router-dom';
 import { format } from 'date-fns';
 
@@ -12,26 +13,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { Combobox } from '@/components/ui/combobox';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 
 import {
   ADMISSION_STATUS_OPTIONS,
-  ADMISSION_TYPE_OPTIONS,
-  ENCOUNTER_TYPE_OPTIONS,
   REGISTRY_SCOPE_TABS,
 } from './registryConstants';
 
-export function PatientRegistryHeader({ state, loading, options, labels, handlers }) {
+const PatientRegistryFiltersPanel = lazy(() => import('./PatientRegistryFiltersPanel').then((module) => ({
+  default: module.PatientRegistryFiltersPanel,
+})));
+
+export function PatientRegistryHeader({ state, labels, handlers }) {
   const headerActions = ['admin', 'receptionist'].includes(state.userRole) ? (
     <Button onClick={handlers.onAddPatient} size="sm" className="font-mono text-xs">
       <Plus className="size-4 mr-2" />
@@ -64,17 +57,16 @@ export function PatientRegistryHeader({ state, loading, options, labels, handler
         />
 
         {state.filtersOpen && (
-          <PatientRegistryFiltersPanel
-            draftFilters={state.draftFilters}
-            activeFilterCount={state.activeFilterCount}
-            roleState={{ isClinicalProvider: state.isClinicalProvider }}
-            loading={loading}
-            options={options}
-            onDraftFiltersChange={handlers.onDraftFiltersChange}
-            onPractitionerSearch={handlers.onPractitionerSearch}
-            onClearFilters={handlers.onClearFilters}
-            onApplyFilters={handlers.onApplyFilters}
-          />
+          <Suspense fallback={<PatientRegistryFiltersFallback />}>
+            <PatientRegistryFiltersPanel
+              draftFilters={state.draftFilters}
+              activeFilterCount={state.activeFilterCount}
+              onDraftFiltersChange={handlers.onDraftFiltersChange}
+              onWardLabelsChange={handlers.onWardLabelsChange}
+              onClearFilters={handlers.onClearFilters}
+              onApplyFilters={handlers.onApplyFilters}
+            />
+          </Suspense>
         )}
 
         {state.hasActiveFilters && (
@@ -97,6 +89,24 @@ export function PatientRegistryHeader({ state, loading, options, labels, handler
         )}
       </div>
     </PageHeader>
+  );
+}
+
+function PatientRegistryFiltersFallback() {
+  return (
+    <div
+      className="rounded-xl border border-border bg-muted/30 p-4"
+      aria-label="Loading patient registry filters"
+    >
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="space-y-2">
+            <div className="h-3 w-24 rounded bg-muted-foreground/20" />
+            <div className="h-9 rounded-md border border-border bg-background" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -206,258 +216,6 @@ function PatientRegistrySearchControls({
   );
 }
 
-function PatientRegistryFiltersPanel({
-  draftFilters,
-  activeFilterCount,
-  roleState,
-  loading,
-  options,
-  onDraftFiltersChange,
-  onPractitionerSearch,
-  onClearFilters,
-  onApplyFilters,
-}) {
-  const updateDraftFilter = (updates) => {
-    onDraftFiltersChange((prev) => ({ ...prev, ...updates }));
-  };
-
-  return (
-    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <AdmissionDateFilter
-          draftFilters={draftFilters}
-          onDraftFilterChange={updateDraftFilter}
-        />
-        <SelectFilter
-          label="Admission Status"
-          value={draftFilters.admissionStatus}
-          options={ADMISSION_STATUS_OPTIONS}
-          placeholder="Any status"
-          onChange={(value) => updateDraftFilter({ admissionStatus: value })}
-        />
-        <SelectFilter
-          label="Admission Type"
-          value={draftFilters.admissionType}
-          options={ADMISSION_TYPE_OPTIONS}
-          placeholder="Any type"
-          onChange={(value) => updateDraftFilter({ admissionType: value })}
-        />
-        <DepartmentFilter
-          value={draftFilters.departmentId || 'all'}
-          isLoading={loading.departments}
-          departmentOptions={options.departmentOptions}
-          onChange={(value) => updateDraftFilter({ departmentId: value === 'all' ? '' : value })}
-        />
-        <WardFilter
-          value={draftFilters.wardId || 'all'}
-          isLoading={loading.wards}
-          wardOptions={options.wardOptions}
-          onChange={(value) => updateDraftFilter({ wardId: value === 'all' ? '' : value })}
-        />
-        <SelectFilter
-          label="Encounter Type"
-          value={draftFilters.encounterType}
-          options={ENCOUNTER_TYPE_OPTIONS}
-          placeholder="Any encounter"
-          onChange={(value) => updateDraftFilter({ encounterType: value })}
-        />
-        <AttendingClinicianFilter
-          draftFilters={draftFilters}
-          practitionerOptions={options.practitionerOptions}
-          isLoading={loading.practitioners}
-          onDraftFilterChange={updateDraftFilter}
-          onPractitionerSearch={onPractitionerSearch}
-        />
-        <AgeRangeFilter
-          draftFilters={draftFilters}
-          onDraftFilterChange={updateDraftFilter}
-        />
-        {roleState.isClinicalProvider && (
-          <MyPatientsFilter
-            checked={draftFilters.myPatients}
-            onChange={(checked) => updateDraftFilter({ myPatients: checked })}
-          />
-        )}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-muted-foreground">
-          {activeFilterCount > 0 ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'No active filters'}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClearFilters}
-            className="font-mono text-xs"
-          >
-            Reset
-          </Button>
-          <Button
-            size="sm"
-            onClick={onApplyFilters}
-            className="font-mono text-xs"
-          >
-            Apply Filters
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AdmissionDateFilter({ draftFilters, onDraftFilterChange }) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-mono text-muted-foreground">Admission Date</Label>
-      <DateRangePicker
-        from={draftFilters.admissionStart}
-        to={draftFilters.admissionEnd}
-        onChange={({ from, to }) => onDraftFilterChange({
-          admissionStart: from,
-          admissionEnd: to,
-        })}
-        pickerClassName="w-[140px] font-mono text-xs"
-      />
-    </div>
-  );
-}
-
-function SelectFilter({ label, value, options, placeholder, onChange }) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-mono text-muted-foreground">{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full font-mono text-xs">
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function DepartmentFilter({ value, isLoading, departmentOptions, onChange }) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-mono text-muted-foreground">Department</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full font-mono text-xs">
-          <SelectValue placeholder={isLoading ? 'Loading...' : 'Any department'} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all" className="font-mono text-xs">Any department</SelectItem>
-          {departmentOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function WardFilter({ value, isLoading, wardOptions, onChange }) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-mono text-muted-foreground">Ward</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full font-mono text-xs">
-          <SelectValue placeholder={isLoading ? 'Loading...' : 'Any ward'} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all" className="font-mono text-xs">Any ward</SelectItem>
-          {wardOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="font-mono text-xs">
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function AttendingClinicianFilter({
-  draftFilters,
-  practitionerOptions,
-  isLoading,
-  onDraftFilterChange,
-  onPractitionerSearch,
-}) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-mono text-muted-foreground">Attending Clinician</Label>
-      <Combobox
-        options={practitionerOptions}
-        value={draftFilters.attending?.id || null}
-        onChange={(value) => {
-          const selected = practitionerOptions.find((option) => option.value === value);
-          onDraftFilterChange({
-            attending: selected ? { id: selected.value, name: selected.label } : null,
-          });
-          onPractitionerSearch('');
-        }}
-        onInputChange={onPractitionerSearch}
-        displayValue={() => draftFilters.attending?.name || 'Select clinician'}
-        searchPlaceholder="Search clinicians..."
-        emptyMessage="No clinicians found."
-        isLoading={isLoading}
-        className="font-mono text-xs"
-      />
-    </div>
-  );
-}
-
-function AgeRangeFilter({ draftFilters, onDraftFilterChange }) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-mono text-muted-foreground">Age Range</Label>
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min="0"
-          placeholder="Min"
-          value={draftFilters.ageMin}
-          onChange={(event) => onDraftFilterChange({
-            ageMin: event.target.value.replace(/[^\d]/g, ''),
-          })}
-          className="w-20 font-mono text-xs"
-        />
-        <span className="text-xs text-muted-foreground">to</span>
-        <Input
-          type="number"
-          min="0"
-          placeholder="Max"
-          value={draftFilters.ageMax}
-          onChange={(event) => onDraftFilterChange({
-            ageMax: event.target.value.replace(/[^\d]/g, ''),
-          })}
-          className="w-20 font-mono text-xs"
-        />
-      </div>
-    </div>
-  );
-}
-
-function MyPatientsFilter({ checked, onChange }) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-mono text-muted-foreground">My Patients</Label>
-      <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
-        <span className="text-xs text-muted-foreground">Only patients in my list</span>
-        <Switch checked={checked} onCheckedChange={onChange} />
-      </div>
-    </div>
-  );
-}
-
 function ActiveFilterChips({
   appliedFilters,
   labels,
@@ -477,12 +235,6 @@ function ActiveFilterChips({
           onRemove={() => onRemoveFilter('admissionRange')}
         />
       )}
-      {appliedFilters.departmentId && (
-        <FilterChip
-          label={`Department: ${labels.departmentLabels.get(appliedFilters.departmentId) || 'Selected'}`}
-          onRemove={() => onRemoveFilter('departmentId')}
-        />
-      )}
       {appliedFilters.wardId && (
         <FilterChip
           label={`Ward: ${labels.wardLabels.get(appliedFilters.wardId) || 'Selected'}`}
@@ -495,21 +247,9 @@ function ActiveFilterChips({
           onRemove={() => onRemoveFilter('admissionStatus')}
         />
       )}
-      {appliedFilters.admissionType !== 'all' && (
-        <FilterChip
-          label={`Admission Type: ${ADMISSION_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.admissionType)?.label || appliedFilters.admissionType}`}
-          onRemove={() => onRemoveFilter('admissionType')}
-        />
-      )}
-      {appliedFilters.encounterType !== 'all' && (
-        <FilterChip
-          label={`Encounter: ${ENCOUNTER_TYPE_OPTIONS.find((opt) => opt.value === appliedFilters.encounterType)?.label || appliedFilters.encounterType}`}
-          onRemove={() => onRemoveFilter('encounterType')}
-        />
-      )}
       {appliedFilters.attending?.id && (
         <FilterChip
-          label={`Attending: ${appliedFilters.attending.name}`}
+          label={`Attending: ${appliedFilters.attending.name || 'Selected clinician'}`}
           onRemove={() => onRemoveFilter('attending')}
         />
       )}
@@ -517,12 +257,6 @@ function ActiveFilterChips({
         <FilterChip
           label={`Age ${appliedFilters.ageMin || '0'}-${appliedFilters.ageMax || 'infinity'}`}
           onRemove={() => onRemoveFilter('ageRange')}
-        />
-      )}
-      {appliedFilters.myPatients && (
-        <FilterChip
-          label="My Patients"
-          onRemove={() => onRemoveFilter('myPatients')}
         />
       )}
       {(displayState.hasSearchQuery || displayState.hasActiveFilters) && (

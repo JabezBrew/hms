@@ -321,11 +321,12 @@ export function useAssignmentTypes(params = {}) {
 // Clinical Units Hooks
 // =============================================================================
 
-export function useClinicalUnits(params = {}) {
+export function useClinicalUnits(params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitsList(params),
     queryFn: ({ signal }) => clinicalUnitsApi.list(params, { signal }),
     staleTime: 30 * 1000, // 30 seconds
+    ...options,
   });
 }
 

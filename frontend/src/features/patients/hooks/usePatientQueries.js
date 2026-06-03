@@ -17,6 +17,46 @@ export const patientKeys = {
   chronicleTimeline: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'timeline', params],
 };
 
+const patientSearchKeySalt = (() => {
+  const bytes = new Uint32Array(2);
+  globalThis.crypto?.getRandomValues?.(bytes);
+  return bytes.some(Boolean)
+    ? `${bytes[0].toString(36)}${bytes[1].toString(36)}`
+    : Math.random().toString(36).slice(2);
+})();
+
+function opaqueSearchDigest(value) {
+  const input = `${patientSearchKeySalt}:${value}`;
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function opaquePatientSearchScope(value) {
+  return {
+    present: true,
+    length: String(value).length,
+    digest: opaqueSearchDigest(String(value)),
+  };
+}
+
+function sanitizePatientSearchKeyParams(params = {}) {
+  const sanitized = { ...params };
+  const rawSearch = sanitized.query || sanitized.search || '';
+  delete sanitized.query;
+  delete sanitized.search;
+  delete sanitized.signal;
+
+  if (rawSearch) {
+    sanitized.search_scope = opaquePatientSearchScope(rawSearch);
+  }
+
+  return sanitized;
+}
+
 /**
  * Get patients list with optional filtering
  * @param {Object} filters - Query parameters for filtering
@@ -245,6 +285,7 @@ export function useSearchPatients(options = {}) {
     (query, requestOptions) => patientsApi.searchPatients(query, requestOptions),
     {
       staleTime: 1 * 60 * 1000, // Search results stale after 1 minute
+      queryKeyForTerm: opaquePatientSearchScope,
       ...options,
     }
   );
@@ -260,7 +301,7 @@ export function useSearchPatients(options = {}) {
 export function usePatientSearch(params = {}, options = {}) {
   const { enabled = true, staleTime = 60 * 1000 } = options;
   return useQuery({
-    queryKey: [...patientKeys.lists(), 'search', params],
+    queryKey: [...patientKeys.lists(), 'search', sanitizePatientSearchKeyParams(params)],
     queryFn: ({ signal }) => patientsApi.searchPatientsWithMeta(params, { signal }),
     enabled,
     staleTime,

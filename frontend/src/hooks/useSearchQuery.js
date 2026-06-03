@@ -10,21 +10,28 @@ import { useDebounce } from './use-debounce';
  * @returns {Object} Query result with search state
  */
 export function useSearchQuery(queryKey, queryFn, options = {}) {
+  const {
+    debounceMs = 300,
+    minLength = 2,
+    queryKeyForTerm,
+    staleTime = 60 * 1000,
+    ...queryOptions
+  } = options;
   const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearchTerm = useDebounce(searchTerm, options.debounceMs || 300);
+  const debouncedSearchTerm = useDebounce(searchTerm, debounceMs);
 
   const enabled =
     !!debouncedSearchTerm &&
     (typeof debouncedSearchTerm === 'string'
-      ? debouncedSearchTerm.length >= (options.minLength || 2)
+      ? debouncedSearchTerm.length >= minLength
       : true);
 
   const query = useQuery({
-    queryKey: [...queryKey, debouncedSearchTerm],
+    queryKey: [...queryKey, queryKeyForTerm ? queryKeyForTerm(debouncedSearchTerm) : debouncedSearchTerm],
     queryFn: ({ signal }) => queryFn(debouncedSearchTerm, { signal }),
     enabled,
-    staleTime: options.staleTime || 60 * 1000, // 1 minute by default
-    ...options
+    staleTime,
+    ...queryOptions
   });
 
   return {

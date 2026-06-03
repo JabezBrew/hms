@@ -27,6 +27,7 @@ const SEARCH_RESOURCE_TYPES: [SearchResourceType; 12] = [
     SearchResourceType::Inventory,
     SearchResourceType::Referrals,
 ];
+const MIN_BROAD_OMNI_QUERY_CHARS: usize = 3;
 
 #[derive(Clone, Debug)]
 pub struct OmniSearchFilters {
@@ -155,6 +156,20 @@ async fn search_documents_with_status(
     can_view_patient_demographics: bool,
     limit_per_group: i64,
 ) -> anyhow::Result<(Vec<SearchDocumentRow>, Vec<SearchIndexStatus>)> {
+    if query_text.chars().count() < MIN_BROAD_OMNI_QUERY_CHARS {
+        return search_documents_with_status_short_query(
+            pool,
+            facility_id,
+            query_text,
+            type_codes,
+            permission_codes,
+            feature_keys,
+            can_view_patient_demographics,
+            limit_per_group,
+        )
+        .await;
+    }
+
     let row = observe_db_query(
         "search.documents_with_status",
         sqlx::query_as::<_, SearchResultSetRow>(
@@ -261,6 +276,158 @@ async fn search_documents_with_status(
         decode_search_json(row.documents, "documents")?,
         search_statuses_from_rows(decode_search_json(row.index_status, "index_status")?)?,
     ))
+}
+
+async fn search_documents_with_status_short_query(
+    pool: &PgPool,
+    facility_id: Uuid,
+    query_text: &str,
+    type_codes: &[String],
+    permission_codes: &[String],
+    feature_keys: &[String],
+    can_view_patient_demographics: bool,
+    limit_per_group: i64,
+) -> anyhow::Result<(Vec<SearchDocumentRow>, Vec<SearchIndexStatus>)> {
+    let prefix_tsquery = short_prefix_tsquery(query_text);
+    let row = observe_db_query(
+        "search.documents_with_status.short_query",
+        sqlx::query_as::<_, SearchResultSetRow>(
+            r#"
+        WITH requested_types AS (
+            SELECT unnest($3::text[]) AS resource_type
+        ),
+        candidates AS (
+            SELECT documents.*
+            FROM requested_types
+            CROSS JOIN LATERAL (
+                SELECT search_document.id,
+                       search_document.resource_type,
+                       search_document.title,
+                       search_document.subtitle,
+                       search_document.route_path,
+                       search_document.patient_id,
+                       search_document.patient_code,
+                       search_document.patient_name,
+                       search_document.patient_date_of_birth,
+                       search_document.status_label,
+                       search_document.occurred_at,
+                       search_document.metadata,
+                       (
+                           search_document.rank_boost::double precision
+                           + CASE
+                               WHEN lower(search_document.title) = lower($2) THEN 250
+                               WHEN lower(search_document.title) LIKE lower($2) || '%' THEN 175
+                               WHEN search_document.patient_code IS NOT NULL AND lower(search_document.patient_code) = lower($2) THEN 225
+                               WHEN search_document.patient_code IS NOT NULL AND lower(search_document.patient_code) LIKE lower($2) || '%' THEN 160
+                               ELSE 0
+                             END
+                           + CASE
+                               WHEN $7::text IS NOT NULL
+                                 AND to_tsvector('simple', search_document.search_text) @@ to_tsquery('simple', $7)
+                               THEN 120
+                               ELSE 0
+                             END
+                       ) AS score,
+                       search_document.source_updated_at
+                FROM search_documents AS search_document
+                WHERE search_document.facility_id = $1
+                  AND search_document.is_active = true
+                  AND search_document.resource_type = requested_types.resource_type
+                  AND search_document.permission_code = ANY($4)
+                  AND (search_document.feature_key IS NULL OR search_document.feature_key = ANY($5))
+                  AND (search_document.requires_patient_demographics = false OR $6 = true)
+                  AND (
+                      lower(search_document.title) = lower($2)
+                      OR lower(search_document.title) LIKE lower($2) || '%'
+                      OR (search_document.patient_code IS NOT NULL AND lower(search_document.patient_code) = lower($2))
+                      OR (search_document.patient_code IS NOT NULL AND lower(search_document.patient_code) LIKE lower($2) || '%')
+                      OR (
+                          $7::text IS NOT NULL
+                          AND to_tsvector('simple', search_document.search_text) @@ to_tsquery('simple', $7)
+                      )
+                  )
+                ORDER BY score DESC, search_document.source_updated_at DESC NULLS LAST, search_document.id
+                LIMIT GREATEST($8::bigint * 8, 50)
+            ) documents
+        ),
+        ranked AS (
+            SELECT *,
+                   row_number() OVER (
+                       PARTITION BY resource_type
+                       ORDER BY score DESC, source_updated_at DESC NULLS LAST, id
+                   ) AS resource_rank
+            FROM candidates
+        ),
+        result_rows AS (
+            SELECT id,
+                   resource_type,
+                   title,
+                   subtitle,
+                   route_path,
+                   patient_id,
+                   patient_code,
+                   patient_name,
+                   patient_date_of_birth,
+                   status_label,
+                   occurred_at,
+                   metadata,
+                   score
+            FROM ranked
+            WHERE resource_rank <= $8
+            ORDER BY score DESC, occurred_at DESC NULLS LAST, id
+            LIMIT $9
+        ),
+        status_rows AS (
+            SELECT resource_type,
+                   status,
+                   indexed_count,
+                   last_backfilled_at,
+                   last_error,
+                   updated_at
+            FROM search_index_status
+            WHERE facility_id = $1
+        )
+        SELECT COALESCE((
+                   SELECT jsonb_agg(to_jsonb(result_rows) ORDER BY result_rows.score DESC, result_rows.occurred_at DESC NULLS LAST, result_rows.id)
+                   FROM result_rows
+               ), '[]'::jsonb) AS documents,
+               COALESCE((
+                   SELECT jsonb_agg(to_jsonb(status_rows) ORDER BY status_rows.resource_type ASC)
+                   FROM status_rows
+               ), '[]'::jsonb) AS index_status
+        "#,
+        )
+        .bind(facility_id)
+        .bind(query_text)
+        .bind(type_codes)
+        .bind(permission_codes)
+        .bind(feature_keys)
+        .bind(can_view_patient_demographics)
+        .bind(prefix_tsquery)
+        .bind(limit_per_group)
+        .bind(limit_per_group * type_codes.len() as i64)
+        .fetch_one(pool),
+    )
+    .await?;
+
+    Ok((
+        decode_search_json(row.documents, "documents")?,
+        search_statuses_from_rows(decode_search_json(row.index_status, "index_status")?)?,
+    ))
+}
+
+fn short_prefix_tsquery(query_text: &str) -> Option<String> {
+    let normalized = query_text
+        .chars()
+        .filter(|ch| ch.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+
+    if normalized.chars().count() >= 2 {
+        Some(format!("{normalized}:*"))
+    } else {
+        None
+    }
 }
 
 async fn recent_patient_documents_with_status(

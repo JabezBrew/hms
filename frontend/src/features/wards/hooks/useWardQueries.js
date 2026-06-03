@@ -53,12 +53,14 @@ export function useWardsRoot() {
 /**
  * Get wards list with optional filtering
  * @param {Object} filters - Query parameters for filtering
+ * @param {Object} options - React Query options
  * @returns {Object} Query result
  */
-export function useWards(filters = {}) {
+export function useWards(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.list(filters),
     queryFn: ({ signal }) => wardsApi.getWards({ ...filters, signal }),
+    ...options,
   });
 }
 

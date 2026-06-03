@@ -1,32 +1,26 @@
 import { format } from 'date-fns';
 
-import { SEARCH_TABLE_PAGE_SIZE } from './registryConstants';
+import {
+  SEARCH_TABLE_PAGE_SIZE,
+} from './registryConstants';
 
 export const createEmptyFilters = () => ({
   admissionStart: null,
   admissionEnd: null,
-  departmentId: '',
   wardId: '',
   admissionStatus: 'all',
-  admissionType: 'all',
-  encounterType: 'all',
   attending: null,
   ageMin: '',
   ageMax: '',
-  myPatients: false,
 });
 
 export const countActiveFilters = (filters) => {
   let count = 0;
   if (filters.admissionStart || filters.admissionEnd) count += 1;
-  if (filters.departmentId) count += 1;
   if (filters.wardId) count += 1;
   if (filters.admissionStatus && filters.admissionStatus !== 'all') count += 1;
-  if (filters.admissionType && filters.admissionType !== 'all') count += 1;
-  if (filters.encounterType && filters.encounterType !== 'all') count += 1;
   if (filters.attending?.id) count += 1;
   if (filters.ageMin || filters.ageMax) count += 1;
-  if (filters.myPatients) count += 1;
   return count;
 };
 
@@ -43,20 +37,11 @@ export const buildSearchParams = (query, filters, registryScope) => {
   if (filters.admissionEnd) {
     params.admission_end = format(filters.admissionEnd, 'yyyy-MM-dd');
   }
-  if (filters.departmentId) {
-    params.department_id = filters.departmentId;
-  }
   if (filters.wardId) {
     params.ward = filters.wardId;
   }
   if (filters.admissionStatus && filters.admissionStatus !== 'all') {
     params.admission_status = filters.admissionStatus;
-  }
-  if (filters.admissionType && filters.admissionType !== 'all') {
-    params.admission_type = filters.admissionType;
-  }
-  if (filters.encounterType && filters.encounterType !== 'all') {
-    params.encounter_type = filters.encounterType;
   }
   if (filters.attending?.id) {
     params.attending_id = filters.attending.id;
@@ -66,9 +51,6 @@ export const buildSearchParams = (query, filters, registryScope) => {
   }
   if (filters.ageMax) {
     params.age_max = filters.ageMax;
-  }
-  if (filters.myPatients) {
-    params.my_patients = 'true';
   }
 
   return params;
@@ -170,27 +152,6 @@ const formatResultCountLabel = ({ count, isExact, hasNextPage }) => {
     return String(count);
   }
   return `${count}+`;
-};
-
-export const formatFooterResultLabel = ({ currentPage, pageSize, visibleCount, totalResults, isExact, hasNextPage }) => {
-  if (isExact) {
-    return `${totalResults} result${totalResults === 1 ? '' : 's'}`;
-  }
-  if (visibleCount <= 0) {
-    return '0 results';
-  }
-
-  const start = ((currentPage - 1) * pageSize) + 1;
-  const end = start + visibleCount - 1;
-  const range = start === end ? String(start) : `${start}-${end}`;
-  return `Showing ${range}${hasNextPage ? '+' : ''} result${end === 1 && !hasNextPage ? '' : 's'}`;
-};
-
-export const formatFooterPageLabel = ({ currentPage, totalPages, isExact, hasNextPage }) => {
-  if (isExact || !hasNextPage) {
-    return `Page ${currentPage} of ${totalPages}`;
-  }
-  return `Page ${currentPage}`;
 };
 
 export function buildSearchResultMeta({

@@ -3,11 +3,10 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import ArrowDown from 'lucide-react/dist/esm/icons/arrow-down.js';
 import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
 import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.js';
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TablePagination } from '@/components/ui/table-pagination';
 import {
   Tooltip,
   TooltipContent,
@@ -27,8 +26,6 @@ import {
   deduplicatePatients,
   formatAdmissionStatus,
   formatDateLabel,
-  formatFooterPageLabel,
-  formatFooterResultLabel,
   formatGender,
   getPatientAge,
   getPatientLocationDisplay,
@@ -154,20 +151,6 @@ function SearchResultsTable({
     hasNextPage,
     hasPreviousPage,
   } = pagination;
-  const footerResultLabel = formatFooterResultLabel({
-    currentPage,
-    pageSize,
-    visibleCount: patients.length,
-    totalResults,
-    isExact: totalResultsExact,
-    hasNextPage,
-  });
-  const footerPageLabel = formatFooterPageLabel({
-    currentPage,
-    totalPages,
-    isExact: totalResultsExact,
-    hasNextPage,
-  });
 
   return (
     <div className="rounded-xl border border-border/70 bg-card overflow-x-auto">
@@ -216,36 +199,19 @@ function SearchResultsTable({
         </TableBody>
       </Table>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-        <p className="text-xs font-mono text-muted-foreground">
-          {footerResultLabel} · {footerPageLabel}
-          {!totalResultsExact && hasNextPage ? ' · More available' : ''}
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={!hasPreviousPage}
-            className="font-mono text-xs"
-          >
-            <ChevronLeft className="mr-1 size-3.5" aria-hidden="true" />
-            Previous
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={!hasNextPage}
-            className="font-mono text-xs"
-          >
-            Next
-            <ChevronRight className="ml-1 size-3.5" aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
+      <TablePagination
+        currentPage={currentPage}
+        totalCount={totalResults}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        countExact={totalResultsExact}
+        canJumpToPage={false}
+        hasNextPage={hasNextPage}
+        hasPrevPage={hasPreviousPage}
+        onPageChange={onPageChange}
+        itemLabel="patients"
+        className="px-4"
+      />
     </div>
   );
 }

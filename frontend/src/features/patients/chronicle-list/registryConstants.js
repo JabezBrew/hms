@@ -12,26 +12,11 @@ export const CLINICAL_PROVIDER_ROLES = [
 
 export const ADMISSION_STATUS_OPTIONS = [
   { value: 'all', label: 'Any status' },
+  { value: 'ready_for_activation', label: 'Ready for activation' },
   { value: 'admitted', label: 'Admitted' },
-  { value: 'waiting', label: 'Waiting' },
+  { value: 'discharge_pending', label: 'Discharge pending' },
   { value: 'discharged', label: 'Discharged' },
-  { value: 'transferred', label: 'Transferred' },
-  { value: 'deceased', label: 'Deceased' },
-];
-
-export const ADMISSION_TYPE_OPTIONS = [
-  { value: 'all', label: 'Any admission type' },
-  { value: 'emergency', label: 'Emergency' },
-  { value: 'elective', label: 'Elective' },
-  { value: 'maternity', label: 'Maternity' },
-  { value: 'newborn', label: 'Newborn' },
-];
-
-export const ENCOUNTER_TYPE_OPTIONS = [
-  { value: 'all', label: 'Any encounter type' },
-  { value: 'inpatient', label: 'Inpatient' },
-  { value: 'outpatient', label: 'Outpatient' },
-  { value: 'emergency', label: 'Emergency' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
 
 export const DEFAULT_SEARCH_ORDERING = '-created_at';

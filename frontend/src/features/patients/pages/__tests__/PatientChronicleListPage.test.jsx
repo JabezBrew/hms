@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import PatientChronicleListPage from '../PatientChronicleListPage'
 import { usePatientSearch } from '@/features/patients/hooks/usePatientQueries'
+import { useWards } from '@/features/wards/hooks/useWardQueries'
 import {
   prefetchPatientChronicleData,
   prefetchPatientDetailRoute,
@@ -20,7 +21,7 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 vi.mock('@/features/wards/hooks/useWardQueries', () => ({
-  useWards: () => ({ data: { results: [] }, isLoading: false }),
+  useWards: vi.fn(() => ({ data: { results: [] }, isLoading: false })),
 }))
 
 vi.mock('@/hooks/useOrganization', () => ({
@@ -49,6 +50,7 @@ vi.mock('@/features/patients/prefetch', () => ({
 }))
 
 const mockUsePatientSearch = vi.mocked(usePatientSearch)
+const mockUseWards = vi.mocked(useWards)
 
 function createSearchResponse(total, rows = []) {
   return {
@@ -93,7 +95,7 @@ function createCursorSearchResponse({ page, rows, hasNext }) {
   }
 }
 
-function renderPage() {
+function renderPage(initialEntry = '/patients') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -102,7 +104,7 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <PatientChronicleListPage />
       </MemoryRouter>
     </QueryClientProvider>
@@ -159,9 +161,30 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
     expect(firstCallParams.registry_scope).toBe('active')
     expect(firstCallParams.ordering).toBe('-created_at')
-    expect(firstCallParams.include_total).toBe('true')
+    expect(firstCallParams.include_total).toBe('false')
     expect(screen.getByText('Active patients')).toBeInTheDocument()
     expect(screen.getByText('(2)')).toBeInTheDocument()
+  })
+
+  it('defers ward filter metadata until filters are opened', () => {
+    renderPage()
+
+    expect(mockUseWards).not.toHaveBeenCalled()
+  })
+
+  it('loads ward filter metadata when filters are opened', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: /Filters/i }))
+
+    await waitFor(() => {
+      expect(mockUseWards).toHaveBeenCalledWith(
+        { is_active: true },
+        { staleTime: 5 * 60 * 1000 }
+      )
+    })
+    expect(await screen.findByText('Admission Date')).toBeInTheDocument()
   })
 
   it('sends server-side ordering when sortable table headers are clicked', async () => {
@@ -257,10 +280,14 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     renderPage()
 
     expect(screen.getByText('(25+)')).toBeInTheDocument()
-    expect(screen.getByText((text) => (
-      text.includes('Showing 1-25+ results')
-      && text.includes('Page 1')
-      && text.includes('More available')
+    expect(screen.getByText((_, element) => (
+      element?.tagName === 'P'
+      && element.textContent?.includes('Showing 1 to 25 of 25+ patients')
+    ))).toBeInTheDocument()
+    expect(screen.getByText((_, element) => (
+      element?.tagName === 'SPAN'
+      && element.textContent?.includes('Page')
+      && element.textContent?.includes('More available')
     ))).toBeInTheDocument()
     expect(screen.queryByText(/26 results/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Page 1 of 2/)).not.toBeInTheDocument()
@@ -269,10 +296,14 @@ describe('PatientChronicleListPage registry scope behavior', () => {
 
     await waitFor(() => {
       expect(screen.getByText('(50+)')).toBeInTheDocument()
-      expect(screen.getByText((text) => (
-        text.includes('Showing 26-50+ results')
-        && text.includes('Page 2')
-        && text.includes('More available')
+      expect(screen.getByText((_, element) => (
+        element?.tagName === 'P'
+        && element.textContent?.includes('Showing 26 to 50 of 50+ patients')
+      ))).toBeInTheDocument()
+      expect(screen.getByText((_, element) => (
+        element?.tagName === 'SPAN'
+        && element.textContent?.includes('Page')
+        && element.textContent?.includes('More available')
       ))).toBeInTheDocument()
     })
     expect(screen.queryByText(/51 results/)).not.toBeInTheDocument()
@@ -295,6 +326,23 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     renderPage()
 
     expect(screen.getByText('Medical Ward / Bed A-12')).toBeInTheDocument()
+  })
+
+  it('does not hydrate patient search or clinical filters from URL params', () => {
+    renderPage('/patients?q=akua&scope=all&admission_start=2026-06-01&admission_end=2026-06-03&ward=ward-1&admission_status=admitted&attending_id=staff-1&age_min=10&age_max=50')
+
+    const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
+    expect(firstCallParams.registry_scope).toBe('active')
+    expect(firstCallParams.query).toBeUndefined()
+    expect(firstCallParams.admission_start).toBeUndefined()
+    expect(firstCallParams.admission_end).toBeUndefined()
+    expect(firstCallParams.ward).toBeUndefined()
+    expect(firstCallParams.admission_status).toBeUndefined()
+    expect(firstCallParams.attending_id).toBeUndefined()
+    expect(firstCallParams.age_min).toBeUndefined()
+    expect(firstCallParams.age_max).toBeUndefined()
+    expect(screen.getByText('Filters')).toBeInTheDocument()
+    expect(screen.queryByText('5')).not.toBeInTheDocument()
   })
 })
 
