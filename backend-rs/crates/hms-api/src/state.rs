@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::{DateTime, Utc};
-use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
+use hms_db::auth::{NewAuthAuditEvent, NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::dashboard::DashboardProjectionRead;
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -1377,6 +1377,7 @@ impl AppState {
         password: &str,
         facility_code: &str,
         device_label: Option<&str>,
+        request_id: Option<String>,
     ) -> Result<Option<LoginOutcome>> {
         if !self
             .inner
@@ -1384,6 +1385,23 @@ impl AppState {
             .facility_code
             .eq_ignore_ascii_case(facility_code.trim())
         {
+            hms_db::auth::insert_login_failure_audit(
+                &self.inner.pool,
+                NewAuthAuditEvent {
+                    facility_id: self.inner.facility_id,
+                    actor_user_id: None,
+                    request_id,
+                    event_type: "auth.login.failed".to_owned(),
+                    resource_type: "auth_facility".to_owned(),
+                    resource_id: Some(self.inner.facility_id),
+                    metadata: serde_json::json!({
+                        "severity": "medium",
+                        "outcome": "failed",
+                        "resolution": "invalid_facility"
+                    }),
+                },
+            )
+            .await?;
             return Ok(None);
         }
 
@@ -1394,6 +1412,23 @@ impl AppState {
         )
         .await?;
         let Some(user) = user else {
+            hms_db::auth::insert_login_failure_audit(
+                &self.inner.pool,
+                NewAuthAuditEvent {
+                    facility_id: self.inner.facility_id,
+                    actor_user_id: None,
+                    request_id,
+                    event_type: "auth.login.failed".to_owned(),
+                    resource_type: "auth_login".to_owned(),
+                    resource_id: None,
+                    metadata: serde_json::json!({
+                        "severity": "medium",
+                        "outcome": "failed",
+                        "resolution": "unresolved"
+                    }),
+                },
+            )
+            .await?;
             return Ok(None);
         };
 
@@ -1401,10 +1436,26 @@ impl AppState {
             .verify_password_bounded(&user.password_hash, password)
             .await?
         {
+            hms_db::auth::insert_login_failure_audit(
+                &self.inner.pool,
+                NewAuthAuditEvent {
+                    facility_id: user.facility_id,
+                    actor_user_id: None,
+                    request_id,
+                    event_type: "auth.login.failed".to_owned(),
+                    resource_type: "auth_user".to_owned(),
+                    resource_id: Some(user.id),
+                    metadata: serde_json::json!({
+                        "severity": "medium",
+                        "outcome": "failed"
+                    }),
+                },
+            )
+            .await?;
             return Ok(None);
         }
 
-        self.issue_session_for_user(&user, None, None, device_label, None, None)
+        self.issue_session_for_user(&user, None, None, device_label, None, None, request_id)
             .await
     }
 
@@ -1412,6 +1463,7 @@ impl AppState {
         &self,
         refresh_token: &str,
         csrf_token: &str,
+        request_id: Option<String>,
     ) -> Result<Option<LoginOutcome>> {
         let token_hash = hash_refresh_token(refresh_token);
         let csrf_token_hash = hash_refresh_token(csrf_token);
@@ -1422,10 +1474,22 @@ impl AppState {
         };
 
         if old_session.revoked_at.is_some() {
-            let _ = hms_db::auth::revoke_refresh_session_family(
+            let _ = hms_db::auth::revoke_refresh_session_family_with_audit(
                 &self.inner.pool,
                 old_session.session_family_id,
                 "refresh_token_reuse_detected",
+                NewAuthAuditEvent {
+                    facility_id: old_session.facility_id,
+                    actor_user_id: None,
+                    request_id,
+                    event_type: "auth.refresh_token_reuse.detected".to_owned(),
+                    resource_type: "auth_session_family".to_owned(),
+                    resource_id: Some(old_session.session_family_id),
+                    metadata: serde_json::json!({
+                        "severity": "high",
+                        "subject_user_id": old_session.user_id
+                    }),
+                },
             )
             .await?;
             self.invalidate_auth_cache_for_user(old_session.facility_id, old_session.user_id);
@@ -1482,6 +1546,7 @@ impl AppState {
             old_session.device_label.as_deref(),
             Some(old_session.session_started_at),
             Some(old_session.absolute_expires_at),
+            None,
         )
         .await
     }
@@ -1824,6 +1889,7 @@ impl AppState {
         device_label: Option<&str>,
         existing_session_started_at: Option<DateTime<Utc>>,
         existing_absolute_expires_at: Option<DateTime<Utc>>,
+        login_request_id: Option<String>,
     ) -> Result<Option<LoginOutcome>> {
         let session_id = Uuid::new_v4();
         let session_family_id = session_family_id.unwrap_or(session_id);
@@ -1835,26 +1901,42 @@ impl AppState {
             return Ok(None);
         };
 
-        hms_db::auth::insert_refresh_session(
-            &self.inner.pool,
-            &NewRefreshSession {
-                token_hash: hash_refresh_token(&refresh_token),
-                session_id,
-                session_family_id,
-                rotated_from_session_id,
-                user_id: user.id,
-                facility_id: user.facility_id,
-                session_version: user.session_version,
-                permission_version_at_issue: user.permission_version,
-                csrf_token_hash: hash_refresh_token(&csrf_token),
-                expires_at: deadlines.refresh_expires_at,
-                session_started_at: deadlines.session_started_at,
-                idle_expires_at: deadlines.idle_expires_at,
-                absolute_expires_at: deadlines.absolute_expires_at,
-                device_label: device_label.map(ToOwned::to_owned),
-            },
-        )
-        .await?;
+        let session = NewRefreshSession {
+            token_hash: hash_refresh_token(&refresh_token),
+            session_id,
+            session_family_id,
+            rotated_from_session_id,
+            user_id: user.id,
+            facility_id: user.facility_id,
+            session_version: user.session_version,
+            permission_version_at_issue: user.permission_version,
+            csrf_token_hash: hash_refresh_token(&csrf_token),
+            expires_at: deadlines.refresh_expires_at,
+            session_started_at: deadlines.session_started_at,
+            idle_expires_at: deadlines.idle_expires_at,
+            absolute_expires_at: deadlines.absolute_expires_at,
+            device_label: device_label.map(ToOwned::to_owned),
+        };
+        if let Some(request_id) = login_request_id {
+            hms_db::auth::insert_refresh_session_with_audit(
+                &self.inner.pool,
+                &session,
+                NewAuthAuditEvent {
+                    facility_id: user.facility_id,
+                    actor_user_id: Some(user.id),
+                    request_id: Some(request_id),
+                    event_type: "auth.login.created".to_owned(),
+                    resource_type: "auth_session".to_owned(),
+                    resource_id: Some(session_id),
+                    metadata: serde_json::json!({
+                        "device_label_present": device_label.is_some()
+                    }),
+                },
+            )
+            .await?;
+        } else {
+            hms_db::auth::insert_refresh_session(&self.inner.pool, &session).await?;
+        }
 
         let active_profile = serde_json::to_value(user.active_profile)?
             .as_str()

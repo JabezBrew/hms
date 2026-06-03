@@ -113,6 +113,15 @@ pub struct NewPaymentReversal {
     pub approved_by_user_id: Uuid,
     pub recorded_by_user_id: Uuid,
     pub reauthorized_at: DateTime<Utc>,
+    pub request_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NhisBatchExportCommand {
+    pub facility_id: Uuid,
+    pub batch_id: Uuid,
+    pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -1181,9 +1190,10 @@ pub async fn create_nhis_batch(
 
 pub async fn export_nhis_batch(
     pool: &PgPool,
-    facility_id: Uuid,
-    batch_id: Uuid,
+    command: NhisBatchExportCommand,
 ) -> anyhow::Result<Option<NhisBatchExport>> {
+    let facility_id = command.facility_id;
+    let batch_id = command.batch_id;
     let row = sqlx::query_as::<_, BatchExportRow>(
         r#"
         SELECT batch_number, claim_count, total_amount_minor
@@ -1262,6 +1272,37 @@ pub async fn export_nhis_batch(
     .bind(codec::encode(InvoiceLockReason::NhisBatchExported)?)
     .bind(facility_id)
     .bind(batch_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(facility_id)
+    .bind(command.actor_user_id)
+    .bind(command.request_id)
+    .bind("billing.nhis_batch.exported")
+    .bind("nhis_batch")
+    .bind(batch_id)
+    .bind(serde_json::json!({
+        "severity": "high",
+        "claim_count": row.claim_count,
+        "total_amount_minor": row.total_amount_minor,
+        "export_format": "nhis_v2_baseline_json"
+    }))
     .execute(&mut *transaction)
     .await?;
 
@@ -1415,6 +1456,11 @@ pub async fn record_payment_reversal(
     if reversal.amount_minor <= 0 {
         anyhow::bail!("payment reversal amount must be positive");
     }
+    let reversal_kind = codec::encode(reversal.reversal_kind)?;
+    let audit_event_type = match reversal.reversal_kind {
+        ReversalKind::Refund => "billing.payment_refund.recorded",
+        ReversalKind::Void => "billing.payment_void.recorded",
+    };
     let mut transaction = pool.begin().await?;
     let payment = sqlx::query_as::<_, PaymentReversalContextRow>(
         r#"
@@ -1456,7 +1502,7 @@ pub async fn record_payment_reversal(
     .bind(reversal.facility_id)
     .bind(reversal.payment_id)
     .bind(payment.invoice_id)
-    .bind(codec::encode(reversal.reversal_kind)?)
+    .bind(&reversal_kind)
     .bind(reversal.amount_minor)
     .bind(&payment.currency)
     .bind(&reversal.reason)
@@ -1500,6 +1546,38 @@ pub async fn record_payment_reversal(
     .bind(codec::encode(InvoiceStatus::PartiallyPaid)?)
     .bind(reversal.facility_id)
     .bind(payment.invoice_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(reversal.facility_id)
+    .bind(reversal.recorded_by_user_id)
+    .bind(reversal.request_id)
+    .bind(audit_event_type)
+    .bind("payment")
+    .bind(reversal.payment_id)
+    .bind(serde_json::json!({
+        "severity": "high",
+        "reversal_id": reversal.id,
+        "reversal_kind": reversal_kind,
+        "amount_minor": reversal.amount_minor,
+        "supervisor_approved": true
+    }))
     .execute(&mut *transaction)
     .await?;
 

@@ -1,12 +1,13 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use hms_db::auth::{EndBreakGlassGrants, StartBreakGlassGrant};
+use hms_db::auth::{AuditBreakGlassChronicleView, EndBreakGlassGrants, StartBreakGlassGrant};
 use hms_db::patients::{
     NewPatient, PatientContextCursor, PatientContextFilters, PatientCursor, PatientListOrdering,
     PatientUpdate,
 };
 use hms_domain::auth::{
     BreakGlassGrant, BreakGlassGrantDenialReason, BreakGlassGrantOutcome,
-    ClinicalPatientAccessDecision, EndBreakGlassGrantsResponse, StartBreakGlassGrantRequest,
+    ClinicalPatientAccessDecision, ClinicalPatientAccessSource, EndBreakGlassGrantsResponse,
+    StartBreakGlassGrantRequest,
 };
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
@@ -431,6 +432,7 @@ impl PatientsService {
     ) -> Result<ObjectResponse<PatientChronicleStartup>, ApiError> {
         let page = chronicle_timeline_page_request(&query)?;
         let cacheable_startup = chronicle_startup_cacheable(&query);
+        let (patient, decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
         if cacheable_startup {
             if let Some(response) = self
                 .state
@@ -455,7 +457,6 @@ impl PatientsService {
             None
         };
 
-        let (patient, decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
         let filters = chronicle_timeline_filters(&query)?;
         let startup = hms_db::clinical::patient_chronicle_startup_for_patient(
             self.pool(),
@@ -733,6 +734,39 @@ async fn load_patient_for_chronicle_access(
                 "You do not have access to this patient Chronicle.",
             )
         })?;
+    if decision.source == ClinicalPatientAccessSource::BreakGlass {
+        let grant = evidence.break_glass_grant.as_ref().ok_or_else(|| {
+            ApiError::conflict(
+                "patient_chronicle_audit_failed",
+                "Patient Chronicle access could not be audited.",
+            )
+        })?;
+        let grant_is_still_active = hms_db::auth::audit_break_glass_chronicle_view_once(
+            state.db_pool(),
+            AuditBreakGlassChronicleView {
+                grant_id: grant.id,
+                facility_id: state.facility_id(),
+                user_id: ctx.user_id,
+                patient_id: patient.id,
+                request_id: Some(ctx.request_id.clone()),
+                now,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_chronicle_audit_failed",
+                "Patient Chronicle access could not be audited.",
+            )
+        })?;
+        if !grant_is_still_active {
+            state.invalidate_patient_chronicle_cache();
+            return Err(ApiError::forbidden(
+                "patient_access_denied",
+                "You do not have access to this patient Chronicle.",
+            ));
+        }
+    }
     Ok((patient, decision))
 }
 

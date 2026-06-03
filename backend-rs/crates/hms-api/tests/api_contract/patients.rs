@@ -106,6 +106,113 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         .expect("chronicle denial succeeds");
     assert_eq!(denied_chronicle.status(), StatusCode::FORBIDDEN);
 
+    let break_glass = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/patients/{registry_only_patient_id}/break-glass"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "category": "urgent_clinical_continuity",
+                        "reason_text": "audit contract emergency access"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("break-glass request succeeds");
+    assert_eq!(break_glass.status(), StatusCode::OK);
+
+    let break_glass_chronicle = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/{registry_only_patient_id}/chronicle/print"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("x-request-id", "patient-break-glass-view-audit-test")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("break-glass Chronicle read succeeds");
+    assert_eq!(break_glass_chronicle.status(), StatusCode::OK);
+
+    let audit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/audit-events?limit=10&search=patient-break-glass-view-audit-test")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient access audit list succeeds");
+    assert_eq!(audit_response.status(), StatusCode::OK);
+    let audit_body = json_body(audit_response).await;
+    let audit_events = audit_body["data"]
+        .as_array()
+        .expect("patient access audit events are array");
+    let patient_view_event = audit_events
+        .iter()
+        .find(|event| event["event_type"] == "patient.chronicle.outside_assignment_viewed")
+        .expect("outside-assignment patient view audit event is returned");
+    assert_eq!(
+        patient_view_event["request_id"],
+        "patient-break-glass-view-audit-test"
+    );
+    assert_eq!(patient_view_event["resource_type"], "patient_chronicle");
+    assert_eq!(patient_view_event["resource_id"], registry_only_patient_id);
+
+    let second_break_glass_chronicle = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/{registry_only_patient_id}/chronicle/print"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("x-request-id", "patient-break-glass-second-view-audit-test")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("second break-glass Chronicle read succeeds");
+    assert_eq!(second_break_glass_chronicle.status(), StatusCode::OK);
+
+    let second_audit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/audit-events?limit=10&search=patient-break-glass-second-view-audit-test")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("second patient access audit list succeeds");
+    assert_eq!(second_audit_response.status(), StatusCode::OK);
+    let second_audit_body = json_body(second_audit_response).await;
+    assert!(
+        second_audit_body["data"]
+            .as_array()
+            .expect("second patient access audit events are array")
+            .is_empty(),
+        "outside-assignment Chronicle view should audit once per active break-glass grant"
+    );
+
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app
         .clone()
@@ -477,8 +584,8 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
     .await;
     second.expect("cached Chronicle startup succeeds");
     assert_eq!(
-        second_queries, 0,
-        "same scoped Chronicle startup should stay off the database while warm"
+        second_queries, 1,
+        "same scoped Chronicle startup should recheck access before serving cached PHI"
     );
 
     let cross_session_ctx = hms_access::RequestContext::new(
@@ -499,8 +606,8 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
         .await;
     cross_session.expect("cross-session cached Chronicle startup succeeds");
     assert_eq!(
-        cross_session_queries, 0,
-        "Chronicle startup cache should survive session refresh when access scope is unchanged"
+        cross_session_queries, 1,
+        "Chronicle startup cache should survive session refresh while rechecking access"
     );
 
     let offsite_ctx = hms_access::RequestContext::new(

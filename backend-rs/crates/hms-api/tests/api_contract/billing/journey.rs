@@ -566,6 +566,7 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
                 .method(Method::POST)
                 .uri(format!("/api/v2/nhis/batches/{batch_id}/export"))
                 .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("x-request-id", "nhis-export-audit-api-test")
                 .body(Body::empty())
                 .expect("request builds"),
         )
@@ -575,6 +576,31 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     let export_body = json_body(export_response).await;
     assert_eq!(export_body["data"]["claim_count"], 1);
     assert!(export_body["data"]["checksum"].as_str().is_some());
+
+    let export_audit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/audit-events?limit=10&search=nhis-export-audit-api-test")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("NHIS export audit list succeeds");
+    assert_eq!(export_audit_response.status(), StatusCode::OK);
+    let export_audit_body = json_body(export_audit_response).await;
+    let export_audit_events = export_audit_body["data"]
+        .as_array()
+        .expect("export audit events are array");
+    let export_event = export_audit_events
+        .iter()
+        .find(|event| event["event_type"] == "billing.nhis_batch.exported")
+        .expect("NHIS export audit event is returned");
+    assert_eq!(export_event["request_id"], "nhis-export-audit-api-test");
+    assert_eq!(export_event["resource_type"], "nhis_batch");
+    assert_eq!(export_event["resource_id"], batch_id);
 
     let remittance_response = app
         .clone()
@@ -632,4 +658,123 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     let limited_status = limited_response.status();
     let limited_body = json_body(limited_response).await;
     assert_eq!(limited_status, StatusCode::FORBIDDEN, "{limited_body}");
+}
+
+#[tokio::test]
+async fn payment_reversal_writes_admin_visible_audit_event() {
+    let app = app().await;
+    enroll_owner_test_passkey(&app).await;
+    let owner = Actor::login(&app, "owner@hms.local").await;
+
+    let prices = assert_json_status(
+        api_get(app.clone(), &owner, "/api/v2/billing/service-prices").await,
+        StatusCode::OK,
+    )
+    .await;
+    let service_price_id = prices["data"][0]["id"]
+        .as_str()
+        .expect("seed service price exists")
+        .to_owned();
+
+    let patients = assert_json_status(
+        api_get(app.clone(), &owner, "/api/v2/patients?limit=1").await,
+        StatusCode::OK,
+    )
+    .await;
+    let patient_id = patients["data"][0]["id"]
+        .as_str()
+        .expect("seed patient exists")
+        .to_owned();
+
+    let invoice = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/billing/invoices",
+            json!({
+                "patient_id": patient_id,
+                "service_price_id": service_price_id,
+                "quantity": 1
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let invoice_id = invoice["data"]["id"]
+        .as_str()
+        .expect("invoice id exists")
+        .to_owned();
+    let gross_amount = invoice["data"]["gross_amount_minor"]
+        .as_i64()
+        .expect("invoice amount exists");
+    assert!(gross_amount > 0);
+
+    let payment = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/billing/payments",
+            json!({
+                "invoice_id": invoice_id,
+                "amount_minor": gross_amount,
+                "method": "mobile_money"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let payment_id = payment["data"]["id"]
+        .as_str()
+        .expect("payment id exists")
+        .to_owned();
+
+    let supervisor_user_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+    let reverse_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/billing/payments/{payment_id}/reverse"))
+                .header(AUTHORIZATION, owner.bearer())
+                .header("content-type", "application/json")
+                .header("x-request-id", "payment-reversal-audit-api-test")
+                .body(Body::from(
+                    json!({
+                        "amount_minor": 1,
+                        "reversal_kind": "refund",
+                        "approval": {
+                            "supervisor_user_id": supervisor_user_id,
+                            "reason": "audit contract reversal"
+                        }
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("payment reversal request succeeds");
+    assert_json_status(reverse_response, StatusCode::OK).await;
+
+    let audit_body = assert_json_status(
+        api_get(
+            app,
+            &owner,
+            "/api/v2/admin/audit-events?limit=10&search=payment-reversal-audit-api-test",
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let audit_events = audit_body["data"]
+        .as_array()
+        .expect("payment audit events are array");
+    let event = audit_events
+        .iter()
+        .find(|event| event["event_type"] == "billing.payment_refund.recorded")
+        .expect("payment reversal audit event is returned");
+    assert_eq!(event["request_id"], "payment-reversal-audit-api-test");
+    assert_eq!(event["resource_type"], "payment");
+    assert_eq!(event["resource_id"], payment_id);
 }

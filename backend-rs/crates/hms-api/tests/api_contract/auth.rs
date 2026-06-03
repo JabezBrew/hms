@@ -95,6 +95,216 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
 }
 
 #[tokio::test]
+async fn auth_login_writes_admin_visible_audit_event() {
+    let app = app().await;
+    let failed_login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/login")
+                .header("content-type", "application/json")
+                .header("x-request-id", "auth-login-failed-audit-test")
+                .body(Body::from(
+                    json!({
+                        "email": "owner@hms.local",
+                        "password": "not-the-password",
+                        "facility_code": "HMS"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("failed login request succeeds");
+    assert_eq!(failed_login_response.status(), StatusCode::UNAUTHORIZED);
+
+    for attempt in 2..=5 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v2/auth/login")
+                    .header("content-type", "application/json")
+                    .header("x-request-id", "auth-login-burst-audit-test")
+                    .body(Body::from(
+                        json!({
+                            "email": "owner@hms.local",
+                            "password": format!("not-the-password-{attempt}"),
+                            "facility_code": "HMS"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("burst login failure request succeeds");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    for attempt in 1..=5 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v2/auth/login")
+                    .header("content-type", "application/json")
+                    .header("x-request-id", "auth-login-unresolved-burst-audit-test")
+                    .body(Body::from(
+                        json!({
+                            "email": format!("unknown-user-{attempt}@hms.local"),
+                            "password": "not-the-password",
+                            "facility_code": "HMS"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("unresolved login failure request succeeds");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    for attempt in 1..=5 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v2/auth/login")
+                    .header("content-type", "application/json")
+                    .header(
+                        "x-request-id",
+                        "auth-login-invalid-facility-burst-audit-test",
+                    )
+                    .body(Body::from(
+                        json!({
+                            "email": format!("facility-probe-{attempt}@hms.local"),
+                            "password": "not-the-password",
+                            "facility_code": "INVALID"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("invalid facility login failure request succeeds");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/login")
+                .header("content-type", "application/json")
+                .header("x-request-id", "auth-login-audit-test")
+                .body(Body::from(
+                    json!({
+                        "email": "owner@hms.local",
+                        "password": "ChangeMe123!",
+                        "facility_code": "HMS"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("login request succeeds");
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let login_body = json_body(login_response).await;
+    let owner_token = login_body["data"]["access_token"]
+        .as_str()
+        .expect("access token exists");
+
+    let audit_response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/audit-events?limit=30")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("audit list succeeds");
+    assert_eq!(audit_response.status(), StatusCode::OK);
+    let audit_body = json_body(audit_response).await;
+    let events = audit_body["data"].as_array().expect("events are array");
+    let event = events
+        .iter()
+        .find(|event| {
+            event["event_type"] == "auth.login.created"
+                && event["request_id"] == "auth-login-audit-test"
+        })
+        .expect("login audit event is returned");
+    assert_eq!(event["request_id"], "auth-login-audit-test");
+    assert_eq!(event["resource_type"], "auth_session");
+    assert_eq!(
+        event["actor_user_id"],
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID).to_string()
+    );
+    assert!(event["resource_id"].as_str().is_some());
+
+    let failed_event = events
+        .iter()
+        .find(|event| {
+            event["event_type"] == "auth.login.failed"
+                && event["request_id"] == "auth-login-failed-audit-test"
+        })
+        .expect("failed-login audit event is returned");
+    assert_eq!(failed_event["request_id"], "auth-login-failed-audit-test");
+    assert_eq!(failed_event["resource_type"], "auth_user");
+    assert!(failed_event["actor_user_id"].is_null());
+    assert_eq!(
+        failed_event["resource_id"],
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID).to_string()
+    );
+
+    let burst_event = events
+        .iter()
+        .find(|event| {
+            event["event_type"] == "auth.login_failure_burst.detected"
+                && event["request_id"] == "auth-login-burst-audit-test"
+        })
+        .expect("login failure burst audit event is returned");
+    assert_eq!(burst_event["request_id"], "auth-login-burst-audit-test");
+    assert!(burst_event["actor_user_id"].is_null());
+    assert_eq!(burst_event["resource_type"], "auth_user");
+
+    let unresolved_burst_event = events
+        .iter()
+        .find(|event| {
+            event["event_type"] == "auth.login_failure_burst.detected"
+                && event["request_id"] == "auth-login-unresolved-burst-audit-test"
+        })
+        .expect("unresolved login failure burst audit event is returned");
+    assert!(unresolved_burst_event["actor_user_id"].is_null());
+    assert_eq!(unresolved_burst_event["resource_type"], "auth_login");
+    assert!(unresolved_burst_event["resource_id"].is_null());
+
+    let invalid_facility_burst_event = events
+        .iter()
+        .find(|event| {
+            event["event_type"] == "auth.login_failure_burst.detected"
+                && event["request_id"] == "auth-login-invalid-facility-burst-audit-test"
+        })
+        .expect("invalid facility login failure burst audit event is returned");
+    assert!(invalid_facility_burst_event["actor_user_id"].is_null());
+    assert_eq!(
+        invalid_facility_burst_event["resource_type"],
+        "auth_facility"
+    );
+    assert_eq!(
+        invalid_facility_burst_event["resource_id"],
+        Uuid::from_u128(hms_db::provision::FACILITY_ID).to_string()
+    );
+}
+
+#[tokio::test]
 async fn server_idle_timeout_rejects_refresh_and_cached_access_sessions() {
     let database =
         Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
@@ -1151,14 +1361,31 @@ async fn refresh_token_reuse_revokes_the_rotated_session_family() {
             Request::builder()
                 .method(Method::POST)
                 .uri("/api/v2/auth/refresh")
-                .header(COOKIE, original_cookie)
-                .header("x-hms-csrf", original_csrf)
+                .header(COOKIE, original_cookie.clone())
+                .header("x-hms-csrf", original_csrf.clone())
+                .header("x-request-id", "refresh-token-reuse-audit-test")
                 .body(Body::empty())
                 .expect("request builds"),
         )
         .await
         .expect("reuse request succeeds");
     assert_eq!(reused_old_token.status(), StatusCode::UNAUTHORIZED);
+
+    let repeated_reuse = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, original_cookie)
+                .header("x-hms-csrf", original_csrf)
+                .header("x-request-id", "refresh-token-reuse-repeat-audit-test")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("repeated reuse request succeeds");
+    assert_eq!(repeated_reuse.status(), StatusCode::UNAUTHORIZED);
 
     let family_revoked = app
         .clone()
@@ -1174,6 +1401,42 @@ async fn refresh_token_reuse_revokes_the_rotated_session_family() {
         .await
         .expect("family revoked request succeeds");
     assert_eq!(family_revoked.status(), StatusCode::UNAUTHORIZED);
+
+    let (audit_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let audit_response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/audit-events?limit=10")
+                .header(AUTHORIZATION, format!("Bearer {audit_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("audit list succeeds");
+    assert_eq!(audit_response.status(), StatusCode::OK);
+    let audit_body = json_body(audit_response).await;
+    let events = audit_body["data"].as_array().expect("events are array");
+    let event = events
+        .iter()
+        .find(|event| {
+            event["event_type"] == "auth.refresh_token_reuse.detected"
+                && event["request_id"] == "refresh-token-reuse-audit-test"
+        })
+        .expect("refresh-token reuse audit event is returned");
+    assert_eq!(event["request_id"], "refresh-token-reuse-audit-test");
+    assert_eq!(event["resource_type"], "auth_session_family");
+    assert!(event["actor_user_id"].is_null());
+    assert!(event["resource_id"].as_str().is_some());
+    let repeated_event = events
+        .iter()
+        .find(|event| {
+            event["event_type"] == "auth.refresh_token_reuse.detected"
+                && event["request_id"] == "refresh-token-reuse-repeat-audit-test"
+        })
+        .expect("repeated refresh-token reuse audit event is returned");
+    assert!(repeated_event["actor_user_id"].is_null());
+    assert_eq!(repeated_event["resource_type"], "auth_session_family");
 }
 
 #[tokio::test]

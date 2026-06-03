@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::{AuthenticatedSession, AuthenticatedUser, RequestContext};
+use crate::middleware::request_id::current_request_id;
 use crate::response::{object, ObjectResponse};
 use crate::state::{AppState, ChangePasswordOutcome, LoginOutcome};
 
@@ -171,6 +172,7 @@ pub async fn login(
             &payload.password,
             &payload.facility_code,
             device_label.as_deref(),
+            Some(current_request_id()),
         )
         .await
         .map_err(|_| ApiError::unauthorized())?
@@ -197,7 +199,7 @@ pub async fn refresh(
     let refresh_token = read_refresh_cookie(&headers).ok_or_else(ApiError::unauthorized)?;
     let csrf_token = require_csrf(&headers)?;
     let outcome = state
-        .refresh(&refresh_token, &csrf_token)
+        .refresh(&refresh_token, &csrf_token, Some(current_request_id()))
         .await
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;

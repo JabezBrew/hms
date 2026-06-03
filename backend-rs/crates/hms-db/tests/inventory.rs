@@ -468,6 +468,7 @@ async fn controlled_count_logs_discrepancy_audit_and_adjusts_stock_immediately()
             quantity_delta: 10,
             witness_user_id: Some(owner_id),
             actor_user_id: owner_id,
+            request_id: Some("controlled-receipt-audit-test".to_owned()),
         },
     )
     .await
@@ -492,6 +493,7 @@ async fn controlled_count_logs_discrepancy_audit_and_adjusts_stock_immediately()
             actor_user_id: owner_id,
             category: ControlledDiscrepancyCategory::Missing,
             reason: "Sealed count found two ampoules missing".to_owned(),
+            request_id: Some("controlled-count-audit-test".to_owned()),
         },
     )
     .await
@@ -537,6 +539,35 @@ async fn controlled_count_logs_discrepancy_audit_and_adjusts_stock_immediately()
     .expect("high-severity discrepancy audit exists");
     assert_eq!(audit_metadata["severity"], "high");
     assert_eq!(audit_metadata["category"], "missing");
+
+    let audit_request_ids = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT event_type, request_id
+        FROM audit_events
+        WHERE facility_id = $1
+          AND event_type IN (
+              'controlled_substance.movement.recorded',
+              'controlled_substance.discrepancy.logged'
+          )
+        ORDER BY occurred_at ASC, id ASC
+        "#,
+    )
+    .bind(facility_id)
+    .fetch_all(pool)
+    .await
+    .expect("controlled-substance audit request ids load");
+    assert!(audit_request_ids.iter().any(|(event_type, request_id)| {
+        event_type == "controlled_substance.movement.recorded"
+            && request_id == "controlled-receipt-audit-test"
+    }));
+    assert!(audit_request_ids.iter().any(|(event_type, request_id)| {
+        event_type == "controlled_substance.movement.recorded"
+            && request_id == "controlled-count-audit-test"
+    }));
+    assert!(audit_request_ids.iter().any(|(event_type, request_id)| {
+        event_type == "controlled_substance.discrepancy.logged"
+            && request_id == "controlled-count-audit-test"
+    }));
 }
 
 #[tokio::test]

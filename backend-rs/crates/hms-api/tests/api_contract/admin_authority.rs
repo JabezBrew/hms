@@ -257,6 +257,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
                 .method(Method::POST)
                 .uri("/api/v2/admin/position-templates")
                 .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("x-request-id", "admin-position-template-audit-test")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -282,6 +283,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
                 .method(Method::POST)
                 .uri("/api/v2/admin/positions")
                 .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("x-request-id", "admin-position-audit-test")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -418,7 +420,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
-                        "delegator_user_id": owner_id,
+                        "delegator_user_id": limited_id,
                         "delegate_user_id": limited_id,
                         "permission_code": "patient.demographics.view",
                         "starts_at": null,
@@ -438,7 +440,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/api/v2/admin/audit-events?limit=10")
+                .uri("/api/v2/admin/audit-events?limit=20")
                 .header(AUTHORIZATION, format!("Bearer {owner_token}"))
                 .body(Body::empty())
                 .expect("request builds"),
@@ -453,8 +455,17 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .iter()
         .filter_map(|event| event["event_type"].as_str())
         .collect();
+    assert!(event_types.contains(&"admin.position_template.created"));
+    assert!(event_types.contains(&"admin.position.created"));
     assert!(event_types.contains(&"admin.permission_assignment.created"));
     assert!(event_types.contains(&"admin.delegation.created"));
+    let delegation_event = audit_body["data"]
+        .as_array()
+        .expect("audit events are array")
+        .iter()
+        .find(|event| event["event_type"] == "admin.delegation.created")
+        .expect("delegation audit event exists");
+    assert_eq!(delegation_event["actor_user_id"], owner_id.to_string());
 
     let filtered_audit_events = app
         .oneshot(

@@ -202,17 +202,23 @@ impl NhisService {
         id: Uuid,
     ) -> Result<ObjectResponse<NhisBatchExport>, ApiError> {
         common::require_nhis_access(ctx, self.facility_id())?;
-        let exported = hms_db::billing::export_nhis_batch(self.pool(), self.facility_id(), id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "nhis_batch_export_failed",
-                    "NHIS batch could not be exported.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("nhis_batch_not_found", "NHIS batch was not found.")
-            })?;
+        let exported = hms_db::billing::export_nhis_batch(
+            self.pool(),
+            hms_db::billing::NhisBatchExportCommand {
+                facility_id: self.facility_id(),
+                batch_id: id,
+                actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nhis_batch_export_failed",
+                "NHIS batch could not be exported.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("nhis_batch_not_found", "NHIS batch was not found."))?;
         Ok(object(exported))
     }
 

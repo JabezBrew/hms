@@ -239,7 +239,11 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         payload: CreatePositionTemplateRequest,
     ) -> Result<ObjectResponse<PositionTemplateListItem>, ApiError> {
-        require_admin_access(ctx, self.facility_id())?;
+        require_high_risk_admin_access(
+            ctx,
+            self.facility_id(),
+            PermissionCode::AdminAuthorityManage,
+        )?;
         validate_code(&payload.code)?;
         validate_text(&payload.title, MAX_NAME_LEN, "title")?;
         validate_text(&payload.description, MAX_TEXT_LEN, "description")?;
@@ -248,6 +252,8 @@ impl AdminService {
             self.pool(),
             NewPositionTemplate {
                 facility_id: self.facility_id(),
+                actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
                 code: payload.code,
                 title: payload.title,
                 description: payload.description,
@@ -292,13 +298,19 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         payload: CreatePositionRequest,
     ) -> Result<ObjectResponse<PositionListItem>, ApiError> {
-        require_admin_access(ctx, self.facility_id())?;
+        require_high_risk_admin_access(
+            ctx,
+            self.facility_id(),
+            PermissionCode::AdminAuthorityManage,
+        )?;
         validate_code(&payload.code)?;
         validate_text(&payload.title, MAX_NAME_LEN, "title")?;
         let position = hms_db::admin::create_position(
             self.pool(),
             NewPosition {
                 facility_id: self.facility_id(),
+                actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
                 code: payload.code,
                 title: payload.title,
                 org_unit_id: payload.org_unit_id,
@@ -937,6 +949,7 @@ impl AdminService {
             self.pool(),
             NewDelegation {
                 facility_id,
+                actor_user_id: ctx.user_id,
                 delegator_user_id: payload.delegator_user_id,
                 delegate_user_id,
                 permission_code: payload.permission_code,

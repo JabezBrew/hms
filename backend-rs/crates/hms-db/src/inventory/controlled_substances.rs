@@ -284,21 +284,20 @@ pub async fn create_controlled_count(
     }
 
     let mut tx = pool.begin().await?;
-    insert_controlled_movement_tx(
-        &mut tx,
-        NewControlledMovement {
-            id: count.id,
-            facility_id: count.facility_id,
-            item_id: context.item_id,
-            location_id: context.location_id,
-            movement_type: ControlledMovementType::Count,
-            quantity_delta,
-            witness_user_id: Some(count.witness_user_id),
-            actor_user_id: count.actor_user_id,
-        },
-        current_balance,
-    )
-    .await?;
+    let movement = NewControlledMovement {
+        id: count.id,
+        facility_id: count.facility_id,
+        item_id: context.item_id,
+        location_id: context.location_id,
+        movement_type: ControlledMovementType::Count,
+        quantity_delta,
+        witness_user_id: Some(count.witness_user_id),
+        actor_user_id: count.actor_user_id,
+        request_id: count.request_id.clone(),
+    };
+    insert_controlled_movement_tx(&mut tx, movement.clone(), current_balance).await?;
+    insert_controlled_movement_audit_tx(&mut tx, &movement, current_balance + quantity_delta)
+        .await?;
 
     if quantity_delta != 0 {
         let discrepancy_id = Uuid::new_v4();
@@ -324,13 +323,14 @@ pub async fn create_controlled_count(
         .await?;
         sqlx::query(
             "INSERT INTO audit_events (
-                id, facility_id, actor_user_id, event_type, resource_type, resource_id, metadata
+                id, facility_id, actor_user_id, request_id, event_type, resource_type, resource_id, metadata
              )
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(Uuid::new_v4())
         .bind(count.facility_id)
         .bind(count.actor_user_id)
+        .bind(count.request_id.clone())
         .bind("controlled_substance.discrepancy.logged")
         .bind("controlled_substance_discrepancy")
         .bind(discrepancy_id)
@@ -376,15 +376,28 @@ pub async fn create_controlled_movement(
 
     let mut tx = pool.begin().await?;
     insert_controlled_movement_tx(&mut tx, movement.clone(), current_balance).await?;
+    insert_controlled_movement_audit_tx(&mut tx, &movement, next_balance).await?;
+    tx.commit().await?;
+    fetch_controlled_by_id(pool, movement.facility_id, movement.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created controlled register entry was not found"))
+}
+
+async fn insert_controlled_movement_audit_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    movement: &NewControlledMovement,
+    balance_after: i64,
+) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO audit_events (
-            id, facility_id, actor_user_id, event_type, resource_type, resource_id, metadata
+            id, facility_id, actor_user_id, request_id, event_type, resource_type, resource_id, metadata
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(Uuid::new_v4())
     .bind(movement.facility_id)
     .bind(movement.actor_user_id)
+    .bind(movement.request_id.as_deref())
     .bind("controlled_substance.movement.recorded")
     .bind("controlled_substance_register")
     .bind(movement.id)
@@ -392,14 +405,11 @@ pub async fn create_controlled_movement(
         "severity": "high",
         "movement_type": movement.movement_type,
         "quantity_delta": movement.quantity_delta,
-        "balance_after": next_balance,
+        "balance_after": balance_after,
     }))
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
-    fetch_controlled_by_id(pool, movement.facility_id, movement.id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("created controlled register entry was not found"))
+    Ok(())
 }
 
 pub async fn list_controlled_discrepancies(

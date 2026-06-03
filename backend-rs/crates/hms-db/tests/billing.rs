@@ -1,7 +1,7 @@
 use hms_db::billing::{
     BillingRuleFilters, CashSessionFilters, NewCashSession, NewClaim, NewInvoice,
     NewNhisArAdjustment, NewNhisServiceMapping, NewPayment, NewPaymentReversal,
-    ServiceCatalogFilters,
+    NhisBatchExportCommand, ServiceCatalogFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::billing::{
@@ -573,10 +573,18 @@ async fn invoice_locks_after_payment_claim_export_and_finalization() {
     )
     .await
     .expect("batch creates");
-    hms_db::billing::export_nhis_batch(&fixture.pool, fixture.facility_id, batch.id)
-        .await
-        .expect("batch exports")
-        .expect("batch exists");
+    hms_db::billing::export_nhis_batch(
+        &fixture.pool,
+        NhisBatchExportCommand {
+            facility_id: fixture.facility_id,
+            batch_id: batch.id,
+            actor_user_id: fixture.owner_id,
+            request_id: Some("nhis-export-db-test".to_owned()),
+        },
+    )
+    .await
+    .expect("batch exports")
+    .expect("batch exists");
     let export_lock =
         hms_db::billing::invoice_lock_state(&fixture.pool, fixture.facility_id, claim_invoice.id)
             .await
@@ -586,6 +594,22 @@ async fn invoice_locks_after_payment_claim_export_and_finalization() {
         export_lock.locked_reason.as_deref(),
         Some("nhis_batch_exported")
     );
+    let export_audit_request_id = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT request_id
+        FROM audit_events
+        WHERE facility_id = $1
+          AND event_type = 'billing.nhis_batch.exported'
+          AND resource_type = 'nhis_batch'
+          AND resource_id = $2
+        "#,
+    )
+    .bind(fixture.facility_id)
+    .bind(batch.id)
+    .fetch_one(&fixture.pool)
+    .await
+    .expect("NHIS export audit event is recorded");
+    assert_eq!(export_audit_request_id, "nhis-export-db-test");
 
     let final_invoice = fixture.create_invoice("INV-LOCK-3", 1).await;
     hms_db::billing::finalize_invoice(
@@ -641,6 +665,7 @@ async fn void_and_refund_are_append_only_reversals_with_supervisor_approval() {
             approved_by_user_id: fixture.owner_id,
             recorded_by_user_id: fixture.owner_id,
             reauthorized_at: chrono::Utc::now(),
+            request_id: Some("self-approved-reversal-db-test".to_owned()),
         },
     )
     .await;
@@ -658,6 +683,7 @@ async fn void_and_refund_are_append_only_reversals_with_supervisor_approval() {
             approved_by_user_id: fixture.supervisor_id,
             recorded_by_user_id: fixture.owner_id,
             reauthorized_at: chrono::Utc::now(),
+            request_id: Some("refund-reversal-db-test".to_owned()),
         },
     )
     .await
@@ -676,6 +702,7 @@ async fn void_and_refund_are_append_only_reversals_with_supervisor_approval() {
             approved_by_user_id: fixture.supervisor_id,
             recorded_by_user_id: fixture.owner_id,
             reauthorized_at: chrono::Utc::now(),
+            request_id: Some("void-reversal-db-test".to_owned()),
         },
     )
     .await
@@ -689,6 +716,35 @@ async fn void_and_refund_are_append_only_reversals_with_supervisor_approval() {
     assert_eq!(ledger.len(), 2);
     assert!(ledger.iter().any(|entry| entry.id == refund.id));
     assert!(ledger.iter().any(|entry| entry.id == void.id));
+
+    let audit_events = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT event_type, request_id
+        FROM audit_events
+        WHERE facility_id = $1
+          AND resource_type = 'payment'
+          AND resource_id = $2
+        ORDER BY occurred_at ASC
+        "#,
+    )
+    .bind(fixture.facility_id)
+    .bind(payment.id)
+    .fetch_all(&fixture.pool)
+    .await
+    .expect("payment reversal audit events load");
+    assert_eq!(
+        audit_events,
+        vec![
+            (
+                "billing.payment_refund.recorded".to_owned(),
+                "refund-reversal-db-test".to_owned()
+            ),
+            (
+                "billing.payment_void.recorded".to_owned(),
+                "void-reversal-db-test".to_owned()
+            ),
+        ]
+    );
 }
 
 #[tokio::test]

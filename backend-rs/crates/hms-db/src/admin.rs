@@ -34,6 +34,8 @@ pub struct NewOrganizationUnit {
 
 pub struct NewPositionTemplate {
     pub facility_id: Uuid,
+    pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
     pub code: String,
     pub title: String,
     pub description: String,
@@ -42,6 +44,8 @@ pub struct NewPositionTemplate {
 
 pub struct NewPosition {
     pub facility_id: Uuid,
+    pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
     pub code: String,
     pub title: String,
     pub org_unit_id: Uuid,
@@ -79,6 +83,7 @@ pub struct NewCommittee {
 
 pub struct NewDelegation {
     pub facility_id: Uuid,
+    pub actor_user_id: Uuid,
     pub delegator_user_id: Uuid,
     pub delegate_user_id: Uuid,
     pub permission_code: PermissionCode,
@@ -573,6 +578,7 @@ pub async fn create_position_template(
 ) -> anyhow::Result<PositionTemplateListItem> {
     let id = Uuid::new_v4();
     let permission_codes = codec::encode_slice(&template.permission_codes)?;
+    let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO position_templates (id, facility_id, code, title, description, permission_codes)
          VALUES ($1, $2, $3, $4, $5, $6)",
@@ -582,9 +588,23 @@ pub async fn create_position_template(
     .bind(template.code)
     .bind(template.title)
     .bind(template.description)
-    .bind(permission_codes)
-    .execute(pool)
+    .bind(&permission_codes)
+    .execute(&mut *tx)
     .await?;
+    insert_audit_event_tx(
+        &mut tx,
+        NewAuditEvent {
+            facility_id: template.facility_id,
+            actor_user_id: Some(template.actor_user_id),
+            request_id: template.request_id,
+            event_type: "admin.position_template.created".to_owned(),
+            resource_type: "position_template".to_owned(),
+            resource_id: Some(id),
+            metadata: json!({ "permission_codes": permission_codes }),
+        },
+    )
+    .await?;
+    tx.commit().await?;
     get_position_template(pool, template.facility_id, id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("position template was not found after write"))
@@ -614,6 +634,7 @@ pub async fn create_position(
     position: NewPosition,
 ) -> anyhow::Result<PositionListItem> {
     let id = Uuid::new_v4();
+    let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO positions (id, facility_id, org_unit_id, template_id, code, title, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -625,8 +646,25 @@ pub async fn create_position(
     .bind(position.code)
     .bind(position.title)
     .bind(codec::encode(PositionStatus::Active)?)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    insert_audit_event_tx(
+        &mut tx,
+        NewAuditEvent {
+            facility_id: position.facility_id,
+            actor_user_id: Some(position.actor_user_id),
+            request_id: position.request_id,
+            event_type: "admin.position.created".to_owned(),
+            resource_type: "position".to_owned(),
+            resource_id: Some(id),
+            metadata: json!({
+                "org_unit_id": position.org_unit_id,
+                "template_id": position.template_id
+            }),
+        },
+    )
+    .await?;
+    tx.commit().await?;
     get_position(pool, position.facility_id, id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("position was not found after write"))
@@ -1670,12 +1708,15 @@ pub async fn create_delegation(
         &mut tx,
         NewAuditEvent {
             facility_id: delegation.facility_id,
-            actor_user_id: Some(delegation.delegator_user_id),
+            actor_user_id: Some(delegation.actor_user_id),
             request_id,
             event_type: "admin.delegation.created".to_owned(),
             resource_type: "delegation".to_owned(),
             resource_id: Some(id),
-            metadata: json!({ "permission_code": permission_code }),
+            metadata: json!({
+                "permission_code": permission_code,
+                "delegator_user_id": delegation.delegator_user_id
+            }),
         },
     )
     .await?;

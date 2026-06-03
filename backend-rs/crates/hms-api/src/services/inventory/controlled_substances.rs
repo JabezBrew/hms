@@ -176,6 +176,7 @@ impl ControlledSubstancesService {
                 actor_user_id: ctx.user_id,
                 category,
                 reason,
+                request_id: Some(ctx.request_id.clone()),
             },
         )
         .await
@@ -214,6 +215,7 @@ impl ControlledSubstancesService {
                 quantity_delta: payload.quantity_delta,
                 witness_user_id: payload.witness_user_id,
                 actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
             },
         )
         .await

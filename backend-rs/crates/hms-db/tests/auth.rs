@@ -1,8 +1,17 @@
+use std::sync::Arc;
+
 use chrono::{Duration, Utc};
-use hms_db::auth::NewRefreshSession;
+use hms_db::auth::{
+    AuditBreakGlassChronicleView, EndBreakGlassGrants, NewAuthAuditEvent, NewRefreshSession,
+    StartBreakGlassGrant,
+};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::auth::{PatientDataVisibility, UpdateAuthProfileRequest};
+use hms_domain::auth::{
+    BreakGlassCategory, BreakGlassGrantDenialReason, BreakGlassGrantOutcome, PatientDataVisibility,
+    UpdateAuthProfileRequest,
+};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
+use tokio::sync::Barrier;
 use uuid::Uuid;
 
 async fn insert_test_refresh_session(
@@ -382,6 +391,272 @@ async fn auth_password_changes_are_user_and_facility_scoped() {
     .await
     .expect("cross-facility password change succeeds")
     .is_none());
+}
+
+#[tokio::test]
+async fn concurrent_login_failures_emit_one_burst_audit() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+
+    let barrier = Arc::new(Barrier::new(5));
+    let mut tasks = Vec::new();
+    for attempt in 0..5 {
+        let pool = pool.clone();
+        let barrier = Arc::clone(&barrier);
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            hms_db::auth::insert_login_failure_audit(
+                &pool,
+                NewAuthAuditEvent {
+                    facility_id,
+                    actor_user_id: None,
+                    request_id: Some(format!("concurrent-login-failure-{attempt}")),
+                    event_type: "auth.login.failed".to_owned(),
+                    resource_type: "auth_user".to_owned(),
+                    resource_id: Some(owner_id),
+                    metadata: serde_json::json!({
+                        "severity": "medium",
+                        "outcome": "failed"
+                    }),
+                },
+            )
+            .await
+        }));
+    }
+
+    for task in tasks {
+        task.await
+            .expect("login failure audit task joins")
+            .expect("login failure audit inserts");
+    }
+
+    let failures = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)::bigint
+        FROM audit_events
+        WHERE facility_id = $1
+          AND event_type = 'auth.login.failed'
+          AND resource_type = 'auth_user'
+          AND resource_id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(owner_id)
+    .fetch_one(&pool)
+    .await
+    .expect("failed-login audit count loads");
+    let bursts = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)::bigint
+        FROM audit_events
+        WHERE facility_id = $1
+          AND event_type = 'auth.login_failure_burst.detected'
+          AND resource_type = 'auth_user'
+          AND resource_id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(owner_id)
+    .fetch_one(&pool)
+    .await
+    .expect("login-burst audit count loads");
+
+    assert_eq!(failures, 5);
+    assert_eq!(bursts, 1);
+}
+
+#[tokio::test]
+async fn break_glass_chronicle_view_audit_validates_active_grant_under_lock() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+    let now = Utc::now();
+    let denied = hms_db::auth::start_break_glass_grant(
+        &pool,
+        StartBreakGlassGrant {
+            id: Uuid::new_v4(),
+            facility_id,
+            user_id: owner_id,
+            patient_id,
+            category: BreakGlassCategory::UrgentClinicalContinuity,
+            reason_text: Some("repo audit contract denied access".to_owned()),
+            request_id: Some("break-glass-denied-test".to_owned()),
+            now,
+            reauth_verified_at: None,
+        },
+    )
+    .await
+    .expect("break-glass denial audits");
+    assert_eq!(
+        denied,
+        BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::ReauthRequired)
+    );
+    let denial_audits = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)::bigint
+        FROM audit_events
+        WHERE facility_id = $1
+          AND event_type = 'patient.break_glass.denied'
+          AND request_id = 'break-glass-denied-test'
+          AND actor_user_id = $2
+          AND resource_type = 'patient'
+          AND resource_id = $3
+          AND metadata->>'denial_reason' = 'reauth_required'
+          AND NOT metadata ? 'reason_text'
+        "#,
+    )
+    .bind(facility_id)
+    .bind(owner_id)
+    .bind(patient_id)
+    .fetch_one(&pool)
+    .await
+    .expect("break-glass denial audit count loads");
+    assert_eq!(denial_audits, 1);
+
+    let grant = match hms_db::auth::start_break_glass_grant(
+        &pool,
+        StartBreakGlassGrant {
+            id: Uuid::new_v4(),
+            facility_id,
+            user_id: owner_id,
+            patient_id,
+            category: BreakGlassCategory::UrgentClinicalContinuity,
+            reason_text: Some("repo audit contract access".to_owned()),
+            request_id: Some("break-glass-start-test".to_owned()),
+            now,
+            reauth_verified_at: Some(now),
+        },
+    )
+    .await
+    .expect("break-glass grant starts")
+    {
+        BreakGlassGrantOutcome::Granted(grant) => grant,
+        BreakGlassGrantOutcome::Denied(reason) => {
+            panic!("break-glass grant should be allowed in baseline: {reason:?}");
+        }
+    };
+
+    assert!(hms_db::auth::audit_break_glass_chronicle_view_once(
+        &pool,
+        AuditBreakGlassChronicleView {
+            grant_id: grant.id,
+            facility_id,
+            user_id: owner_id,
+            patient_id,
+            request_id: Some("break-glass-view-first".to_owned()),
+            now,
+        },
+    )
+    .await
+    .expect("first Chronicle view audits"));
+    assert!(hms_db::auth::audit_break_glass_chronicle_view_once(
+        &pool,
+        AuditBreakGlassChronicleView {
+            grant_id: grant.id,
+            facility_id,
+            user_id: owner_id,
+            patient_id,
+            request_id: Some("break-glass-view-second".to_owned()),
+            now,
+        },
+    )
+    .await
+    .expect("already-audited active grant stays allowed"));
+
+    let second_view_audits = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)::bigint
+        FROM audit_events
+        WHERE facility_id = $1
+          AND event_type = 'patient.chronicle.outside_assignment_viewed'
+          AND request_id = 'break-glass-view-second'
+        "#,
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("second view audit count loads");
+    assert_eq!(second_view_audits, 0);
+
+    hms_db::auth::end_break_glass_grants(
+        &pool,
+        EndBreakGlassGrants {
+            facility_id,
+            user_id: owner_id,
+            patient_id,
+            ended_by_user_id: owner_id,
+            request_id: Some("break-glass-end-test".to_owned()),
+            now: now + Duration::seconds(1),
+        },
+    )
+    .await
+    .expect("break-glass grant ends");
+
+    assert!(!hms_db::auth::audit_break_glass_chronicle_view_once(
+        &pool,
+        AuditBreakGlassChronicleView {
+            grant_id: grant.id,
+            facility_id,
+            user_id: owner_id,
+            patient_id,
+            request_id: Some("break-glass-view-after-end".to_owned()),
+            now,
+        },
+    )
+    .await
+    .expect("ended grant blocks Chronicle view audit"));
 }
 
 #[tokio::test]

@@ -131,6 +131,7 @@ pub struct NewControlledMovement {
     pub quantity_delta: i64,
     pub witness_user_id: Option<Uuid>,
     pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -143,6 +144,7 @@ pub struct NewControlledCount {
     pub actor_user_id: Uuid,
     pub category: ControlledDiscrepancyCategory,
     pub reason: String,
+    pub request_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]

@@ -147,6 +147,17 @@ pub struct NewRefreshSession {
     pub device_label: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+pub struct NewAuthAuditEvent {
+    pub facility_id: Uuid,
+    pub actor_user_id: Option<Uuid>,
+    pub request_id: Option<String>,
+    pub event_type: String,
+    pub resource_type: String,
+    pub resource_id: Option<Uuid>,
+    pub metadata: Value,
+}
+
 #[derive(Clone, Debug, FromRow)]
 pub struct UserSessionRow {
     pub id: Uuid,
@@ -201,6 +212,16 @@ pub struct EndBreakGlassGrants {
     pub user_id: Uuid,
     pub patient_id: Uuid,
     pub ended_by_user_id: Uuid,
+    pub request_id: Option<String>,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AuditBreakGlassChronicleView {
+    pub grant_id: Uuid,
+    pub facility_id: Uuid,
+    pub user_id: Uuid,
+    pub patient_id: Uuid,
     pub request_id: Option<String>,
     pub now: DateTime<Utc>,
 }
@@ -869,8 +890,9 @@ pub async fn insert_refresh_session(
     pool: &PgPool,
     session: &NewRefreshSession,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
+    insert_refresh_session_query(
+        sqlx::query(
+            r#"
         INSERT INTO refresh_sessions (
             token_hash,
             session_id,
@@ -889,6 +911,54 @@ pub async fn insert_refresh_session(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         "#,
+        ),
+        session,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn insert_refresh_session_with_audit(
+    pool: &PgPool,
+    session: &NewRefreshSession,
+    audit_event: NewAuthAuditEvent,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        WITH inserted_session AS (
+            INSERT INTO refresh_sessions (
+                token_hash,
+                session_id,
+                session_family_id,
+                rotated_from_session_id,
+                user_id,
+                facility_id,
+                session_version,
+                permission_version_at_issue,
+                csrf_token_hash,
+                expires_at,
+                session_started_at,
+                idle_expires_at,
+                absolute_expires_at,
+                device_label
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING 1
+        )
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        SELECT $15, $16, $17, $18, $19, $20, $21, $22
+        FROM inserted_session
+        "#,
     )
     .bind(&session.token_hash)
     .bind(session.session_id)
@@ -904,9 +974,207 @@ pub async fn insert_refresh_session(
     .bind(session.idle_expires_at)
     .bind(session.absolute_expires_at)
     .bind(session.device_label.as_deref())
+    .bind(Uuid::new_v4())
+    .bind(audit_event.facility_id)
+    .bind(audit_event.actor_user_id)
+    .bind(audit_event.request_id)
+    .bind(audit_event.event_type)
+    .bind(audit_event.resource_type)
+    .bind(audit_event.resource_id)
+    .bind(audit_event.metadata)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+pub async fn insert_auth_audit_event(
+    pool: &PgPool,
+    audit_event: NewAuthAuditEvent,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(audit_event.facility_id)
+    .bind(audit_event.actor_user_id)
+    .bind(audit_event.request_id)
+    .bind(audit_event.event_type)
+    .bind(audit_event.resource_type)
+    .bind(audit_event.resource_id)
+    .bind(audit_event.metadata)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn insert_login_failure_audit(
+    pool: &PgPool,
+    audit_event: NewAuthAuditEvent,
+) -> anyhow::Result<()> {
+    let mut transaction = pool.begin().await?;
+    let occurred_at = sqlx::query_scalar::<_, DateTime<Utc>>(
+        r#"
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)
+        RETURNING occurred_at
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(audit_event.facility_id)
+    .bind(audit_event.request_id.as_deref())
+    .bind(&audit_event.event_type)
+    .bind(&audit_event.resource_type)
+    .bind(audit_event.resource_id)
+    .bind(&audit_event.metadata)
+    .fetch_one(&mut *transaction)
+    .await?;
+
+    let resource_key = audit_event
+        .resource_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "none".to_owned());
+
+    sqlx::query(
+        r#"
+        INSERT INTO auth_login_failure_counters (
+            facility_id,
+            resource_type,
+            resource_key,
+            window_started_at,
+            failure_count,
+            burst_audited_at,
+            last_failed_at
+        )
+        VALUES ($1, $2, $3, $4, 1, NULL, $4)
+        ON CONFLICT (facility_id, resource_type, resource_key)
+        DO UPDATE SET
+            window_started_at = CASE
+                WHEN auth_login_failure_counters.window_started_at >= EXCLUDED.last_failed_at - interval '15 minutes'
+                    THEN auth_login_failure_counters.window_started_at
+                ELSE EXCLUDED.window_started_at
+            END,
+            failure_count = CASE
+                WHEN auth_login_failure_counters.window_started_at >= EXCLUDED.last_failed_at - interval '15 minutes'
+                    THEN auth_login_failure_counters.failure_count + 1
+                ELSE 1
+            END,
+            burst_audited_at = CASE
+                WHEN auth_login_failure_counters.window_started_at >= EXCLUDED.last_failed_at - interval '15 minutes'
+                    THEN auth_login_failure_counters.burst_audited_at
+                ELSE NULL
+            END,
+            last_failed_at = EXCLUDED.last_failed_at,
+            updated_at = now()
+        "#,
+    )
+    .bind(audit_event.facility_id)
+    .bind(&audit_event.resource_type)
+    .bind(&resource_key)
+    .bind(occurred_at)
+    .execute(&mut *transaction)
+    .await?;
+
+    let burst_failure_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        UPDATE auth_login_failure_counters
+        SET burst_audited_at = $4,
+            updated_at = now()
+        WHERE facility_id = $1
+          AND resource_type = $2
+          AND resource_key = $3
+          AND failure_count >= 5
+          AND burst_audited_at IS NULL
+        RETURNING failure_count
+        "#,
+    )
+    .bind(audit_event.facility_id)
+    .bind(&audit_event.resource_type)
+    .bind(&resource_key)
+    .bind(occurred_at)
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    if let Some(failure_count) = burst_failure_count {
+        sqlx::query(
+            r#"
+            INSERT INTO audit_events (
+                id,
+                facility_id,
+                actor_user_id,
+                request_id,
+                event_type,
+                resource_type,
+                resource_id,
+                metadata
+            )
+            SELECT $1,
+                   $2,
+                   NULL,
+                   $3,
+                   'auth.login_failure_burst.detected',
+                   $4,
+                   $5,
+                   jsonb_build_object(
+                       'severity', 'high',
+                       'failure_count', $6,
+                       'window_minutes', 15
+                   )
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(audit_event.facility_id)
+        .bind(audit_event.request_id.as_deref())
+        .bind(&audit_event.resource_type)
+        .bind(audit_event.resource_id)
+        .bind(failure_count)
+        .execute(&mut *transaction)
+        .await?;
+    }
+
+    transaction.commit().await?;
+    Ok(())
+}
+
+fn insert_refresh_session_query<'q>(
+    query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    session: &'q NewRefreshSession,
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    query
+        .bind(&session.token_hash)
+        .bind(session.session_id)
+        .bind(session.session_family_id)
+        .bind(session.rotated_from_session_id)
+        .bind(session.user_id)
+        .bind(session.facility_id)
+        .bind(session.session_version)
+        .bind(session.permission_version_at_issue)
+        .bind(&session.csrf_token_hash)
+        .bind(session.expires_at)
+        .bind(session.session_started_at)
+        .bind(session.idle_expires_at)
+        .bind(session.absolute_expires_at)
+        .bind(session.device_label.as_deref())
 }
 
 pub async fn refresh_session_by_token_hash(
@@ -1082,6 +1350,56 @@ pub async fn revoke_refresh_session_family(
     .await?;
 
     Ok(result.rows_affected())
+}
+
+pub async fn revoke_refresh_session_family_with_audit(
+    pool: &PgPool,
+    session_family_id: Uuid,
+    reason: &str,
+    audit_event: NewAuthAuditEvent,
+) -> anyhow::Result<u64> {
+    let revoked = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH revoked AS (
+            UPDATE refresh_sessions
+            SET revoked_at = now(),
+                last_seen_at = now(),
+                revoked_reason = $2
+            WHERE session_family_id = $1
+              AND revoked_at IS NULL
+            RETURNING 1
+        ),
+        audit AS (
+            INSERT INTO audit_events (
+                id,
+                facility_id,
+                actor_user_id,
+                request_id,
+                event_type,
+                resource_type,
+                resource_id,
+                metadata
+            )
+            SELECT $3, $4, $5, $6, $7, $8, $9, $10
+            RETURNING 1
+        )
+        SELECT count(*)::bigint FROM revoked
+        "#,
+    )
+    .bind(session_family_id)
+    .bind(reason)
+    .bind(Uuid::new_v4())
+    .bind(audit_event.facility_id)
+    .bind(audit_event.actor_user_id)
+    .bind(audit_event.request_id)
+    .bind(audit_event.event_type)
+    .bind(audit_event.resource_type)
+    .bind(audit_event.resource_id)
+    .bind(audit_event.metadata)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(revoked as u64)
 }
 
 pub async fn insert_password_reset_token(
@@ -1654,9 +1972,8 @@ pub async fn start_break_glass_grant(
     command: StartBreakGlassGrant,
 ) -> anyhow::Result<BreakGlassGrantOutcome> {
     if !reauth_is_fresh(command.reauth_verified_at, command.now) {
-        return Ok(BreakGlassGrantOutcome::Denied(
-            BreakGlassGrantDenialReason::ReauthRequired,
-        ));
+        return deny_break_glass_grant(pool, &command, BreakGlassGrantDenialReason::ReauthRequired)
+            .await;
     }
 
     let has_permission = sqlx::query_scalar::<_, bool>(
@@ -1678,9 +1995,12 @@ pub async fn start_break_glass_grant(
     .fetch_one(pool)
     .await?;
     if !has_permission {
-        return Ok(BreakGlassGrantOutcome::Denied(
+        return deny_break_glass_grant(
+            pool,
+            &command,
             BreakGlassGrantDenialReason::MissingDedicatedPermission,
-        ));
+        )
+        .await;
     }
 
     let patient_is_active = sqlx::query_scalar::<_, bool>(
@@ -1699,9 +2019,12 @@ pub async fn start_break_glass_grant(
     .fetch_one(pool)
     .await?;
     if !patient_is_active {
-        return Ok(BreakGlassGrantOutcome::Denied(
+        return deny_break_glass_grant(
+            pool,
+            &command,
             BreakGlassGrantDenialReason::PatientNotActive,
-        ));
+        )
+        .await;
     }
 
     if active_break_glass_grant_for_patient(
@@ -1714,18 +2037,24 @@ pub async fn start_break_glass_grant(
     .await?
     .is_some()
     {
-        return Ok(BreakGlassGrantOutcome::Denied(
+        return deny_break_glass_grant(
+            pool,
+            &command,
             BreakGlassGrantDenialReason::ActiveGrantAlreadyExists,
-        ));
+        )
+        .await;
     }
 
     let active_count =
         active_break_glass_grant_count(pool, command.facility_id, command.user_id, command.now)
             .await?;
     if active_count >= BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER {
-        return Ok(BreakGlassGrantOutcome::Denied(
+        return deny_break_glass_grant(
+            pool,
+            &command,
             BreakGlassGrantDenialReason::TooManyActiveGrants,
-        ));
+        )
+        .await;
     }
 
     let reason_text = command
@@ -1834,6 +2163,95 @@ pub async fn end_break_glass_grants(
     Ok(ended)
 }
 
+pub async fn audit_break_glass_chronicle_view_once(
+    pool: &PgPool,
+    command: AuditBreakGlassChronicleView,
+) -> anyhow::Result<bool> {
+    let mut transaction = pool.begin().await?;
+    let audited_grant = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        UPDATE patient_break_glass_grants
+        SET chronicle_view_audited_at = $5
+        WHERE id = $1
+          AND facility_id = $2
+          AND user_id = $3
+          AND patient_id = $4
+          AND ended_at IS NULL
+          AND started_at <= $5
+          AND expires_at > $5
+          AND chronicle_view_audited_at IS NULL
+        RETURNING id
+        "#,
+    )
+    .bind(command.grant_id)
+    .bind(command.facility_id)
+    .bind(command.user_id)
+    .bind(command.patient_id)
+    .bind(command.now)
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    if audited_grant.is_some() {
+        sqlx::query(
+            r#"
+            INSERT INTO audit_events (
+                id,
+                facility_id,
+                actor_user_id,
+                request_id,
+                event_type,
+                resource_type,
+                resource_id,
+                metadata
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(command.facility_id)
+        .bind(command.user_id)
+        .bind(command.request_id.as_deref())
+        .bind("patient.chronicle.outside_assignment_viewed")
+        .bind("patient_chronicle")
+        .bind(command.patient_id)
+        .bind(serde_json::json!({
+            "severity": "high",
+            "break_glass_grant_id": command.grant_id,
+            "access_source": "break_glass",
+            "access_reason": "break_glass_emergency"
+        }))
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        return Ok(true);
+    }
+
+    let grant_is_active = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM patient_break_glass_grants
+            WHERE id = $1
+              AND facility_id = $2
+              AND user_id = $3
+              AND patient_id = $4
+              AND ended_at IS NULL
+              AND started_at <= $5
+              AND expires_at > $5
+        )
+        "#,
+    )
+    .bind(command.grant_id)
+    .bind(command.facility_id)
+    .bind(command.user_id)
+    .bind(command.patient_id)
+    .bind(command.now)
+    .fetch_one(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(grant_is_active)
+}
+
 async fn active_break_glass_grant_count(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1856,6 +2274,42 @@ async fn active_break_glass_grant_count(
     .bind(now)
     .fetch_one(pool)
     .await?)
+}
+
+async fn deny_break_glass_grant(
+    pool: &PgPool,
+    command: &StartBreakGlassGrant,
+    reason: BreakGlassGrantDenialReason,
+) -> anyhow::Result<BreakGlassGrantOutcome> {
+    let category = codec::encode(command.category)?;
+    sqlx::query(
+        r#"
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, 'patient.break_glass.denied', 'patient', $5, $6)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(command.facility_id)
+    .bind(command.user_id)
+    .bind(command.request_id.as_deref())
+    .bind(command.patient_id)
+    .bind(serde_json::json!({
+        "severity": "high",
+        "category": category,
+        "denial_reason": reason
+    }))
+    .execute(pool)
+    .await?;
+    Ok(BreakGlassGrantOutcome::Denied(reason))
 }
 
 fn reauth_is_fresh(reauth_verified_at: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {

@@ -206,6 +206,7 @@ impl FinancialWorkflowService {
                 approved_by_user_id: payload.approval.supervisor_user_id,
                 recorded_by_user_id: ctx.user_id,
                 reauthorized_at: Utc::now(),
+                request_id: Some(ctx.request_id.clone()),
             },
         )
         .await
