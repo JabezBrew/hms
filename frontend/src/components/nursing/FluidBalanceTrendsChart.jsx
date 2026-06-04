@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import { HmsEChart } from '@/shared/components/charts/HmsEChart';
 import {
   createBaseChartOption,
+  createItemTooltip,
   escapeChartTooltipHtml,
+  getChartTooltipParams,
 } from '@/shared/components/charts/HmsEChartTheme';
 
 const DEFAULT_EMPTY_ARRAY = [];
@@ -14,10 +16,9 @@ export default function FluidBalanceTrendsChart({ data = DEFAULT_EMPTY_ARRAY }) 
       ...base,
       grid: { ...base.grid, bottom: 46, top: 18 },
       legend: { ...base.legend, show: true },
-      tooltip: {
-        ...base.tooltip,
+      tooltip: createItemTooltip(base.tooltip, {
         formatter: (params) => {
-          const list = Array.isArray(params) ? params : [params];
+          const list = getChartTooltipParams(params);
           const row = list[0]?.data?.record;
           return `
             <div>
@@ -32,7 +33,7 @@ export default function FluidBalanceTrendsChart({ data = DEFAULT_EMPTY_ARRAY }) 
             </div>
           `;
         },
-      },
+      }),
       xAxis: {
         ...base.xAxis,
         data: data.map((point) => point.dateLabel),

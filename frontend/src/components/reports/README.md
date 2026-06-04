@@ -11,6 +11,8 @@ Scope: ward occupancy charts and reports.
 - Charts should not require PHI-bearing labels.
 - Heavy report charts should be deferred.
 - Rendered report graphs use the shared ECharts wrapper, not Recharts.
+- Bar and mixed bar/line charts should use item-triggered tooltips so empty
+  plot hover does not select or visually mask the nearest ward/category.
 - Rust V2 ward reports currently expose a ward capacity snapshot only; do not
   fabricate historical occupancy, LOS, admissions, transfer, discharge, or
   revenue analytics from placeholder zeros.

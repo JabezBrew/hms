@@ -10,7 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { HmsEChart } from '@/shared/components/charts/HmsEChart';
 import {
   createBaseChartOption,
+  createItemTooltip,
   escapeChartTooltipHtml,
+  getChartTooltipDataParam,
+  getChartTooltipParams,
 } from '@/shared/components/charts/HmsEChartTheme';
 import { cn } from '@/lib/utils';
 
@@ -68,6 +71,15 @@ function getAverage(values) {
   const validValues = values.filter(Number.isFinite);
   if (validValues.length === 0) return null;
   return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
+}
+
+function getFinitePointValues(points, key) {
+  const values = [];
+  for (const point of points) {
+    const value = numericValue(point[key]);
+    if (Number.isFinite(value)) values.push(value);
+  }
+  return values;
 }
 
 function hasMetricValue(rows, key) {
@@ -148,10 +160,9 @@ function buildSnapshotBarOption(rows, title) {
       ...base,
       grid: { ...base.grid, bottom: 46, top: 16 },
       legend: { ...base.legend, show: false },
-      tooltip: {
-        ...base.tooltip,
+      tooltip: createItemTooltip(base.tooltip, {
         formatter: (params) => {
-          const row = params?.data?.record;
+          const row = getChartTooltipDataParam(params)?.data?.record;
           const bedSummary = row?.totalBeds != null
             ? ` / ${formatNumber(row.totalBeds)}`
             : '';
@@ -165,7 +176,7 @@ function buildSnapshotBarOption(rows, title) {
             </div>
           `;
         },
-      },
+      }),
       xAxis: {
         ...base.xAxis,
         axisLabel: { ...base.xAxis.axisLabel, interval: 0, rotate: rows.length > 4 ? 24 : 0 },
@@ -214,7 +225,7 @@ function buildTrendLineOption({ occupancyData, selectedWard, wards }) {
       tooltip: {
         ...base.tooltip,
         formatter: (params) => {
-          const list = Array.isArray(params) ? params : [params];
+          const list = getChartTooltipParams(params);
           return `
             <div>
               <div style="color:${theme.muted};font-size:11px;margin-bottom:4px;">${escapeChartTooltipHtml(list[0]?.axisValue || '')}</div>
@@ -297,9 +308,7 @@ function TrendStatsTable({ occupancyData, rows, selectedWard, wards }) {
       </TableHeader>
       <TableBody>
         {names.map((name) => {
-          const values = occupancyData
-            .map((point) => numericValue(point[name]))
-            .filter(Number.isFinite);
+          const values = getFinitePointValues(occupancyData, name);
           return (
             <TableRow key={name}>
               <TableCell className="font-medium">{name}</TableCell>
@@ -392,13 +401,12 @@ function buildLengthOfStayDistributionOption(lengthOfStayData) {
       ...base,
       grid: { ...base.grid, bottom: 48, top: 18 },
       legend: { ...base.legend, show: true },
-      tooltip: {
-        ...base.tooltip,
+      tooltip: createItemTooltip(base.tooltip, {
         formatter: (params) => {
-          const list = Array.isArray(params) ? params : [params];
+          const list = getChartTooltipParams(params);
           return `
             <div>
-              <div style="color:${theme.muted};font-size:11px;margin-bottom:4px;">${escapeChartTooltipHtml(list[0]?.axisValue || '')}</div>
+              <div style="color:${theme.muted};font-size:11px;margin-bottom:4px;">${escapeChartTooltipHtml(list[0]?.axisValue || list[0]?.name || '')}</div>
               ${list.map((param) => `
                 <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
                   <span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${param.color};"></span>
@@ -409,7 +417,7 @@ function buildLengthOfStayDistributionOption(lengthOfStayData) {
             </div>
           `;
         },
-      },
+      }),
       xAxis: {
         ...base.xAxis,
         data: lengthOfStayData.map((point) => point.range),
@@ -538,10 +546,9 @@ function buildSnapshotMetricBarOption(rows, metricKey, title, unit = '') {
       ...base,
       grid: { ...base.grid, bottom: 46, top: 18 },
       legend: { ...base.legend, show: false },
-      tooltip: {
-        ...base.tooltip,
+      tooltip: createItemTooltip(base.tooltip, {
         formatter: (params) => {
-          const row = params?.data?.record;
+          const row = getChartTooltipDataParam(params)?.data?.record;
           const value = formatNumber(row?.[metricKey], unit ? ` ${unit}` : '');
           return `
             <div>
@@ -550,7 +557,7 @@ function buildSnapshotMetricBarOption(rows, metricKey, title, unit = '') {
             </div>
           `;
         },
-      },
+      }),
       xAxis: {
         ...base.xAxis,
         axisLabel: { ...base.xAxis.axisLabel, interval: 0, rotate: rows.length > 4 ? 24 : 0 },
@@ -665,13 +672,12 @@ function buildAdmissionsOption(admissionsByWard) {
       ...base,
       grid: { ...base.grid, bottom: 48, top: 18 },
       legend: { ...base.legend, show: true },
-      tooltip: {
-        ...base.tooltip,
+      tooltip: createItemTooltip(base.tooltip, {
         formatter: (params) => {
-          const list = Array.isArray(params) ? params : [params];
+          const list = getChartTooltipParams(params);
           return `
             <div>
-              <div style="color:${theme.muted};font-size:11px;margin-bottom:4px;">${escapeChartTooltipHtml(list[0]?.axisValue || '')}</div>
+              <div style="color:${theme.muted};font-size:11px;margin-bottom:4px;">${escapeChartTooltipHtml(list[0]?.axisValue || list[0]?.name || '')}</div>
               ${list.map((param) => `
                 <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
                   <span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${param.color};"></span>
@@ -682,7 +688,7 @@ function buildAdmissionsOption(admissionsByWard) {
             </div>
           `;
         },
-      },
+      }),
       xAxis: {
         ...base.xAxis,
         axisLabel: { ...base.xAxis.axisLabel, interval: 0, rotate: admissionsByWard.length > 4 ? 20 : 0 },

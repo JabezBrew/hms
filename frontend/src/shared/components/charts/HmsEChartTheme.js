@@ -61,6 +61,23 @@ export function escapeChartTooltipHtml(value) {
   }[character]));
 }
 
+export function getChartTooltipParams(params) {
+  return Array.isArray(params) ? params.filter(Boolean) : [params].filter(Boolean);
+}
+
+export function getChartTooltipDataParam(params) {
+  const list = getChartTooltipParams(params);
+  return list.find((param) => param?.data?.record) || list[0] || null;
+}
+
+export function createItemTooltip(baseTooltip, overrides = {}) {
+  return {
+    ...baseTooltip,
+    ...overrides,
+    trigger: 'item',
+  };
+}
+
 export function createBaseChartOption(theme) {
   return {
     backgroundColor: theme.background,
