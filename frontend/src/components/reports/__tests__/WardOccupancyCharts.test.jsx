@@ -15,7 +15,7 @@ const chartMock = vi.hoisted(() => ({
 vi.mock('@/shared/components/charts/HmsEChart', () => ({
   HmsEChart: (props) => {
     chartMock.instances.push(props);
-    return <div aria-label={props.ariaLabel} role="img" />;
+    return <img alt={props.ariaLabel} />;
   },
 }));
 
@@ -115,6 +115,8 @@ describe('WardOccupancyCharts', () => {
 
     expect(option.tooltip.trigger).toBe('item');
     expect(barData.value).toBe(75);
+    expect(barData.emphasis.itemStyle.color).toBe(barData.itemStyle.color);
+    expect(barData.emphasis.itemStyle.opacity).toBe(1);
 
     const directHoverHtml = option.tooltip.formatter({ data: barData });
     expect(directHoverHtml).toContain('Medical Ward');
@@ -142,6 +144,8 @@ describe('WardOccupancyCharts', () => {
 
     expect(option.tooltip.trigger).toBe('item');
     expect(barData.value).toBe(2.5);
+    expect(barData.emphasis.itemStyle.color).toBe(barData.itemStyle.color);
+    expect(barData.emphasis.itemStyle.opacity).toBe(1);
 
     const hoverHtml = option.tooltip.formatter({ data: barData });
     expect(hoverHtml).toContain('Medical Ward');
@@ -177,6 +181,8 @@ describe('WardOccupancyCharts', () => {
 
     expect(losOption.tooltip.trigger).toBe('item');
     expect(admissionsOption.tooltip.trigger).toBe('item');
+    expect(losOption.series[0].emphasis.itemStyle.color).toBe(losOption.series[0].itemStyle.color);
+    expect(admissionsOption.series[0].emphasis.itemStyle.color).toBe(admissionsOption.series[0].itemStyle.color);
     expect(losOption.tooltip.formatter({ color: '#123', seriesName: 'Patients', value: 4, name: '0-2 days' }))
       .toContain('4');
     expect(admissionsOption.tooltip.formatter({ color: '#123', seriesName: 'Admissions', value: 12, name: 'Medical Ward' }))

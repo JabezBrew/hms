@@ -22142,6 +22142,55 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_WardAnalyticsResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "admissions_by_ward": {
+                "items": {
+                  "$ref": "#/components/schemas/WardAdmissionMetric"
+                },
+                "type": "array"
+              },
+              "length_of_stay": {
+                "items": {
+                  "$ref": "#/components/schemas/WardLengthOfStayBucket"
+                },
+                "type": "array"
+              },
+              "meta": {
+                "$ref": "#/components/schemas/WardAnalyticsMeta"
+              },
+              "occupancy_trends": {
+                "items": {
+                  "$ref": "#/components/schemas/WardOccupancyTrendPoint"
+                },
+                "type": "array"
+              },
+              "ward_utilization": {
+                "items": {
+                  "$ref": "#/components/schemas/WardUtilizationMetric"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "meta",
+              "occupancy_trends",
+              "length_of_stay",
+              "ward_utilization",
+              "admissions_by_ward"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_WardBedMapResponse": {
         "properties": {
           "data": {
@@ -29526,6 +29575,96 @@
         ],
         "type": "string"
       },
+      "WardAdmissionMetric": {
+        "properties": {
+          "admissions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "discharges": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "transfers": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ward": {
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ward_id",
+          "ward",
+          "admissions",
+          "discharges"
+        ],
+        "type": "object"
+      },
+      "WardAnalyticsMeta": {
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "unavailable_metrics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "unavailable_metrics"
+        ],
+        "type": "object"
+      },
+      "WardAnalyticsResponse": {
+        "properties": {
+          "admissions_by_ward": {
+            "items": {
+              "$ref": "#/components/schemas/WardAdmissionMetric"
+            },
+            "type": "array"
+          },
+          "length_of_stay": {
+            "items": {
+              "$ref": "#/components/schemas/WardLengthOfStayBucket"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/WardAnalyticsMeta"
+          },
+          "occupancy_trends": {
+            "items": {
+              "$ref": "#/components/schemas/WardOccupancyTrendPoint"
+            },
+            "type": "array"
+          },
+          "ward_utilization": {
+            "items": {
+              "$ref": "#/components/schemas/WardUtilizationMetric"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "meta",
+          "occupancy_trends",
+          "length_of_stay",
+          "ward_utilization",
+          "admissions_by_ward"
+        ],
+        "type": "object"
+      },
       "WardBedMapBed": {
         "properties": {
           "bed_code": {
@@ -29855,6 +29994,27 @@
         },
         "type": "object"
       },
+      "WardLengthOfStayBucket": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "percentage": {
+            "format": "double",
+            "type": "number"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "range",
+          "count",
+          "percentage"
+        ],
+        "type": "object"
+      },
       "WardListItem": {
         "properties": {
           "active_bed_count": {
@@ -29906,6 +30066,42 @@
           "reserved_bed_count",
           "cleaning_bed_count",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "WardOccupancyTrendPoint": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "occupancy_rate": {
+            "format": "double",
+            "type": "number"
+          },
+          "occupied_bed_days": {
+            "format": "double",
+            "type": "number"
+          },
+          "total_beds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ward": {
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "ward_id",
+          "ward",
+          "occupancy_rate",
+          "occupied_bed_days",
+          "total_beds"
         ],
         "type": "object"
       },
@@ -30473,6 +30669,56 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "WardUtilizationMetric": {
+        "properties": {
+          "avg_los": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "bed_days": {
+            "format": "double",
+            "type": "number"
+          },
+          "occupancy_rate": {
+            "format": "double",
+            "type": "number"
+          },
+          "occupied_beds_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_beds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "turnover_rate": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ward": {
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ward_id",
+          "ward",
+          "occupancy_rate",
+          "occupied_beds_count",
+          "total_beds",
+          "bed_days"
+        ],
+        "type": "object"
       },
       "WebAuthnVerifyRequest": {
         "properties": {
@@ -58607,6 +58853,100 @@
               }
             },
             "description": "Ward could not be created"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/analytics": {
+      "get": {
+        "operationId": "getWardAnalytics",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardAnalyticsResponse"
+                }
+              }
+            },
+            "description": "Ward occupancy analytics"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid analytics query"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ward not found"
           }
         },
         "security": [

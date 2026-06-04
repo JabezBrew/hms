@@ -1,5 +1,6 @@
 mod admin;
 mod admission_cases;
+mod analytics;
 mod bed_management;
 mod common;
 mod discharge_cases;
@@ -11,6 +12,7 @@ mod ward_stock;
 
 pub use admin::WardAdminService;
 pub use admission_cases::AdmissionCasesService;
+pub use analytics::WardAnalyticsService;
 pub use bed_management::BedManagementService;
 pub use discharge_cases::DischargeCasesService;
 pub use handoff::HandoffService;
@@ -33,6 +35,10 @@ impl WardServices {
 
     pub fn admin(&self) -> WardAdminService {
         WardAdminService::new(self.state.clone())
+    }
+
+    pub fn analytics(&self) -> WardAnalyticsService {
+        WardAnalyticsService::new(self.state.clone())
     }
 
     pub fn bed_management(&self) -> BedManagementService {

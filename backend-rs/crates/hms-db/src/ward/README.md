@@ -17,6 +17,7 @@ query details.
 | --- | --- |
 | `mod.rs` | public ward repository exports. |
 | `admin.rs` | ward, section, bed, amenity, and staff-assignment persistence. |
+| `analytics.rs` | ward report aggregate queries for occupancy trends, LOS buckets, admissions, discharges, utilization, and turnover. |
 | `bed_management.rs` | bed status, assignment, layout, transfer, and occupancy queries. |
 | `admission_cases.rs` | admission-case state, active admissions, and admission workflow queries. |
 | `discharge_cases.rs` | discharge planning and discharge completion persistence. |
@@ -35,6 +36,8 @@ query details.
   projection queries.
 - Use `[start, end)` timestamp ranges for date filters.
 - Keep admission/bed transition writes atomic and auditable.
+- Ward analytics should calculate bed-days from admission interval overlap
+  rather than deriving report data from current bed state alone.
 
 ## Verification
 

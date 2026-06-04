@@ -11,6 +11,7 @@ import { HmsEChart } from '@/shared/components/charts/HmsEChart';
 import {
   createBaseChartOption,
   createItemTooltip,
+  createStableBarStyle,
   escapeChartTooltipHtml,
   getChartTooltipDataParam,
   getChartTooltipParams,
@@ -51,6 +52,19 @@ function numericValue(value) {
 
 function getWardNameById(wards, wardId) {
   return wards.find((ward) => ward.id === wardId)?.name;
+}
+
+function getTrendMetricKeys(occupancyData) {
+  const firstPoint = occupancyData[0] || {};
+  return Object.keys(firstPoint).filter((key) => (
+    key !== 'date' && key !== 'Overall' && !key.startsWith('__')
+  ));
+}
+
+function getTrendLabelForWard(occupancyData, wards, wardId) {
+  if (wardId === 'all') return null;
+  const wardLabel = occupancyData[0]?.__wardLabels?.[wardId];
+  return wardLabel || getWardNameById(wards, wardId);
 }
 
 function getSnapshotRows(utilizationData) {
@@ -153,6 +167,10 @@ function SnapshotNotice({ meta }) {
   );
 }
 
+function hasUnavailableMetric(meta, metric) {
+  return meta?.unavailable_metrics?.includes(metric) || false;
+}
+
 function buildSnapshotBarOption(rows, title) {
   return (theme) => {
     const base = createBaseChartOption(theme, title);
@@ -191,14 +209,14 @@ function buildSnapshotBarOption(rows, title) {
       },
       series: [{
         barMaxWidth: 42,
-        data: rows.map((row, index) => ({
-          itemStyle: {
-            borderRadius: [4, 4, 0, 0],
-            color: theme.palette[index % theme.palette.length],
-          },
-          record: row,
-          value: row.occupancyRate ?? null,
-        })),
+        data: rows.map((row, index) => {
+          const color = theme.palette[index % theme.palette.length];
+          return {
+            ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color }),
+            record: row,
+            value: row.occupancyRate ?? null,
+          };
+        }),
         name: 'Occupancy',
         type: 'bar',
       }],
@@ -209,10 +227,10 @@ function buildSnapshotBarOption(rows, title) {
 function buildTrendLineOption({ occupancyData, selectedWard, wards }) {
   return (theme) => {
     const base = createBaseChartOption(theme, 'Ward occupancy trend chart');
-    const selectedWardName = selectedWard === 'all' ? null : getWardNameById(wards, selectedWard);
+    const selectedWardName = getTrendLabelForWard(occupancyData, wards, selectedWard);
     const visibleWards = selectedWardName
       ? [selectedWardName]
-      : wards.slice(0, MAX_COMPARISON_LINES).map((ward) => ward.name);
+      : getTrendMetricKeys(occupancyData).slice(0, MAX_COMPARISON_LINES);
     const series = [
       ...(selectedWardName ? [] : ['Overall']),
       ...visibleWards,
@@ -293,8 +311,8 @@ function TrendStatsTable({ occupancyData, rows, selectedWard, wards }) {
     );
   }
 
-  const selectedWardName = selectedWard === 'all' ? null : getWardNameById(wards, selectedWard);
-  const names = selectedWardName ? [selectedWardName] : [...wards.map((ward) => ward.name), 'Overall'];
+  const selectedWardName = getTrendLabelForWard(occupancyData, wards, selectedWard);
+  const names = selectedWardName ? [selectedWardName] : [...getTrendMetricKeys(occupancyData), 'Overall'];
 
   return (
     <Table>
@@ -437,7 +455,7 @@ function buildLengthOfStayDistributionOption(lengthOfStayData) {
         {
           barMaxWidth: 34,
           data: lengthOfStayData.map((point) => numericValue(point.count) ?? 0),
-          itemStyle: { color: theme.palette[3], borderRadius: [4, 4, 0, 0] },
+          ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[3] }),
           name: 'Patients',
           type: 'bar',
         },
@@ -571,14 +589,14 @@ function buildSnapshotMetricBarOption(rows, metricKey, title, unit = '') {
       },
       series: [{
         barMaxWidth: 42,
-        data: rows.map((row, index) => ({
-          itemStyle: {
-            borderRadius: [4, 4, 0, 0],
-            color: theme.palette[index % theme.palette.length],
-          },
-          record: row,
-          value: row[metricKey],
-        })),
+        data: rows.map((row, index) => {
+          const color = theme.palette[index % theme.palette.length];
+          return {
+            ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color }),
+            record: row,
+            value: row[metricKey],
+          };
+        }),
         name: title,
         type: 'bar',
       }],
@@ -665,9 +683,35 @@ export function UtilizationPanel({
   );
 }
 
-function buildAdmissionsOption(admissionsByWard) {
+function buildAdmissionsOption(admissionsByWard, { showTransfers }) {
   return (theme) => {
     const base = createBaseChartOption(theme, 'Admissions discharges and transfers by ward chart');
+    const series = [
+      {
+        barMaxWidth: 28,
+        data: admissionsByWard.map((ward) => numericValue(ward.admissions) ?? 0),
+        ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[3] }),
+        name: 'Admissions',
+        type: 'bar',
+      },
+      {
+        barMaxWidth: 28,
+        data: admissionsByWard.map((ward) => numericValue(ward.discharges) ?? 0),
+        ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[1] }),
+        name: 'Discharges',
+        type: 'bar',
+      },
+    ];
+    if (showTransfers) {
+      series.push({
+        barMaxWidth: 28,
+        data: admissionsByWard.map((ward) => numericValue(ward.transfers) ?? 0),
+        ...createStableBarStyle({ borderRadius: [4, 4, 0, 0], color: theme.palette[0] }),
+        name: 'Transfers',
+        type: 'bar',
+      });
+    }
+
     return {
       ...base,
       grid: { ...base.grid, bottom: 48, top: 18 },
@@ -699,29 +743,7 @@ function buildAdmissionsOption(admissionsByWard) {
         ...base.yAxis,
         minInterval: 1,
       },
-      series: [
-        {
-          barMaxWidth: 28,
-          data: admissionsByWard.map((ward) => numericValue(ward.admissions) ?? 0),
-          itemStyle: { color: theme.palette[3], borderRadius: [4, 4, 0, 0] },
-          name: 'Admissions',
-          type: 'bar',
-        },
-        {
-          barMaxWidth: 28,
-          data: admissionsByWard.map((ward) => numericValue(ward.discharges) ?? 0),
-          itemStyle: { color: theme.palette[1], borderRadius: [4, 4, 0, 0] },
-          name: 'Discharges',
-          type: 'bar',
-        },
-        {
-          barMaxWidth: 28,
-          data: admissionsByWard.map((ward) => numericValue(ward.transfers) ?? 0),
-          itemStyle: { color: theme.palette[0], borderRadius: [4, 4, 0, 0] },
-          name: 'Transfers',
-          type: 'bar',
-        },
-      ],
+      series,
     };
   };
 }
@@ -731,13 +753,16 @@ export function AdmissionsPanel({
   analyticsMeta,
   wards = DEFAULT_EMPTY_ARRAY,
 }) {
+  const showTransfers = !hasUnavailableMetric(analyticsMeta, 'transfers')
+    && admissionsByWard.some((ward) => numericValue(ward.transfers) !== null);
+
   if (admissionsByWard.length === 0) {
     return (
       <div className="space-y-5">
         <SnapshotNotice meta={analyticsMeta} />
         <EmptyAnalyticsState
-          title="Admissions analytics are not available yet"
-          body="The current report data does not expose admissions, discharge, or transfer aggregates. The previous placeholder that treated occupied beds as admissions has been removed."
+          title="No admission analytics for this range"
+          body="There are no admissions or discharges for the selected ward and date range."
         />
       </div>
     );
@@ -750,7 +775,7 @@ export function AdmissionsPanel({
         <HmsEChart
           ariaLabel="Admissions discharges and transfers by ward chart"
           height={360}
-          option={buildAdmissionsOption(admissionsByWard)}
+          option={buildAdmissionsOption(admissionsByWard, { showTransfers })}
         />
       </ChartCard>
 
@@ -779,7 +804,9 @@ export function AdmissionsPanel({
                     <TableCell className="font-medium">{ward.ward}</TableCell>
                     <TableCell>{formatNumber(ward.admissions)}</TableCell>
                     <TableCell>{formatNumber(ward.discharges)}</TableCell>
-                    <TableCell>{formatNumber(ward.transfers)}</TableCell>
+                    <TableCell>
+                      {hasUnavailableMetric(analyticsMeta, 'transfers') ? 'Not available' : formatNumber(ward.transfers)}
+                    </TableCell>
                     <TableCell className={cn(netChange > 0 && 'text-emerald-700', netChange < 0 && 'text-rose-700')}>
                       {netChange > 0 ? `+${netChange}` : netChange}
                     </TableCell>

@@ -87,6 +87,115 @@ describe('Rust V2 wards bridge', () => {
     ]);
   });
 
+  it('fetches Rust V2 ward analytics and adapts typed rows for report charts', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            meta: {
+              mode: 'rust_v2_aggregates',
+              unavailable_metrics: ['transfers', 'revenue'],
+            },
+            occupancy_trends: [
+              {
+                date: '2026-06-01',
+                ward_id: 'ward-1',
+                ward: 'Medical Ward',
+                occupancy_rate: 50,
+                occupied_bed_days: 1,
+                total_beds: 2,
+              },
+              {
+                date: '2026-06-01',
+                ward_id: 'ward-2',
+                ward: 'Surgical Ward',
+                occupancy_rate: 25,
+                occupied_bed_days: 1,
+                total_beds: 4,
+              },
+            ],
+            length_of_stay: [
+              { range: '0-2 days', count: 1, percentage: 100 },
+            ],
+            ward_utilization: [
+              {
+                ward_id: 'ward-1',
+                ward: 'Medical Ward',
+                occupancy_rate: 66.67,
+                occupied_beds_count: 1,
+                total_beds: 2,
+                turnover_rate: 0.5,
+                avg_los: 2,
+                bed_days: 4,
+              },
+            ],
+            admissions_by_ward: [
+              {
+                ward_id: 'ward-1',
+                ward: 'Medical Ward',
+                admissions: 2,
+                discharges: 1,
+                transfers: null,
+              },
+            ],
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const analytics = await wardsApi.getAnalytics({
+      ward_id: 'all',
+      start_date: '2026-06-01',
+      end_date: '2026-06-04',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/analytics?start_date=2026-06-01&end_date=2026-06-04',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(analytics).toMatchObject({
+      meta: {
+        mode: 'rust_v2_aggregates',
+        unavailable_metrics: ['transfers', 'revenue'],
+      },
+      occupancy_trends: [
+        {
+          date: '2026-06-01',
+          'Medical Ward': 50,
+          'Surgical Ward': 25,
+          Overall: 33.33333333333333,
+        },
+      ],
+      length_of_stay: [{ range: '0-2 days', count: 1, percentage: 100 }],
+      ward_utilization: [
+        {
+          ward_id: 'ward-1',
+          ward: 'Medical Ward',
+          occupancy_rate: 66.67,
+          occupied_beds_count: 1,
+          total_beds: 2,
+          turnover_rate: 0.5,
+          avg_los: 2,
+          bed_days: 4,
+        },
+      ],
+      admissions_by_ward: [
+        {
+          ward_id: 'ward-1',
+          ward: 'Medical Ward',
+          admissions: 2,
+          discharges: 1,
+          transfers: null,
+        },
+      ],
+    });
+  });
+
   it('searches wards with a server-side Rust V2 search parameter', async () => {
     const controller = new AbortController();
     globalThis.fetch.mockResolvedValueOnce(

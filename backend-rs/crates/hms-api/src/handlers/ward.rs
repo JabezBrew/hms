@@ -12,9 +12,9 @@ use hms_domain::ward::{
     MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery,
     PatientVitalsListItem, PatientVitalsListQuery, RecordNursingReleaseRequest,
     ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
-    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest, WardBedMapResponse,
-    WardBoardGetQuery, WardBoardItem, WardBoardQuery, WardListItem, WardListQuery,
-    WardSectionListItem, WardStockRequestListItem,
+    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest, WardAnalyticsQuery,
+    WardAnalyticsResponse, WardBedMapResponse, WardBoardGetQuery, WardBoardItem, WardBoardQuery,
+    WardListItem, WardListQuery, WardSectionListItem, WardStockRequestListItem,
 };
 use uuid::Uuid;
 
@@ -46,6 +46,35 @@ pub async fn list_wards(
             .ward_services()
             .admin()
             .list_wards(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/analytics",
+    operation_id = "getWardAnalytics",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(WardAnalyticsQuery),
+    responses(
+        (status = 200, description = "Ward occupancy analytics", body = ObjectResponse<WardAnalyticsResponse>),
+        (status = 400, description = "Invalid analytics query", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn ward_analytics(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<WardAnalyticsQuery>,
+) -> Result<Json<ObjectResponse<WardAnalyticsResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .analytics()
+            .analytics(&user, query)
             .await?,
     ))
 }

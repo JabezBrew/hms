@@ -2143,6 +2143,18 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getWardAnalytics": {
+    "operationId": "getWardAnalytics",
+    "method": "GET",
+    "path": "/api/v2/wards/analytics",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "ward_id",
+      "start_date",
+      "end_date"
+    ],
+    "hasBody": false
+  },
   "getWardBedById": {
     "operationId": "getWardBedById",
     "method": "GET",
@@ -4135,6 +4147,7 @@ export function createGeneratedClient(request) {
     getTriageQueue: createOperation(request, operations.getTriageQueue),
     getVisitById: createOperation(request, operations.getVisitById),
     getVisits: createOperation(request, operations.getVisits),
+    getWardAnalytics: createOperation(request, operations.getWardAnalytics),
     getWardBedById: createOperation(request, operations.getWardBedById),
     getWardBedMap: createOperation(request, operations.getWardBedMap),
     getWardBeds: createOperation(request, operations.getWardBeds),

@@ -98,6 +98,44 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     let ward_detail_body = json_body(ward_detail).await;
     assert_eq!(ward_detail_body["data"]["id"], ward_id);
 
+    let ward_analytics = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/wards/analytics?ward_id={ward_id}&start_date=2026-06-01&end_date=2026-06-04"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward analytics succeeds");
+    assert_eq!(ward_analytics.status(), StatusCode::OK);
+    let ward_analytics_body = json_body(ward_analytics).await;
+    assert_eq!(
+        ward_analytics_body["data"]["meta"]["mode"],
+        "rust_v2_aggregates"
+    );
+    assert!(ward_analytics_body["data"]["meta"]["unavailable_metrics"]
+        .as_array()
+        .expect("unavailable metrics exist")
+        .iter()
+        .any(|metric| metric == "transfers"));
+    assert!(
+        ward_analytics_body["data"]["occupancy_trends"]
+            .as_array()
+            .expect("occupancy trends exist")
+            .len()
+            >= 4
+    );
+    assert!(ward_analytics_body["data"]["ward_utilization"]
+        .as_array()
+        .expect("ward utilization exists")
+        .iter()
+        .all(|metric| metric.get("ward_id").is_some()));
+
     let section_response = app
         .clone()
         .oneshot(
@@ -1022,6 +1060,29 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .await
         .expect("ward board denial succeeds");
     assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    grant_test_permission(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        PermissionCode::WardView,
+    )
+    .await;
+    let (ward_view_only_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let analytics_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/wards/analytics?ward_id={ward_id}&start_date=2026-06-01&end_date=2026-06-04"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {ward_view_only_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward analytics denial succeeds");
+    assert_eq!(analytics_denied.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

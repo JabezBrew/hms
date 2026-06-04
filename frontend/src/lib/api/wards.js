@@ -129,6 +129,69 @@ function adaptV2WardBoardAdmission(item = {}) {
   };
 }
 
+function adaptV2WardAnalytics(response = {}) {
+  const data = response?.data || response || {};
+  const occupancyByDate = new Map();
+  const wardNameIds = new Map();
+  for (const point of data.occupancy_trends || []) {
+    const wardName = point.ward || 'Ward';
+    const identifiers = wardNameIds.get(wardName) || new Set();
+    identifiers.add(point.ward_id || wardName);
+    wardNameIds.set(wardName, identifiers);
+  }
+
+  for (const point of data.occupancy_trends || []) {
+    const date = point.date;
+    if (!date) continue;
+    const row = occupancyByDate.get(date) || {
+      date,
+      __occupiedBedDays: 0,
+      __totalBeds: 0,
+    };
+    const wardName = point.ward || 'Ward';
+    const wardLabel = wardNameIds.get(wardName)?.size > 1 && point.ward_id
+      ? `${wardName} (${String(point.ward_id).slice(0, 8)})`
+      : wardName;
+    row.__wardLabels = {
+      ...(row.__wardLabels || {}),
+      [point.ward_id || wardName]: wardLabel,
+    };
+    row[wardLabel] = numberFrom(point.occupancy_rate);
+    row.__occupiedBedDays += numberFrom(point.occupied_bed_days);
+    row.__totalBeds += numberFrom(point.total_beds);
+    occupancyByDate.set(date, row);
+  }
+
+  const occupancyTrends = [...occupancyByDate.values()].map((row) => {
+    const { __occupiedBedDays, __totalBeds, ...chartRow } = row;
+    chartRow.Overall = __totalBeds > 0 ? (__occupiedBedDays / __totalBeds) * 100 : 0;
+    return chartRow;
+  });
+
+  return {
+    meta: data.meta || null,
+    occupancy_trends: occupancyTrends,
+    length_of_stay: Array.isArray(data.length_of_stay) ? data.length_of_stay : [],
+    ward_utilization: (data.ward_utilization || []).map((ward) => ({
+      ward_id: ward.ward_id,
+      ward: ward.ward,
+      occupancy_rate: numberFrom(ward.occupancy_rate),
+      occupied_beds_count: numberFrom(ward.occupied_beds_count),
+      total_beds: numberFrom(ward.total_beds),
+      turnover_rate: ward.turnover_rate ?? null,
+      avg_los: ward.avg_los ?? null,
+      bed_days: numberFrom(ward.bed_days),
+    })),
+    admissions_by_ward: (data.admissions_by_ward || []).map((ward) => ({
+      ward_id: ward.ward_id,
+      ward: ward.ward,
+      admissions: numberFrom(ward.admissions),
+      discharges: numberFrom(ward.discharges),
+      transfers: ward.transfers ?? null,
+    })),
+  };
+}
+
 function v2ListData(response) {
   return Array.isArray(response?.data) ? response.data : [];
 }
@@ -873,33 +936,15 @@ export const wardsApi = {
   getAnalytics: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const wards = await wardsApi.getWards({ limit: normalizeV2Limit(params) });
-        return {
-          meta: {
-            mode: 'rust_v2_snapshot',
-            unavailable_metrics: [
-              'occupancy_trends',
-              'length_of_stay',
-              'turnover_rate',
-              'admissions',
-              'discharges',
-              'transfers',
-              'revenue',
-            ],
+        const response = await v2Api.getWardAnalytics({
+          query: {
+            ward_id: params.ward_id && params.ward_id !== 'all' ? params.ward_id : undefined,
+            start_date: params.start_date,
+            end_date: params.end_date,
           },
-          occupancy_trends: [],
-          length_of_stay: [],
-          ward_utilization: wards.map((ward) => ({
-            ward: ward.name,
-            occupancy_rate: ward.occupancy_rate || 0,
-            occupied_beds_count: ward.occupied_beds_count || 0,
-            total_beds: ward.total_beds || 0,
-            turnover_rate: null,
-            avg_los: null,
-            bed_days: null,
-          })),
-          admissions_by_ward: [],
-        };
+          signal: params.signal,
+        });
+        return adaptV2WardAnalytics(response);
       }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/wards/analytics/${queryString ? `?${queryString}` : ''}`;

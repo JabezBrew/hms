@@ -13,6 +13,14 @@ Scope: ward occupancy charts and reports.
 - Rendered report graphs use the shared ECharts wrapper, not Recharts.
 - Bar and mixed bar/line charts should use item-triggered tooltips so empty
   plot hover does not select or visually mask the nearest ward/category.
-- Rust V2 ward reports currently expose a ward capacity snapshot only; do not
-  fabricate historical occupancy, LOS, admissions, transfer, discharge, or
-  revenue analytics from placeholder zeros.
+- Bar emphasis styles should preserve the normal fill color and opacity so the
+  active bar remains visible while its tooltip is open.
+- Report filters should use compact toolbars when they contain only a few
+  controls; avoid full-height filter cards that push charts below the fold.
+- Rust V2 ward reports consume `/api/v2/wards/analytics` for typed aggregate
+  rows. The frontend may adapt those rows into chart-friendly arrays, but must
+  not fabricate unavailable measures from placeholder zeros.
+- Report date filters are date-only (`yyyy-MM-dd`) so the selected calendar
+  range is not shifted by browser timezone conversion.
+- Ward transfer and ward-attributed revenue analytics remain unavailable until
+  Rust V2 has a trustworthy transfer/revenue attribution contract.

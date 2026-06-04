@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 mod admin;
 mod admission_cases;
+mod analytics;
 mod bed_management;
 mod discharge_cases;
 mod handoff;
@@ -21,6 +22,7 @@ pub use admission_cases::{
     get_admission_case, get_admission_context, get_ward_board_admission, list_admission_cases,
     list_ward_board, reserve_admission_bed, AdmissionContext, NewAdmission, NewAdmissionCase,
 };
+pub use analytics::ward_analytics;
 pub use bed_management::{
     create_bed, get_bed_by_id, get_ward_bed_map, list_section_beds, list_ward_beds,
     release_cleaned_beds, update_bed, BedUpdate, NewBed,

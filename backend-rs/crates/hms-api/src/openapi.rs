@@ -381,6 +381,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::ward::record_nursing_release,
         crate::handlers::ward::reserve_admission_bed,
         crate::handlers::ward::schedule_medication_administration,
+        crate::handlers::ward::ward_analytics,
         crate::handlers::ward::ward_board
     ),
     components(schemas(

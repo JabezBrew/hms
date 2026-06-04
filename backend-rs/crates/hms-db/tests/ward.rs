@@ -1,3 +1,4 @@
+use chrono::TimeZone;
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::{
     AdmissionContext, BedUpdate, NewAdmissionCase, NewBed, NewFluidBalanceEntry,
@@ -322,6 +323,167 @@ async fn ward_list_search_filters_server_side_and_stays_facility_scoped() {
         .await
         .expect("wildcard ward search succeeds");
     assert!(wildcard_rows.is_empty());
+}
+
+#[tokio::test]
+async fn ward_analytics_use_real_admission_intervals_and_facility_scope() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_ids = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 2",
+    )
+    .bind(facility_id)
+    .fetch_all(&pool)
+    .await
+    .expect("patients exist");
+
+    let ward = hms_db::ward::create_ward(
+        &pool,
+        NewWard {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            code: "ANALYTICS".to_owned(),
+            name: "Analytics Ward".to_owned(),
+        },
+    )
+    .await
+    .expect("ward create succeeds");
+    let bed_a = hms_db::ward::create_bed(
+        &pool,
+        NewBed {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            ward_id: ward.id,
+            section_id: None,
+            bed_code: "A-1".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("first bed create succeeds");
+    let bed_b = hms_db::ward::create_bed(
+        &pool,
+        NewBed {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            ward_id: ward.id,
+            section_id: None,
+            bed_code: "A-2".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("second bed create succeeds");
+    hms_db::ward::update_bed(
+        &pool,
+        facility_id,
+        bed_b.id,
+        BedUpdate {
+            section_id: None,
+            bed_code: None,
+            status: Some(BedStatus::Occupied),
+        },
+    )
+    .await
+    .expect("occupied bed update succeeds");
+
+    let start = chrono::Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    let end = chrono::Utc.with_ymd_and_hms(2026, 6, 4, 0, 0, 0).unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO admission_cases (
+            id,
+            facility_id,
+            patient_id,
+            ward_id,
+            bed_id,
+            status,
+            admitted_at,
+            discharged_at,
+            attending_user_id,
+            created_by_user_id
+        )
+        VALUES
+            ($1, $2, $3, $4, $5, 'discharged', $6, $7, $8, $8),
+            ($9, $2, $10, $4, $11, 'admitted', $12, NULL, $8, $8)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(patient_ids[0])
+    .bind(ward.id)
+    .bind(bed_a.id)
+    .bind(start)
+    .bind(chrono::Utc.with_ymd_and_hms(2026, 6, 3, 0, 0, 0).unwrap())
+    .bind(owner_id)
+    .bind(uuid::Uuid::new_v4())
+    .bind(patient_ids[1])
+    .bind(bed_b.id)
+    .bind(chrono::Utc.with_ymd_and_hms(2026, 6, 2, 0, 0, 0).unwrap())
+    .execute(&pool)
+    .await
+    .expect("admission fixtures insert");
+
+    let analytics = hms_db::ward::ward_analytics(&pool, facility_id, Some(ward.id), start, end)
+        .await
+        .expect("analytics query succeeds");
+
+    assert_eq!(analytics.meta.mode, "rust_v2_aggregates");
+    assert_eq!(analytics.occupancy_trends.len(), 3);
+    assert!((analytics.occupancy_trends[0].occupancy_rate - 50.0).abs() < 0.001);
+    assert!((analytics.occupancy_trends[1].occupancy_rate - 100.0).abs() < 0.001);
+    assert!((analytics.occupancy_trends[2].occupancy_rate - 50.0).abs() < 0.001);
+
+    let utilization = analytics
+        .ward_utilization
+        .iter()
+        .find(|metric| metric.ward_id == ward.id)
+        .expect("ward utilization metric exists");
+    assert_eq!(utilization.total_beds, 2);
+    assert_eq!(utilization.occupied_beds_count, 1);
+    assert!((utilization.occupancy_rate - 66.666).abs() < 0.01);
+    assert!((utilization.bed_days - 4.0).abs() < 0.001);
+    assert!((utilization.turnover_rate.expect("turnover is present") - 0.5).abs() < 0.001);
+    assert!((utilization.avg_los.expect("LOS is present") - 2.0).abs() < 0.001);
+
+    let admissions = analytics
+        .admissions_by_ward
+        .iter()
+        .find(|metric| metric.ward_id == ward.id)
+        .expect("admission metric exists");
+    assert_eq!(admissions.admissions, 2);
+    assert_eq!(admissions.discharges, 1);
+    assert_eq!(admissions.transfers, None);
+
+    let cross_facility =
+        hms_db::ward::ward_analytics(&pool, uuid::Uuid::new_v4(), Some(ward.id), start, end)
+            .await
+            .expect("cross-facility analytics query succeeds");
+    assert!(cross_facility.ward_utilization.is_empty());
+    assert!(cross_facility.admissions_by_ward.is_empty());
 }
 
 #[tokio::test]

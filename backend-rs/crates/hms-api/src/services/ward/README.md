@@ -18,6 +18,7 @@ lives in `hms-db::ward`.
 | `mod.rs` | public service exports and shared ward service assembly. |
 | `common.rs` | shared request/response helpers, scope translation, and workflow utilities. |
 | `admin.rs` | ward, section, bed, amenity, and staff-assignment administration. |
+| `analytics.rs` | ward occupancy, length-of-stay, admission, discharge, and utilization aggregate reporting. |
 | `bed_management.rs` | bed layout, bed status, assignment, hold, and movement workflows. |
 | `admission_cases.rs` | admission-case creation, status transitions, and active inpatient context. |
 | `discharge_cases.rs` | discharge planning, discharge completion, and discharge summaries. |
@@ -39,6 +40,11 @@ lives in `hms-db::ward`.
   authorized.
 - Admission and bed state transitions must be coordinated through the service
   interface; callers should not assemble them with independent repository calls.
+- Ward analytics must be backed by aggregate admission/bed projections. Do not
+  expose placeholder zeros for unavailable measures such as ward transfers or
+  ward-attributed revenue until a real source table/contract exists.
+- Ward analytics date filters are calendar dates, interpreted as an inclusive
+  start/end range and converted inside the service to `[start, end)` timestamps.
 - MAR, observation, and handoff paths must keep PHI out of logs and metric
   labels.
 - External side effects belong in worker jobs or later async paths, not inside

@@ -94,6 +94,14 @@ function csvMetric(value, unavailable = false) {
   return value;
 }
 
+function trendLabelForWard(day, ward) {
+  return day?.__wardLabels?.[ward.id] || ward.name;
+}
+
+function trendValueForWard(day, ward) {
+  return day?.[trendLabelForWard(day, ward)] || 0;
+}
+
 function buildWardOccupancyCsv({
   admissionsByWard,
   analyticsMeta,
@@ -109,25 +117,30 @@ function buildWardOccupancyCsv({
     ...(analyticsMeta?.mode === 'rust_v2_snapshot'
       ? ['Mode: Rust V2 live capacity snapshot; historical aggregate analytics unavailable']
       : []),
+    ...(analyticsMeta?.mode === 'rust_v2_aggregates'
+      ? ['Mode: Rust V2 ward analytics aggregates']
+      : []),
     '',
     'Occupancy Trends',
   ];
 
   if (selectedWard === 'all') {
-    lines.push(['Date', ...wards.map((ward) => ward.name), 'Overall'].map(csvCell).join(','));
+    const firstDay = occupancyData[0] || {};
+    lines.push(['Date', ...wards.map((ward) => trendLabelForWard(firstDay, ward)), 'Overall'].map(csvCell).join(','));
   } else {
     const ward = wards.find((item) => item.id === selectedWard);
-    lines.push(['Date', ward?.name || 'Ward'].map(csvCell).join(','));
+    const firstDay = occupancyData[0] || {};
+    lines.push(['Date', ward ? trendLabelForWard(firstDay, ward) : 'Ward'].map(csvCell).join(','));
   }
 
   occupancyData.forEach((day) => {
     if (selectedWard === 'all') {
-      lines.push([day.date, ...wards.map((ward) => day[ward.name] || 0), day.Overall || 0].map(csvCell).join(','));
+      lines.push([day.date, ...wards.map((ward) => trendValueForWard(day, ward)), day.Overall || 0].map(csvCell).join(','));
       return;
     }
 
     const ward = wards.find((item) => item.id === selectedWard);
-    lines.push([day.date, day[ward?.name] || 0].map(csvCell).join(','));
+    lines.push([day.date, ward ? trendValueForWard(day, ward) : 0].map(csvCell).join(','));
   });
 
   lines.push(
@@ -153,7 +166,12 @@ function buildWardOccupancyCsv({
     ['Ward', 'Admissions', 'Discharges', 'Transfers'].map(csvCell).join(',')
   );
   admissionsByWard.forEach((ward) => {
-    lines.push([ward.ward, ward.admissions, ward.discharges, ward.transfers].map(csvCell).join(','));
+    lines.push([
+      ward.ward,
+      ward.admissions,
+      ward.discharges,
+      csvMetric(ward.transfers, isUnavailableMetric(analyticsMeta, 'transfers')),
+    ].map(csvCell).join(','));
   });
 
   return lines.join('\n');
@@ -199,8 +217,8 @@ function useWardOccupancyReport(selectedWard, dateRange) {
       try {
         const analyticsData = await wardsApi.getAnalytics({
           ward_id: selectedWard,
-          start_date: dateRange.start.toISOString(),
-          end_date: dateRange.end.toISOString(),
+          start_date: format(dateRange.start, 'yyyy-MM-dd'),
+          end_date: format(dateRange.end, 'yyyy-MM-dd'),
         });
         if (!cancelled) {
           dispatch({ type: 'analytics-loaded', analytics: normalizeAnalytics(analyticsData) });
@@ -252,18 +270,35 @@ function ReportLoading() {
   );
 }
 
-function ReportFilters({ dateRange, onDateChange, onWardChange, selectedWard, wards }) {
+function ReportToolbar({
+  analyticsMeta,
+  dateRange,
+  onDateChange,
+  onExport,
+  onWardChange,
+  selectedWard,
+  wards,
+}) {
   return (
-    <Card className="rounded-lg border-border shadow-sm">
-      <CardHeader className="pb-3">
-        <CardTitle className="font-display text-lg leading-tight">Report Filters</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(180px,0.7fr)_1fr_1fr]">
-          <div className="space-y-2">
-            <Label htmlFor="ward" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</Label>
+    <section
+      aria-label="Report controls"
+      className="rounded-lg border border-border bg-card/80 px-3 py-3 shadow-sm sm:px-4"
+    >
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-wrap items-center gap-2 xl:min-h-9">
+          <ReportModeBadge analyticsMeta={analyticsMeta} />
+          <span className="font-mono text-xs text-muted-foreground">
+            {dateRange.start && dateRange.end
+              ? `${format(dateRange.start, 'MMM d, yyyy')} - ${format(dateRange.end, 'MMM d, yyyy')}`
+              : 'Select a report range'}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-end">
+          <div className="space-y-1.5 lg:w-44">
+            <Label htmlFor="ward-report-ward" className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Ward</Label>
             <Select value={selectedWard} onValueChange={onWardChange}>
-              <SelectTrigger id="ward">
+              <SelectTrigger id="ward-report-ward" className="h-9 w-full">
                 <SelectValue placeholder="Select ward" />
               </SelectTrigger>
               <SelectContent>
@@ -277,28 +312,35 @@ function ReportFilters({ dateRange, onDateChange, onWardChange, selectedWard, wa
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Start Date</Label>
+          <div className="space-y-1.5 lg:w-48">
+            <Label htmlFor="ward-report-start" className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Start</Label>
             <DatePicker
+              id="ward-report-start"
               date={dateRange.start}
               setDate={(date) => onDateChange('start', date)}
               placeholder="Start date"
-              className="font-mono text-sm"
+              className="h-9 font-mono text-sm"
             />
           </div>
 
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">End Date</Label>
+          <div className="space-y-1.5 lg:w-48">
+            <Label htmlFor="ward-report-end" className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">End</Label>
             <DatePicker
+              id="ward-report-end"
               date={dateRange.end}
               setDate={(date) => onDateChange('end', date)}
               placeholder="End date"
-              className="font-mono text-sm"
+              className="h-9 font-mono text-sm"
             />
           </div>
+
+          <Button onClick={onExport} variant="outline" className="h-9 font-mono text-xs lg:mb-0">
+            <Download className="mr-2 size-4" />
+            Export Report
+          </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -435,24 +477,11 @@ export function WardOccupancyReports() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <ReportModeBadge analyticsMeta={analyticsMeta} />
-          <span className="font-mono text-xs text-muted-foreground">
-            {dateRange.start && dateRange.end
-              ? `${format(dateRange.start, 'MMM d, yyyy')} - ${format(dateRange.end, 'MMM d, yyyy')}`
-              : 'Select a report range'}
-          </span>
-        </div>
-        <Button onClick={exportReport} variant="outline" className="font-mono text-xs">
-          <Download className="mr-2 size-4" />
-          Export Report
-        </Button>
-      </div>
-
-      <ReportFilters
+      <ReportToolbar
+        analyticsMeta={analyticsMeta}
         dateRange={dateRange}
         onDateChange={handleDateChange}
+        onExport={exportReport}
         onWardChange={setSelectedWard}
         selectedWard={selectedWard}
         wards={wards}

@@ -311,6 +311,67 @@ pub struct WardListQuery {
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in = Query)]
+pub struct WardAnalyticsQuery {
+    pub ward_id: Option<Uuid>,
+    pub start_date: Option<NaiveDate>,
+    pub end_date: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardAnalyticsMeta {
+    pub mode: String,
+    pub unavailable_metrics: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardAnalyticsResponse {
+    pub meta: WardAnalyticsMeta,
+    pub occupancy_trends: Vec<WardOccupancyTrendPoint>,
+    pub length_of_stay: Vec<WardLengthOfStayBucket>,
+    pub ward_utilization: Vec<WardUtilizationMetric>,
+    pub admissions_by_ward: Vec<WardAdmissionMetric>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardOccupancyTrendPoint {
+    pub date: NaiveDate,
+    pub ward_id: Uuid,
+    pub ward: String,
+    pub occupancy_rate: f64,
+    pub occupied_bed_days: f64,
+    pub total_beds: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardLengthOfStayBucket {
+    pub range: String,
+    pub count: i64,
+    pub percentage: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardUtilizationMetric {
+    pub ward_id: Uuid,
+    pub ward: String,
+    pub occupancy_rate: f64,
+    pub occupied_beds_count: i64,
+    pub total_beds: i64,
+    pub turnover_rate: Option<f64>,
+    pub avg_los: Option<f64>,
+    pub bed_days: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardAdmissionMetric {
+    pub ward_id: Uuid,
+    pub ward: String,
+    pub admissions: i64,
+    pub discharges: i64,
+    pub transfers: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct WardBoardQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
