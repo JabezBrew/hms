@@ -10,7 +10,7 @@ const chartMock = vi.hoisted(() => ({
 vi.mock('@/shared/components/charts/HmsEChart', () => ({
   HmsEChart: (props) => {
     chartMock.instances.push(props);
-    return <div aria-label={props.ariaLabel} role="img" />;
+    return <img alt={props.ariaLabel} />;
   },
 }));
 
@@ -49,6 +49,8 @@ describe('FluidBalanceTrendsChart', () => {
 
     expect(option.tooltip.trigger).toBe('item');
     expect(option.series.some((series) => series.type === 'bar')).toBe(true);
+    expect(option.series[0].emphasis.itemStyle.color).toBe(option.series[0].itemStyle.color);
+    expect(option.series[0].emphasis.itemStyle.opacity).toBe(1);
     expect(option.tooltip.formatter({
       color: '#123',
       data: { record: option.series[0].data[0].record },

@@ -3,6 +3,7 @@ import { HmsEChart } from '@/shared/components/charts/HmsEChart';
 import {
   createBaseChartOption,
   createItemTooltip,
+  createStableBarStyle,
   escapeChartTooltipHtml,
   getChartTooltipParams,
 } from '@/shared/components/charts/HmsEChartTheme';
@@ -51,14 +52,14 @@ export default function FluidBalanceTrendsChart({ data = DEFAULT_EMPTY_ARRAY }) 
         {
           barMaxWidth: 24,
           data: data.map((point) => ({ record: point, value: point.intake })),
-          itemStyle: { color: theme.palette[3], borderRadius: [3, 3, 0, 0] },
+          ...createStableBarStyle({ borderRadius: [3, 3, 0, 0], color: theme.palette[3] }),
           name: 'Intake',
           type: 'bar',
         },
         {
           barMaxWidth: 24,
           data: data.map((point) => ({ record: point, value: point.output })),
-          itemStyle: { color: theme.palette[0], borderRadius: [3, 3, 0, 0] },
+          ...createStableBarStyle({ borderRadius: [3, 3, 0, 0], color: theme.palette[0] }),
           name: 'Output',
           type: 'bar',
         },

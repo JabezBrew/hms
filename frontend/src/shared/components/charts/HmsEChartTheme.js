@@ -78,6 +78,16 @@ export function createItemTooltip(baseTooltip, overrides = {}) {
   };
 }
 
+export function createStableBarStyle({ borderRadius, color, opacity = 1 }) {
+  const itemStyle = { borderRadius, color, opacity };
+  return {
+    emphasis: {
+      itemStyle: { ...itemStyle },
+    },
+    itemStyle,
+  };
+}
+
 export function createBaseChartOption(theme) {
   return {
     backgroundColor: theme.background,
