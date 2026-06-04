@@ -344,6 +344,215 @@ async fn patient_registry_rejects_unknown_ordering() {
 }
 
 #[tokio::test]
+async fn patient_registry_ward_filter_defaults_to_current_admissions() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let ward_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/wards?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward list succeeds");
+    assert_eq!(ward_response.status(), StatusCode::OK);
+    let ward_body = json_body(ward_response).await;
+    let ward_id = ward_body["data"][0]["id"].as_str().expect("ward id exists");
+
+    let cancelled_patient_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/patients")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "first_name": "Cancelled",
+                        "last_name": "Wardfilterprobe",
+                        "date_of_birth": "1984-02-11",
+                        "sex": "female"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancelled-filter patient create succeeds");
+    assert_eq!(cancelled_patient_response.status(), StatusCode::OK);
+    let cancelled_patient_body = json_body(cancelled_patient_response).await;
+    let cancelled_patient_id = cancelled_patient_body["data"]["id"]
+        .as_str()
+        .expect("cancelled-filter patient id exists");
+
+    let cancelled_case_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admissions/cases")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": cancelled_patient_id,
+                        "ward_id": ward_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancelled-filter admission case create succeeds");
+    assert_eq!(cancelled_case_response.status(), StatusCode::OK);
+    let cancelled_case_body = json_body(cancelled_case_response).await;
+    let cancelled_case_id = cancelled_case_body["data"]["id"]
+        .as_str()
+        .expect("cancelled-filter admission case id exists");
+
+    let cancel_case_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/admissions/cases/{cancelled_case_id}/cancel"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancelled-filter admission case cancel succeeds");
+    assert_eq!(cancel_case_response.status(), StatusCode::OK);
+
+    let current_patient_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/patients")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "first_name": "Current",
+                        "last_name": "Wardfilterprobe",
+                        "date_of_birth": "1991-06-23",
+                        "sex": "male"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("current-filter patient create succeeds");
+    assert_eq!(current_patient_response.status(), StatusCode::OK);
+    let current_patient_body = json_body(current_patient_response).await;
+    let current_patient_id = current_patient_body["data"]["id"]
+        .as_str()
+        .expect("current-filter patient id exists");
+
+    let current_case_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admissions/cases")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": current_patient_id,
+                        "ward_id": ward_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("current-filter admission case create succeeds");
+    assert_eq!(current_case_response.status(), StatusCode::OK);
+    let current_case_body = json_body(current_case_response).await;
+    let current_case_id = current_case_body["data"]["id"]
+        .as_str()
+        .expect("current-filter admission case id exists");
+
+    let activate_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/admissions/cases/{current_case_id}/activate"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("current-filter admission activates");
+    assert_eq!(activate_response.status(), StatusCode::OK);
+
+    let ward_only_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients?limit=10&search=Wardfilterprobe&ward_id={ward_id}&include_total=true"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward-only patient list succeeds");
+    assert_eq!(ward_only_response.status(), StatusCode::OK);
+    let ward_only_body = json_body(ward_only_response).await;
+    let ward_only_rows = ward_only_body["data"]
+        .as_array()
+        .expect("ward-only patient list data exists");
+    assert_eq!(ward_only_body["meta"]["total_count"], 1);
+    assert_eq!(ward_only_rows[0]["id"], current_patient_id);
+    assert!(ward_only_rows[0]["patient_location"].is_string());
+    assert!(
+        ward_only_rows
+            .iter()
+            .all(|row| row["id"].as_str() != Some(cancelled_patient_id)),
+        "ward-only patient registry filter must not include cancelled historical admissions"
+    );
+
+    let explicit_cancelled_response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients?limit=10&search=Wardfilterprobe&ward_id={ward_id}&admission_status=cancelled&include_total=true"
+                ))
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("explicit cancelled patient list succeeds");
+    assert_eq!(explicit_cancelled_response.status(), StatusCode::OK);
+    let explicit_cancelled_body = json_body(explicit_cancelled_response).await;
+    let explicit_cancelled_rows = explicit_cancelled_body["data"]
+        .as_array()
+        .expect("explicit cancelled patient list data exists");
+    assert_eq!(explicit_cancelled_body["meta"]["total_count"], 1);
+    assert_eq!(explicit_cancelled_rows[0]["id"], cancelled_patient_id);
+}
+
+#[tokio::test]
 async fn patient_registry_rejects_invalid_filter_ranges() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;

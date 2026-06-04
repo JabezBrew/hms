@@ -9,6 +9,7 @@ use hms_db::patients::{
     PatientUpdate,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
+use hms_db::ward::NewAdmissionCase;
 use hms_domain::clinical::{
     AllergySeverity, AllergyStatus, ChartEntryType, ClinicalNoteType, PrescriptionStatus,
     ProblemStatus, UpdateAllergyRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
@@ -361,6 +362,121 @@ async fn patient_registry_filters_by_admission_and_age_without_duplication() {
     .await
     .expect("wrong ward registry query succeeds");
     assert!(wrong_ward_rows.is_empty());
+}
+
+#[tokio::test]
+async fn patient_registry_ward_filter_defaults_to_current_admissions() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let current = db
+        .scenario("registry-current-ward")
+        .admission_case_with_available_bed()
+        .await
+        .expect("current admission scenario builds");
+    hms_db::ward::activate_admission_case(
+        db.pool(),
+        db.facility_id(),
+        current.admission.id,
+        db.owner_user_id(),
+    )
+    .await
+    .expect("activation query succeeds")
+    .expect("current admission activates");
+
+    let historical_patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        r#"
+        SELECT id
+        FROM patients
+        WHERE facility_id = $1
+          AND id <> $2
+        ORDER BY created_at, id
+        LIMIT 1
+        "#,
+    )
+    .bind(db.facility_id())
+    .bind(current.patient.id)
+    .fetch_one(db.pool())
+    .await
+    .expect("historical-filter patient exists");
+    let historical_admission = hms_db::ward::create_admission_case(
+        db.pool(),
+        NewAdmissionCase {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: historical_patient_id,
+            ward_id: current.ward.id,
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("historical admission case creates");
+    hms_db::ward::cancel_admission_case(
+        db.pool(),
+        db.facility_id(),
+        historical_admission.id,
+        db.owner_user_id(),
+    )
+    .await
+    .expect("historical admission cancellation query succeeds")
+    .expect("historical admission cancels");
+
+    let ward_only_rows = hms_db::patients::list_patient_registry(
+        db.pool(),
+        db.facility_id(),
+        None,
+        10,
+        PatientRegistryFilters {
+            ward_id: Some(current.ward.id),
+            status: Some(PatientAdministrativeStatus::Active),
+            ..Default::default()
+        },
+        PatientListOrdering::default(),
+    )
+    .await
+    .expect("ward-only registry query succeeds");
+
+    assert!(
+        ward_only_rows
+            .iter()
+            .any(|row| row.patient.id == current.patient.id),
+        "current admission in the ward should match ward-only registry filters"
+    );
+    assert!(
+        ward_only_rows
+            .iter()
+            .all(|row| row.patient.id != historical_patient_id),
+        "ward-only registry filters should not match cancelled historical admissions"
+    );
+    assert!(
+        ward_only_rows
+            .iter()
+            .all(|row| row.patient_location.is_some()),
+        "ward-only registry results should have a current ward location"
+    );
+
+    let explicit_cancelled_rows = hms_db::patients::list_patient_registry(
+        db.pool(),
+        db.facility_id(),
+        None,
+        10,
+        PatientRegistryFilters {
+            ward_id: Some(current.ward.id),
+            status: Some(PatientAdministrativeStatus::Active),
+            admission_status: Some(AdmissionStatus::Cancelled),
+            ..Default::default()
+        },
+        PatientListOrdering::default(),
+    )
+    .await
+    .expect("explicit cancelled registry query succeeds");
+
+    assert!(
+        explicit_cancelled_rows
+            .iter()
+            .any(|row| row.patient.id == historical_patient_id),
+        "explicit admission_status filters should still allow historical ward lookups"
+    );
 }
 
 #[tokio::test]

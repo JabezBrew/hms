@@ -48,6 +48,9 @@ Scope: patient registry, patient forms, Patient Chronicle, print, ward round, br
 - Registry and my-patients lists must stay lightweight and server-paginated.
 - Patient Registry location displays current admission ward/bed context; use
   `Not admitted` when no current admission location is present.
+- Patient Registry ward filters default to current admissions
+  (`admitted`/`discharge_pending`). Historical ward lookups require an explicit
+  `admission_status` filter such as `discharged` or `cancelled`.
 - Break-glass requires backend permission, fresh auth, grant expiry, and audit.
 - Do not prefetch heavy Chronicle data unless performance budgets allow it.
 - Patient identity fields must not appear in query keys, logs, browser events,

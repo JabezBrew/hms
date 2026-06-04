@@ -382,6 +382,12 @@ fn push_patient_registry_filters(
         if let Some(admission_status) = filters.admission_status {
             query.push(" AND registry_admission.status = ");
             query.push_bind(codec::encode(admission_status)?);
+        } else if filters.ward_id.is_some() {
+            query.push(" AND registry_admission.status IN (");
+            query.push_bind(codec::encode(AdmissionStatus::Admitted)?);
+            query.push(", ");
+            query.push_bind(codec::encode(AdmissionStatus::DischargePending)?);
+            query.push(")");
         }
 
         if let Some(admitted_at) = filters.admission_start_at {
