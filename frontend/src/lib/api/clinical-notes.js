@@ -5,6 +5,10 @@ import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 import { v2Api } from './v2/client';
+import {
+  clinicalNoteTypeForWrite,
+  normalizeClinicalNoteType,
+} from '@/features/clinical-notes/noteTypes';
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -40,6 +44,9 @@ function v2CursorQuery(params = {}) {
   const query = { limit: v2Limit(params.limit || params.page_size) };
   if (params.cursor || params.next_cursor) {
     query.cursor = params.cursor || params.next_cursor;
+  }
+  if (params.encounter_id || params.encounterId) {
+    query.encounter_id = params.encounter_id || params.encounterId;
   }
   return query;
 }
@@ -84,12 +91,15 @@ function serializeNoteBody(data = {}) {
 
 function normalizeNotePayload(data = {}) {
   const template = typeof data.template === 'object' && data.template !== null ? data.template : null;
-  const noteType = String(data.note_type || data.type || template?.note_type || template?.category || 'clinical_note').trim();
+  const noteType = clinicalNoteTypeForWrite(data.note_type || data.type || template?.note_type || template?.category);
   const title = String(data.title || data.note_title || template?.title || template?.name || 'Clinical note').trim();
   return {
-    note_type: noteType || 'clinical_note',
+    note_type: noteType,
     title: title || 'Clinical note',
     body: serializeNoteBody(data),
+    ...(data.encounter_id || data.encounterId
+      ? { encounter_id: data.encounter_id || data.encounterId }
+      : {}),
   };
 }
 
@@ -114,7 +124,8 @@ function adaptV2Template(template) {
   return {
     ...template,
     name: template.title,
-    category: template.note_type,
+    category: normalizeClinicalNoteType(template.note_type),
+    note_type: normalizeClinicalNoteType(template.note_type),
     is_active: template.is_active !== false,
     structure,
   };
@@ -126,7 +137,7 @@ function normalizeTemplatePayload(data = {}) {
     payload.title = data.title ?? data.name;
   }
   if (data.note_type !== undefined || data.category !== undefined || data.type !== undefined) {
-    payload.note_type = data.note_type ?? data.category ?? data.type;
+    payload.note_type = clinicalNoteTypeForWrite(data.note_type ?? data.category ?? data.type);
   }
   if (data.body_template !== undefined || data.structure !== undefined || data.template !== undefined) {
     payload.body_template = serializeTemplateStructure(data.body_template ?? data.structure ?? data.template);
@@ -386,7 +397,10 @@ export const clinicalNotesApi = {
         if (!patientId) {
           return [];
         }
-        return clinicalNotesApi.getNoteEntries({ ...params, patient_id: patientId }, options);
+        return clinicalNotesApi.getNoteEntries(
+          { ...params, patient_id: patientId, encounter_id: encounterId },
+          options,
+        );
       }
       const response = await apiClient.getWithPagination('/clinical-notes/entries/', {
         ...options,

@@ -16,6 +16,11 @@ import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 import { useAvailableNoteTemplates } from "@/features/clinical-notes/hooks";
+import {
+  CLINICAL_NOTE_TYPES,
+  clinicalNoteTypeLabel,
+  normalizeClinicalNoteType,
+} from "@/features/clinical-notes/noteTypes";
 
 // Icon mapping for template icons (Lucide icon names to components)
 const ICON_MAP = {
@@ -31,30 +36,18 @@ const ICON_MAP = {
   'folder': Folder,
 };
 
-// Color mapping for categories
+// Color mapping for clinical note workstreams
 const CATEGORY_COLORS = {
-  general: 'amber',
-  soap: 'amber',
-  progress: 'amber',
-  procedure: 'rose',
-  admission: 'emerald',
-  discharge: 'emerald',
-  nursing: 'sky',
-  consultation: 'amber',
-  custom: 'violet',
+  [CLINICAL_NOTE_TYPES.DOCTOR]: 'amber',
+  [CLINICAL_NOTE_TYPES.NURSING]: 'sky',
+  [CLINICAL_NOTE_TYPES.ALLIED_HEALTH]: 'emerald',
 };
 
-// Category display names
+// Clinical note workstream display names
 const CATEGORY_LABELS = {
-  general: 'General',
-  soap: 'SOAP Notes',
-  progress: 'Progress Notes',
-  procedure: 'Procedure Notes',
-  admission: 'Admission Notes',
-  discharge: 'Discharge Notes',
-  nursing: 'Nursing Notes',
-  consultation: 'Consultation Notes',
-  custom: 'Custom',
+  [CLINICAL_NOTE_TYPES.DOCTOR]: clinicalNoteTypeLabel(CLINICAL_NOTE_TYPES.DOCTOR),
+  [CLINICAL_NOTE_TYPES.NURSING]: clinicalNoteTypeLabel(CLINICAL_NOTE_TYPES.NURSING),
+  [CLINICAL_NOTE_TYPES.ALLIED_HEALTH]: clinicalNoteTypeLabel(CLINICAL_NOTE_TYPES.ALLIED_HEALTH),
 };
 
 // Visibility icons
@@ -65,7 +58,11 @@ const VISIBILITY_ICONS = {
   public: Globe,
 };
 
-const CATEGORY_ORDER = ['soap', 'progress', 'procedure', 'admission', 'discharge', 'nursing', 'consultation', 'general', 'custom'];
+const CATEGORY_ORDER = [
+  CLINICAL_NOTE_TYPES.DOCTOR,
+  CLINICAL_NOTE_TYPES.NURSING,
+  CLINICAL_NOTE_TYPES.ALLIED_HEALTH,
+];
 
 // Derive steps from template structure
 const getStepsFromTemplate = (template) => {
@@ -106,12 +103,12 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
   );
   const isLoading = propIsLoading || apiIsLoading;
 
-  // Group templates by category
+  // Group templates by clinical note workstream. Specific shapes like SOAP/HPI stay in the template title/structure.
   const groupedTemplates = useMemo(() => {
     if (!templates?.length) return {};
 
     return templates.reduce((acc, template) => {
-      const category = template.category || 'custom';
+      const category = normalizeClinicalNoteType(template.note_type || template.category);
       if (!acc[category]) acc[category] = [];
       acc[category].push(template);
       return acc;
@@ -153,10 +150,10 @@ const NoteTypeSelector = ({ onSelect, templates: propTemplates, isLoading: propI
     <div className="space-y-8">
       <div>
         <h3 className="font-display text-2xl text-foreground mb-2">
-          Select Note Type
+          Select Note Template
         </h3>
         <p className="font-mono text-sm text-muted-foreground">
-          Choose the type of clinical note you want to create
+          Choose the template that matches the clinical note you want to write
         </p>
       </div>
 

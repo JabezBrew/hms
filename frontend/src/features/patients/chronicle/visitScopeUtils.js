@@ -7,6 +7,8 @@ const TRANSIENT_CHRONICLE_PARAMS = Object.freeze([
   'admission',
   'wardRound',
   'consultation',
+  'note_type',
+  'title',
 ]);
 
 function normalizeVisitValue(value) {

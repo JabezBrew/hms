@@ -520,7 +520,8 @@ fn discharge_query() -> QueryBuilder<'static, Postgres> {
                    patient_id,
                    max(updated_at) AS completed_at
             FROM clinical_notes
-            WHERE note_type = 'discharge_summary'
+            WHERE note_type = 'doctor_note'
+              AND lower(title) = 'discharge summary'
               AND status IN ('signed', 'amended')
             GROUP BY facility_id, patient_id
         ) summary_sources
@@ -631,7 +632,7 @@ fn blockers_from_row(row: &DischargeCaseRow) -> anyhow::Result<Vec<DischargeBloc
             DischargeBlockerKind::DischargeSummary,
             "Discharge summary",
             format!(
-                "/patients/{}?action=add_note&note_type=discharge_summary",
+                "/patients/{}?action=add_note&note_type=doctor_note&title=Discharge%20summary",
                 row.patient_id
             ),
             row.discharge_summary_posted_at,

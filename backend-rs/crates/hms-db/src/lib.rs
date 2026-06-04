@@ -13,6 +13,7 @@ pub mod laboratory;
 pub mod migrate;
 pub mod ops;
 pub mod patients;
+pub mod pharmacy;
 pub mod pool;
 pub mod provision;
 pub mod referrals;

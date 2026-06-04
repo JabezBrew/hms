@@ -1682,7 +1682,8 @@ export const operations = {
     ],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "encounter_id"
     ],
     "hasBody": false
   },
@@ -1789,6 +1790,29 @@ export const operations = {
       "cursor",
       "limit"
     ],
+    "hasBody": false
+  },
+  "getPharmacyDispensingQueue": {
+    "operationId": "getPharmacyDispensingQueue",
+    "method": "GET",
+    "path": "/api/v2/pharmacy/dispensing-queue",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "patient_id",
+      "status"
+    ],
+    "hasBody": false
+  },
+  "getPharmacyDispensingQueueItem": {
+    "operationId": "getPharmacyDispensingQueueItem",
+    "method": "GET",
+    "path": "/api/v2/pharmacy/dispensing-queue/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getPurchaseOrderById": {
@@ -2783,6 +2807,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postClinicalPrescriptionGenerateMar": {
+    "operationId": "postClinicalPrescriptionGenerateMar",
+    "method": "POST",
+    "path": "/api/v2/clinical/prescriptions/{id}/generate-mar",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postClinicalProblemLinks": {
     "operationId": "postClinicalProblemLinks",
     "method": "POST",
@@ -3483,6 +3517,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPharmacyDispensingQueueDispense": {
+    "operationId": "postPharmacyDispensingQueueDispense",
+    "method": "POST",
+    "path": "/api/v2/pharmacy/dispensing-queue/{id}/dispense",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPurchaseOrderApprove": {
     "operationId": "postPurchaseOrderApprove",
     "method": "POST",
@@ -4061,6 +4105,8 @@ export function createGeneratedClient(request) {
     getPatientValidationRules: createOperation(request, operations.getPatientValidationRules),
     getPatientVitals: createOperation(request, operations.getPatientVitals),
     getPharmacyDispenses: createOperation(request, operations.getPharmacyDispenses),
+    getPharmacyDispensingQueue: createOperation(request, operations.getPharmacyDispensingQueue),
+    getPharmacyDispensingQueueItem: createOperation(request, operations.getPharmacyDispensingQueueItem),
     getPurchaseOrderById: createOperation(request, operations.getPurchaseOrderById),
     getPurchaseOrders: createOperation(request, operations.getPurchaseOrders),
     getRealtimeSubscriptions: createOperation(request, operations.getRealtimeSubscriptions),
@@ -4160,6 +4206,7 @@ export function createGeneratedClient(request) {
     postCashSessions: createOperation(request, operations.postCashSessions),
     postClinicalNoteTemplates: createOperation(request, operations.postClinicalNoteTemplates),
     postClinicalNoteVersions: createOperation(request, operations.postClinicalNoteVersions),
+    postClinicalPrescriptionGenerateMar: createOperation(request, operations.postClinicalPrescriptionGenerateMar),
     postClinicalProblemLinks: createOperation(request, operations.postClinicalProblemLinks),
     postClinicalProblemStatus: createOperation(request, operations.postClinicalProblemStatus),
     postClinics: createOperation(request, operations.postClinics),
@@ -4237,6 +4284,7 @@ export function createGeneratedClient(request) {
     postPatientsSearch: createOperation(request, operations.postPatientsSearch),
     postPatientVitals: createOperation(request, operations.postPatientVitals),
     postPharmacyDispenses: createOperation(request, operations.postPharmacyDispenses),
+    postPharmacyDispensingQueueDispense: createOperation(request, operations.postPharmacyDispensingQueueDispense),
     postPurchaseOrderApprove: createOperation(request, operations.postPurchaseOrderApprove),
     postPurchaseOrders: createOperation(request, operations.postPurchaseOrders),
     postPurchaseOrderSend: createOperation(request, operations.postPurchaseOrderSend),

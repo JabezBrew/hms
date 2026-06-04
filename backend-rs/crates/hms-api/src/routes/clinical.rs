@@ -72,6 +72,10 @@ pub fn routes() -> Router<AppState> {
             get(clinical::get_prescription).patch(clinical::update_prescription),
         )
         .route(
+            "/api/v2/clinical/prescriptions/:id/generate-mar",
+            post(clinical::generate_prescription_mar),
+        )
+        .route(
             "/api/v2/patients/:patient_id/clinical/chart-entries",
             get(clinical::list_chart_entries).post(clinical::create_chart_entry),
         )

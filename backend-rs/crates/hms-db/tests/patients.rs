@@ -10,8 +10,8 @@ use hms_db::patients::{
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::clinical::{
-    AllergySeverity, AllergyStatus, ChartEntryType, PrescriptionStatus, ProblemStatus,
-    UpdateAllergyRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
+    AllergySeverity, AllergyStatus, ChartEntryType, ClinicalNoteType, PrescriptionStatus,
+    ProblemStatus, UpdateAllergyRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::laboratory::LabPriority;
@@ -479,7 +479,8 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
-            note_type: "general".to_owned(),
+            encounter_id: None,
+            note_type: ClinicalNoteType::DoctorNote,
             title: "Summary note".to_owned(),
             body: "Clinical summary body.".to_owned(),
             actor_user_id: owner_id,
@@ -535,7 +536,12 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
             patient_id,
             medication_name: "Amlodipine".to_owned(),
             dose: "5 mg".to_owned(),
+            route: "oral".to_owned(),
             frequency: "daily".to_owned(),
+            inventory_item_id: None,
+            start_date: None,
+            duration_days: None,
+            first_dose_at: None,
             actor_user_id: owner_id,
         },
     )
@@ -547,6 +553,8 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            encounter_id: None,
+            visit_id: None,
             entry_type: ChartEntryType::BloodPressure,
             measured_at: Utc::now(),
             value: "130/82".to_owned(),
@@ -772,7 +780,7 @@ async fn clinical_note_template_mutations_are_facility_scoped_and_soft_deleted()
             id: uuid::Uuid::new_v4(),
             facility_id,
             title: "Ward Round Note".to_owned(),
-            note_type: "ward_round".to_owned(),
+            note_type: ClinicalNoteType::DoctorNote,
             body_template: "Subjective\nObjective\nAssessment\nPlan".to_owned(),
         },
     )
@@ -993,7 +1001,12 @@ async fn prescription_detail_updates_are_facility_scoped() {
             patient_id,
             medication_name: "Amlodipine".to_owned(),
             dose: "5 mg".to_owned(),
+            route: "oral".to_owned(),
             frequency: "daily".to_owned(),
+            inventory_item_id: None,
+            start_date: None,
+            duration_days: None,
+            first_dose_at: None,
             actor_user_id: owner_id,
         },
     )
@@ -1013,7 +1026,12 @@ async fn prescription_detail_updates_are_facility_scoped() {
         UpdatePrescriptionRequest {
             medication_name: None,
             dose: Some("10 mg".to_owned()),
+            route: None,
             frequency: Some("twice daily".to_owned()),
+            inventory_item_id: None,
+            start_date: None,
+            duration_days: None,
+            first_dose_at: None,
             status: Some(PrescriptionStatus::Stopped),
         },
     )
@@ -1031,7 +1049,12 @@ async fn prescription_detail_updates_are_facility_scoped() {
         UpdatePrescriptionRequest {
             medication_name: None,
             dose: None,
+            route: None,
             frequency: None,
+            inventory_item_id: None,
+            start_date: None,
+            duration_days: None,
+            first_dose_at: None,
             status: Some(PrescriptionStatus::OnHold),
         },
     )
@@ -1047,7 +1070,12 @@ async fn prescription_detail_updates_are_facility_scoped() {
         UpdatePrescriptionRequest {
             medication_name: Some("Cross facility".to_owned()),
             dose: None,
+            route: None,
             frequency: None,
+            inventory_item_id: None,
+            start_date: None,
+            duration_days: None,
+            first_dose_at: None,
             status: None,
         },
     )

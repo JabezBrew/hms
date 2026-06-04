@@ -135,6 +135,7 @@ function usePatientChroniclePageModel(defaultAction) {
     openWardRoundMode,
     prefetchActionResources,
     slideOvers,
+    workspaceOptions,
   } = useChronicleWorkspaceRouting({
     id,
     navigate,
@@ -321,6 +322,7 @@ function usePatientChroniclePageModel(defaultAction) {
     setRequestedDischargeAdmissionId,
     setRequestedTreatmentSheetAdmissionId,
     slideOvers,
+    workspaceOptions,
   });
 
   const dischargeCaseAdmissionId = resolveDischargeCaseAdmissionId({

@@ -11,6 +11,7 @@ pub mod laboratory;
 pub mod observability;
 pub mod ops;
 pub mod patients;
+pub mod pharmacy;
 pub mod referrals;
 pub mod scheduling;
 pub mod search;

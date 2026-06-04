@@ -7,13 +7,15 @@ use hms_db::clinical::{
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
     AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
-    ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteTemplateListQuery, ClinicalNoteVersion,
-    CreateAllergyRequest, CreateChartEntryRequest, CreateClinicalNoteRequest,
-    CreateClinicalNoteTemplateRequest, CreateClinicalNoteVersionRequest, CreatePrescriptionRequest,
-    CreateProblemRequest, LaboratoryClinicalContext, PharmacyClinicalContext, PrescriptionListItem,
-    ProblemArtifactKind, ProblemArtifactLinkItem, ProblemArtifactLinkQuery,
-    ProblemArtifactLinkRequest, ProblemListItem, UpdateAllergyRequest,
-    UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
+    ClinicalNoteListItem, ClinicalNoteListQuery, ClinicalNoteTemplate,
+    ClinicalNoteTemplateListQuery, ClinicalNoteVersion, CreateAllergyRequest,
+    CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
+    CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
+    GenerateMedicationAdministrationRequest, GenerateMedicationAdministrationResponse,
+    LaboratoryClinicalContext, PharmacyClinicalContext, PrescriptionListItem, ProblemArtifactKind,
+    ProblemArtifactLinkItem, ProblemArtifactLinkQuery, ProblemArtifactLinkRequest, ProblemListItem,
+    UpdateAllergyRequest, UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest,
+    UpdateProblemRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -79,7 +81,6 @@ impl ClinicalService {
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
         let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
-        let note_type = normalize_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
         let body_template =
             normalize_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
         let template = hms_db::clinical::create_note_template(
@@ -88,7 +89,7 @@ impl ClinicalService {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 title,
-                note_type,
+                note_type: payload.note_type,
                 body_template,
             },
         )
@@ -139,8 +140,6 @@ impl ClinicalService {
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
         payload.title = normalize_optional_text(payload.title, "title", MAX_TITLE_LEN)?;
-        payload.note_type =
-            normalize_optional_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
         payload.body_template =
             normalize_optional_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
         if payload.title.is_none()
@@ -211,16 +210,37 @@ impl ClinicalService {
         &self,
         ctx: &hms_access::RequestContext,
         patient_id: Uuid,
-        query: CursorListQuery,
+        query: ClinicalNoteListQuery,
     ) -> Result<ListResponse<ClinicalNoteListItem>, ApiError> {
         require_clinical_list_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
-        let page = page_request(query)?;
+        if let Some(encounter_id) = query.encounter_id {
+            let encounter =
+                hms_db::care::get_encounter(self.pool(), self.facility_id(), encounter_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict(
+                            "encounter_load_failed",
+                            "Encounter could not be loaded.",
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        ApiError::not_found("encounter_not_found", "Encounter was not found.")
+                    })?;
+            if encounter.patient_id != patient_id {
+                return Err(validation_error(
+                    "encounter_id",
+                    "Encounter does not belong to this patient.",
+                ));
+            }
+        }
+        let page = note_page_request(query.cursor.as_deref(), query.limit)?;
         let fetch_limit = page.fetch_limit();
         let rows = hms_db::clinical::list_notes(
             self.pool(),
             self.facility_id(),
             patient_id,
+            query.encounter_id,
             page.cursor,
             fetch_limit,
         )
@@ -245,7 +265,26 @@ impl ClinicalService {
     ) -> Result<ObjectResponse<ClinicalNoteListItem>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
-        let note_type = normalize_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
+        if let Some(encounter_id) = payload.encounter_id {
+            let encounter =
+                hms_db::care::get_encounter(self.pool(), self.facility_id(), encounter_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict(
+                            "encounter_load_failed",
+                            "Encounter could not be loaded.",
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        ApiError::not_found("encounter_not_found", "Encounter was not found.")
+                    })?;
+            if encounter.patient_id != patient_id {
+                return Err(validation_error(
+                    "encounter_id",
+                    "Encounter does not belong to this patient.",
+                ));
+            }
+        }
         let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
         let body = normalize_text(payload.body, "body", MAX_NOTE_BODY_LEN)?;
         let note = hms_db::clinical::create_note(
@@ -254,7 +293,8 @@ impl ClinicalService {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 patient_id,
-                note_type,
+                encounter_id: payload.encounter_id,
+                note_type: payload.note_type,
                 title,
                 body,
                 actor_user_id: ctx.user_id,
@@ -770,6 +810,8 @@ impl ClinicalService {
         let medication_name =
             normalize_text(payload.medication_name, "medication_name", MAX_TITLE_LEN)?;
         let dose = normalize_text(payload.dose, "dose", MAX_SHORT_TEXT_LEN)?;
+        let route = normalize_optional_text(payload.route, "route", MAX_SHORT_TEXT_LEN)?
+            .unwrap_or_else(|| "oral".to_owned());
         let frequency = normalize_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
         let prescription = hms_db::clinical::create_prescription(
             self.pool(),
@@ -779,7 +821,12 @@ impl ClinicalService {
                 patient_id,
                 medication_name,
                 dose,
+                route,
                 frequency,
+                inventory_item_id: payload.inventory_item_id,
+                start_date: payload.start_date,
+                duration_days: payload.duration_days,
+                first_dose_at: payload.first_dose_at,
                 actor_user_id: ctx.user_id,
             },
         )
@@ -822,11 +869,17 @@ impl ClinicalService {
         payload.medication_name =
             normalize_optional_text(payload.medication_name, "medication_name", MAX_TITLE_LEN)?;
         payload.dose = normalize_optional_text(payload.dose, "dose", MAX_SHORT_TEXT_LEN)?;
+        payload.route = normalize_optional_text(payload.route, "route", MAX_SHORT_TEXT_LEN)?;
         payload.frequency =
             normalize_optional_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
         if payload.medication_name.is_none()
             && payload.dose.is_none()
+            && payload.route.is_none()
             && payload.frequency.is_none()
+            && payload.inventory_item_id.is_none()
+            && payload.start_date.is_none()
+            && payload.duration_days.is_none()
+            && payload.first_dose_at.is_none()
             && payload.status.is_none()
         {
             return Err(validation_error(
@@ -850,6 +903,77 @@ impl ClinicalService {
 
         self.state.invalidate_patient_chronicle_cache();
         Ok(object(prescription))
+    }
+
+    pub async fn generate_prescription_mar(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: GenerateMedicationAdministrationRequest,
+    ) -> Result<ObjectResponse<GenerateMedicationAdministrationResponse>, ApiError> {
+        require_clinical_write_access(ctx, self.facility_id())?;
+        let prescription = load_prescription_for_access(&self.state, ctx, id).await?;
+        let admission = hms_db::ward::get_admission_context(
+            self.pool(),
+            self.facility_id(),
+            payload.admission_case_id,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
+        if admission.patient_id != prescription.patient_id {
+            return Err(validation_error(
+                "admission_case_id",
+                "Admission does not belong to this prescription patient.",
+            ));
+        }
+        let _patient = load_patient_for_access(&self.state, ctx, admission.patient_id).await?;
+        let first_dose_at = payload
+            .first_dose_at
+            .or(prescription.first_dose_at)
+            .unwrap_or_else(Utc::now);
+        let result = hms_db::pharmacy::generate_mar_for_prescription(
+            self.pool(),
+            hms_db::pharmacy::GenerateMarCommand {
+                facility_id: self.facility_id(),
+                prescription_id: id,
+                admission_case_id: payload.admission_case_id,
+                days: payload.days.unwrap_or(7).clamp(1, 31),
+                first_dose_at,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|error| {
+            let message = error.to_string();
+            if message.contains("unsupported_frequency") {
+                validation_error(
+                    "frequency",
+                    "Frequency is not supported for MAR generation.",
+                )
+            } else if message.contains("prescription_not_active") {
+                ApiError::bad_request(
+                    "prescription_not_active",
+                    "MAR can only be generated for active prescriptions.",
+                )
+            } else if message.contains("admission_not_active") {
+                ApiError::bad_request(
+                    "admission_not_active",
+                    "MAR generation requires an active admission.",
+                )
+            } else if message.contains("mar_generation_parameters_locked") {
+                ApiError::conflict(
+                    "mar_generation_parameters_locked",
+                    "MAR has already been generated for this prescription and admission. Use a clinical correction workflow instead of changing generation parameters.",
+                )
+            } else {
+                ApiError::conflict("mar_generation_failed", "MAR could not be generated.")
+            }
+        })?;
+
+        self.state.invalidate_patient_chronicle_cache();
+        self.state.invalidate_ward_board_cache();
+        Ok(object(result))
     }
 
     pub async fn list_chart_entries(
@@ -1092,16 +1216,23 @@ fn require_action_permission(
     })
 }
 
-fn page_request(
-    query: CursorListQuery,
+fn note_page_request(
+    cursor: Option<&str>,
+    limit: Option<u8>,
 ) -> Result<cursor_list::CursorPage<ClinicalCursor>, ApiError> {
     Ok(cursor_list::page_request(
-        query.cursor.as_deref(),
-        query.limit,
+        cursor,
+        limit,
         DEFAULT_LIMIT,
         MAX_LIMIT,
         |occurred_at, id| ClinicalCursor { occurred_at, id },
     )?)
+}
+
+fn page_request(
+    query: CursorListQuery,
+) -> Result<cursor_list::CursorPage<ClinicalCursor>, ApiError> {
+    note_page_request(query.cursor.as_deref(), query.limit)
 }
 
 fn page_response<T>(

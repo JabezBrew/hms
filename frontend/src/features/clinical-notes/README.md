@@ -19,5 +19,8 @@ Scope: clinical note creation and template management.
 ## Invariants
 
 - Patient notes belong in the Patient Chronicle/encounter context.
+- Persisted clinical note types are limited to `doctor_note`, `nursing_note`,
+  and `allied_health_note`. SOAP, HPI, ward round, discharge summary, wound
+  care, and similar labels are template titles/structures, not note types.
 - Note versions and free-text clinical content must not be logged.
 - Template management must not bypass clinical-note permissions.

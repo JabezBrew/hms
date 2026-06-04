@@ -24,8 +24,16 @@ import { toast } from 'sonner';
 import PatientContextPanel from '@/components/patients/PatientContextPanel';
 import {
   usePendingDispensingGrouped,
+  useDispenseMedication,
   useBulkDispense
 } from '@/features/nursing/hooks';
+
+const STAT_CARD_COLOR_STYLES = {
+  amber: 'bg-primary/10 text-primary',
+  sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+};
 
 function formatQueueTime(timestamp) {
   if (!timestamp) return '-';
@@ -145,8 +153,8 @@ function PharmacyQueueErrorState({ error, onRetry }) {
 }
 
 function PharmacyQueueControls({
+  bulkActionsAvailable,
   bulkDispensePending,
-  dispensingActionsAvailable,
   onBulkDispense,
   onRefresh,
   onSearchChange,
@@ -210,13 +218,13 @@ function PharmacyQueueControls({
         </div>
       </div>
 
-      {!dispensingActionsAvailable && (
+      {!bulkActionsAvailable && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
-          Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.
+          Rust V2 dispensing is available per medication row once the prescription is linked to an inventory item. Select the dispensing location before issuing supply.
         </div>
       )}
 
-      {dispensingActionsAvailable && selectedCount > 0 && (
+      {bulkActionsAvailable && selectedCount > 0 && (
         <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
           <span className="font-mono text-sm text-primary">
             {selectedCount} medication{selectedCount !== 1 ? 's' : ''} selected
@@ -236,11 +244,17 @@ export function PharmacyQueue() {
   const [selectedMeds, setSelectedMeds] = useState([]);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmMedication, setConfirmMedication] = useState(null);
+  const [dispenseStock, setDispenseStock] = useState({
+    itemId: '',
+    locationId: '',
+    quantity: '1',
+  });
   const [viewMode, setViewMode] = useState('by-patient');
   const [contextOpen, setContextOpen] = useState(false);
   const [contextPatient, setContextPatient] = useState(null);
   const rustV2Mode = isRustV2ApiMode();
-  const dispensingActionsAvailable = !rustV2Mode;
+  const dispensingActionsAvailable = true;
+  const bulkActionsAvailable = !rustV2Mode;
 
   // Fetch pending dispensing (grouped per prescription so a "5 mg TDS x 7 days"
   // course shows as one row, not 21).
@@ -254,14 +268,15 @@ export function PharmacyQueue() {
   // All dispenses (single or bulk) flow through bulk-dispense, since dispensing a
   // group means flipping every MAR entry it contains.
   const bulkDispenseMutation = useBulkDispense();
-  const dispenseMutation = bulkDispenseMutation;
+  const singleDispenseMutation = useDispenseMedication();
+  const dispenseMutation = rustV2Mode ? singleDispenseMutation : bulkDispenseMutation;
 
   const filteredMeds = filterPendingMedications(pendingMeds, searchTerm);
   const groupedByPatient = groupMedicationsByPatient(filteredMeds);
 
   // Toggle medication selection
   const toggleMedSelection = (medId) => {
-    if (!dispensingActionsAvailable) return;
+    if (!bulkActionsAvailable) return;
     setSelectedMeds(prev =>
       prev.includes(medId)
         ? prev.filter(id => id !== medId)
@@ -271,7 +286,7 @@ export function PharmacyQueue() {
 
   // Select all for a patient
   const selectAllForPatient = (patientId) => {
-    if (!dispensingActionsAvailable) return;
+    if (!bulkActionsAvailable) return;
     const patientMeds = groupedByPatient[patientId]?.medications.map(m => m.id) || [];
     const allSelected = patientMeds.every(id => selectedMeds.includes(id));
 
@@ -289,9 +304,18 @@ export function PharmacyQueue() {
       toast.error('Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.');
       return;
     }
-    const ids = getMedicationDispenseIds(medication);
     try {
-      await bulkDispenseMutation.mutateAsync(ids);
+      if (rustV2Mode) {
+        await singleDispenseMutation.mutateAsync({
+          fulfillmentId: medication.fulfillment_id || medication.id,
+          itemId: dispenseStock.itemId.trim(),
+          locationId: dispenseStock.locationId.trim(),
+          quantity: dispenseStock.quantity,
+        });
+      } else {
+        const ids = getMedicationDispenseIds(medication);
+        await bulkDispenseMutation.mutateAsync(ids);
+      }
       toast.success(`${medication.medication_name} dispensed successfully`);
       setConfirmMedication(null);
       setShowConfirmDialog(false);
@@ -303,8 +327,8 @@ export function PharmacyQueue() {
   // Bulk dispense — selectedMeds holds group ids; expand to the union of their
   // child MAR entry ids before posting.
   const handleBulkDispense = async () => {
-    if (!dispensingActionsAvailable) {
-      toast.error('Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.');
+    if (!bulkActionsAvailable) {
+      toast.error('Use individual dispense in Rust V2 so stock item, location, and quantity are captured.');
       return;
     }
     if (selectedMeds.length === 0) {
@@ -327,6 +351,11 @@ export function PharmacyQueue() {
   const openConfirmDialog = (medication) => {
     if (!dispensingActionsAvailable) return;
     setConfirmMedication(medication);
+    setDispenseStock({
+      itemId: medication.inventory_item_id || '',
+      locationId: medication.dispensing_location_id || '',
+      quantity: String(Math.max(1, Number(medication.dose_count || 1))),
+    });
     setShowConfirmDialog(true);
   };
 
@@ -357,8 +386,8 @@ export function PharmacyQueue() {
   return (
     <div className="space-y-6">
       <PharmacyQueueControls
+        bulkActionsAvailable={bulkActionsAvailable}
         bulkDispensePending={bulkDispenseMutation.isPending}
-        dispensingActionsAvailable={dispensingActionsAvailable}
         onBulkDispense={handleBulkDispense}
         onRefresh={() => refetch()}
         onSearchChange={setSearchTerm}
@@ -385,6 +414,7 @@ export function PharmacyQueue() {
           getPatientWard={getQueuePatientWard}
           formatTime={formatQueueTime}
           dispensingActionsAvailable={dispensingActionsAvailable}
+          selectionAvailable={bulkActionsAvailable}
         />
       ) : (
         <AllMedicationsView
@@ -400,6 +430,7 @@ export function PharmacyQueue() {
           getPrescriberName={getQueuePrescriberName}
           formatDateTime={formatQueueDateTime}
           dispensingActionsAvailable={dispensingActionsAvailable}
+          selectionAvailable={bulkActionsAvailable}
         />
       )}
 
@@ -448,6 +479,66 @@ export function PharmacyQueue() {
                 <hr className="border-border" />
                 <DetailRow label="Prescribed by" value={getQueuePrescriberName(confirmMedication)} />
               </div>
+              {rustV2Mode && (
+                <div className="grid gap-3">
+                  <div>
+                    <label
+                      className="mb-1 block text-xs font-mono uppercase tracking-wider text-muted-foreground"
+                      htmlFor="pharmacy-dispense-item-id"
+                    >
+                      Linked stock item ID
+                    </label>
+                    <Input
+                      id="pharmacy-dispense-item-id"
+                      readOnly
+                      value={dispenseStock.itemId}
+                      onChange={(event) => setDispenseStock((current) => ({
+                        ...current,
+                        itemId: event.target.value,
+                      }))}
+                      placeholder="No linked inventory item"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="mb-1 block text-xs font-mono uppercase tracking-wider text-muted-foreground"
+                      htmlFor="pharmacy-dispense-location-id"
+                    >
+                      Location ID
+                    </label>
+                    <Input
+                      id="pharmacy-dispense-location-id"
+                      value={dispenseStock.locationId}
+                      onChange={(event) => setDispenseStock((current) => ({
+                        ...current,
+                        locationId: event.target.value,
+                      }))}
+                      placeholder="Dispensing location UUID"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="mb-1 block text-xs font-mono uppercase tracking-wider text-muted-foreground"
+                      htmlFor="pharmacy-dispense-quantity"
+                    >
+                      Quantity
+                    </label>
+                    <Input
+                      id="pharmacy-dispense-quantity"
+                      min="1"
+                      type="number"
+                      value={dispenseStock.quantity}
+                      onChange={(event) => setDispenseStock((current) => ({
+                        ...current,
+                        quantity: event.target.value,
+                      }))}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -457,7 +548,7 @@ export function PharmacyQueue() {
             </Button>
             <Button
               onClick={() => handleDispense(confirmMedication)}
-              disabled={dispenseMutation.isPending}
+              disabled={dispenseMutation.isPending || (rustV2Mode && !confirmMedication?.inventory_item_id)}
             >
               {dispenseMutation.isPending ? 'Dispensing...' : 'Confirm Dispense'}
             </Button>
@@ -481,17 +572,10 @@ export function PharmacyQueue() {
  * StatCard - Chronicle-styled stat card
  */
 const StatCard = ({ icon: Icon, value, label, color = 'amber' }) => {
-  const colorStyles = {
-    amber: 'bg-primary/10 text-primary',
-    sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
-    emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-  };
-
   return (
     <div className="bg-card/50 backdrop-blur border border-border rounded-xl p-4">
       <div className="flex items-center gap-4">
-        <div className={cn("p-3 rounded-lg", colorStyles[color])}>
+        <div className={cn("p-3 rounded-lg", STAT_CARD_COLOR_STYLES[color])}>
           <Icon className="size-5" />
         </div>
         <div>
@@ -535,6 +619,7 @@ const ByPatientView = ({
   getPatientWard,
   formatTime,
   dispensingActionsAvailable,
+  selectionAvailable,
 }) => {
   const totalPatients = Object.keys(groupedByPatient).length;
 
@@ -562,7 +647,7 @@ const ByPatientView = ({
               {/* Patient Header */}
               <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
                 <div className="flex items-center gap-3">
-                  {dispensingActionsAvailable ? (
+                  {selectionAvailable ? (
                     <Checkbox
                       checked={allSelected}
                       onCheckedChange={() => selectAllForPatient(patientId)}
@@ -603,7 +688,7 @@ const ByPatientView = ({
                       med.is_overdue && "bg-destructive/5"
                     )}
                   >
-                    {dispensingActionsAvailable ? (
+                    {selectionAvailable ? (
                       <Checkbox
                         checked={selectedMeds.includes(med.id)}
                         onCheckedChange={() => toggleMedSelection(med.id)}
@@ -678,6 +763,7 @@ const AllMedicationsView = ({
   getPrescriberName,
   formatDateTime,
   dispensingActionsAvailable,
+  selectionAvailable,
 }) => {
   if (filteredMeds.length === 0) {
     return <EmptyState />;
@@ -689,7 +775,7 @@ const AllMedicationsView = ({
     <div className="bg-card/50 backdrop-blur border border-border rounded-xl overflow-hidden">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/30">
-        {dispensingActionsAvailable ? (
+        {selectionAvailable ? (
           <Checkbox
             checked={allSelected}
             onCheckedChange={(checked) => {
@@ -717,7 +803,7 @@ const AllMedicationsView = ({
                 med.is_overdue && "bg-destructive/5"
               )}
             >
-              {dispensingActionsAvailable ? (
+              {selectionAvailable ? (
                 <Checkbox
                   checked={selectedMeds.includes(med.id)}
                   onCheckedChange={() => toggleMedSelection(med.id)}

@@ -5,6 +5,7 @@ import { PharmacyQueue } from '../PharmacyQueue';
 
 const refetch = vi.fn();
 const bulkDispense = vi.fn();
+const dispenseMedication = vi.fn();
 
 const pendingMedication = {
   id: 'group-1',
@@ -34,30 +35,34 @@ vi.mock('@/features/nursing/hooks', () => ({
     mutateAsync: bulkDispense,
     isPending: false,
   }),
+  useDispenseMedication: () => ({
+    mutateAsync: dispenseMedication,
+    isPending: false,
+  }),
 }));
 
 vi.mock('@/components/patients/PatientContextPanel', () => ({
   default: () => null,
 }));
 
-describe('PharmacyQueue Rust V2 guards', () => {
+describe('PharmacyQueue Rust V2 dispensing controls', () => {
   afterEach(() => {
     delete window.__HMS_RUNTIME_CONFIG__;
     vi.clearAllMocks();
   });
 
-  it('keeps the queue visible but hides unsupported dispensing controls in Rust V2 mode', () => {
+  it('keeps per-row dispensing visible but hides bulk selection in Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
 
     render(<PharmacyQueue />);
 
     expect(screen.getByText('Ama Mensah')).toBeInTheDocument();
     expect(screen.getByText('Amoxicillin')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^dispense$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^dispense$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /dispense selected/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(
-      screen.getByText(/pharmacy dispensing actions from the nursing queue are not available in rust v2/i),
+      screen.getByText(/rust v2 dispensing is available per medication row/i),
     ).toBeInTheDocument();
   });
 
@@ -69,7 +74,7 @@ describe('PharmacyQueue Rust V2 guards', () => {
     expect(screen.getByRole('button', { name: /^dispense$/i })).toBeInTheDocument();
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);
     expect(
-      screen.queryByText(/pharmacy dispensing actions from the nursing queue are not available in rust v2/i),
+      screen.queryByText(/rust v2 dispensing is available per medication row/i),
     ).not.toBeInTheDocument();
   });
 });

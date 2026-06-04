@@ -3,7 +3,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
     ClinicalNoteDetail, ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate,
-    ClinicalNoteVersion, LaboratoryClinicalContext, PatientChronicleSummary,
+    ClinicalNoteType, ClinicalNoteVersion, LaboratoryClinicalContext, PatientChronicleSummary,
     PharmacyClinicalContext, PrescriptionListItem, PrescriptionStatus, ProblemArtifactKind,
     ProblemArtifactLinkItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
     UpdatePrescriptionRequest, UpdateProblemRequest,
@@ -37,7 +37,8 @@ pub struct NewClinicalNote {
     pub id: Uuid,
     pub facility_id: Uuid,
     pub patient_id: Uuid,
-    pub note_type: String,
+    pub encounter_id: Option<Uuid>,
+    pub note_type: ClinicalNoteType,
     pub title: String,
     pub body: String,
     pub actor_user_id: Uuid,
@@ -48,14 +49,14 @@ pub struct NewClinicalNoteTemplate {
     pub id: Uuid,
     pub facility_id: Uuid,
     pub title: String,
-    pub note_type: String,
+    pub note_type: ClinicalNoteType,
     pub body_template: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct UpdateClinicalNoteTemplate {
     pub title: Option<String>,
-    pub note_type: Option<String>,
+    pub note_type: Option<ClinicalNoteType>,
     pub body_template: Option<String>,
     pub is_active: Option<bool>,
 }
@@ -88,7 +89,12 @@ pub struct NewPrescription {
     pub patient_id: Uuid,
     pub medication_name: String,
     pub dose: String,
+    pub route: String,
     pub frequency: String,
+    pub inventory_item_id: Option<Uuid>,
+    pub start_date: Option<NaiveDate>,
+    pub duration_days: Option<i32>,
+    pub first_dose_at: Option<DateTime<Utc>>,
     pub actor_user_id: Uuid,
 }
 
@@ -131,6 +137,7 @@ struct TemplateRow {
 struct NoteRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
     note_type: String,
     title: String,
     status: String,
@@ -142,6 +149,7 @@ struct NoteRow {
 struct NoteDetailRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
     note_type: String,
     title: String,
     body: String,
@@ -196,7 +204,12 @@ struct PrescriptionRow {
     patient_id: Uuid,
     medication_name: String,
     dose: String,
+    route: String,
     frequency: String,
+    inventory_item_id: Option<Uuid>,
+    start_date: Option<NaiveDate>,
+    duration_days: Option<i32>,
+    first_dose_at: Option<DateTime<Utc>>,
     status: String,
     prescribed_at: DateTime<Utc>,
 }
@@ -344,7 +357,7 @@ pub async fn list_note_templates(
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(template_from_row).collect())
+    rows.into_iter().map(template_from_row).collect()
 }
 
 pub async fn get_note_template(
@@ -363,7 +376,7 @@ pub async fn get_note_template(
     .bind(template_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(template_from_row))
+    row.map(template_from_row).transpose()
 }
 
 pub async fn create_note_template(
@@ -386,11 +399,11 @@ pub async fn create_note_template(
     .bind(template.id)
     .bind(template.facility_id)
     .bind(template.title)
-    .bind(template.note_type)
+    .bind(codec::encode(template.note_type)?)
     .bind(template.body_template)
     .fetch_one(pool)
     .await?;
-    Ok(template_from_row(row))
+    template_from_row(row)
 }
 
 pub async fn update_note_template(
@@ -414,12 +427,12 @@ pub async fn update_note_template(
     .bind(facility_id)
     .bind(template_id)
     .bind(update.title)
-    .bind(update.note_type)
+    .bind(update.note_type.map(codec::encode).transpose()?)
     .bind(update.body_template)
     .bind(update.is_active)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(template_from_row))
+    row.map(template_from_row).transpose()
 }
 
 pub async fn deactivate_note_template(
@@ -445,12 +458,13 @@ pub async fn list_notes(
     pool: &PgPool,
     facility_id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
     cursor: Option<ClinicalCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<ClinicalNoteListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT id, patient_id, note_type, title, status, version, updated_at
+        SELECT id, patient_id, encounter_id, note_type, title, status, version, updated_at
         FROM clinical_notes
         WHERE facility_id =
         "#,
@@ -458,6 +472,10 @@ pub async fn list_notes(
     query.push_bind(facility_id);
     query.push(" AND patient_id = ");
     query.push_bind(patient_id);
+    if let Some(encounter_id) = encounter_id {
+        query.push(" AND encounter_id = ");
+        query.push_bind(encounter_id);
+    }
     if let Some(cursor) = cursor {
         query.push(" AND (updated_at, id) < (");
         query.push_bind(cursor.occurred_at);
@@ -482,20 +500,22 @@ pub async fn create_note(
             id,
             facility_id,
             patient_id,
+            encounter_id,
             note_type,
             title,
             body,
             status,
             created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, patient_id, note_type, title, status, version, updated_at
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id, patient_id, encounter_id, note_type, title, status, version, updated_at
         "#,
     )
     .bind(note.id)
     .bind(note.facility_id)
     .bind(note.patient_id)
-    .bind(&note.note_type)
+    .bind(note.encounter_id)
+    .bind(codec::encode(note.note_type)?)
     .bind(&note.title)
     .bind(&note.body)
     .bind(codec::encode(ClinicalNoteStatus::Draft)?)
@@ -545,7 +565,7 @@ pub async fn get_note_detail(
 ) -> anyhow::Result<Option<ClinicalNoteDetail>> {
     let row = sqlx::query_as::<_, NoteDetailRow>(
         r#"
-        SELECT id, patient_id, note_type, title, body, status, version, updated_at
+        SELECT id, patient_id, encounter_id, note_type, title, body, status, version, updated_at
         FROM clinical_notes
         WHERE facility_id = $1 AND id = $2
         "#,
@@ -1044,7 +1064,7 @@ pub async fn list_prescriptions(
 ) -> anyhow::Result<Vec<PrescriptionListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         FROM prescriptions
         WHERE facility_id =
         "#,
@@ -1075,10 +1095,10 @@ pub async fn create_prescription(
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
         INSERT INTO prescriptions (
-            id, facility_id, patient_id, medication_name, dose, frequency, status, created_by_user_id
+            id, facility_id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         "#,
     )
     .bind(prescription.id)
@@ -1086,7 +1106,12 @@ pub async fn create_prescription(
     .bind(prescription.patient_id)
     .bind(prescription.medication_name)
     .bind(prescription.dose)
+    .bind(prescription.route)
     .bind(prescription.frequency)
+    .bind(prescription.inventory_item_id)
+    .bind(prescription.start_date)
+    .bind(prescription.duration_days)
+    .bind(prescription.first_dose_at)
     .bind(codec::encode(PrescriptionStatus::Active)?)
     .bind(prescription.actor_user_id)
     .fetch_one(pool)
@@ -1101,7 +1126,7 @@ pub async fn get_prescription(
 ) -> anyhow::Result<Option<PrescriptionListItem>> {
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
-        SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         FROM prescriptions
         WHERE facility_id = $1 AND id = $2
         "#,
@@ -1125,18 +1150,28 @@ pub async fn update_prescription(
         UPDATE prescriptions
         SET medication_name = COALESCE($3, medication_name),
             dose = COALESCE($4, dose),
-            frequency = COALESCE($5, frequency),
-            status = COALESCE($6, status),
+            route = COALESCE($5, route),
+            frequency = COALESCE($6, frequency),
+            inventory_item_id = COALESCE($7, inventory_item_id),
+            start_date = COALESCE($8, start_date),
+            duration_days = COALESCE($9, duration_days),
+            first_dose_at = COALESCE($10, first_dose_at),
+            status = COALESCE($11, status),
             updated_at = now()
         WHERE facility_id = $1 AND id = $2
-        RETURNING id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        RETURNING id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         "#,
     )
     .bind(facility_id)
     .bind(prescription_id)
     .bind(update.medication_name)
     .bind(update.dose)
+    .bind(update.route)
     .bind(update.frequency)
+    .bind(update.inventory_item_id)
+    .bind(update.start_date)
+    .bind(update.duration_days)
+    .bind(update.first_dose_at)
     .bind(status)
     .fetch_optional(pool)
     .await?;
@@ -1344,7 +1379,7 @@ async fn patient_chronicle_sections(
               COALESCE((
                 SELECT jsonb_agg(to_jsonb(notes) ORDER BY notes.updated_at DESC, notes.id DESC)
                 FROM (
-                  SELECT id, patient_id, note_type, title, status, version, updated_at
+                  SELECT id, patient_id, encounter_id, note_type, title, status, version, updated_at
                   FROM clinical_notes
                   WHERE facility_id = $1 AND patient_id = $2
                   ORDER BY updated_at DESC, id DESC
@@ -1374,7 +1409,7 @@ async fn patient_chronicle_sections(
               COALESCE((
                 SELECT jsonb_agg(to_jsonb(prescriptions) ORDER BY prescriptions.prescribed_at DESC, prescriptions.id DESC)
                 FROM (
-                  SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+                  SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
                   FROM prescriptions
                   WHERE facility_id = $1 AND patient_id = $2
                   ORDER BY prescribed_at DESC, id DESC
@@ -1468,16 +1503,12 @@ timeline_entries AS (
     SELECT clinical_notes.id AS entry_id,
            CASE
              WHEN clinical_notes.note_type IN (
-               'progress_note',
-               'soap_note',
+               'doctor_note',
                'nursing_note',
-               'admission_note',
-               'discharge_note',
-               'consult_note',
-               'procedure'
+               'allied_health_note'
              )
              THEN clinical_notes.note_type
-             ELSE 'progress_note'
+             ELSE 'doctor_note'
            END AS entry_type,
            'note' AS entry_category,
            clinical_notes.updated_at AS occurred_at,
@@ -1680,7 +1711,7 @@ SELECT
   COALESCE((
     SELECT jsonb_agg(to_jsonb(notes) ORDER BY notes.updated_at DESC, notes.id DESC)
     FROM (
-      SELECT id, patient_id, note_type, title, status, version, updated_at
+      SELECT id, patient_id, encounter_id, note_type, title, status, version, updated_at
       FROM clinical_notes
       WHERE facility_id = $1 AND patient_id = $2
       ORDER BY updated_at DESC, id DESC
@@ -1710,7 +1741,7 @@ SELECT
   COALESCE((
     SELECT jsonb_agg(to_jsonb(prescriptions) ORDER BY prescriptions.prescribed_at DESC, prescriptions.id DESC)
     FROM (
-      SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+      SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
       FROM prescriptions
       WHERE facility_id = $1 AND patient_id = $2
       ORDER BY prescribed_at DESC, id DESC
@@ -1772,16 +1803,12 @@ FROM (
   SELECT clinical_notes.id AS entry_id,
          CASE
            WHEN clinical_notes.note_type IN (
-             'progress_note',
-             'soap_note',
+             'doctor_note',
              'nursing_note',
-             'admission_note',
-             'discharge_note',
-             'consult_note',
-             'procedure'
+             'allied_health_note'
            )
            THEN clinical_notes.note_type
-           ELSE 'progress_note'
+           ELSE 'doctor_note'
          END AS entry_type,
          'note' AS entry_category,
          clinical_notes.updated_at AS occurred_at,
@@ -2112,7 +2139,7 @@ async fn list_active_prescriptions(
 ) -> anyhow::Result<Vec<PrescriptionListItem>> {
     let rows = sqlx::query_as::<_, PrescriptionRow>(
         r#"
-        SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         FROM prescriptions
         WHERE facility_id = $1
           AND patient_id = $2
@@ -2164,21 +2191,22 @@ async fn linked_problems_for_artifact(
     rows.into_iter().map(problem_from_row).collect()
 }
 
-fn template_from_row(row: TemplateRow) -> ClinicalNoteTemplate {
-    ClinicalNoteTemplate {
+fn template_from_row(row: TemplateRow) -> anyhow::Result<ClinicalNoteTemplate> {
+    Ok(ClinicalNoteTemplate {
         id: row.id,
         title: row.title,
-        note_type: row.note_type,
+        note_type: codec::decode(&row.note_type)?,
         body_template: row.body_template,
         is_active: row.is_active,
-    }
+    })
 }
 
 fn note_from_row(row: NoteRow) -> anyhow::Result<ClinicalNoteListItem> {
     Ok(ClinicalNoteListItem {
         id: row.id,
         patient_id: row.patient_id,
-        note_type: row.note_type,
+        encounter_id: row.encounter_id,
+        note_type: codec::decode(&row.note_type)?,
         title: row.title,
         status: codec::decode(&row.status)?,
         version: row.version,
@@ -2190,7 +2218,8 @@ fn note_detail_from_row(row: NoteDetailRow) -> anyhow::Result<ClinicalNoteDetail
     Ok(ClinicalNoteDetail {
         id: row.id,
         patient_id: row.patient_id,
-        note_type: row.note_type,
+        encounter_id: row.encounter_id,
+        note_type: codec::decode(&row.note_type)?,
         title: row.title,
         body: row.body,
         status: codec::decode(&row.status)?,
@@ -2251,7 +2280,12 @@ fn prescription_from_row(row: PrescriptionRow) -> anyhow::Result<PrescriptionLis
         patient_id: row.patient_id,
         medication_name: row.medication_name,
         dose: row.dose,
+        route: row.route,
         frequency: row.frequency,
+        inventory_item_id: row.inventory_item_id,
+        start_date: row.start_date,
+        duration_days: row.duration_days,
+        first_dose_at: row.first_dose_at,
         status: codec::decode(&row.status)?,
         prescribed_at: row.prescribed_at,
     })

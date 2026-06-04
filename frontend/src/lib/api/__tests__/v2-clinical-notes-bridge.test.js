@@ -34,7 +34,7 @@ describe('Rust V2 clinical notes bridge', () => {
             {
               id: 'template-1',
               title: 'Consultation Note',
-              note_type: 'consultation',
+              note_type: 'doctor_note',
               body_template: 'SOAP template',
             },
           ],
@@ -68,7 +68,7 @@ describe('Rust V2 clinical notes bridge', () => {
       expect.objectContaining({
         id: 'template-1',
         title: 'Consultation Note',
-        note_type: 'consultation',
+        note_type: 'doctor_note',
         body_template: 'SOAP template',
         is_active: true,
       }),
@@ -83,7 +83,7 @@ describe('Rust V2 clinical notes bridge', () => {
             {
               id: 'template-structured',
               title: 'Structured SOAP Note',
-              note_type: 'soap',
+              note_type: 'doctor_note',
               body_template: JSON.stringify([
                 { section: 'Subjective', type: 'text', required: true },
                 { section: 'Assessment', type: 'condition', required: true },
@@ -106,7 +106,7 @@ describe('Rust V2 clinical notes bridge', () => {
     expect(templates[0]).toEqual(
       expect.objectContaining({
         id: 'template-structured',
-        category: 'soap',
+        category: 'doctor_note',
         structure: [
           { section: 'Subjective', type: 'text', required: true },
           { section: 'Assessment', type: 'condition', required: true },
@@ -123,7 +123,7 @@ describe('Rust V2 clinical notes bridge', () => {
             data: {
               id: 'template-2',
               title: 'Ward Round Note',
-              note_type: 'ward_round',
+              note_type: 'doctor_note',
               body_template: 'SOAP template',
               is_active: true,
             },
@@ -141,7 +141,7 @@ describe('Rust V2 clinical notes bridge', () => {
             data: {
               id: 'template-2',
               title: 'Updated Ward Round Note',
-              note_type: 'ward_round',
+              note_type: 'doctor_note',
               body_template: 'Updated template',
               is_active: true,
             },
@@ -159,7 +159,7 @@ describe('Rust V2 clinical notes bridge', () => {
             data: {
               id: 'template-2',
               title: 'Updated Ward Round Note',
-              note_type: 'ward_round',
+              note_type: 'doctor_note',
               body_template: 'Updated template',
               is_active: false,
             },
@@ -175,7 +175,7 @@ describe('Rust V2 clinical notes bridge', () => {
     const created = await clinicalNotesApi.createNoteTemplate(
       {
         title: 'Ward Round Note',
-        note_type: 'ward_round',
+        note_type: 'doctor_note',
         body_template: 'SOAP template',
       },
       { signal: new AbortController().signal },
@@ -200,7 +200,7 @@ describe('Rust V2 clinical notes bridge', () => {
         credentials: 'include',
         body: JSON.stringify({
           title: 'Ward Round Note',
-          note_type: 'ward_round',
+          note_type: 'doctor_note',
           body_template: 'SOAP template',
         }),
       }),
@@ -237,7 +237,7 @@ describe('Rust V2 clinical notes bridge', () => {
           data: {
             id: 'template-structured',
             title: 'Structured SOAP Note',
-            note_type: 'soap',
+            note_type: 'doctor_note',
             body_template: JSON.stringify({
               sections: [
                 { name: 'Subjective', type: 'text', required: true },
@@ -257,7 +257,7 @@ describe('Rust V2 clinical notes bridge', () => {
 
     const created = await clinicalNotesApi.createNoteTemplate({
       title: 'Structured SOAP Note',
-      category: 'soap',
+      category: 'doctor_note',
       structure: {
         sections: [
           { name: 'Subjective', type: 'text', required: true },
@@ -273,7 +273,7 @@ describe('Rust V2 clinical notes bridge', () => {
         credentials: 'include',
         body: JSON.stringify({
           title: 'Structured SOAP Note',
-          note_type: 'soap',
+          note_type: 'doctor_note',
           body_template: JSON.stringify({
             sections: [
               { name: 'Subjective', type: 'text', required: true },
@@ -297,7 +297,7 @@ describe('Rust V2 clinical notes bridge', () => {
             {
               id: 'note-1',
               patient_id: 'patient-1',
-              note_type: 'consultation',
+              note_type: 'doctor_note',
               title: 'Initial consult',
               status: 'draft',
               version: 1,
@@ -332,7 +332,7 @@ describe('Rust V2 clinical notes bridge', () => {
         patient: 'patient-1',
         patient_id: 'patient-1',
         title: 'Initial consult',
-        note_type: 'consultation',
+        note_type: 'doctor_note',
         version_number: 1,
       }),
     ]);
@@ -350,7 +350,7 @@ describe('Rust V2 clinical notes bridge', () => {
           data: {
             id: 'note-1',
             patient_id: 'patient-1',
-            note_type: 'consultation',
+            note_type: 'doctor_note',
             title: 'Initial consult',
             body: JSON.stringify({ assessment: 'Upper respiratory infection' }),
             status: 'draft',
@@ -394,7 +394,7 @@ describe('Rust V2 clinical notes bridge', () => {
           data: {
             id: 'note-1',
             patient_id: 'patient-1',
-            note_type: 'consultation',
+            note_type: 'doctor_note',
             title: 'Initial consult',
             status: 'draft',
             version: 1,
@@ -411,7 +411,7 @@ describe('Rust V2 clinical notes bridge', () => {
 
     const note = await clinicalNotesApi.createNoteEntry({
       patient_id: 'patient-1',
-      note_type: 'consultation',
+      note_type: 'doctor_note',
       title: 'Initial consult',
       data: {
         subjective: 'Cough for two days',
@@ -424,7 +424,7 @@ describe('Rust V2 clinical notes bridge', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          note_type: 'consultation',
+          note_type: 'doctor_note',
           title: 'Initial consult',
           body: JSON.stringify({
             subjective: 'Cough for two days',
@@ -441,6 +441,27 @@ describe('Rust V2 clinical notes bridge', () => {
         version_number: 1,
       }),
     );
+  });
+
+  it('rejects unsupported explicit note types before Rust V2 mutations', async () => {
+    await expect(
+      clinicalNotesApi.createNoteEntry({
+        patient_id: 'patient-1',
+        note_type: 'pharmacist_note',
+        title: 'Medication review',
+        data: { note: 'Should not silently become a doctor note' },
+      }),
+    ).rejects.toThrow('Clinical note type must be doctor_note, nursing_note, or allied_health_note.');
+
+    await expect(
+      clinicalNotesApi.createNoteTemplate({
+        title: 'Typo template',
+        note_type: 'nursng_note',
+        body_template: 'Template',
+      }),
+    ).rejects.toThrow('Clinical note type must be doctor_note, nursing_note, or allied_health_note.');
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('writes note versions through Rust /api/v2 instead of patching legacy entries', async () => {
@@ -584,7 +605,7 @@ describe('Rust V2 clinical notes bridge', () => {
             data: {
               id: 'note-1',
               patient_id: 'patient-1',
-              note_type: 'consultation',
+              note_type: 'doctor_note',
               title: 'Initial consult',
               body: JSON.stringify({
                 subjective: 'Cough for two days',
@@ -608,7 +629,7 @@ describe('Rust V2 clinical notes bridge', () => {
             data: {
               id: 'note-copy',
               patient_id: 'patient-2',
-              note_type: 'consultation',
+              note_type: 'doctor_note',
               title: 'Copied assessment',
               status: 'draft',
               version: 1,
@@ -648,7 +669,7 @@ describe('Rust V2 clinical notes bridge', () => {
         method: 'POST',
         credentials: 'include',
         body: JSON.stringify({
-          note_type: 'consultation',
+          note_type: 'doctor_note',
           title: 'Copied assessment',
           body: JSON.stringify({
             assessment: 'Upper respiratory infection',
@@ -676,7 +697,7 @@ describe('Rust V2 clinical notes bridge', () => {
             data: {
               id: 'template-1',
               title: 'Consultation Note',
-              note_type: 'consultation',
+              note_type: 'doctor_note',
               body_template: 'SOAP template',
               is_active: true,
             },
@@ -694,7 +715,7 @@ describe('Rust V2 clinical notes bridge', () => {
             data: {
               id: 'template-copy',
               title: 'Copy of Consultation Note',
-              note_type: 'consultation',
+              note_type: 'doctor_note',
               body_template: 'SOAP template',
               is_active: true,
             },
@@ -727,7 +748,7 @@ describe('Rust V2 clinical notes bridge', () => {
         credentials: 'include',
         body: JSON.stringify({
           title: 'Copy of Consultation Note',
-          note_type: 'consultation',
+          note_type: 'doctor_note',
           body_template: 'SOAP template',
         }),
       }),
@@ -736,7 +757,7 @@ describe('Rust V2 clinical notes bridge', () => {
       expect.objectContaining({
         id: 'template-copy',
         title: 'Copy of Consultation Note',
-        note_type: 'consultation',
+        note_type: 'doctor_note',
       }),
     );
   });

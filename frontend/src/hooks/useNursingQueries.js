@@ -891,9 +891,33 @@ export const useGenerateMAR = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ prescriptionId, days = 7, startDate = null }) => {
+    mutationFn: async ({
+      prescriptionId,
+      admissionCaseId = null,
+      admission_case_id: admissionCaseIdSnake = null,
+      days = 7,
+      startDate = null,
+      firstDoseAt = null,
+      first_dose_at: firstDoseAtSnake = null,
+    }) => {
       if (isRustV2ApiMode()) {
-        throw new Error('Rust V2 does not expose MAR generation yet.');
+        const admissionId = admissionCaseId || admissionCaseIdSnake;
+        if (!admissionId) {
+          throw new Error('Active admission is required to generate MAR in Rust V2.');
+        }
+        const body = {
+          admission_case_id: admissionId,
+          days,
+        };
+        const firstDose = firstDoseAt || firstDoseAtSnake || startDate;
+        if (firstDose) {
+          body.first_dose_at = firstDose;
+        }
+        return v2Request({
+          method: 'POST',
+          path: `/api/v2/clinical/prescriptions/${prescriptionId}/generate-mar`,
+          body,
+        });
       }
 
       const data = { days };
@@ -918,7 +942,7 @@ export const usePendingDispensing = (patientId = null) => {
     queryKey: nursingKeys.pendingDispensing(patientId),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        return getV2PendingPharmacyQueue({ signal });
+        return getV2PendingPharmacyQueue({ patientId, signal });
       }
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/pending/${params}`);
@@ -934,7 +958,7 @@ export const usePendingDispensingGrouped = (patientId = null) => {
     queryKey: nursingKeys.pendingDispensingGrouped(patientId),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        return getV2PendingPharmacyQueue({ signal });
+        return getV2PendingPharmacyQueue({ patientId, signal });
       }
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/pending-grouped/${params}`);
@@ -950,7 +974,7 @@ export const useReadyForAdmin = (patientId = null) => {
     queryKey: nursingKeys.readyForAdmin(patientId),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        return getV2PendingPharmacyQueue({ signal });
+        return getV2PendingPharmacyQueue({ patientId, signal });
       }
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/ready-for-admin/${params}`);
@@ -965,11 +989,30 @@ export const useDispenseMedication = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (medicationId) => {
+    mutationFn: async (medication) => {
       if (isRustV2ApiMode()) {
-        throw new Error('Rust V2 does not expose pharmacy dispense actions from the nursing queue yet.');
+        const request = typeof medication === 'object' && medication !== null
+          ? medication
+          : { fulfillmentId: medication };
+        const fulfillmentId = request.fulfillmentId || request.fulfillment_id || request.id || request.mar_entry_id;
+        const itemId = request.itemId || request.item_id || request.inventory_item_id;
+        const locationId = request.locationId || request.location_id || request.dispensing_location_id;
+        const quantity = Number(request.quantity || request.dose_count || 1);
+        if (!fulfillmentId || !itemId || !locationId || !Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error('Stock item, location, and positive quantity are required to dispense in Rust V2.');
+        }
+        return v2Request({
+          method: 'POST',
+          path: `/api/v2/pharmacy/dispensing-queue/${fulfillmentId}/dispense`,
+          body: {
+            item_id: itemId,
+            location_id: locationId,
+            quantity,
+          },
+        });
       }
 
+      const medicationId = medication;
       const response = await apiClient.post(`/pharmacy/dispensing/${medicationId}/dispense/`, {});
       return response;
     },
@@ -988,7 +1031,37 @@ export const useBulkDispense = () => {
   return useMutation({
     mutationFn: async (medicationIds) => {
       if (isRustV2ApiMode()) {
-        throw new Error('Rust V2 does not expose pharmacy bulk dispense actions from the nursing queue yet.');
+        if (!Array.isArray(medicationIds)) {
+          throw new Error('Bulk dispense in Rust V2 requires an array of fulfillment dispense requests.');
+        }
+        const results = [];
+        for (const request of medicationIds) {
+          if (typeof request !== 'object' || request === null) {
+            throw new Error('Bulk dispense in Rust V2 requires stock item, location, and quantity for each fulfillment.');
+          }
+          const fulfillmentId = request.fulfillmentId || request.fulfillment_id || request.id;
+          const itemId = request.itemId || request.item_id || request.inventory_item_id;
+          const locationId = request.locationId || request.location_id || request.dispensing_location_id;
+          const quantity = Number(request.quantity || request.dose_count || 1);
+          if (!fulfillmentId || !itemId || !locationId || !Number.isFinite(quantity) || quantity <= 0) {
+            throw new Error('Bulk dispense in Rust V2 requires stock item, location, and quantity for each fulfillment.');
+          }
+          results.push(await v2Request({
+            method: 'POST',
+            path: `/api/v2/pharmacy/dispensing-queue/${fulfillmentId}/dispense`,
+            body: {
+              item_id: itemId,
+              location_id: locationId,
+              quantity,
+            },
+          }));
+        }
+        return {
+          dispensed_count: results.reduce((sum, result) => (
+            sum + Number(result?.data?.dispensed_dose_count || 0)
+          ), 0),
+          results,
+        };
       }
 
       const response = await apiClient.post('/pharmacy/dispensing/bulk-dispense/', {

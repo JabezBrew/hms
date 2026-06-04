@@ -114,6 +114,7 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
     copilotPatientName,
     copyForwardData,
     editNoteData,
+    noteDraft,
     requestedDischargeAdmissionId,
     requestedTreatmentSheetAdmissionId,
     onClose,
@@ -146,6 +147,7 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         onNoteCreated,
         initialTemplate: editNoteData?.template || copyForwardData?.template,
         initialData: editNoteData?.data || copyForwardData?.data,
+        noteDraftOverrides: noteDraft,
         editNoteId: editNoteData?.noteId,
       };
     case 'vitals':

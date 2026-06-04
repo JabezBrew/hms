@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import {
@@ -16,7 +16,8 @@ export function useChronicleWorkspaceRouting({
   search,
 }) {
   const prefetchedActionsRef = useRef(new Set());
-  const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
+  const rawSlideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
+  const [workspaceOptions, setWorkspaceOptions] = useState(null);
 
   useEffect(() => {
     prefetchedActionsRef.current = new Set();
@@ -33,10 +34,21 @@ export function useChronicleWorkspaceRouting({
     prefetchChronicleWorkspaceResources(workspaceId, { patientLocalId, queryClient });
   }, [patientLocalId, queryClient]);
 
-  const openChronicleWorkspace = useCallback((workspaceId) => {
+  const openChronicleWorkspace = useCallback((workspaceId, options = null) => {
     prefetchWorkspaceForOpen(workspaceId);
-    slideOvers.open(workspaceId);
-  }, [prefetchWorkspaceForOpen, slideOvers]);
+    setWorkspaceOptions(options && typeof options === 'object' ? options : null);
+    rawSlideOvers.open(workspaceId);
+  }, [prefetchWorkspaceForOpen, rawSlideOvers]);
+
+  const closeChronicleWorkspace = useCallback(() => {
+    setWorkspaceOptions(null);
+    rawSlideOvers.close();
+  }, [rawSlideOvers]);
+
+  const slideOvers = useMemo(() => ({
+    ...rawSlideOvers,
+    close: closeChronicleWorkspace,
+  }), [closeChronicleWorkspace, rawSlideOvers]);
 
   const openWardRoundMode = useCallback(() => {
     const nextSearchParams = new URLSearchParams(search);
@@ -66,5 +78,6 @@ export function useChronicleWorkspaceRouting({
     openWardRoundMode,
     prefetchActionResources,
     slideOvers,
+    workspaceOptions,
   };
 }

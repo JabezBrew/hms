@@ -14,12 +14,6 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Globe from 'lucide-react/dist/esm/icons/globe.js';
-import Activity from 'lucide-react/dist/esm/icons/activity.js';
-import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
-import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
-import Heart from 'lucide-react/dist/esm/icons/heart.js';
-import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import Folder from 'lucide-react/dist/esm/icons/folder.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import CircleDot from 'lucide-react/dist/esm/icons/circle-dot.js';
 import { useMemo, useState } from 'react';
@@ -27,12 +21,20 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useCreateNoteTemplate, useUpdateNoteTemplate } from '@/features/clinical-notes/hooks';
+import {
+  CLINICAL_NOTE_TYPES,
+  clinicalNoteTypeForWrite,
+  clinicalNoteTypeLabel,
+  inferClinicalNoteTypeForRole,
+  normalizeClinicalNoteType,
+} from '@/features/clinical-notes/noteTypes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/lib/auth';
 
 const VISIBILITY_OPTIONS = [
   { value: 'private', label: 'Private', icon: Lock, description: 'Only you can see and use this template.' },
@@ -41,16 +43,10 @@ const VISIBILITY_OPTIONS = [
   { value: 'public', label: 'Public', icon: Globe, description: 'Available across the facility.' },
 ];
 
-const CATEGORY_OPTIONS = [
-  { value: 'general', label: 'General', icon: FileText },
-  { value: 'soap', label: 'SOAP Notes', icon: ClipboardList },
-  { value: 'progress', label: 'Progress Notes', icon: FileText },
-  { value: 'procedure', label: 'Procedure Notes', icon: Activity },
-  { value: 'admission', label: 'Admission Notes', icon: UserPlus },
-  { value: 'discharge', label: 'Discharge Notes', icon: LogOut },
-  { value: 'nursing', label: 'Nursing Notes', icon: Heart },
-  { value: 'consultation', label: 'Consultation Notes', icon: Stethoscope },
-  { value: 'custom', label: 'Custom', icon: Folder },
+const NOTE_TYPE_OPTIONS = [
+  { value: CLINICAL_NOTE_TYPES.DOCTOR, label: 'Doctor Note', icon: FileText },
+  { value: CLINICAL_NOTE_TYPES.NURSING, label: 'Nursing Note', icon: ClipboardList },
+  { value: CLINICAL_NOTE_TYPES.ALLIED_HEALTH, label: 'Allied Health Note', icon: Users },
 ];
 
 const ICON_OPTIONS = [
@@ -90,7 +86,7 @@ const QUICK_STARTS = [
   {
     value: 'soap',
     label: 'SOAP',
-    category: 'soap',
+    noteType: CLINICAL_NOTE_TYPES.DOCTOR,
     estimatedSteps: 4,
     sections: [
       { section: 'Subjective', type: 'text', required: true },
@@ -102,7 +98,7 @@ const QUICK_STARTS = [
   {
     value: 'hpi',
     label: 'HPI',
-    category: 'consultation',
+    noteType: CLINICAL_NOTE_TYPES.DOCTOR,
     estimatedSteps: 6,
     sections: [
       { section: 'Presenting Complaint(s)', type: 'text', required: true },
@@ -116,7 +112,7 @@ const QUICK_STARTS = [
   {
     value: 'nursing_vitals',
     label: 'Nursing Vitals',
-    category: 'nursing',
+    noteType: CLINICAL_NOTE_TYPES.NURSING,
     estimatedSteps: 2,
     sections: [
       { section: 'Vitals', type: 'observation', observation_type: 'vitals', required: true },
@@ -126,7 +122,7 @@ const QUICK_STARTS = [
   {
     value: 'nursing_io',
     label: 'Nursing I/O',
-    category: 'nursing',
+    noteType: CLINICAL_NOTE_TYPES.NURSING,
     estimatedSteps: 2,
     sections: [
       { section: 'I/O Chart', type: 'observation', observation_type: 'fluid_balance', required: true },
@@ -136,7 +132,7 @@ const QUICK_STARTS = [
   {
     value: 'nursing_meds',
     label: 'Nursing Meds',
-    category: 'nursing',
+    noteType: CLINICAL_NOTE_TYPES.NURSING,
     estimatedSteps: 2,
     sections: [
       { section: 'Medication Given', type: 'medication_administration', required: true },
@@ -271,7 +267,7 @@ function TemplateBasicsStep({ errors, register, setValue, watch }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        <TemplateCategorySelect setValue={setValue} watch={watch} />
+        <TemplateNoteTypeSelect setValue={setValue} watch={watch} />
         <TemplateIconSelect setValue={setValue} watch={watch} />
         <TemplateModeSelect setValue={setValue} watch={watch} />
       </div>
@@ -301,21 +297,21 @@ function TemplateBasicsStep({ errors, register, setValue, watch }) {
   );
 }
 
-function TemplateCategorySelect({ setValue, watch }) {
+function TemplateNoteTypeSelect({ setValue, watch }) {
   return (
     <div className="space-y-2">
       <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        Category
+        Note Type
       </Label>
       <Select
         value={watch('category')}
-        onValueChange={(value) => setValue('category', value, { shouldDirty: true })}
+        onValueChange={(value) => setValue('category', normalizeClinicalNoteType(value), { shouldDirty: true })}
       >
         <SelectTrigger className="font-mono">
-          <SelectValue placeholder="Select category" />
+          <SelectValue placeholder="Select note type" />
         </SelectTrigger>
         <SelectContent>
-          {CATEGORY_OPTIONS.map((option) => {
+          {NOTE_TYPE_OPTIONS.map((option) => {
             const Icon = option.icon;
             return (
               <SelectItem key={option.value} value={option.value} className="font-mono">
@@ -761,7 +757,7 @@ function TemplateRequiredToggle({ index, setValue, watch }) {
   );
 }
 
-function TemplateReviewStep({ categoryLabel, fields, visibility, watchedStructure, watch }) {
+function TemplateReviewStep({ noteTypeLabel, fields, visibility, watchedStructure, watch }) {
   return (
     <section className="space-y-5 animate-chronicle-enter">
       <div>
@@ -775,7 +771,7 @@ function TemplateReviewStep({ categoryLabel, fields, visibility, watchedStructur
         <div className="rounded-xl border border-border bg-card/60 p-4">
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Title</p>
           <p className="font-display text-lg text-foreground mt-1">{watch('title') || 'Untitled Template'}</p>
-          <p className="font-mono text-xs text-muted-foreground mt-2">Category: {categoryLabel}</p>
+          <p className="font-mono text-xs text-muted-foreground mt-2">Type: {noteTypeLabel}</p>
         </div>
 
         <div className="rounded-xl border border-border bg-card/60 p-4">
@@ -919,6 +915,15 @@ function TemplateBuilderFooter({
 
 const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
   const [currentStep, setCurrentStep] = useState(1);
+  const { user } = useAuth();
+  const inferredNoteType = useMemo(
+    () => inferClinicalNoteTypeForRole(user?.role || user?.user_type),
+    [user?.role, user?.user_type],
+  );
+  const initialNoteType = normalizeClinicalNoteType(
+    initialTemplate?.note_type || initialTemplate?.category,
+    inferredNoteType,
+  );
 
   const {
     register,
@@ -936,7 +941,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
       is_active: initialTemplate?.is_active ?? true,
       visibility: initialTemplate?.visibility || 'private',
       department: initialTemplate?.department || '',
-      category: initialTemplate?.category || 'custom',
+      category: initialNoteType,
       icon: initialTemplate?.icon || 'file-text',
       estimated_steps: initialTemplate?.estimated_steps || 3,
       template_mode: initialTemplate?.latest_published_revision_mode || 'structured',
@@ -955,11 +960,9 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
 
   const visibility = watch('visibility');
   const watchedStructure = watch('structure') || [];
-  const category = watch('category');
+  const noteType = normalizeClinicalNoteType(watch('category'), inferredNoteType);
 
-  const categoryLabel = useMemo(() => {
-    return CATEGORY_OPTIONS.find((option) => option.value === category)?.label || 'Custom';
-  }, [category]);
+  const noteTypeLabel = useMemo(() => clinicalNoteTypeLabel(noteType), [noteType]);
 
   const validateStep = async (step) => {
     if (step === 1) {
@@ -1048,7 +1051,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
     }
 
     replace(template.sections);
-    setValue('category', template.category, { shouldDirty: true });
+    setValue('category', template.noteType, { shouldDirty: true });
     setValue('estimated_steps', template.estimatedSteps, { shouldDirty: true });
     toast.success(`${template.label} structure applied.`);
   };
@@ -1063,9 +1066,12 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
       return;
     }
 
+    const normalizedNoteType = clinicalNoteTypeForWrite(data.category, inferredNoteType);
     const formattedData = {
       ...data,
       title: data.title.trim(),
+      category: normalizedNoteType,
+      note_type: normalizedNoteType,
       department: data.visibility === 'department' ? (data.department || '').trim() : '',
       template_mode: data.template_mode || 'structured',
       structure: {
@@ -1141,7 +1147,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
 
           {currentStep === 4 ? (
             <TemplateReviewStep
-              categoryLabel={categoryLabel}
+              noteTypeLabel={noteTypeLabel}
               fields={fields}
               visibility={visibility}
               watchedStructure={watchedStructure}

@@ -554,7 +554,7 @@ async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
         INSERT INTO clinical_notes (
             id, facility_id, patient_id, note_type, title, body, status, created_by_user_id
         )
-        VALUES ($1, $2, $3, 'discharge_summary', 'Discharge summary', 'Stable for discharge.', 'signed', $4)
+        VALUES ($1, $2, $3, 'doctor_note', 'Discharge summary', 'Stable for discharge.', 'signed', $4)
         "#,
     )
     .bind(uuid::Uuid::new_v4())
@@ -708,7 +708,7 @@ async fn discharge_completion_moves_bed_to_cleaning_then_releases_after_policy_i
         INSERT INTO clinical_notes (
             id, facility_id, patient_id, note_type, title, body, status, created_by_user_id
         )
-        VALUES ($1, $2, $3, 'discharge_summary', 'Discharge summary', 'Stable.', 'signed', $4)
+        VALUES ($1, $2, $3, 'doctor_note', 'Discharge summary', 'Stable.', 'signed', $4)
         "#,
     )
     .bind(uuid::Uuid::new_v4())

@@ -3,10 +3,12 @@ use axum::Json;
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
     AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
-    ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteTemplateListQuery, ClinicalNoteVersion,
-    CreateAllergyRequest, CreateChartEntryRequest, CreateClinicalNoteRequest,
-    CreateClinicalNoteTemplateRequest, CreateClinicalNoteVersionRequest, CreatePrescriptionRequest,
-    CreateProblemRequest, LaboratoryClinicalContext, PharmacyClinicalContext, PrescriptionListItem,
+    ClinicalNoteListItem, ClinicalNoteListQuery, ClinicalNoteTemplate,
+    ClinicalNoteTemplateListQuery, ClinicalNoteVersion, CreateAllergyRequest,
+    CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
+    CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
+    GenerateMedicationAdministrationRequest, GenerateMedicationAdministrationResponse,
+    LaboratoryClinicalContext, PharmacyClinicalContext, PrescriptionListItem,
     ProblemArtifactLinkItem, ProblemArtifactLinkQuery, ProblemArtifactLinkRequest, ProblemListItem,
     UpdateAllergyRequest, UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest,
     UpdateProblemRequest,
@@ -163,7 +165,7 @@ pub async fn delete_note_template(
     security(("bearerAuth" = [])),
     params(
         ("patient_id" = Uuid, Path, description = "Patient id"),
-        CursorListQuery
+        ClinicalNoteListQuery
     ),
     responses(
         (status = 200, description = "Patient clinical notes", body = ListResponse<ClinicalNoteListItem>),
@@ -176,7 +178,7 @@ pub async fn list_notes(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<ClinicalNoteListQuery>,
 ) -> Result<Json<ListResponse<ClinicalNoteListItem>>, ApiError> {
     Ok(Json(
         state
@@ -823,6 +825,37 @@ pub async fn update_prescription(
         state
             .clinical_service()
             .update_prescription(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/clinical/prescriptions/{id}/generate-mar",
+    operation_id = "postClinicalPrescriptionGenerateMar",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Prescription id")),
+    request_body = GenerateMedicationAdministrationRequest,
+    responses(
+        (status = 200, description = "MAR generated", body = ObjectResponse<GenerateMedicationAdministrationResponse>),
+        (status = 400, description = "Invalid MAR generation request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Prescription or admission not found", body = ApiErrorResponse),
+        (status = 409, description = "MAR generation conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn generate_prescription_mar(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<GenerateMedicationAdministrationRequest>,
+) -> Result<Json<ObjectResponse<GenerateMedicationAdministrationResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .generate_prescription_mar(&user, id, payload)
             .await?,
     ))
 }

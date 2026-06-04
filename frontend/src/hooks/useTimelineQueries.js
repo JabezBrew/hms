@@ -56,7 +56,7 @@ function normalizeTimelineEntry(entry) {
   if (entry.type === 'note') {
     return {
       ...baseEntry,
-      type: entry.note_type || 'progress_note',
+      type: entry.note_type || 'doctor_note',
       entry_type: 'note',
       template_id: entry.template_id ?? entry.template?.id ?? null,
       template_title: entry.template_title ?? entry.template?.title ?? null,
@@ -221,7 +221,7 @@ function buildV2TimelineEntries(context = {}) {
   return [
     ...notes.map((note) => ({
       ...note,
-      type: note.note_type || 'progress_note',
+      type: note.note_type || 'doctor_note',
       entry_type: 'note',
       title: note.title || 'Clinical note',
       content: note.title || '',

@@ -76,6 +76,7 @@ async fn migrations_apply_to_fresh_database_and_seed_baseline() {
         "patients_registry_sex_sort_idx",
         "patients_registry_status_sex_sort_idx",
         "patients_registry_status_sort_idx",
+        "clinical_notes_discharge_summary_signed_idx",
     ] {
         let exists = sqlx::query_scalar::<_, bool>("SELECT to_regclass($1) IS NOT NULL")
             .bind(index_name)

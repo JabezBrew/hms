@@ -1,4 +1,4 @@
-import { v2Api } from '@/lib/api/v2/client';
+import { v2Api, v2Request } from '@/lib/api/v2/client';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
 
 export const MAX_MONITORING_PAGE_SIZE = 50;
@@ -966,15 +966,61 @@ export async function getV2PatientVitals(filters = {}, { signal } = {}) {
   }
 }
 
-export async function getV2PendingPharmacyQueue({ signal } = {}) {
+function adaptV2PharmacyQueueItem(item = {}) {
+  const remainingDoseCount = Math.max(
+    0,
+    Number(item.requested_dose_count || 0) - Number(item.dispensed_dose_count || 0),
+  );
+  const doseCount = remainingDoseCount || Number(item.requested_dose_count || 1) || 1;
+  const isOverdue = Number(item.overdue_count || 0) > 0;
+
+  return {
+    id: item.id,
+    fulfillment_id: item.id,
+    mar_entry_id: item.id,
+    mar_entry_ids: [item.id],
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_name: item.patient_display_name || 'Unknown Patient',
+    patient_display_name: item.patient_display_name || 'Unknown Patient',
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    patient_ward: item.ward_name || 'Current admission',
+    admission_case_id: item.admission_case_id,
+    prescription_id: item.prescription_id,
+    medication_course_id: item.medication_course_id,
+    medication_name: item.medication_name || '',
+    dosage: item.dose || '',
+    dose: item.dose || '',
+    route: item.route || '',
+    frequency: item.frequency || '',
+    status: item.status,
+    scheduled_time: item.next_due_at || item.coverage_start,
+    coverage_start: item.coverage_start,
+    coverage_end: item.coverage_end,
+    dose_count: doseCount,
+    requested_dose_count: item.requested_dose_count,
+    dispensed_dose_count: item.dispensed_dose_count,
+    overdue_count: item.overdue_count,
+    is_overdue: isOverdue,
+    inventory_item_id: item.inventory_item_id,
+    dispensing_location_id: item.dispensing_location_id,
+  };
+}
+
+export async function getV2PendingPharmacyQueue({ patientId = null, signal } = {}) {
   try {
-    await v2Api.getPharmacyDispenses({
-      query: { limit: 50 },
+    const query = { limit: 50, status: 'pending' };
+    if (patientId) {
+      query.patient_id = patientId;
+    }
+    const response = await v2Request({
+      method: 'GET',
+      path: '/api/v2/pharmacy/dispensing-queue',
+      query,
       signal,
     });
-    // Rust V2 currently exposes completed pharmacy dispenses, not a pending
-    // prescription dispensing queue. Do not surface completed dispenses as work.
-    return [];
+    return (response?.data || []).map(adaptV2PharmacyQueueItem);
   } catch (error) {
     rethrowV2Error(error, 'Failed to load pharmacy dispensing queue');
   }

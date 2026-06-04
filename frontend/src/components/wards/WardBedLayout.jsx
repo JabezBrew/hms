@@ -1,6 +1,5 @@
 import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Home from 'lucide-react/dist/esm/icons/house.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
@@ -107,7 +106,10 @@ const STATUS_CONFIG = {
   },
 };
 
-const STATUS_ORDER = ['occupied', 'available', 'cleaning', 'maintenance', 'reserved'];
+const STATUS_ORDER = ['available', 'occupied', 'reserved', 'cleaning', 'maintenance'];
+const BED_STATUS_SORT_PRIORITY = new Map(
+  STATUS_ORDER.map((status, index) => [status, index]),
+);
 
 const BED_TYPE_LABELS = {
   standard: 'Standard',
@@ -134,6 +136,13 @@ function canonicalStatus(status) {
 function formatBedType(type) {
   if (!type) return 'Bed';
   return BED_TYPE_LABELS[type] || type.replaceAll('_', ' ');
+}
+
+function compareBedsForMap(a, b) {
+  const aPriority = BED_STATUS_SORT_PRIORITY.get(canonicalStatus(a.status)) ?? STATUS_ORDER.length;
+  const bPriority = BED_STATUS_SORT_PRIORITY.get(canonicalStatus(b.status)) ?? STATUS_ORDER.length;
+  if (aPriority !== bPriority) return aPriority - bPriority;
+  return BED_COLLATOR.compare(a.bed_number || '', b.bed_number || '');
 }
 
 function getLosDays(admissionDate) {
@@ -184,7 +193,7 @@ function buildSectionGroups(wardBeds, sections) {
   });
 
   grouped.forEach((group) => {
-    group.sort((a, b) => BED_COLLATOR.compare(a.bed_number || '', b.bed_number || ''));
+    group.sort(compareBedsForMap);
   });
 
   const sortedGroups = [];
@@ -243,7 +252,6 @@ function formatCountLabel(status, count) {
 export function WardBedLayout({
   beds,
   admissions = EMPTY_ADMISSIONS,
-  onBedClick,
   sections: providedSections,
   wardId,
   viewMode = 'grid',
@@ -280,7 +288,6 @@ export function WardBedLayout({
     return (
       <ListView
         admissionByBedId={admissionByBedId}
-        onBedClick={onBedClick}
         sectionGroups={sectionGroups}
         totalBedCount={totalBedCount}
       />
@@ -290,7 +297,6 @@ export function WardBedLayout({
   return (
     <GridView
       admissionByBedId={admissionByBedId}
-      onBedClick={onBedClick}
       sectionGroups={sectionGroups}
       totalBedCount={totalBedCount}
     />
@@ -397,7 +403,7 @@ function getTierColor(tier) {
   }
 }
 
-function GridView({ admissionByBedId, onBedClick, sectionGroups, totalBedCount }) {
+function GridView({ admissionByBedId, sectionGroups, totalBedCount }) {
   const virtualizationThreshold = totalBedCount >= GLOBAL_VIRTUALIZATION_THRESHOLD
     ? 1
     : SECTION_VIRTUALIZATION_THRESHOLD;
@@ -436,7 +442,6 @@ function GridView({ admissionByBedId, onBedClick, sectionGroups, totalBedCount }
                     <BedCell
                       admission={admissionByBedId.get(bed.id)}
                       bed={bed}
-                      onBedClick={onBedClick}
                     />
                   )}
                 />
@@ -449,7 +454,7 @@ function GridView({ admissionByBedId, onBedClick, sectionGroups, totalBedCount }
   );
 }
 
-function ListView({ admissionByBedId, onBedClick, sectionGroups, totalBedCount }) {
+function ListView({ admissionByBedId, sectionGroups, totalBedCount }) {
   const virtualizationThreshold = totalBedCount >= GLOBAL_VIRTUALIZATION_THRESHOLD
     ? 1
     : SECTION_VIRTUALIZATION_THRESHOLD;
@@ -487,7 +492,6 @@ function ListView({ admissionByBedId, onBedClick, sectionGroups, totalBedCount }
                     <BedStrip
                       admission={admissionByBedId.get(bed.id)}
                       bed={bed}
-                      onBedClick={onBedClick}
                     />
                   )}
                 />
@@ -522,7 +526,7 @@ function BedMapLegend() {
   );
 }
 
-function BedCell({ admission, bed, onBedClick }) {
+function BedCell({ admission, bed }) {
   const config = getStatusConfig(bed.status);
   const StatusIcon = config.icon;
   const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
@@ -531,26 +535,17 @@ function BedCell({ admission, bed, onBedClick }) {
   const secondaryLabel = bed.status === 'occupied'
     ? losLabel || config.label
     : config.shortLabel;
-  const ariaLabel = [
-    bed.bed_number,
-    config.label,
-    losLabel,
-  ].filter(Boolean).join(', ');
 
   return (
     <Tooltip delayDuration={200}>
       <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={() => onBedClick(bed.id)}
+        <div
           className={cn(
             'group flex min-h-[58px] w-full items-center gap-3 rounded-md border border-l-[3px] bg-background px-3 py-2 text-left transition-colors',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             config.railClass,
             config.borderClass,
             config.bgClass,
           )}
-          aria-label={ariaLabel}
         >
           <StatusIcon className={cn('size-4 shrink-0', config.textClass)} aria-hidden="true" />
           <span className="min-w-0 flex-1">
@@ -561,7 +556,7 @@ function BedCell({ admission, bed, onBedClick }) {
               {secondaryLabel}
             </span>
           </span>
-        </button>
+        </div>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs p-0">
         <BedTooltip admission={admission} bed={bed} config={config} />
@@ -570,7 +565,7 @@ function BedCell({ admission, bed, onBedClick }) {
   );
 }
 
-function BedStrip({ admission, bed, onBedClick }) {
+function BedStrip({ admission, bed }) {
   const config = getStatusConfig(bed.status);
   const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
     ? `LOS ${admission.losDays}d`
@@ -579,16 +574,13 @@ function BedStrip({ admission, bed, onBedClick }) {
   return (
     <Tooltip delayDuration={200}>
       <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={() => onBedClick(bed.id)}
+        <div
           className={cn(
             'flex min-h-[48px] w-full items-center gap-3 rounded-md border border-l-[3px] bg-background px-3 py-2 text-left transition-colors',
-            'hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'hover:bg-muted/50',
             config.railClass,
             config.borderClass,
           )}
-          aria-label={[bed.bed_number, config.label, losLabel].filter(Boolean).join(', ')}
         >
           <span className="min-w-[5.5rem] font-mono text-sm font-semibold text-foreground">
             {bed.bed_number}
@@ -604,8 +596,7 @@ function BedStrip({ admission, bed, onBedClick }) {
           <span className="ml-auto truncate font-mono text-xs capitalize text-muted-foreground">
             {formatBedType(bed.bed_type)}
           </span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        </button>
+        </div>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs p-0">
         <BedTooltip admission={admission} bed={bed} config={config} />

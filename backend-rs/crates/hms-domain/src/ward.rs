@@ -455,11 +455,20 @@ pub struct MedicationAdministrationListItem {
     pub id: Uuid,
     pub admission_case_id: Uuid,
     pub patient_id: Uuid,
+    pub prescription_id: Option<Uuid>,
+    pub medication_course_id: Option<Uuid>,
+    pub pharmacy_fulfillment_id: Option<Uuid>,
     pub patient_code: String,
     pub patient_display_name: String,
     pub medication_name: String,
+    pub dose: Option<String>,
+    pub route: Option<String>,
+    pub frequency: Option<String>,
+    pub dose_sequence: Option<i32>,
     pub scheduled_at: DateTime<Utc>,
     pub administered_at: Option<DateTime<Utc>>,
+    pub is_dispensed: bool,
+    pub dispensed_at: Option<DateTime<Utc>>,
     pub status: MedicationAdministrationStatus,
 }
 
@@ -467,6 +476,9 @@ pub struct MedicationAdministrationListItem {
 pub struct ScheduleMedicationAdministrationRequest {
     pub admission_case_id: Uuid,
     pub medication_name: String,
+    pub dose: Option<String>,
+    pub route: Option<String>,
+    pub frequency: Option<String>,
     pub scheduled_at: DateTime<Utc>,
 }
 

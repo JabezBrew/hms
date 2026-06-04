@@ -19,15 +19,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import {
-  Sheet,
-  SheetBody,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 
 import { useWard, useWardBedMap } from '@/features/wards/hooks/useWardQueries';
 import { WardBedLayout } from './WardBedLayout';
@@ -53,11 +44,11 @@ const WARD_TYPE_LABELS = {
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'All' },
-  { value: 'occupied', label: 'Occupied' },
   { value: 'available', label: 'Vacant' },
+  { value: 'occupied', label: 'Occupied' },
+  { value: 'reserved', label: 'Reserved' },
   { value: 'cleaning', label: 'Cleaning' },
   { value: 'maintenance', label: 'Blocked' },
-  { value: 'reserved', label: 'Reserved' },
 ];
 
 const STAT_CARD_COLOR_CLASSES = {
@@ -284,36 +275,6 @@ function buildSectionStats(sections, beds) {
 
 function hasWardFilters(filters) {
   return filters.status !== 'all' || filters.searchTerm;
-}
-
-function getLosDaysFromTimestamp(timestamp) {
-  if (!timestamp) return null;
-  const startedAt = new Date(timestamp);
-  if (Number.isNaN(startedAt.getTime())) return null;
-
-  const startedDay = new Date(
-    startedAt.getFullYear(),
-    startedAt.getMonth(),
-    startedAt.getDate(),
-  );
-  const today = new Date();
-  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return Math.max(0, Math.floor((todayDay.getTime() - startedDay.getTime()) / 86_400_000));
-}
-
-function getBedStatusLabel(status) {
-  switch (canonicalBedStatus(status)) {
-    case 'occupied':
-      return 'Occupied';
-    case 'cleaning':
-      return 'Cleaning';
-    case 'maintenance':
-      return 'Blocked';
-    case 'reserved':
-      return 'Reserved';
-    default:
-      return 'Vacant';
-  }
 }
 
 function WardDashboardLoadingState() {
@@ -543,7 +504,6 @@ function WardBedsContent({
   beds,
   filteredBeds,
   hasActiveFilters,
-  onBedClick,
   onClearFilters,
   sections,
   viewMode,
@@ -571,68 +531,10 @@ function WardBedsContent({
   return (
     <WardBedLayout
       beds={filteredBeds}
-      onBedClick={onBedClick}
       sections={sections}
       wardId={wardId}
       viewMode={viewMode}
     />
-  );
-}
-
-function BedOperationsSheet({ bed, onOpenChange, open, section, ward }) {
-  const statusLabel = getBedStatusLabel(bed?.status);
-  const losDays = getLosDaysFromTimestamp(bed?.occupied_since);
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-md">
-        <SheetHeader>
-          <div className="flex items-center gap-3 pr-8">
-            <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-              <Bed className="size-5" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <SheetTitle className="truncate font-mono text-xl">
-                {bed?.bed_number || 'Bed'}
-              </SheetTitle>
-              <SheetDescription className="sr-only">
-                Operational bed state. No patient details are shown.
-              </SheetDescription>
-            </div>
-          </div>
-        </SheetHeader>
-
-        <SheetBody className="space-y-4 pr-1">
-          <div className="rounded-lg border border-border/70 p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="font-mono text-xs uppercase text-muted-foreground">Status</span>
-              <Badge variant="outline" className="font-mono">
-                {statusLabel}
-              </Badge>
-            </div>
-
-            <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-3 text-sm">
-              <dt className="font-mono text-xs uppercase text-muted-foreground">Ward</dt>
-              <dd className="truncate text-foreground">{ward?.name || 'Ward'}</dd>
-
-              <dt className="font-mono text-xs uppercase text-muted-foreground">Section</dt>
-              <dd className="truncate text-foreground">{section?.name || 'Unassigned'}</dd>
-
-              <dt className="font-mono text-xs uppercase text-muted-foreground">LOS</dt>
-              <dd className="font-mono text-foreground">
-                {losDays === null ? 'None' : `${losDays}d`}
-              </dd>
-            </dl>
-          </div>
-
-          <SheetClose asChild>
-            <Button type="button" variant="outline" className="w-full">
-              Close
-            </Button>
-          </SheetClose>
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
   );
 }
 
@@ -650,7 +552,6 @@ export function WardDashboard() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState('grid');
   const [filters, setFilters] = useState(EMPTY_WARD_FILTERS);
-  const [selectedBedId, setSelectedBedId] = useState(null);
 
   // Fetch data with React Query
   const {
@@ -677,24 +578,11 @@ export function WardDashboard() {
   const statsSource = useMemo(() => buildWardStatsSource(ward, bedMap), [ward, bedMap]);
   const stats = useMemo(() => buildWardStats(statsSource, beds), [statsSource, beds]);
   const sectionStats = useMemo(() => buildSectionStats(sections, beds), [sections, beds]);
-  const selectedBed = useMemo(
-    () => beds.find((bed) => bed.id === selectedBedId) || null,
-    [beds, selectedBedId],
-  );
-  const selectedSection = useMemo(
-    () => sections.find((section) => section.id === selectedBed?.section) || null,
-    [sections, selectedBed],
-  );
   const canFilterByStatus = stats.total > 0 && beds.length >= stats.total;
 
   // Handle filter change
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
-  };
-
-  // Handle bed click
-  const handleBedClick = (bedId) => {
-    setSelectedBedId(bedId);
   };
 
   // Handle new admission
@@ -756,7 +644,6 @@ export function WardDashboard() {
         beds={beds}
         filteredBeds={filteredBeds}
         hasActiveFilters={hasActiveFilters}
-        onBedClick={handleBedClick}
         onClearFilters={clearFilters}
         sections={sections}
         viewMode={viewMode}
@@ -770,16 +657,6 @@ export function WardDashboard() {
           </p>
         </div>
       )}
-
-      <BedOperationsSheet
-        bed={selectedBed}
-        onOpenChange={(open) => {
-          if (!open) setSelectedBedId(null);
-        }}
-        open={!!selectedBed}
-        section={selectedSection}
-        ward={ward}
-      />
     </div>
   );
 }

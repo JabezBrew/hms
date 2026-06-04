@@ -13,18 +13,13 @@ import {
   useAINoteDraft,
   useAINoteLint,
 } from "@/features/clinical-notes/hooks";
+import { CLINICAL_NOTE_TYPES, normalizeClinicalNoteType } from "@/features/clinical-notes/noteTypes";
 import { toast } from "sonner";
 
 const CATEGORY_COLORS = {
-  general: 'amber',
-  soap: 'amber',
-  progress: 'amber',
-  procedure: 'rose',
-  admission: 'emerald',
-  discharge: 'emerald',
-  nursing: 'sky',
-  consultation: 'amber',
-  custom: 'violet',
+  [CLINICAL_NOTE_TYPES.DOCTOR]: 'amber',
+  [CLINICAL_NOTE_TYPES.NURSING]: 'sky',
+  [CLINICAL_NOTE_TYPES.ALLIED_HEALTH]: 'emerald',
 };
 
 const INITIAL_AI_ASSISTANT_STATE = {
@@ -325,9 +320,11 @@ export function useAddNoteSlideOverController({
   onNoteCreated,
   initialTemplate = null,
   initialData = null,
+  noteDraftOverrides = null,
   editNoteId = null,
 }) {
   const isEditMode = !!editNoteId;
+  const encounterId = encounter?.id || null;
   const {
     template,
     templateRevisionId,
@@ -350,13 +347,11 @@ export function useAddNoteSlideOverController({
     // The hook instance is keyed by the parent-owned note open context; the
     // copy-forward synchronization effect below documents the remaining prop-driven start.
     // react-doctor-disable-next-line react-doctor/no-event-handler
-  } = useNoteWorkflow(patientId, { editNoteId });
+  } = useNoteWorkflow(patientId, { editNoteId, encounterId, noteDraftOverrides });
 
   const isLastStep = currentStep === totalSteps;
   const currentStepConfig = steps[currentStep - 1] || null;
-  const categoryColor = CATEGORY_COLORS[template?.category] || 'amber';
-  const encounterId = encounter?.id || null;
-
+  const categoryColor = CATEGORY_COLORS[normalizeClinicalNoteType(template?.note_type || template?.category)] || 'amber';
   const aiController = useAiAssistantController({
     encounterId,
     formData,

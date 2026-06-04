@@ -19,6 +19,7 @@ pub fn build_app(state: AppState) -> Router {
         .merge(routes::consent::routes())
         .merge(routes::laboratory::routes())
         .merge(routes::inventory::routes())
+        .merge(routes::pharmacy::routes())
         .merge(routes::billing::routes())
         .merge(routes::referrals::routes())
         .merge(routes::scheduling::routes())

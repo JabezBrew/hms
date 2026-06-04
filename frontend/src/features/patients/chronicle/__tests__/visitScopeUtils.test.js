@@ -59,7 +59,7 @@ describe('visitScopeUtils', () => {
 
   it('removes transient chronicle params while preserving visit scope', () => {
     const nextSearch = stripTransientChronicleParams(
-      '?action=add_note&referral_id=123&visit=enc-1&foo=bar'
+      '?action=add_note&referral_id=123&note_type=doctor_note&title=Discharge+summary&visit=enc-1&foo=bar'
     );
 
     expect(nextSearch).toBe('?visit=enc-1&foo=bar');

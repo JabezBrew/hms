@@ -176,7 +176,7 @@ function mapInitialDataToWorkflowSteps(initialData, derivedSteps) {
  * @returns {Object} Workflow state and actions
  */
 export function useNoteWorkflow(patientId, options = {}) {
-  const { editNoteId = null } = options;
+  const { editNoteId = null, encounterId = null, noteDraftOverrides = null } = options;
   const queryClient = useQueryClient();
 
   // Workflow state
@@ -279,7 +279,15 @@ export function useNoteWorkflow(patientId, options = {}) {
 
   // Complete workflow mutation - creates or updates note entry
   const completeWorkflowMutation = useMutation({
-    mutationFn: async ({ workflowId, template, finalData, patientId, editNoteId, templateRevisionId }) => {
+    mutationFn: async ({
+      workflowId,
+      template,
+      finalData,
+      patientId,
+      editNoteId,
+      templateRevisionId,
+      noteDraftOverrides,
+    }) => {
       // If we're editing an existing note, update it
       if (editNoteId) {
         const noteEntry = await clinicalNotesApi.updateNoteEntry(
@@ -301,7 +309,11 @@ export function useNoteWorkflow(patientId, options = {}) {
       const noteEntry = await clinicalNotesApi.createNoteEntry({
         template_id: template.id,
         template_revision_id: templateRevisionId,
+        template,
+        note_type: noteDraftOverrides?.noteType || template.note_type || template.category,
+        title: noteDraftOverrides?.title || template.title,
         patient_id: patientId,
+        encounter_id: encounterId || undefined,
         data: finalData,
       });
       return { success: true, note: noteEntry, workflowId };
@@ -492,13 +504,14 @@ export function useNoteWorkflow(patientId, options = {}) {
         patientId,
         templateRevisionId,
         editNoteId,  // Pass editNoteId to trigger update instead of create
+        noteDraftOverrides,
       });
 
       return result;
     } finally {
       setIsSaving(false);
     }
-  }, [workflowId, template, steps, formData, patientId, templateRevisionId, editNoteId, completeWorkflowMutation]);
+  }, [workflowId, template, steps, formData, patientId, templateRevisionId, editNoteId, noteDraftOverrides, completeWorkflowMutation]);
 
   // Reset workflow state
   const resetWorkflow = useCallback(() => {

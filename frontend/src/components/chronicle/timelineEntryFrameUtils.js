@@ -9,6 +9,12 @@ import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 
 const ENTRY_CONFIG = {
+  doctor_note: {
+    icon: FileText,
+    label: 'Doctor Note',
+    color: 'amber',
+    nodeClass: 'timeline-node-amber',
+  },
   progress_note: {
     icon: FileText,
     label: 'Progress Note',
@@ -93,6 +99,12 @@ const ENTRY_CONFIG = {
     color: 'sky',
     nodeClass: 'timeline-node-sky',
   },
+  allied_health_note: {
+    icon: Stethoscope,
+    label: 'Allied Health Note',
+    color: 'emerald',
+    nodeClass: 'timeline-node-emerald',
+  },
   procedure: {
     icon: Activity,
     label: 'Procedure',
@@ -114,9 +126,11 @@ const ENTRY_CONFIG = {
 };
 
 const COPYABLE_NOTE_TYPES = new Set([
+  'doctor_note',
   'progress_note',
   'soap_note',
   'nursing_note',
+  'allied_health_note',
   'admission_note',
   'discharge_note',
   'consult_note',
@@ -130,7 +144,7 @@ const BADGE_CLASSES = {
   sky: 'badge-chronicle-sky',
 };
 
-export const getTimelineEntryConfig = (type) => ENTRY_CONFIG[type] || ENTRY_CONFIG.progress_note;
+export const getTimelineEntryConfig = (type) => ENTRY_CONFIG[type] || ENTRY_CONFIG.doctor_note;
 
 export const getTimelineEntryTimestamp = (entry) => entry.timestamp
   || entry.occurred_at

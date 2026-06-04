@@ -17,6 +17,8 @@ export function useChronicleRouteState({
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
   const admissionParam = searchParams.get('admission');
+  const noteTypeParam = searchParams.get('note_type');
+  const noteTitleParam = searchParams.get('title');
   const visitParam = searchParams.get(CHRONICLE_VISIT_PARAM);
   const chronicleModeParam = searchParams.get('mode');
   const wardRoundParam = searchParams.get('wardRound');
@@ -42,6 +44,8 @@ export function useChronicleRouteState({
     defaultAction,
     openChronicleWorkspace,
     openWardRoundMode,
+    noteTitleParam,
+    noteTypeParam,
     patient,
     setRequestedDischargeAdmissionId,
     setRequestedTreatmentSheetAdmissionId,
@@ -55,6 +59,8 @@ export function useChronicleRouteState({
     defaultAction,
     openChronicleWorkspace,
     openWardRoundMode,
+    noteTitleParam,
+    noteTypeParam,
     patient,
     setRequestedDischargeAdmissionId,
     setRequestedTreatmentSheetAdmissionId,

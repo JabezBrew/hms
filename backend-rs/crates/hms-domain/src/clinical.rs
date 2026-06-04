@@ -15,6 +15,14 @@ pub enum ClinicalNoteStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum ClinicalNoteType {
+    DoctorNote,
+    NursingNote,
+    AlliedHealthNote,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ProblemStatus {
     Active,
     Resolved,
@@ -45,7 +53,7 @@ pub enum AllergyStatus {
     Inactive,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PrescriptionStatus {
     Active,
@@ -69,7 +77,7 @@ pub enum ChartEntryType {
 pub struct ClinicalNoteTemplate {
     pub id: Uuid,
     pub title: String,
-    pub note_type: String,
+    pub note_type: ClinicalNoteType,
     pub body_template: String,
     pub is_active: bool,
 }
@@ -79,17 +87,24 @@ pub struct ClinicalNoteTemplateListQuery {
     pub limit: Option<u8>,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct ClinicalNoteListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub encounter_id: Option<Uuid>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateClinicalNoteTemplateRequest {
     pub title: String,
-    pub note_type: String,
+    pub note_type: ClinicalNoteType,
     pub body_template: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct UpdateClinicalNoteTemplateRequest {
     pub title: Option<String>,
-    pub note_type: Option<String>,
+    pub note_type: Option<ClinicalNoteType>,
     pub body_template: Option<String>,
     pub is_active: Option<bool>,
 }
@@ -98,7 +113,8 @@ pub struct UpdateClinicalNoteTemplateRequest {
 pub struct ClinicalNoteListItem {
     pub id: Uuid,
     pub patient_id: Uuid,
-    pub note_type: String,
+    pub encounter_id: Option<Uuid>,
+    pub note_type: ClinicalNoteType,
     pub title: String,
     pub status: ClinicalNoteStatus,
     pub version: i64,
@@ -109,7 +125,8 @@ pub struct ClinicalNoteListItem {
 pub struct ClinicalNoteDetail {
     pub id: Uuid,
     pub patient_id: Uuid,
-    pub note_type: String,
+    pub encounter_id: Option<Uuid>,
+    pub note_type: ClinicalNoteType,
     pub title: String,
     pub body: String,
     pub status: ClinicalNoteStatus,
@@ -119,9 +136,10 @@ pub struct ClinicalNoteDetail {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateClinicalNoteRequest {
-    pub note_type: String,
+    pub note_type: ClinicalNoteType,
     pub title: String,
     pub body: String,
+    pub encounter_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -240,7 +258,12 @@ pub struct PrescriptionListItem {
     pub patient_id: Uuid,
     pub medication_name: String,
     pub dose: String,
+    pub route: String,
     pub frequency: String,
+    pub inventory_item_id: Option<Uuid>,
+    pub start_date: Option<NaiveDate>,
+    pub duration_days: Option<i32>,
+    pub first_dose_at: Option<DateTime<Utc>>,
     pub status: PrescriptionStatus,
     pub prescribed_at: DateTime<Utc>,
 }
@@ -249,15 +272,48 @@ pub struct PrescriptionListItem {
 pub struct CreatePrescriptionRequest {
     pub medication_name: String,
     pub dose: String,
+    pub route: Option<String>,
     pub frequency: String,
+    pub inventory_item_id: Option<Uuid>,
+    pub start_date: Option<NaiveDate>,
+    pub duration_days: Option<i32>,
+    pub first_dose_at: Option<DateTime<Utc>>,
+    pub generate_mar: Option<bool>,
+    pub admission_case_id: Option<Uuid>,
+    pub mar_days: Option<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct UpdatePrescriptionRequest {
     pub medication_name: Option<String>,
     pub dose: Option<String>,
+    pub route: Option<String>,
     pub frequency: Option<String>,
+    pub inventory_item_id: Option<Uuid>,
+    pub start_date: Option<NaiveDate>,
+    pub duration_days: Option<i32>,
+    pub first_dose_at: Option<DateTime<Utc>>,
     pub status: Option<PrescriptionStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct GenerateMedicationAdministrationRequest {
+    pub admission_case_id: Uuid,
+    pub days: Option<u8>,
+    pub first_dose_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct GenerateMedicationAdministrationResponse {
+    pub prescription_id: Uuid,
+    pub medication_course_id: Uuid,
+    pub pharmacy_fulfillment_id: Option<Uuid>,
+    pub created_count: i64,
+    pub existing_count: i64,
+    pub requested_dose_count: i64,
+    pub window_start: DateTime<Utc>,
+    pub window_end: DateTime<Utc>,
+    pub skipped_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

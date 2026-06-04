@@ -41,8 +41,9 @@ const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote,
   // Check if this is an editable note type (has an id, template, and data)
   // AND the current user is the author
   const isEditableNoteType = entry.id && entry.template && entry.data && [
+    'doctor_note',
     'progress_note', 'soap_note', 'nursing_note', 'admission_note',
-    'discharge_note', 'consult_note', 'consult', 'procedure'
+    'allied_health_note', 'discharge_note', 'consult_note', 'consult', 'procedure'
   ].includes(entry.type);
 
   // Only allow editing if the current user is the author
@@ -69,6 +70,7 @@ const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote,
   };
 
   const entryConfig = {
+    doctor_note: { icon: FileText, label: 'Doctor Note', color: 'text-amber-600' },
     progress_note: { icon: FileText, label: 'Progress Note', color: 'text-amber-600' },
     soap_note: { icon: FileText, label: 'SOAP Note', color: 'text-amber-600' },
     vitals: { icon: Activity, label: 'Vitals', color: 'text-emerald-600' },
@@ -83,10 +85,11 @@ const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote,
     discharge: { icon: LogOut, label: 'Discharge', color: 'text-emerald-600' },
     discharge_note: { icon: LogOut, label: 'Discharge Note', color: 'text-emerald-600' },
     nursing_note: { icon: FileText, label: 'Nursing Note', color: 'text-sky-600' },
+    allied_health_note: { icon: Stethoscope, label: 'Allied Health Note', color: 'text-emerald-600' },
     procedure: { icon: Activity, label: 'Procedure', color: 'text-rose-600' },
   };
 
-  const config = entryConfig[entry.type] || entryConfig.progress_note;
+  const config = entryConfig[entry.type] || entryConfig.doctor_note;
   const Icon = config.icon;
 
   // Format timestamp for display

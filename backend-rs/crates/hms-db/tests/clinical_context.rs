@@ -3,7 +3,7 @@ use hms_db::clinical::{
 };
 use hms_db::laboratory::NewLabOrder;
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::clinical::{AllergySeverity, ProblemArtifactKind};
+use hms_domain::clinical::{AllergySeverity, ClinicalNoteType, ProblemArtifactKind};
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::laboratory::LabPriority;
 use uuid::Uuid;
@@ -64,7 +64,8 @@ async fn problem_links_and_context_slices_stay_same_patient_scoped() {
             id: Uuid::new_v4(),
             facility_id,
             patient_id: other_patient_id,
-            note_type: "general".to_owned(),
+            encounter_id: None,
+            note_type: ClinicalNoteType::DoctorNote,
             title: "Other patient note".to_owned(),
             body: "Not the same patient".to_owned(),
             actor_user_id: owner_id,
@@ -112,7 +113,12 @@ async fn problem_links_and_context_slices_stay_same_patient_scoped() {
             patient_id,
             medication_name: "Metformin".to_owned(),
             dose: "500 mg".to_owned(),
+            route: "oral".to_owned(),
             frequency: "bd".to_owned(),
+            inventory_item_id: None,
+            start_date: None,
+            duration_days: None,
+            first_dose_at: None,
             actor_user_id: owner_id,
         },
     )

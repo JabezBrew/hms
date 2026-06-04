@@ -1153,7 +1153,54 @@ describe('Rust V2 nursing dashboard hooks', () => {
     }));
   });
 
-  it('fails closed for MAR generation and pharmacy dispensing mutations that Rust V2 does not expose', async () => {
+  it('generates MAR and dispenses pharmacy fulfillments through Rust V2 contracts', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              prescription_id: 'rx-1',
+              medication_course_id: 'course-1',
+              pharmacy_fulfillment_id: 'fulfillment-1',
+              created_count: 14,
+              existing_count: 0,
+              requested_dose_count: 14,
+              window_start: '2026-06-04T09:00:00Z',
+              window_end: '2026-06-11T09:00:00Z',
+              skipped_reason: null,
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              fulfillment: { id: 'fulfillment-1' },
+              dispensed_dose_count: 14,
+              remaining_dose_count: 0,
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              fulfillment: { id: 'fulfillment-2' },
+              dispensed_dose_count: 2,
+              remaining_dose_count: 0,
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
     const generate = renderHook(() => useGenerateMAR(), {
       wrapper: createWrapper(),
     });
@@ -1164,16 +1211,59 @@ describe('Rust V2 nursing dashboard hooks', () => {
       wrapper: createWrapper(),
     });
 
-    await expect(generate.result.current.mutateAsync({ prescriptionId: 'rx-1' })).rejects.toThrow(
-      'Rust V2 does not expose MAR generation yet.',
+    await expect(generate.result.current.mutateAsync({
+      prescriptionId: 'rx-1',
+      admissionCaseId: 'admission-1',
+      days: 7,
+      firstDoseAt: '2026-06-04T09:00:00Z',
+    })).resolves.toEqual(expect.objectContaining({
+      data: expect.objectContaining({ created_count: 14 }),
+    }));
+
+    await expect(dispense.result.current.mutateAsync({
+      fulfillmentId: 'fulfillment-1',
+      itemId: 'item-1',
+      locationId: 'location-1',
+      quantity: 14,
+    })).resolves.toEqual(expect.objectContaining({
+      data: expect.objectContaining({ dispensed_dose_count: 14 }),
+    }));
+
+    await expect(bulkDispense.result.current.mutateAsync([
+      {
+        fulfillmentId: 'fulfillment-2',
+        itemId: 'item-2',
+        locationId: 'location-2',
+        quantity: 2,
+      },
+    ])).resolves.toEqual(expect.objectContaining({
+      dispensed_count: 2,
+    }));
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/clinical/prescriptions/rx-1/generate-mar',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          admission_case_id: 'admission-1',
+          days: 7,
+          first_dose_at: '2026-06-04T09:00:00Z',
+        }),
+      }),
     );
-    await expect(dispense.result.current.mutateAsync('med-admin-1')).rejects.toThrow(
-      'Rust V2 does not expose pharmacy dispense actions from the nursing queue yet.',
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/pharmacy/dispensing-queue/fulfillment-1/dispense',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          item_id: 'item-1',
+          location_id: 'location-1',
+          quantity: 14,
+        }),
+      }),
     );
-    await expect(bulkDispense.result.current.mutateAsync(['med-admin-1'])).rejects.toThrow(
-      'Rust V2 does not expose pharmacy bulk dispense actions from the nursing queue yet.',
-    );
-    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('loads and creates treatment-sheet shells through the Rust V2 treatment sheet contract', async () => {
@@ -1752,21 +1842,32 @@ describe('Rust V2 nursing dashboard hooks', () => {
     }));
   });
 
-  it('loads the pharmacy dispensing surface from Rust V2 without exposing dispensed records as pending work', async () => {
+  it('loads the Rust V2 pharmacy dispensing queue as pending fulfillment work', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           data: [
             {
-              id: 'dispense-1',
+              id: 'fulfillment-1',
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
-              item_id: 'item-1',
-              item_name: 'Paracetamol 500mg',
-              location_id: 'location-1',
-              quantity: 10,
-              status: 'dispensed',
-              dispensed_at: '2026-05-12T09:00:00Z',
+              patient_display_name: 'Ama Mensah',
+              admission_case_id: 'admission-1',
+              prescription_id: 'rx-1',
+              medication_course_id: 'course-1',
+              medication_name: 'Paracetamol',
+              dose: '500 mg',
+              route: 'oral',
+              frequency: 'bid',
+              status: 'pending',
+              coverage_start: '2026-06-04T10:00:00Z',
+              coverage_end: '2026-06-06T10:00:00Z',
+              next_due_at: '2026-06-04T10:00:00Z',
+              overdue_count: 0,
+              requested_dose_count: 4,
+              dispensed_dose_count: 0,
+              inventory_item_id: null,
+              dispensing_location_id: null,
             },
           ],
           page: { limit: 50, has_next: false, next_cursor: null },
@@ -1783,10 +1884,22 @@ describe('Rust V2 nursing dashboard hooks', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.data).toEqual([]));
+    await waitFor(() => expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'fulfillment-1',
+        fulfillment_id: 'fulfillment-1',
+        patient_name: 'Ama Mensah',
+        patient_mrn: 'MRN-001',
+        medication_name: 'Paracetamol',
+        dosage: '500 mg',
+        frequency: 'bid',
+        dose_count: 4,
+        scheduled_time: '2026-06-04T10:00:00Z',
+      }),
+    ]));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/pharmacy/dispenses?limit=50',
+      'http://localhost:8080/api/v2/pharmacy/dispensing-queue?limit=50&status=pending',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

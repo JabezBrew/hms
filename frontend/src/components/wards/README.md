@@ -20,6 +20,10 @@ Scope: ward, bed, section, admission, layout, dashboard, and staff-management UI
 - Bed-grid LOS should come from `occupied_since` on the dedicated bed-map DTO,
   not from ward-board patient rows, admission identifiers, or paginated bed
   list DTOs.
+- Bed maps should stay tooltip-first for bed details; do not open a drawer for
+  routine bed identity/status context.
+- Within each section or bay, sort available beds before occupied, reserved,
+  cleaning, and blocked beds so staff can scan vacancies quickly.
 - Bed/admission transitions should avoid duplicate submissions.
 - Ward clinical actions should route through Patient Chronicle or authorized
   ward workflows.

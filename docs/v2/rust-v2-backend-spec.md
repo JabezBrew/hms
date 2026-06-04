@@ -1071,14 +1071,40 @@ problems
 problem_codes
 allergies
 prescriptions
+medication_courses
 chart_templates
 chart_entries
 vital_signs
 nursing_tasks
 medication_administrations
+pharmacy_fulfillments
 fluid_balance_entries
 handoffs
 ```
+
+Clinical notes carry one controlled workstream type: `doctor_note`,
+`nursing_note`, or `allied_health_note`. Specific documentation shapes such as
+SOAP, HPI, ward round, wound care, or discharge summary are represented by note
+templates and their structures, not by expanding the note type set.
+
+Medication fulfillment is prescription-led:
+
+- A prescription may generate one `medication_course` for an admission case.
+- `bid`, `tid`, `qid`, `q4h`, `q6h`, `q8h`, and `q12h` are interval schedules
+  from the first dose anchor. They are not hard-coded ward-round clock lists.
+- MAR generation inserts scheduled `medication_administrations`
+  idempotently for the requested window and does not rewrite administered or
+  dispensed rows.
+- `prn` creates/keeps the clinical prescription/course context but does not
+  create scheduled MAR rows or a pharmacy fulfillment obligation.
+- Pharmacy sees `pharmacy_fulfillments`: patient, prescription/course,
+  medication, linked inventory item, requested dose count, coverage window,
+  next due, overdue count, and dispense status. Pharmacy does not need the
+  anchor as a primary field.
+- Dispense requires an explicit inventory item, dispensing location, and
+  positive quantity, and the inventory item must match the prescription's
+  linked item. The system does not guess the stock item from medication free
+  text.
 
 Inpatient:
 
@@ -1296,6 +1322,10 @@ POST /api/v2/inventory/stock/transfer
 POST /api/v2/inventory/controlled/receive
 POST /api/v2/inventory/controlled/dispense
 POST /api/v2/pharmacy/dispense
+GET  /api/v2/pharmacy/dispensing-queue
+GET  /api/v2/pharmacy/dispensing-queue/:id
+POST /api/v2/pharmacy/dispensing-queue/:id/dispense
+POST /api/v2/clinical/prescriptions/:id/generate-mar
 ```
 
 <a id="session-architecture"></a>

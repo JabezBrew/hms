@@ -107,7 +107,7 @@ function adaptTimelineEntry(entry) {
   if (!entry) {
     return entry
   }
-  const type = entry.type || entry.entry_type || 'progress_note'
+  const type = entry.type || entry.entry_type || 'doctor_note'
   return {
     ...entry,
     id: entry.id || entry.entry_id,

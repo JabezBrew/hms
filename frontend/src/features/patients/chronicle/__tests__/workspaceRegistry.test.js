@@ -59,6 +59,26 @@ describe('chronicle workspace registry', () => {
     });
   });
 
+  it('passes routed note draft overrides to the note workspace', () => {
+    const props = buildChronicleWorkspaceProps('note', {
+      patient: { id: 'patient-1' },
+      noteDraft: {
+        noteType: 'doctor_note',
+        title: 'Discharge summary',
+      },
+      onClose: vi.fn(),
+      onNoteCreated: vi.fn(),
+    });
+
+    expect(props).toMatchObject({
+      open: true,
+      noteDraftOverrides: {
+        noteType: 'doctor_note',
+        title: 'Discharge summary',
+      },
+    });
+  });
+
   it('prefers the requested discharge admission when building admission-scoped workspace props', () => {
     const props = buildChronicleWorkspaceProps('discharge', {
       patient: {

@@ -129,6 +129,7 @@ export function formatEncounterScopeLabel(encounter, activeEncounterId) {
 function isNoteTimelineEntry(entry) {
   const type = entry?.type || entry?.entry_type;
   return [
+    'doctor_note',
     'progress_note',
     'soap_note',
     'admission_note',
@@ -136,6 +137,7 @@ function isNoteTimelineEntry(entry) {
     'consult_note',
     'consultation_note',
     'nursing_note',
+    'allied_health_note',
     'note',
   ].includes(type);
 }
@@ -252,11 +254,13 @@ export function useChronicleTimelineViewModel({
     if (activeFilter === 'progress_note') {
       return timelineEntries.filter(entry =>
         entry.type === 'progress_note' ||
+        entry.type === 'doctor_note' ||
         entry.type === 'soap_note' ||
         entry.type === 'admission_note' ||
         entry.type === 'discharge_note' ||
         entry.type === 'consult_note' ||
-        entry.type === 'nursing_note'
+        entry.type === 'nursing_note' ||
+        entry.type === 'allied_health_note'
       );
     }
     return timelineEntries;

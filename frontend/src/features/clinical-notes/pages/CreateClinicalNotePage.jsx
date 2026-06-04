@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import TemplateSelector from '@/components/clinical-notes/TemplateSelector';
 import DynamicNoteForm from '@/components/clinical-notes/DynamicNoteForm';
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
+import { CLINICAL_NOTE_TYPES } from '@/features/clinical-notes/noteTypes';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
@@ -30,6 +31,7 @@ const DEFAULT_NURSING_TEMPLATES = [
   {
     title: 'Nursing Vitals',
     description: 'Template for recording patient vital signs',
+    note_type: CLINICAL_NOTE_TYPES.NURSING,
     is_active: true,
     is_public: true,
     is_default: true,
@@ -41,6 +43,7 @@ const DEFAULT_NURSING_TEMPLATES = [
   {
     title: 'Nursing I/O',
     description: 'Template for recording fluid intake and output',
+    note_type: CLINICAL_NOTE_TYPES.NURSING,
     is_active: true,
     is_public: true,
     is_default: true,
@@ -52,6 +55,7 @@ const DEFAULT_NURSING_TEMPLATES = [
   {
     title: 'Nursing Meds',
     description: 'Template for recording medications administered',
+    note_type: CLINICAL_NOTE_TYPES.NURSING,
     is_active: true,
     is_public: true,
     is_default: true,
@@ -63,6 +67,7 @@ const DEFAULT_NURSING_TEMPLATES = [
   {
     title: 'Nursing Note',
     description: 'Template for general nursing notes',
+    note_type: CLINICAL_NOTE_TYPES.NURSING,
     is_active: true,
     is_public: true,
     is_default: true,
@@ -365,7 +370,8 @@ export default function CreateClinicalNotePage() {
 
   // Get the user's authentication information
   const { user } = useAuth();
-  const isNurse = user?.role === 'nurse';
+  const userRole = user?.role || user?.user_type;
+  const isNurse = ['nurse', 'head_nurse', 'nurse_practitioner'].includes(userRole);
 
   // Get the create template mutation
   const createNoteTemplate = useCreateNoteTemplate();

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -13,10 +13,10 @@ vi.mock('@/features/wards/hooks/useWardQueries', () => ({
 }));
 
 vi.mock('../WardBedLayout', () => ({
-  WardBedLayout: ({ beds, onBedClick }) => (
-    <button type="button" data-testid="ward-bed-layout" onClick={() => onBedClick(beds[0].id)}>
+  WardBedLayout: ({ beds }) => (
+    <div data-testid="ward-bed-layout">
       Rendered {beds.length} loaded beds
-    </button>
+    </div>
   ),
 }));
 
@@ -98,9 +98,11 @@ describe('WardDashboard', () => {
     expect(screen.getByTestId('ward-bed-layout')).toHaveTextContent('Rendered 480 loaded beds');
     expect(screen.getByText('Showing 480 of 480 beds')).toBeInTheDocument();
     expect(screen.getByText('255').closest('button')).not.toBeNull();
-
-    fireEvent.click(screen.getByTestId('ward-bed-layout'));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('MED-01')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('group', { name: 'Bed status filter' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['All', 'Vacant', 'Occupied', 'Reserved', 'Cleaning', 'Blocked']);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

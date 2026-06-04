@@ -28,6 +28,7 @@ const AddNoteSlideOver = ({
   onNoteCreated,
   initialTemplate = null,
   initialData = null,
+  noteDraftOverrides = null,
   editNoteId = null,
 }) => {
   const patientId = patient?.local_data?.id || patient?.id;
@@ -52,6 +53,7 @@ const AddNoteSlideOver = ({
         onNoteCreated={onNoteCreated}
         initialTemplate={initialTemplate}
         initialData={initialData}
+        noteDraftOverrides={noteDraftOverrides}
         editNoteId={editNoteId}
       />
     </div>

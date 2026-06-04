@@ -126,7 +126,7 @@ import { TimelineEntry, TimelineGroup } from '@/components/chronicle';
 <TimelineGroup date="Today" entries={entries} />
 ```
 
-Entry types: `progress_note`, `soap_note`, `vitals`, `medication`, `prescription`, `lab_result`, `order`, `consult`, `consult_note`, `admission`, `admission_note`, `discharge`, `discharge_note`, `nursing_note`, `procedure`, `referral`
+Entry types: `doctor_note`, `nursing_note`, `allied_health_note`, `vitals`, `medication`, `prescription`, `lab_result`, `order`, `consult`, `admission`, `discharge`, `procedure`, `referral`. Legacy note aliases such as `progress_note`, `soap_note`, and `consult_note` may appear in old fixtures or cached entries, but new clinical notes use the three workstream note types; SOAP, HPI, ward round, and similar labels belong to templates.
 
 ### ClinicalSummarySidebar
 Desktop-visible patient context (hidden on mobile and when a slide-over is open):

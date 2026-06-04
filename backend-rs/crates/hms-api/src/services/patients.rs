@@ -1026,8 +1026,9 @@ fn normalize_chronicle_entry_filter(value: Option<&str>) -> Result<Option<String
     };
     let normalized = match value {
         "all" => None,
-        "note" | "notes" | "progress_note" | "soap_note" | "nursing_note" | "admission_note"
-        | "discharge_note" | "consult_note" => Some("note"),
+        "note" | "notes" | "doctor_note" | "nursing_note" | "allied_health_note"
+        | "progress_note" | "soap_note" | "admission_note" | "discharge_note" | "consult_note"
+        | "consultation_note" => Some("note"),
         "vital" | "vitals" => Some("vitals"),
         "medication" | "medications" | "prescription" | "prescriptions" => Some("prescription"),
         "lab" | "labs" | "lab_result" | "laboratory" => Some("lab_result"),

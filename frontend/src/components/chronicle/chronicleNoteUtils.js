@@ -1,7 +1,9 @@
 const INLINE_EXPANDABLE_NOTE_TYPES = new Set([
+  'doctor_note',
   'progress_note',
   'soap_note',
   'nursing_note',
+  'allied_health_note',
   'admission_note',
   'discharge_note',
   'consult_note',

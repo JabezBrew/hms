@@ -23,9 +23,11 @@ import {
 const PRINT_PAGE_SIZE = 100;
 const EMPTY_VALUE = 'Not recorded';
 const NOTE_ENTRY_TYPES = new Set([
+  'doctor_note',
   'progress_note',
   'soap_note',
   'nursing_note',
+  'allied_health_note',
   'admission_note',
   'discharge_note',
   'consult_note',

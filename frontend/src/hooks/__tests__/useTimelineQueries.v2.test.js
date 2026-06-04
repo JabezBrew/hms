@@ -28,7 +28,7 @@ describe('Rust V2 timeline bridge', () => {
       notes: [
         {
           id: 'note-1',
-          note_type: 'progress_note',
+          note_type: 'doctor_note',
           title: 'Progress review',
           status: 'signed',
           updated_at: '2026-05-12T09:00:00Z',
@@ -87,7 +87,7 @@ describe('Rust V2 timeline bridge', () => {
         count: 5,
         has_next: true,
         results: [
-          expect.objectContaining({ id: 'note-1', entry_type: 'note', type: 'progress_note' }),
+          expect.objectContaining({ id: 'note-1', entry_type: 'note', type: 'doctor_note' }),
           expect.objectContaining({ id: 'rx-1', entry_type: 'prescription', type: 'prescription' }),
         ],
       }),

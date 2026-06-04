@@ -46,6 +46,8 @@ pub const DEFAULT_APPOINTMENT_TYPE_GENERAL_ID: u128 = 0x400000000000000000000000
 pub const DEFAULT_WARD_ID: u128 = 0x50000000000000000000000000000001;
 pub const DEFAULT_BED_ID: u128 = 0x50000000000000000000000000000002;
 pub const DEFAULT_NOTE_TEMPLATE_ID: u128 = 0x60000000000000000000000000000001;
+pub const DEFAULT_NURSING_NOTE_TEMPLATE_ID: u128 = 0x60000000000000000000000000000002;
+pub const DEFAULT_ALLIED_HEALTH_NOTE_TEMPLATE_ID: u128 = 0x60000000000000000000000000000003;
 pub const DEFAULT_LAB_TEST_FBC_ID: u128 = 0x70000000000000000000000000000001;
 pub const DEFAULT_LAB_TEST_MALARIA_ID: u128 = 0x70000000000000000000000000000002;
 pub const DEFAULT_LAB_TEST_RBG_ID: u128 = 0x70000000000000000000000000000003;
@@ -2132,7 +2134,7 @@ fn demo_patient_archetypes() -> Vec<DemoPatientArchetype> {
             date_of_birth: (1988, 4, 12),
             sex: Sex::Female,
             archetype_label: "respiratory inpatient",
-            note_type: "admission_note",
+            note_type: "doctor_note",
             note_title: "Demo admission summary",
             note_body: "Synthetic admission note: fever and cough improving after initial treatment. No real patient data.",
             problem_label: "Community-acquired pneumonia with malaria rule-out",
@@ -2169,7 +2171,7 @@ fn demo_patient_archetypes() -> Vec<DemoPatientArchetype> {
             date_of_birth: (1975, 11, 3),
             sex: Sex::Male,
             archetype_label: "hypertension review",
-            note_type: "progress_note",
+            note_type: "doctor_note",
             note_title: "Demo hypertension review",
             note_body: "Synthetic outpatient review: blood pressure above target, adherence counselling completed. No real patient data.",
             problem_label: "Essential hypertension",
@@ -2202,7 +2204,7 @@ fn demo_patient_archetypes() -> Vec<DemoPatientArchetype> {
             date_of_birth: (1994, 8, 22),
             sex: Sex::Female,
             archetype_label: "maternity observation",
-            note_type: "progress_note",
+            note_type: "doctor_note",
             note_title: "Demo maternity observation",
             note_body: "Synthetic maternity observation note: stable after overnight monitoring. No real patient data.",
             problem_label: "Third-trimester observation",
@@ -2235,7 +2237,7 @@ fn demo_patient_archetypes() -> Vec<DemoPatientArchetype> {
             date_of_birth: (2018, 1, 9),
             sex: Sex::Male,
             archetype_label: "pediatric malaria follow-up",
-            note_type: "progress_note",
+            note_type: "doctor_note",
             note_title: "Demo pediatric follow-up",
             note_body: "Synthetic pediatric review: fever settled and oral intake improving. No real patient data.",
             problem_label: "Uncomplicated malaria follow-up",
@@ -2855,7 +2857,7 @@ async fn seed_chronicle_demo_outpatient(
         journey,
         encounter_id,
         sequence,
-        "progress_note",
+        "doctor_note",
         starts_at + Duration::minutes(20),
     )
     .await?;
@@ -3635,7 +3637,7 @@ async fn seed_chronicle_demo_admission(
         journey,
         journey.encounter_id(CHRONICLE_DEMO_INPATIENT_SEQUENCE),
         CHRONICLE_DEMO_INPATIENT_SEQUENCE,
-        "admission_note",
+        "doctor_note",
         admission.admitted_at + Duration::minutes(50),
     )
     .await?;
@@ -5178,9 +5180,9 @@ pub async fn provision_performance_seed(
                $1,
                id,
                NULL,
-               CASE WHEN note_index % 4 = 0 THEN 'ward_round'
-                    WHEN note_index % 3 = 0 THEN 'review'
-                    ELSE 'general'
+               CASE WHEN note_index % 4 = 0 THEN 'nursing_note'
+                    WHEN note_index % 3 = 0 THEN 'allied_health_note'
+                    ELSE 'doctor_note'
                END,
                'Performance note ' || lpad(note_index::text, 3, '0'),
                'Synthetic clinical performance seed note. No patient-identifying content.',
@@ -6018,27 +6020,51 @@ async fn seed_clinical_templates(
     pool: &PgPool,
     baseline: &BaselineProvisioning,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO clinical_note_templates (
-            id,
-            facility_id,
-            title,
-            note_type,
-            body_template
+    for (id, title, note_type, body_template) in [
+        (
+            DEFAULT_NOTE_TEMPLATE_ID,
+            "General Doctor Note",
+            "doctor_note",
+            "History:\n\nExamination:\n\nAssessment:\n\nPlan:",
+        ),
+        (
+            DEFAULT_NURSING_NOTE_TEMPLATE_ID,
+            "General Nursing Note",
+            "nursing_note",
+            "Observation:\n\nCare given:\n\nResponse:\n\nFollow-up:",
+        ),
+        (
+            DEFAULT_ALLIED_HEALTH_NOTE_TEMPLATE_ID,
+            "Allied Health Note",
+            "allied_health_note",
+            "Assessment:\n\nIntervention:\n\nPatient response:\n\nPlan:",
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO clinical_note_templates (
+                id,
+                facility_id,
+                title,
+                note_type,
+                body_template
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (id) DO UPDATE
+            SET title = EXCLUDED.title,
+                note_type = EXCLUDED.note_type,
+                body_template = EXCLUDED.body_template,
+                is_active = TRUE
+            "#,
         )
-        VALUES ($1, $2, 'General Clinical Note', 'general', 'History:\n\nExamination:\n\nAssessment:\n\nPlan:')
-        ON CONFLICT (id) DO UPDATE
-        SET title = EXCLUDED.title,
-            note_type = EXCLUDED.note_type,
-            body_template = EXCLUDED.body_template,
-            is_active = TRUE
-        "#,
-    )
-    .bind(Uuid::from_u128(DEFAULT_NOTE_TEMPLATE_ID))
-    .bind(baseline.facility_id)
-    .execute(pool)
-    .await?;
+        .bind(Uuid::from_u128(id))
+        .bind(baseline.facility_id)
+        .bind(title)
+        .bind(note_type)
+        .bind(body_template)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }

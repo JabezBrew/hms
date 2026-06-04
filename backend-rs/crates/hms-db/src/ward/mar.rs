@@ -19,6 +19,9 @@ pub struct NewMedicationAdministration {
     pub admission_case_id: Uuid,
     pub patient_id: Uuid,
     pub medication_name: String,
+    pub dose: Option<String>,
+    pub route: Option<String>,
+    pub frequency: Option<String>,
     pub scheduled_at: DateTime<Utc>,
     pub actor_user_id: Uuid,
 }
@@ -38,11 +41,20 @@ struct MedicationAdministrationRow {
     id: Uuid,
     admission_case_id: Uuid,
     patient_id: Uuid,
+    prescription_id: Option<Uuid>,
+    medication_course_id: Option<Uuid>,
+    pharmacy_fulfillment_id: Option<Uuid>,
     patient_code: String,
     patient_display_name: String,
     medication_name: String,
+    dose: Option<String>,
+    route: Option<String>,
+    frequency: Option<String>,
+    dose_sequence: Option<i32>,
     scheduled_at: DateTime<Utc>,
     administered_at: Option<DateTime<Utc>>,
+    is_dispensed: bool,
+    dispensed_at: Option<DateTime<Utc>>,
     status: String,
 }
 
@@ -103,11 +115,14 @@ pub async fn schedule_medication_administration(
             admission_case_id,
             patient_id,
             medication_name,
+            dose,
+            route,
+            frequency,
             scheduled_at,
             status,
             created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
         )
         .bind(medication.id)
@@ -115,6 +130,9 @@ pub async fn schedule_medication_administration(
         .bind(medication.admission_case_id)
         .bind(medication.patient_id)
         .bind(&medication.medication_name)
+        .bind(&medication.dose)
+        .bind(&medication.route)
+        .bind(&medication.frequency)
         .bind(medication.scheduled_at)
         .bind(codec::encode(MedicationAdministrationStatus::Scheduled)?)
         .bind(medication.actor_user_id)
@@ -240,11 +258,20 @@ fn medication_query() -> QueryBuilder<'static, Postgres> {
         SELECT medication_administrations.id,
                medication_administrations.admission_case_id,
                medication_administrations.patient_id,
+               medication_administrations.prescription_id,
+               medication_administrations.medication_course_id,
+               medication_administrations.pharmacy_fulfillment_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                medication_administrations.medication_name,
+               medication_administrations.dose,
+               medication_administrations.route,
+               medication_administrations.frequency,
+               medication_administrations.dose_sequence,
                medication_administrations.scheduled_at,
                medication_administrations.administered_at,
+               medication_administrations.is_dispensed,
+               medication_administrations.dispensed_at,
                medication_administrations.status
         FROM medication_administrations
         JOIN patients ON patients.id = medication_administrations.patient_id
@@ -327,11 +354,20 @@ fn medication_from_row(
         id: row.id,
         admission_case_id: row.admission_case_id,
         patient_id: row.patient_id,
+        prescription_id: row.prescription_id,
+        medication_course_id: row.medication_course_id,
+        pharmacy_fulfillment_id: row.pharmacy_fulfillment_id,
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
         medication_name: row.medication_name,
+        dose: row.dose,
+        route: row.route,
+        frequency: row.frequency,
+        dose_sequence: row.dose_sequence,
         scheduled_at: row.scheduled_at,
         administered_at: row.administered_at,
+        is_dispensed: row.is_dispensed,
+        dispensed_at: row.dispensed_at,
         status: codec::decode(&row.status)?,
     })
 }

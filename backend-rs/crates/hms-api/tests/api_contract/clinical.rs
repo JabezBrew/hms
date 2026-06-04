@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
+async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
@@ -24,6 +24,506 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .as_str()
         .expect("patient id exists");
 
+    let ward_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/wards?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward list succeeds");
+    assert_eq!(ward_response.status(), StatusCode::OK);
+    let ward_body = json_body(ward_response).await;
+    let ward_id = ward_body["data"][0]["id"].as_str().expect("ward id exists");
+
+    let admission_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admissions/cases")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "ward_id": ward_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("admission case create succeeds");
+    assert_eq!(admission_response.status(), StatusCode::OK);
+    let admission_body = json_body(admission_response).await;
+    let admission_case_id = admission_body["data"]["id"]
+        .as_str()
+        .expect("admission case id exists");
+
+    let activate_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/admissions/cases/{admission_case_id}/activate"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("admission activation succeeds");
+    assert_eq!(activate_response.status(), StatusCode::OK);
+
+    let items_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/items?limit=20")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("inventory item list succeeds");
+    assert_eq!(items_response.status(), StatusCode::OK);
+    let items_body = json_body(items_response).await;
+    let items = items_body["data"].as_array().expect("items array exists");
+    let item_id = items
+        .iter()
+        .find(|item| item["controlled"] == false)
+        .and_then(|item| item["id"].as_str())
+        .expect("normal inventory item exists");
+    let wrong_item_id = items
+        .iter()
+        .filter_map(|item| item["id"].as_str())
+        .find(|candidate| *candidate != item_id)
+        .expect("second inventory item exists");
+
+    let prescription_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/clinical/prescriptions"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "medication_name": "Amoxicillin",
+                        "dose": "500 mg",
+                        "route": "oral",
+                        "frequency": "bid",
+                        "inventory_item_id": item_id,
+                        "start_date": "2026-06-04",
+                        "duration_days": 2,
+                        "first_dose_at": "2026-06-04T10:00:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("prescription create succeeds");
+    assert_eq!(prescription_response.status(), StatusCode::OK);
+    let prescription_body = json_body(prescription_response).await;
+    let prescription_id = prescription_body["data"]["id"]
+        .as_str()
+        .expect("prescription id exists");
+
+    let generate_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/clinical/prescriptions/{prescription_id}/generate-mar"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_case_id,
+                        "days": 2,
+                        "first_dose_at": "2026-06-04T10:00:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("MAR generation succeeds");
+    assert_eq!(generate_response.status(), StatusCode::OK);
+    let generate_body = json_body(generate_response).await;
+    assert_eq!(generate_body["data"]["created_count"], 4);
+    assert_eq!(generate_body["data"]["requested_dose_count"], 4);
+    assert!(generate_body["data"]["pharmacy_fulfillment_id"].is_string());
+
+    let duplicate_generate = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/clinical/prescriptions/{prescription_id}/generate-mar"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_case_id,
+                        "days": 2,
+                        "first_dose_at": "2026-06-04T10:00:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("duplicate MAR generation succeeds");
+    assert_eq!(duplicate_generate.status(), StatusCode::OK);
+    let duplicate_body = json_body(duplicate_generate).await;
+    assert_eq!(duplicate_body["data"]["created_count"], 0);
+    assert_eq!(duplicate_body["data"]["existing_count"], 4);
+
+    let shifted_generate = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/clinical/prescriptions/{prescription_id}/generate-mar"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_case_id,
+                        "days": 2,
+                        "first_dose_at": "2026-06-04T11:00:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("shifted MAR generation returns a response");
+    assert_eq!(shifted_generate.status(), StatusCode::CONFLICT);
+
+    let mar_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/nursing/medication-administrations?limit=10&admission_case_id={admission_case_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("MAR list succeeds");
+    assert_eq!(mar_response.status(), StatusCode::OK);
+    let mar_body = json_body(mar_response).await;
+    assert_eq!(mar_body["data"].as_array().expect("MAR list").len(), 4);
+    assert_eq!(mar_body["data"][0]["scheduled_at"], "2026-06-04T10:00:00Z");
+    assert_eq!(mar_body["data"][1]["scheduled_at"], "2026-06-04T22:00:00Z");
+    assert_eq!(mar_body["data"][2]["scheduled_at"], "2026-06-05T10:00:00Z");
+    assert_eq!(mar_body["data"][3]["scheduled_at"], "2026-06-05T22:00:00Z");
+    assert_eq!(mar_body["data"][0]["frequency"], "bid");
+    assert_eq!(mar_body["data"][0]["is_dispensed"], false);
+
+    let queue_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/pharmacy/dispensing-queue?limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("pharmacy queue succeeds");
+    assert_eq!(queue_response.status(), StatusCode::OK);
+    let queue_body = json_body(queue_response).await;
+    assert_eq!(queue_body["data"].as_array().expect("queue list").len(), 1);
+    assert_eq!(queue_body["data"][0]["medication_name"], "Amoxicillin");
+    assert_eq!(queue_body["data"][0]["requested_dose_count"], 4);
+    assert_eq!(queue_body["data"][0]["next_due_at"], "2026-06-04T10:00:00Z");
+    let fulfillment_id = queue_body["data"][0]["id"]
+        .as_str()
+        .expect("fulfillment id exists");
+
+    let locations_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/storage-locations?limit=20")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("location list succeeds");
+    assert_eq!(locations_response.status(), StatusCode::OK);
+    let locations_body = json_body(locations_response).await;
+    let location_id = locations_body["data"]
+        .as_array()
+        .expect("locations array exists")
+        .iter()
+        .find(|location| location["code"] == "PHARM")
+        .and_then(|location| location["id"].as_str())
+        .expect("pharmacy location exists");
+
+    let batch_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/inventory/stock-batches")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "item_id": item_id,
+                        "location_id": location_id,
+                        "batch_number": "MAR-FULFILL-001",
+                        "expires_on": "2027-01-31",
+                        "quantity_received": 10
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock batch create succeeds");
+    assert_eq!(batch_response.status(), StatusCode::OK);
+    let batch_body = json_body(batch_response).await;
+    assert_eq!(batch_body["data"]["quantity_on_hand"], 10);
+
+    let wrong_item_dispense = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/pharmacy/dispensing-queue/{fulfillment_id}/dispense"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "item_id": wrong_item_id,
+                        "location_id": location_id,
+                        "quantity": 1
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("wrong item dispense returns a response");
+    assert_eq!(wrong_item_dispense.status(), StatusCode::BAD_REQUEST);
+
+    let dispense_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/pharmacy/dispensing-queue/{fulfillment_id}/dispense"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "item_id": item_id,
+                        "location_id": location_id,
+                        "quantity": 4
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("fulfillment dispense succeeds");
+    assert_eq!(dispense_response.status(), StatusCode::OK);
+    let dispense_body = json_body(dispense_response).await;
+    assert_eq!(dispense_body["data"]["dispensed_dose_count"], 4);
+    assert_eq!(dispense_body["data"]["remaining_dose_count"], 0);
+    assert_eq!(dispense_body["data"]["fulfillment"]["status"], "dispensed");
+
+    let dispensed_mar_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/nursing/medication-administrations?limit=10&admission_case_id={admission_case_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("dispensed MAR list succeeds");
+    assert_eq!(dispensed_mar_response.status(), StatusCode::OK);
+    let dispensed_mar_body = json_body(dispensed_mar_response).await;
+    assert!(dispensed_mar_body["data"]
+        .as_array()
+        .expect("MAR list")
+        .iter()
+        .all(|entry| entry["is_dispensed"] == true));
+
+    let prn_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/clinical/prescriptions"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "medication_name": "Salbutamol",
+                        "dose": "2 puffs",
+                        "route": "inhaled",
+                        "frequency": "prn"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("PRN prescription create succeeds");
+    assert_eq!(prn_response.status(), StatusCode::OK);
+    let prn_body = json_body(prn_response).await;
+    let prn_prescription_id = prn_body["data"]["id"]
+        .as_str()
+        .expect("PRN prescription id exists");
+
+    let prn_generate = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/clinical/prescriptions/{prn_prescription_id}/generate-mar"
+                ))
+                .header(AUTHORIZATION, auth_header)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_case_id,
+                        "days": 2,
+                        "first_dose_at": "2026-06-04T10:00:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("PRN generation succeeds");
+    assert_eq!(prn_generate.status(), StatusCode::OK);
+    let prn_generate_body = json_body(prn_generate).await;
+    assert_eq!(prn_generate_body["data"]["created_count"], 0);
+    assert_eq!(prn_generate_body["data"]["skipped_reason"], "prn");
+    assert!(prn_generate_body["data"]["pharmacy_fulfillment_id"].is_null());
+}
+
+#[tokio::test]
+async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let patient_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=20")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient list succeeds");
+    assert_eq!(patient_response.status(), StatusCode::OK);
+    let patient_body = json_body(patient_response).await;
+    let patient_id = patient_body["data"][0]["id"]
+        .as_str()
+        .expect("patient id exists");
+    let other_patient_id = patient_body["data"]
+        .as_array()
+        .expect("patients are returned")
+        .iter()
+        .filter_map(|patient| patient["id"].as_str())
+        .find(|candidate| *candidate != patient_id)
+        .expect("second patient id exists");
+    let encounter_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/encounters")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "encounter_type": "outpatient"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("encounter create succeeds");
+    assert_eq!(encounter_response.status(), StatusCode::OK);
+    let encounter_body = json_body(encounter_response).await;
+    let encounter_id = encounter_body["data"]["id"]
+        .as_str()
+        .expect("encounter id exists");
+    let wrong_patient_note = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/patients/{other_patient_id}/clinical/notes"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "note_type": "doctor_note",
+                        "title": "Wrong encounter",
+                        "body": "Should not attach to another patient's encounter.",
+                        "encounter_id": encounter_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("wrong-patient note request completes");
+    assert_eq!(wrong_patient_note.status(), StatusCode::BAD_REQUEST);
+
     let templates = app
         .clone()
         .oneshot(
@@ -39,7 +539,8 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(templates.status(), StatusCode::OK);
     let templates_body = json_body(templates).await;
     assert_eq!(templates_body["page"]["limit"], 1);
-    assert_eq!(templates_body["data"][0]["title"], "General Clinical Note");
+    assert_eq!(templates_body["data"][0]["title"], "Allied Health Note");
+    assert_eq!(templates_body["data"][0]["note_type"], "allied_health_note");
 
     let template_create = app
         .clone()
@@ -52,7 +553,7 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
                 .body(Body::from(
                     json!({
                         "title": "Ward Round Note",
-                        "note_type": "ward_round",
+                        "note_type": "doctor_note",
                         "body_template": "Subjective\\nObjective\\nAssessment\\nPlan"
                     })
                     .to_string(),
@@ -162,9 +663,10 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
-                        "note_type": "general",
+                        "note_type": "nursing_note",
                         "title": "Review note",
-                        "body": "History recorded. Assessment and plan captured."
+                        "body": "History recorded. Assessment and plan captured.",
+                        "encounter_id": encounter_id
                     })
                     .to_string(),
                 ))
@@ -178,6 +680,8 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .as_str()
         .expect("clinical note id exists");
     assert_eq!(note_body["data"]["status"], "draft");
+    assert_eq!(note_body["data"]["note_type"], "nursing_note");
+    assert_eq!(note_body["data"]["encounter_id"], encounter_id);
 
     let note_detail = app
         .clone()
@@ -194,6 +698,7 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(note_detail.status(), StatusCode::OK);
     let note_detail_body = json_body(note_detail).await;
     assert_eq!(note_detail_body["data"]["id"], note_id);
+    assert_eq!(note_detail_body["data"]["encounter_id"], encounter_id);
     assert_eq!(
         note_detail_body["data"]["body"],
         "History recorded. Assessment and plan captured."
@@ -217,6 +722,54 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     let notes_body = json_body(notes).await;
     assert_eq!(notes_body["data"].as_array().unwrap().len(), 1);
     assert_eq!(notes_body["page"]["limit"], 1);
+
+    let encounter_notes = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/clinical/notes?limit=10&encounter_id={encounter_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("encounter-scoped clinical note list succeeds");
+    assert_eq!(encounter_notes.status(), StatusCode::OK);
+    let encounter_notes_body = json_body(encounter_notes).await;
+    assert!(encounter_notes_body["data"]
+        .as_array()
+        .expect("encounter notes are returned")
+        .iter()
+        .any(|entry| entry["id"] == note_id && entry["encounter_id"] == encounter_id));
+
+    let timeline = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/chronicle/timeline?limit=20&encounter_id={encounter_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("chronicle timeline succeeds");
+    assert_eq!(timeline.status(), StatusCode::OK);
+    let timeline_body = json_body(timeline).await;
+    let timeline_entry = timeline_body["data"]
+        .as_array()
+        .expect("timeline entries are returned")
+        .iter()
+        .find(|entry| entry["id"] == note_id)
+        .expect("created nursing note appears in Chronicle timeline");
+    assert_eq!(timeline_entry["type"], "nursing_note");
+    assert_eq!(timeline_entry["encounter_id"], encounter_id);
+    assert_eq!(timeline_entry["data"]["note_type"], "nursing_note");
 
     let version_response = app
         .clone()

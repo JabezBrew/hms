@@ -86,7 +86,7 @@ export const buildEncounterTimelineEntries = (clinicalNotes) => {
 
   return clinicalNotes.map((note) => ({
     id: note.id,
-    type: note.note_type || 'progress_note',
+    type: note.note_type || 'doctor_note',
     title: note.title,
     content: note.content,
     timestamp: note.created_at,

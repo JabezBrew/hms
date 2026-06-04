@@ -10,6 +10,8 @@ function handleChronicleRouteAction({
   defaultAction,
   openChronicleWorkspace,
   openWardRoundMode,
+  noteTitleParam,
+  noteTypeParam,
   patient,
   setRequestedDischargeAdmissionId,
   setRequestedTreatmentSheetAdmissionId,
@@ -17,8 +19,14 @@ function handleChronicleRouteAction({
 }) {
   const action = actionParam || defaultAction;
   if (action === 'add_note' || action === 'note') {
-    openChronicleWorkspace('note');
-    if (actionParam) clearQueryParams();
+    const noteDraft = noteTitleParam || noteTypeParam
+      ? {
+          title: noteTitleParam || undefined,
+          noteType: noteTypeParam || undefined,
+        }
+      : null;
+    openChronicleWorkspace('note', noteDraft ? { noteDraft } : null);
+    if (actionParam || noteTitleParam || noteTypeParam) clearQueryParams();
   } else if (action === 'vitals' || action === 'record_vitals' || action === 'add_vitals') {
     openChronicleWorkspace('vitals');
     if (actionParam) clearQueryParams();

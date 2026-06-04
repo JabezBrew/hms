@@ -45,6 +45,7 @@ export function useChronicleWorkspaceActions({
   setRequestedDischargeAdmissionId,
   setRequestedTreatmentSheetAdmissionId,
   slideOvers,
+  workspaceOptions,
 }) {
   const [copyForwardData, setCopyForwardData] = useState(null);
   const [editNoteData, setEditNoteData] = useState(null);
@@ -266,6 +267,7 @@ export function useChronicleWorkspaceActions({
     copilotPatientName,
     copyForwardData,
     editNoteData,
+    noteDraft: workspaceOptions?.noteDraft || null,
     requestedDischargeAdmissionId,
     requestedTreatmentSheetAdmissionId,
     mobileContext: mobileWorkspaceContext,
@@ -292,6 +294,7 @@ export function useChronicleWorkspaceActions({
     copilotPatientName,
     copyForwardData,
     editNoteData,
+    workspaceOptions,
     requestedDischargeAdmissionId,
     requestedTreatmentSheetAdmissionId,
     mobileWorkspaceContext,

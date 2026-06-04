@@ -34,4 +34,6 @@ Scope: wards, sections, beds, ward reports, and ward detail UI.
   Chronicle. Use `occupied_since` from the bed-map DTO for LOS, do not expose
   admission identifiers from bed DTOs, and do not hydrate ward-board patient
   rows for the bed grid.
+- Ward bed-grid details should stay in tooltips unless a future workflow needs
+  an explicit action panel. Available beds should sort first within each bay.
 - Ward reports should use aggregate projections, not full clinical payloads.
