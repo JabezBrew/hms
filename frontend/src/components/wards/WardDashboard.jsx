@@ -20,21 +20,25 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Sheet,
+  SheetBody,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 
-import { useWard, useWardBeds, useAdmissions, useWardSections } from '@/features/wards/hooks/useWardQueries';
+import { useWard, useWardBedMap } from '@/features/wards/hooks/useWardQueries';
 import { WardBedLayout } from './WardBedLayout';
 
 const EMPTY_WARD_FILTERS = {
   status: 'all',
-  bedType: 'all',
   searchTerm: '',
 };
+
+const EMPTY_BEDS = [];
+const EMPTY_SECTIONS = [];
 
 const WARD_TYPE_LABELS = {
   general: 'General Ward',
@@ -56,8 +60,81 @@ const STATUS_FILTERS = [
   { value: 'reserved', label: 'Reserved' },
 ];
 
+const STAT_CARD_COLOR_CLASSES = {
+  primary: {
+    bg: 'bg-primary/10',
+    text: 'text-primary',
+    icon: 'text-primary',
+    active: 'ring-2 ring-primary',
+  },
+  emerald: {
+    bg: 'bg-emerald-500/10',
+    text: 'text-emerald-600',
+    icon: 'text-emerald-600',
+    active: 'ring-2 ring-emerald-500',
+  },
+  rose: {
+    bg: 'bg-rose-500/10',
+    text: 'text-rose-600',
+    icon: 'text-rose-600',
+    active: 'ring-2 ring-rose-500',
+  },
+  amber: {
+    bg: 'bg-amber-500/10',
+    text: 'text-amber-600',
+    icon: 'text-amber-600',
+    active: 'ring-2 ring-amber-500',
+  },
+  slate: {
+    bg: 'bg-slate-500/10',
+    text: 'text-slate-600',
+    icon: 'text-slate-600',
+    active: 'ring-2 ring-slate-500',
+  },
+  sky: {
+    bg: 'bg-sky-500/10',
+    text: 'text-sky-600',
+    icon: 'text-sky-600',
+    active: 'ring-2 ring-sky-500',
+  },
+};
+
+function getSectionTierIcon(tier) {
+  switch (tier) {
+    case 'vip':
+      return <Sparkles className="size-3.5" />;
+    case 'private':
+      return <Home className="size-3.5" />;
+    case 'semi_private':
+      return <Users className="size-3.5" />;
+    default:
+      return null;
+  }
+}
+
+function getSectionTierColor(tier) {
+  switch (tier) {
+    case 'vip':
+      return 'text-amber-600 bg-amber-50 border-amber-200';
+    case 'private':
+      return 'text-sky-600 bg-sky-50 border-sky-200';
+    case 'semi_private':
+      return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+    case 'open':
+      return 'text-stone-600 bg-stone-50 border-stone-200';
+    default:
+      return 'text-stone-600 bg-stone-50 border-stone-200';
+  }
+}
+
+function getSectionOccupancyColor(rate) {
+  if (rate >= 90) return 'text-rose-600';
+  if (rate >= 70) return 'text-amber-600';
+  return 'text-emerald-600';
+}
+
 function canonicalBedStatus(status) {
-  if (status === 'blocked' || status === 'maintenance') return 'maintenance';
+  if (status === 'blocked' || status === 'closed' || status === 'maintenance') return 'maintenance';
   if (status === 'cleaning') return 'cleaning';
   if (status === 'reserved') return 'reserved';
   if (status === 'occupied') return 'occupied';
@@ -69,7 +146,6 @@ function filterBeds(beds, filters) {
 
   return beds.filter((bed) => {
     if (filters.status !== 'all' && canonicalBedStatus(bed.status) !== filters.status) return false;
-    if (filters.bedType !== 'all' && bed.bed_type !== filters.bedType) return false;
     if (normalizedSearch && !bed.bed_number.toLowerCase().includes(normalizedSearch)) {
       return false;
     }
@@ -119,6 +195,20 @@ function buildWardStats(ward, beds) {
       ['blocked_beds_count', 'maintenance_beds_count'],
       bedPageCounts.maintenance,
     ),
+  };
+}
+
+function buildWardStatsSource(ward, bedMap) {
+  if (!bedMap?.totals) return ward;
+
+  return {
+    ...ward,
+    total_beds: bedMap.totals.total_beds,
+    available_beds_count: bedMap.totals.available_beds_count,
+    occupied_beds_count: bedMap.totals.occupied_beds_count,
+    reserved_beds_count: bedMap.totals.reserved_beds_count,
+    cleaning_beds_count: bedMap.totals.cleaning_beds_count,
+    maintenance_beds_count: bedMap.totals.maintenance_beds_count,
   };
 }
 
@@ -192,15 +282,38 @@ function buildSectionStats(sections, beds) {
     });
 }
 
-function findActiveAdmissionByBedId(admissions, bedId) {
-  return admissions.find((admission) => {
-    const admissionBedId = admission?.bed?.id || admission?.bed;
-    return admissionBedId === bedId && admission.status === 'admitted';
-  });
+function hasWardFilters(filters) {
+  return filters.status !== 'all' || filters.searchTerm;
 }
 
-function hasWardFilters(filters) {
-  return filters.status !== 'all' || filters.bedType !== 'all' || filters.searchTerm;
+function getLosDaysFromTimestamp(timestamp) {
+  if (!timestamp) return null;
+  const startedAt = new Date(timestamp);
+  if (Number.isNaN(startedAt.getTime())) return null;
+
+  const startedDay = new Date(
+    startedAt.getFullYear(),
+    startedAt.getMonth(),
+    startedAt.getDate(),
+  );
+  const today = new Date();
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.max(0, Math.floor((todayDay.getTime() - startedDay.getTime()) / 86_400_000));
+}
+
+function getBedStatusLabel(status) {
+  switch (canonicalBedStatus(status)) {
+    case 'occupied':
+      return 'Occupied';
+    case 'cleaning':
+      return 'Cleaning';
+    case 'maintenance':
+      return 'Blocked';
+    case 'reserved':
+      return 'Reserved';
+    default:
+      return 'Vacant';
+  }
 }
 
 function WardDashboardLoadingState() {
@@ -366,23 +479,6 @@ function WardFilterBar({
           />
         </div>
 
-        <Select
-          value={filters.bedType}
-          onValueChange={(value) => onFilterChange('bedType', value)}
-        >
-          <SelectTrigger className="w-full sm:w-40 font-mono text-sm">
-            <SelectValue placeholder="Bed Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="standard">Standard</SelectItem>
-            <SelectItem value="icu">ICU</SelectItem>
-            <SelectItem value="pediatric">Pediatric</SelectItem>
-            <SelectItem value="bariatric">Bariatric</SelectItem>
-            <SelectItem value="maternity">Maternity</SelectItem>
-          </SelectContent>
-        </Select>
-
         <fieldset className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg bg-muted/50 p-1">
           <legend className="sr-only">Bed status filter</legend>
           {STATUS_FILTERS.map((status) => (
@@ -444,12 +540,12 @@ function WardFilterBar({
 }
 
 function WardBedsContent({
-  admissions,
   beds,
   filteredBeds,
   hasActiveFilters,
   onBedClick,
   onClearFilters,
+  sections,
   viewMode,
   wardId,
 }) {
@@ -475,11 +571,68 @@ function WardBedsContent({
   return (
     <WardBedLayout
       beds={filteredBeds}
-      admissions={admissions}
       onBedClick={onBedClick}
+      sections={sections}
       wardId={wardId}
       viewMode={viewMode}
     />
+  );
+}
+
+function BedOperationsSheet({ bed, onOpenChange, open, section, ward }) {
+  const statusLabel = getBedStatusLabel(bed?.status);
+  const losDays = getLosDaysFromTimestamp(bed?.occupied_since);
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-md">
+        <SheetHeader>
+          <div className="flex items-center gap-3 pr-8">
+            <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+              <Bed className="size-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <SheetTitle className="truncate font-mono text-xl">
+                {bed?.bed_number || 'Bed'}
+              </SheetTitle>
+              <SheetDescription className="sr-only">
+                Operational bed state. No patient details are shown.
+              </SheetDescription>
+            </div>
+          </div>
+        </SheetHeader>
+
+        <SheetBody className="space-y-4 pr-1">
+          <div className="rounded-lg border border-border/70 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <span className="font-mono text-xs uppercase text-muted-foreground">Status</span>
+              <Badge variant="outline" className="font-mono">
+                {statusLabel}
+              </Badge>
+            </div>
+
+            <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-3 text-sm">
+              <dt className="font-mono text-xs uppercase text-muted-foreground">Ward</dt>
+              <dd className="truncate text-foreground">{ward?.name || 'Ward'}</dd>
+
+              <dt className="font-mono text-xs uppercase text-muted-foreground">Section</dt>
+              <dd className="truncate text-foreground">{section?.name || 'Unassigned'}</dd>
+
+              <dt className="font-mono text-xs uppercase text-muted-foreground">LOS</dt>
+              <dd className="font-mono text-foreground">
+                {losDays === null ? 'None' : `${losDays}d`}
+              </dd>
+            </dl>
+          </div>
+
+          <SheetClose asChild>
+            <Button type="button" variant="outline" className="w-full">
+              Close
+            </Button>
+          </SheetClose>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -497,6 +650,7 @@ export function WardDashboard() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState('grid');
   const [filters, setFilters] = useState(EMPTY_WARD_FILTERS);
+  const [selectedBedId, setSelectedBedId] = useState(null);
 
   // Fetch data with React Query
   const {
@@ -508,33 +662,29 @@ export function WardDashboard() {
   } = useWard(wardId);
 
   const {
-    data: beds = [],
-    isLoading: isBedsLoading,
-    isError: isBedsError,
-    refetch: refetchBeds
-  } = useWardBeds(wardId);
+    data: bedMap,
+    isLoading: isBedMapLoading,
+    isError: isBedMapError,
+    error: bedMapError,
+    refetch: refetchBedMap,
+  } = useWardBedMap(wardId);
 
-  const {
-    data: admissions = [],
-    isLoading: isAdmissionsLoading
-  } = useAdmissions({
-    ward: wardId,
-    status: 'admitted',
-    page_size: 200,
-  });
-
-  const {
-    data: sections = [],
-    isLoading: isSectionsLoading
-  } = useWardSections(wardId, {
-    enabled: !!wardId,
-  });
-
-  const isLoading = isWardLoading || isBedsLoading || isAdmissionsLoading || isSectionsLoading;
+  const beds = bedMap?.beds || EMPTY_BEDS;
+  const sections = bedMap?.sections || EMPTY_SECTIONS;
+  const isLoading = isWardLoading || isBedMapLoading;
 
   const filteredBeds = useMemo(() => filterBeds(beds, filters), [beds, filters]);
-  const stats = useMemo(() => buildWardStats(ward, beds), [ward, beds]);
+  const statsSource = useMemo(() => buildWardStatsSource(ward, bedMap), [ward, bedMap]);
+  const stats = useMemo(() => buildWardStats(statsSource, beds), [statsSource, beds]);
   const sectionStats = useMemo(() => buildSectionStats(sections, beds), [sections, beds]);
+  const selectedBed = useMemo(
+    () => beds.find((bed) => bed.id === selectedBedId) || null,
+    [beds, selectedBedId],
+  );
+  const selectedSection = useMemo(
+    () => sections.find((section) => section.id === selectedBed?.section) || null,
+    [sections, selectedBed],
+  );
   const canFilterByStatus = stats.total > 0 && beds.length >= stats.total;
 
   // Handle filter change
@@ -544,13 +694,7 @@ export function WardDashboard() {
 
   // Handle bed click
   const handleBedClick = (bedId) => {
-    const activeAdmission = findActiveAdmissionByBedId(admissions, bedId);
-
-    if (activeAdmission) {
-      navigate(`/admissions/${activeAdmission.id}`);
-    } else {
-      navigate(`/beds/${bedId}`);
-    }
+    setSelectedBedId(bedId);
   };
 
   // Handle new admission
@@ -561,7 +705,7 @@ export function WardDashboard() {
   // Handle refresh
   const handleRefresh = () => {
     refetchWard();
-    refetchBeds();
+    refetchBedMap();
   };
 
   // Clear filters
@@ -577,8 +721,8 @@ export function WardDashboard() {
   }
 
   // Error state
-  if (isWardError || isBedsError) {
-    return <WardDashboardErrorState error={wardError} onRetry={handleRefresh} />;
+  if (isWardError || isBedMapError) {
+    return <WardDashboardErrorState error={wardError || bedMapError} onRetry={handleRefresh} />;
   }
 
   if (!ward) {
@@ -609,12 +753,12 @@ export function WardDashboard() {
       />
 
       <WardBedsContent
-        admissions={admissions}
         beds={beds}
         filteredBeds={filteredBeds}
         hasActiveFilters={hasActiveFilters}
         onBedClick={handleBedClick}
         onClearFilters={clearFilters}
+        sections={sections}
         viewMode={viewMode}
         wardId={ward.id}
       />
@@ -626,6 +770,16 @@ export function WardDashboard() {
           </p>
         </div>
       )}
+
+      <BedOperationsSheet
+        bed={selectedBed}
+        onOpenChange={(open) => {
+          if (!open) setSelectedBedId(null);
+        }}
+        open={!!selectedBed}
+        section={selectedSection}
+        ward={ward}
+      />
     </div>
   );
 }
@@ -634,46 +788,7 @@ export function WardDashboard() {
  * StatCard - Clickable stat card for quick filtering
  */
 function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active }) {
-  const colorClasses = {
-    primary: {
-      bg: 'bg-primary/10',
-      text: 'text-primary',
-      icon: 'text-primary',
-      active: 'ring-2 ring-primary'
-    },
-    emerald: {
-      bg: 'bg-emerald-500/10',
-      text: 'text-emerald-600',
-      icon: 'text-emerald-600',
-      active: 'ring-2 ring-emerald-500'
-    },
-    rose: {
-      bg: 'bg-rose-500/10',
-      text: 'text-rose-600',
-      icon: 'text-rose-600',
-      active: 'ring-2 ring-rose-500'
-    },
-    amber: {
-      bg: 'bg-amber-500/10',
-      text: 'text-amber-600',
-      icon: 'text-amber-600',
-      active: 'ring-2 ring-amber-500'
-    },
-    slate: {
-      bg: 'bg-slate-500/10',
-      text: 'text-slate-600',
-      icon: 'text-slate-600',
-      active: 'ring-2 ring-slate-500'
-    },
-    sky: {
-      bg: 'bg-sky-500/10',
-      text: 'text-sky-600',
-      icon: 'text-sky-600',
-      active: 'ring-2 ring-sky-500'
-    },
-  };
-
-  const colors = colorClasses[color];
+  const colors = STAT_CARD_COLOR_CLASSES[color];
 
   const CardElement = onClick ? 'button' : 'div';
   const interactiveProps = onClick
@@ -716,59 +831,24 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
  * SectionStatCard - Section statistics card
  */
 function SectionStatCard({ section }) {
-  // Get icon for accommodation tier
-  const getTierIcon = (tier) => {
-    switch (tier) {
-      case 'vip':
-        return <Sparkles className="size-3.5" />;
-      case 'private':
-        return <Home className="size-3.5" />;
-      case 'semi_private':
-        return <Users className="size-3.5" />;
-      default:
-        return null;
-    }
-  };
-
-  // Get color for accommodation tier
-  const getTierColor = (tier) => {
-    switch (tier) {
-      case 'vip':
-        return 'text-amber-600 bg-amber-50 border-amber-200';
-      case 'private':
-        return 'text-sky-600 bg-sky-50 border-sky-200';
-      case 'semi_private':
-        return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-      case 'open':
-        return 'text-stone-600 bg-stone-50 border-stone-200';
-      default:
-        return 'text-stone-600 bg-stone-50 border-stone-200';
-    }
-  };
-
-  // Get occupancy color
-  const getOccupancyColor = (rate) => {
-    if (rate >= 90) return 'text-rose-600';
-    if (rate >= 70) return 'text-amber-600';
-    return 'text-emerald-600';
-  };
-
   return (
     <div className="rounded-xl p-4 border border-border/50 bg-card/50 space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          {getTierIcon(section.accommodation_tier)}
+          {getSectionTierIcon(section.accommodation_tier)}
           <h4 className="font-semibold text-sm text-foreground truncate">
             {section.name}
           </h4>
         </div>
-        <Badge
-          variant="outline"
-          className={cn('text-xs shrink-0', getTierColor(section.accommodation_tier))}
-        >
-          {section.accommodation_tier?.replace('_', ' ')}
-        </Badge>
+        {section.accommodation_tier && (
+          <Badge
+            variant="outline"
+            className={cn('text-xs shrink-0', getSectionTierColor(section.accommodation_tier))}
+          >
+            {section.accommodation_tier.replace('_', ' ')}
+          </Badge>
+        )}
       </div>
 
       {/* Stats */}
@@ -785,7 +865,7 @@ function SectionStatCard({ section }) {
           <p className="font-mono text-xs text-muted-foreground">Occupancy</p>
           <p className={cn(
             "font-mono text-lg font-bold",
-            getOccupancyColor(section.occupancyRate)
+            getSectionOccupancyColor(section.occupancyRate)
           )}>
             {section.occupancyRate}%
           </p>

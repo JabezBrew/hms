@@ -9,11 +9,12 @@ use hms_domain::ward::{
     CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
     CreateWardStockRequestRequest, DischargeBlockerActionRequest, DischargeCaseListItem,
     FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
-    MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, PatientVitalsListItem,
-    PatientVitalsListQuery, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
+    MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery,
+    PatientVitalsListItem, PatientVitalsListQuery, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
     ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
-    UpdateWardRequest, UpdateWardSectionRequest, WardBoardGetQuery, WardBoardItem, WardBoardQuery,
-    WardListItem, WardListQuery, WardSectionListItem, WardStockRequestListItem,
+    UpdateWardRequest, UpdateWardSectionRequest, WardBedMapResponse, WardBoardGetQuery,
+    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
+    WardStockRequestListItem,
 };
 use uuid::Uuid;
 
@@ -308,6 +309,35 @@ pub async fn list_ward_beds(
             .ward_services()
             .bed_management()
             .list_ward_beds(&user, id, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/{id}/bed-map",
+    operation_id = "getWardBedMap",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward id")),
+    responses(
+        (status = 200, description = "Ward operational bed map", body = ObjectResponse<WardBedMapResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward not found", body = ApiErrorResponse),
+        (status = 409, description = "Ward bed map could not be loaded", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_ward_bed_map(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<WardBedMapResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .bed_management()
+            .get_ward_bed_map(&user, id)
             .await?,
     ))
 }
@@ -929,7 +959,7 @@ pub async fn complete_discharge(
     operation_id = "getNursingTasks",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(NursingTaskListQuery),
     responses(
         (status = 200, description = "Nursing tasks", body = ListResponse<NursingTaskListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -939,7 +969,7 @@ pub async fn complete_discharge(
 pub async fn list_nursing_tasks(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<NursingTaskListQuery>,
 ) -> Result<Json<ListResponse<NursingTaskListItem>>, ApiError> {
     Ok(Json(
         state

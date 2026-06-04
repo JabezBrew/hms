@@ -210,6 +210,43 @@ pub struct BedListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardBedMapResponse {
+    pub ward_id: Uuid,
+    pub totals: WardBedMapTotals,
+    pub sections: Vec<WardBedMapSection>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+pub struct WardBedMapTotals {
+    pub total_bed_count: i64,
+    pub available_bed_count: i64,
+    pub occupied_bed_count: i64,
+    pub reserved_bed_count: i64,
+    pub cleaning_bed_count: i64,
+    pub blocked_bed_count: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardBedMapSection {
+    pub id: Option<Uuid>,
+    pub code: Option<String>,
+    pub name: String,
+    pub status: Option<WardStatus>,
+    pub totals: WardBedMapTotals,
+    pub beds: Vec<WardBedMapBed>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardBedMapBed {
+    pub id: Uuid,
+    pub ward_id: Uuid,
+    pub section_id: Option<Uuid>,
+    pub bed_code: String,
+    pub status: BedStatus,
+    pub occupied_since: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateWardSectionRequest {
     pub code: String,
     pub name: String,
@@ -378,6 +415,15 @@ pub struct DischargeCaseListItem {
     pub blockers: Vec<DischargeBlocker>,
     pub invoice_summary: DischargeInvoiceSummary,
     pub schedule_follow_up_action: DischargeWorkflowAction,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct NursingTaskListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

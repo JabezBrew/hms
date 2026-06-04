@@ -17,6 +17,7 @@ import {
   useStaffRoles,
   useTransfers,
   useWard,
+  useWardBedMap,
   useWardBeds,
   useWardSections,
   useWardStaff,
@@ -41,6 +42,7 @@ vi.mock('@/features/wards/api', () => ({
     getSections: vi.fn(),
     getTransfers: vi.fn(),
     getWard: vi.fn(),
+    getBedMap: vi.fn(),
     getWardStaff: vi.fn(),
     getWardSections: vi.fn(),
     getWards: vi.fn(),
@@ -80,6 +82,7 @@ describe('useWardQueries Rust V2 behavior', () => {
     wardsApi.getSections.mockResolvedValue([]);
     wardsApi.getTransfers.mockResolvedValue([]);
     wardsApi.getWard.mockResolvedValue({});
+    wardsApi.getBedMap.mockResolvedValue({ beds: [], sections: [], totals: {} });
     wardsApi.getWardStaff.mockResolvedValue([]);
     wardsApi.getWardSections.mockResolvedValue([]);
     wardsApi.getWards.mockResolvedValue([]);
@@ -103,6 +106,7 @@ describe('useWardQueries Rust V2 behavior', () => {
 
     renderHook(() => useWards({ status: 'active' }), { wrapper });
     renderHook(() => useWard('ward-1'), { wrapper });
+    renderHook(() => useWardBedMap('ward-1'), { wrapper });
     renderHook(() => useBeds({ ward: 'ward-1' }), { wrapper });
     renderHook(() => useWardBeds('ward-1', { status: 'available' }), { wrapper });
     renderHook(() => useBed('bed-1'), { wrapper });
@@ -113,6 +117,9 @@ describe('useWardQueries Rust V2 behavior', () => {
         signal: expect.any(AbortSignal),
       });
       expect(wardsApi.getWard).toHaveBeenCalledWith('ward-1', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(wardsApi.getBedMap).toHaveBeenCalledWith('ward-1', {
         signal: expect.any(AbortSignal),
       });
       expect(wardsApi.getBeds).toHaveBeenCalledWith({

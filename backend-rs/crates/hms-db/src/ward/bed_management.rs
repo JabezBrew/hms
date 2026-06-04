@@ -1,7 +1,11 @@
 use chrono::{DateTime, Utc};
-use hms_domain::ward::{BedListItem, BedStatus};
+use hms_domain::ward::{
+    BedListItem, BedStatus, WardBedMapBed, WardBedMapResponse, WardBedMapSection, WardBedMapTotals,
+    WardStatus,
+};
 use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::codec;
@@ -34,6 +38,24 @@ struct BedRow {
     bed_code: String,
     status: String,
     created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct BedMapBedRow {
+    id: Uuid,
+    ward_id: Uuid,
+    section_id: Option<Uuid>,
+    bed_code: String,
+    status: String,
+    occupied_since: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct BedMapSectionRow {
+    id: Uuid,
+    code: String,
+    name: String,
+    status: String,
 }
 
 pub async fn list_ward_beds(
@@ -76,6 +98,111 @@ pub async fn list_ward_beds(
     )
     .await?;
     rows.into_iter().map(bed_from_row).collect()
+}
+
+pub async fn get_ward_bed_map(
+    pool: &PgPool,
+    facility_id: Uuid,
+    ward_id: Uuid,
+) -> anyhow::Result<WardBedMapResponse> {
+    let section_rows = observe_db_query(
+        "ward.bed_management.bed_map.sections",
+        sqlx::query_as::<_, BedMapSectionRow>(
+            r#"
+        SELECT ward_sections.id,
+               ward_sections.code,
+               ward_sections.name,
+               ward_sections.status
+        FROM ward_sections
+        WHERE ward_sections.facility_id = $1
+          AND ward_sections.ward_id = $2
+        ORDER BY ward_sections.created_at ASC, ward_sections.id ASC
+        "#,
+        )
+        .bind(facility_id)
+        .bind(ward_id)
+        .fetch_all(pool),
+    )
+    .await?;
+
+    let bed_rows = observe_db_query(
+        "ward.bed_management.bed_map.beds",
+        sqlx::query_as::<_, BedMapBedRow>(
+            r#"
+        SELECT beds.id,
+               beds.ward_id,
+               beds.section_id,
+               beds.bed_code,
+               beds.status,
+               active_admission.occupied_since
+        FROM beds
+        LEFT JOIN LATERAL (
+            SELECT admission_cases.admitted_at AS occupied_since
+            FROM admission_cases
+            WHERE admission_cases.facility_id = beds.facility_id
+              AND admission_cases.bed_id = beds.id
+              AND admission_cases.status IN ('admitted', 'discharge_pending')
+            ORDER BY admission_cases.admitted_at DESC, admission_cases.id DESC
+            LIMIT 1
+        ) active_admission ON true
+        WHERE beds.facility_id = $1
+          AND beds.ward_id = $2
+        ORDER BY beds.created_at ASC, beds.id ASC
+        "#,
+        )
+        .bind(facility_id)
+        .bind(ward_id)
+        .fetch_all(pool),
+    )
+    .await?;
+
+    let mut sections = Vec::with_capacity(section_rows.len() + 1);
+    let mut section_indexes = HashMap::with_capacity(section_rows.len());
+    for section_row in section_rows {
+        let index = sections.len();
+        section_indexes.insert(section_row.id, index);
+        sections.push(WardBedMapSection {
+            id: Some(section_row.id),
+            code: Some(section_row.code),
+            name: section_row.name,
+            status: Some(codec::decode::<WardStatus>(&section_row.status)?),
+            totals: WardBedMapTotals::default(),
+            beds: Vec::new(),
+        });
+    }
+
+    let mut unassigned_index = None;
+    let mut totals = WardBedMapTotals::default();
+    for row in bed_rows {
+        let bed = bed_map_bed_from_row(row)?;
+        increment_bed_map_totals(&mut totals, bed.status);
+        let section_index = match bed
+            .section_id
+            .and_then(|section_id| section_indexes.get(&section_id).copied())
+        {
+            Some(index) => index,
+            None => *unassigned_index.get_or_insert_with(|| {
+                let index = sections.len();
+                sections.push(WardBedMapSection {
+                    id: None,
+                    code: None,
+                    name: "Unassigned Beds".to_owned(),
+                    status: None,
+                    totals: WardBedMapTotals::default(),
+                    beds: Vec::new(),
+                });
+                index
+            }),
+        };
+        increment_bed_map_totals(&mut sections[section_index].totals, bed.status);
+        sections[section_index].beds.push(bed);
+    }
+
+    Ok(WardBedMapResponse {
+        ward_id,
+        totals,
+        sections,
+    })
 }
 
 pub async fn list_section_beds(
@@ -317,4 +444,26 @@ fn bed_from_row(row: BedRow) -> anyhow::Result<BedListItem> {
         status: codec::decode(&row.status)?,
         created_at: row.created_at,
     })
+}
+
+fn bed_map_bed_from_row(row: BedMapBedRow) -> anyhow::Result<WardBedMapBed> {
+    Ok(WardBedMapBed {
+        id: row.id,
+        ward_id: row.ward_id,
+        section_id: row.section_id,
+        bed_code: row.bed_code,
+        status: codec::decode(&row.status)?,
+        occupied_since: row.occupied_since,
+    })
+}
+
+fn increment_bed_map_totals(totals: &mut WardBedMapTotals, status: BedStatus) {
+    totals.total_bed_count += 1;
+    match status {
+        BedStatus::Available => totals.available_bed_count += 1,
+        BedStatus::Occupied => totals.occupied_bed_count += 1,
+        BedStatus::Reserved => totals.reserved_bed_count += 1,
+        BedStatus::Cleaning => totals.cleaning_bed_count += 1,
+        BedStatus::Closed => totals.blocked_bed_count += 1,
+    }
 }

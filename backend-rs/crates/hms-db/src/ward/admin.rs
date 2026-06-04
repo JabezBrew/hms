@@ -197,6 +197,28 @@ pub async fn get_ward(
     row.map(ward_from_row).transpose()
 }
 
+pub async fn ward_exists(pool: &PgPool, facility_id: Uuid, ward_id: Uuid) -> anyhow::Result<bool> {
+    let exists = observe_db_query(
+        "ward.admin.wards.exists",
+        sqlx::query_scalar::<_, bool>(
+            r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM wards
+            WHERE facility_id = $1
+              AND id = $2
+        )
+        "#,
+        )
+        .bind(facility_id)
+        .bind(ward_id)
+        .fetch_one(pool),
+    )
+    .await?;
+
+    Ok(exists)
+}
+
 pub async fn create_ward(pool: &PgPool, ward: NewWard) -> anyhow::Result<WardListItem> {
     let row = observe_db_query(
         "ward.admin.wards.create",

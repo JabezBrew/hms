@@ -1,591 +1,659 @@
 import Bed from 'lucide-react/dist/esm/icons/bed.js';
-import User from 'lucide-react/dist/esm/icons/user.js';
-import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import Wrench from 'lucide-react/dist/esm/icons/wrench.js';
-import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import Users from 'lucide-react/dist/esm/icons/users.js';
+import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Home from 'lucide-react/dist/esm/icons/house.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import Wrench from 'lucide-react/dist/esm/icons/wrench.js';
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger
+  TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Badge } from '@/components/ui/badge';
 import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import VirtualizedList from '@/components/ui/VirtualizedList';
 
 import { useWardSections } from '@/features/wards/hooks/useWardQueries';
 
-/**
- * WardBedLayout - Chronicle-style bed visualization
- *
- * Features:
- * - Grid view: Visual bed icons with status colors
- * - List view: Detailed rows with patient info
- * - Section grouping with headers
- * - Elegant hover effects and animations
- * - Status-based color coding
- */
-export function WardBedLayout({ beds, admissions, onBedClick, wardId, viewMode = 'grid' }) {
-  // Filter beds for this ward (in case not pre-filtered)
-  const wardBeds = beds.filter(bed => bed.ward === wardId || !wardId);
+const BED_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const EMPTY_ADMISSIONS = [];
+const GLOBAL_VIRTUALIZATION_THRESHOLD = 40;
+const SECTION_VIRTUALIZATION_THRESHOLD = 16;
 
-  // Fetch sections for the ward
-  const { data: sections = [], isLoading: sectionsLoading } = useWardSections(wardId, {
-    enabled: !!wardId,
+const STATUS_CONFIG = {
+  available: {
+    label: 'Vacant',
+    shortLabel: 'Vacant',
+    helper: 'Ready for admission',
+    icon: Bed,
+    dotClass: 'bg-emerald-500',
+    railClass: 'border-l-emerald-500',
+    borderClass: 'border-emerald-200/80 hover:border-emerald-400',
+    bgClass: 'bg-emerald-50/30 hover:bg-emerald-50/70',
+    textClass: 'text-emerald-700',
+    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  occupied: {
+    label: 'Occupied',
+    shortLabel: 'LOS',
+    helper: 'Occupied bed',
+    icon: Users,
+    dotClass: 'bg-rose-500',
+    railClass: 'border-l-rose-500',
+    borderClass: 'border-rose-200/80 hover:border-rose-400',
+    bgClass: 'bg-rose-50/30 hover:bg-rose-50/70',
+    textClass: 'text-rose-700',
+    badgeClass: 'border-rose-200 bg-rose-50 text-rose-700',
+  },
+  cleaning: {
+    label: 'Cleaning',
+    shortLabel: 'Cleaning',
+    helper: 'Being cleaned',
+    icon: Wrench,
+    dotClass: 'bg-amber-500',
+    railClass: 'border-l-amber-500',
+    borderClass: 'border-amber-200/80 hover:border-amber-400',
+    bgClass: 'bg-amber-50/30 hover:bg-amber-50/70',
+    textClass: 'text-amber-700',
+    badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
+  },
+  maintenance: {
+    label: 'Blocked',
+    shortLabel: 'Blocked',
+    helper: 'Unavailable for assignment',
+    icon: Shield,
+    dotClass: 'bg-stone-500',
+    railClass: 'border-l-stone-500',
+    borderClass: 'border-stone-300/80 hover:border-stone-500',
+    bgClass: 'bg-stone-50/40 hover:bg-stone-100/70',
+    textClass: 'text-stone-700',
+    badgeClass: 'border-stone-300 bg-stone-100 text-stone-700',
+  },
+  blocked: {
+    label: 'Blocked',
+    shortLabel: 'Blocked',
+    helper: 'Unavailable for assignment',
+    icon: Shield,
+    dotClass: 'bg-stone-500',
+    railClass: 'border-l-stone-500',
+    borderClass: 'border-stone-300/80 hover:border-stone-500',
+    bgClass: 'bg-stone-50/40 hover:bg-stone-100/70',
+    textClass: 'text-stone-700',
+    badgeClass: 'border-stone-300 bg-stone-100 text-stone-700',
+  },
+  reserved: {
+    label: 'Reserved',
+    shortLabel: 'Reserved',
+    helper: 'Held for incoming admission',
+    icon: Clock,
+    dotClass: 'bg-sky-500',
+    railClass: 'border-l-sky-500',
+    borderClass: 'border-sky-200/80 hover:border-sky-400',
+    bgClass: 'bg-sky-50/30 hover:bg-sky-50/70',
+    textClass: 'text-sky-700',
+    badgeClass: 'border-sky-200 bg-sky-50 text-sky-700',
+  },
+};
+
+const STATUS_ORDER = ['occupied', 'available', 'cleaning', 'maintenance', 'reserved'];
+
+const BED_TYPE_LABELS = {
+  standard: 'Standard',
+  icu: 'ICU',
+  pediatric: 'Pediatric',
+  bariatric: 'Bariatric',
+  maternity: 'Maternity',
+  electric: 'Electric',
+  manual: 'Manual',
+};
+
+function getStatusConfig(status) {
+  return STATUS_CONFIG[canonicalStatus(status)] || STATUS_CONFIG.available;
+}
+
+function canonicalStatus(status) {
+  if (status === 'blocked' || status === 'closed' || status === 'maintenance') return 'maintenance';
+  if (status === 'cleaning') return 'cleaning';
+  if (status === 'reserved') return 'reserved';
+  if (status === 'occupied') return 'occupied';
+  return 'available';
+}
+
+function formatBedType(type) {
+  if (!type) return 'Bed';
+  return BED_TYPE_LABELS[type] || type.replaceAll('_', ' ');
+}
+
+function getLosDays(admissionDate) {
+  if (!admissionDate) return null;
+  const admittedAt = new Date(admissionDate);
+  if (Number.isNaN(admittedAt.getTime())) return null;
+
+  const admittedDay = new Date(
+    admittedAt.getFullYear(),
+    admittedAt.getMonth(),
+    admittedAt.getDate(),
+  );
+  const today = new Date();
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diff = todayDay.getTime() - admittedDay.getTime();
+
+  return Math.max(0, Math.floor(diff / 86_400_000));
+}
+
+function getBedOperationalAdmission(bed, admissions) {
+  if (bed?.occupied_since || bed?.admitted_at || bed?.admission_date) {
+    const admittedAt = bed.occupied_since || bed.admitted_at || bed.admission_date;
+    return {
+      losDays: getLosDays(admittedAt),
+    };
+  }
+
+  const activeAdmission = admissions.find((admission) => {
+    const admissionBedId = admission?.bed?.id || admission?.bed;
+    return admissionBedId === bed.id && admission.status === 'admitted';
   });
 
-  // Group beds by section
-  const bedsBySection = React.useMemo(() => {
-    const grouped = {};
+  if (!activeAdmission) return null;
 
-    wardBeds.forEach(bed => {
-      const sectionId = bed.section || 'unassigned';
-      if (!grouped[sectionId]) {
-        grouped[sectionId] = [];
+  return {
+    losDays: getLosDays(activeAdmission.admission_date),
+  };
+}
+
+function buildSectionGroups(wardBeds, sections) {
+  const grouped = new Map();
+
+  wardBeds.forEach((bed) => {
+    const sectionId = bed.section || 'unassigned';
+    const group = grouped.get(sectionId) || [];
+    group.push(bed);
+    grouped.set(sectionId, group);
+  });
+
+  grouped.forEach((group) => {
+    group.sort((a, b) => BED_COLLATOR.compare(a.bed_number || '', b.bed_number || ''));
+  });
+
+  const sortedGroups = [];
+  const knownSectionIds = new Set();
+  sections
+    .toSorted((a, b) => (a.display_order || 0) - (b.display_order || 0))
+    .forEach((section) => {
+      knownSectionIds.add(section.id);
+      const sectionBeds = grouped.get(section.id);
+      if (sectionBeds) {
+        sortedGroups.push({ section, beds: sectionBeds });
       }
-      grouped[sectionId].push(bed);
     });
 
-    // Sort sections by display_order
-    const sortedGroups = {};
-    sections
-      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-      .forEach(section => {
-        if (grouped[section.id]) {
-          sortedGroups[section.id] = grouped[section.id];
-        }
-      });
-
-    // Add unassigned beds at the end
-    if (grouped.unassigned) {
-      sortedGroups.unassigned = grouped.unassigned;
-    }
-
-    return sortedGroups;
-  }, [wardBeds, sections]);
-
-  // Get section details by ID
-  const getSectionDetails = (sectionId) => {
-    if (sectionId === 'unassigned') {
-      return { id: 'unassigned', name: 'Unassigned Beds', is_active: true };
-    }
-    return sections.find(s => s.id === sectionId);
-  };
-
-  // Get patient info for a bed
-  const getPatientInfo = (bedId) => {
-    const activeAdmission = admissions.find(
-      (admission) => {
-        const admissionBedId = admission?.bed?.id || admission?.bed;
-        return admissionBedId === bedId && admission.status === 'admitted';
-      }
-    );
-
-    if (activeAdmission) {
-      return {
-        name: activeAdmission.patient_name || activeAdmission.patient?.user?.full_name || activeAdmission.patient?.full_name || 'Patient',
-        admissionDate: activeAdmission.admission_date,
-        admissionId: activeAdmission.id,
-        diagnosis: activeAdmission.diagnosis || activeAdmission.reason_for_admission,
-        daysAdmitted: getDaysAdmitted(activeAdmission.admission_date)
-      };
-    }
-
-    return null;
-  };
-
-  // Calculate days admitted
-  const getDaysAdmitted = (admissionDate) => {
-    if (!admissionDate) return 0;
-    const admission = new Date(admissionDate);
-    const today = new Date();
-    const diffTime = Math.abs(today - admission);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  // Format date
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
+  grouped.forEach((beds, sectionId) => {
+    if (sectionId === 'unassigned' || knownSectionIds.has(sectionId)) return;
+    sortedGroups.push({
+      section: { id: sectionId, name: 'Unassigned Section', is_active: true },
+      beds,
     });
-  };
+  });
 
-  // Status configuration
-  const statusConfig = {
-    available: {
-      label: 'Available',
-      color: 'emerald',
-      bgClass: 'bg-emerald-500/10 hover:bg-emerald-500/20',
-      borderClass: 'border-emerald-500/30 hover:border-emerald-500',
-      textClass: 'text-emerald-600',
-      iconClass: 'text-emerald-500',
-      icon: Bed
-    },
-    occupied: {
-      label: 'Occupied',
-      color: 'rose',
-      bgClass: 'bg-rose-500/10 hover:bg-rose-500/20',
-      borderClass: 'border-rose-500/30 hover:border-rose-500',
-      textClass: 'text-rose-600',
-      iconClass: 'text-rose-500',
-      icon: User
-    },
-    reserved: {
-      label: 'Reserved',
-      color: 'amber',
-      bgClass: 'bg-amber-500/10 hover:bg-amber-500/20',
-      borderClass: 'border-amber-500/30 hover:border-amber-500',
-      textClass: 'text-amber-600',
-      iconClass: 'text-amber-500',
-      icon: Clock
-    },
-    maintenance: {
-      label: 'Maintenance',
-      color: 'slate',
-      bgClass: 'bg-slate-500/10 hover:bg-slate-500/20',
-      borderClass: 'border-slate-500/30 hover:border-slate-500',
-      textClass: 'text-slate-500',
-      iconClass: 'text-slate-400',
-      icon: Wrench
-    }
-  };
+  if (grouped.has('unassigned')) {
+    sortedGroups.push({
+      section: { id: 'unassigned', name: 'Unassigned Beds', is_active: true },
+      beds: grouped.get('unassigned'),
+    });
+  }
 
-  // Bed type labels
-  const bedTypeLabels = {
-    'standard': 'Standard',
-    'icu': 'ICU',
-    'pediatric': 'Pediatric',
-    'bariatric': 'Bariatric',
-    'maternity': 'Maternity',
-    'electric': 'Electric',
-    'manual': 'Manual'
-  };
+  return sortedGroups;
+}
+
+function getSectionCounts(beds) {
+  return beds.reduce(
+    (counts, bed) => {
+      const status = canonicalStatus(bed.status);
+      counts.total += 1;
+      counts[status] += 1;
+      return counts;
+    },
+    { total: 0, occupied: 0, available: 0, cleaning: 0, maintenance: 0, reserved: 0 },
+  );
+}
+
+function formatCountLabel(status, count) {
+  const label = getStatusConfig(status).label.toLowerCase();
+  return `${count} ${label}`;
+}
+
+/**
+ * WardBedLayout - compact bed-state visualization.
+ *
+ * The bed grid is an operational capacity surface. It intentionally avoids
+ * patient names and clinical details; LOS is the only admission-derived value.
+ */
+export function WardBedLayout({
+  beds,
+  admissions = EMPTY_ADMISSIONS,
+  onBedClick,
+  sections: providedSections,
+  wardId,
+  viewMode = 'grid',
+}) {
+  const wardBeds = React.useMemo(
+    () => beds.filter((bed) => bed.ward === wardId || !wardId),
+    [beds, wardId],
+  );
+
+  const { data: queriedSections = [] } = useWardSections(wardId, {
+    enabled: !!wardId && !providedSections,
+  });
+  const sections = providedSections || queriedSections;
+
+  const sectionGroups = React.useMemo(
+    () => buildSectionGroups(wardBeds, sections),
+    [wardBeds, sections],
+  );
+
+  const admissionByBedId = React.useMemo(() => {
+    const byBedId = new Map();
+    wardBeds.forEach((bed) => {
+      const admission = getBedOperationalAdmission(bed, admissions);
+      if (admission) byBedId.set(bed.id, admission);
+    });
+    return byBedId;
+  }, [admissions, wardBeds]);
+  const totalBedCount = React.useMemo(
+    () => sectionGroups.reduce((total, group) => total + group.beds.length, 0),
+    [sectionGroups],
+  );
 
   if (viewMode === 'list') {
     return (
       <ListView
-        bedsBySection={bedsBySection}
-        getSectionDetails={getSectionDetails}
-        statusConfig={statusConfig}
-        bedTypeLabels={bedTypeLabels}
-        getPatientInfo={getPatientInfo}
-        formatDate={formatDate}
+        admissionByBedId={admissionByBedId}
         onBedClick={onBedClick}
+        sectionGroups={sectionGroups}
+        totalBedCount={totalBedCount}
       />
     );
   }
 
   return (
     <GridView
-      bedsBySection={bedsBySection}
-      getSectionDetails={getSectionDetails}
-      statusConfig={statusConfig}
-      bedTypeLabels={bedTypeLabels}
-      getPatientInfo={getPatientInfo}
-      formatDate={formatDate}
+      admissionByBedId={admissionByBedId}
       onBedClick={onBedClick}
+      sectionGroups={sectionGroups}
+      totalBedCount={totalBedCount}
     />
   );
 }
 
-/**
- * SectionHeader - Section title with metadata
- */
-function SectionHeader({ section }) {
-  if (!section) return null;
-
-  // Get icon for accommodation tier
-  const getTierIcon = (tier) => {
-    switch (tier) {
-      case 'vip':
-        return <Sparkles className="size-4" />;
-      case 'private':
-        return <Home className="size-4" />;
-      case 'semi_private':
-        return <Users className="size-4" />;
-      default:
-        return null;
-    }
-  };
-
-  // Get color for accommodation tier
-  const getTierColor = (tier) => {
-    switch (tier) {
-      case 'vip':
-        return 'text-amber-600 bg-amber-50 border-amber-200';
-      case 'private':
-        return 'text-sky-600 bg-sky-50 border-sky-200';
-      case 'semi_private':
-        return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-      case 'open':
-        return 'text-stone-600 bg-stone-50 border-stone-200';
-      default:
-        return 'text-stone-600 bg-stone-50 border-stone-200';
-    }
-  };
-
+function SectionHeader({ section, beds }) {
+  const counts = getSectionCounts(beds);
   const isUnassigned = section.id === 'unassigned';
 
   return (
-    <div className="flex items-center gap-3 pb-4 mb-6 border-b border-border/50">
-      {/* Section name with tier icon */}
-      <div className="flex items-center gap-2">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex min-w-0 items-center gap-2">
         {!isUnassigned && getTierIcon(section.accommodation_tier)}
-        <h3 className="font-heading text-xl font-semibold text-foreground">
+        <h3 className="truncate font-heading text-base font-semibold text-foreground">
           {section.name}
         </h3>
       </div>
 
-      {/* Badges */}
-      {!isUnassigned && (
-        <div className="flex items-center gap-2">
-          {/* Accommodation tier badge */}
-          <Badge
-            variant="outline"
-            className={cn('text-xs capitalize', getTierColor(section.accommodation_tier))}
-          >
-            {section.accommodation_tier?.replace('_', ' ')}
-          </Badge>
-
-          {/* Gender restriction badge */}
-          {section.gender_restriction === 'male_only' && (
-            <Badge variant="outline" className="text-xs text-sky-700 bg-sky-50 border-sky-200">
-              Male Only
-            </Badge>
-          )}
-          {section.gender_restriction === 'female_only' && (
-            <Badge variant="outline" className="text-xs text-rose-700 bg-rose-50 border-rose-200">
-              Female Only
-            </Badge>
-          )}
-
-          {/* Isolation capability */}
-          {section.is_isolation_capable && (
-            <Badge variant="outline" className="text-xs">
-              <Shield className="size-3 mr-1" />
-              Isolation
-            </Badge>
-          )}
-        </div>
-      )}
-
-      {/* Bed count */}
-      <span className="ml-auto font-mono text-sm text-muted-foreground">
-        {section.bed_count || section.available_beds_count || 0} beds
+      <span className="font-mono text-xs text-muted-foreground">
+        {counts.total} beds
       </span>
-    </div>
-  );
-}
 
-/**
- * GridView - Visual bed grid with icons
- */
-function GridView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabels, getPatientInfo, formatDate, onBedClick }) {
-  return (
-    <div className="space-y-8">
-      {/* Iterate through sections */}
-      {Object.entries(bedsBySection).map(([sectionId, beds]) => {
-        const section = getSectionDetails(sectionId);
-        if (!section) return null;
-
-        return (
-          <div key={sectionId} className="space-y-4">
-            {/* Section Header */}
-            <SectionHeader section={section} />
-
-            <VirtualizedGrid
-              items={beds}
-              minItemWidth={160}
-              rowHeight={200}
-              gap={16}
-              getItemKey={(bed) => bed.id}
-              renderItem={(bed) => {
-                const config = statusConfig[bed.status] || statusConfig.available;
-                const StatusIcon = config.icon;
-                const patientInfo = getPatientInfo(bed.id);
-
-                return (
-                  <TooltipProvider>
-                    <Tooltip delayDuration={200}>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => onBedClick(bed.id)}
-                          className={cn(
-                            "relative w-full rounded-xl border-2 p-4 text-left cursor-pointer transition-all duration-200",
-                            "hover:shadow-lg hover:-translate-y-0.5",
-                            config.bgClass,
-                            config.borderClass
-                          )}
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className={cn("p-2 rounded-lg", `bg-${config.color}-500/20`)}>
-                              <Bed className={cn("size-5", config.iconClass)} />
-                            </div>
-                            <span className={cn(
-                              "font-mono text-lg font-bold",
-                              config.textClass
-                            )}>
-                              {bed.bed_number}
-                            </span>
-                          </div>
-
-                          <div className="space-y-1">
-                            <div className={cn(
-                              "flex items-center gap-1.5",
-                              config.textClass
-                            )}>
-                              <StatusIcon className="size-3.5" />
-                              <span className="font-mono text-xs font-medium">
-                                {config.label}
-                              </span>
-                            </div>
-                            <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
-                              {bedTypeLabels[bed.bed_type] || bed.bed_type}
-                            </p>
-                          </div>
-
-                          {patientInfo && (
-                            <div className="mt-3 pt-3 border-t border-border/50">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {patientInfo.name}
-                              </p>
-                              <p className="font-mono text-[10px] text-muted-foreground">
-                                Day {patientInfo.daysAdmitted}
-                              </p>
-                            </div>
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs p-0">
-                        <BedTooltip
-                          bed={bed}
-                          config={config}
-                          bedTypeLabels={bedTypeLabels}
-                          patientInfo={patientInfo}
-                          formatDate={formatDate}
-                        />
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                );
-              }}
-            />
-          </div>
-        );
-      })}
-
-      {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-6 py-4 border-t border-border/50">
-        {Object.entries(statusConfig).map(([status, config]) => (
-          <div key={status} className="flex items-center gap-2">
-            <div className={cn(
-              "size-3 rounded-full",
-              `bg-${config.color}-500`
-            )} />
-            <span className="font-mono text-xs text-muted-foreground">
-              {config.label}
-            </span>
-          </div>
+      <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
+        {STATUS_ORDER.map((status) => (
+          <SectionCount key={status} count={counts[status]} status={status} />
         ))}
       </div>
+
+      {!isUnassigned && (
+        <SectionBadges section={section} />
+      )}
     </div>
   );
 }
 
-/**
- * ListView - Detailed table-like list
- */
-function ListView({ bedsBySection, getSectionDetails, statusConfig, bedTypeLabels, getPatientInfo, formatDate, onBedClick }) {
+function SectionCount({ count, status }) {
+  const config = getStatusConfig(status);
+
   return (
-    <div className="space-y-8">
-      {/* Iterate through sections */}
-      {Object.entries(bedsBySection).map(([sectionId, beds]) => {
-        const section = getSectionDetails(sectionId);
-        if (!section) return null;
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className={cn('size-1.5 rounded-full', config.dotClass)} aria-hidden="true" />
+      {formatCountLabel(status, count)}
+    </span>
+  );
+}
 
-        return (
-          <div key={sectionId} className="space-y-4">
-            {/* Section Header */}
-            <SectionHeader section={section} />
-
-            <VirtualizedList
-              items={beds}
-              estimateSize={120}
-              gap={8}
-              getItemKey={(bed) => bed.id}
-              renderItem={(bed) => {
-                const config = statusConfig[bed.status] || statusConfig.available;
-                const StatusIcon = config.icon;
-                const patientInfo = getPatientInfo(bed.id);
-
-                return (
-                  <button
-                    type="button"
-                    onClick={() => onBedClick(bed.id)}
-                    className={cn(
-                      "flex w-full items-center gap-4 p-4 rounded-xl border text-left cursor-pointer transition-all",
-                      "hover:shadow-md hover:border-border",
-                      "bg-card/50 border-border/50"
-                    )}
-                  >
-                    <div className={cn(
-                      "p-3 rounded-xl shrink-0",
-                      config.bgClass
-                    )}>
-                      <Bed className={cn("size-5", config.iconClass)} />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-lg font-bold text-foreground">
-                          Bed {bed.bed_number}
-                        </span>
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono",
-                          config.bgClass,
-                          config.textClass
-                        )}>
-                          <StatusIcon className="size-3" />
-                          {config.label}
-                        </span>
-                        <span className="font-mono text-xs text-muted-foreground uppercase">
-                          {bedTypeLabels[bed.bed_type] || bed.bed_type}
-                        </span>
-                      </div>
-
-                      {patientInfo ? (
-                        <div className="flex items-center gap-4 mt-1.5">
-                          <div className="flex items-center gap-1.5 text-sm text-foreground">
-                            <User className="size-3.5 text-muted-foreground" />
-                            <span className="font-medium">{patientInfo.name}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                            <Calendar className="size-3" />
-                            {formatDate(patientInfo.admissionDate)}
-                          </div>
-                          <div className="font-mono text-xs text-muted-foreground">
-                            Day {patientInfo.daysAdmitted}
-                          </div>
-                          {patientInfo.diagnosis && (
-                            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {patientInfo.diagnosis}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {bed.status === 'available' && 'Ready for admission'}
-                          {bed.status === 'reserved' && 'Reserved for incoming patient'}
-                          {bed.status === 'maintenance' && 'Under maintenance'}
-                        </p>
-                      )}
-                    </div>
-
-                    {bed.total_rate && (
-                      <div className="text-right shrink-0">
-                        <p className="font-mono text-sm font-medium text-foreground">
-                          ${bed.total_rate}
-                        </p>
-                        <p className="font-mono text-[10px] text-muted-foreground uppercase">
-                          per night
-                        </p>
-                      </div>
-                    )}
-
-                    <ChevronRight className="size-5 text-muted-foreground shrink-0" />
-                  </button>
-                );
-              }}
-            />
-          </div>
-        );
-      })}
+function SectionBadges({ section }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {section.accommodation_tier && (
+        <Badge
+          variant="outline"
+          className={cn('h-6 capitalize', getTierColor(section.accommodation_tier))}
+        >
+          {section.accommodation_tier.replace('_', ' ')}
+        </Badge>
+      )}
+      {section.gender_restriction === 'male_only' && (
+        <Badge variant="outline" className="h-6 border-sky-200 bg-sky-50 text-sky-700">
+          Male Only
+        </Badge>
+      )}
+      {section.gender_restriction === 'female_only' && (
+        <Badge variant="outline" className="h-6 border-rose-200 bg-rose-50 text-rose-700">
+          Female Only
+        </Badge>
+      )}
+      {section.is_isolation_capable && (
+        <Badge variant="outline" className="h-6">
+          <Shield className="mr-1 size-3" aria-hidden="true" />
+          Isolation
+        </Badge>
+      )}
     </div>
   );
 }
 
-/**
- * BedTooltip - Rich tooltip content for beds
- */
-function BedTooltip({ bed, config, bedTypeLabels, patientInfo, formatDate }) {
+function getTierIcon(tier) {
+  switch (tier) {
+    case 'vip':
+      return <Sparkles className="size-4 text-amber-600" aria-hidden="true" />;
+    case 'private':
+      return <Home className="size-4 text-sky-600" aria-hidden="true" />;
+    case 'semi_private':
+      return <Users className="size-4 text-emerald-600" aria-hidden="true" />;
+    default:
+      return null;
+  }
+}
+
+function getTierColor(tier) {
+  switch (tier) {
+    case 'vip':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'private':
+      return 'border-sky-200 bg-sky-50 text-sky-700';
+    case 'semi_private':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'open':
+      return 'border-stone-200 bg-stone-50 text-stone-700';
+    default:
+      return 'border-stone-200 bg-stone-50 text-stone-700';
+  }
+}
+
+function GridView({ admissionByBedId, onBedClick, sectionGroups, totalBedCount }) {
+  const virtualizationThreshold = totalBedCount >= GLOBAL_VIRTUALIZATION_THRESHOLD
+    ? 1
+    : SECTION_VIRTUALIZATION_THRESHOLD;
+
   return (
-    <div className="p-4 space-y-3">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <TooltipProvider>
+      <div className="space-y-3">
+        <BedMapLegend />
+
+        {sectionGroups.map(({ section, beds }) => (
+          <Collapsible key={section.id} defaultOpen className="rounded-lg border border-border bg-card/60">
+            <div className="flex items-start gap-3 border-b border-border/70 px-4 py-3">
+              <SectionHeader section={section} beds={beds} />
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="mt-0.5 size-7 shrink-0 text-muted-foreground"
+                  aria-label={`Toggle ${section.name}`}
+                >
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent>
+              <div className="p-3">
+                <VirtualizedGrid
+                  items={beds}
+                  minItemWidth={146}
+                  rowHeight={58}
+                  gap={8}
+                  threshold={virtualizationThreshold}
+                  getItemKey={(bed) => bed.id}
+                  renderItem={(bed) => (
+                    <BedCell
+                      admission={admissionByBedId.get(bed.id)}
+                      bed={bed}
+                      onBedClick={onBedClick}
+                    />
+                  )}
+                />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        ))}
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function ListView({ admissionByBedId, onBedClick, sectionGroups, totalBedCount }) {
+  const virtualizationThreshold = totalBedCount >= GLOBAL_VIRTUALIZATION_THRESHOLD
+    ? 1
+    : SECTION_VIRTUALIZATION_THRESHOLD;
+
+  return (
+    <TooltipProvider>
+      <div className="space-y-3">
+        <BedMapLegend />
+
+        {sectionGroups.map(({ section, beds }) => (
+          <Collapsible key={section.id} defaultOpen className="rounded-lg border border-border bg-card/60">
+            <div className="flex items-start gap-3 border-b border-border/70 px-4 py-3">
+              <SectionHeader section={section} beds={beds} />
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="mt-0.5 size-7 shrink-0 text-muted-foreground"
+                  aria-label={`Toggle ${section.name}`}
+                >
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent>
+              <div className="p-3">
+                <VirtualizedList
+                  items={beds}
+                  estimateSize={52}
+                  gap={6}
+                  threshold={virtualizationThreshold}
+                  getItemKey={(bed) => bed.id}
+                  renderItem={(bed) => (
+                    <BedStrip
+                      admission={admissionByBedId.get(bed.id)}
+                      bed={bed}
+                      onBedClick={onBedClick}
+                    />
+                  )}
+                />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        ))}
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function BedMapLegend() {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-card/50 px-4 py-3">
+      <div>
+        <h2 className="font-heading text-base font-semibold text-foreground">Bay Map Microgrid</h2>
+        <p className="text-sm text-muted-foreground">Physical bed capacity and operations</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        {STATUS_ORDER.map((status) => {
+          const config = getStatusConfig(status);
+          return (
+            <span key={status} className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              <span className={cn('h-1.5 w-4 rounded-full', config.dotClass)} aria-hidden="true" />
+              {config.label}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BedCell({ admission, bed, onBedClick }) {
+  const config = getStatusConfig(bed.status);
+  const StatusIcon = config.icon;
+  const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
+    ? `LOS ${admission.losDays}d`
+    : null;
+  const secondaryLabel = bed.status === 'occupied'
+    ? losLabel || config.label
+    : config.shortLabel;
+  const ariaLabel = [
+    bed.bed_number,
+    config.label,
+    losLabel,
+  ].filter(Boolean).join(', ');
+
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={() => onBedClick(bed.id)}
+          className={cn(
+            'group flex min-h-[58px] w-full items-center gap-3 rounded-md border border-l-[3px] bg-background px-3 py-2 text-left transition-colors',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            config.railClass,
+            config.borderClass,
+            config.bgClass,
+          )}
+          aria-label={ariaLabel}
+        >
+          <StatusIcon className={cn('size-4 shrink-0', config.textClass)} aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-mono text-sm font-semibold leading-5 text-foreground">
+              {bed.bed_number}
+            </span>
+            <span className={cn('block truncate font-mono text-xs leading-4', config.textClass)}>
+              {secondaryLabel}
+            </span>
+          </span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-xs p-0">
+        <BedTooltip admission={admission} bed={bed} config={config} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function BedStrip({ admission, bed, onBedClick }) {
+  const config = getStatusConfig(bed.status);
+  const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
+    ? `LOS ${admission.losDays}d`
+    : null;
+
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={() => onBedClick(bed.id)}
+          className={cn(
+            'flex min-h-[48px] w-full items-center gap-3 rounded-md border border-l-[3px] bg-background px-3 py-2 text-left transition-colors',
+            'hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            config.railClass,
+            config.borderClass,
+          )}
+          aria-label={[bed.bed_number, config.label, losLabel].filter(Boolean).join(', ')}
+        >
+          <span className="min-w-[5.5rem] font-mono text-sm font-semibold text-foreground">
+            {bed.bed_number}
+          </span>
+          <Badge variant="outline" className={cn('h-6 shrink-0 font-mono text-[11px]', config.badgeClass)}>
+            {config.label}
+          </Badge>
+          {losLabel && (
+            <span className={cn('font-mono text-xs', config.textClass)}>
+              {losLabel}
+            </span>
+          )}
+          <span className="ml-auto truncate font-mono text-xs capitalize text-muted-foreground">
+            {formatBedType(bed.bed_type)}
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-xs p-0">
+        <BedTooltip admission={admission} bed={bed} config={config} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function BedTooltip({ admission, bed, config }) {
+  const losLabel = admission?.losDays !== null && admission?.losDays !== undefined
+    ? `LOS ${admission.losDays}d`
+    : null;
+
+  return (
+    <div className="space-y-3 p-3">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h4 className="font-mono font-bold text-foreground">
-            Bed {bed.bed_number}
+          <h4 className="font-mono text-sm font-bold text-foreground">
+            {bed.bed_number}
           </h4>
-          <p className="font-mono text-xs text-muted-foreground">
-            {bedTypeLabels[bed.bed_type] || bed.bed_type}
+          <p className="font-mono text-xs capitalize text-muted-foreground">
+            {formatBedType(bed.bed_type)}
           </p>
         </div>
-        <span className={cn(
-          "px-2 py-1 rounded-full text-xs font-mono",
-          config.bgClass,
-          config.textClass
-        )}>
+        <Badge variant="outline" className={cn('font-mono text-[11px]', config.badgeClass)}>
           {config.label}
-        </span>
+        </Badge>
       </div>
 
-      {/* Rate */}
+      <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+        <div>
+          <p className="text-muted-foreground">Status</p>
+          <p className={cn('font-medium', config.textClass)}>{config.helper}</p>
+        </div>
+        {losLabel && (
+          <div>
+            <p className="text-muted-foreground">Length of stay</p>
+            <p className={cn('font-medium', config.textClass)}>{losLabel}</p>
+          </div>
+        )}
+      </div>
+
       {bed.total_rate && (
-        <div className="flex items-baseline gap-1">
-          <span className="font-mono text-lg font-bold text-foreground">
-            ${bed.total_rate}
-          </span>
-          <span className="font-mono text-xs text-muted-foreground">
-            /night
-          </span>
+        <div className="border-t border-border pt-2 font-mono text-xs text-muted-foreground">
+          Rate {bed.total_rate}
         </div>
       )}
 
-      {/* Patient Info */}
-      {patientInfo && (
-        <div className="pt-3 border-t border-border space-y-2">
-          <div className="flex items-center gap-2">
-            <User className="size-4 text-muted-foreground" />
-            <span className="font-medium text-foreground">
-              {patientInfo.name}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="size-3.5" />
-            Admitted {formatDate(patientInfo.admissionDate)}
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Clock className="size-3.5 text-muted-foreground" />
-            <span className="font-mono text-amber-600">
-              Day {patientInfo.daysAdmitted}
-            </span>
-          </div>
-          {patientInfo.diagnosis && (
-            <div className="flex items-start gap-2 text-sm text-muted-foreground">
-              <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
-              <span className="line-clamp-2">{patientInfo.diagnosis}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Click hint */}
-      <p className="font-mono text-[10px] text-muted-foreground text-center pt-2">
-        Click to {patientInfo ? 'view admission' : 'view details'}
-      </p>
     </div>
   );
 }

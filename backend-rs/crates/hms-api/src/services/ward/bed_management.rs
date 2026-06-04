@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use hms_db::ward::{BedUpdate, NewBed};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
-use hms_domain::ward::{BedListItem, CreateBedRequest, UpdateBedRequest};
+use hms_domain::ward::{BedListItem, CreateBedRequest, UpdateBedRequest, WardBedMapResponse};
 use uuid::Uuid;
 
 use super::common;
@@ -80,6 +80,34 @@ impl BedManagementService {
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
         }))
+    }
+
+    pub async fn get_ward_bed_map(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<WardBedMapResponse>, ApiError> {
+        common::require_patient_workflow_access(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::WardView,
+        )?;
+        let ward_exists =
+            hms_db::ward::ward_exists(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| ApiError::conflict("ward_load_failed", "Ward could not be loaded."))?;
+        if !ward_exists {
+            return Err(ApiError::not_found("ward_not_found", "Ward was not found."));
+        }
+
+        let bed_map =
+            hms_db::ward::get_ward_bed_map(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("ward_bed_map_failed", "Ward bed map could not be loaded.")
+                })?;
+
+        Ok(object(bed_map))
     }
 
     pub async fn get_bed(

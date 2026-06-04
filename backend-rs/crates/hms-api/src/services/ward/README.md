@@ -33,6 +33,10 @@ lives in `hms-db::ward`.
   patient or ward visibility checks before service data is returned.
 - Lists must stay bounded and use deterministic cursor or server-side
   pagination behavior.
+- Operational bed maps are complete ward snapshots. Keep them separate from
+  paginated bed-management lists and return only bed state, section placement,
+  and operational occupancy timestamps after patient-workflow access is
+  authorized.
 - Admission and bed state transitions must be coordinated through the service
   interface; callers should not assemble them with independent repository calls.
 - MAR, observation, and handoff paths must keep PHI out of logs and metric

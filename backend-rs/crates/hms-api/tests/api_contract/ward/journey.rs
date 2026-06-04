@@ -381,6 +381,9 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     assert_eq!(reserve_response.status(), StatusCode::OK);
     let reserve_body = json_body(reserve_response).await;
     assert!(reserve_body["data"]["bed_id"].is_string());
+    let reserved_bed_id = reserve_body["data"]["bed_id"]
+        .as_str()
+        .expect("reserved bed id exists");
 
     let inactive_admission_detail = app
         .clone()
@@ -440,6 +443,74 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         active_admission_detail_body["data"]["admission_status"],
         "admitted"
     );
+
+    let occupied_beds_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/{ward_id}/beds?limit=100"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("occupied ward beds list succeeds");
+    assert_eq!(occupied_beds_response.status(), StatusCode::OK);
+    let occupied_beds_body = json_body(occupied_beds_response).await;
+    let occupied_bed = occupied_beds_body["data"]
+        .as_array()
+        .expect("beds are an array")
+        .iter()
+        .find(|bed| bed["id"] == reserved_bed_id)
+        .expect("reserved bed appears in ward bed list");
+    assert!(occupied_bed.get("occupied_since").is_none());
+    assert!(occupied_bed.get("active_admission_id").is_none());
+    assert!(occupied_bed.get("admitted_at").is_none());
+    assert!(occupied_bed.get("patient_id").is_none());
+    assert!(occupied_bed.get("patient_code").is_none());
+    assert!(occupied_bed.get("patient_display_name").is_none());
+
+    let bed_map_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/{ward_id}/bed-map"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward bed map succeeds");
+    assert_eq!(bed_map_response.status(), StatusCode::OK);
+    let bed_map_body = json_body(bed_map_response).await;
+    assert_eq!(bed_map_body["data"]["ward_id"], ward_id);
+    assert!(
+        bed_map_body["data"]["totals"]["total_bed_count"]
+            .as_i64()
+            .expect("bed map total is numeric")
+            >= 1
+    );
+    assert_eq!(bed_map_body["data"]["totals"]["occupied_bed_count"], 1);
+    let bed_map_bed = bed_map_body["data"]["sections"]
+        .as_array()
+        .expect("bed map sections are an array")
+        .iter()
+        .flat_map(|section| {
+            section["beds"]
+                .as_array()
+                .expect("bed map section beds are arrays")
+                .iter()
+        })
+        .find(|bed| bed["id"] == reserved_bed_id)
+        .expect("reserved bed appears in ward bed map");
+    assert!(bed_map_bed["occupied_since"].is_string());
+    assert!(bed_map_bed.get("active_admission_id").is_none());
+    assert!(bed_map_bed.get("admission_id").is_none());
+    assert!(bed_map_bed.get("patient_id").is_none());
+    assert!(bed_map_bed.get("patient_code").is_none());
+    assert!(bed_map_bed.get("patient_display_name").is_none());
 
     let cancellable_case = app
         .clone()

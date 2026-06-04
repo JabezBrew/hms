@@ -79,7 +79,6 @@ describe('Rust V2 wards bridge', () => {
         occupied_beds_count: 5,
         reserved_beds_count: 2,
         cleaning_beds_count: 1,
-        maintenance_beds_count: 1,
         occupancy_rate: 25,
         is_active: true,
         status: 'active',
@@ -258,6 +257,158 @@ describe('Rust V2 wards bridge', () => {
         }),
       }),
     ]);
+  });
+
+  it('maps ward beds without admission-derived occupancy timing', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'bed-1',
+              ward_id: 'ward-1',
+              section_id: 'section-a',
+              bed_code: 'A-01',
+              status: 'occupied',
+              created_at: '2026-05-12T09:06:00Z',
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const beds = await wardsApi.getBeds({ ward: 'ward-1', page_size: 200 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/ward-1/beds?limit=100',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(beds).toEqual([
+      expect.objectContaining({
+        id: 'bed-1',
+        ward: 'ward-1',
+        section: 'section-a',
+        bed_number: 'A-01',
+        status: 'occupied',
+      }),
+    ]);
+    expect(beds[0]).not.toHaveProperty('occupied_since');
+    expect(beds[0]).not.toHaveProperty('active_admission_id');
+    expect(beds[0]).not.toHaveProperty('admitted_at');
+    expect(beds[0]).not.toHaveProperty('admission_date');
+    expect(beds[0]).not.toHaveProperty('patient_id');
+    expect(beds[0]).not.toHaveProperty('patient_display_name');
+  });
+
+  it('loads the complete operational ward bed map through the Rust V2 bed-map endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            ward_id: 'ward-1',
+            totals: {
+              total_bed_count: 2,
+              available_bed_count: 1,
+              occupied_bed_count: 1,
+              reserved_bed_count: 0,
+              cleaning_bed_count: 0,
+              blocked_bed_count: 0,
+            },
+            sections: [
+              {
+                id: 'section-a',
+                code: 'A',
+                name: 'Bay A',
+                status: 'active',
+                totals: {
+                  total_bed_count: 2,
+                  available_bed_count: 1,
+                  occupied_bed_count: 1,
+                  reserved_bed_count: 0,
+                  cleaning_bed_count: 0,
+                  blocked_bed_count: 0,
+                },
+                beds: [
+                  {
+                    id: 'bed-1',
+                    ward_id: 'ward-1',
+                    section_id: 'section-a',
+                    bed_code: 'A-01',
+                    status: 'occupied',
+                    occupied_since: '2026-05-12T08:00:00Z',
+                  },
+                  {
+                    id: 'bed-2',
+                    ward_id: 'ward-1',
+                    section_id: 'section-a',
+                    bed_code: 'A-02',
+                    status: 'available',
+                    occupied_since: null,
+                  },
+                ],
+              },
+            ],
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const bedMap = await wardsApi.getBedMap('ward-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/ward-1/bed-map',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(bedMap).toEqual(expect.objectContaining({
+      ward_id: 'ward-1',
+      totals: expect.objectContaining({
+        total_beds: 2,
+        occupied_beds_count: 1,
+        available_beds_count: 1,
+      }),
+      sections: [
+        expect.objectContaining({
+          id: 'section-a',
+          name: 'Bay A',
+          bed_count: 2,
+        }),
+      ],
+    }));
+    expect(bedMap.beds).toEqual([
+      expect.objectContaining({
+        id: 'bed-1',
+        ward: 'ward-1',
+        section: 'section-a',
+        bed_number: 'A-01',
+        status: 'occupied',
+        occupied_since: '2026-05-12T08:00:00Z',
+      }),
+      expect.objectContaining({
+        id: 'bed-2',
+        bed_number: 'A-02',
+        status: 'available',
+      }),
+    ]);
+    expect(bedMap.beds[0]).not.toHaveProperty('active_admission_id');
+    expect(bedMap.beds[0]).not.toHaveProperty('admission_id');
+    expect(bedMap.beds[0]).not.toHaveProperty('patient_id');
   });
 
   it('creates wards through the Rust V2 ward setup contract', async () => {

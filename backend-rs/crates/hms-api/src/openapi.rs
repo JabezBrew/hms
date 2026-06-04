@@ -348,6 +348,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::ward::get_admission_case,
         crate::handlers::ward::get_admission,
         crate::handlers::ward::get_bed,
+        crate::handlers::ward::get_ward_bed_map,
         crate::handlers::ward::get_discharge,
         crate::handlers::ward::get_ward,
         crate::handlers::ward::get_ward_section,

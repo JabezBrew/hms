@@ -12,7 +12,9 @@ export const wardKeys = {
   beds: () => [...wardKeys.all, 'beds'],
   bedsList: (filters) => [...wardKeys.beds(), 'list', { filters }],
   bed: (id) => [...wardKeys.beds(), id],
-  wardBeds: (wardId, filters) => [...wardKeys.detail(wardId), 'beds', { filters }],
+  wardBedsRoot: (wardId) => [...wardKeys.detail(wardId), 'beds'],
+  wardBeds: (wardId, filters) => [...wardKeys.wardBedsRoot(wardId), { filters }],
+  wardBedMap: (wardId) => [...wardKeys.detail(wardId), 'bed-map'],
   availableBeds: (filters) => [...wardKeys.beds(), 'available', { filters }],
   transfers: () => [...wardKeys.all, 'transfers'],
   transfersList: (filters) => [...wardKeys.transfers(), 'list', { filters }],
@@ -38,6 +40,22 @@ export const wardKeys = {
   staffRoles: () => [...wardKeys.all, 'staffRoles'],
   staffRolesList: (filters) => [...wardKeys.staffRoles(), 'list', { filters }],
 };
+
+function invalidateWardBedState(queryClient, wardId) {
+  if (!wardId) return;
+
+  queryClient.invalidateQueries({ queryKey: wardKeys.wardBedsRoot(wardId) });
+  queryClient.invalidateQueries({ queryKey: wardKeys.wardBedMap(wardId) });
+  queryClient.invalidateQueries({ queryKey: wardKeys.detail(wardId), exact: true });
+}
+
+function invalidateWardSectionState(queryClient, wardId) {
+  if (!wardId) return;
+
+  queryClient.invalidateQueries({ queryKey: wardKeys.wardSections(wardId) });
+  queryClient.invalidateQueries({ queryKey: wardKeys.wardBedMap(wardId) });
+  queryClient.invalidateQueries({ queryKey: wardKeys.detail(wardId), exact: true });
+}
 
 /**
  * Get wards API root information
@@ -213,6 +231,19 @@ export function useWardBeds(wardId, filters = {}) {
 }
 
 /**
+ * Get the complete operational bed map for a ward.
+ * @param {string} wardId - Ward ID
+ * @returns {Object} Query result
+ */
+export function useWardBedMap(wardId) {
+  return useQuery({
+    queryKey: wardKeys.wardBedMap(wardId),
+    queryFn: ({ signal }) => wardsApi.getBedMap(wardId, { signal }),
+    enabled: !!wardId,
+  });
+}
+
+/**
  * Get a single bed by ID
  * @param {string} id - Bed ID
  * @returns {Object} Query result
@@ -239,11 +270,7 @@ export function useCreateBed() {
       queryClient.invalidateQueries({ queryKey: wardKeys.beds() });
 
       // If the bed has a ward, also invalidate that ward's beds
-      if (data && data.ward) {
-        queryClient.invalidateQueries({ 
-          queryKey: wardKeys.wardBeds(data.ward) 
-        });
-      }
+      invalidateWardBedState(queryClient, data?.ward ?? data?.ward_id);
     },
   });
 }
@@ -269,18 +296,10 @@ export function useUpdateBed() {
       });
 
       // If the bed has a ward, also invalidate that ward's beds
-      if (responseData && responseData.ward) {
-        queryClient.invalidateQueries({ 
-          queryKey: wardKeys.wardBeds(responseData.ward) 
-        });
-      }
+      invalidateWardBedState(queryClient, responseData?.ward ?? responseData?.ward_id);
 
       // If the bed was moved from one ward to another, invalidate both wards
-      if (variables.data && variables.data.ward && responseData && responseData.ward !== variables.data.ward) {
-        queryClient.invalidateQueries({ 
-          queryKey: wardKeys.wardBeds(variables.data.ward) 
-        });
-      }
+      invalidateWardBedState(queryClient, variables.data?.ward ?? variables.data?.ward_id);
     },
   });
 }
@@ -293,7 +312,7 @@ export function useDeleteBed() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, wardId }) => {
+    mutationFn: ({ id }) => {
       // wardId is optional and used only for cache invalidation
       return wardsApi.deleteBed(id);
     },
@@ -309,11 +328,7 @@ export function useDeleteBed() {
       });
 
       // If wardId was provided, invalidate that ward's beds
-      if (variables.wardId) {
-        queryClient.invalidateQueries({ 
-          queryKey: wardKeys.wardBeds(variables.wardId) 
-        });
-      }
+      invalidateWardBedState(queryClient, variables.wardId);
     },
   });
 }
@@ -339,7 +354,7 @@ export function useCreateTransfer() {
 
   return useMutation({
     mutationFn: (data) => wardsApi.createTransfer(data),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       // Invalidate the transfers list
       queryClient.invalidateQueries({ 
         queryKey: wardKeys.transfers() 
@@ -351,18 +366,8 @@ export function useCreateTransfer() {
       });
 
       // If we know the source and destination wards, invalidate their beds too
-      if (data) {
-        if (data.source_ward) {
-          queryClient.invalidateQueries({ 
-            queryKey: wardKeys.wardBeds(data.source_ward) 
-          });
-        }
-        if (data.destination_ward) {
-          queryClient.invalidateQueries({ 
-            queryKey: wardKeys.wardBeds(data.destination_ward) 
-          });
-        }
-      }
+      invalidateWardBedState(queryClient, data?.source_ward ?? variables?.source_ward);
+      invalidateWardBedState(queryClient, data?.destination_ward ?? variables?.destination_ward);
     },
   });
 }
@@ -470,15 +475,7 @@ export function useCreateSection() {
       queryClient.invalidateQueries({ queryKey: wardKeys.sections() });
 
       // If section has a ward, invalidate that ward's sections
-      if (data && data.ward) {
-        queryClient.invalidateQueries({
-          queryKey: wardKeys.wardSections(data.ward)
-        });
-        // Also invalidate the ward detail
-        queryClient.invalidateQueries({
-          queryKey: wardKeys.detail(data.ward)
-        });
-      }
+      invalidateWardSectionState(queryClient, data?.ward ?? data?.ward_id);
     },
   });
 }
@@ -504,14 +501,8 @@ export function useUpdateSection() {
       });
 
       // If section has a ward, invalidate that ward's sections
-      if (responseData && responseData.ward) {
-        queryClient.invalidateQueries({
-          queryKey: wardKeys.wardSections(responseData.ward)
-        });
-        queryClient.invalidateQueries({
-          queryKey: wardKeys.detail(responseData.ward)
-        });
-      }
+      invalidateWardSectionState(queryClient, responseData?.ward ?? responseData?.ward_id);
+      invalidateWardSectionState(queryClient, variables.data?.ward ?? variables.data?.ward_id);
     },
   });
 }
@@ -524,7 +515,7 @@ export function useDeleteSection() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, wardId }) => {
+    mutationFn: ({ id }) => {
       // wardId is optional and used only for cache invalidation
       return wardsApi.deleteSection(id);
     },
@@ -540,14 +531,7 @@ export function useDeleteSection() {
       });
 
       // If wardId was provided, invalidate that ward's sections
-      if (variables.wardId) {
-        queryClient.invalidateQueries({
-          queryKey: wardKeys.wardSections(variables.wardId)
-        });
-        queryClient.invalidateQueries({
-          queryKey: wardKeys.detail(variables.wardId)
-        });
-      }
+      invalidateWardSectionState(queryClient, variables.wardId);
     },
   });
 }

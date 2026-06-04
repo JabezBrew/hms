@@ -17,6 +17,7 @@ Scope: wards, sections, beds, ward reports, and ward detail UI.
 
 - `/api/v2/wards`
 - `/api/v2/wards/:id`
+- `/api/v2/wards/:id/bed-map`
 - `/api/v2/wards/:id/beds`
 - `/api/v2/wards/:id/sections`
 
@@ -24,9 +25,13 @@ Scope: wards, sections, beds, ward reports, and ward detail UI.
 
 - Ward/bed/section state is backend-authoritative.
 - Bed availability must respect admission/discharge/cleaning state.
+- Ward bed-map UI must use the complete `/api/v2/wards/:id/bed-map`
+  operational snapshot. Do not stitch cursor pages from `/beds` to draw a map.
 - Ward and section capacity summaries must use backend aggregate counters, not
   the currently loaded `/beds` page.
 - Ward bed-grid UI is operational only. Tiles may include LOS for occupied beds,
   but patient names and clinical detail belong on the ward board or Patient
-  Chronicle.
+  Chronicle. Use `occupied_since` from the bed-map DTO for LOS, do not expose
+  admission identifiers from bed DTOs, and do not hydrate ward-board patient
+  rows for the bed grid.
 - Ward reports should use aggregate projections, not full clinical payloads.

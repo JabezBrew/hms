@@ -21271,6 +21271,39 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_WardBedMapResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "sections": {
+                "items": {
+                  "$ref": "#/components/schemas/WardBedMapSection"
+                },
+                "type": "array"
+              },
+              "totals": {
+                "$ref": "#/components/schemas/WardBedMapTotals"
+              },
+              "ward_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ward_id",
+              "totals",
+              "sections"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_WardBoardItem": {
         "properties": {
           "data": {
@@ -28355,6 +28388,150 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "WardBedMapBed": {
+        "properties": {
+          "bed_code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occupied_since": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "section_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/BedStatus"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ward_id",
+          "bed_code",
+          "status"
+        ],
+        "type": "object"
+      },
+      "WardBedMapResponse": {
+        "properties": {
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/WardBedMapSection"
+            },
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/WardBedMapTotals"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ward_id",
+          "totals",
+          "sections"
+        ],
+        "type": "object"
+      },
+      "WardBedMapSection": {
+        "properties": {
+          "beds": {
+            "items": {
+              "$ref": "#/components/schemas/WardBedMapBed"
+            },
+            "type": "array"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardStatus"
+              }
+            ]
+          },
+          "totals": {
+            "$ref": "#/components/schemas/WardBedMapTotals"
+          }
+        },
+        "required": [
+          "name",
+          "totals",
+          "beds"
+        ],
+        "type": "object"
+      },
+      "WardBedMapTotals": {
+        "properties": {
+          "available_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "blocked_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cleaning_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "occupied_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reserved_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_bed_count",
+          "available_bed_count",
+          "occupied_bed_count",
+          "reserved_bed_count",
+          "cleaning_bed_count",
+          "blocked_bed_count"
+        ],
+        "type": "object"
       },
       "WardBoardGetQuery": {
         "properties": {
@@ -57657,6 +57834,83 @@
               }
             },
             "description": "Ward could not be updated"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/{id}/bed-map": {
+      "get": {
+        "operationId": "getWardBedMap",
+        "parameters": [
+          {
+            "description": "Ward id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardBedMapResponse"
+                }
+              }
+            },
+            "description": "Ward operational bed map"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ward not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ward bed map could not be loaded"
           }
         },
         "security": [

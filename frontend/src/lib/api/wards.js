@@ -46,6 +46,7 @@ function adaptV2Ward(ward) {
   const occupiedBeds = numberFrom(ward.occupied_bed_count);
   const reservedBeds = numberFrom(ward.reserved_bed_count);
   const cleaningBeds = numberFrom(ward.cleaning_bed_count);
+  const maintenanceBeds = ward.blocked_bed_count ?? ward.maintenance_bed_count ?? ward.closed_bed_count;
   const fallbackAvailableBeds = Math.max(totalBeds - occupiedBeds - reservedBeds - cleaningBeds, 0);
   const availableBeds = ward.available_bed_count === undefined || ward.available_bed_count === null
     ? fallbackAvailableBeds
@@ -61,14 +62,16 @@ function adaptV2Ward(ward) {
     occupied_beds_count: occupiedBeds,
     reserved_beds_count: reservedBeds,
     cleaning_beds_count: cleaningBeds,
-    maintenance_beds_count: cleaningBeds,
+    maintenance_beds_count: maintenanceBeds === undefined || maintenanceBeds === null
+      ? undefined
+      : numberFrom(maintenanceBeds),
     occupancy_rate: occupancyRate,
     is_active: ward.status === 'active',
   };
 }
 
 function adaptV2Bed(bed) {
-  return {
+  const model = {
     ...bed,
     bed_number: bed.bed_number || bed.bed_code,
     name: bed.name || bed.bed_code,
@@ -76,6 +79,10 @@ function adaptV2Bed(bed) {
     section: bed.section || bed.section_id,
     is_active: bed.status !== 'closed',
   };
+  if (bed.occupied_since !== undefined) {
+    model.occupied_since = bed.occupied_since;
+  }
+  return model;
 }
 
 function adaptV2WardBoardAdmission(item = {}) {
@@ -148,6 +155,9 @@ function adaptV2Section(section) {
   const occupiedBeds = numberFrom(section.occupied_bed_count);
   const reservedBeds = numberFrom(section.reserved_bed_count);
   const cleaningBeds = numberFrom(section.cleaning_bed_count);
+  const maintenanceBeds = section.blocked_bed_count
+    ?? section.maintenance_bed_count
+    ?? section.closed_bed_count;
   const fallbackAvailableBeds = Math.max(totalBeds - occupiedBeds - reservedBeds - cleaningBeds, 0);
   const availableBeds = section.available_bed_count === undefined || section.available_bed_count === null
     ? fallbackAvailableBeds
@@ -161,10 +171,110 @@ function adaptV2Section(section) {
     occupied_beds_count: occupiedBeds,
     reserved_beds_count: reservedBeds,
     cleaning_beds_count: cleaningBeds,
-    maintenance_beds_count: cleaningBeds,
+    maintenance_beds_count: maintenanceBeds === undefined || maintenanceBeds === null
+      ? undefined
+      : numberFrom(maintenanceBeds),
     is_active: section.status === 'active',
     description: section.description || '',
   };
+}
+
+function adaptBedMapTotals(totals = {}) {
+  return {
+    total_beds: numberFrom(totals.total_bed_count),
+    available_beds_count: numberFrom(totals.available_bed_count),
+    occupied_beds_count: numberFrom(totals.occupied_bed_count),
+    reserved_beds_count: numberFrom(totals.reserved_bed_count),
+    cleaning_beds_count: numberFrom(totals.cleaning_bed_count),
+    maintenance_beds_count: numberFrom(totals.blocked_bed_count),
+  };
+}
+
+function adaptBedMapSection(section = {}, wardId) {
+  const { beds: _beds, totals: _totals, ...sectionDetails } = section;
+  const totals = adaptBedMapTotals(section.totals);
+  return {
+    ...sectionDetails,
+    id: section.id || 'unassigned',
+    ward: wardId,
+    ward_id: wardId,
+    code: section.code || null,
+    name: section.name || 'Unassigned Beds',
+    is_active: section.status ? section.status === 'active' : true,
+    bed_count: totals.total_beds,
+    available_beds_count: totals.available_beds_count,
+    occupied_beds_count: totals.occupied_beds_count,
+    reserved_beds_count: totals.reserved_beds_count,
+    cleaning_beds_count: totals.cleaning_beds_count,
+    maintenance_beds_count: totals.maintenance_beds_count,
+  };
+}
+
+function adaptBedMapBed(bed = {}, wardId, sectionId) {
+  return adaptV2Bed({
+    ...bed,
+    ward_id: bed.ward_id || wardId,
+    section_id: bed.section_id || sectionId || null,
+  });
+}
+
+function buildBedMapFromParts({ wardId, sections = [], beds = [], totals }) {
+  const bedTotals = totals || beds.reduce(
+    (acc, bed) => {
+      acc.total_bed_count += 1;
+      const status = bed.status === 'closed' || bed.status === 'maintenance' || bed.status === 'blocked'
+        ? 'blocked'
+        : bed.status;
+      if (status === 'available') acc.available_bed_count += 1;
+      if (status === 'occupied') acc.occupied_bed_count += 1;
+      if (status === 'reserved') acc.reserved_bed_count += 1;
+      if (status === 'cleaning') acc.cleaning_bed_count += 1;
+      if (status === 'blocked') acc.blocked_bed_count += 1;
+      return acc;
+    },
+    {
+      total_bed_count: 0,
+      available_bed_count: 0,
+      occupied_bed_count: 0,
+      reserved_bed_count: 0,
+      cleaning_bed_count: 0,
+      blocked_bed_count: 0,
+    },
+  );
+
+  return {
+    ward_id: wardId,
+    totals: adaptBedMapTotals(bedTotals),
+    sections,
+    beds,
+  };
+}
+
+function adaptV2BedMap(data = {}) {
+  const wardId = data.ward_id;
+  const sections = [];
+  const beds = [];
+
+  (data.sections || []).forEach((section) => {
+    const sectionModel = adaptBedMapSection(section, wardId);
+    sections.push(sectionModel);
+    (section.beds || []).forEach((bed) => {
+      beds.push(adaptBedMapBed(bed, wardId, section.id));
+    });
+  });
+
+  return buildBedMapFromParts({
+    wardId,
+    sections,
+    beds,
+    totals: data.totals,
+  });
+}
+
+function buildLegacyBedMap(wardId, rawBeds = [], rawSections = []) {
+  const sections = normalizeListResponse(rawSections).map((section) => adaptV2Section(section));
+  const beds = normalizeListResponse(rawBeds).map((bed) => adaptV2Bed(bed));
+  return buildBedMapFromParts({ wardId, sections, beds });
 }
 
 function wardIdFrom(data = {}) {
@@ -418,6 +528,31 @@ export const wardsApi = {
   },
 
   /**
+   * Get the complete operational bed map for a ward.
+   * @param {string} wardId - Ward ID
+   * @returns {Promise<Object>} Ward bed map data
+   */
+  getBedMap: async (wardId, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getWardBedMap({ id: wardId }, { signal: options.signal });
+        return adaptV2BedMap(response?.data || {});
+      }
+
+      const [beds, sections] = await Promise.all([
+        wardsApi.getBeds({ ward: wardId, signal: options.signal }),
+        wardsApi.getWardSections(wardId, { signal: options.signal }),
+      ]);
+      return buildLegacyBedMap(wardId, beds, sections);
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch ward bed map');
+      }
+      throw new Error(handleApiError(error, 'Failed to fetch ward bed map'));
+    }
+  },
+
+  /**
    * Get all beds with optional filtering
    * @param {Object} params - Query parameters for filtering
    * @returns {Promise<Array>} List of beds
@@ -432,7 +567,7 @@ export const wardsApi = {
           { id: params.ward },
           {
             query: {
-              cursor: params.cursor,
+              cursor: params.cursor ?? params.next_cursor,
               limit: normalizeV2Limit(params, 100),
             },
             signal: params.signal,

@@ -12,9 +12,14 @@ Scope: ward, bed, section, admission, layout, dashboard, and staff-management UI
   bounded bed lists are for bed visualization only.
 - Summary-card status filters must only run against a complete loaded bed set;
   do not filter a whole-ward aggregate through a partial bed page.
+- Ward detail bed maps must consume the dedicated bed-map snapshot endpoint,
+  not a client-stitched sequence of paginated bed-list calls.
 - Bed grid tiles are an operational capacity surface: show bed identity, bed
   state, section/bay placement, and LOS when occupied, but do not show patient
   names, diagnoses, acuity, vitals, clinician names, MRNs, or clinical flags.
+- Bed-grid LOS should come from `occupied_since` on the dedicated bed-map DTO,
+  not from ward-board patient rows, admission identifiers, or paginated bed
+  list DTOs.
 - Bed/admission transitions should avoid duplicate submissions.
 - Ward clinical actions should route through Patient Chronicle or authorized
   ward workflows.

@@ -14,6 +14,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/wards/:id",
             get(ward::get_ward).patch(ward::update_ward),
         )
+        .route("/api/v2/wards/:id/bed-map", get(ward::get_ward_bed_map))
         .route(
             "/api/v2/wards/:id/beds",
             get(ward::list_ward_beds).post(ward::create_bed),

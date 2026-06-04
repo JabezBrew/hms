@@ -13,8 +13,8 @@ mod ward_stock;
 
 pub use admin::{
     create_ward, create_ward_section, get_ward, get_ward_section_by_id, list_ward_sections,
-    list_wards, update_ward, update_ward_section, NewWard, NewWardSection, WardSectionUpdate,
-    WardUpdate,
+    list_wards, update_ward, update_ward_section, ward_exists, NewWard, NewWardSection,
+    WardSectionUpdate, WardUpdate,
 };
 pub use admission_cases::{
     activate_admission_case, admit_patient, cancel_admission_case, create_admission_case,
@@ -22,8 +22,8 @@ pub use admission_cases::{
     list_ward_board, reserve_admission_bed, AdmissionContext, NewAdmission, NewAdmissionCase,
 };
 pub use bed_management::{
-    create_bed, get_bed_by_id, list_section_beds, list_ward_beds, release_cleaned_beds, update_bed,
-    BedUpdate, NewBed,
+    create_bed, get_bed_by_id, get_ward_bed_map, list_section_beds, list_ward_beds,
+    release_cleaned_beds, update_bed, BedUpdate, NewBed,
 };
 pub use discharge_cases::{
     cancel_discharge, complete_discharge, get_discharge_case, hold_discharge_blocker,
