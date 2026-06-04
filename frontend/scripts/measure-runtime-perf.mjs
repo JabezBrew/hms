@@ -140,7 +140,7 @@ function summarizeResources(entries) {
     script_count: scripts.length,
     style_count: styles.length,
     transfer_kb: toKb(transfers.reduce((sum, value) => sum + value, 0)),
-    chart_chunk_loaded: scripts.some((entry) => /vendor-recharts/.test(entry.name || '')),
+    chart_chunk_loaded: scripts.some((entry) => /vendor-(echarts|zrender)/.test(entry.name || '')),
     api_routes: [...new Set(api.map((entry) => sanitizeResourceName(entry.name)))].sort(),
     script_assets: [...new Set(scripts.map((entry) => path.basename(sanitizeResourceName(entry.name))))].sort(),
   }

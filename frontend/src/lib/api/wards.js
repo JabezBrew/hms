@@ -875,22 +875,30 @@ export const wardsApi = {
       if (isRustV2ApiMode()) {
         const wards = await wardsApi.getWards({ limit: normalizeV2Limit(params) });
         return {
+          meta: {
+            mode: 'rust_v2_snapshot',
+            unavailable_metrics: [
+              'occupancy_trends',
+              'length_of_stay',
+              'turnover_rate',
+              'admissions',
+              'discharges',
+              'transfers',
+              'revenue',
+            ],
+          },
           occupancy_trends: [],
           length_of_stay: [],
           ward_utilization: wards.map((ward) => ({
             ward: ward.name,
             occupancy_rate: ward.occupancy_rate || 0,
-            turnover_rate: 0,
-            avg_los: 0,
-            bed_days: 0,
-            revenue: 0,
+            occupied_beds_count: ward.occupied_beds_count || 0,
+            total_beds: ward.total_beds || 0,
+            turnover_rate: null,
+            avg_los: null,
+            bed_days: null,
           })),
-          admissions_by_ward: wards.map((ward) => ({
-            ward: ward.name,
-            admissions: ward.occupied_beds_count || 0,
-            discharges: 0,
-            transfers: 0,
-          })),
+          admissions_by_ward: [],
         };
       }
       const queryString = new URLSearchParams(params).toString();

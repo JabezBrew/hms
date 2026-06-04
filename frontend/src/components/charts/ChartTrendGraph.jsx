@@ -1,74 +1,74 @@
-/* oxlint-disable react-doctor/prefer-dynamic-import -- These chart modules already load through route or slide-over chunks; splitting Recharts again would add a nested loading waterfall. */
 /**
- * ChartTrendGraph - Chronicle-styled line chart for trend visualization
+ * ChartTrendGraph - Chronicle-styled line chart for trend visualization.
  *
- * Displays trends of numeric/scale fields over time using Recharts.
- * Highlights critical values with color coding.
+ * Displays trends of numeric/scale fields over time using ECharts.
  */
 
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useMemo } from "react";
-import { cn } from "@/lib/utils";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  Area,
-  ComposedChart,
-} from "recharts";
+import { useMemo } from 'react';
+import { cn } from '@/lib/utils';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
+import { HmsEChart } from '@/shared/components/charts/HmsEChart';
+import {
+  createBaseChartOption,
+  escapeChartTooltipHtml,
+} from '@/shared/components/charts/HmsEChartTheme';
+import format from 'date-fns/format';
+import parseISO from 'date-fns/parseISO';
+import { useChartEntryTrends, useChartAssignment } from '@/features/charts/hooks';
 
-import format from "date-fns/format";
-import parseISO from "date-fns/parseISO";
-import { useChartEntryTrends, useChartAssignment } from "@/features/charts/hooks";
+function formatTrendTooltip(params, theme, currentField) {
+  const list = Array.isArray(params) ? params : [params];
+  const point = list[0]?.data?.record;
+  if (!point) return '';
 
-function ChartTrendTooltip({ active, payload, currentField }) {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    const isCritical = data.isCritical;
-
-    return (
-      <div className={cn(
-        "bg-card border border-border rounded-lg shadow-lg p-3",
-        isCritical && "border-rose-500"
-      )}>
-        <p className="font-mono text-[10px] text-muted-foreground mb-1">
-          {data.formattedDate} at {data.formattedTime}
-        </p>
-        <p className={cn(
-          "font-mono text-lg font-medium",
-          isCritical ? "text-rose-500" : "text-foreground"
-        )}>
-          {data.value}
-          {currentField?.config?.unit && (
-            <span className="text-sm text-muted-foreground ml-1">
-              {currentField.config.unit}
-            </span>
-          )}
-        </p>
-        {isCritical && (
-          <p className="flex items-center gap-1 text-[10px] text-rose-500 mt-1">
-            <AlertTriangle className="size-3" />
-            Critical value
-          </p>
-        )}
+  const unit = currentField?.config?.unit;
+  const isCritical = point.isCritical;
+  const safeUnit = unit ? ` ${escapeChartTooltipHtml(unit)}` : '';
+  return `
+    <div>
+      <div style="color:${theme.muted};font-size:11px;margin-bottom:4px;">
+        ${escapeChartTooltipHtml(`${point.formattedDate} at ${point.formattedTime}`)}
       </div>
-    );
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${isCritical ? theme.palette[2] : theme.palette[0]};"></span>
+        <span>${escapeChartTooltipHtml(currentField?.name || 'Value')}</span>
+        <strong style="margin-left:auto;">${escapeChartTooltipHtml(point.value)}${safeUnit}</strong>
+      </div>
+      ${isCritical ? `<div style="color:${theme.palette[2]};font-size:11px;margin-top:6px;">Critical value</div>` : ''}
+    </div>
+  `;
+}
+
+function buildCriticalThresholdSeries(chartData, criticalRange, theme) {
+  if (chartData.length === 0) return [];
+
+  const start = chartData[0].datetime;
+  const end = chartData[chartData.length - 1].datetime;
+  const thresholds = [];
+  if (criticalRange?.low !== undefined) {
+    thresholds.push({ label: 'Low', value: criticalRange.low });
   }
-  return null;
+  if (criticalRange?.high !== undefined) {
+    thresholds.push({ label: 'High', value: criticalRange.high });
+  }
+
+  return thresholds.map((line) => ({
+    data: [[start, line.value], [end, line.value]],
+    lineStyle: { color: theme.palette[2], opacity: 0.6, type: 'dashed', width: 1 },
+    name: line.label,
+    showSymbol: false,
+    silent: true,
+    tooltip: { show: false },
+    type: 'line',
+  }));
 }
 
 const ChartTrendGraph = ({
@@ -79,7 +79,6 @@ const ChartTrendGraph = ({
   className,
 }) => {
   const [resolvedFieldKey, componentKey] = (fieldKey || '').split(':');
-  // Fetch assignment for template info
   const { data: assignment, isLoading: assignmentLoading } = useChartAssignment(assignmentId);
   const { data: trendData, isLoading: trendLoading } = useChartEntryTrends(
     assignmentId,
@@ -91,19 +90,17 @@ const ChartTrendGraph = ({
   );
 
   const template = assignment?.template;
-
-  // Get numeric/scale fields that can be graphed
   const graphableFields = useMemo(() => {
     if (!template?.fields) return [];
-    return template.fields.filter((f) =>
-      ['numeric', 'scale', 'calculated', 'paired'].includes(f.field_type)
+    return template.fields.filter((field) =>
+      ['numeric', 'scale', 'calculated', 'paired'].includes(field.field_type)
     );
   }, [template]);
 
-  // Get current field config
-  const currentField = useMemo(() => {
-    return graphableFields.find((f) => f.field_key === resolvedFieldKey);
-  }, [graphableFields, resolvedFieldKey]);
+  const currentField = useMemo(() => (
+    graphableFields.find((field) => field.field_key === resolvedFieldKey)
+  ), [graphableFields, resolvedFieldKey]);
+
   const fieldOptions = useMemo(() => (
     graphableFields.flatMap((field) => {
       if (field.field_type !== 'paired') {
@@ -117,39 +114,80 @@ const ChartTrendGraph = ({
     })
   ), [graphableFields]);
 
-  // Format trend data for chart
   const chartData = useMemo(() => {
     if (!trendData) return [];
 
-    return trendData.map((point) => ({
-      datetime: parseISO(point.datetime),
-      value: point.value,
-      isCritical: point.is_critical,
-      formattedDate: format(parseISO(point.datetime), 'MMM d'),
-      formattedTime: format(parseISO(point.datetime), 'h:mm a'),
-    }));
+    return trendData.map((point) => {
+      const parsedDate = parseISO(point.datetime);
+      return {
+        datetime: parsedDate.getTime(),
+        formattedDate: format(parsedDate, 'MMM d'),
+        formattedTime: format(parsedDate, 'h:mm a'),
+        isCritical: point.is_critical,
+        value: point.value,
+      };
+    });
   }, [trendData]);
 
-  // Get critical range for reference lines
   const criticalRange = useMemo(() => {
     if (!currentField?.config) return null;
 
     const { critical_low, critical_high } = currentField.config;
     if (currentField.field_type === 'paired') {
       return {
-        low: componentKey ? critical_low?.[componentKey] : undefined,
         high: componentKey ? critical_high?.[componentKey] : undefined,
+        low: componentKey ? critical_low?.[componentKey] : undefined,
       };
     }
 
-    return { low: critical_low, high: critical_high };
+    return { high: critical_high, low: critical_low };
   }, [componentKey, currentField]);
 
+  const optionFactory = useMemo(() => (theme) => {
+    const base = createBaseChartOption(theme, 'Chart entry trend graph');
+    return {
+      ...base,
+      grid: { ...base.grid, bottom: 34, top: 18 },
+      legend: { ...base.legend, show: false },
+      tooltip: {
+        ...base.tooltip,
+        formatter: (params) => formatTrendTooltip(params, theme, currentField),
+      },
+      xAxis: {
+        ...base.xAxis,
+        type: 'time',
+      },
+      yAxis: {
+        ...base.yAxis,
+        scale: true,
+      },
+      series: [
+        {
+          data: chartData.map((point) => ({
+            itemStyle: {
+              color: point.isCritical ? theme.palette[2] : theme.palette[0],
+            },
+            record: point,
+            value: [point.datetime, point.value],
+          })),
+          lineStyle: { color: theme.palette[0], width: 2 },
+          name: currentField?.name || 'Value',
+          showSymbol: chartData.length < 20,
+          smooth: 0.25,
+          symbolSize: (value, params) => (params.data?.record?.isCritical ? 10 : 7),
+          type: 'line',
+        },
+        ...buildCriticalThresholdSeries(chartData, criticalRange, theme),
+      ],
+    };
+  }, [chartData, criticalRange, currentField]);
+
   const isLoading = assignmentLoading || trendLoading;
+  const values = chartData.map((point) => point.value).filter(Number.isFinite);
 
   if (isLoading) {
     return (
-      <div className={cn("flex items-center justify-center py-12", className)}>
+      <div className={cn('flex items-center justify-center py-12', className)}>
         <LoadingSpinner className="size-6 text-muted-foreground" />
       </div>
     );
@@ -157,23 +195,20 @@ const ChartTrendGraph = ({
 
   if (graphableFields.length === 0) {
     return (
-      <div className={cn("text-center py-12 text-muted-foreground", className)}>
-        <TrendingUp className="size-12 mx-auto mb-3 opacity-50" />
+      <div className={cn('py-12 text-center text-muted-foreground', className)}>
+        <TrendingUp className="mx-auto mb-3 size-12 opacity-50" />
         <p>No numeric fields to graph</p>
       </div>
     );
   }
 
   return (
-    <div className={cn("border border-border rounded-xl overflow-hidden", className)}>
-      {/* Header */}
-      <div className="px-4 py-3 bg-muted/30 border-b border-border">
+    <div className={cn('overflow-hidden rounded-xl border border-border', className)}>
+      <div className="border-b border-border bg-muted/30 px-4 py-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <TrendingUp className="size-4 text-amber-600" />
-            <h3 className="font-display text-base text-foreground">
-              Trend
-            </h3>
+            <h3 className="font-display text-base text-foreground">Trend</h3>
           </div>
           <Select value={fieldKey} onValueChange={onFieldChange}>
             <SelectTrigger className="w-[180px] font-mono text-xs">
@@ -190,145 +225,50 @@ const ChartTrendGraph = ({
         </div>
       </div>
 
-      {/* Chart */}
       <div className="p-4">
         {!resolvedFieldKey ? (
-          <div className="text-center py-12 text-muted-foreground">
+          <div className="py-12 text-center text-muted-foreground">
             <p>Select a field to view trends</p>
           </div>
         ) : chartData.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <TrendingUp className="size-12 mx-auto mb-3 opacity-50" />
+          <div className="py-12 text-center text-muted-foreground">
+            <TrendingUp className="mx-auto mb-3 size-12 opacity-50" />
             <p>No data available for this field</p>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="datetime"
-                tickFormatter={(date) => format(date, 'MMM d')}
-                tick={{ fontSize: 10, fontFamily: 'var(--font-ibm-plex-mono)' }}
-                stroke="hsl(var(--muted-foreground))"
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 10, fontFamily: 'var(--font-ibm-plex-mono)' }}
-                stroke="hsl(var(--muted-foreground))"
-                tickLine={false}
-                axisLine={false}
-                width={50}
-                domain={['dataMin - 5', 'dataMax + 5']}
-              />
-              <Tooltip content={<ChartTrendTooltip currentField={currentField} />} />
-
-              {/* Critical range reference lines */}
-              {criticalRange?.low !== undefined && (
-                <ReferenceLine
-                  y={criticalRange.low}
-                  stroke="hsl(var(--rose-500))"
-                  strokeDasharray="5 5"
-                  strokeWidth={1}
-                  label={{
-                    value: 'Low',
-                    position: 'left',
-                    fontSize: 10,
-                    fontFamily: 'var(--font-ibm-plex-mono)',
-                    fill: 'hsl(var(--rose-500))',
-                  }}
-                />
-              )}
-              {criticalRange?.high !== undefined && (
-                <ReferenceLine
-                  y={criticalRange.high}
-                  stroke="hsl(var(--rose-500))"
-                  strokeDasharray="5 5"
-                  strokeWidth={1}
-                  label={{
-                    value: 'High',
-                    position: 'left',
-                    fontSize: 10,
-                    fontFamily: 'var(--font-ibm-plex-mono)',
-                    fill: 'hsl(var(--rose-500))',
-                  }}
-                />
-              )}
-
-              {/* Main line */}
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="hsl(var(--amber-500))"
-                strokeWidth={2}
-                dot={({ cx, cy, payload }) => (
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={payload.isCritical ? 5 : 3}
-                    fill={payload.isCritical ? 'hsl(var(--rose-500))' : 'hsl(var(--amber-500))'}
-                    stroke={payload.isCritical ? 'hsl(var(--rose-500))' : 'hsl(var(--amber-500))'}
-                  />
-                )}
-                activeDot={{
-                  r: 6,
-                  stroke: 'hsl(var(--amber-500))',
-                  strokeWidth: 2,
-                  fill: 'hsl(var(--background))',
-                }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <HmsEChart ariaLabel="Chart entry trend graph" height={300} option={optionFactory} />
         )}
       </div>
 
-      {/* Footer with stats */}
-      {chartData.length > 0 && (
-        <div className="px-4 py-3 bg-muted/30 border-t border-border">
-          <div className="grid grid-cols-4 gap-4">
-            <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                Latest
-              </p>
-              <p className="font-mono text-sm text-foreground">
-                {chartData[chartData.length - 1]?.value ?? '—'}
-                {currentField?.config?.unit ? ` ${currentField.config.unit}` : ''}
-              </p>
-            </div>
-            <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                Min
-              </p>
-              <p className="font-mono text-sm text-foreground">
-                {Math.min(...chartData.map((d) => d.value))}
-              </p>
-            </div>
-            <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                Max
-              </p>
-              <p className="font-mono text-sm text-foreground">
-                {Math.max(...chartData.map((d) => d.value))}
-              </p>
-            </div>
-            <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                Avg
-              </p>
-              <p className="font-mono text-sm text-foreground">
-                {(chartData.reduce((sum, d) => sum + d.value, 0) / chartData.length).toFixed(1)}
-              </p>
-            </div>
+      {values.length > 0 && (
+        <div className="border-t border-border bg-muted/30 px-4 py-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <ChartTrendStat label="Latest" value={values[values.length - 1]} unit={currentField?.config?.unit} />
+            <ChartTrendStat label="Min" value={Math.min(...values)} />
+            <ChartTrendStat label="Max" value={Math.max(...values)} />
+            <ChartTrendStat
+              label="Avg"
+              value={(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)}
+            />
           </div>
         </div>
       )}
     </div>
   );
 };
+
+function ChartTrendStat({ label, value, unit = '' }) {
+  return (
+    <div>
+      <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <p className="font-mono text-sm text-foreground">
+        {value ?? '—'}{unit ? ` ${unit}` : ''}
+      </p>
+    </div>
+  );
+}
 
 export { ChartTrendGraph };
 export default ChartTrendGraph;

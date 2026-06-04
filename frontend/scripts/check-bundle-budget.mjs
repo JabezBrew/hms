@@ -134,7 +134,7 @@ if (largestJsChunk.name) {
 }
 
 const initialJsAssets = [...scripts, ...modulePreloads]
-const forbiddenInitialChunks = [/\/vendor-recharts-[^/]+\.js$/]
+const forbiddenInitialChunks = [/\/vendor-echarts-[^/]+\.js$/, /\/vendor-zrender-[^/]+\.js$/]
 const forbiddenInitialAssets = initialJsAssets.filter((asset) =>
   forbiddenInitialChunks.some((pattern) => pattern.test(asset))
 )

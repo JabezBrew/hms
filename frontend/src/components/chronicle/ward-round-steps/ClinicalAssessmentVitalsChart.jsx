@@ -1,20 +1,28 @@
-/* oxlint-disable react-doctor/prefer-dynamic-import -- These chart modules already load through route or slide-over chunks; splitting Recharts again would add a nested loading waterfall. */
+import { useMemo } from 'react';
+import { HmsEChart } from '@/shared/components/charts/HmsEChart';
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  ReferenceLine,
-} from 'recharts';
+  createBaseChartOption,
+  escapeChartTooltipHtml,
+} from '@/shared/components/charts/HmsEChartTheme';
 
 const DEFAULT_EMPTY_ARRAY = [];
 
+function buildReferenceSeries(data, referenceLines) {
+  if (!referenceLines.length || data.length === 0) return [];
+
+  return referenceLines.map((line) => ({
+    data: data.map((point) => [point.time, line.value]),
+    lineStyle: { color: line.color, opacity: 0.6, type: 'dashed', width: 1 },
+    name: line.label,
+    showSymbol: false,
+    silent: true,
+    tooltip: { show: false },
+    type: 'line',
+  }));
+}
+
 function VitalsChart({
-  data,
+  data = DEFAULT_EMPTY_ARRAY,
   dataKey,
   title,
   color,
@@ -24,79 +32,82 @@ function VitalsChart({
   secondaryKey = null,
   secondaryColor = null,
 }) {
-  if (!data || data.length === 0) {
+  const chartRows = useMemo(() => data.filter((point) => point?.[dataKey] != null), [data, dataKey]);
+  const optionFactory = useMemo(() => (theme) => {
+    const base = createBaseChartOption(theme, `${title} vital signs trend`);
+    const primaryColor = color || theme.palette[0];
+    const secondaryLineColor = secondaryColor || theme.palette[1];
+
+    return {
+      ...base,
+      grid: { ...base.grid, bottom: secondaryKey ? 42 : 24, top: 12 },
+      legend: { ...base.legend, show: Boolean(secondaryKey) },
+      tooltip: {
+        ...base.tooltip,
+        formatter: (params) => {
+          const list = Array.isArray(params) ? params : [params];
+          const row = list[0]?.data?.record;
+          const safeUnit = unit ? ` ${escapeChartTooltipHtml(unit)}` : '';
+          return `
+            <div>
+              <div style="color:${theme.muted};font-size:11px;margin-bottom:4px;">${escapeChartTooltipHtml(`${row?.date || ''} ${row?.time || ''}`.trim())}</div>
+              ${list.map((param) => `
+                <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${param.color};"></span>
+                  <span>${escapeChartTooltipHtml(param.seriesName)}</span>
+                  <strong style="margin-left:auto;">${escapeChartTooltipHtml(param.value?.[1] ?? '')}${safeUnit}</strong>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        },
+      },
+      xAxis: {
+        ...base.xAxis,
+        data: data.map((point) => point.time),
+        type: 'category',
+      },
+      yAxis: {
+        ...base.yAxis,
+        max: domain?.[1],
+        min: domain?.[0],
+        scale: !domain,
+      },
+      series: [
+        {
+          connectNulls: true,
+          data: data.map((point) => ({ record: point, value: [point.time, point[dataKey]] })),
+          lineStyle: { color: primaryColor, width: 2 },
+          name: title,
+          showSymbol: data.length < 15,
+          smooth: 0.25,
+          symbolSize: 7,
+          type: 'line',
+        },
+        ...(secondaryKey ? [{
+          connectNulls: true,
+          data: data.map((point) => ({ record: point, value: [point.time, point[secondaryKey]] })),
+          lineStyle: { color: secondaryLineColor, width: 2 },
+          name: secondaryKey,
+          showSymbol: data.length < 15,
+          smooth: 0.25,
+          symbolSize: 7,
+          type: 'line',
+        }] : []),
+        ...buildReferenceSeries(data, referenceLines),
+      ],
+    };
+  }, [color, data, dataKey, domain, referenceLines, secondaryColor, secondaryKey, title, unit]);
+
+  if (chartRows.length === 0) {
     return (
-      <div className="h-[180px] flex items-center justify-center text-muted-foreground text-sm">
+      <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">
         No data available
       </div>
     );
   }
 
-  return (
-    <div className="h-[180px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis
-            dataKey="time"
-            tick={{ fontSize: 10 }}
-            className="text-muted-foreground"
-          />
-          <YAxis
-            domain={domain}
-            tick={{ fontSize: 10 }}
-            className="text-muted-foreground"
-            width={35}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'hsl(var(--popover))',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '6px',
-              fontSize: '12px',
-            }}
-            formatter={(value, name) => [`${value} ${unit}`, name === dataKey ? title : name]}
-            labelFormatter={(label, payload) => {
-              if (payload?.[0]?.payload?.date) {
-                return `${payload[0].payload.date} ${label}`;
-              }
-              return label;
-            }}
-          />
-          {referenceLines.map((line) => (
-            <ReferenceLine
-              key={`${line.label}-${line.value}`}
-              y={line.value}
-              stroke={line.color}
-              strokeDasharray="5 5"
-              label={{ value: line.label, fontSize: 10, fill: line.color }}
-            />
-          ))}
-          <Line
-            type="monotone"
-            dataKey={dataKey}
-            stroke={color}
-            strokeWidth={2}
-            dot={{ r: 3 }}
-            activeDot={{ r: 5 }}
-            connectNulls
-          />
-          {secondaryKey && (
-            <Line
-              type="monotone"
-              dataKey={secondaryKey}
-              stroke={secondaryColor}
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-              connectNulls
-            />
-          )}
-          {secondaryKey && <Legend />}
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
+  return <HmsEChart ariaLabel={`${title} vital signs trend`} height={180} option={optionFactory} />;
 }
 
 export default VitalsChart;

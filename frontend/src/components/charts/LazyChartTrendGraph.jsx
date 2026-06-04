@@ -1,9 +1,8 @@
 /**
  * LazyChartTrendGraph - Lazy-loaded version of ChartTrendGraph
  *
- * Reduces initial bundle size by code-splitting the recharts library.
- * Recharts adds ~180KB to the bundle, so lazy loading it when charts
- * are first viewed provides significant performance improvements.
+ * Reduces initial bundle size by code-splitting the charting library.
+ * ECharts stays out of the initial bundle until trend graphs are first viewed.
  */
 
 import { lazy, Suspense } from 'react';
@@ -59,4 +58,3 @@ export function LazyChartTrendGraph(props) {
     </DeferredMount>
   );
 }
-

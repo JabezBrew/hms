@@ -70,7 +70,8 @@ export default defineConfig(({ mode }) => {
               id.includes("tailwind-merge") ||
               id.includes("class-variance-authority")
             ) return "vendor-ui-utils"
-            if (id.includes("recharts") || id.includes("react-smooth") || id.includes("d3-")) return "vendor-recharts"
+            if (id.includes("zrender")) return "vendor-zrender"
+            if (id.includes("echarts")) return "vendor-echarts"
             if (id.includes("@dnd-kit")) return "vendor-dnd"
             if (id.includes("date-fns")) return "vendor-date"
             if (id.includes("react-hook-form") || id.includes("@hookform/resolvers") || id.includes("zod")) return "vendor-form"

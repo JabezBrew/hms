@@ -7,12 +7,14 @@ import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import { lazy, Suspense, useEffect, useReducer, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { wardsApi } from '@/features/wards/api';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import format from 'date-fns/format';
 import subDays from 'date-fns/subDays';
 import DeferredMount from '@/components/ui/DeferredMount';
@@ -31,11 +33,13 @@ const AdmissionsPanel = lazy(() =>
 );
 
 const EMPTY_ANALYTICS = {
+  analyticsMeta: null,
   occupancyData: [],
   lengthOfStayData: [],
   utilizationData: [],
   admissionsByWard: [],
 };
+const WARD_REPORT_TABS = ['occupancy', 'los', 'utilization', 'admissions'];
 
 const initialReportState = {
   wardsLoading: true,
@@ -64,6 +68,7 @@ function reportReducer(state, action) {
 
 function normalizeAnalytics(analyticsData = {}) {
   return {
+    analyticsMeta: analyticsData.meta || null,
     occupancyData: analyticsData.occupancy_trends || [],
     lengthOfStayData: analyticsData.length_of_stay || [],
     utilizationData: analyticsData.ward_utilization || [],
@@ -77,8 +82,21 @@ function csvCell(value) {
   return `"${safeText.replace(/"/g, '""')}"`;
 }
 
+function isUnavailableMetric(analyticsMeta, metric) {
+  return analyticsMeta?.unavailable_metrics?.includes(metric) || false;
+}
+
+function csvMetric(value, unavailable = false) {
+  if (unavailable || value === null || value === undefined || value === '') {
+    return 'Not available';
+  }
+
+  return value;
+}
+
 function buildWardOccupancyCsv({
   admissionsByWard,
+  analyticsMeta,
   dateRange,
   occupancyData,
   selectedWard,
@@ -88,6 +106,9 @@ function buildWardOccupancyCsv({
   const lines = [
     'Ward Occupancy Report',
     `Date Range: ${format(dateRange.start, 'MMM dd, yyyy')} - ${format(dateRange.end, 'MMM dd, yyyy')}`,
+    ...(analyticsMeta?.mode === 'rust_v2_snapshot'
+      ? ['Mode: Rust V2 live capacity snapshot; historical aggregate analytics unavailable']
+      : []),
     '',
     'Occupancy Trends',
   ];
@@ -112,16 +133,17 @@ function buildWardOccupancyCsv({
   lines.push(
     '',
     'Ward Utilization',
-    ['Ward', 'Occupancy Rate (%)', 'Turnover Rate', 'Avg LOS (days)', 'Bed Days', 'Revenue'].map(csvCell).join(',')
+    ['Ward', 'Occupancy Rate (%)', 'Occupied Beds', 'Total Beds', 'Turnover Rate', 'Avg LOS (days)', 'Bed Days'].map(csvCell).join(',')
   );
   utilizationData.forEach((ward) => {
     lines.push([
       ward.ward,
-      ward.occupancy_rate || 0,
-      ward.turnover_rate || 0,
-      ward.avg_los || 0,
-      ward.bed_days || 0,
-      ward.revenue || 0,
+      csvMetric(ward.occupancy_rate),
+      csvMetric(ward.occupied_beds_count),
+      csvMetric(ward.total_beds),
+      csvMetric(ward.turnover_rate, isUnavailableMetric(analyticsMeta, 'turnover_rate')),
+      csvMetric(ward.avg_los, isUnavailableMetric(analyticsMeta, 'avg_los') || isUnavailableMetric(analyticsMeta, 'length_of_stay')),
+      csvMetric(ward.bed_days, isUnavailableMetric(analyticsMeta, 'bed_days') || isUnavailableMetric(analyticsMeta, 'length_of_stay')),
     ].map(csvCell).join(','));
   });
 
@@ -232,12 +254,12 @@ function ReportLoading() {
 
 function ReportFilters({ dateRange, onDateChange, onWardChange, selectedWard, wards }) {
   return (
-    <Card className="border-border">
-      <CardHeader className="pb-4">
-        <CardTitle className="font-display text-lg">Report Filters</CardTitle>
+    <Card className="rounded-lg border-border shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="font-display text-lg leading-tight">Report Filters</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(180px,0.7fr)_1fr_1fr]">
           <div className="space-y-2">
             <Label htmlFor="ward" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Ward</Label>
             <Select value={selectedWard} onValueChange={onWardChange}>
@@ -282,7 +304,7 @@ function ReportFilters({ dateRange, onDateChange, onWardChange, selectedWard, wa
 
 function ChartTab({ children, value }) {
   return (
-    <TabsContent value={value} className="mt-4 data-[state=active]:mt-6">
+    <TabsContent value={value} className="mt-5">
       <DeferredMount placeholder={<Skeleton className="h-[300px] w-full" />}>
         <Suspense fallback={<Skeleton className="h-[300px] w-full" />}>
           {children}
@@ -294,15 +316,22 @@ function ChartTab({ children, value }) {
 
 function ReportTabs({
   admissionsByWard,
+  analyticsMeta,
   lengthOfStayData,
   occupancyData,
   selectedWard,
   utilizationData,
   wards,
 }) {
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: WARD_REPORT_TABS,
+    defaultValue: 'occupancy',
+  });
+
   return (
-    <Tabs defaultValue="occupancy">
-      <TabsList className="bg-muted/50">
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-0">
+      <TabsList className="h-auto max-w-full flex-wrap gap-1 rounded-lg bg-muted/50 p-1">
         <TabsTrigger value="occupancy" className="font-mono text-xs">
           <TrendingUp className="mr-2 size-4" />
           Occupancy Trends
@@ -324,6 +353,7 @@ function ReportTabs({
       <ChartTab value="occupancy">
         <OccupancyTrendsPanel
           occupancyData={occupancyData}
+          analyticsMeta={analyticsMeta}
           utilizationData={utilizationData}
           wards={wards}
           selectedWard={selectedWard}
@@ -331,15 +361,16 @@ function ReportTabs({
       </ChartTab>
       <ChartTab value="los">
         <LengthOfStayPanel
+          analyticsMeta={analyticsMeta}
           lengthOfStayData={lengthOfStayData}
           utilizationData={utilizationData}
         />
       </ChartTab>
       <ChartTab value="utilization">
-        <UtilizationPanel utilizationData={utilizationData} />
+        <UtilizationPanel analyticsMeta={analyticsMeta} utilizationData={utilizationData} />
       </ChartTab>
       <ChartTab value="admissions">
-        <AdmissionsPanel admissionsByWard={admissionsByWard} wards={wards} />
+        <AdmissionsPanel admissionsByWard={admissionsByWard} analyticsMeta={analyticsMeta} wards={wards} />
       </ChartTab>
     </Tabs>
   );
@@ -353,6 +384,7 @@ export function WardOccupancyReports() {
   });
   const {
     admissionsByWard,
+    analyticsMeta,
     analyticsLoading,
     error,
     lengthOfStayData,
@@ -370,6 +402,7 @@ export function WardOccupancyReports() {
     try {
       const csvContent = buildWardOccupancyCsv({
         admissionsByWard,
+        analyticsMeta,
         dateRange,
         occupancyData,
         selectedWard,
@@ -402,7 +435,15 @@ export function WardOccupancyReports() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <ReportModeBadge analyticsMeta={analyticsMeta} />
+          <span className="font-mono text-xs text-muted-foreground">
+            {dateRange.start && dateRange.end
+              ? `${format(dateRange.start, 'MMM d, yyyy')} - ${format(dateRange.end, 'MMM d, yyyy')}`
+              : 'Select a report range'}
+          </span>
+        </div>
         <Button onClick={exportReport} variant="outline" className="font-mono text-xs">
           <Download className="mr-2 size-4" />
           Export Report
@@ -422,6 +463,7 @@ export function WardOccupancyReports() {
       ) : (
         <ReportTabs
           admissionsByWard={admissionsByWard}
+          analyticsMeta={analyticsMeta}
           lengthOfStayData={lengthOfStayData}
           occupancyData={occupancyData}
           selectedWard={selectedWard}
@@ -430,5 +472,21 @@ export function WardOccupancyReports() {
         />
       )}
     </div>
+  );
+}
+
+function ReportModeBadge({ analyticsMeta }) {
+  if (analyticsMeta?.mode === 'rust_v2_snapshot') {
+    return (
+      <Badge variant="outline" className="border-amber-300 bg-amber-50 font-mono text-[10px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+        Snapshot Mode
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant="outline" className="font-mono text-[10px]">
+      Analytics Mode
+    </Badge>
   );
 }

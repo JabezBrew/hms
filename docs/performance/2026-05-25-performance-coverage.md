@@ -78,7 +78,7 @@ Frontend bundle budget from `frontend/dist`:
 - Entry CSS gzip: 31.15 KB / 45 KB.
 - Largest JS chunk gzip: 112.55 KB / 120 KB, `vendor-core-CD4Y7yJX.js`.
 - Initial modulepreloads: 6.
-- Initial chart chunks: none. `vendor-recharts` is now a forbidden initial
+- Initial chart chunks: none. `vendor-echarts*` and `vendor-zrender*` chunks are now forbidden initial
   script/preload in `frontend/scripts/check-bundle-budget.mjs`.
 
 Low-end browser probe from `/private/tmp/hms-frontend-runtime-perf.json`:
@@ -107,7 +107,7 @@ Low-end browser probe from `/private/tmp/hms-frontend-runtime-perf.json`:
 | Laboratory read group | 36.98ms | 52.63ms | 0.22, budget 2 | p99 payload 15.82 KiB, pool wait 0ms, slow SQL 0 | Lab Orders route 246.3ms at 4x CPU, 0 long tasks | Pass on medium seed |
 | Inventory/pharmacy read group | 12.87ms | 70.10ms | 0.44, budget 2 | p99 payload 29.12 KiB, pool wait 0ms, slow SQL 0 | Inventory Items route 340.7ms at 4x CPU, one 55ms long task | Pass on medium seed; frontend residual |
 | Billing/NHIS read group | 10.71ms | 55.18ms | 0.10, budget 2 | p99 payload 7.90 KiB, pool wait 0ms, slow SQL 0 | Billing helpers pass cancellation signals through paginated fallback paths | Pass on medium seed |
-| Frontend startup/chunks | Bundle budget passed | n/a | n/a | n/a | `vendor-recharts` no longer appears in initial scripts or modulepreloads; initial chart chunks: none | Pass, but largest vendor chunk is close to the 120 KB gzip ceiling |
+| Frontend startup/chunks | Bundle budget passed | n/a | n/a | n/a | charting chunks no longer appear in initial scripts or modulepreloads; initial chart chunks: none | Pass, but largest vendor chunk is close to the 120 KB gzip ceiling |
 | Frontend list cancellation and low-end rendering | Browser probe passed key routes | n/a | n/a | n/a | Patient Registry no longer route-prefetches Chronicle on hover/focus; PHI data prefetch remains navigation-gated | Improved in this pass |
 | Observability/regression protection | Reporter and browser probe cover hot paths | n/a | n/a | n/a | Metrics use route patterns, status buckets, and safe facility labels only; runtime probe sanitizes UUIDs and records no PHI | Improved in this pass |
 
@@ -126,8 +126,8 @@ Low-end browser probe from `/private/tmp/hms-frontend-runtime-perf.json`:
    synthetic non-PHI data and idempotence coverage.
 6. Changed patient search to use the existing combined trigram expression index
    instead of filtering facility-created index scans with multiple `OR` clauses.
-7. Split shared UI utility packages out of the Recharts chunk and made the bundle
-   budget fail if `vendor-recharts` becomes an initial script or modulepreload.
+7. Split shared UI utility packages out of the charting chunks and made the bundle
+   budget fail if `vendor-echarts*` or `vendor-zrender*` becomes an initial script or modulepreload.
 8. Added `frontend/scripts/measure-runtime-perf.mjs`, a PHI-safe Playwright
    probe for login, Patient Registry, Patient Chronicle, Ward Board, Lab Orders,
    and Inventory Items.
