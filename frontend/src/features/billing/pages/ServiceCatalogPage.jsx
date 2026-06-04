@@ -5,7 +5,6 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Pencil from 'lucide-react/dist/esm/icons/square-pen.js';
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
@@ -15,6 +14,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { VirtualizedTable } from '@/components/ui/VirtualizedTable';
 import { TablePagination } from '@/components/ui/table-pagination';
 import { Button } from '@/components/ui/button';
@@ -51,6 +51,7 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   currency: 'GHS',
   minimumFractionDigits: 2,
 });
+const SERVICE_CATALOG_TABS = ['services', 'categories'];
 
 function normalizeResults(data) {
   if (!data) return { results: [], count: 0 };
@@ -550,10 +551,13 @@ function ServiceDialog({
 }
 
 export default function ServiceCatalogPage() {
-  const [searchParams] = useSearchParams();
+  const [tab, setUrlTab, searchParams] = useUrlEnumParam({
+    param: 'tab',
+    values: SERVICE_CATALOG_TABS,
+    defaultValue: 'services',
+  });
   const targetServiceId = searchParams.get('service') || null;
   const [catalogState, setCatalogState] = useRouteTableState('billingServiceCatalog', {
-    tab: 'services',
     categorySearch: '',
     serviceSearch: '',
     activeFilter: 'active',
@@ -561,7 +565,6 @@ export default function ServiceCatalogPage() {
     servicePage: 1,
   });
   const {
-    tab,
     categorySearch,
     serviceSearch,
     activeFilter,
@@ -573,8 +576,9 @@ export default function ServiceCatalogPage() {
   useEffect(() => {
     if (!targetServiceId) return;
     if (tab === 'services' && activeFilter === 'all') return;
-    setCatalogState({ tab: 'services', activeFilter: 'all' });
-  }, [activeFilter, setCatalogState, tab, targetServiceId]);
+    setUrlTab('services');
+    setCatalogState({ activeFilter: 'all' });
+  }, [activeFilter, setCatalogState, setUrlTab, tab, targetServiceId]);
 
   // Categories query
   const debouncedCategorySearch = useDebounce(categorySearch, 250);
@@ -633,7 +637,7 @@ export default function ServiceCatalogPage() {
   };
 
   const setTab = (nextTab) => {
-    setCatalogState({ tab: nextTab });
+    setUrlTab(nextTab);
   };
 
   const setCategorySearch = (nextSearch) => {

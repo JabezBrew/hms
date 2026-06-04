@@ -3,7 +3,7 @@
  * Shows who's on duty now, quick links to setup and builder
  * Chronicle Design System styling
  */
-import { useState, useMemo, useEffect } from 'react';
+import { useCallback, useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -50,6 +50,9 @@ import { EmptyState } from './duty-roster/components';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
+
+const DUTY_ROSTER_TABS = ['now', 'calendar'];
 
 /**
  * OnDutyCard - Shows a single on-duty entry
@@ -346,8 +349,12 @@ function RosterCalendarView({ departmentId, flatUnits }) {
  * DutyRosterPage - Main component
  */
 export default function DutyRosterPage() {
-  const [activeTab, setActiveTab] = useState('now');
-  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [activeTab, setActiveTab, searchParams, setSearchParams] = useUrlEnumParam({
+    param: 'tab',
+    values: DUTY_ROSTER_TABS,
+    defaultValue: 'now',
+  });
+  const routeDepartment = searchParams.get('department') || '';
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Live clock - updates at the start of each minute (synchronized with system clock)
@@ -375,7 +382,7 @@ export default function DutyRosterPage() {
     };
   }, []);
 
-  const { data: treeData, isLoading: treeLoading } = useClinicalUnitsTree();
+  const { data: treeData } = useClinicalUnitsTree();
   const flatUnits = useMemo(() => {
     const nodes = treeData?.data || treeData || [];
     return flattenUnitTree(Array.isArray(nodes) ? nodes : []);
@@ -390,6 +397,12 @@ export default function DutyRosterPage() {
     ),
     [flatUnits]
   );
+  const selectedDepartment = useMemo(() => {
+    if (!routeDepartment) {
+      return '';
+    }
+    return rosterUnits.some((unit) => unit.id === routeDepartment) ? routeDepartment : '';
+  }, [rosterUnits, routeDepartment]);
 
   const pageMeta = usePageMeta({
     title: 'Duty Roster | Organization',
@@ -399,6 +412,18 @@ export default function DutyRosterPage() {
       { label: 'Duty Roster' },
     ],
   });
+
+  const handleDepartmentChange = useCallback((value) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (value && value !== 'all') {
+        params.set('department', value);
+      } else {
+        params.delete('department');
+      }
+      return params;
+    });
+  }, [setSearchParams]);
 
   return (
     <PageShell>
@@ -489,11 +514,11 @@ export default function DutyRosterPage() {
 
           {/* Unit Filter */}
           <div className="mb-6">
-	            <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-2 block">
-	              Filter by Department / Division
-	            </span>
-	            <Select value={selectedDepartment || 'all'} onValueChange={(v) => setSelectedDepartment(v === 'all' ? '' : v)}>
-	              <SelectTrigger aria-label="Filter by department or division" className="w-full max-w-xs">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-2 block">
+              Filter by Department / Division
+            </span>
+            <Select value={selectedDepartment || 'all'} onValueChange={handleDepartmentChange}>
+              <SelectTrigger aria-label="Filter by department or division" className="w-full max-w-xs">
                 <SelectValue placeholder="All units" />
               </SelectTrigger>
               <SelectContent className="z-[200]">

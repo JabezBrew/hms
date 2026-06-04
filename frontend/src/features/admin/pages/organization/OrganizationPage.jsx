@@ -14,7 +14,8 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,8 +53,12 @@ import { WardAllocationPanel } from './components/WardAllocationPanel';
 import { ClinicsPanel } from './components/ClinicsPanel';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 
 import { toast } from 'sonner';
+
+const ORG_UNIT_DETAIL_TABS = ['overview', 'leadership', 'staff', 'wards'];
+const ORG_UNIT_DETAIL_TABS_WITH_CLINICS = [...ORG_UNIT_DETAIL_TABS, 'clinics'];
 
 /**
  * TreeNode - Recursive component for rendering tree nodes
@@ -207,7 +212,6 @@ function TreeNode({ node, level = 0, selectedId, onSelect, onAction, expandedIds
  * Uses Chronicle Design System styling
  */
 function UnitDetailPanel({ unitId, onEdit }) {
-  const [activeTab, setActiveTab] = useState('overview');
   const { data: unitData, isLoading } = useClinicalUnit(unitId);
   const unit = unitData?.data || unitData;
   const isOpsUnit = unit?.staffing_mode === 'ops_only';
@@ -216,6 +220,11 @@ function UnitDetailPanel({ unitId, onEdit }) {
 
   // Clinics tab only for departments/divisions
   const canHaveClinics = unit?.unit_type_code === 'department' || unit?.unit_type_code === 'division';
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: canHaveClinics ? ORG_UNIT_DETAIL_TABS_WITH_CLINICS : ORG_UNIT_DETAIL_TABS,
+    defaultValue: 'overview',
+  });
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Building2 },
@@ -792,8 +801,9 @@ function DeleteUnitDialog({ unit, onOpenChange, onDelete, isDeleting }) {
  * OrganizationPage - Main organization management page
  */
 export default function OrganizationPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedUnitId, setSelectedUnitId] = useState(null);
+  const selectedUnitId = searchParams.get('unit') || null;
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [editingUnitId, setEditingUnitId] = useState(null);
   const [parentForNewUnit, setParentForNewUnit] = useState(null);
@@ -823,6 +833,22 @@ export default function OrganizationPage() {
     [expandedIds, filteredTree, searchQuery]
   );
 
+  useEffect(() => {
+    if (!selectedUnitId || !tree.length) {
+      return;
+    }
+
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.add(selectedUnitId);
+      getAncestorIds(selectedUnitId, tree).forEach((ancestorId) => next.add(ancestorId));
+      if (next.size === prev.size) {
+        return prev;
+      }
+      return next;
+    });
+  }, [selectedUnitId, tree]);
+
   const handleToggleExpand = (id) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -836,7 +862,11 @@ export default function OrganizationPage() {
   };
 
   const handleSelectUnit = (id) => {
-    setSelectedUnitId(id);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('unit', id);
+      return params;
+    });
     // Auto-expand the selected node and its ancestors
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -906,7 +936,12 @@ export default function OrganizationPage() {
       await deleteUnit.mutateAsync(deleteConfirm.id);
       toast.success('Unit deleted successfully');
       if (selectedUnitId === deleteConfirm.id) {
-        setSelectedUnitId(null);
+        setSearchParams((prev) => {
+          const params = new URLSearchParams(prev);
+          params.delete('unit');
+          params.delete('tab');
+          return params;
+        });
       }
       setDeleteConfirm(null);
     } catch (error) {

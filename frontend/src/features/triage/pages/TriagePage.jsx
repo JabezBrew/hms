@@ -21,11 +21,18 @@ import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
+
+const TRIAGE_PRIORITY_FILTERS = ['all', 'emergency', 'urgent', 'routine'];
 
 export default function TriagePage() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
-  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useUrlEnumParam({
+    param: 'priority',
+    values: TRIAGE_PRIORITY_FILTERS,
+    defaultValue: 'all',
+  });
   const [triageEntry, setTriageEntry] = useState(null);
   const [assignEntry, setAssignEntry] = useState(null);
 

@@ -21,8 +21,10 @@ import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 
 const DEFAULT_NURSING_TEMPLATE_TITLES = ['Nursing Vitals', 'Nursing I/O', 'Nursing Meds', 'Nursing Note'];
+const CLINICAL_NOTE_TABS = ['new', 'history', 'template'];
 
 const DEFAULT_NURSING_TEMPLATES = [
   {
@@ -352,7 +354,12 @@ export default function CreateClinicalNotePage() {
   const { id: encounterId } = useParams();
   const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [activeTab, setActiveTab] = useState('new');
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: CLINICAL_NOTE_TABS,
+    defaultValue: 'new',
+  });
+  const [isTemplateFormActive, setIsTemplateFormActive] = useState(false);
   const isCreatingTemplatesRef = useRef(false);
   const rustV2Mode = isRustV2ApiMode();
 
@@ -445,7 +452,7 @@ export default function CreateClinicalNotePage() {
   // Handle template selection
   const handleSelectTemplate = (template) => {
     setSelectedTemplate(template);
-    setActiveTab('form');
+    setIsTemplateFormActive(true);
   };
 
   const handleSelectNursingActivity = (activity) => {
@@ -464,6 +471,7 @@ export default function CreateClinicalNotePage() {
   const handleFormSuccess = () => {
     // Reset the form
     setSelectedTemplate(null);
+    setIsTemplateFormActive(false);
     setActiveTab('new');
 
     // Navigate back to the encounter detail page
@@ -473,6 +481,11 @@ export default function CreateClinicalNotePage() {
   // Handle template creation success
   const handleTemplateCreationSuccess = () => {
     toast.success('Template created successfully. You can now select it from the template list.');
+  };
+
+  const handleVisibleTabChange = (nextTab) => {
+    setIsTemplateFormActive(false);
+    setActiveTab(nextTab);
   };
 
   // Check if encounter is valid for adding notes
@@ -511,7 +524,6 @@ export default function CreateClinicalNotePage() {
             isLoadingEncounter={isLoadingEncounter}
           >
             <ClinicalNotesTabs
-              activeTab={activeTab}
               encounterId={encounterId}
               existingNotes={existingNotes}
               isErrorNotes={isErrorNotes}
@@ -525,7 +537,8 @@ export default function CreateClinicalNotePage() {
               patientId={encounter?.patient}
               rustV2Mode={rustV2Mode}
               selectedTemplate={selectedTemplate}
-              setActiveTab={setActiveTab}
+              activeTab={isTemplateFormActive ? 'form' : activeTab}
+              setActiveTab={handleVisibleTabChange}
             />
           </ClinicalNotePageState>
       </div>

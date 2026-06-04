@@ -18,7 +18,10 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+
+const ADMISSION_DETAIL_TABS = ['notes', 'vitals', 'billing'];
 
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
@@ -201,8 +204,14 @@ function AdmissionClinicalTabs({
   lengthOfStayLabel,
   totalCostLabel,
 }) {
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: ADMISSION_DETAIL_TABS,
+    defaultValue: 'notes',
+  });
+
   return (
-    <Tabs defaultValue="notes">
+    <Tabs value={activeTab} onValueChange={setActiveTab}>
       <TabsList>
         <TabsTrigger value="notes">
           <Clipboard className="size-4 mr-2" />

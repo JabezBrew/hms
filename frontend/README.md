@@ -72,6 +72,14 @@ The UI should not hand-code Rust V2 response shapes that already exist in the
 generated client. Feature adapters translate backend envelopes into UI-facing
 objects.
 
+## Route State
+
+Durable workflow selections, including page tabs that users expect to survive
+refresh, should use safe enum query parameters such as `?tab=critical` instead
+of component-only state. Use `src/shared/hooks/useUrlEnumParam.js` for tab-like
+state, and keep PHI, names, MRNs, accessions, raw URLs, and free-text clinical
+values out of query parameters.
+
 ## Safety And Performance Rules
 
 - Patient clinical data belongs in Patient Chronicle or panels launched from it.

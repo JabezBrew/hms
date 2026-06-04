@@ -38,6 +38,7 @@ import {
   useBulkVerifyLabResults,
 } from "@/features/laboratory/hooks";
 import { useDebounce } from '@/hooks/use-debounce';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { toast } from "sonner";
 import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
 import SpecimenCollectionDialog from "./SpecimenCollectionDialog";
@@ -97,6 +98,7 @@ const LAB_TABS = [
     badgeClassName: "badge-chronicle-emerald",
   },
 ];
+const LAB_TAB_VALUES = LAB_TABS.map((tab) => tab.id);
 
 function buildLabOrderFilters({ status, expand, page, searchQuery }) {
   const search = searchQuery.trim();
@@ -785,7 +787,11 @@ function LabActionDialogBody({
 const LabTechnicianDashboard = () => {
   const { user } = useAuth();
   const currentStaffId = user?.staffId || null;
-  const [activeTab, setActiveTab] = useState("ordered");
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: LAB_TAB_VALUES,
+    defaultValue: 'ordered',
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [orderedPage, setOrderedPage] = useState(1);

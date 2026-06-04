@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { useEncounters } from '@/features/encounters/hooks/useEncounterQueries';
 import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import {
   ENCOUNTER_PAGE_SIZE,
   INITIAL_ENCOUNTER_FILTERS,
@@ -17,15 +18,23 @@ import {
   hasActiveEncounterFilters,
 } from './encounterListUtils';
 
+const ENCOUNTER_TAB_RESET_PARAMS = Object.freeze(['page']);
+
 export function useEncounterListController() {
   const navigate = useNavigate();
   const rustV2Mode = isRustV2ApiMode();
   const [persistedEncounterState, setPersistedEncounterState] = useRouteTableState('encounters:listTable', {
-    activeTab: 'all',
     currentPage: 1,
     filters: INITIAL_ENCOUNTER_FILTERS,
   });
-  const [activeTab, setActiveTab] = useState(persistedEncounterState.activeTab || 'all');
+  const visibleTabs = rustV2Mode ? RUST_V2_ENCOUNTER_TABS : ENCOUNTER_TABS;
+  const visibleTabValues = useMemo(() => visibleTabs.map((tab) => tab.value), [visibleTabs]);
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: visibleTabValues,
+    defaultValue: 'all',
+    resetParams: ENCOUNTER_TAB_RESET_PARAMS,
+  });
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(persistedEncounterState.currentPage || 1);
   const [filters, setFilters] = useState({
@@ -56,7 +65,6 @@ export function useEncounterListController() {
   const hasPrevPage = !!encountersData?.previous;
   const canFilter = true;
   const canJumpToPage = !rustV2Mode;
-  const visibleTabs = rustV2Mode ? RUST_V2_ENCOUNTER_TABS : ENCOUNTER_TABS;
   const hasActiveFilters = canFilter && hasActiveEncounterFilters(filters, activeTab);
 
   useEffect(() => {
@@ -76,7 +84,7 @@ export function useEncounterListController() {
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setCurrentPage(1);
-    setPersistedEncounterState({ activeTab: tab, currentPage: 1 });
+    setPersistedEncounterState({ currentPage: 1 });
   };
 
   const resetFilters = () => {
@@ -84,7 +92,6 @@ export function useEncounterListController() {
     setFilters(INITIAL_ENCOUNTER_FILTERS);
     setCurrentPage(1);
     setPersistedEncounterState({
-      activeTab: 'all',
       filters: INITIAL_ENCOUNTER_FILTERS,
       currentPage: 1,
     });

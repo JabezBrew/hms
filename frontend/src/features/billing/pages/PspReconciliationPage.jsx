@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import {
@@ -75,6 +76,8 @@ const SETTLEMENT_TEMPLATE_HEADERS = [
   'paid_at',
   'status',
 ];
+
+const PSP_TABS = ['intents', 'settlements'];
 
 const PAYMENT_INTENT_STATUS_META = {
   pending: { cls: 'badge-chronicle-amber', label: 'Pending', icon: Clock },
@@ -532,7 +535,11 @@ function SettlementLinesDialog({
 }
 
 export default function PspReconciliationPage() {
-  const [tab, setTab] = useState('intents');
+  const [tab, setTab] = useUrlEnumParam({
+    param: 'tab',
+    values: PSP_TABS,
+    defaultValue: 'intents',
+  });
   const rustV2Mode = isRustV2ApiMode();
   const settlementImportsAvailable = !rustV2Mode;
 

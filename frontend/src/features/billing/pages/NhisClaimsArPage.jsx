@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import {
   Select,
@@ -58,6 +59,8 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
   currency: 'GHS',
   minimumFractionDigits: 2,
 });
+
+const NHIS_TABS = ['batches', 'exports', 'remittances', 'ar'];
 
 function formatCurrency(amount) {
   const n = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -454,7 +457,11 @@ function RemittanceMatchStatusBadge({ status }) {
 }
 
 export default function NhisClaimsArPage() {
-  const [tab, setTab] = useState('batches');
+  const [tab, setTab] = useUrlEnumParam({
+    param: 'tab',
+    values: NHIS_TABS,
+    defaultValue: 'batches',
+  });
   const rustV2Mode = isRustV2ApiMode();
   const periodBatchCreationAvailable = !rustV2Mode;
   const exportDownloadsAvailable = !rustV2Mode;
@@ -532,7 +539,7 @@ export default function NhisClaimsArPage() {
       setTab,
       setForceExportDialog,
     }),
-    [exportBatchMutation, lintBatchMutation]
+    [exportBatchMutation, lintBatchMutation, setTab]
   );
 
   const exportColumns = useMemo(

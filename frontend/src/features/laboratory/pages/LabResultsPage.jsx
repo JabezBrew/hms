@@ -24,6 +24,7 @@ import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import {
   LabEmptyState,
   LabMetricGrid,
@@ -77,6 +78,7 @@ import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { toast } from "sonner";
 
 const RESULTS_PAGE_SIZE = 100;
+const LAB_RESULT_TABS = ['all', 'critical'];
 
 const RESULT_VERIFICATION_OPTIONS = [
   { value: "all", label: "All Results" },
@@ -1496,7 +1498,6 @@ export default function LabResultsPage() {
   const [persistedResultsState, setPersistedResultsState] = useRouteTableState('laboratory:resultsTable', {
     searchQuery: '',
     verificationFilter: 'all',
-    activeTab: 'all',
     page: 1,
   });
 
@@ -1510,7 +1511,11 @@ export default function LabResultsPage() {
   const [verificationFilter, setVerificationFilter] = useState(
     persistedResultsState.verificationFilter || "all"
   );
-  const [activeTab, setActiveTab] = useState(persistedResultsState.activeTab || "all");
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: LAB_RESULT_TABS,
+    defaultValue: 'all',
+  });
   const [expandedOrders, setExpandedOrders] = useState(new Set());
   const [page, setPage] = useState(persistedResultsState.page || 1);
 
@@ -1704,7 +1709,7 @@ export default function LabResultsPage() {
   const handleTabChange = (value) => {
     setActiveTab(value);
     setPage(1);
-    setPersistedResultsState({ activeTab: value, page: 1 });
+    setPersistedResultsState({ page: 1 });
   };
 
   const handleSearchChange = (event) => {
@@ -1728,7 +1733,6 @@ export default function LabResultsPage() {
     setPersistedResultsState({
       searchQuery: "",
       verificationFilter: "all",
-      activeTab: "all",
       page: 1,
     });
   };

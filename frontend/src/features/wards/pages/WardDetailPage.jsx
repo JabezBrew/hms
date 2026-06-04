@@ -9,7 +9,6 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { cn } from '@/lib/utils';
 import { getAuthJSON } from '@/lib/auth-storage';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,6 +21,7 @@ import { useWard, useDeleteWard } from '@/features/wards/hooks/useWardQueries';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { useSystemCapabilities } from '@/hooks/useSystemQueries';
 import { toast } from 'sonner';
 import {
@@ -34,6 +34,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+
+const WARD_DETAIL_BASE_TABS = ['overview'];
+const WARD_DETAIL_ADMIN_TABS = ['overview', 'staff', 'sections'];
 
 /**
  * WardDetailPage - Chronicle-style ward detail page
@@ -50,6 +53,11 @@ export default function WardDetailPage() {
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isAdmin] = useState(() => getAuthJSON('user')?.role === 'admin');
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: isAdmin ? WARD_DETAIL_ADMIN_TABS : WARD_DETAIL_BASE_TABS,
+    defaultValue: 'overview',
+  });
   const { data: deploymentCapabilities } = useSystemCapabilities();
   const enabledFeatures = deploymentCapabilities?.features;
   const canOpenWardBoard = enabledFeatures?.ward_task_board === true
@@ -212,7 +220,7 @@ export default function WardDetailPage() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <Tabs defaultValue="overview" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutGrid className="size-4" />

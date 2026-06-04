@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PspReconciliationPage from '../PspReconciliationPage'
@@ -31,8 +32,18 @@ vi.mock('@/components/ui/VirtualizedTable', () => ({
   VirtualizedTable: () => <div data-testid="virtualized-table" />,
 }))
 
-function renderPage() {
-  return render(<PspReconciliationPage />)
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location-probe">{`${location.pathname}${location.search}`}</div>
+}
+
+function renderPage(route = '/billing/psp') {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <PspReconciliationPage />
+      <LocationProbe />
+    </MemoryRouter>
+  )
 }
 
 async function openSettlementsTab() {
@@ -55,6 +66,7 @@ describe('PspReconciliationPage Rust V2 settlement guards', () => {
     renderPage()
     await openSettlementsTab()
 
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/psp?tab=settlements')
     expect(screen.queryByText('Import Settlement Statement')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^import$/i })).not.toBeInTheDocument()
     expect(screen.getByText(/settlement imports are not available in rust v2/i)).toBeInTheDocument()
@@ -66,6 +78,7 @@ describe('PspReconciliationPage Rust V2 settlement guards', () => {
     renderPage()
     await openSettlementsTab()
 
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/psp?tab=settlements')
     expect(screen.getByText('Import Settlement Statement')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^import$/i })).toBeInTheDocument()
   })

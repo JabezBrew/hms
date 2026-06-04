@@ -29,6 +29,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { keyWith } from '@/shared/lib/queryKeys';
 import { AppointmentMetrics } from './appointments/AppointmentMetrics';
 import {
@@ -45,7 +46,7 @@ import {
   toUtcIso,
 } from './appointments/appointmentsPageUtils';
 
-const APPOINTMENT_TAB_VALUES = new Set([
+const APPOINTMENT_TAB_VALUES = [
   'today',
   'appointments',
   'sessions',
@@ -53,11 +54,12 @@ const APPOINTMENT_TAB_VALUES = new Set([
   'waitlist',
   'exceptions',
   'services',
-]);
+];
+const APPOINTMENT_TAB_VALUE_SET = new Set(APPOINTMENT_TAB_VALUES);
 
 function appointmentTabFromSearchParams(searchParams) {
   const tab = searchParams.get('tab');
-  if (APPOINTMENT_TAB_VALUES.has(tab)) {
+  if (APPOINTMENT_TAB_VALUE_SET.has(tab)) {
     return tab;
   }
   if (searchParams.get('waitlist')) {
@@ -76,7 +78,11 @@ const AppointmentsPage = () => {
   const targetClinicId = routeSearchParams.get('clinic') || '';
   const targetWaitlistId = routeSearchParams.get('waitlist') || '';
   const routeTab = appointmentTabFromSearchParams(routeSearchParams);
-  const [view, setView] = useState(() => routeTab || 'today');
+  const [view, setView] = useUrlEnumParam({
+    param: 'tab',
+    values: APPOINTMENT_TAB_VALUES,
+    defaultValue: routeTab || 'today',
+  });
   const [sessionForm, setSessionForm] = useState(() => ({
     ...initialSessionForm(),
     ...(targetClinicId ? { clinic_id: targetClinicId } : {}),
@@ -129,12 +135,6 @@ const AppointmentsPage = () => {
     () => new Map(sessions.map((session) => [session.id, session])),
     [sessions],
   );
-
-  useEffect(() => {
-    if (routeTab) {
-      setView(routeTab);
-    }
-  }, [routeTab]);
 
   useEffect(() => {
     if (!targetClinicId) {

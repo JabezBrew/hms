@@ -15,6 +15,7 @@ import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   LabEmptyState,
@@ -65,6 +66,7 @@ const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
 });
 
 const CATALOG_PAGE_SIZE = 24;
+const LAB_CATALOG_TABS = ['tests', 'panels'];
 
 function labCatalogTabFromSearchParams(searchParams) {
   const tab = searchParams.get('tab');
@@ -945,15 +947,17 @@ const LabCatalogPage = () => {
   const targetCatalogTab = labCatalogTabFromSearchParams(routeSearchParams);
   const catalogMutationsAvailable = !isRustV2ApiMode();
   const [persistedCatalogState, setPersistedCatalogState] = useRouteTableState('laboratory:catalogTable', {
-    activeTab: 'tests',
     searchQuery: '',
     categoryFilter: 'all',
     statusFilter: 'all',
     page: 1,
   });
 
-  // Tab state
-  const [activeTab, setActiveTab] = useState(targetCatalogTab || persistedCatalogState.activeTab || "tests");
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: LAB_CATALOG_TABS,
+    defaultValue: targetCatalogTab || "tests",
+  });
 
   // Search and filters
   const [searchQuery, setSearchQuery] = useState(persistedCatalogState.searchQuery || "");
@@ -1041,8 +1045,7 @@ const LabCatalogPage = () => {
     if (!targetCatalogTab) {
       return;
     }
-    setActiveTab(targetCatalogTab);
-    setPersistedCatalogState({ activeTab: targetCatalogTab, page: 1 });
+    setPersistedCatalogState({ page: 1 });
   }, [setPersistedCatalogState, targetCatalogTab]);
   const isActiveFetching = activeTab === "tests" ? testsFetching : panelsFetching;
 
@@ -1144,7 +1147,7 @@ const LabCatalogPage = () => {
   const handleTabChange = (value) => {
     setActiveTab(value);
     setPage(1);
-    setPersistedCatalogState({ activeTab: value, page: 1 });
+    setPersistedCatalogState({ page: 1 });
   };
 
   const handleSearchChange = (event) => {

@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import NhisClaimsArPage from '../NhisClaimsArPage';
@@ -102,6 +103,20 @@ vi.mock('@/components/ui/VirtualizedTable', () => ({
   ),
 }));
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe">{`${location.pathname}${location.search}`}</div>;
+}
+
+function renderPage(route = '/billing/nhis') {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <NhisClaimsArPage />
+      <LocationProbe />
+    </MemoryRouter>
+  );
+}
+
 describe('NhisClaimsArPage Rust V2 guards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -115,7 +130,7 @@ describe('NhisClaimsArPage Rust V2 guards', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     const user = userEvent.setup();
 
-    render(<NhisClaimsArPage />);
+    renderPage();
 
     expect(screen.queryByRole('button', { name: /create batch/i })).not.toBeInTheDocument();
     expect(
@@ -124,12 +139,14 @@ describe('NhisClaimsArPage Rust V2 guards', () => {
     expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /exports/i }));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/nhis?tab=exports');
     expect(screen.queryByRole('button', { name: /download zip/i })).not.toBeInTheDocument();
     expect(
       screen.getByText(/nhis export zip downloads are not available in rust v2/i),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /remittances/i }));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/nhis?tab=remittances');
     expect(screen.queryByRole('button', { name: /^import$/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Import Remittance')).not.toBeInTheDocument();
     expect(
@@ -142,14 +159,16 @@ describe('NhisClaimsArPage Rust V2 guards', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' };
     const user = userEvent.setup();
 
-    render(<NhisClaimsArPage />);
+    renderPage();
 
     expect(screen.getByRole('button', { name: /create batch/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /exports/i }));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/nhis?tab=exports');
     expect(screen.getByRole('button', { name: /download zip/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /remittances/i }));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/nhis?tab=remittances');
     expect(screen.getByText('Import Remittance')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^import$/i })).toBeInTheDocument();
   });

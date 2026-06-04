@@ -22,7 +22,7 @@ import Server from 'lucide-react/dist/esm/icons/server.js'
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js'
 import Timer from 'lucide-react/dist/esm/icons/timer.js'
 import TriangleAlert from 'lucide-react/dist/esm/icons/triangle-alert.js'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import {
@@ -38,6 +38,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader'
 import { PageShell } from '@/shared/components/page/PageShell'
 import { PageState } from '@/shared/components/page/PageState'
 import { usePageMeta } from '@/shared/hooks/usePageMeta'
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam'
 import { isOpsDashboardHost } from '@/features/ops/host'
 import {
   useOpsDatabase,
@@ -62,6 +63,8 @@ const TABS = [
   { id: 'deploys', label: 'Deploys', icon: Cloud },
   { id: 'incidents', label: 'Incidents', icon: TriangleAlert },
 ]
+const OPS_TAB_VALUES = TABS.map((tab) => tab.id)
+const OPS_WINDOW_VALUES = WINDOW_OPTIONS.map((option) => option.value)
 
 const EMPTY_DASHBOARD = Object.freeze({})
 const EMPTY_ARRAY = Object.freeze([])
@@ -1065,8 +1068,16 @@ function LoadingDashboard({ pageMeta }) {
 }
 
 export default function OpsDashboardPage() {
-  const [windowValue, setWindowValue] = useState('15m')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [windowValue, setWindowValue] = useUrlEnumParam({
+    param: 'window',
+    values: OPS_WINDOW_VALUES,
+    defaultValue: '15m',
+  })
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: OPS_TAB_VALUES,
+    defaultValue: 'overview',
+  })
   const opsHostAllowed = isOpsDashboardHost()
   const pageMeta = usePageMeta({
     title: 'Ops Dashboard | Hospital Management System',

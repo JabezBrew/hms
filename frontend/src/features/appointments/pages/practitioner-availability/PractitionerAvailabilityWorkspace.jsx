@@ -13,11 +13,14 @@ import { usePractitioner } from '@/features/staff/hooks';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 
 import { AvailabilityCalendarPanel } from './AvailabilityCalendarPanel';
 import { AvailabilityDialogs } from './AvailabilityDialogs';
 import { AvailabilityHeader } from './AvailabilityHeader';
 import { AvailabilitySidebar } from './AvailabilitySidebar';
+
+const AVAILABILITY_TABS = ['schedules', 'blocked'];
 
 const getPractitionerOption = (practitioner) => {
   if (practitioner?.name) {
@@ -87,7 +90,11 @@ const PractitionerAvailabilityWorkspace = ({
   initialSelectedPractitioner,
   pageMeta,
 }) => {
-  const [activeTab, setActiveTab] = useState('schedules');
+  const [activeTab, setActiveTab] = useUrlEnumParam({
+    param: 'tab',
+    values: AVAILABILITY_TABS,
+    defaultValue: 'schedules',
+  });
   const [selectedPractitioner, setSelectedPractitioner] = useState(initialSelectedPractitioner);
   const [isCreateAvailabilityDialogOpen, setIsCreateAvailabilityDialogOpen] = useState(false);
   const [isEditAvailabilityDialogOpen, setIsEditAvailabilityDialogOpen] = useState(false);
