@@ -47,11 +47,28 @@ const WARD_TYPE_LABELS = {
   isolation: 'Isolation Ward',
 };
 
+const STATUS_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'occupied', label: 'Occupied' },
+  { value: 'available', label: 'Vacant' },
+  { value: 'cleaning', label: 'Cleaning' },
+  { value: 'maintenance', label: 'Blocked' },
+  { value: 'reserved', label: 'Reserved' },
+];
+
+function canonicalBedStatus(status) {
+  if (status === 'blocked' || status === 'maintenance') return 'maintenance';
+  if (status === 'cleaning') return 'cleaning';
+  if (status === 'reserved') return 'reserved';
+  if (status === 'occupied') return 'occupied';
+  return 'available';
+}
+
 function filterBeds(beds, filters) {
   const normalizedSearch = filters.searchTerm.toLowerCase();
 
   return beds.filter((bed) => {
-    if (filters.status !== 'all' && bed.status !== filters.status) return false;
+    if (filters.status !== 'all' && canonicalBedStatus(bed.status) !== filters.status) return false;
     if (filters.bedType !== 'all' && bed.bed_type !== filters.bedType) return false;
     if (normalizedSearch && !bed.bed_number.toLowerCase().includes(normalizedSearch)) {
       return false;
@@ -60,18 +77,49 @@ function filterBeds(beds, filters) {
   });
 }
 
-function buildWardStats(beds) {
+function countBedsByStatus(beds) {
   return beds.reduce(
     (acc, bed) => {
       acc.total += 1;
-      if (bed.status === 'available') acc.available += 1;
-      if (bed.status === 'occupied') acc.occupied += 1;
-      if (bed.status === 'reserved') acc.reserved += 1;
-      if (bed.status === 'maintenance') acc.maintenance += 1;
+      const status = canonicalBedStatus(bed.status);
+      acc[status] += 1;
       return acc;
     },
-    { total: 0, available: 0, occupied: 0, reserved: 0, maintenance: 0 },
+    { total: 0, available: 0, occupied: 0, reserved: 0, cleaning: 0, maintenance: 0 },
   );
+}
+
+function aggregateCount(source, keys, fallback) {
+  const names = Array.isArray(keys) ? keys : [keys];
+  for (const key of names) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return fallback;
+}
+
+function buildWardStats(ward, beds) {
+  const bedPageCounts = countBedsByStatus(beds);
+
+  return {
+    total: aggregateCount(ward, 'total_beds', bedPageCounts.total),
+    available: aggregateCount(ward, 'available_beds_count', bedPageCounts.available),
+    occupied: aggregateCount(ward, 'occupied_beds_count', bedPageCounts.occupied),
+    reserved: aggregateCount(ward, 'reserved_beds_count', bedPageCounts.reserved),
+    cleaning: aggregateCount(
+      ward,
+      'cleaning_beds_count',
+      bedPageCounts.cleaning,
+    ),
+    maintenance: aggregateCount(
+      ward,
+      ['blocked_beds_count', 'maintenance_beds_count'],
+      bedPageCounts.maintenance,
+    ),
+  };
 }
 
 function buildSectionStats(sections, beds) {
@@ -83,11 +131,18 @@ function buildSectionStats(sections, beds) {
       totalBeds: 0,
       availableBeds: 0,
       occupiedBeds: 0,
+      reservedBeds: 0,
+      cleaningBeds: 0,
+      maintenanceBeds: 0,
     };
 
     current.totalBeds += 1;
-    if (bed.status === 'available') current.availableBeds += 1;
-    if (bed.status === 'occupied') current.occupiedBeds += 1;
+    const status = canonicalBedStatus(bed.status);
+    if (status === 'available') current.availableBeds += 1;
+    if (status === 'occupied') current.occupiedBeds += 1;
+    if (status === 'reserved') current.reservedBeds += 1;
+    if (status === 'cleaning') current.cleaningBeds += 1;
+    if (status === 'maintenance') current.maintenanceBeds += 1;
     bedsBySection.set(bed.section, current);
   });
 
@@ -98,14 +153,40 @@ function buildSectionStats(sections, beds) {
         totalBeds = 0,
         availableBeds = 0,
         occupiedBeds = 0,
+        reservedBeds = 0,
+        cleaningBeds = 0,
+        maintenanceBeds = 0,
       } = bedsBySection.get(section.id) || {};
-      const occupancyRate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+      const aggregateTotalBeds = aggregateCount(section, 'bed_count', totalBeds);
+      const aggregateAvailableBeds = aggregateCount(
+        section,
+        'available_beds_count',
+        availableBeds,
+      );
+      const aggregateOccupiedBeds = aggregateCount(section, 'occupied_beds_count', occupiedBeds);
+      const aggregateReservedBeds = aggregateCount(section, 'reserved_beds_count', reservedBeds);
+      const aggregateCleaningBeds = aggregateCount(
+        section,
+        'cleaning_beds_count',
+        cleaningBeds,
+      );
+      const aggregateMaintenanceBeds = aggregateCount(
+        section,
+        ['blocked_beds_count', 'maintenance_beds_count'],
+        maintenanceBeds,
+      );
+      const occupancyRate = aggregateTotalBeds > 0
+        ? Math.round((aggregateOccupiedBeds / aggregateTotalBeds) * 100)
+        : 0;
 
       return {
         ...section,
-        totalBeds,
-        availableBeds,
-        occupiedBeds,
+        totalBeds: aggregateTotalBeds,
+        availableBeds: aggregateAvailableBeds,
+        occupiedBeds: aggregateOccupiedBeds,
+        reservedBeds: aggregateReservedBeds,
+        cleaningBeds: aggregateCleaningBeds,
+        maintenanceBeds: aggregateMaintenanceBeds,
         occupancyRate,
       };
     });
@@ -201,39 +282,46 @@ function WardDashboardHeader({ ward, onNewAdmission }) {
   );
 }
 
-function WardStatsGrid({ filters, onFilterChange, stats }) {
+function WardStatsGrid({ canFilterByStatus, filters, onFilterChange, stats }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
       <StatCard icon={Bed} label="Total Beds" value={stats.total} color="primary" />
       <StatCard
         icon={Activity}
-        label="Available"
+        label="Vacant"
         value={stats.available}
         color="emerald"
-        onClick={() => onFilterChange('status', stats.available > 0 ? 'available' : 'all')}
-        active={filters.status === 'available'}
+        onClick={canFilterByStatus ? () => onFilterChange('status', stats.available > 0 ? 'available' : 'all') : undefined}
+        active={canFilterByStatus && filters.status === 'available'}
       />
       <StatCard
         icon={Users}
         label="Occupied"
         value={stats.occupied}
         color="rose"
-        onClick={() => onFilterChange('status', stats.occupied > 0 ? 'occupied' : 'all')}
-        active={filters.status === 'occupied'}
+        onClick={canFilterByStatus ? () => onFilterChange('status', stats.occupied > 0 ? 'occupied' : 'all') : undefined}
+        active={canFilterByStatus && filters.status === 'occupied'}
+      />
+      <StatCard
+        label="Cleaning"
+        value={stats.cleaning}
+        color="amber"
+        onClick={canFilterByStatus ? () => onFilterChange('status', stats.cleaning > 0 ? 'cleaning' : 'all') : undefined}
+        active={canFilterByStatus && filters.status === 'cleaning'}
+      />
+      <StatCard
+        label="Blocked"
+        value={stats.maintenance}
+        color="slate"
+        onClick={canFilterByStatus ? () => onFilterChange('status', stats.maintenance > 0 ? 'maintenance' : 'all') : undefined}
+        active={canFilterByStatus && filters.status === 'maintenance'}
       />
       <StatCard
         label="Reserved"
         value={stats.reserved}
-        color="amber"
-        onClick={() => onFilterChange('status', stats.reserved > 0 ? 'reserved' : 'all')}
-        active={filters.status === 'reserved'}
-      />
-      <StatCard
-        label="Maintenance"
-        value={stats.maintenance}
-        color="slate"
-        onClick={() => onFilterChange('status', stats.maintenance > 0 ? 'maintenance' : 'all')}
-        active={filters.status === 'maintenance'}
+        color="sky"
+        onClick={canFilterByStatus ? () => onFilterChange('status', stats.reserved > 0 ? 'reserved' : 'all') : undefined}
+        active={canFilterByStatus && filters.status === 'reserved'}
       />
     </div>
   );
@@ -255,6 +343,7 @@ function WardSectionOverview({ sectionStats }) {
 }
 
 function WardFilterBar({
+  canFilterByStatus,
   filters,
   hasActiveFilters,
   onClearFilters,
@@ -263,8 +352,8 @@ function WardFilterBar({
   viewMode,
 }) {
   return (
-    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between bg-card/50 rounded-xl p-4 border border-border/50">
-      <div className="flex flex-wrap gap-3 items-center flex-1">
+    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/50 p-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-1 flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
           <Label htmlFor="bed-search" className="sr-only">Search beds</Label>
@@ -294,6 +383,24 @@ function WardFilterBar({
           </SelectContent>
         </Select>
 
+        <fieldset className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg bg-muted/50 p-1">
+          <legend className="sr-only">Bed status filter</legend>
+          {STATUS_FILTERS.map((status) => (
+            <Button
+              key={status.value}
+              type="button"
+              variant={filters.status === status.value ? 'secondary' : 'ghost'}
+              size="sm"
+              disabled={!canFilterByStatus && status.value !== 'all'}
+              onClick={() => onFilterChange('status', status.value)}
+              className="h-8 px-2.5 font-mono text-xs"
+              aria-pressed={filters.status === status.value}
+            >
+              {status.label}
+            </Button>
+          ))}
+        </fieldset>
+
         {hasActiveFilters && (
           <Button
             variant="ghost"
@@ -313,21 +420,23 @@ function WardFilterBar({
           variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
           size="sm"
           onClick={() => onViewModeChange('grid')}
-          className="size-8 p-0"
-          aria-label="Grid view"
+          className="h-8 gap-1.5 px-2.5"
+          aria-label="Bay map view"
           aria-pressed={viewMode === 'grid'}
         >
           <LayoutGrid className="size-4" aria-hidden="true" />
+          <span className="hidden font-mono text-xs sm:inline">Bay Map</span>
         </Button>
         <Button
           variant={viewMode === 'list' ? 'secondary' : 'ghost'}
           size="sm"
           onClick={() => onViewModeChange('list')}
-          className="size-8 p-0"
+          className="h-8 gap-1.5 px-2.5"
           aria-label="List view"
           aria-pressed={viewMode === 'list'}
         >
           <List className="size-4" aria-hidden="true" />
+          <span className="hidden font-mono text-xs sm:inline">List</span>
         </Button>
       </fieldset>
     </div>
@@ -424,8 +533,9 @@ export function WardDashboard() {
   const isLoading = isWardLoading || isBedsLoading || isAdmissionsLoading || isSectionsLoading;
 
   const filteredBeds = useMemo(() => filterBeds(beds, filters), [beds, filters]);
-  const stats = useMemo(() => buildWardStats(beds), [beds]);
+  const stats = useMemo(() => buildWardStats(ward, beds), [ward, beds]);
   const sectionStats = useMemo(() => buildSectionStats(sections, beds), [sections, beds]);
+  const canFilterByStatus = stats.total > 0 && beds.length >= stats.total;
 
   // Handle filter change
   const handleFilterChange = (key, value) => {
@@ -480,6 +590,7 @@ export function WardDashboard() {
       <WardDashboardHeader ward={ward} onNewAdmission={handleNewAdmission} />
 
       <WardStatsGrid
+        canFilterByStatus={canFilterByStatus}
         filters={filters}
         onFilterChange={handleFilterChange}
         stats={stats}
@@ -488,6 +599,7 @@ export function WardDashboard() {
       <WardSectionOverview sectionStats={sectionStats} />
 
       <WardFilterBar
+        canFilterByStatus={canFilterByStatus}
         filters={filters}
         hasActiveFilters={hasActiveFilters}
         onClearFilters={clearFilters}
@@ -510,7 +622,7 @@ export function WardDashboard() {
       {filteredBeds.length > 0 && (
         <div className="text-center">
           <p className="font-mono text-xs text-muted-foreground">
-            Showing {filteredBeds.length} of {beds.length} beds
+            Showing {filteredBeds.length} of {stats.total} beds
           </p>
         </div>
       )}
@@ -552,6 +664,12 @@ function StatCard({ icon: Icon, label, value, color = 'primary', onClick, active
       text: 'text-slate-600',
       icon: 'text-slate-600',
       active: 'ring-2 ring-slate-500'
+    },
+    sky: {
+      bg: 'bg-sky-500/10',
+      text: 'text-sky-600',
+      icon: 'text-sky-600',
+      active: 'ring-2 ring-sky-500'
     },
   };
 

@@ -53,7 +53,10 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
     assert_eq!(created_ward.name, "Test Ward");
     assert_eq!(created_ward.status, WardStatus::Active);
     assert_eq!(created_ward.active_bed_count, 0);
+    assert_eq!(created_ward.available_bed_count, 0);
     assert_eq!(created_ward.occupied_bed_count, 0);
+    assert_eq!(created_ward.reserved_bed_count, 0);
+    assert_eq!(created_ward.cleaning_bed_count, 0);
     assert!(
         hms_db::ward::get_ward(&pool, uuid::Uuid::new_v4(), created_ward.id)
             .await
@@ -197,6 +200,31 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
     assert!(beds.iter().all(|bed| bed.ward_id == ward_id));
     assert!(beds.iter().any(|candidate| candidate.id == bed.id));
 
+    let ward_after_bed_update = hms_db::ward::get_ward(&pool, facility_id, ward_id)
+        .await
+        .expect("ward lookup after bed update succeeds")
+        .expect("ward exists after bed update");
+    assert_eq!(
+        ward_after_bed_update.active_bed_count,
+        ward.active_bed_count + 1
+    );
+    assert_eq!(
+        ward_after_bed_update.available_bed_count,
+        ward.available_bed_count
+    );
+    assert_eq!(
+        ward_after_bed_update.occupied_bed_count,
+        ward.occupied_bed_count
+    );
+    assert_eq!(
+        ward_after_bed_update.reserved_bed_count,
+        ward.reserved_bed_count
+    );
+    assert_eq!(
+        ward_after_bed_update.cleaning_bed_count,
+        ward.cleaning_bed_count + 1
+    );
+
     let sections = hms_db::ward::list_ward_sections(&pool, facility_id, ward_id, None, 25)
         .await
         .expect("section lookup succeeds");
@@ -205,6 +233,10 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
         .find(|candidate| candidate.id == section.id)
         .expect("created section is listed");
     assert_eq!(created_section.active_bed_count, 1);
+    assert_eq!(created_section.available_bed_count, 0);
+    assert_eq!(created_section.occupied_bed_count, 0);
+    assert_eq!(created_section.reserved_bed_count, 0);
+    assert_eq!(created_section.cleaning_bed_count, 1);
 
     assert!(hms_db::ward::get_ward(&pool, uuid::Uuid::new_v4(), ward_id)
         .await

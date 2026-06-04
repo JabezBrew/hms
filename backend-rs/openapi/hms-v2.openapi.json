@@ -13643,6 +13643,14 @@
                   "format": "int64",
                   "type": "integer"
                 },
+                "available_bed_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "cleaning_bed_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "code": {
                   "type": "string"
                 },
@@ -13661,6 +13669,10 @@
                   "format": "int64",
                   "type": "integer"
                 },
+                "reserved_bed_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "status": {
                   "$ref": "#/components/schemas/WardStatus"
                 }
@@ -13671,7 +13683,10 @@
                 "name",
                 "status",
                 "active_bed_count",
+                "available_bed_count",
                 "occupied_bed_count",
+                "reserved_bed_count",
+                "cleaning_bed_count",
                 "created_at"
               ],
               "type": "object"
@@ -13699,6 +13714,14 @@
                   "format": "int64",
                   "type": "integer"
                 },
+                "available_bed_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "cleaning_bed_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "code": {
                   "type": "string"
                 },
@@ -13712,6 +13735,14 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "occupied_bed_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "reserved_bed_count": {
+                  "format": "int64",
+                  "type": "integer"
                 },
                 "status": {
                   "$ref": "#/components/schemas/WardStatus"
@@ -13728,6 +13759,10 @@
                 "name",
                 "status",
                 "active_bed_count",
+                "available_bed_count",
+                "occupied_bed_count",
+                "reserved_bed_count",
+                "cleaning_bed_count",
                 "created_at"
               ],
               "type": "object"
@@ -21330,6 +21365,14 @@
                 "format": "int64",
                 "type": "integer"
               },
+              "available_bed_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "cleaning_bed_count": {
+                "format": "int64",
+                "type": "integer"
+              },
               "code": {
                 "type": "string"
               },
@@ -21348,6 +21391,10 @@
                 "format": "int64",
                 "type": "integer"
               },
+              "reserved_bed_count": {
+                "format": "int64",
+                "type": "integer"
+              },
               "status": {
                 "$ref": "#/components/schemas/WardStatus"
               }
@@ -21358,7 +21405,10 @@
               "name",
               "status",
               "active_bed_count",
+              "available_bed_count",
               "occupied_bed_count",
+              "reserved_bed_count",
+              "cleaning_bed_count",
               "created_at"
             ],
             "type": "object"
@@ -21473,6 +21523,14 @@
                 "format": "int64",
                 "type": "integer"
               },
+              "available_bed_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "cleaning_bed_count": {
+                "format": "int64",
+                "type": "integer"
+              },
               "code": {
                 "type": "string"
               },
@@ -21486,6 +21544,14 @@
               },
               "name": {
                 "type": "string"
+              },
+              "occupied_bed_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "reserved_bed_count": {
+                "format": "int64",
+                "type": "integer"
               },
               "status": {
                 "$ref": "#/components/schemas/WardStatus"
@@ -21502,6 +21568,10 @@
               "name",
               "status",
               "active_bed_count",
+              "available_bed_count",
+              "occupied_bed_count",
+              "reserved_bed_count",
+              "cleaning_bed_count",
               "created_at"
             ],
             "type": "object"
@@ -28477,6 +28547,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "available_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cleaning_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
           "code": {
             "type": "string"
           },
@@ -28495,6 +28573,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "reserved_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
           "status": {
             "$ref": "#/components/schemas/WardStatus"
           }
@@ -28505,7 +28587,10 @@
           "name",
           "status",
           "active_bed_count",
+          "available_bed_count",
           "occupied_bed_count",
+          "reserved_bed_count",
+          "cleaning_bed_count",
           "created_at"
         ],
         "type": "object"
@@ -28953,6 +29038,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "available_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cleaning_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
           "code": {
             "type": "string"
           },
@@ -28966,6 +29059,14 @@
           },
           "name": {
             "type": "string"
+          },
+          "occupied_bed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reserved_bed_count": {
+            "format": "int64",
+            "type": "integer"
           },
           "status": {
             "$ref": "#/components/schemas/WardStatus"
@@ -28982,6 +29083,10 @@
           "name",
           "status",
           "active_bed_count",
+          "available_bed_count",
+          "occupied_bed_count",
+          "reserved_bed_count",
+          "cleaning_bed_count",
           "created_at"
         ],
         "type": "object"

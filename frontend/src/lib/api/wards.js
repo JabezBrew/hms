@@ -36,10 +36,20 @@ function deriveRustCodeFromName(value, fallback) {
   return normalized || fallback;
 }
 
+function numberFrom(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function adaptV2Ward(ward) {
-  const totalBeds = Number(ward.active_bed_count || 0);
-  const occupiedBeds = Number(ward.occupied_bed_count || 0);
-  const availableBeds = Math.max(totalBeds - occupiedBeds, 0);
+  const totalBeds = numberFrom(ward.active_bed_count);
+  const occupiedBeds = numberFrom(ward.occupied_bed_count);
+  const reservedBeds = numberFrom(ward.reserved_bed_count);
+  const cleaningBeds = numberFrom(ward.cleaning_bed_count);
+  const fallbackAvailableBeds = Math.max(totalBeds - occupiedBeds - reservedBeds - cleaningBeds, 0);
+  const availableBeds = ward.available_bed_count === undefined || ward.available_bed_count === null
+    ? fallbackAvailableBeds
+    : numberFrom(ward.available_bed_count);
   const occupancyRate = totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
 
   return {
@@ -49,6 +59,9 @@ function adaptV2Ward(ward) {
     total_beds: totalBeds,
     available_beds_count: availableBeds,
     occupied_beds_count: occupiedBeds,
+    reserved_beds_count: reservedBeds,
+    cleaning_beds_count: cleaningBeds,
+    maintenance_beds_count: cleaningBeds,
     occupancy_rate: occupancyRate,
     is_active: ward.status === 'active',
   };
@@ -131,11 +144,24 @@ function adaptV2Section(section) {
   if (!section) {
     return section;
   }
+  const totalBeds = numberFrom(section.active_bed_count);
+  const occupiedBeds = numberFrom(section.occupied_bed_count);
+  const reservedBeds = numberFrom(section.reserved_bed_count);
+  const cleaningBeds = numberFrom(section.cleaning_bed_count);
+  const fallbackAvailableBeds = Math.max(totalBeds - occupiedBeds - reservedBeds - cleaningBeds, 0);
+  const availableBeds = section.available_bed_count === undefined || section.available_bed_count === null
+    ? fallbackAvailableBeds
+    : numberFrom(section.available_bed_count);
+
   return {
     ...section,
     ward: section.ward_id,
-    bed_count: section.active_bed_count || 0,
-    available_beds_count: section.active_bed_count || 0,
+    bed_count: totalBeds,
+    available_beds_count: availableBeds,
+    occupied_beds_count: occupiedBeds,
+    reserved_beds_count: reservedBeds,
+    cleaning_beds_count: cleaningBeds,
+    maintenance_beds_count: cleaningBeds,
     is_active: section.status === 'active',
     description: section.description || '',
   };

@@ -32,6 +32,10 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     assert_eq!(created_ward_body["data"]["name"], "Test Ward");
     assert_eq!(created_ward_body["data"]["status"], "active");
     assert_eq!(created_ward_body["data"]["active_bed_count"], 0);
+    assert_eq!(created_ward_body["data"]["available_bed_count"], 0);
+    assert_eq!(created_ward_body["data"]["occupied_bed_count"], 0);
+    assert_eq!(created_ward_body["data"]["reserved_bed_count"], 0);
+    assert_eq!(created_ward_body["data"]["cleaning_bed_count"], 0);
     let created_ward_id = created_ward_body["data"]["id"]
         .as_str()
         .expect("created ward id exists");
@@ -263,6 +267,11 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     let section_detail_body = json_body(section_detail).await;
     assert_eq!(section_detail_body["data"]["id"], section_id);
     assert_eq!(section_detail_body["data"]["ward_id"], ward_id);
+    assert_eq!(section_detail_body["data"]["active_bed_count"], 1);
+    assert_eq!(section_detail_body["data"]["available_bed_count"], 0);
+    assert_eq!(section_detail_body["data"]["occupied_bed_count"], 0);
+    assert_eq!(section_detail_body["data"]["reserved_bed_count"], 0);
+    assert_eq!(section_detail_body["data"]["cleaning_bed_count"], 1);
 
     let section_beds = app
         .clone()

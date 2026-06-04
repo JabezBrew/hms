@@ -164,7 +164,10 @@ pub struct WardListItem {
     pub name: String,
     pub status: WardStatus,
     pub active_bed_count: i64,
+    pub available_bed_count: i64,
     pub occupied_bed_count: i64,
+    pub reserved_bed_count: i64,
+    pub cleaning_bed_count: i64,
     pub created_at: DateTime<Utc>,
 }
 
@@ -189,6 +192,10 @@ pub struct WardSectionListItem {
     pub name: String,
     pub status: WardStatus,
     pub active_bed_count: i64,
+    pub available_bed_count: i64,
+    pub occupied_bed_count: i64,
+    pub reserved_bed_count: i64,
+    pub cleaning_bed_count: i64,
     pub created_at: DateTime<Utc>,
 }
 

@@ -48,7 +48,10 @@ struct WardRow {
     name: String,
     status: String,
     active_bed_count: i64,
+    available_bed_count: i64,
     occupied_bed_count: i64,
+    reserved_bed_count: i64,
+    cleaning_bed_count: i64,
     created_at: DateTime<Utc>,
 }
 
@@ -60,6 +63,10 @@ struct WardSectionRow {
     name: String,
     status: String,
     active_bed_count: i64,
+    available_bed_count: i64,
+    occupied_bed_count: i64,
+    reserved_bed_count: i64,
+    cleaning_bed_count: i64,
     created_at: DateTime<Utc>,
 }
 
@@ -72,28 +79,14 @@ pub async fn list_wards(
 ) -> anyhow::Result<Vec<WardListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT wards.id,
-               wards.code,
-               wards.name,
-               wards.status,
-               COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
-               COALESCE(bed_counts.occupied_bed_count, 0) AS occupied_bed_count,
-               wards.created_at
-        FROM wards
-        LEFT JOIN (
-            SELECT ward_id,
-                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count,
-                   count(*) FILTER (WHERE status = 'occupied') AS occupied_bed_count
-            FROM beds
-            WHERE facility_id =
-        "#,
-    );
-    query.push_bind(facility_id);
-    query.push(
-        r#"
-            GROUP BY ward_id
-        ) bed_counts ON bed_counts.ward_id = wards.id
-        WHERE wards.facility_id =
+        WITH paged_wards AS (
+            SELECT wards.id,
+                   wards.code,
+                   wards.name,
+                   wards.status,
+                   wards.created_at
+            FROM wards
+            WHERE wards.facility_id =
         "#,
     );
     query.push_bind(facility_id);
@@ -116,6 +109,40 @@ pub async fn list_wards(
 
     query.push(" ORDER BY wards.created_at ASC, wards.id ASC LIMIT ");
     query.push_bind(limit);
+    query.push(
+        r#"
+        )
+        SELECT paged_wards.id,
+               paged_wards.code,
+               paged_wards.name,
+               paged_wards.status,
+               COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               COALESCE(bed_counts.available_bed_count, 0) AS available_bed_count,
+               COALESCE(bed_counts.occupied_bed_count, 0) AS occupied_bed_count,
+               COALESCE(bed_counts.reserved_bed_count, 0) AS reserved_bed_count,
+               COALESCE(bed_counts.cleaning_bed_count, 0) AS cleaning_bed_count,
+               paged_wards.created_at
+        FROM paged_wards
+        LEFT JOIN (
+            SELECT beds.ward_id,
+                   count(*) FILTER (WHERE beds.status != 'closed') AS active_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'available') AS available_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'occupied') AS occupied_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'reserved') AS reserved_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'cleaning') AS cleaning_bed_count
+            FROM beds
+            JOIN paged_wards ON paged_wards.id = beds.ward_id
+            WHERE beds.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(
+        r#"
+            GROUP BY beds.ward_id
+        ) bed_counts ON bed_counts.ward_id = paged_wards.id
+        ORDER BY paged_wards.created_at ASC, paged_wards.id ASC
+        "#,
+    );
 
     let rows = observe_db_query(
         "ward.admin.wards.list",
@@ -139,15 +166,22 @@ pub async fn get_ward(
                wards.name,
                wards.status,
                COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               COALESCE(bed_counts.available_bed_count, 0) AS available_bed_count,
                COALESCE(bed_counts.occupied_bed_count, 0) AS occupied_bed_count,
+               COALESCE(bed_counts.reserved_bed_count, 0) AS reserved_bed_count,
+               COALESCE(bed_counts.cleaning_bed_count, 0) AS cleaning_bed_count,
                wards.created_at
         FROM wards
         LEFT JOIN (
             SELECT ward_id,
-                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count,
-                   count(*) FILTER (WHERE status = 'occupied') AS occupied_bed_count
+                   count(*) FILTER (WHERE beds.status != 'closed') AS active_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'available') AS available_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'occupied') AS occupied_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'reserved') AS reserved_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'cleaning') AS cleaning_bed_count
             FROM beds
             WHERE facility_id = $1
+              AND ward_id = $2
             GROUP BY ward_id
         ) bed_counts ON bed_counts.ward_id = wards.id
         WHERE wards.facility_id = $1
@@ -181,7 +215,10 @@ pub async fn create_ward(pool: &PgPool, ward: NewWard) -> anyhow::Result<WardLis
                   name,
                   status,
                   0::bigint AS active_bed_count,
+                  0::bigint AS available_bed_count,
                   0::bigint AS occupied_bed_count,
+                  0::bigint AS reserved_bed_count,
+                  0::bigint AS cleaning_bed_count,
                   created_at
         "#,
         )
@@ -227,15 +264,22 @@ pub async fn update_ward(
                updated.name,
                updated.status,
                COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               COALESCE(bed_counts.available_bed_count, 0) AS available_bed_count,
                COALESCE(bed_counts.occupied_bed_count, 0) AS occupied_bed_count,
+               COALESCE(bed_counts.reserved_bed_count, 0) AS reserved_bed_count,
+               COALESCE(bed_counts.cleaning_bed_count, 0) AS cleaning_bed_count,
                updated.created_at
         FROM updated
         LEFT JOIN (
             SELECT ward_id,
-                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count,
-                   count(*) FILTER (WHERE status = 'occupied') AS occupied_bed_count
+                   count(*) FILTER (WHERE beds.status != 'closed') AS active_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'available') AS available_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'occupied') AS occupied_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'reserved') AS reserved_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'cleaning') AS cleaning_bed_count
             FROM beds
             WHERE facility_id = $1
+              AND ward_id = $2
             GROUP BY ward_id
         ) bed_counts ON bed_counts.ward_id = updated.id
         "#,
@@ -267,16 +311,26 @@ pub async fn list_ward_sections(
                ward_sections.name,
                ward_sections.status,
                COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               COALESCE(bed_counts.available_bed_count, 0) AS available_bed_count,
+               COALESCE(bed_counts.occupied_bed_count, 0) AS occupied_bed_count,
+               COALESCE(bed_counts.reserved_bed_count, 0) AS reserved_bed_count,
+               COALESCE(bed_counts.cleaning_bed_count, 0) AS cleaning_bed_count,
                ward_sections.created_at
         FROM ward_sections
         LEFT JOIN (
             SELECT section_id,
-                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count
+                   count(*) FILTER (WHERE beds.status != 'closed') AS active_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'available') AS available_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'occupied') AS occupied_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'reserved') AS reserved_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'cleaning') AS cleaning_bed_count
             FROM beds
             WHERE facility_id =
         "#,
     );
     query.push_bind(facility_id);
+    query.push(" AND ward_id = ");
+    query.push_bind(ward_id);
     query.push(
         r#"
               AND section_id IS NOT NULL
@@ -323,11 +377,19 @@ pub async fn get_ward_section_by_id(
                ward_sections.name,
                ward_sections.status,
                COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               COALESCE(bed_counts.available_bed_count, 0) AS available_bed_count,
+               COALESCE(bed_counts.occupied_bed_count, 0) AS occupied_bed_count,
+               COALESCE(bed_counts.reserved_bed_count, 0) AS reserved_bed_count,
+               COALESCE(bed_counts.cleaning_bed_count, 0) AS cleaning_bed_count,
                ward_sections.created_at
         FROM ward_sections
         LEFT JOIN (
             SELECT section_id,
-                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count
+                   count(*) FILTER (WHERE beds.status != 'closed') AS active_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'available') AS available_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'occupied') AS occupied_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'reserved') AS reserved_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'cleaning') AS cleaning_bed_count
             FROM beds
             WHERE facility_id = $1
               AND section_id = $2
@@ -384,6 +446,10 @@ pub async fn create_ward_section(
                inserted.name,
                inserted.status,
                0::bigint AS active_bed_count,
+               0::bigint AS available_bed_count,
+               0::bigint AS occupied_bed_count,
+               0::bigint AS reserved_bed_count,
+               0::bigint AS cleaning_bed_count,
                inserted.created_at
         FROM inserted
         "#,
@@ -435,11 +501,19 @@ pub async fn update_ward_section(
                updated.name,
                updated.status,
                COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               COALESCE(bed_counts.available_bed_count, 0) AS available_bed_count,
+               COALESCE(bed_counts.occupied_bed_count, 0) AS occupied_bed_count,
+               COALESCE(bed_counts.reserved_bed_count, 0) AS reserved_bed_count,
+               COALESCE(bed_counts.cleaning_bed_count, 0) AS cleaning_bed_count,
                updated.created_at
         FROM updated
         LEFT JOIN (
             SELECT section_id,
-                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count
+                   count(*) FILTER (WHERE beds.status != 'closed') AS active_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'available') AS available_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'occupied') AS occupied_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'reserved') AS reserved_bed_count,
+                   count(*) FILTER (WHERE beds.status = 'cleaning') AS cleaning_bed_count
             FROM beds
             WHERE facility_id = $1
               AND section_id = $2
@@ -466,7 +540,10 @@ fn ward_from_row(row: WardRow) -> anyhow::Result<WardListItem> {
         name: row.name,
         status: codec::decode(&row.status)?,
         active_bed_count: row.active_bed_count,
+        available_bed_count: row.available_bed_count,
         occupied_bed_count: row.occupied_bed_count,
+        reserved_bed_count: row.reserved_bed_count,
+        cleaning_bed_count: row.cleaning_bed_count,
         created_at: row.created_at,
     })
 }
@@ -479,6 +556,10 @@ fn ward_section_from_row(row: WardSectionRow) -> anyhow::Result<WardSectionListI
         name: row.name,
         status: codec::decode(&row.status)?,
         active_bed_count: row.active_bed_count,
+        available_bed_count: row.available_bed_count,
+        occupied_bed_count: row.occupied_bed_count,
+        reserved_bed_count: row.reserved_bed_count,
+        cleaning_bed_count: row.cleaning_bed_count,
         created_at: row.created_at,
     })
 }
