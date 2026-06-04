@@ -13,6 +13,9 @@ const adminHookState = vi.hoisted(() => ({
   departments: { data: [], isLoading: false },
   onDuty: { data: [], isLoading: false },
 }));
+const visitHookState = vi.hoisted(() => ({
+  waitingRoom: [],
+}));
 
 vi.mock('@/components/layout/layout', () => ({
   Layout: ({ children }) => <div>{children}</div>,
@@ -43,10 +46,14 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/hooks/useVisitQueries', () => ({
   useWaitingRoom: () => ({
-    data: [],
+    data: visitHookState.waitingRoom,
     isLoading: false,
     refetch: vi.fn(),
     isFetching: false,
+  }),
+  useVisit: () => ({
+    data: null,
+    isLoading: false,
   }),
   useTriageActions: () => ({
     assignToClinic: {
@@ -57,6 +64,7 @@ vi.mock('@/hooks/useVisitQueries', () => ({
   useVisitActions: () => ({
     callPatient: { mutate: vi.fn(), isPending: false },
     startConsultation: { mutate: vi.fn(), isPending: false },
+    checkout: { mutate: vi.fn(), isPending: false },
     markNoShow: { mutate: vi.fn(), isPending: false },
   }),
 }));
@@ -117,6 +125,7 @@ describe('clinic Rust V2 read callers', () => {
     appointmentsApi.getAppointmentTypes.mockResolvedValue([]);
     adminHookState.departments = { data: [], isLoading: false };
     adminHookState.onDuty = { data: [], isLoading: false };
+    visitHookState.waitingRoom = [];
   });
 
   it('threads React Query AbortSignal into clinic waiting room detail reads', async () => {
@@ -132,6 +141,42 @@ describe('clinic Rust V2 read callers', () => {
         signal: expect.any(AbortSignal),
       });
     });
+  });
+
+  it('marks the targeted waiting-room visit from Omni Search route params', async () => {
+    visitHookState.waitingRoom = [
+      {
+        id: 'visit-1',
+        visit_id: 'visit-1',
+        encounter_id: 'visit-1',
+        patient_id: 'patient-1',
+        patient_name: 'Patient One',
+        queue_number: 1,
+        visit_status: 'waiting',
+        checked_in_at: '2026-01-01T10:00:00Z',
+      },
+      {
+        id: 'visit-2',
+        visit_id: 'visit-2',
+        encounter_id: 'visit-2',
+        patient_id: 'patient-2',
+        patient_name: 'Patient Two',
+        queue_number: 2,
+        visit_status: 'called',
+        checked_in_at: '2026-01-01T10:05:00Z',
+      },
+    ];
+
+    renderWithQuery(
+      <Routes>
+        <Route path="/clinics/:clinicId/waiting-room" element={<ClinicWaitingRoomPage />} />
+      </Routes>,
+      '/clinics/clinic-1/waiting-room?visit=visit-2',
+    );
+
+    expect(await screen.findByText(/Patient Two/)).toBeInTheDocument();
+    const target = document.querySelector('[data-omni-target="true"]');
+    expect(target).toHaveTextContent('Patient Two');
   });
 
   it('threads React Query AbortSignal into triage assignment lookup reads', async () => {

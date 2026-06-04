@@ -14,7 +14,7 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +67,7 @@ import format from "date-fns/format";
 import { useAuth } from "@/lib/auth";
 import {
   usePaginatedLabResults,
+  useLabResult,
   useLabInterpretation,
   useVerifyLabResult,
   useBulkVerifyLabResults,
@@ -649,10 +650,17 @@ function LabResultsContent({
   onToggleOrderExpansion,
   onVerifyResult,
   searchQuery,
+  targetResult,
+  targetResultId,
+  targetResultLoading,
   verificationFilter,
 }) {
   return (
     <main className="p-4 sm:p-6 space-y-4">
+      {targetResultId ? (
+        <TargetLabResultPanel isLoading={targetResultLoading} result={targetResult} />
+      ) : null}
+
       {isLoading ? (
         <LabTableSkeleton rows={6} />
       ) : filteredGroups.length === 0 ? (
@@ -687,6 +695,7 @@ function LabResultsContent({
             onResultInterpretation={onResultInterpretation}
             onToggleOrderExpansion={onToggleOrderExpansion}
             onVerifyResult={onVerifyResult}
+            targetResultId={targetResultId}
           />
         </div>
       )}
@@ -726,6 +735,63 @@ function LabResultsEmptyState({
   );
 }
 
+function TargetLabResultPanel({ isLoading, result }) {
+  if (isLoading) {
+    return (
+      <Card data-omni-target="loading" className="border-primary/30 bg-primary/5">
+        <CardContent className="space-y-3 p-4">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-5 w-64" />
+          <Skeleton className="h-4 w-48" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!result) {
+    return (
+      <Card data-omni-target="missing" className="border-amber-200 bg-amber-50/50">
+        <CardContent className="p-4">
+          <p className="text-sm font-medium text-foreground">Selected result is not available</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            It may have been removed or your current access may not include it.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const flag = result.flag || (result.is_critical ? "critical_high" : "normal");
+  const flagConfig = getLabResultFlagConfig(flag);
+
+  return (
+    <Card data-omni-target="true" className="border-primary/30 bg-primary/5">
+      <CardContent className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="min-w-0">
+          <p className="font-mono text-[11px] uppercase text-muted-foreground">Selected result</p>
+          <h3 className="mt-1 truncate text-sm font-semibold text-foreground">
+            {result.test_name || "Lab result"}
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {result.patient_name || "Unknown patient"} · Order {result.order_number || result.order_id || "unknown"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          <Badge variant="outline" className={cn("text-xs", flagConfig.className)}>
+            {flagConfig.label}
+          </Badge>
+          <span className={cn("font-mono text-sm", flagConfig.className)}>
+            {result.value || "-"} {result.unit || ""}
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
+            {formatLabResultDate(result.entered_at || result.performed_at)}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ExpandedResultGroups({
   aiInterpretationAvailable,
   canVerify,
@@ -735,6 +801,7 @@ function ExpandedResultGroups({
   onResultInterpretation,
   onToggleOrderExpansion,
   onVerifyResult,
+  targetResultId,
 }) {
   return groups.map((group, groupIndex) => (
     <ExpandedResultGroupCard
@@ -748,6 +815,7 @@ function ExpandedResultGroups({
       onResultInterpretation={onResultInterpretation}
       onToggleOrderExpansion={onToggleOrderExpansion}
       onVerifyResult={onVerifyResult}
+      targetResultId={targetResultId}
     />
   ));
 }
@@ -762,6 +830,7 @@ function ExpandedResultGroupCard({
   onResultInterpretation,
   onToggleOrderExpansion,
   onVerifyResult,
+  targetResultId,
 }) {
   const unverifiedCount = group.results.filter((result) => !result.is_verified).length;
   const panelNames = Array.from(group.panels);
@@ -794,6 +863,7 @@ function ExpandedResultGroupCard({
           group={group}
           onResultInterpretation={onResultInterpretation}
           onVerifyResult={onVerifyResult}
+          targetResultId={targetResultId}
         />
         <div className="mt-2 flex justify-end text-xs text-muted-foreground">
           {formatLabResultDate(group.performed_at)}
@@ -916,6 +986,7 @@ function ExpandedResultTable({
   group,
   onResultInterpretation,
   onVerifyResult,
+  targetResultId,
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border">
@@ -940,6 +1011,7 @@ function ExpandedResultTable({
               onResultInterpretation={onResultInterpretation}
               onVerifyResult={onVerifyResult}
               result={result}
+              targetResultId={targetResultId}
             />
           ))}
         </tbody>
@@ -955,15 +1027,19 @@ function ExpandedResultRow({
   onResultInterpretation,
   onVerifyResult,
   result,
+  targetResultId,
 }) {
   const flagConfig = getLabResultFlagConfig(result.flag);
   const FlagIcon = flagConfig.icon;
+  const isTargetResult = Boolean(targetResultId) && String(result.id) === String(targetResultId);
 
   return (
     <tr
+      data-omni-target={isTargetResult ? 'true' : undefined}
       className={cn(
         "text-sm",
-        isCriticalLabFlag(result.flag) && "bg-rose-50/50 dark:bg-rose-900/10"
+        isCriticalLabFlag(result.flag) && "bg-rose-50/50 dark:bg-rose-900/10",
+        isTargetResult && "bg-primary/5"
       )}
     >
       <td className="px-4 py-2.5">
@@ -1411,6 +1487,9 @@ function VerifySingleResultSummary({ selectedResult }) {
  * - Filter by verification status, critical values
  */
 export default function LabResultsPage() {
+  const { search: routeSearch } = useLocation();
+  const routeSearchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
+  const targetResultId = routeSearchParams.get("result") || "";
   const { user } = useAuth();
   const userRole = user?.role || "";
   const aiInterpretationAvailable = !isRustV2ApiMode();
@@ -1466,6 +1545,7 @@ export default function LabResultsPage() {
 
   // Fetch results
   const { data: resultsData, isLoading, isFetching, refetch } = usePaginatedLabResults(queryFilters);
+  const { data: targetResult, isLoading: targetResultLoading } = useLabResult(targetResultId);
 
   // Mutations
   const verifyMutation = useVerifyLabResult();
@@ -1520,6 +1600,28 @@ export default function LabResultsPage() {
   const groupedResults = useGroupedLabResults(results);
 
   const filteredGroups = groupedResults;
+
+  useEffect(() => {
+    if (!targetResultId) {
+      return;
+    }
+
+    const targetGroup = groupedResults.find((group) =>
+      group.results.some((result) => String(result.id) === String(targetResultId))
+    );
+    if (!targetGroup) {
+      return;
+    }
+
+    setExpandedOrders((prev) => {
+      if (prev.has(targetGroup._key)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(targetGroup._key);
+      return next;
+    });
+  }, [groupedResults, targetResultId]);
 
   const stats = useLabResultsStats(results, groupedResults, totalCount);
   const metrics = useLabResultsMetrics(stats);
@@ -1692,6 +1794,9 @@ export default function LabResultsPage() {
         onToggleOrderExpansion={toggleOrderExpansion}
         onVerifyResult={handleVerifyClick}
         searchQuery={searchQuery}
+        targetResult={targetResult}
+        targetResultId={targetResultId}
+        targetResultLoading={targetResultLoading}
         verificationFilter={verificationFilter}
       />
 

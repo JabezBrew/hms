@@ -28,7 +28,7 @@ import {
   statusClass,
 } from './appointmentsPageUtils';
 
-export function SessionRows({ sessions, emptyTitle }) {
+export function SessionRows({ sessions, emptyTitle, targetClinicId = '' }) {
   if (!sessions?.length) {
     return (
       <PageState
@@ -45,8 +45,16 @@ export function SessionRows({ sessions, emptyTitle }) {
     <div className="divide-y divide-border rounded-md border border-border bg-card">
       {sessions.map((session) => {
         const status = sessionStatus(session);
+        const isTargetClinic = Boolean(targetClinicId) && session.clinic_id === targetClinicId;
         return (
-          <div key={session.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div
+            key={session.id}
+            data-omni-target={isTargetClinic ? 'true' : undefined}
+            className={cn(
+              "grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center",
+              isTargetClinic && "bg-primary/5 ring-1 ring-inset ring-primary/30",
+            )}
+          >
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold text-foreground">{session.name}</h3>
@@ -276,7 +284,7 @@ export function SessionForm({
   );
 }
 
-export function WaitlistRows({ entries, isLoading, onPromote }) {
+export function WaitlistRows({ entries, isLoading, onPromote, targetEntryId }) {
   if (isLoading) {
     return (
       <PageState
@@ -301,29 +309,39 @@ export function WaitlistRows({ entries, isLoading, onPromote }) {
 
   return (
     <div className="divide-y divide-border rounded-md border border-border bg-card">
-      {entries.map((entry) => (
-        <div key={entry.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold text-foreground">
-                {entry.patient_name || 'Unknown patient'}
-              </h3>
-              <Badge className="badge-chronicle-amber font-mono text-[11px]">
-                {entry.priority}
-              </Badge>
-              <Badge variant="outline" className="font-mono text-[11px]">
-                {entry.status}
-              </Badge>
+      {entries.map((entry) => {
+        const isTargetEntry = Boolean(targetEntryId) && String(entry.id) === String(targetEntryId);
+        return (
+          <div
+            key={entry.id}
+            data-omni-target={isTargetEntry ? 'true' : undefined}
+            className={cn(
+              'grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center',
+              isTargetEntry && 'bg-primary/5 ring-1 ring-inset ring-primary/30',
+            )}
+          >
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {entry.patient_name || 'Unknown patient'}
+                </h3>
+                <Badge className="badge-chronicle-amber font-mono text-[11px]">
+                  {entry.priority}
+                </Badge>
+                <Badge variant="outline" className="font-mono text-[11px]">
+                  {entry.status}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {entry.service} · {entry.patient_mrn || 'No MRN'}
+              </p>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {entry.service} · {entry.patient_mrn || 'No MRN'}
-            </p>
+            <Button variant="outline" size="sm" onClick={() => onPromote(entry)}>
+              Promote
+            </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={() => onPromote(entry)}>
-            Promote
-          </Button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

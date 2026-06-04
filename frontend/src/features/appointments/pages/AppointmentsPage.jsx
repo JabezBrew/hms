@@ -6,8 +6,8 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import UsersRound from 'lucide-react/dist/esm/icons/users-round.js';
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -45,10 +45,42 @@ import {
   toUtcIso,
 } from './appointments/appointmentsPageUtils';
 
+const APPOINTMENT_TAB_VALUES = new Set([
+  'today',
+  'appointments',
+  'sessions',
+  'templates',
+  'waitlist',
+  'exceptions',
+  'services',
+]);
+
+function appointmentTabFromSearchParams(searchParams) {
+  const tab = searchParams.get('tab');
+  if (APPOINTMENT_TAB_VALUES.has(tab)) {
+    return tab;
+  }
+  if (searchParams.get('waitlist')) {
+    return 'waitlist';
+  }
+  if (searchParams.get('clinic')) {
+    return 'sessions';
+  }
+  return null;
+}
+
 const AppointmentsPage = () => {
   const navigate = useNavigate();
-  const [view, setView] = useState('today');
-  const [sessionForm, setSessionForm] = useState(initialSessionForm);
+  const { search: routeSearch } = useLocation();
+  const routeSearchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
+  const targetClinicId = routeSearchParams.get('clinic') || '';
+  const targetWaitlistId = routeSearchParams.get('waitlist') || '';
+  const routeTab = appointmentTabFromSearchParams(routeSearchParams);
+  const [view, setView] = useState(() => routeTab || 'today');
+  const [sessionForm, setSessionForm] = useState(() => ({
+    ...initialSessionForm(),
+    ...(targetClinicId ? { clinic_id: targetClinicId } : {}),
+  }));
   const [exceptionForm, setExceptionForm] = useState(initialExceptionForm);
   const createSession = useCreateSchedulingSession();
   const createException = useCreateSchedulingException();
@@ -69,13 +101,16 @@ const AppointmentsPage = () => {
   const { data: sessions = [], isLoading: sessionsLoading } = useSchedulingSessions({
     date: today,
     limit: 50,
+    ...(targetClinicId ? { clinic_id: targetClinicId } : {}),
   });
   const { data: exceptions = [], isLoading: exceptionsLoading } = useSchedulingExceptions({
     start_date: today,
     end_date: today,
     limit: 50,
   });
-  const { data: waitlist = [], isLoading: waitlistLoading } = useClinicWaitlist({ page_size: 50 });
+  const { data: waitlist = [], isLoading: waitlistLoading } = useClinicWaitlist({
+    page_size: targetWaitlistId ? 100 : 50,
+  });
   const { data: clinics = [] } = useQuery({
     queryKey: keyWith('clinics', 'scheduling-options'),
     queryFn: ({ signal }) => clinicsApi.list({ is_active: true, page_size: 100 }, { signal }),
@@ -94,6 +129,24 @@ const AppointmentsPage = () => {
     () => new Map(sessions.map((session) => [session.id, session])),
     [sessions],
   );
+
+  useEffect(() => {
+    if (routeTab) {
+      setView(routeTab);
+    }
+  }, [routeTab]);
+
+  useEffect(() => {
+    if (!targetClinicId) {
+      return;
+    }
+    setSessionForm((current) => {
+      if (current.clinic_id === targetClinicId) {
+        return current;
+      }
+      return { ...current, clinic_id: targetClinicId };
+    });
+  }, [targetClinicId]);
 
   const handleSessionField = (field, value) => {
     setSessionForm((current) => ({ ...current, [field]: value }));
@@ -219,7 +272,11 @@ const AppointmentsPage = () => {
             {sessionsLoading ? (
               <PageState variant="loading" fullHeight={false} className="min-h-0 rounded-md border border-border" />
             ) : (
-              <SessionRows sessions={sessions} emptyTitle="No sessions today" />
+              <SessionRows
+                sessions={sessions}
+                emptyTitle="No sessions today"
+                targetClinicId={targetClinicId}
+              />
             )}
           </TabsContent>
 
@@ -241,7 +298,11 @@ const AppointmentsPage = () => {
             {sessionsLoading ? (
               <PageState variant="loading" fullHeight={false} className="min-h-0 rounded-md border border-border" />
             ) : (
-              <SessionRows sessions={sessions} emptyTitle="No sessions match the selected day" />
+              <SessionRows
+                sessions={sessions}
+                emptyTitle="No sessions match the selected day"
+                targetClinicId={targetClinicId}
+              />
             )}
           </TabsContent>
 
@@ -257,6 +318,7 @@ const AppointmentsPage = () => {
             <WaitlistRows
               entries={activeWaitlist}
               isLoading={waitlistLoading}
+              targetEntryId={targetWaitlistId}
               onPromote={(entry) => {
                 const params = new URLSearchParams({
                   patient: entry.patient_id,

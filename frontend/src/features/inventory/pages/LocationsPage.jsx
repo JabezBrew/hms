@@ -548,7 +548,7 @@ export default function LocationsPage() {
   const totalCount = locationsData?.count || locations.length;
 
   const handleLocationClick = useCallback((locationId) => {
-    navigate(`/inventory/locations/${locationId}`);
+    navigate(`/inventory/items?location=${locationId}`);
   }, [navigate]);
   const handleViewStock = useCallback((locationId) => {
     navigate(`/inventory/items?location=${locationId}`);

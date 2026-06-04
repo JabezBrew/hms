@@ -6,6 +6,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from 'react-router-dom';
 import format from 'date-fns/format';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -422,6 +423,9 @@ function LabOrdersPagination({ countExact, hasNextPage, onPageChange, page, tota
  * - Grid/list view toggle
  */
 export default function LabOrdersPage() {
+  const { search: routeSearch } = useLocation();
+  const routeSearchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
+  const targetOrderId = routeSearchParams.get("order") || "";
   const { user } = useAuth();
   const userRole = user?.role || "";
   const [persistedOrdersState, setPersistedOrdersState] = useRouteTableState('laboratory:ordersTable', {
@@ -450,6 +454,14 @@ export default function LabOrdersPage() {
   // Slide-over state
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [slideOverOpen, setSlideOverOpen] = useState(false);
+
+  useEffect(() => {
+    if (!targetOrderId) {
+      return;
+    }
+    setSelectedOrderId(targetOrderId);
+    setSlideOverOpen(true);
+  }, [targetOrderId]);
 
   // Fetch practitioners for the doctor filter dropdown (only for lab staff)
   const { data: practitionersData } = usePractitioners({ user_type: "doctor" });

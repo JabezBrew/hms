@@ -7,6 +7,25 @@ const DEFAULT_EMPTY_ARRAY = [];
 
 import { cn } from '@/lib/utils';
 
+const STATUS_CONFIG = {
+  critical: {
+    ribbon: 'status-ribbon-critical',
+    border: 'border-rose-500/30',
+  },
+  warning: {
+    ribbon: 'status-ribbon-warning',
+    border: 'border-amber-500/30',
+  },
+  stable: {
+    ribbon: 'status-ribbon-stable',
+    border: 'border-emerald-500/30',
+  },
+  info: {
+    ribbon: 'status-ribbon-info',
+    border: 'border-sky-500/30',
+  },
+};
+
 /**
  * ActionCard - Card for actionable items (patients, appointments, tasks)
  *
@@ -33,27 +52,9 @@ export default function ActionCard({
   onClick,
   icon: Icon,
   className,
+  ...cardProps
 }) {
-  const statusConfig = {
-    critical: {
-      ribbon: 'status-ribbon-critical',
-      border: 'border-rose-500/30',
-    },
-    warning: {
-      ribbon: 'status-ribbon-warning',
-      border: 'border-amber-500/30',
-    },
-    stable: {
-      ribbon: 'status-ribbon-stable',
-      border: 'border-emerald-500/30',
-    },
-    info: {
-      ribbon: 'status-ribbon-info',
-      border: 'border-sky-500/30',
-    },
-  };
-
-  const config = status ? statusConfig[status] : null;
+  const config = status ? STATUS_CONFIG[status] : null;
 
   const handleKeyDown = (e) => {
     if (onClick && (e.key === 'Enter' || e.key === ' ')) {
@@ -84,6 +85,7 @@ export default function ActionCard({
         'animate-chronicle-enter',
         className
       )}
+      {...cardProps}
       {...interactiveProps}
     >
       {/* Status ribbon */}

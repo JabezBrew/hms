@@ -4,7 +4,7 @@ import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import { useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Layout } from '@/components/layout/layout';
 import { StatCard, DashboardSection, DashboardGrid } from '@/components/dashboard';
@@ -28,7 +28,12 @@ const clinicKeys = {
 export default function ClinicWaitingRoomPage() {
   const { clinicId } = useParams();
   const navigate = useNavigate();
+  const { search: routeSearch } = useLocation();
   const { facilityCode } = useAuth();
+  const targetVisitId = useMemo(
+    () => new URLSearchParams(routeSearch).get('visit') || null,
+    [routeSearch],
+  );
 
   // Fetch clinic details
   const {
@@ -206,6 +211,7 @@ export default function ClinicWaitingRoomPage() {
               clinicId={clinicId}
               showActions={true}
               onPatientClick={handlePatientClick}
+              targetVisitId={targetVisitId}
             />
           </DashboardSection>
         </div>

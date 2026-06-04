@@ -39,6 +39,7 @@ async fn service_catalog_list_is_bounded_and_includes_active_price() {
         ServiceCatalogFilters {
             search: None,
             is_active: Some(true),
+            service_id: None,
         },
     )
     .await
@@ -48,6 +49,36 @@ async fn service_catalog_list_is_bounded_and_includes_active_price() {
     assert!(rows[0].active);
     assert!(rows[0].active_price_id.is_some());
     assert!(rows[0].active_price_amount_minor.unwrap_or_default() > 0);
+
+    let target_service_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        r#"
+        SELECT id
+        FROM service_catalog
+        WHERE facility_id = $1
+        ORDER BY code DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("target service exists");
+    let exact_rows = hms_db::billing::list_service_catalog(
+        &pool,
+        facility_id,
+        None,
+        2,
+        ServiceCatalogFilters {
+            search: None,
+            is_active: None,
+            service_id: Some(target_service_id),
+        },
+    )
+    .await
+    .expect("service catalog filters by service id");
+
+    assert_eq!(exact_rows.len(), 1);
+    assert_eq!(exact_rows[0].id, target_service_id);
 }
 
 #[tokio::test]

@@ -49,7 +49,7 @@ pub struct OmniSearchResult {
 
 #[derive(Clone, Debug, Deserialize, FromRow)]
 struct SearchDocumentRow {
-    id: Uuid,
+    resource_id: Uuid,
     resource_type: String,
     title: String,
     subtitle: Option<String>,
@@ -176,6 +176,7 @@ async fn search_documents_with_status(
             r#"
         WITH candidates AS (
             SELECT id,
+                   resource_id,
                    resource_type,
                    title,
                    subtitle,
@@ -223,6 +224,7 @@ async fn search_documents_with_status(
         ),
         result_rows AS (
             SELECT id,
+                   resource_id,
                    resource_type,
                    title,
                    subtitle,
@@ -301,6 +303,7 @@ async fn search_documents_with_status_short_query(
             FROM requested_types
             CROSS JOIN LATERAL (
                 SELECT search_document.id,
+                       search_document.resource_id,
                        search_document.resource_type,
                        search_document.title,
                        search_document.subtitle,
@@ -360,6 +363,7 @@ async fn search_documents_with_status_short_query(
         ),
         result_rows AS (
             SELECT id,
+                   resource_id,
                    resource_type,
                    title,
                    subtitle,
@@ -449,6 +453,7 @@ async fn recent_patient_documents_with_status(
             r#"
         WITH result_rows AS (
         SELECT search_documents.id,
+               search_documents.resource_id,
                search_documents.resource_type,
                search_documents.title,
                search_documents.subtitle,
@@ -1172,7 +1177,7 @@ async fn insert_visit_documents(
                patients.date_of_birth,
                patients.first_name || ' ' || patients.last_name,
                coalesce(clinics.name || ' · ', '') || visits.status,
-               '/visits/' || visits.id::text,
+               '/clinics/' || clinics.id::text || '/waiting-room?visit=' || visits.id::text,
                visits.status,
                'encounters',
                'encounter.view',
@@ -1197,7 +1202,9 @@ async fn insert_visit_documents(
                visits.status NOT IN ('checked_out', 'cancelled', 'no_show')
         FROM visits
         INNER JOIN patients ON patients.id = visits.patient_id
-        LEFT JOIN clinics ON clinics.id = visits.clinic_id
+        INNER JOIN clinics
+          ON clinics.id = visits.clinic_id
+         AND clinics.facility_id = visits.facility_id
         WHERE visits.facility_id = $1
         "#,
     )
@@ -1238,7 +1245,7 @@ async fn insert_clinic_documents(
                clinics.id,
                clinics.name,
                'Clinic ' || clinics.code,
-               '/appointments',
+               '/appointments?tab=sessions&clinic=' || clinics.id::text,
                CASE WHEN clinics.is_active THEN 'active' ELSE 'inactive' END,
                'appointments',
                'appointment.view',
@@ -1298,7 +1305,7 @@ async fn insert_laboratory_documents(
                NULL::date,
                lab_tests.name,
                'Lab test ' || lab_tests.code,
-               '/laboratory/catalog',
+               '/laboratory/catalog?tab=tests&test=' || lab_tests.id::text,
                CASE WHEN lab_tests.is_active THEN 'active' ELSE 'inactive' END,
                'laboratory',
                'laboratory.order.manage',
@@ -1322,7 +1329,7 @@ async fn insert_laboratory_documents(
                NULL::date,
                lab_panels.name,
                'Lab panel ' || lab_panels.code,
-               '/laboratory/panels/' || lab_panels.id::text,
+               '/laboratory/catalog?tab=panels&panel=' || lab_panels.id::text,
                CASE WHEN lab_panels.is_active THEN 'active' ELSE 'inactive' END,
                'laboratory',
                'laboratory.order.manage',
@@ -1346,7 +1353,7 @@ async fn insert_laboratory_documents(
                patients.date_of_birth,
                'Lab order',
                patients.first_name || ' ' || patients.last_name || ' · ' || lab_orders.priority,
-               '/laboratory/orders/' || lab_orders.id::text,
+               '/laboratory/orders?order=' || lab_orders.id::text,
                lab_orders.status,
                'laboratory',
                'laboratory.order.manage',
@@ -1371,7 +1378,7 @@ async fn insert_laboratory_documents(
                patients.date_of_birth,
                lab_tests.name || ' result',
                patients.first_name || ' ' || patients.last_name,
-               '/laboratory/results',
+               '/laboratory/results?result=' || lab_results.id::text,
                lab_results.status,
                'laboratory',
                'laboratory.result.verify',
@@ -1434,7 +1441,7 @@ async fn insert_billing_documents(
                NULL::date,
                service_catalog.name,
                'Service ' || service_catalog.code,
-               '/billing/catalog',
+               '/billing/catalog?service=' || service_catalog.id::text,
                CASE WHEN service_catalog.active THEN 'active' ELSE 'inactive' END,
                'billing',
                'billing.view',
@@ -1483,7 +1490,7 @@ async fn insert_billing_documents(
                patients.date_of_birth,
                payments.receipt_number,
                patients.first_name || ' ' || patients.last_name,
-               '/billing/payments',
+               '/billing/invoices/' || invoices.id::text || '?payment=' || payments.id::text,
                payments.status,
                'billing',
                'billing.view',
@@ -1509,7 +1516,7 @@ async fn insert_billing_documents(
                patients.date_of_birth,
                nhis_claims.claim_number,
                patients.first_name || ' ' || patients.last_name,
-               '/billing/claims',
+               '/billing/claims?claim=' || nhis_claims.id::text,
                nhis_claims.status,
                'nhis',
                'nhis.claim.manage',
@@ -1589,7 +1596,7 @@ async fn insert_inventory_documents(
                storage_locations.id,
                storage_locations.name,
                'Location ' || storage_locations.code,
-               '/inventory/locations',
+               '/inventory/items?location=' || storage_locations.id::text,
                CASE WHEN storage_locations.is_active THEN 'active' ELSE 'inactive' END,
                'inventory',
                'inventory.view',
@@ -1608,7 +1615,7 @@ async fn insert_inventory_documents(
                inventory_suppliers.id,
                inventory_suppliers.name,
                'Supplier ' || inventory_suppliers.code,
-               '/inventory/suppliers',
+               '/inventory/items?supplier=' || inventory_suppliers.id::text,
                CASE WHEN inventory_suppliers.is_active THEN 'active' ELSE 'inactive' END,
                'inventory',
                'inventory.view',
@@ -1687,7 +1694,7 @@ async fn insert_referral_documents(
                patients.date_of_birth,
                referrals.to_service,
                patients.first_name || ' ' || patients.last_name || ' · ' || referrals.priority,
-               '/referrals/' || referrals.id::text,
+               '/referrals/inbox?referral=' || referrals.id::text,
                referrals.status,
                'referrals',
                'referral.manage',
@@ -1712,7 +1719,7 @@ async fn insert_referral_documents(
                patients.date_of_birth,
                clinic_waitlist_entries.service,
                patients.first_name || ' ' || patients.last_name || ' · waitlist',
-               '/referrals/waitlist',
+               '/appointments?tab=waitlist&waitlist=' || clinic_waitlist_entries.id::text,
                clinic_waitlist_entries.status,
                'referrals',
                'referral.manage',
@@ -1722,10 +1729,11 @@ async fn insert_referral_documents(
                clinic_waitlist_entries.updated_at,
                clinic_waitlist_entries.created_at,
                jsonb_build_object('source_table', 'clinic_waitlist_entries', 'priority', clinic_waitlist_entries.priority),
-               clinic_waitlist_entries.status NOT IN ('completed', 'cancelled')
+               true
         FROM clinic_waitlist_entries
         INNER JOIN patients ON patients.id = clinic_waitlist_entries.patient_id
         WHERE clinic_waitlist_entries.facility_id = $1
+          AND clinic_waitlist_entries.status IN ('waiting', 'offered')
         "#,
     )
     .bind(facility_id)
@@ -1808,7 +1816,7 @@ fn search_type_codes(types: &[SearchResourceType]) -> anyhow::Result<Vec<String>
 
 fn search_item_from_row(row: SearchDocumentRow) -> anyhow::Result<OmniSearchItem> {
     Ok(OmniSearchItem {
-        id: row.id,
+        id: row.resource_id,
         resource_type: codec::decode(&row.resource_type)?,
         title: row.title,
         subtitle: row.subtitle,

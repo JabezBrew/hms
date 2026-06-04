@@ -40,6 +40,7 @@ pub struct ClaimContext {
 pub struct ServiceCatalogFilters {
     pub search: Option<String>,
     pub is_active: Option<bool>,
+    pub service_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -643,6 +644,10 @@ pub async fn list_service_catalog(
     if let Some(is_active) = filters.is_active {
         query.push(" AND service_catalog.active = ");
         query.push_bind(is_active);
+    }
+    if let Some(service_id) = filters.service_id {
+        query.push(" AND service_catalog.id = ");
+        query.push_bind(service_id);
     }
     if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
         query.push(" AND (service_catalog.name ILIKE ");

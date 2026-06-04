@@ -345,7 +345,7 @@ function InvoiceTotals({ invoice }) {
   );
 }
 
-function PaymentHistorySection({ payments, printingId, onPrintReceipt }) {
+function PaymentHistorySection({ payments, printingId, targetPaymentId, onPrintReceipt }) {
   if (!payments?.length) {
     return null;
   }
@@ -360,7 +360,14 @@ function PaymentHistorySection({ payments, printingId, onPrintReceipt }) {
       </header>
       <div className="divide-y divide-border">
         {payments.map((payment, index) => (
-          <div key={payment.id || index} className="px-5 sm:px-6 py-4">
+          <div
+            key={payment.id || index}
+            className={cn(
+              'px-5 sm:px-6 py-4',
+              payment.id === targetPaymentId ? 'bg-primary/5 ring-2 ring-inset ring-primary/40' : null,
+            )}
+            data-omni-target={payment.id === targetPaymentId ? 'true' : undefined}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-foreground">{formatDate(payment.payment_date)}</p>
@@ -484,6 +491,7 @@ function InvoiceDetailContent({
   patient,
   facility,
   printingId,
+  targetPaymentId,
   onOpenPatient,
   onOpenEncounter,
   onPrintReceipt,
@@ -501,6 +509,7 @@ function InvoiceDetailContent({
           <PaymentHistorySection
             payments={invoice.payments}
             printingId={printingId}
+            targetPaymentId={targetPaymentId}
             onPrintReceipt={onPrintReceipt}
           />
         </div>
@@ -520,6 +529,7 @@ export default function InvoiceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const targetPaymentId = new URLSearchParams(location.search).get('payment') || null;
   const [showPaymentSlideOver, setShowPaymentSlideOver] = useState(false);
 
   const {
@@ -590,6 +600,7 @@ export default function InvoiceDetailPage() {
         patient={patient}
         facility={facility}
         printingId={printingId}
+        targetPaymentId={targetPaymentId}
         onOpenPatient={(patientId) => navigate(`/patients/${patientId}`)}
         onOpenEncounter={(encounterId) => navigate(`/encounters/${encounterId}`)}
         onPrintReceipt={printReceipt}

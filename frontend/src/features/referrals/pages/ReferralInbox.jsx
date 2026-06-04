@@ -12,7 +12,7 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
 import MessageSquare from 'lucide-react/dist/esm/icons/message-square.js';
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ import {
 
 import format from 'date-fns/format';
 import {
+  useReferral,
   useReferralInbox,
   useAcceptReferral,
   useDeclineReferral,
@@ -436,9 +437,15 @@ function ReferralCardActions({ referral, onStartConsultation, onActionClick }) {
   );
 }
 
-function ReferralCard({ referral, onStartConsultation, onActionClick }) {
+function ReferralCard({ isTarget, referral, onStartConsultation, onActionClick }) {
   return (
-    <Card className="bg-card border-border animate-chronicle-enter">
+    <Card
+      data-omni-target={isTarget ? 'true' : undefined}
+      className={cn(
+        "animate-chronicle-enter border-border bg-card",
+        isTarget && "border-primary/30 bg-primary/5 ring-1 ring-inset ring-primary/30",
+      )}
+    >
       <ReferralCardHeader referral={referral} />
       <CardContent className="space-y-4">
         <ReferralProviderPanel referral={referral} />
@@ -459,6 +466,7 @@ function ReferralList({
   hasActiveFilters,
   onStartConsultation,
   onActionClick,
+  targetReferralId,
 }) {
   if (referrals.length === 0) {
     return <ReferralEmptyState hasActiveFilters={hasActiveFilters} />;
@@ -469,6 +477,7 @@ function ReferralList({
       {referrals.map((referral) => (
         <ReferralCard
           key={referral.id}
+          isTarget={Boolean(targetReferralId) && String(referral.id) === String(targetReferralId)}
           referral={referral}
           onStartConsultation={onStartConsultation}
           onActionClick={onActionClick}
@@ -578,6 +587,9 @@ function ReferralActionDialog({
  */
 const ReferralInbox = () => {
   const navigate = useNavigate();
+  const { search: routeSearch } = useLocation();
+  const routeSearchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
+  const targetReferralId = routeSearchParams.get('referral') || '';
   const { search: searchQuery, updateSearch, hasActiveFilters } = useListFilters();
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
@@ -586,6 +598,9 @@ const ReferralInbox = () => {
   const [recommendations, setRecommendations] = useState('');
 
   const { data: inboxData, isLoading } = useReferralInbox();
+  const { data: targetReferralData } = useReferral(targetReferralId, {
+    enabled: Boolean(targetReferralId),
+  });
   const { data: slaDashboard } = useReferralSlaDashboard();
   const { data: waitlistSummary } = useClinicWaitlistSummary();
   const acceptReferral = useAcceptReferral();
@@ -596,9 +611,13 @@ const ReferralInbox = () => {
     () => (inboxData?.referrals || []).map(normalizeReferral),
     [inboxData?.referrals]
   );
+  const normalizedTargetReferral = useMemo(
+    () => (targetReferralData ? normalizeReferral(targetReferralData) : null),
+    [targetReferralData]
+  );
 
-  const filteredReferrals = useMemo(() => {
-    return normalizedReferrals.filter((referral) => {
+  const displayedReferrals = useMemo(() => {
+    const filtered = normalizedReferrals.filter((referral) => {
       if (!searchQuery) return true;
 
       const query = searchQuery.toLowerCase();
@@ -609,7 +628,14 @@ const ReferralInbox = () => {
         (referral.reason || '').toLowerCase().includes(query)
       );
     });
-  }, [normalizedReferrals, searchQuery]);
+    if (
+      normalizedTargetReferral &&
+      !filtered.some((referral) => String(referral.id) === String(normalizedTargetReferral.id))
+    ) {
+      return [normalizedTargetReferral, ...filtered];
+    }
+    return filtered;
+  }, [normalizedReferrals, normalizedTargetReferral, searchQuery]);
 
   const waitlistWaitingCount = useMemo(() => {
     const rows = waitlistSummary?.rows || [];
@@ -706,7 +732,7 @@ const ReferralInbox = () => {
   return (
     <PageShell>
       <ReferralInboxHeader
-        referralCount={filteredReferrals.length}
+        referralCount={displayedReferrals.length}
         breachedCount={breachedCount}
         waitlistWaitingCount={waitlistWaitingCount}
       />
@@ -718,10 +744,11 @@ const ReferralInbox = () => {
         />
 
         <ReferralList
-          referrals={filteredReferrals}
+          referrals={displayedReferrals}
           hasActiveFilters={hasActiveFilters}
           onStartConsultation={handleStartConsultation}
           onActionClick={handleActionClick}
+          targetReferralId={targetReferralId}
         />
 
         <ReferralActionDialog

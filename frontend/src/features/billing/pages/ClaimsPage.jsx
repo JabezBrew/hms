@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useClaims } from '@/features/billing/hooks';
+import { useClaim, useClaims } from '@/features/billing/hooks';
 import { BillingPagination } from '@/features/billing/components/BillingPagination';
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
@@ -78,6 +78,7 @@ export default function ClaimsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const rustV2Mode = isRustV2ApiMode();
   const statusOptions = rustV2Mode ? RUST_V2_STATUS_OPTIONS : LEGACY_STATUS_OPTIONS;
+  const targetClaimId = searchParams.get('claim') || null;
 
   // Filters from URL
   const urlSearch = searchParams.get('search') || '';
@@ -129,6 +130,11 @@ export default function ClaimsPage() {
     error,
     refetch,
   } = useClaims(queryParams);
+  const {
+    data: targetClaim,
+    isLoading: targetClaimLoading,
+    error: targetClaimError,
+  } = useClaim(targetClaimId);
 
   const claims = claimsData?.results || [];
   const totalCount = claimsData?.count || 0;
@@ -295,6 +301,12 @@ export default function ClaimsPage() {
       />
 
       <div className="p-4 sm:px-6 bg-card/50 border-b border-border">
+        <TargetClaimPanel
+          claim={targetClaim}
+          error={targetClaimError}
+          isLoading={targetClaimLoading}
+          targetClaimId={targetClaimId}
+        />
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -330,7 +342,10 @@ export default function ClaimsPage() {
               rowKey={(claim) => claim.id}
               rowHeight={68}
               columns={claimColumns}
-              onRowClick={(claim) => navigate(`/billing/claims/${claim.id}`)}
+              getRowClassName={(claim) => (
+                claim.id === targetClaimId ? 'ring-2 ring-primary/50 bg-primary/5' : undefined
+              )}
+              onRowClick={(claim) => navigate(`/billing/claims?claim=${claim.id}`)}
               rowClassName="hover:bg-muted/30"
               className="min-w-[1080px]"
               headerClassName="bg-muted/50 border-b border-border"
@@ -360,6 +375,45 @@ export default function ClaimsPage() {
         />
       </main>
     </PageShell>
+  );
+}
+
+function TargetClaimPanel({ claim, error, isLoading, targetClaimId }) {
+  if (!targetClaimId) return null;
+
+  if (isLoading) {
+    return (
+      <section className="mb-4 rounded-xl border border-border bg-card px-4 py-3" data-omni-target="true">
+        <Skeleton className="h-5 w-48" />
+      </section>
+    );
+  }
+
+  if (error || !claim) {
+    return (
+      <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200" data-omni-target="true">
+        Claim unavailable.
+      </section>
+    );
+  }
+
+  const badge = getClaimStatusBadge(claim.status);
+  return (
+    <section className="mb-4 rounded-xl border border-primary/40 bg-primary/5 px-4 py-3" data-omni-target="true">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Target Claim</p>
+          <p className="truncate font-medium text-foreground">{claim.claim_number || targetClaimId}</p>
+          <p className="truncate text-sm text-muted-foreground">{claim.patient_name || claim.patient_mrn || 'Patient claim'}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className={cn('text-xs capitalize', badge.class)}>
+            {(claim.status || 'draft').replaceAll('_', ' ')}
+          </Badge>
+          <span className="font-mono text-sm text-foreground">{formatCurrency(claim.claimed_amount)}</span>
+        </div>
+      </div>
+    </section>
   );
 }
 

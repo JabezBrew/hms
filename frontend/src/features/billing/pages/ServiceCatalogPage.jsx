@@ -4,7 +4,8 @@ import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Pencil from 'lucide-react/dist/esm/icons/square-pen.js';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
@@ -248,6 +249,7 @@ function ServicesTab({
   serviceData,
   serviceSearch,
   services,
+  targetServiceId,
   setServicePage,
   setActiveFilter,
   setServiceSearch,
@@ -282,6 +284,10 @@ function ServicesTab({
 
       <VirtualizedTable
         columns={serviceColumns}
+        getRowClassName={(service) => (
+          service.id === targetServiceId ? 'ring-2 ring-primary/50 bg-primary/5' : undefined
+        )}
+        rowKey={(service) => service.id}
         rows={services}
         threshold={50}
         className="rounded-2xl border border-border bg-card"
@@ -544,6 +550,8 @@ function ServiceDialog({
 }
 
 export default function ServiceCatalogPage() {
+  const [searchParams] = useSearchParams();
+  const targetServiceId = searchParams.get('service') || null;
   const [catalogState, setCatalogState] = useRouteTableState('billingServiceCatalog', {
     tab: 'services',
     categorySearch: '',
@@ -562,6 +570,12 @@ export default function ServiceCatalogPage() {
   } = catalogState;
   const catalogMutationsAvailable = !isRustV2ApiMode();
 
+  useEffect(() => {
+    if (!targetServiceId) return;
+    if (tab === 'services' && activeFilter === 'all') return;
+    setCatalogState({ tab: 'services', activeFilter: 'all' });
+  }, [activeFilter, setCatalogState, tab, targetServiceId]);
+
   // Categories query
   const debouncedCategorySearch = useDebounce(categorySearch, 250);
   const categoriesQuery = useServiceCategories({
@@ -572,12 +586,18 @@ export default function ServiceCatalogPage() {
 
   // Services query
   const debouncedServiceSearch = useDebounce(serviceSearch, 250);
-  const servicesQuery = useServices({
-    page: servicePage,
-    page_size: 25,
-    ...(debouncedServiceSearch ? { search: debouncedServiceSearch } : {}),
-    ...(activeFilter === 'active' ? { is_active: true } : {}),
-  });
+  const serviceQueryParams = useMemo(() => {
+    if (targetServiceId) {
+      return { page: 1, page_size: 1, service_id: targetServiceId };
+    }
+    return {
+      page: servicePage,
+      page_size: 25,
+      ...(debouncedServiceSearch ? { search: debouncedServiceSearch } : {}),
+      ...(activeFilter === 'active' ? { is_active: true } : {}),
+    };
+  }, [activeFilter, debouncedServiceSearch, servicePage, targetServiceId]);
+  const servicesQuery = useServices(serviceQueryParams);
 
   const createCategoryMutation = useCreateServiceCategory();
   const updateCategoryMutation = useUpdateServiceCategory();
@@ -808,6 +828,7 @@ export default function ServiceCatalogPage() {
             serviceData={servicesQuery.data}
             serviceSearch={serviceSearch}
             services={services}
+            targetServiceId={targetServiceId}
             setServicePage={setServicePage}
             setActiveFilter={setActiveFilter}
             setServiceSearch={setServiceSearch}

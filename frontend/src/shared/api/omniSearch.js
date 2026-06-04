@@ -73,8 +73,10 @@ function adaptV2SearchItem(item) {
 }
 
 function adaptV2Patient(item) {
+  const base = adaptV2SearchItem(item)
   return {
-    ...adaptV2SearchItem(item),
+    ...base,
+    id: item?.patient_id || base.id,
     name: item?.patient_name || item?.title,
     medical_record_number: item?.patient_code,
     date_of_birth: item?.patient_date_of_birth,

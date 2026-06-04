@@ -553,7 +553,8 @@ export const operations = {
       "cursor",
       "limit",
       "search",
-      "is_active"
+      "is_active",
+      "service_id"
     ],
     "hasBody": false
   },

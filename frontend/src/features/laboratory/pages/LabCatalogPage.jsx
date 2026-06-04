@@ -6,6 +6,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { useEffect, useState, useMemo } from "react";
+import { useLocation } from 'react-router-dom';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +37,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LabTestCustomizeSlideOver } from "@/components/laboratory/LabTestCustomizeSlideOver";
 import { AddLabTestSlideOver } from "@/components/laboratory/AddLabTestSlideOver";
 import {
+  useLabTest,
   useLabTests,
+  useLabPanel,
   useLabPanels,
   useDeleteLabTest,
   useDeleteLabPanel,
@@ -62,6 +65,20 @@ const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
 });
 
 const CATALOG_PAGE_SIZE = 24;
+
+function labCatalogTabFromSearchParams(searchParams) {
+  const tab = searchParams.get('tab');
+  if (tab === 'tests' || tab === 'panels') {
+    return tab;
+  }
+  if (searchParams.get('panel')) {
+    return 'panels';
+  }
+  if (searchParams.get('test')) {
+    return 'tests';
+  }
+  return null;
+}
 
 const CATALOG_CATEGORY_OPTIONS = [
   { value: "all", label: "All Categories" },
@@ -401,6 +418,10 @@ function LabCatalogView({
   tests,
   testsColumns,
   testsLoading,
+  targetItem,
+  targetItemId,
+  targetItemLabel,
+  targetItemLoading,
   customizeCatalogItem,
   handleSlideOverSuccess,
 }) {
@@ -432,6 +453,14 @@ function LabCatalogView({
         />
 
         <main className="p-4 sm:p-6">
+          {targetItemId ? (
+            <TargetCatalogItemPanel
+              isLoading={targetItemLoading}
+              item={targetItem}
+              itemLabel={targetItemLabel}
+            />
+          ) : null}
+
           <CatalogTableTab
             activeTab="tests"
             catalogMutationsAvailable={catalogMutationsAvailable}
@@ -446,6 +475,7 @@ function LabCatalogView({
             onCreate={() => openAddCatalogItem("test")}
             onRowCustomize={customizeCatalogItem}
             rows={tests}
+            targetItemId={targetItemId}
           />
 
           <CatalogTableTab
@@ -462,6 +492,7 @@ function LabCatalogView({
             onCreate={() => openAddCatalogItem("panel")}
             onRowCustomize={customizeCatalogItem}
             rows={panels}
+            targetItemId={targetItemId}
           />
 
           {activeTotalCount > CATALOG_PAGE_SIZE || activeHasNextPage ? (
@@ -566,6 +597,55 @@ function LabCatalogReadonlyAlert() {
   );
 }
 
+function TargetCatalogItemPanel({ isLoading, item, itemLabel }) {
+  if (!isLoading && !item) {
+    return (
+      <div
+        data-omni-target="missing"
+        className="mb-4 rounded-md border border-amber-200 bg-amber-50/50 p-4"
+      >
+        <p className="text-sm font-medium text-foreground">Selected {itemLabel} is not available</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          It may have been removed or your current access may not include it.
+        </p>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div
+        data-omni-target="loading"
+        className="mb-4 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 p-4 text-sm text-muted-foreground"
+      >
+        <LoadingSpinner className="size-4" />
+        Loading selected {itemLabel}
+      </div>
+    );
+  }
+
+  const badge = getCatalogStatusBadge(item);
+
+  return (
+    <div
+      data-omni-target="true"
+      className="mb-4 grid gap-3 rounded-md border border-primary/30 bg-primary/5 p-4 md:grid-cols-[1fr_auto] md:items-center"
+    >
+      <div className="min-w-0">
+        <p className="font-mono text-[11px] uppercase text-muted-foreground">Selected {itemLabel}</p>
+        <h3 className="mt-1 truncate text-sm font-semibold text-foreground">{item.name}</h3>
+        <p className="mt-1 font-mono text-xs text-muted-foreground">{item.code || item.loinc_code || "No code"}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        <Badge variant="outline" className={cn("text-xs", badge.className)}>
+          {badge.label}
+        </Badge>
+        <span className="font-mono text-sm text-muted-foreground">{formatCatalogPrice(item.price)}</span>
+      </div>
+    </div>
+  );
+}
+
 function LabCatalogTabs() {
   return (
     <LabToolbar className="py-3">
@@ -662,6 +742,7 @@ function CatalogTableTab({
   onCreate,
   onRowCustomize,
   rows,
+  targetItemId,
 }) {
   const pluralItemLabel = itemLabel === "test" ? "tests" : "panels";
 
@@ -702,6 +783,11 @@ function CatalogTableTab({
             columns={columns}
             onRowClick={catalogMutationsAvailable ? (item) => onRowCustomize(item, itemLabel) : undefined}
             rowClassName="hover:bg-muted/30"
+            getRowClassName={(item) =>
+              targetItemId && String(item.id) === String(targetItemId)
+                ? 'bg-primary/5 ring-1 ring-inset ring-primary/30'
+                : null
+            }
             className={cn(labTableClassName, minWidthClass)}
             headerClassName={labTableHeaderClassName}
             aria-label={`${pluralItemLabel} catalog`}
@@ -852,6 +938,11 @@ function useLabCatalogMetrics({
  * - Chronicle design system styling
  */
 const LabCatalogPage = () => {
+  const { search: routeSearch } = useLocation();
+  const routeSearchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
+  const targetTestId = routeSearchParams.get("test") || "";
+  const targetPanelId = routeSearchParams.get("panel") || "";
+  const targetCatalogTab = labCatalogTabFromSearchParams(routeSearchParams);
   const catalogMutationsAvailable = !isRustV2ApiMode();
   const [persistedCatalogState, setPersistedCatalogState] = useRouteTableState('laboratory:catalogTable', {
     activeTab: 'tests',
@@ -862,7 +953,7 @@ const LabCatalogPage = () => {
   });
 
   // Tab state
-  const [activeTab, setActiveTab] = useState(persistedCatalogState.activeTab || "tests");
+  const [activeTab, setActiveTab] = useState(targetCatalogTab || persistedCatalogState.activeTab || "tests");
 
   // Search and filters
   const [searchQuery, setSearchQuery] = useState(persistedCatalogState.searchQuery || "");
@@ -883,6 +974,9 @@ const LabCatalogPage = () => {
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
+
+  const { data: targetTest, isLoading: targetTestLoading } = useLabTest(targetTestId);
+  const { data: targetPanel, isLoading: targetPanelLoading } = useLabPanel(targetPanelId);
 
   const catalogFilters = useMemo(() => {
     const filters = {
@@ -938,6 +1032,18 @@ const LabCatalogPage = () => {
   const activeCountExact = activeData?.count_exact !== false && activeData?.total_is_lower_bound !== true;
   const activeHasNextPage = Boolean(activeData?.next);
   const resolvedPage = Number(activeData?.page || page);
+  const targetItemId = activeTab === "panels" ? targetPanelId : targetTestId;
+  const targetItem = activeTab === "panels" ? targetPanel : targetTest;
+  const targetItemLoading = activeTab === "panels" ? targetPanelLoading : targetTestLoading;
+  const targetItemLabel = activeTab === "panels" ? "panel" : "test";
+
+  useEffect(() => {
+    if (!targetCatalogTab) {
+      return;
+    }
+    setActiveTab(targetCatalogTab);
+    setPersistedCatalogState({ activeTab: targetCatalogTab, page: 1 });
+  }, [setPersistedCatalogState, targetCatalogTab]);
   const isActiveFetching = activeTab === "tests" ? testsFetching : panelsFetching;
 
   useEffect(() => {
@@ -1159,6 +1265,10 @@ const LabCatalogPage = () => {
       tests={tests}
       testsColumns={testsColumns}
       testsLoading={testsLoading}
+      targetItem={targetItem}
+      targetItemId={targetItemId}
+      targetItemLabel={targetItemLabel}
+      targetItemLoading={targetItemLoading}
       customizeCatalogItem={handleCustomize}
     />
   );

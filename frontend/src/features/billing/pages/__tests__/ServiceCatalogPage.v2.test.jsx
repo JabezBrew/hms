@@ -21,22 +21,38 @@ vi.mock('@/features/billing/hooks', () => ({
     error: null,
     refetch: vi.fn(),
   }),
-  useServices: () => ({
-    data: {
-      count: 1,
-      results: [
-        {
-          id: 'service-1',
-          code: 'CONS-GEN',
-          name: 'General Consultation',
-          category: 'category-1',
-          category_name: 'Consultation',
-          base_price: '75.00',
-          tax_rate: '0.00',
-          is_active: true,
-        },
-      ],
-    },
+  useServices: (params = {}) => ({
+    data: params.service_id === 'service-target'
+      ? {
+        count: 1,
+        results: [
+          {
+            id: 'service-target',
+            code: 'CARD-FUP',
+            name: 'Cardiology Follow Up',
+            category: 'category-1',
+            category_name: 'Consultation',
+            base_price: '120.00',
+            tax_rate: '0.00',
+            is_active: true,
+          },
+        ],
+      }
+      : {
+        count: 1,
+        results: [
+          {
+            id: 'service-1',
+            code: 'CONS-GEN',
+            name: 'General Consultation',
+            category: 'category-1',
+            category_name: 'Consultation',
+            base_price: '75.00',
+            tax_rate: '0.00',
+            is_active: true,
+          },
+        ],
+      },
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -48,10 +64,10 @@ vi.mock('@/features/billing/hooks', () => ({
 }));
 
 vi.mock('@/components/ui/VirtualizedTable', () => ({
-  VirtualizedTable: ({ rows = [], columns = [] }) => (
+  VirtualizedTable: ({ rows = [], columns = [], getRowClassName }) => (
     <div>
       {rows.map((row) => (
-        <div key={row.id}>
+        <div key={row.id} className={getRowClassName?.(row)} data-testid={`service-row-${row.id}`}>
           {columns.map((column) => (
             <div key={column.key}>{column.render ? column.render(row) : row[column.key]}</div>
           ))}
@@ -61,9 +77,9 @@ vi.mock('@/components/ui/VirtualizedTable', () => ({
   ),
 }));
 
-function renderPage() {
+function renderPage(route = '/billing/catalog') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[route]}>
       <ServiceCatalogPage />
     </MemoryRouter>,
   );
@@ -98,5 +114,15 @@ describe('ServiceCatalogPage Rust V2 guards', () => {
 
     expect(screen.getByRole('button', { name: /new service/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+  });
+
+  it('highlights the targeted service from Omni Search route params', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+
+    renderPage('/billing/catalog?service=service-target');
+
+    expect(screen.getByTestId('service-row-service-target')).toHaveClass('ring-2');
+    expect(screen.queryByText('General Consultation')).not.toBeInTheDocument();
+    expect(screen.getByText('Cardiology Follow Up')).toBeInTheDocument();
   });
 });

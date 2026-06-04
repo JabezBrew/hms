@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LocationsPage from '../LocationsPage';
@@ -28,10 +28,10 @@ vi.mock('@/features/inventory/hooks', () => ({
 }));
 
 vi.mock('@/components/ui/VirtualizedTable', () => ({
-  default: ({ rows = [], columns = [] }) => (
+  default: ({ rows = [], columns = [], onRowClick }) => (
     <div>
       {rows.map((row) => (
-        <div key={row.id}>
+        <div key={row.id} data-testid={`location-row-${row.id}`} onClick={() => onRowClick?.(row)}>
           {columns.map((column) => (
             <div key={column.key}>{column.render ? column.render(row) : row[column.key]}</div>
           ))}
@@ -62,10 +62,18 @@ vi.mock('@/components/inventory', async (importOriginal) => {
   };
 });
 
-function renderPage() {
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe">{`${location.pathname}${location.search}`}</div>;
+}
+
+function renderPage(route = '/inventory/locations') {
   return render(
-    <MemoryRouter initialEntries={['/inventory/locations']}>
-      <LocationsPage />
+    <MemoryRouter initialEntries={[route]}>
+      <Routes>
+        <Route path="/inventory/locations" element={<LocationsPage />} />
+        <Route path="/inventory/items" element={<LocationProbe />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -101,5 +109,17 @@ describe('LocationsPage Rust V2 guards', () => {
 
     expect(screen.getByRole('button', { name: /add location/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+  });
+
+  it('opens the stock-by-location view instead of an unregistered location detail route', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+
+    renderPage();
+
+    fireEvent.click(screen.getByTestId('location-row-location-1'));
+
+    expect(screen.getByTestId('location-probe')).toHaveTextContent(
+      '/inventory/items?location=location-1',
+    );
   });
 });

@@ -505,12 +505,64 @@ function getPatientActionLabel(action) {
   return null
 }
 
+function safeInternalHref(value, fallback = null) {
+  const href = String(value || '').trim()
+  if (!href || !href.startsWith('/') || href.startsWith('//')) return fallback
+  return href
+}
+
+function splitHref(href) {
+  const hashIndex = href.indexOf('#')
+  const beforeHash = hashIndex >= 0 ? href.slice(0, hashIndex) : href
+  const hash = hashIndex >= 0 ? href.slice(hashIndex) : ''
+  const queryIndex = beforeHash.indexOf('?')
+  return {
+    pathname: queryIndex >= 0 ? beforeHash.slice(0, queryIndex) : beforeHash,
+    search: queryIndex >= 0 ? beforeHash.slice(queryIndex + 1) : '',
+    hash,
+  }
+}
+
+function appendHrefSearchParam(href, key, value) {
+  const safeHref = safeInternalHref(href)
+  if (!safeHref) return null
+
+  const { pathname, search, hash } = splitHref(safeHref)
+  const params = new URLSearchParams(search)
+  params.set(key, String(value))
+  const nextSearch = params.toString()
+  return `${pathname}${nextSearch ? `?${nextSearch}` : ''}${hash}`
+}
+
+function appendHrefPathSegment(href, segment) {
+  const safeHref = safeInternalHref(href)
+  if (!safeHref) return null
+
+  const { pathname, search, hash } = splitHref(safeHref)
+  const suffix = `/${segment}`
+  const nextPathname = pathname.endsWith(suffix)
+    ? pathname
+    : `${pathname.replace(/\/+$/, '')}${suffix}`
+  return `${nextPathname}${search ? `?${search}` : ''}${hash}`
+}
+
+function getResultHref(item, fallback = null) {
+  return safeInternalHref(item?.route_path) || safeInternalHref(item?.href) || safeInternalHref(fallback)
+}
+
+function getPatientHref(patient, action) {
+  const fallback = patient?.id ? `/patients/${patient.id}` : null
+  const href = getResultHref(patient, fallback)
+  if (!href) return null
+  return action ? appendHrefSearchParam(href, 'action', action) : href
+}
+
 function PatientCommandItem({ patient, action, patientNameCounts, onSelectPatient, onConfirmPatient }) {
   const name = patient?.name || 'Patient'
   const id = patient?.id
-  if (!id) return null
+  const destination = getPatientHref(patient, action)
+  if (!id || !destination) return null
 
-  const destination = action ? `/patients/${id}?action=${action}` : `/patients/${id}`
   const duplicateCount = getPatientDuplicateCount(patient, patientNameCounts)
   const identityParts = buildPatientIdentityParts(patient)
   const identityWarnings = buildPatientIdentityWarnings(patient)
@@ -595,7 +647,7 @@ function PatientCommandItem({ patient, action, patientNameCounts, onSelectPatien
 }
 
 function GenericCommandItem({ item, Icon = FileText, tone = 'sky', keyPrefix = 'search', onSelectResult }) {
-  const href = item?.href || item?.route_path
+  const href = getResultHref(item)
   const label = item?.label || item?.title || 'Result'
   const description = item?.description || item?.subtitle || item?.status_label || href
   if (!href || !item?.id) return null
@@ -904,7 +956,7 @@ function WardsGroup({ wards, effectiveQuery, isLoading, onSelectResult }) {
           <CommandItem
             key={`ward:${ward.id}`}
             value={`${ward.name} ${ward.ward_type || ''}`.trim()}
-            onSelect={() => onSelectResult(`/wards/${ward.id}`)}
+            onSelect={() => onSelectResult(getResultHref(ward, `/wards/${ward.id}`))}
             className={COMMAND_ITEM_CLASSNAME}
           >
             <div className="flex min-w-0 items-start gap-3">
@@ -938,9 +990,10 @@ function EncountersGroup({ encounters, role, effectiveQuery, isLoading, onSelect
             key={`encounter:${encounter.id}`}
             value={`${encounter.patient_name || ''} ${encounter.reason || ''}`.trim()}
             onSelect={() => {
+              const href = getResultHref(encounter, `/encounters/${encounter.id}`)
               const to = ROLE_GROUPS.ENCOUNTER_WORKSPACE.includes(role)
-                ? `/encounters/${encounter.id}/workspace`
-                : `/encounters/${encounter.id}`
+                ? appendHrefPathSegment(href, 'workspace')
+                : href
               onSelectResult(to)
             }}
             className={COMMAND_ITEM_CLASSNAME}
@@ -975,7 +1028,7 @@ function AppointmentsGroup({ appointments, effectiveQuery, isLoading, onSelectRe
           <CommandItem
             key={`appointment:${appointment.id}`}
             value={`${appointment.patient_name || ''} ${appointment.practitioner_name || ''}`.trim()}
-            onSelect={() => onSelectResult(`/appointments/${appointment.id}`)}
+            onSelect={() => onSelectResult(getResultHref(appointment, `/appointments/${appointment.id}`))}
             className={COMMAND_ITEM_CLASSNAME}
           >
             <div className="flex min-w-0 items-start gap-3">
@@ -1008,7 +1061,7 @@ function AdmissionsGroup({ admissions, effectiveQuery, isLoading, onSelectResult
           <CommandItem
             key={`admission:${admission.id}`}
             value={`${admission.patient_name || ''} ${admission.ward_name || ''}`.trim()}
-            onSelect={() => onSelectResult(`/admissions/${admission.id}`)}
+            onSelect={() => onSelectResult(getResultHref(admission, `/admissions/${admission.id}`))}
             className={COMMAND_ITEM_CLASSNAME}
           >
             <div className="flex min-w-0 items-start gap-3">
@@ -1040,7 +1093,7 @@ function StaffResultItems({ staff, effectiveQuery, isLoading, onSelectResult }) 
         <CommandItem
           key={`staff:${member.id}`}
           value={`${member.name || ''} ${member.employee_id || ''}`.trim()}
-          onSelect={() => onSelectResult(`/staff/${member.id}`)}
+          onSelect={() => onSelectResult(getResultHref(member, `/staff/${member.id}`))}
           className={COMMAND_ITEM_CLASSNAME}
         >
           <div className="flex min-w-0 items-start gap-3">

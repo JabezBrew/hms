@@ -28,6 +28,24 @@ vi.mock('@/features/laboratory/hooks', () => ({
     isFetching: false,
     refetch: vi.fn(),
   }),
+  useLabTest: (id) => ({
+    data: id
+      ? {
+          id,
+          name: 'Full Blood Count',
+          description: 'CBC equivalent',
+          loinc_code: 'FBC',
+          category: 'hematology',
+          price: '45.00',
+          tat_hours: 4,
+          specimen_type: 'blood',
+          is_system_default: false,
+          is_facility_modified: false,
+          is_active: true,
+        }
+      : null,
+    isLoading: false,
+  }),
   useLabPanels: () => ({
     data: {
       count: 1,
@@ -48,6 +66,22 @@ vi.mock('@/features/laboratory/hooks', () => ({
     isLoading: false,
     isFetching: false,
     refetch: vi.fn(),
+  }),
+  useLabPanel: (id) => ({
+    data: id
+      ? {
+          id,
+          name: 'Renal Function Panel',
+          description: 'Kidney profile',
+          code: 'RFT',
+          test_count: 3,
+          price: '80.00',
+          is_system_default: false,
+          is_facility_modified: false,
+          is_active: true,
+        }
+      : null,
+    isLoading: false,
   }),
   useDeleteLabTest: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteLabPanel: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -79,9 +113,9 @@ vi.mock('@/hooks/useSlideOver', () => ({
   useSlideOver: () => [false, vi.fn(), vi.fn()],
 }));
 
-function renderLabCatalogPage() {
+function renderLabCatalogPage(initialEntry = '/laboratory/catalog') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <LabCatalogPage />
     </MemoryRouter>,
   );
@@ -118,5 +152,15 @@ describe('LabCatalogPage Rust V2 guards', () => {
     expect(screen.getByRole('button', { name: /add test/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
+  });
+
+  it('shows the selected panel from a catalog deep link', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+
+    renderLabCatalogPage('/laboratory/catalog?tab=panels&panel=panel-1');
+
+    expect(screen.getByText(/selected panel/i)).toBeInTheDocument();
+    expect(screen.getAllByText('Renal Function Panel').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-omni-target="true"]')).toBeInTheDocument();
   });
 });

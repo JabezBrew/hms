@@ -15,8 +15,14 @@ import CheckoutDialog from './CheckoutDialog';
  * @param {string} props.clinicId - Clinic UUID to show queue for
  * @param {boolean} props.showActions - Show action buttons (default: true)
  * @param {Function} props.onPatientClick - Callback when patient name clicked
+ * @param {string} props.targetVisitId - Visit UUID to highlight from route targets
  */
-export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick }) {
+export function WaitingRoomQueue({
+  clinicId,
+  showActions = true,
+  onPatientClick,
+  targetVisitId = null,
+}) {
   const navigate = useNavigate();
   const { data: queue, isLoading, error } = useWaitingRoom(clinicId);
   const { callPatient, startConsultation, markNoShow } = useVisitActions();
@@ -93,6 +99,17 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
     return [];
   };
 
+  const isTargetVisit = (visit) => {
+    if (!targetVisitId) return false;
+    return [visit?.id, visit?.visit_id, visit?.encounter_id].some((candidate) => candidate === targetVisitId);
+  };
+
+  const targetVisitClassName = (visit) => (
+    isTargetVisit(visit)
+      ? 'ring-2 ring-primary/50 border-primary/50 bg-primary/5'
+      : undefined
+  );
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -142,6 +159,8 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
                     </button>
                   }
                   status="stable"
+                  className={targetVisitClassName(visit)}
+                  data-omni-target={isTargetVisit(visit) ? 'true' : undefined}
                   badges={[
                     {
                       text: 'Ready for Checkout',
@@ -186,6 +205,8 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
                     </button>
                   }
                   status="warning"
+                  className={targetVisitClassName(visit)}
+                  data-omni-target={isTargetVisit(visit) ? 'true' : undefined}
                   badges={[
                     {
                       text: 'Called',
@@ -230,6 +251,8 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
                     </button>
                   }
                   status="info"
+                  className={targetVisitClassName(visit)}
+                  data-omni-target={isTargetVisit(visit) ? 'true' : undefined}
                   badges={[
                     {
                       text: 'Waiting',
@@ -260,4 +283,3 @@ export function WaitingRoomQueue({ clinicId, showActions = true, onPatientClick 
     </>
   );
 }
-

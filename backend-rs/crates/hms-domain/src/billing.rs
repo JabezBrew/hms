@@ -332,6 +332,7 @@ pub struct ServiceCatalogQuery {
     pub limit: Option<u8>,
     pub search: Option<String>,
     pub is_active: Option<bool>,
+    pub service_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

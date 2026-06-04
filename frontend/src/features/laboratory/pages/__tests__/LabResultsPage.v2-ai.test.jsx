@@ -34,6 +34,8 @@ vi.mock('@/features/laboratory/hooks', () => ({
         unit: 'g/dL',
         flag: 'normal',
         is_verified: false,
+        is_critical: false,
+        entered_at: '2026-05-12T10:00:00Z',
         performed_at: '2026-05-12T10:00:00Z',
       }],
     },
@@ -47,6 +49,26 @@ vi.mock('@/features/laboratory/hooks', () => ({
     isError: false,
     error: null,
     refetch: vi.fn(),
+  }),
+  useLabResult: (id) => ({
+    data: id
+      ? {
+          id,
+          order_id: 'order-1',
+          order_number: 'LAB-001',
+          patient_id: 'patient-1',
+          patient_name: 'Ama Mensah',
+          patient_mrn: 'MRN-001',
+          test_name: 'Full Blood Count',
+          value: '12.1',
+          unit: 'g/dL',
+          flag: 'normal',
+          is_verified: false,
+          is_critical: false,
+          entered_at: '2026-05-12T10:00:00Z',
+        }
+      : null,
+    isLoading: false,
   }),
   useVerifyLabResult: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useBulkVerifyLabResults: () => ({ isPending: false, mutateAsync: vi.fn() }),
@@ -66,9 +88,9 @@ vi.mock('@/components/ui/VirtualizedTable', () => ({
   ),
 }))
 
-function renderPage() {
+function renderPage(initialEntry = '/laboratory/results') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <LabResultsPage />
     </MemoryRouter>
   )
@@ -97,5 +119,15 @@ describe('LabResultsPage Rust V2 AI guard', () => {
     renderPage()
 
     expect(screen.getByRole('button', { name: /^interpret$/i })).toBeInTheDocument()
+  })
+
+  it('shows the selected result from a result deep link', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+
+    renderPage('/laboratory/results?result=result-1')
+
+    expect(screen.getByText(/selected result/i)).toBeInTheDocument()
+    expect(screen.getAllByText('Full Blood Count').length).toBeGreaterThan(0)
+    expect(document.querySelector('[data-omni-target="true"]')).toBeInTheDocument()
   })
 })

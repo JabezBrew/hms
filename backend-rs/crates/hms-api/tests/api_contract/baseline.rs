@@ -114,6 +114,17 @@ async fn omni_search_posts_access_scoped_projection_results() {
         body["data"]["groups"]["patients"][0]["patient_code"],
         "P-0000000001"
     );
+    let patient_result = &body["data"]["groups"]["patients"][0];
+    assert_eq!(patient_result["id"], patient_result["patient_id"]);
+    assert_eq!(
+        patient_result["route_path"],
+        format!(
+            "/patients/{}",
+            patient_result["patient_id"]
+                .as_str()
+                .expect("patient id is serialized")
+        )
+    );
     assert_eq!(
         body["data"]["groups"]["patients"][0]["patient_date_of_birth"],
         "1990-02-14"

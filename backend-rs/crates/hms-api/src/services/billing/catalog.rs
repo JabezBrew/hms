@@ -44,6 +44,7 @@ impl BillingCatalogService {
             ServiceCatalogFilters {
                 search: query.search,
                 is_active: query.is_active,
+                service_id: query.service_id,
             },
         )
         .await

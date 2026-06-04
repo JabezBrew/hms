@@ -463,6 +463,9 @@ function serviceCatalogQuery(params = {}) {
   if (params.is_active !== undefined && params.is_active !== null && params.is_active !== '') {
     query.is_active = params.is_active === true || params.is_active === 'true' || params.is_active === '1';
   }
+  if (params.service_id) {
+    query.service_id = String(params.service_id);
+  }
   return query;
 }
 

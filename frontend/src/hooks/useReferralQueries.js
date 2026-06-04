@@ -120,6 +120,18 @@ export function useReferralInbox() {
 }
 
 /**
+ * Get one referral by ID.
+ */
+export function useReferral(id, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: referralKeys.detail(id),
+    queryFn: ({ signal }) => referralsApi.getReferral(id, { signal }),
+    enabled: enabled && !!id,
+  });
+}
+
+/**
  * Get sent referrals
  */
 export function useReferralsSent() {

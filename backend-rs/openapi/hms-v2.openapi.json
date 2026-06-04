@@ -26547,6 +26547,13 @@
               "string",
               "null"
             ]
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -35732,6 +35739,18 @@
             "schema": {
               "type": [
                 "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
                 "null"
               ]
             }

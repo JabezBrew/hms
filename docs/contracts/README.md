@@ -89,6 +89,25 @@ Adapters must preserve:
 - feature gating
 - PHI-safe, scoped query keys and browser events
 
+OmniSearch result `id` values are target resource IDs, not search-index document
+IDs. The server-provided `route_path` is the canonical internal navigation path
+for result clicks; frontend result renderers should prefer it over rebuilding
+links from IDs, while still rejecting non-internal paths. Search-index producers
+must only emit `route_path` values that the destination screen actually honors,
+such as opening a detail panel, selecting a tab, applying a filter, or marking
+the target row/card.
+
+For list-backed OmniSearch targets, use the registered route plus an honored
+target parameter instead of a generic list page. Examples include
+`/appointments?tab=sessions&clinic=<clinic_id>`, `/billing/catalog?service=<id>`,
+`/billing/invoices/<invoice_id>?payment=<payment_id>`,
+`/billing/claims?claim=<claim_id>`, `/inventory/items?location=<location_id>`,
+and `/referrals/inbox?referral=<referral_id>`.
+If a list cannot load or mark a specific target deterministically, do not index
+that source until the destination has a target-aware query or detail fetch. For
+example, waitlist search rows are limited to statuses rendered by the appointment
+waitlist.
+
 Query keys for authorization-sensitive data must include visibility-changing
 scope such as facility, user/profile, feature set, permission version, patient or
 ward scope, and query params. Use opaque/sanitized scope values; do not key

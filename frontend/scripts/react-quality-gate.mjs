@@ -160,7 +160,10 @@ function main() {
     )
     doctorStatus = doctor.status
     doctorOutput = doctor.output
-    diagnosticsPath = extractDiagnosticsPath(doctor.output) || findLatestDiagnostics(startedAtMs)
+    const reportedDiagnosticsPath = extractDiagnosticsPath(doctor.output)
+    diagnosticsPath = reportedDiagnosticsPath
+      ? resolveDiagnosticsPath(reportedDiagnosticsPath)
+      : findLatestDiagnostics(startedAtMs)
     result.reactDoctor = { status: doctorStatus, diagnosticsPath }
   } else {
     result.reactDoctor = { status: doctorStatus, diagnosticsPath }
@@ -216,7 +219,7 @@ function main() {
     result.reactDoctor.warning = `React Doctor warnings ${warnings} exceed limit ${options.maxWarnings}`
   }
 
-  if (doctorStatus !== 0 && summary.total === 0) {
+  if (doctorStatus !== 0) {
     result.ok = false
     result.reactDoctor.error = result.reactDoctor.error || `React Doctor exited with status ${doctorStatus}`
   }
