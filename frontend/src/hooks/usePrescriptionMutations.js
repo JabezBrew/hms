@@ -52,11 +52,29 @@ function getPrescriptionPatientId(data = {}) {
 }
 
 function normalizeCreatePrescriptionPayload(data = {}) {
-  return {
+  const payload = {
     medication_name: data.medication_name,
     dose: data.dose || data.dosage,
     frequency: data.frequency,
   };
+
+  if (data.route !== undefined) {
+    payload.route = data.route;
+  }
+  if (data.inventory_item_id !== undefined) {
+    payload.inventory_item_id = data.inventory_item_id;
+  }
+  if (data.start_date !== undefined) {
+    payload.start_date = data.start_date;
+  }
+  if (data.duration_days !== undefined) {
+    payload.duration_days = data.duration_days;
+  }
+  if (data.first_dose_at !== undefined) {
+    payload.first_dose_at = data.first_dose_at;
+  }
+
+  return payload;
 }
 
 function normalizeUpdatePrescriptionPayload(data = {}) {
@@ -88,7 +106,38 @@ export async function createPrescription(data, options = {}) {
         normalizeCreatePrescriptionPayload(data),
         { signal: options.signal },
       );
-      return normalizePrescriptionResponse(response?.data);
+      const prescription = normalizePrescriptionResponse(response?.data);
+
+      if (data.generate_mar === 'yes' || data.generate_mar === true) {
+        const admissionCaseId = normalizeIdentifier(
+          data.admission_case_id || data.admissionCaseId || data.admission,
+        );
+        if (!admissionCaseId) {
+          throw new Error('Active admission is required to generate MAR in Rust V2.');
+        }
+
+        const generateBody = {
+          admission_case_id: admissionCaseId,
+          days: Number(data.mar_days || data.days || 7),
+        };
+        if (data.first_dose_at) {
+          generateBody.first_dose_at = data.first_dose_at;
+        }
+
+        const marResponse = await v2Api.postClinicalPrescriptionGenerateMar(
+          { id: prescription.id },
+          generateBody,
+          { signal: options.signal },
+        );
+
+        return {
+          ...prescription,
+          mar_generated: true,
+          mar_generation: marResponse?.data,
+        };
+      }
+
+      return prescription;
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleV2ApiError(error, 'Failed to create prescription'));

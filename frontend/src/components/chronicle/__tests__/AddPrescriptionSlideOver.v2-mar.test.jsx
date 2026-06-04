@@ -12,6 +12,7 @@ const patient = {
   id: 'patient-1',
   name: 'Ama Mensah',
   is_admitted: true,
+  current_admission_id: 'admission-1',
 };
 
 vi.mock('@/hooks/useDrugSafetyQueries', () => ({
@@ -67,17 +68,17 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     vi.clearAllMocks();
   });
 
-  it('hides MAR generation controls in Rust V2 mode because no generated MAR contract exists', () => {
+  it('shows MAR generation controls in Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
 
     renderPanel();
 
     expect(
-      screen.queryByText(/generate medication administration record/i),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/mar generation is not available in rust v2/i),
+      screen.getByText(/generate medication administration record/i),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/mar generation is not available in rust v2/i),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps MAR generation controls available outside Rust V2 mode', () => {
@@ -117,6 +118,9 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
       route: 'oral',
       frequency: 'daily',
       start_date: expect.any(String),
+      generate_mar: 'yes',
+      mar_days: 7,
+      admission_case_id: 'admission-1',
     });
     expect(onClose).toHaveBeenCalled();
   });

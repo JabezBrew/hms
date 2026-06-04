@@ -365,7 +365,7 @@ function MarGenerationPanel({
       <Alert>
         <ClipboardList className="size-4" />
         <AlertDescription>
-          MAR generation is not available in Rust V2 mode yet.
+          MAR generation requires an active admission.
         </AlertDescription>
       </Alert>
     );

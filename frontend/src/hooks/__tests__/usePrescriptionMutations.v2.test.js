@@ -80,13 +80,14 @@ describe('Rust V2 prescription mutations bridge', () => {
           'Content-Type': 'application/json',
           'X-Facility-Code': 'HMS',
         }),
-        body: JSON.stringify({
-          medication_name: 'Amlodipine',
-          dose: '5 mg',
-          frequency: 'daily',
-        }),
       }),
     );
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({
+      medication_name: 'Amlodipine',
+      dose: '5 mg',
+      frequency: 'daily',
+      route: 'oral',
+    });
     expect(response).toEqual(
       expect.objectContaining({
         id: 'rx-1',
@@ -95,6 +96,91 @@ describe('Rust V2 prescription mutations bridge', () => {
       }),
     );
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('generates MAR after creating a Rust V2 prescription when requested', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'rx-1',
+              patient_id: 'patient-1',
+              medication_name: 'Amlodipine',
+              dose: '5 mg',
+              route: 'oral',
+              frequency: 'bid',
+              status: 'active',
+              prescribed_at: '2026-05-12T08:30:00Z',
+            },
+            meta: {},
+          }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              prescription_id: 'rx-1',
+              created_count: 14,
+              existing_count: 0,
+              requested_dose_count: 14,
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    const response = await createPrescription({
+      patient: 'patient-1',
+      medication_name: 'Amlodipine',
+      dosage: '5 mg',
+      route: 'oral',
+      frequency: 'bid',
+      start_date: '2026-06-04',
+      duration_days: 7,
+      generate_mar: 'yes',
+      mar_days: 7,
+      admission_case_id: 'admission-1',
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/patients/patient-1/clinical/prescriptions',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({
+      medication_name: 'Amlodipine',
+      dose: '5 mg',
+      frequency: 'bid',
+      route: 'oral',
+      start_date: '2026-06-04',
+      duration_days: 7,
+    });
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/clinical/prescriptions/rx-1/generate-mar',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
+      admission_case_id: 'admission-1',
+      days: 7,
+    });
+    expect(response).toEqual(
+      expect.objectContaining({
+        id: 'rx-1',
+        mar_generated: true,
+        mar_generation: expect.objectContaining({
+          created_count: 14,
+        }),
+      }),
+    );
   });
 
   it('updates prescription dose, frequency, and status through Rust /api/v2', async () => {

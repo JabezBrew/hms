@@ -136,6 +136,7 @@ const prescriptionReducer = (state, action) => {
 
 const buildPrescriptionPayload = ({
   patientId,
+  admissionCaseId,
   formData,
   marGenerationAvailable,
   generateMAR,
@@ -154,6 +155,9 @@ const buildPrescriptionPayload = ({
   if (marGenerationAvailable) {
     data.generate_mar = generateMAR ? 'yes' : 'no';
     data.mar_days = marDays;
+    if (admissionCaseId) {
+      data.admission_case_id = admissionCaseId;
+    }
   }
 
   if (formData.duration_days) {
@@ -186,12 +190,13 @@ const AddPrescriptionSlideOverContent = ({
   open,
   onClose,
   patient,
+  encounter = null,
   onPrescriptionCreated
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
   const rustV2Mode = isRustV2ApiMode();
-  const marGenerationAvailable = !rustV2Mode;
+  const marGenerationAvailable = true;
   const drugSafetyEnhancementsAvailable = !rustV2Mode;
 
   const queryClient = useQueryClient();
@@ -215,6 +220,11 @@ const AddPrescriptionSlideOverContent = ({
 
   // Check if patient is admitted (for MAR generation hint)
   const isPatientAdmitted = patient?.local_data?.current_admission || patient?.is_admitted || false;
+  const admissionCaseId = encounter?.admission_id
+    || encounter?.admission_case_id
+    || patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || null;
 
   // Hooks for drug safety - only fetch when slide-over is open
   const safetyCheck = useSafetyCheck();
@@ -353,6 +363,7 @@ const AddPrescriptionSlideOverContent = ({
   const createPrescription = async (overrideReason = '') => {
     const data = buildPrescriptionPayload({
       patientId,
+      admissionCaseId,
       formData,
       marGenerationAvailable,
       generateMAR,
