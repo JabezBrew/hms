@@ -1,13 +1,16 @@
 import { lazy, Suspense } from 'react'
+import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import { Layout } from '@/components/layout/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboardModuleGates } from '@/features/dashboards/hooks'
-import { dashboardFeaturesForRole } from '@/features/dashboards/utils/moduleGates'
+import {
+  dashboardFeaturesForRole,
+  nursingHomeForFeatures,
+} from '@/features/dashboards/utils/moduleGates'
 
 // Lazy load dashboard components
 const DoctorDashboard = lazy(() => import('./DoctorDashboard'))
-const NurseDashboard = lazy(() => import('./NurseDashboard'))
 const ReceptionistDashboard = lazy(() => import('./ReceptionistDashboard'))
 const AdminDashboard = lazy(() => import('./AdminDashboard'))
 const InpatientDoctorDashboard = lazy(() => import('./InpatientDoctorDashboard'))
@@ -46,9 +49,9 @@ const ROLE_DASHBOARD_MAP = {
   inpatient_doctor: { component: InpatientDoctorDashboard, hasLayout: false },
   
   // Nursing staff
-  nurse: { component: NurseDashboard, hasLayout: false },
-  head_nurse: { component: NurseDashboard, hasLayout: false },
-  nurse_practitioner: { component: NurseDashboard, hasLayout: false },
+  nurse: { resolveRedirect: nursingHomeForFeatures },
+  head_nurse: { resolveRedirect: nursingHomeForFeatures },
+  nurse_practitioner: { resolveRedirect: nursingHomeForFeatures },
   
   // Front desk
   receptionist: { component: ReceptionistDashboard, hasLayout: false },
@@ -86,6 +89,7 @@ export default function RoleDashboard() {
   const dashboardConfig = user?.role ? ROLE_DASHBOARD_MAP[user.role] : null
   const requiredFeatures = dashboardFeaturesForRole(user?.role)
   const moduleGate = useDashboardModuleGates({ enabled: Boolean(dashboardConfig) })
+  const hasDynamicRedirect = typeof dashboardConfig?.resolveRedirect === 'function'
   
   if (!user?.role) {
     return <DefaultDashboard />
@@ -95,7 +99,7 @@ export default function RoleDashboard() {
     return <DefaultDashboard />
   }
 
-  if (requiredFeatures.length > 0 && moduleGate.isResolving) {
+  if ((requiredFeatures.length > 0 || hasDynamicRedirect) && moduleGate.isResolving) {
     return (
       <Layout>
         <DashboardLoader />
@@ -112,6 +116,14 @@ export default function RoleDashboard() {
     )
   }
   
+  if (dashboardConfig.redirectTo) {
+    return <Navigate to={dashboardConfig.redirectTo} replace />
+  }
+
+  if (dashboardConfig.resolveRedirect) {
+    return <Navigate to={dashboardConfig.resolveRedirect(moduleGate.enabledFeatures)} replace />
+  }
+
   const { component: DashboardComponent, hasLayout } = dashboardConfig
   
   // Some dashboards have their own layout, others need the Layout wrapper

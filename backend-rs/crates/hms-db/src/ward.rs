@@ -37,7 +37,7 @@ pub use mar::{
 };
 pub use nursing_task_board::{
     cancel_nursing_task, complete_nursing_task, create_nursing_task, get_nursing_task,
-    list_nursing_tasks, NewNursingTask,
+    list_nursing_tasks, NewNursingTask, NursingTaskFilters,
 };
 pub use observations_monitoring::{
     acknowledge_nursing_alert, create_fluid_balance_entry, create_monitoring_event,

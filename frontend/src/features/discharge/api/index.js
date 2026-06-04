@@ -21,8 +21,30 @@ function mapV2Status(status) {
   }
 }
 
+function dischargeWardBoardWorkflowPath(discharge) {
+  const params = new URLSearchParams({ view: 'discharge' })
+  if (discharge?.patient_id) params.set('patient', discharge.patient_id)
+  if (discharge?.id) params.set('case', discharge.id)
+  return `/ward-board?${params.toString()}`
+}
+
+function dischargeSummaryWorkflowPath(discharge) {
+  if (!discharge?.patient_id) {
+    return dischargeWardBoardWorkflowPath(discharge)
+  }
+
+  const params = new URLSearchParams({
+    action: 'add_note',
+    note_type: 'discharge_summary',
+  })
+  return `/patients/${encodeURIComponent(discharge.patient_id)}?${params.toString()}`
+}
+
 function mapV2Blocker(blocker, discharge) {
   const taskType = blocker.blocker_type || blocker.task_type
+  const workflowPath = ['discharge_summary', 'nursing_release'].includes(taskType)
+    ? workflowPathForBlocker(taskType, discharge)
+    : blocker.workflow_path || workflowPathForBlocker(taskType, discharge)
   return {
     ...blocker,
     id: blocker.id || `${discharge.id}:${taskType}`,
@@ -30,7 +52,7 @@ function mapV2Blocker(blocker, discharge) {
     status: blocker.status || 'pending',
     blocking: blocker.blocking ?? true,
     workflow_label: blocker.workflow_label || taskType?.replace(/_/g, ' ') || 'Workflow',
-    workflow_path: blocker.workflow_path || workflowPathForBlocker(taskType, discharge),
+    workflow_path: workflowPath,
     snapshot: {
       hold_reason: blocker.hold_reason || null,
       override_reason: blocker.override_reason || null,
@@ -42,15 +64,15 @@ function mapV2Blocker(blocker, discharge) {
 function workflowPathForBlocker(taskType, discharge) {
   switch (taskType) {
     case 'discharge_summary':
-      return `/patients/${discharge.patient_id}/chronicle?panel=clinical-notes&type=discharge_summary`
+      return dischargeSummaryWorkflowPath(discharge)
     case 'nursing_release':
-      return `/nursing/discharges?case=${discharge.id}`
+      return dischargeWardBoardWorkflowPath(discharge)
     case 'billing_clearance':
       return `/billing/discharges?case=${discharge.id}`
     case 'pharmacy_clearance':
       return `/pharmacy/dispensing?patient=${discharge.patient_id}&discharge=${discharge.id}`
     default:
-      return `/patients/${discharge.patient_id}/chronicle`
+      return `/patients/${discharge.patient_id}`
   }
 }
 

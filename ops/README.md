@@ -33,8 +33,12 @@ For the current GCP staging path, use the root front door:
 ```
 
 Use `./deploy --in-place` only when already SSH'd into `/opt/hms` on the VM, and
-`./deploy verify` for a quick GCP edge check. The lower-level scripts remain
-available for incident debugging and reusable client VPS shapes.
+`./deploy verify` for a quick GCP edge check. `./deploy staging` refuses dirty
+working trees by default; use `./deploy staging --ignore-dirty` only when the
+intended release is the committed `HEAD` snapshot and local changes should be
+ignored. The override still refuses dirty deploy control scripts. The
+lower-level scripts remain available for incident debugging and reusable client
+VPS shapes.
 
 `compose-v2/` contains:
 

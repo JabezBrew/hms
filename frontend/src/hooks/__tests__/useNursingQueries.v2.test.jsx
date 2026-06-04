@@ -474,7 +474,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/tasks?limit=50',
+      'http://localhost:8080/api/v2/nursing/tasks?limit=50&patient_id=patient-1',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual([

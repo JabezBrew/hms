@@ -9,6 +9,7 @@ DRY_RUN="false"
 FORCE_SKIP_PULL=""
 SKIP_HEALTHCHECK="false"
 SKIP_MIGRATIONS="false"
+IGNORE_DIRTY="false"
 VERIFY_APPLY="false"
 ASSUME_MANAGED_BACKUP="false"
 HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED="${HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED:-false}"
@@ -51,6 +52,9 @@ Options:
   --skip-migrations               Forward rollback-only migration skip to the
                                   lower-level deploy script. Requires
                                   HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true.
+  --ignore-dirty                  For remote staging deploys only: ignore
+                                  local uncommitted changes and deploy the
+                                  committed HEAD snapshot.
   --edge-verify=auto|required|skip
                                   Override GCP edge verification after deploy.
   --ssh-mode=iap|direct           Use IAP tunneling or direct SSH for GCP
@@ -107,6 +111,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-migrations)
       SKIP_MIGRATIONS="true"
+      ;;
+    --ignore-dirty)
+      IGNORE_DIRTY="true"
       ;;
     --edge-verify=auto|--edge-verify=required|--edge-verify=skip)
       GCP_EDGE_VERIFY="${1#*=}"
@@ -182,6 +189,16 @@ has_git_checkout() {
   [ -d "$ROOT_DIR/.git" ] &&
     command -v git >/dev/null 2>&1 &&
     git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+git_dirty_status() {
+  git -C "$ROOT_DIR" status --porcelain --untracked-files=normal
+}
+
+print_dirty_status_summary() {
+  status="$1"
+  total="$(printf '%s\n' "$status" | wc -l | tr -d '[:space:]')"
+  printf 'Dirty checkout has %s changed path(s). Full path list omitted from deploy logs; run git status --short locally.\n' "$total"
 }
 
 is_deploy_host_path() {
@@ -304,6 +321,45 @@ validate_migration_versions_in() {
   done
   printf 'Refusing remote deploy before upload so schema history cannot be partially advanced.\n' >&2
   exit 1
+}
+
+validate_migration_versions_at_commit() {
+  commit="$1"
+  if ! git -C "$ROOT_DIR" cat-file -e "$commit:backend-rs/migrations" 2>/dev/null; then
+    printf 'Missing committed migrations directory: backend-rs/migrations\n' >&2
+    exit 1
+  fi
+
+  duplicates="$(
+    git -C "$ROOT_DIR" ls-tree -r --name-only "$commit" -- backend-rs/migrations |
+      sed -n 's|^backend-rs/migrations/\([0-9][0-9]*\)_.*\.sql$|\1|p' |
+      sort |
+      uniq -d
+  )"
+
+  if [ -z "$duplicates" ]; then
+    return 0
+  fi
+
+  printf 'Duplicate committed SQL migration versions found in %s:\n' "$commit" >&2
+  for version in $duplicates; do
+    printf '  version %s\n' "$version" >&2
+    git -C "$ROOT_DIR" ls-tree -r --name-only "$commit" -- backend-rs/migrations |
+      sed -n "s|^backend-rs/migrations/\(${version}_.*\.sql\)$|    \1|p" |
+      sort >&2
+  done
+  printf 'Refusing remote deploy before upload so schema history cannot be partially advanced.\n' >&2
+  exit 1
+}
+
+ensure_git_archive_uses_committed_attributes() {
+  git_dir="$(git -C "$ROOT_DIR" rev-parse --absolute-git-dir)"
+  info_attributes="$git_dir/info/attributes"
+  if [ -s "$info_attributes" ]; then
+    printf '%s\n' 'Refusing remote deploy because local .git/info/attributes can change git archive output.' >&2
+    printf 'Remove or empty %s before deploying a committed snapshot.\n' "$info_attributes" >&2
+    exit 1
+  fi
 }
 
 verify_cloudsql_backups() {
@@ -473,12 +529,53 @@ ensure_clean_committed_checkout() {
     exit 1
   fi
 
-  status="$(git -C "$ROOT_DIR" status --porcelain)"
+  status="$(git_dirty_status)"
   if [ -n "$status" ]; then
+    if [ "$IGNORE_DIRTY" = "true" ]; then
+      deploy_sha="$1"
+      dirty_deploy_controls="$(
+        printf '%s\n' "$status" |
+          grep -E '^...((deploy)|(ops/deploy\.sh)|(ops/gcp-staging/(install-archive|verify-edge)\.sh))$' || true
+      )"
+      if [ -n "$dirty_deploy_controls" ]; then
+        printf '%s\n' 'Refusing --ignore-dirty because deploy control files have uncommitted changes.' >&2
+        printf '%s\n' "$dirty_deploy_controls" >&2
+        printf 'Commit or stash those deploy files before deploying committed SHA %s.\n' "$deploy_sha" >&2
+        exit 1
+      fi
+      printf 'Dirty checkout detected. Ignoring local changes and deploying committed SHA %s only.\n' "$deploy_sha" >&2
+      print_dirty_status_summary "$status" >&2
+      return 0
+    fi
     printf 'Refusing remote deploy from a dirty checkout. Commit or stash first.\n' >&2
-    printf '%s\n' "$status" >&2
+    print_dirty_status_summary "$status" >&2
     exit 1
   fi
+}
+
+print_ignore_dirty_dry_run_notice() {
+  if [ "$IGNORE_DIRTY" != "true" ]; then
+    return 0
+  fi
+
+  status="$(git_dirty_status)"
+  if [ -z "$status" ]; then
+    return 0
+  fi
+
+  deploy_sha="$1"
+  dirty_deploy_controls="$(
+    printf '%s\n' "$status" |
+      grep -E '^...((deploy)|(ops/deploy\.sh)|(ops/gcp-staging/(install-archive|verify-edge)\.sh))$' || true
+  )"
+  if [ -n "$dirty_deploy_controls" ]; then
+    printf '%s\n' 'Dirty checkout detected. A real --ignore-dirty deploy would refuse because deploy control files have uncommitted changes.' >&2
+    printf '%s\n' "$dirty_deploy_controls" >&2
+    exit 1
+  fi
+
+  printf 'Dirty checkout detected. Would ignore local changes and deploy committed SHA %s only.\n' "$deploy_sha" >&2
+  print_dirty_status_summary "$status" >&2
 }
 
 print_remote_deploy_log_tail() {
@@ -601,12 +698,20 @@ run_gcp_remote() {
     exit 1
   fi
 
-  sha="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)"
+  commit="$(git -C "$ROOT_DIR" rev-parse --verify 'HEAD^{commit}')"
+  sha="$(git -C "$ROOT_DIR" rev-parse --short=12 "$commit")"
   remote_deploy_id="$sha-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  ensure_git_archive_uses_committed_attributes
 
   if [ "$DRY_RUN" = "true" ]; then
+    if [ "$IGNORE_DIRTY" = "true" ]; then
+      print_ignore_dirty_dry_run_notice "$sha"
+    else
+      ensure_clean_committed_checkout "$sha"
+    fi
     print_selected
-    printf 'Would archive committed SHA: %s\n' "$sha"
+    printf 'Would archive committed SHA: %s\n' "$commit"
+    printf 'Would upload committed archive installer from %s.\n' "$commit"
     printf 'Would use GCP SSH mode: %s\n' "$GCP_SSH_MODE"
     printf 'Would stream archive over SSH to: %s:%s\n' "$GCP_APP_INSTANCE" "/tmp/hms-deploy-$remote_deploy_id"
     printf 'Would verify remote archive byte count before install.\n'
@@ -624,30 +729,32 @@ run_gcp_remote() {
     return 0
   fi
 
+  ensure_clean_committed_checkout "$sha"
   require_command gcloud
   require_command gzip
   require_command mktemp
   require_command python3
   require_command wc
   require_command date
-  ensure_clean_committed_checkout
-  validate_migration_versions_in "$ROOT_DIR"
+  validate_migration_versions_at_commit "$commit"
   confirm_external_database_backup
 
   archive="$(mktemp "${TMPDIR:-/tmp}/hms-${sha}.XXXXXX.tgz")"
   runner="$(mktemp "${TMPDIR:-/tmp}/hms-remote-runner-${sha}.XXXXXX.sh")"
+  installer="$(mktemp "${TMPDIR:-/tmp}/hms-install-archive-${sha}.XXXXXX.sh")"
   remote_tmp="/tmp/hms-deploy-$remote_deploy_id"
   archive_name="hms-$sha.tgz"
   remote_log="/tmp/hms-deploy-$remote_deploy_id.log"
   remote_pid_file="$remote_tmp/install.pid"
 
   cleanup() {
-    rm -f "$archive" "$runner"
+    rm -f "$archive" "$runner" "$installer"
   }
   trap cleanup EXIT HUP INT TERM
 
   printf 'Packaging committed checkout %s...\n' "$sha"
-  git -C "$ROOT_DIR" archive --format=tar HEAD | gzip >"$archive"
+  GIT_ATTR_NOSYSTEM=1 git -C "$ROOT_DIR" -c core.attributesFile=/dev/null archive --format=tar "$commit" | gzip >"$archive"
+  git -C "$ROOT_DIR" show "$commit:ops/gcp-staging/install-archive.sh" >"$installer"
   archive_bytes="$(wc -c <"$archive" | tr -d '[:space:]')"
 
   {
@@ -703,7 +810,7 @@ run_gcp_remote() {
     exit 1
   fi
   gcp_compute_ssh \
-    --command "cat > '$remote_tmp/install-archive.sh' && chmod +x '$remote_tmp/install-archive.sh'" <"$ROOT_DIR/ops/gcp-staging/install-archive.sh"
+    --command "cat > '$remote_tmp/install-archive.sh' && chmod +x '$remote_tmp/install-archive.sh'" <"$installer"
   gcp_compute_ssh \
     --command "cat > '$remote_tmp/run-install.sh' && chmod +x '$remote_tmp/run-install.sh'" <"$runner"
 
@@ -766,6 +873,10 @@ run_compose_in_place() {
 }
 
 if [ "$ACTION" = "verify" ]; then
+  if [ "$IGNORE_DIRTY" = "true" ]; then
+    printf '%s\n' '--ignore-dirty only applies to remote GCP staging deploys.' >&2
+    exit 2
+  fi
   if [ "$TARGET" != "gcp-staging" ]; then
     printf 'Only GCP staging has a top-level verify action today.\n' >&2
     exit 2
@@ -783,6 +894,10 @@ case "$TARGET" in
         MODE="remote"
       fi
     fi
+    if [ "$IGNORE_DIRTY" = "true" ] && [ "$MODE" != "remote" ]; then
+      printf '%s\n' '--ignore-dirty only applies to remote GCP staging deploys.' >&2
+      exit 2
+    fi
 
     case "$MODE" in
       in-place)
@@ -798,6 +913,10 @@ case "$TARGET" in
     esac
     ;;
   compose-v2)
+    if [ "$IGNORE_DIRTY" = "true" ]; then
+      printf '%s\n' '--ignore-dirty only applies to remote GCP staging deploys.' >&2
+      exit 2
+    fi
     run_compose_in_place
     ;;
 esac

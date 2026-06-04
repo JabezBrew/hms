@@ -70,7 +70,7 @@ describe('cockpit cache', () => {
       'global-actions',
       {
         commands: [
-          { id: 'open-dashboard', label: 'Open dashboard', route: '/dashboards/nurse' },
+          { id: 'open-ward-board', label: 'Open ward board', route: '/ward-board' },
         ],
       },
       { nonPhi: true }
@@ -92,7 +92,7 @@ describe('cockpit cache', () => {
       )
     ).resolves.toEqual({
       commands: [
-        { id: 'open-dashboard', label: 'Open dashboard', route: '/dashboards/nurse' },
+        { id: 'open-ward-board', label: 'Open ward board', route: '/ward-board' },
       ],
     })
   })

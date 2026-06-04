@@ -631,7 +631,7 @@ fn blockers_from_row(row: &DischargeCaseRow) -> anyhow::Result<Vec<DischargeBloc
             DischargeBlockerKind::DischargeSummary,
             "Discharge summary",
             format!(
-                "/patients/{}/chronicle?panel=clinical-notes&type=discharge_summary",
+                "/patients/{}?action=add_note&note_type=discharge_summary",
                 row.patient_id
             ),
             row.discharge_summary_posted_at,
@@ -642,7 +642,10 @@ fn blockers_from_row(row: &DischargeCaseRow) -> anyhow::Result<Vec<DischargeBloc
             row,
             DischargeBlockerKind::NursingRelease,
             "Nursing release",
-            format!("/nursing/discharges?case={}", row.id),
+            format!(
+                "/ward-board?view=discharge&patient={}&case={}",
+                row.patient_id, row.id
+            ),
             nursing_completed_at(row),
             row.nursing_release_hold_reason.clone(),
             row.nursing_release_override_reason.clone(),

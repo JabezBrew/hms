@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth'
 
 const getRoleHomePage = (role) => {
   if (['nurse', 'head_nurse', 'nurse_practitioner'].includes(role)) {
-    return '/dashboards/nurse'
+    return '/patients'
   }
   if (['doctor', 'inpatient_doctor', 'practitioner', 'physician'].includes(role)) {
     return '/dashboards/inpatient'

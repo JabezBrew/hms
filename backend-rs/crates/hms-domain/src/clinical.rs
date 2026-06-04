@@ -264,6 +264,8 @@ pub struct UpdatePrescriptionRequest {
 pub struct ChartEntryListItem {
     pub id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub entry_type: ChartEntryType,
     pub measured_at: DateTime<Utc>,
     pub value: String,
@@ -273,6 +275,8 @@ pub struct ChartEntryListItem {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateChartEntryRequest {
     pub entry_type: ChartEntryType,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub measured_at: DateTime<Utc>,
     pub value: String,
     pub unit: Option<String>,

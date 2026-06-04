@@ -41,6 +41,13 @@ function getStatusTone(status) {
   }
 }
 
+function dischargeWorkflowPath(caseItem) {
+  const params = new URLSearchParams({ view: 'discharge' })
+  if (caseItem?.patient) params.set('patient', caseItem.patient)
+  if (caseItem.id) params.set('case', caseItem.id)
+  return `/ward-board?${params.toString()}`
+}
+
 export function DischargeCasePanel({ admissionId, title = 'Discharge Status', className = '', enabled = true }) {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -158,9 +165,9 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => navigate(`/nursing/discharges?case=${caseItem.id}`)}
+                    onClick={() => navigate(dischargeWorkflowPath(caseItem))}
                   >
-                    Open Nursing Queue
+                    Open Discharge Workflow
                   </Button>
                 )}
                 {caseItem.schedule_follow_up_action?.path && (

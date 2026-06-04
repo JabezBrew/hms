@@ -6,7 +6,6 @@ const AdmissionCreatePage = lazy(() => import('./pages/AdmissionCreatePage'))
 const AdmissionRequestListPage = lazy(() => import('./pages/AdmissionRequestListPage'))
 const AdmissionCaseDetailPage = lazy(() => import('./pages/AdmissionCaseDetailPage'))
 const BillingAdmissionQueuePage = lazy(() => import('./pages/BillingAdmissionQueuePage'))
-const NursingAdmissionQueuePage = lazy(() => import('./pages/NursingAdmissionQueuePage'))
 const AdmissionDetailPage = lazy(() => import('./pages/AdmissionDetailPage'))
 
 export const admissionRoutes = [
@@ -34,7 +33,7 @@ export const admissionRoutes = [
   {
     path: '/admissions/cases/:caseId',
     component: AdmissionCaseDetailPage,
-    roles: combineRoles(ROLE_GROUPS.ADMISSIONS, ROLE_GROUPS.BILLING, ROLE_GROUPS.NURSING_DASHBOARD),
+    roles: combineRoles(ROLE_GROUPS.ADMISSIONS, ROLE_GROUPS.BILLING, ROLE_GROUPS.NURSING_WORKFLOW),
     layout: ROUTE_LAYOUTS.APP,
     title: 'Admission Case | Hospital Management System',
     breadcrumbs: [
@@ -52,18 +51,6 @@ export const admissionRoutes = [
     breadcrumbs: [
       { label: 'Billing', path: '/billing/admissions' },
       { label: 'Admissions', path: '/billing/admissions' },
-    ],
-  },
-  {
-    path: '/nursing/admissions',
-    component: NursingAdmissionQueuePage,
-    roles: ROLE_GROUPS.NURSING_DASHBOARD,
-    features: ['nursing_workflows'],
-    layout: ROUTE_LAYOUTS.APP,
-    title: 'Nursing Admission Queue | Hospital Management System',
-    breadcrumbs: [
-      { label: 'Nursing', path: '/nursing/admissions' },
-      { label: 'Admissions', path: '/nursing/admissions' },
     ],
   },
   {

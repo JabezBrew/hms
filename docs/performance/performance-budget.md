@@ -12,7 +12,7 @@ All new performance metrics and browser events MUST use only these safe labels:
 
 | Label | Allowed values |
 | --- | --- |
-| `route_pattern` | Static route templates only, for example `/api/v2/patients/:id/chronicle`, `/dashboards/nurse`, or `_none`. Never raw URLs. |
+| `route_pattern` | Static route templates only, for example `/api/v2/patients/:id/chronicle`, `/ward-board`, or `_none`. Never raw URLs. |
 | `status_bucket` | `2xx`, `3xx`, `4xx`, `5xx`, `network`, `timeout`, `cancelled`, or `unknown`. |
 | `facility_safe` | Safe facility code such as `MAIN`, or `_unknown` when unavailable. No facility names. |
 

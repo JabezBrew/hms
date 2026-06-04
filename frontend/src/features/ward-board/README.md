@@ -18,5 +18,7 @@ Scope: ward clinical task board UI.
 ## Invariants
 
 - Ward board reads must stay bounded and fast.
+- Patient detail task reads must use Rust V2 patient/admission filters rather
+  than fetching broad nursing task pages and filtering in the browser.
 - Lane visibility must follow enabled features and permissions.
 - Realtime/polling updates must preserve facility/ward/patient authorization.

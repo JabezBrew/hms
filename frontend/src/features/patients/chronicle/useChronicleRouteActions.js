@@ -16,8 +16,17 @@ function handleChronicleRouteAction({
   wardRoundParam,
 }) {
   const action = actionParam || defaultAction;
-  if (action === 'add_note') {
+  if (action === 'add_note' || action === 'note') {
     openChronicleWorkspace('note');
+    if (actionParam) clearQueryParams();
+  } else if (action === 'vitals' || action === 'record_vitals' || action === 'add_vitals') {
+    openChronicleWorkspace('vitals');
+    if (actionParam) clearQueryParams();
+  } else if (action === 'fluids' || action === 'fluid_balance' || action === 'record_fluids') {
+    openChronicleWorkspace('fluids');
+    if (actionParam) clearQueryParams();
+  } else if (action === 'medication_history' || action === 'mar') {
+    openChronicleWorkspace('medicationHistory');
     if (actionParam) clearQueryParams();
   } else if (action === 'ward_round' || wardRoundParam === 'true') {
     if (actionParam || wardRoundParam) {

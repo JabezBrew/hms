@@ -32,6 +32,27 @@ const ACK_STYLES = {
   seen: 'font-mono text-[10px] text-muted-foreground',
 };
 
+const PATIENT_CHRONICLE_QUICK_ACTIONS = [
+  { label: 'Vitals', action: 'vitals' },
+  { label: 'Fluids', action: 'fluids' },
+  { label: 'Treatment Sheet', action: 'treatment_sheet' },
+  { label: 'Medication History', action: 'medication_history' },
+];
+
+function patientChronicleActionHref(patient, action) {
+  const href = patientChronicleHref(patient);
+  if (!href || href === '/patients') {
+    return href;
+  }
+
+  const params = new URLSearchParams({ action });
+  const admissionId = patient?.admission_id || patient?.admission_case_id || patient?.current_admission_id;
+  if (admissionId) {
+    params.set('admission', admissionId);
+  }
+  return `${href}?${params.toString()}`;
+}
+
 function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
   if (tasks.length === 0) {
     return (
@@ -211,6 +232,17 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
                   Patient Chronicle
                   <ExternalLink className="size-3" aria-hidden="true" />
                 </Link>
+              </div>
+              <div className="mb-3 flex flex-wrap gap-2">
+                  {PATIENT_CHRONICLE_QUICK_ACTIONS.map((item) => (
+                  <Link
+                    key={item.action}
+                    to={patientChronicleActionHref(detail, item.action)}
+                    className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-amber-300 hover:text-amber-700"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
               </div>
               <TaskTable
                 tasks={tasks}

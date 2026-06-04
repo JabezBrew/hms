@@ -4,7 +4,6 @@ import { ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 
 const DoctorDashboard = lazy(() => import('./pages/DoctorDashboard'))
 const ProviderDashboard = lazy(() => import('./pages/ProviderDashboard'))
-const NurseDashboard = lazy(() => import('./pages/NurseDashboard'))
 const InpatientDoctorDashboard = lazy(() => import('./pages/InpatientDoctorDashboard'))
 const ReceptionistDashboard = lazy(() => import('./pages/ReceptionistDashboard'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
@@ -20,15 +19,6 @@ export const dashboardRoutes = [
     layout: ROUTE_LAYOUTS.BARE,
     title: 'Dashboard | Hospital Management System',
     breadcrumbs: [DASHBOARDS_BREADCRUMB],
-  },
-  {
-    path: '/dashboards/nurse',
-    component: NurseDashboard,
-    roles: ROLE_GROUPS.NURSING_DASHBOARD,
-    features: ['nursing_workflows'],
-    layout: ROUTE_LAYOUTS.BARE,
-    title: 'Nurse Dashboard | Hospital Management System',
-    breadcrumbs: [DASHBOARDS_BREADCRUMB, { label: 'Nurse', path: '/dashboards/nurse' }],
   },
   {
     path: '/dashboards/inpatient',

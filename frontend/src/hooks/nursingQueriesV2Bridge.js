@@ -858,8 +858,14 @@ export async function getV2NursingAlerts(filters = {}, { signal } = {}) {
 
 export async function getV2NursingTasks(filters = {}, { signal } = {}) {
   try {
+    const patientId = filters.patient || filters.patient_id;
+    const admissionCaseId = filters.admission || filters.admission_id || filters.admission_case_id;
     const response = await v2Api.getNursingTasks({
-      query: { limit: MAX_TASK_PAGE_SIZE },
+      query: {
+        limit: MAX_TASK_PAGE_SIZE,
+        ...(patientId ? { patient_id: patientId } : {}),
+        ...(admissionCaseId ? { admission_case_id: admissionCaseId } : {}),
+      },
       signal,
     });
     return adaptMatchingV2Items(

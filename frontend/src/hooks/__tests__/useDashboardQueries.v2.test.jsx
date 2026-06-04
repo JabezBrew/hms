@@ -11,14 +11,12 @@ import {
   useClinicSchedule,
   useInpatientDashboard,
   useMyWorkDashboard,
-  useNurseDashboard,
   useReceptionistDashboard,
 } from '../useDashboardQueries';
 import { dashboardsApi } from '@/features/dashboards/api';
 
 vi.mock('@/features/dashboards/api', () => ({
   dashboardsApi: {
-    getNurseDashboard: vi.fn(),
     getInpatientDashboard: vi.fn(),
     getReceptionistDashboard: vi.fn(),
     getAdminDashboard: vi.fn(),
@@ -70,15 +68,10 @@ describe('useDashboardQueries Rust V2 behavior', () => {
   });
 
   it('threads React Query AbortSignal into role dashboard reads', async () => {
-    await expectSuccessfulHook(() => useNurseDashboard({ ward: 'ward-1' }));
     await expectSuccessfulHook(() => useInpatientDashboard());
     await expectSuccessfulHook(() => useReceptionistDashboard());
     await expectSuccessfulHook(() => useAdminDashboard());
 
-    expect(dashboardsApi.getNurseDashboard).toHaveBeenCalledWith({
-      ward: 'ward-1',
-      signal: expect.any(AbortSignal),
-    });
     expect(dashboardsApi.getInpatientDashboard).toHaveBeenCalledWith({
       signal: expect.any(AbortSignal),
     });

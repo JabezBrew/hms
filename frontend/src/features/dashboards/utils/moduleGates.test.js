@@ -4,14 +4,32 @@ import {
   dashboardFeaturesForRole,
   filterDashboardItemsByFeature,
   getHrefFeatureRequirements,
+  nursingHomeFeaturesForFeatures,
+  nursingHomeForFeatures,
 } from './moduleGates'
 
 describe('dashboard module gates', () => {
   it('maps role dashboards to backing modules', () => {
     expect(dashboardFeaturesForRole('doctor')).toEqual(['outpatient_encounters'])
     expect(dashboardFeaturesForRole('inpatient_doctor')).toEqual(['inpatient_admissions'])
-    expect(dashboardFeaturesForRole('nurse')).toEqual(['nursing_workflows'])
+    expect(dashboardFeaturesForRole('nurse')).toEqual([])
     expect(dashboardFeaturesForRole('admin')).toEqual([])
+  })
+
+  it('resolves nurse home to the available embedded workflow surface', () => {
+    expect(nursingHomeForFeatures({
+      ward_task_board: true,
+      patient_chronicle: true,
+      wards: true,
+      inpatient_admissions: true,
+      nursing_workflows: true,
+    })).toBe('/ward-board')
+    expect(nursingHomeForFeatures({ emergency_encounters: true })).toBe('/triage')
+    expect(nursingHomeForFeatures({ outpatient_encounters: true })).toBe('/encounters')
+    expect(nursingHomeForFeatures({ patient_chronicle: true })).toBe('/patients')
+    expect(nursingHomeFeaturesForFeatures({ emergency_encounters: true })).toEqual([
+      'emergency_encounters',
+    ])
   })
 
   it('derives feature requirements from dashboard action links', () => {

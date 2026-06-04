@@ -24,6 +24,12 @@ pub struct NewNursingTask {
     pub actor_user_id: Uuid,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NursingTaskFilters {
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+}
+
 #[derive(Clone, Debug, FromRow)]
 struct NursingTaskRow {
     id: Uuid,
@@ -43,10 +49,19 @@ pub async fn list_nursing_tasks(
     facility_id: Uuid,
     cursor: Option<WardCursor>,
     limit: i64,
+    filters: NursingTaskFilters,
 ) -> anyhow::Result<Vec<NursingTaskListItem>> {
     let mut query = nursing_task_query();
     query.push(" WHERE nursing_tasks.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND nursing_tasks.patient_id = ");
+        query.push_bind(patient_id);
+    }
+    if let Some(admission_case_id) = filters.admission_case_id {
+        query.push(" AND nursing_tasks.admission_case_id = ");
+        query.push_bind(admission_case_id);
+    }
     if let Some(cursor) = cursor {
         query.push(" AND (nursing_tasks.due_at, nursing_tasks.id) > (");
         query.push_bind(cursor.occurred_at);

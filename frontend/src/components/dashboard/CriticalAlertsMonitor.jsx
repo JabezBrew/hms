@@ -3,10 +3,10 @@ import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import React, { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
-  useNurseDashboard,
   useAdminDashboard,
   useInpatientDashboard,
 } from '@/features/dashboards/hooks';
+import { useActiveAlerts, useOverdueMedications } from '@/features/nursing/hooks';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/lib/auth';
@@ -22,7 +22,14 @@ export default function CriticalAlertsMonitor() {
   const { user } = useAuth();
   const { isPageActive } = usePageVisibility();
   const location = useLocation();
-  const previousAlertsRef = useRef(new Set());
+  const previousAlertIdsRef = useRef(null);
+  const previousMedicationIdsRef = useRef(null);
+  if (previousAlertIdsRef.current === null) {
+    previousAlertIdsRef.current = new Set();
+  }
+  if (previousMedicationIdsRef.current === null) {
+    previousMedicationIdsRef.current = new Set();
+  }
 
   // Determine which dashboard to monitor based on role
   const userRole = user?.role;
@@ -37,15 +44,13 @@ export default function CriticalAlertsMonitor() {
   const isAdmin = userRole === 'admin';
   const isAdminDashboardRoute = location.pathname === '/dashboards/admin';
 
-  // Poll appropriate dashboard based on role
-  const { data: nurseDashboardData } = useNurseDashboard(
-    {},
-    {
-      enabled: shouldMonitor && isNurse,
-      refetchInterval: 30000,
-      refetchIntervalInBackground: false,
-    }
-  );
+  const { data: nurseAlerts = [] } = useActiveAlerts({
+    enabled: shouldMonitor && isNurse,
+  });
+
+  const { data: nurseOverdueMedications = [] } = useOverdueMedications({
+    enabled: shouldMonitor && isNurse,
+  });
 
   const { data: inpatientDashboardData } = useInpatientDashboard({
     enabled: shouldMonitor && isInpatientDoctor,
@@ -59,21 +64,20 @@ export default function CriticalAlertsMonitor() {
     refetchIntervalInBackground: false,
   });
 
-  // Select the appropriate dashboard data
-  const dashboardData = isNurse
-    ? nurseDashboardData
-    : isInpatientDoctor
+  const dashboardData = isInpatientDoctor
     ? inpatientDashboardData
     : isAdmin
     ? adminDashboardData
     : null;
 
   useEffect(() => {
-    if (!shouldMonitor || !dashboardData?.urgent) return;
+    if (!shouldMonitor) return;
 
-    const currentAlerts = dashboardData.urgent.critical_alerts || [];
+    const currentAlerts = isNurse
+      ? nurseAlerts.filter((alert) => ['critical', 'high'].includes(String(alert.severity || '').toLowerCase()))
+      : dashboardData?.urgent?.critical_alerts || [];
     const newAlerts = currentAlerts.filter(
-      (alert) => !previousAlertsRef.current.has(alert.id)
+      (alert) => !previousAlertIdsRef.current.has(alert.id)
     );
 
     // Show toast for new critical alerts
@@ -110,15 +114,17 @@ export default function CriticalAlertsMonitor() {
 
     // Update the set of seen alerts
     const alertIds = new Set(currentAlerts.map((a) => a.id));
-    previousAlertsRef.current = alertIds;
-  }, [dashboardData, shouldMonitor]);
+    previousAlertIdsRef.current = alertIds;
+  }, [dashboardData, isNurse, nurseAlerts, shouldMonitor]);
 
   useEffect(() => {
-    if (!shouldMonitor || !dashboardData?.urgent) return;
+    if (!shouldMonitor) return;
 
-    const overdueMeds = dashboardData.urgent.overdue_medications || [];
+    const overdueMeds = isNurse
+      ? nurseOverdueMedications
+      : dashboardData?.urgent?.overdue_medications || [];
     const newOverdueMeds = overdueMeds.filter(
-      (med) => !previousAlertsRef.current.has(`med-${med.id}`)
+      (med) => !previousMedicationIdsRef.current.has(med.id)
     );
 
     // Show toast for overdue medications
@@ -152,9 +158,9 @@ export default function CriticalAlertsMonitor() {
       );
 
       // Add to seen set
-      previousAlertsRef.current.add(`med-${med.id}`);
+      previousMedicationIdsRef.current.add(med.id);
     });
-  }, [dashboardData, shouldMonitor]);
+  }, [dashboardData, isNurse, nurseOverdueMedications, shouldMonitor]);
 
   // This component doesn't render anything
   return null;

@@ -392,11 +392,13 @@ export const useCreateVitalSigns = () => {
 
 export const useNursingTasks = (filters = {}) => {
   // Extract filter values to use as stable primitives in query key
-  const { patient, status, ward, date, task_type, priority } = filters;
+  const patient = filters.patient || filters.patient_id;
+  const admission = filters.admission || filters.admission_id || filters.admission_case_id;
+  const { status, ward, date, task_type, priority } = filters;
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.nursingTasks(patient, status, ward, date, task_type, priority),
+    queryKey: nursingKeys.nursingTasks(patient, admission, status, ward, date, task_type, priority),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         return getV2NursingTasks(filters, { signal });
@@ -554,7 +556,8 @@ export const useNursingAlerts = (filters = {}) => {
   });
 };
 
-export const useActiveAlerts = () => {
+export const useActiveAlerts = (options = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: nursingKeys.nursingAlertsActive(),
     queryFn: async ({ signal }) => {
@@ -574,6 +577,7 @@ export const useActiveAlerts = () => {
       // Handle both array and object responses
       return Array.isArray(data) ? data : [];
     },
+    enabled,
     // Provide placeholder data while loading to prevent undefined
     placeholderData: [],
     refetchInterval: () => !document.hidden ? 45000 : false, // 45 seconds when focused
@@ -743,7 +747,8 @@ export const useMedicationsDueNow = () => {
   });
 };
 
-export const useOverdueMedications = () => {
+export const useOverdueMedications = (options = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: nursingKeys.medicationsOverdue(),
     queryFn: async ({ signal }) => {
@@ -757,6 +762,7 @@ export const useOverdueMedications = () => {
       const data = response?.data ?? response;
       return Array.isArray(data) ? data : [];
     },
+    enabled,
     placeholderData: [],
     refetchInterval: 60000, // Refetch every minute
   });

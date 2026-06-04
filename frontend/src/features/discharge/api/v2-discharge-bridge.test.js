@@ -58,7 +58,7 @@ describe('Rust V2 discharge bridge', () => {
                   blocker_type: 'nursing_release',
                   status: 'pending',
                   blocking: true,
-                  workflow_path: '/nursing/discharges?case=discharge-1',
+                  workflow_path: '/legacy/nursing-discharge?case=discharge-1',
                 },
                 {
                   blocker_type: 'billing_clearance',
@@ -112,9 +112,13 @@ describe('Rust V2 discharge bridge', () => {
           expect.objectContaining({
             task_type: 'discharge_summary',
             status: 'completed',
-            workflow_path: '/patients/patient-1/chronicle?panel=clinical-notes&type=discharge_summary',
+            workflow_path: '/patients/patient-1?action=add_note&note_type=discharge_summary',
           }),
-          expect.objectContaining({ task_type: 'nursing_release', status: 'pending' }),
+          expect.objectContaining({
+            task_type: 'nursing_release',
+            status: 'pending',
+            workflow_path: '/ward-board?view=discharge&patient=patient-1&case=discharge-1',
+          }),
           expect.objectContaining({
             task_type: 'billing_clearance',
             status: 'held',

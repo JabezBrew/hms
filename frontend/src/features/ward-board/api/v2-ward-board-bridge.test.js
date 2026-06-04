@@ -157,4 +157,91 @@ describe('Rust V2 ward-board bridge', () => {
       wardBoardApi.getBoard({}, { signal: new AbortController().signal }),
     ).rejects.toBe(abortError);
   });
+
+  it('loads patient task details from the Rust V2 nursing task board', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'task-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              task_type: 'vitals',
+              title: 'Record vitals',
+              instruction: 'Repeat observations',
+              status: 'open',
+              due_at: '2026-05-12T10:00:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await wardBoardApi.getPatient('patient-1', { signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/tasks?limit=50&patient_id=patient-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include', signal }),
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        patient_id: 'patient-1',
+        open_task_count: 1,
+        tasks: [
+          expect.objectContaining({
+            id: 'task-1',
+            patient_id: 'patient-1',
+            category: 'Vitals',
+            title: 'Record vitals',
+            status: 'open',
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('runs supported task actions through Rust V2 nursing task endpoints', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'task-1',
+            patient_id: 'patient-1',
+            status: 'completed',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(
+      wardBoardApi.runTaskAction({ taskId: 'task-1', action: 'complete' }),
+    ).resolves.toEqual(expect.objectContaining({ id: 'task-1', status: 'completed' }));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/tasks/task-1/complete',
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    );
+  });
+
+  it('rejects legacy-only task actions in Rust V2 mode', async () => {
+    await expect(
+      wardBoardApi.runTaskAction({ taskId: 'task-1', action: 'acknowledge' }),
+    ).rejects.toThrow(/Unsupported task action in Rust V2 mode/);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });

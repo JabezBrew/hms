@@ -10,7 +10,6 @@ const dashboardKeyFactory = createKeyFactory('dashboards');
 
 export const dashboardKeys = {
   all: dashboardKeyFactory.all,
-  nurse: (filters) => keyWith('dashboards', 'nurse', { filters }),
   inpatient: () => keyWith('dashboards', 'inpatient'),
   receptionist: () => keyWith('dashboards', 'receptionist'),
   admin: () => keyWith('dashboards', 'admin'),
@@ -44,25 +43,6 @@ function normalizeAdminV2Filters(filters = {}) {
     ...filters,
     window,
   };
-}
-
-/**
- * Get nurse dashboard data with real-time polling
- * @param {Object} filters - Query parameters (ward, etc.)
- * @param {Object} options - Additional query options
- * @returns {Object} Query result
- */
-export function useNurseDashboard(filters = {}, options = {}) {
-  const { facilityCode } = useAuth();
-  return useQuery({
-    queryKey: dashboardKeys.nurse(filters),
-    queryFn: ({ signal }) => dashboardsApi.getNurseDashboard({ ...filters, signal }),
-    refetchInterval: DEFAULT_REFETCH_INTERVAL,
-    refetchIntervalInBackground: false, // Only poll when tab is active
-    staleTime: 10000, // Consider data stale after 10 seconds
-    ...options,
-    enabled: (options.enabled ?? true) && Boolean(facilityCode),
-  });
 }
 
 /**

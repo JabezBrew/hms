@@ -97,6 +97,8 @@ pub struct NewChartEntry {
     pub id: Uuid,
     pub facility_id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub entry_type: ChartEntryType,
     pub measured_at: DateTime<Utc>,
     pub value: String,
@@ -203,6 +205,8 @@ struct PrescriptionRow {
 struct ChartEntryRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
     entry_type: String,
     measured_at: DateTime<Utc>,
     value: String,
@@ -1148,7 +1152,7 @@ pub async fn list_chart_entries(
 ) -> anyhow::Result<Vec<ChartEntryListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT id, patient_id, entry_type, measured_at, value, unit
+        SELECT id, patient_id, encounter_id, visit_id, entry_type, measured_at, value, unit
         FROM chart_entries
         WHERE facility_id =
         "#,
@@ -1179,15 +1183,17 @@ pub async fn create_chart_entry(
     let row = sqlx::query_as::<_, ChartEntryRow>(
         r#"
         INSERT INTO chart_entries (
-            id, facility_id, patient_id, entry_type, measured_at, value, unit, created_by_user_id
+            id, facility_id, patient_id, encounter_id, visit_id, entry_type, measured_at, value, unit, created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, patient_id, entry_type, measured_at, value, unit
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id, patient_id, encounter_id, visit_id, entry_type, measured_at, value, unit
         "#,
     )
     .bind(entry.id)
     .bind(entry.facility_id)
     .bind(entry.patient_id)
+    .bind(entry.encounter_id)
+    .bind(entry.visit_id)
     .bind(codec::encode(entry.entry_type)?)
     .bind(entry.measured_at)
     .bind(entry.value)
@@ -1378,7 +1384,7 @@ async fn patient_chronicle_sections(
               COALESCE((
                 SELECT jsonb_agg(to_jsonb(chart_entries) ORDER BY chart_entries.measured_at DESC, chart_entries.id DESC)
                 FROM (
-                  SELECT id, patient_id, entry_type, measured_at, value, unit
+                  SELECT id, patient_id, encounter_id, visit_id, entry_type, measured_at, value, unit
                   FROM chart_entries
                   WHERE facility_id = $1 AND patient_id = $2
                   ORDER BY measured_at DESC, id DESC
@@ -1476,6 +1482,7 @@ timeline_entries AS (
            'note' AS entry_category,
            clinical_notes.updated_at AS occurred_at,
            clinical_notes.encounter_id,
+           NULL::uuid AS visit_id,
            clinical_notes.title,
            concat_ws(' · ', clinical_notes.note_type, clinical_notes.status) AS summary,
            jsonb_build_object(
@@ -1494,6 +1501,7 @@ timeline_entries AS (
            'prescription' AS entry_category,
            prescriptions.prescribed_at AS occurred_at,
            NULL::uuid AS encounter_id,
+           NULL::uuid AS visit_id,
            prescriptions.medication_name AS title,
            concat_ws(' ', prescriptions.dose, prescriptions.frequency, prescriptions.status) AS summary,
            jsonb_build_object(
@@ -1514,7 +1522,8 @@ timeline_entries AS (
            'vitals' AS entry_type,
            'vitals' AS entry_category,
            chart_entries.measured_at AS occurred_at,
-           NULL::uuid AS encounter_id,
+           chart_entries.encounter_id AS encounter_id,
+           chart_entries.visit_id AS visit_id,
            chart_entries.entry_type AS title,
            concat_ws(' ', chart_entries.value, chart_entries.unit) AS summary,
            CASE chart_entries.entry_type
@@ -1540,6 +1549,7 @@ timeline_entries AS (
            'lab_result' AS entry_category,
            lab_results.entered_at AS occurred_at,
            NULL::uuid AS encounter_id,
+           NULL::uuid AS visit_id,
            lab_tests.name AS title,
            concat_ws(' ', lab_results.value, lab_results.unit, lab_results.status) AS summary,
            jsonb_build_object(
@@ -1566,6 +1576,7 @@ timeline_entries AS (
            'problem' AS entry_category,
            patient_problems.created_at AS occurred_at,
            NULL::uuid AS encounter_id,
+           NULL::uuid AS visit_id,
            patient_problems.label AS title,
            patient_problems.status AS summary,
            jsonb_build_object(
@@ -1584,6 +1595,7 @@ timeline_entries AS (
            'allergy' AS entry_category,
            patient_allergies.created_at AS occurred_at,
            NULL::uuid AS encounter_id,
+           NULL::uuid AS visit_id,
            patient_allergies.substance AS title,
            concat_ws(' · ', patient_allergies.severity, patient_allergies.status) AS summary,
            jsonb_build_object(
@@ -1603,6 +1615,7 @@ timeline_entries AS (
            'ward_round' AS entry_category,
            ward_rounds.signed_at AS occurred_at,
            NULL::uuid AS encounter_id,
+           NULL::uuid AS visit_id,
            'Ward Round' AS title,
            concat_ws(' · ', 'signed', count(ward_round_actions.id)::text || ' actions') AS summary,
            jsonb_build_object(
@@ -1639,7 +1652,17 @@ timeline_entries AS (
   WHERE ($5::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($5::timestamptz, $6::uuid))
     AND ($7::text IS NULL OR entries.entry_category = $7)
     AND ($8::text IS NULL OR entries.title ILIKE $8 OR entries.summary ILIKE $8)
-    AND ($9::uuid IS NULL OR entries.encounter_id = $9)
+    AND (
+      $9::uuid IS NULL
+      OR entries.encounter_id = $9
+      OR entries.visit_id = (
+        SELECT encounters.visit_id
+        FROM encounters
+        WHERE encounters.facility_id = $1
+          AND encounters.patient_id = $2
+          AND encounters.id = $9
+      )
+    )
   ORDER BY entries.occurred_at DESC, entries.entry_id DESC
   LIMIT $4
 )
@@ -1697,7 +1720,7 @@ SELECT
   COALESCE((
     SELECT jsonb_agg(to_jsonb(chart_entries) ORDER BY chart_entries.measured_at DESC, chart_entries.id DESC)
     FROM (
-      SELECT id, patient_id, entry_type, measured_at, value, unit
+      SELECT id, patient_id, encounter_id, visit_id, entry_type, measured_at, value, unit
       FROM chart_entries
       WHERE facility_id = $1 AND patient_id = $2
       ORDER BY measured_at DESC, id DESC
@@ -1763,6 +1786,7 @@ FROM (
          'note' AS entry_category,
          clinical_notes.updated_at AS occurred_at,
          clinical_notes.encounter_id,
+         NULL::uuid AS visit_id,
          clinical_notes.title,
          concat_ws(' · ', clinical_notes.note_type, clinical_notes.status) AS summary,
          jsonb_build_object(
@@ -1781,6 +1805,7 @@ FROM (
          'prescription' AS entry_category,
          prescriptions.prescribed_at AS occurred_at,
          NULL::uuid AS encounter_id,
+         NULL::uuid AS visit_id,
          prescriptions.medication_name AS title,
          concat_ws(' ', prescriptions.dose, prescriptions.frequency, prescriptions.status) AS summary,
          jsonb_build_object(
@@ -1801,7 +1826,8 @@ FROM (
          'vitals' AS entry_type,
          'vitals' AS entry_category,
          chart_entries.measured_at AS occurred_at,
-         NULL::uuid AS encounter_id,
+         chart_entries.encounter_id AS encounter_id,
+         chart_entries.visit_id AS visit_id,
          chart_entries.entry_type AS title,
          concat_ws(' ', chart_entries.value, chart_entries.unit) AS summary,
          CASE chart_entries.entry_type
@@ -1827,6 +1853,7 @@ FROM (
          'lab_result' AS entry_category,
          lab_results.entered_at AS occurred_at,
          NULL::uuid AS encounter_id,
+         NULL::uuid AS visit_id,
          lab_tests.name AS title,
          concat_ws(' ', lab_results.value, lab_results.unit, lab_results.status) AS summary,
          jsonb_build_object(
@@ -1853,6 +1880,7 @@ FROM (
          'problem' AS entry_category,
          patient_problems.created_at AS occurred_at,
          NULL::uuid AS encounter_id,
+         NULL::uuid AS visit_id,
          patient_problems.label AS title,
          patient_problems.status AS summary,
          jsonb_build_object(
@@ -1871,6 +1899,7 @@ FROM (
          'allergy' AS entry_category,
          patient_allergies.created_at AS occurred_at,
          NULL::uuid AS encounter_id,
+         NULL::uuid AS visit_id,
          patient_allergies.substance AS title,
          concat_ws(' · ', patient_allergies.severity, patient_allergies.status) AS summary,
          jsonb_build_object(
@@ -1890,6 +1919,7 @@ FROM (
          'ward_round' AS entry_category,
          ward_rounds.signed_at AS occurred_at,
          NULL::uuid AS encounter_id,
+         NULL::uuid AS visit_id,
          'Ward Round' AS title,
          concat_ws(' · ', 'signed', count(ward_round_actions.id)::text || ' actions') AS summary,
          jsonb_build_object(
@@ -1926,7 +1956,17 @@ FROM (
 WHERE ($4::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($4::timestamptz, $5::uuid))
   AND ($6::text IS NULL OR entries.entry_category = $6)
   AND ($7::text IS NULL OR entries.title ILIKE $7 OR entries.summary ILIKE $7)
-  AND ($8::uuid IS NULL OR entries.encounter_id = $8)
+  AND (
+    $8::uuid IS NULL
+    OR entries.encounter_id = $8
+    OR entries.visit_id = (
+      SELECT encounters.visit_id
+      FROM encounters
+      WHERE encounters.facility_id = $1
+        AND encounters.patient_id = $2
+        AND encounters.id = $8
+    )
+  )
 ORDER BY entries.occurred_at DESC, entries.entry_id DESC
 LIMIT $3
 "#;
@@ -2221,6 +2261,8 @@ fn chart_entry_from_row(row: ChartEntryRow) -> anyhow::Result<ChartEntryListItem
     Ok(ChartEntryListItem {
         id: row.id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
         entry_type: codec::decode(&row.entry_type)?,
         measured_at: row.measured_at,
         value: row.value,

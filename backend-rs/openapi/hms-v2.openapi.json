@@ -2250,6 +2250,13 @@
       },
       "ChartEntryListItem": {
         "properties": {
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "entry_type": {
             "$ref": "#/components/schemas/ChartEntryType"
           },
@@ -2273,6 +2280,13 @@
           },
           "value": {
             "type": "string"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3696,6 +3710,13 @@
       },
       "CreateChartEntryRequest": {
         "properties": {
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "entry_type": {
             "$ref": "#/components/schemas/ChartEntryType"
           },
@@ -3711,6 +3732,13 @@
           },
           "value": {
             "type": "string"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -8324,6 +8352,13 @@
           "data": {
             "items": {
               "properties": {
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "entry_type": {
                   "$ref": "#/components/schemas/ChartEntryType"
                 },
@@ -8347,6 +8382,13 @@
                 },
                 "value": {
                   "type": "string"
+                },
+                "visit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -16006,6 +16048,13 @@
         "properties": {
           "data": {
             "properties": {
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "entry_type": {
                 "$ref": "#/components/schemas/ChartEntryType"
               },
@@ -16029,6 +16078,13 @@
               },
               "value": {
                 "type": "string"
+              },
+              "visit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -47483,10 +47539,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -47496,10 +47549,25 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],

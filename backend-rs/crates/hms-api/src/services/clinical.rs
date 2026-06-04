@@ -890,6 +890,51 @@ impl ClinicalService {
     ) -> Result<ObjectResponse<ChartEntryListItem>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
+        let encounter = if let Some(encounter_id) = payload.encounter_id {
+            let encounter =
+                hms_db::care::get_encounter(self.pool(), self.facility_id(), encounter_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict(
+                            "encounter_load_failed",
+                            "Encounter could not be loaded.",
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        ApiError::not_found("encounter_not_found", "Encounter was not found.")
+                    })?;
+            if encounter.patient_id != patient_id {
+                return Err(validation_error(
+                    "encounter_id",
+                    "Encounter does not belong to this patient.",
+                ));
+            }
+            Some(encounter)
+        } else {
+            None
+        };
+        if let Some(visit_id) = payload.visit_id {
+            let visit = hms_db::care::get_visit(self.pool(), self.facility_id(), visit_id)
+                .await
+                .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
+                .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+            if visit.patient_id != patient_id {
+                return Err(validation_error(
+                    "visit_id",
+                    "Visit does not belong to this patient.",
+                ));
+            }
+            if encounter
+                .as_ref()
+                .and_then(|encounter| encounter.visit_id)
+                .is_some_and(|encounter_visit_id| encounter_visit_id != visit_id)
+            {
+                return Err(validation_error(
+                    "visit_id",
+                    "Visit does not belong to the supplied encounter.",
+                ));
+            }
+        }
         let value = normalize_text(payload.value, "value", MAX_SHORT_TEXT_LEN)?;
         let unit = normalize_optional_text(payload.unit, "unit", MAX_SHORT_TEXT_LEN)?;
         let entry = hms_db::clinical::create_chart_entry(
@@ -898,6 +943,8 @@ impl ClinicalService {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 patient_id,
+                encounter_id: payload.encounter_id,
+                visit_id: payload.visit_id,
                 entry_type: payload.entry_type,
                 measured_at: payload.measured_at,
                 value,

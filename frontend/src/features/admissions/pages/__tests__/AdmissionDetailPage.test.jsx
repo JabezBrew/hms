@@ -41,7 +41,7 @@ function renderPage(initialEntry = '/admissions/adm-1') {
             <Route path="/wards/:wardId" element={<div>Ward Detail</div>} />
             <Route path="/wards" element={<div>Ward List</div>} />
             <Route path="/patients/:patientId" element={<div>Patient Detail</div>} />
-            <Route path="/nursing/discharges" element={<div>Nursing Discharges</div>} />
+            <Route path="/ward-board" element={<div>Ward Board</div>} />
           </Routes>
         </BreadcrumbProvider>
       </MemoryRouter>
@@ -135,7 +135,7 @@ describe('AdmissionDetailPage', () => {
     expect(screen.getAllByText('N/A').length).toBeGreaterThan(0)
   })
 
-  it('requests a discharge case through Rust V2 mode and opens the nursing queue', async () => {
+  it('requests a discharge case through Rust V2 mode and opens the ward discharge workflow', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     useAuth.mockReturnValue({
       user: { id: 'user-1', user_type: 'doctor' },
@@ -171,7 +171,7 @@ describe('AdmissionDetailPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /request discharge/i }))
 
     expect(dischargeApi.requestCase).toHaveBeenCalledWith('adm-3')
-    expect(await screen.findByText('Nursing Discharges')).toBeInTheDocument()
+    expect(await screen.findByText('Ward Board')).toBeInTheDocument()
   })
 
   it('keeps the medical discharge workflow available outside Rust V2 mode', async () => {

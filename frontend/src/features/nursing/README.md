@@ -2,16 +2,19 @@
 
 Status: active
 Owner: Frontend/Nursing Workflow
-Last reviewed: 2026-06-01
-Scope: nursing dashboard, shift handoff, task board, ward stock requests, nursing discharges.
+Last reviewed: 2026-06-04
+Scope: nursing API adapters, hooks, and Chronicle/Ward Board clinical components.
 
 ## Routes
 
-- `/nursing/dashboard`
-- `/nursing/shift-handoff`
-- `/nursing/tasks`
-- `/nursing/ward-stock-requests`
-- `/nursing/discharges`
+No standalone nursing routes. Nursing work is launched from the workflow that
+owns the patient context:
+
+- OPD intake actions from clinic waiting rooms.
+- Triage assessment from `/triage`.
+- Ward tasks, vitals, fluids, treatment sheets, and medication history from
+  `/ward-board` or `/wards/:wardId/board`.
+- Patient-specific clinical data from `/patients/:id` Chronicle workspaces.
 
 ## Backend Contracts
 
@@ -21,6 +24,6 @@ Scope: nursing dashboard, shift handoff, task board, ward stock requests, nursin
 ## Invariants
 
 - Patient clinical nursing data belongs in Chronicle context or authorized
-  ward/nursing workflow surfaces.
+  ward workflow surfaces.
 - MAR, vitals, handoff, alerts, and treatment-sheet state are backend-authoritative.
 - Realtime/task updates must use authorized facility/ward/patient subscriptions.

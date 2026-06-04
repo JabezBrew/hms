@@ -13,8 +13,8 @@ export const nursingKeys = {
   vitalSignsTrends: (patientId, days, encounterId, admissionId, startDate, endDate) =>
     keyWith('vital-signs-trends', patientId, days, encounterId, admissionId, startDate, endDate),
   vitalSignsTrendsByPatient: (patientId) => keyWith('vital-signs-trends', patientId),
-  nursingTasks: (patient, status, ward, date, taskType, priority) =>
-    keyWith('nursing-tasks', patient, status, ward, date, taskType, priority),
+  nursingTasks: (patient, admission, status, ward, date, taskType, priority) =>
+    keyWith('nursing-tasks', patient, admission, status, ward, date, taskType, priority),
   nursingTasksAll: () => keyWith('nursing-tasks'),
   nursingTasksToday: () => keyWith('nursing-tasks-today'),
   nursingAlerts: (patient, ward, severity, status) => keyWith('nursing-alerts', patient, ward, severity, status),

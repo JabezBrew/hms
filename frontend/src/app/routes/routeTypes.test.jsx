@@ -43,12 +43,12 @@ describe('featureRoutes', () => {
   it('fails closed for non-prefix tier-controlled routes without feature metadata', () => {
     expect(() => validateRoutes([
       {
-        path: '/dashboards/nurse',
+        path: '/dashboards/inpatient',
         component: () => null,
         roles: null,
         layout: ROUTE_LAYOUTS.BARE,
       },
-    ])).toThrow(/must declare feature nursing_workflows/)
+    ])).toThrow(/must declare feature inpatient_admissions/)
   })
 
   it('fails closed for ward board routes without feature metadata', () => {
@@ -142,12 +142,9 @@ describe('featureRoutes', () => {
     expect(routesByPath.get('/billing/claims')?.features).toEqual(
       expect.arrayContaining(['billing', 'insurance_claims'])
     )
-    expect(routesByPath.get('/nursing/admissions')?.features).toEqual(
-      expect.arrayContaining(['nursing_workflows', 'inpatient_admissions'])
-    )
-    expect(routesByPath.get('/nursing/discharges')?.features).toEqual(
-      expect.arrayContaining(['nursing_workflows', 'discharge_workflows'])
-    )
+    expect(routesByPath.has('/nursing/admissions')).toBe(false)
+    expect(routesByPath.has('/nursing/discharges')).toBe(false)
+    expect(routesByPath.has('/dashboards/nurse')).toBe(false)
     expect(routesByPath.get('/admin/audit-logs')?.features).toEqual(
       expect.arrayContaining(['audit'])
     )

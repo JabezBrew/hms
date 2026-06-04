@@ -10,6 +10,7 @@ import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 const BOARD_ENDPOINT = '/ward-board/';
 const TASK_ACTIONS = new Set(['acknowledge', 'complete', 'cancel', 'escalate']);
+const V2_TASK_ACTIONS = new Set(['complete', 'cancel']);
 const DEFAULT_BOARD_LIMIT = 25;
 const MAX_BOARD_LIMIT = 100;
 const boardCursorCache = new Map();
@@ -148,6 +149,56 @@ function adaptV2WardBoardItem(item = {}) {
   };
 }
 
+function humanize(value) {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function isTerminalTaskStatus(status) {
+  return ['completed', 'cancelled', 'done', 'closed'].includes(String(status || '').toLowerCase());
+}
+
+function adaptV2NursingTask(task = {}) {
+  const taskType = task.task_type || task.type || 'nursing_task';
+  const status = String(task.status || 'pending').toLowerCase();
+  return {
+    ...task,
+    id: task.id,
+    task_id: task.id,
+    admission_id: task.admission_case_id,
+    admission_case_id: task.admission_case_id,
+    patient_id: task.patient_id,
+    patient_name: task.patient_display_name,
+    medical_record_number: task.patient_code,
+    category: humanize(taskType),
+    type: taskType,
+    title: task.title || task.instruction || humanize(taskType),
+    summary: task.instruction || task.title || humanize(taskType),
+    status,
+    urgency: status === 'open' ? 'pending' : status,
+    _action_source: 'nursing_task',
+  };
+}
+
+async function getV2PatientBoardDetail(patientId, options = {}) {
+  const taskResponse = await v2Api.getNursingTasks({
+    query: { limit: 50, patient_id: patientId },
+    signal: options.signal,
+  });
+  const tasks = (Array.isArray(taskResponse?.data) ? taskResponse.data : [])
+    .map(adaptV2NursingTask);
+
+  return {
+    id: patientId,
+    patient_id: patientId,
+    tasks,
+    ...(tasks.length > 0
+      ? { open_task_count: tasks.filter((task) => !isTerminalTaskStatus(task.status)).length }
+      : {}),
+  };
+}
+
 function normalizeV2BoardResponse(response, params = {}) {
   const rows = Array.isArray(response?.data) ? response.data.map(adaptV2WardBoardItem) : [];
   const limit = normalizePositiveInteger(
@@ -222,6 +273,14 @@ export const wardBoardApi = {
   },
 
   getPatient: async (patientId, options = {}) => {
+    if (isRustV2ApiMode()) {
+      try {
+        return await getV2PatientBoardDetail(patientId, options);
+      } catch (error) {
+        wrapV2ApiError(error, 'Failed to fetch ward board patient details');
+      }
+    }
+
     try {
       return await apiClient.get(`/ward-board/patients/${patientId}/`, options);
     } catch (error) {
@@ -235,6 +294,21 @@ export const wardBoardApi = {
     }
     if (!TASK_ACTIONS.has(action)) {
       throw new Error('Unsupported task action');
+    }
+
+    if (isRustV2ApiMode()) {
+      if (!V2_TASK_ACTIONS.has(action)) {
+        throw new Error('Unsupported task action in Rust V2 mode');
+      }
+
+      try {
+        const response = action === 'complete'
+          ? await v2Api.postNursingTaskComplete({ id: taskId }, { signal: payload?.signal })
+          : await v2Api.postNursingTaskCancel({ id: taskId }, { signal: payload?.signal });
+        return response?.data || response;
+      } catch (error) {
+        wrapV2ApiError(error, `Failed to ${action} ward board task`);
+      }
     }
 
     try {

@@ -8,6 +8,22 @@ import { useWaitingRoom, useVisitActions } from '@/hooks/useVisitQueries';
 import { Skeleton } from '@/components/ui/skeleton';
 import CheckoutDialog from './CheckoutDialog';
 
+function getVisitPatientId(visit) {
+  return visit?.patient_id || visit?.patientId || null;
+}
+
+function patientChronicleActionPath(visit, action) {
+  const patientId = getVisitPatientId(visit);
+  if (!patientId) return null;
+
+  const params = new URLSearchParams({ action });
+  const visitId = visit?.visit_id || visit?.id || null;
+  if (visitId) params.set('visit', visitId);
+  if (visit?.encounter_id) params.set('encounter', visit.encounter_id);
+
+  return `/patients/${encodeURIComponent(patientId)}?${params.toString()}`;
+}
+
 /**
  * WaitingRoomQueue - Displays clinic waiting room with patient queue
  *
@@ -40,7 +56,7 @@ export function WaitingRoomQueue({
   }, [queue]);
 
   const handlePatientClick = (visit) => {
-    const patientId = visit?.patient_id || visit?.patientId;
+    const patientId = getVisitPatientId(visit);
     if (onPatientClick) {
       onPatientClick(visit);
     } else {
@@ -49,13 +65,34 @@ export function WaitingRoomQueue({
     }
   };
 
+  const getClinicalActions = (visit) => {
+    const vitalsPath = patientChronicleActionPath(visit, 'vitals');
+    const notePath = patientChronicleActionPath(visit, 'add_note');
+
+    return [
+      {
+        label: 'Record Vitals',
+        variant: 'outline',
+        onClick: () => vitalsPath && navigate(vitalsPath),
+        disabled: !vitalsPath,
+      },
+      {
+        label: 'Add Note',
+        variant: 'outline',
+        onClick: () => notePath && navigate(notePath),
+        disabled: !notePath,
+      },
+    ];
+  };
+
   const getActions = (visit) => {
     if (!showActions) return [];
 
     if (visit.visit_status === 'waiting') {
       return [
+        ...getClinicalActions(visit),
         {
-          label: 'Call Patient',
+          label: 'Room Patient',
           variant: 'default',
           onClick: () => callPatient.mutate(visit.encounter_id),
           disabled: callPatient.isPending,
@@ -71,6 +108,7 @@ export function WaitingRoomQueue({
 
     if (visit.visit_status === 'called') {
       return [
+        ...getClinicalActions(visit),
         {
           label: 'Start Consultation',
           variant: 'default',
@@ -88,6 +126,7 @@ export function WaitingRoomQueue({
 
     if (visit.visit_status === 'ready_checkout') {
       return [
+        ...getClinicalActions(visit),
         {
           label: 'Checkout',
           variant: 'default',

@@ -150,9 +150,32 @@ function normalizeV2ChartEntryPayload(entryData = {}) {
       entry_type: entryType,
       measured_at: measuredAt,
       value: String(value),
+      ...(entryData.encounter_id || entryData.encounterId
+        ? { encounter_id: entryData.encounter_id || entryData.encounterId }
+        : {}),
+      ...(entryData.visit_id || entryData.visitId
+        ? { visit_id: entryData.visit_id || entryData.visitId }
+        : {}),
       ...(entryData.unit !== undefined ? { unit: entryData.unit } : {}),
     },
   };
+}
+
+async function createChartEntryRecord(entryData) {
+  if (isRustV2ApiMode()) {
+    const { patientId, payload } = normalizeV2ChartEntryPayload(entryData);
+    try {
+      const response = await v2Api.postPatientChartEntries(
+        { patient_id: patientId },
+        payload,
+        { signal: entryData?.signal },
+      );
+      return adaptV2ChartEntry(response?.data || response);
+    } catch (error) {
+      rethrowV2ChartError(error, 'Failed to record chart entry');
+    }
+  }
+  return await apiClient.post('/charts/entries/', entryData);
 }
 
 function getCachedAssignment(queryClient, assignmentId) {
@@ -1083,22 +1106,7 @@ export function useCreateChartEntry() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (entryData) => {
-      if (isRustV2ApiMode()) {
-        const { patientId, payload } = normalizeV2ChartEntryPayload(entryData);
-        try {
-          const response = await v2Api.postPatientChartEntries(
-            { patient_id: patientId },
-            payload,
-            { signal: entryData?.signal },
-          );
-          return adaptV2ChartEntry(response?.data || response);
-        } catch (error) {
-          rethrowV2ChartError(error, 'Failed to record chart entry');
-        }
-      }
-      return await apiClient.post('/charts/entries/', entryData);
-    },
+    mutationFn: createChartEntryRecord,
     onSuccess: (data, variables) => {
       const entryId = normalizeIdentifier(data?.id);
       const assignmentId = resolveChartAssignmentId(queryClient, {
@@ -1144,6 +1152,64 @@ export function useCreateChartEntry() {
       } else {
         toast.error(message);
       }
+    },
+  });
+}
+
+/**
+ * Create multiple chart entries while collapsing cache invalidation.
+ */
+export function useCreateChartEntries() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (entries) => {
+      const entryList = Array.isArray(entries) ? entries : [];
+      return Promise.all(entryList.map(createChartEntryRecord));
+    },
+    onSuccess: (items, variables) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        return;
+      }
+
+      const patientIds = new Set();
+      const assignmentIds = new Set();
+
+      items.forEach((item, index) => {
+        const source = variables?.[index];
+        const entryId = normalizeIdentifier(item?.id);
+        if (entryId) {
+          queryClient.setQueryData(chartKeys.entryDetail(entryId), item);
+        }
+
+        const assignmentId = resolveChartAssignmentId(queryClient, {
+          sources: [item, source],
+        });
+        const patientId = resolveChartPatientId(queryClient, {
+          assignmentId,
+          sources: [item, source],
+        });
+
+        if (assignmentId) assignmentIds.add(String(assignmentId));
+        if (patientId) patientIds.add(String(patientId));
+      });
+
+      if (assignmentIds.size > 0) {
+        assignmentIds.forEach((assignmentId) => {
+          const patientId = patientIds.size === 1 ? [...patientIds][0] : null;
+          void invalidateChartEntryMutationQueries(queryClient, { assignmentId, patientId });
+        });
+        return;
+      }
+
+      if (patientIds.size > 0) {
+        patientIds.forEach((patientId) => {
+          void invalidateChartEntryMutationQueries(queryClient, { patientId });
+        });
+        return;
+      }
+
+      void invalidateChartEntryMutationQueries(queryClient);
     },
   });
 }

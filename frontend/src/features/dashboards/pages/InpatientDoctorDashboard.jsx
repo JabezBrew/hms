@@ -326,7 +326,7 @@ export default function InpatientDoctorDashboard() {
               canUseDischarge={canUseDischarge}
               canUsePatientChronicle={canUsePatientChronicle}
               onStartDischarge={(discharge) => navigate(
-                `/patients/${discharge.patient_id}?action=discharge&admission=${discharge.id}&source=dashboard`
+                `/ward-board?view=discharge&patient=${discharge.patient_id}&case=${discharge.id}`
               )}
               onViewPatient={(patientId) => navigate(`/patients/${patientId}`)}
             />

@@ -57,6 +57,10 @@ import { useSystemCapabilities } from '@/hooks/useSystemQueries'
 import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 import { userCanAccess } from '@/shared/lib/access'
 import { areFeaturesEnabled } from '@/shared/lib/features'
+import {
+  nursingHomeFeaturesForFeatures,
+  nursingHomeForFeatures,
+} from '@/features/dashboards/utils/moduleGates'
 import { useSidebarState } from '@/hooks/useSidebarState'
 import { SIDEBARS } from '@/app/routes/routeTypes'
 import { useLocation, useParams } from 'react-router-dom'
@@ -107,9 +111,9 @@ const CHART_TEMPLATE_ROLES = [
 ]
 const DUTY_ROSTER_ROLES = [ROLES.ADMIN, ROLES.HEAD_NURSE]
 
-function getDashboardUrl(role) {
+function getDashboardUrl(role, enabledFeatures = DEFAULT_EMPTY_OBJECT) {
   if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
-    return '/dashboards/nurse'
+    return nursingHomeForFeatures(enabledFeatures)
   }
   if ([ROLES.DOCTOR, ROLES.INPATIENT_DOCTOR].includes(role)) {
     return '/dashboards/inpatient'
@@ -135,9 +139,9 @@ function getDashboardUrl(role) {
   return '/dashboard/provider'
 }
 
-function getDashboardFeatures(role) {
+function getDashboardFeatures(role, enabledFeatures = DEFAULT_EMPTY_OBJECT) {
   if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
-    return ['nursing_workflows']
+    return nursingHomeFeaturesForFeatures(enabledFeatures)
   }
   if ([ROLES.DOCTOR, ROLES.INPATIENT_DOCTOR].includes(role)) {
     return ['inpatient_admissions']
@@ -190,10 +194,10 @@ const section = (key, label, items) => ({ key, label, items })
 const dashboardItem = item({
   key: 'dashboard',
   label: 'Dashboard',
-  href: ({ user }) => getDashboardUrl(user?.role || user?.user_type || ''),
+  href: ({ user, enabledFeatures }) => getDashboardUrl(user?.role || user?.user_type || '', enabledFeatures),
   icon: LayoutDashboard,
   roles: DASHBOARD_ROLES,
-  features: ({ user }) => getDashboardFeatures(user?.role || user?.user_type || ''),
+  features: ({ user, enabledFeatures }) => getDashboardFeatures(user?.role || user?.user_type || '', enabledFeatures),
   exact: true,
   props: { 'data-onboarding': 'nav-dashboard' },
 })
@@ -262,21 +266,12 @@ const globalSections = [
       exact: true,
     }),
     item({
-      key: 'shift-handoff',
-      label: 'Shift Handoff',
-      href: '/nursing/shift-handoff',
-      icon: ArrowLeftRight,
-      roles: ROLE_GROUPS.NURSING_DASHBOARD,
-      features: ['nursing_workflows'],
-      exact: true,
-    }),
-    item({
-      key: 'ward-stock-requests',
-      label: 'Ward Stock',
-      href: '/nursing/ward-stock-requests',
-      icon: Package,
-      roles: ROLE_GROUPS.NURSING_DASHBOARD,
-      features: ['nursing_workflows', 'inventory'],
+      key: 'ward-board',
+      label: 'Ward Board',
+      href: '/ward-board',
+      icon: ClipboardList,
+      roles: [ROLES.ADMIN, ...ROLE_GROUPS.CLINICAL],
+      features: ['ward_task_board', 'patient_chronicle', 'wards', 'inpatient_admissions', 'nursing_workflows'],
       exact: true,
     }),
     item({

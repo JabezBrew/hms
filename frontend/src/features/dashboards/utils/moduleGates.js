@@ -19,15 +19,30 @@ export const DASHBOARD_FEATURES = {
   wards: ['wards'],
 }
 
+export const NURSING_WARD_HOME_FEATURES = [
+  'ward_task_board',
+  'patient_chronicle',
+  'wards',
+  'inpatient_admissions',
+  'nursing_workflows',
+]
+
+const NURSING_HOME_OPTIONS = [
+  { path: '/ward-board', features: NURSING_WARD_HOME_FEATURES },
+  { path: '/triage', features: DASHBOARD_FEATURES.emergencyEncounters },
+  { path: '/encounters', features: DASHBOARD_FEATURES.outpatientEncounters },
+  { path: '/patients', features: DASHBOARD_FEATURES.patientChronicle },
+]
+
 const ROLE_DASHBOARD_FEATURES = {
   admin: [],
   doctor: DASHBOARD_FEATURES.outpatientEncounters,
   physician: DASHBOARD_FEATURES.outpatientEncounters,
   practitioner: DASHBOARD_FEATURES.outpatientEncounters,
   inpatient_doctor: DASHBOARD_FEATURES.inpatientAdmissions,
-  nurse: DASHBOARD_FEATURES.nursingWorkflows,
-  head_nurse: DASHBOARD_FEATURES.nursingWorkflows,
-  nurse_practitioner: DASHBOARD_FEATURES.nursingWorkflows,
+  nurse: [],
+  head_nurse: [],
+  nurse_practitioner: [],
   receptionist: [],
   billing: DASHBOARD_FEATURES.billing,
   lab_technician: DASHBOARD_FEATURES.laboratory,
@@ -54,6 +69,16 @@ const HREF_FEATURE_RULES = [
 
 function canUseFeatures(enabledFeatures, requiredFeatures) {
   return areFeaturesEnabled(requiredFeatures, enabledFeatures)
+}
+
+export function nursingHomeForFeatures(enabledFeatures = {}) {
+  return NURSING_HOME_OPTIONS.find((option) => canUseFeatures(enabledFeatures, option.features))?.path
+    || '/patients'
+}
+
+export function nursingHomeFeaturesForFeatures(enabledFeatures = {}) {
+  return NURSING_HOME_OPTIONS.find((option) => canUseFeatures(enabledFeatures, option.features))?.features
+    || []
 }
 
 export function dashboardFeaturesForRole(role) {

@@ -16,19 +16,19 @@ domain-specific components. Shared primitives belong in `src/shared/` or
 | Feature | Routes / role | Backend area |
 | --- | --- | --- |
 | `admin` | `/admin/*`, staff/org/audit/admin authority | `/api/v2/admin/*`, `/api/v2/staff/directory` |
-| `admissions` | `/admissions/*`, billing/nursing admission queues | `/api/v2/admissions/*`, `/api/v2/admissions/cases/*` |
+| `admissions` | `/admissions/*`, billing admission queue | `/api/v2/admissions/*`, `/api/v2/admissions/cases/*` |
 | `appointments` | `/appointments/*`, `/practitioner-availability`, schedule slots | `/api/v2/appointments`, `/api/v2/scheduling/*` |
 | `billing` | `/billing/*`, invoices, payments, cash, NHIS | `/api/v2/billing/*`, `/api/v2/nhis/*` |
 | `charts` | `/charts/templates`, `/charts/builder` | `/api/v2/patients/:id/clinical/chart-entries` and clinical template APIs |
 | `clinical-notes` | encounter note route and template admin | `/api/v2/clinical/*` |
 | `clinics` | clinic waiting room | `/api/v2/clinics`, `/api/v2/visits` |
 | `dashboards` | role dashboards and app root | `/api/v2/dashboards/*`, notifications, realtime |
-| `discharge` | discharge feature helpers; routed through admissions/ward/nursing flows | `/api/v2/discharges/*` |
+| `discharge` | discharge feature helpers; routed through admissions, Ward Board, Chronicle, and billing flows | `/api/v2/discharges/*` |
 | `encounters` | `/encounters/*` | `/api/v2/encounters/*` |
 | `inbox` | `/inbox` | `/api/v2/notifications/*` |
 | `inventory` | `/inventory/*` | `/api/v2/inventory/*`, controlled-substance APIs |
 | `laboratory` | `/laboratory/*` | `/api/v2/laboratory/*` |
-| `nursing` | `/nursing/*` | `/api/v2/nursing/*` |
+| `nursing` | no standalone routes; used by OPD, triage, Ward Board, and Chronicle surfaces | `/api/v2/nursing/*` |
 | `onboarding` | onboarding support modules; no primary app route | deployment/setup APIs when enabled |
 | `ops` | `/system/ops` | `/api/v2/ops/*`, observability summaries |
 | `patients` | `/patients/*`, Chronicle, print, ward round | `/api/v2/patients/*`, Chronicle, break-glass |

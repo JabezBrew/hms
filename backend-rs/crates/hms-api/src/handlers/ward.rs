@@ -10,11 +10,11 @@ use hms_domain::ward::{
     CreateWardStockRequestRequest, DischargeBlockerActionRequest, DischargeCaseListItem,
     FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
     MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery,
-    PatientVitalsListItem, PatientVitalsListQuery, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
-    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
-    UpdateWardRequest, UpdateWardSectionRequest, WardBedMapResponse, WardBoardGetQuery,
-    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
-    WardStockRequestListItem,
+    PatientVitalsListItem, PatientVitalsListQuery, RecordNursingReleaseRequest,
+    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
+    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest, WardBedMapResponse,
+    WardBoardGetQuery, WardBoardItem, WardBoardQuery, WardListItem, WardListQuery,
+    WardSectionListItem, WardStockRequestListItem,
 };
 use uuid::Uuid;
 

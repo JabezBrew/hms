@@ -2,8 +2,8 @@
 
 Status: active
 Owner: Frontend/Admissions Workflow
-Last reviewed: 2026-06-01
-Scope: admission requests, admission cases, and role-specific admission queues.
+Last reviewed: 2026-06-04
+Scope: admission requests, admission cases, and admission detail workflow links.
 
 ## Routes
 
@@ -11,7 +11,6 @@ Scope: admission requests, admission cases, and role-specific admission queues.
 - `/admissions/new`
 - `/admissions/cases/:caseId`
 - `/billing/admissions`
-- `/nursing/admissions`
 - `/admissions/:admissionId`
 
 ## Backend Contracts
@@ -23,5 +22,7 @@ Scope: admission requests, admission cases, and role-specific admission queues.
 ## Invariants
 
 - Admission-case pages must preserve patient/facility context.
-- Billing and nursing queues must use their role-specific data contracts.
+- Billing queues must use their role-specific data contracts.
+- Nursing admission work should stay in admissions, Ward Board, or Chronicle
+  context rather than a standalone nursing page.
 - Bed reservation/activation/cancellation state is backend-authoritative.

@@ -1,7 +1,7 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
 
 import { Button } from '@/components/ui/button';
-import { TreatmentSheetContent } from '@/features/nursing/pages/TreatmentSheetPage';
+import { TreatmentSheetContent } from '@/features/nursing/components/TreatmentSheetContent';
 import { cn } from '@/lib/utils';
 
 const TreatmentSheetSlideOver = ({

@@ -7,7 +7,6 @@ import { inventoryRoutes } from '@/features/inventory/routes'
 import { billingRoutes } from '@/features/billing/routes'
 import { laboratoryRoutes } from '@/features/laboratory/routes'
 import { pharmacyRoutes } from '@/features/pharmacy/routes'
-import { nursingRoutes } from '@/features/nursing/routes'
 import { dashboardRoutes } from '@/features/dashboards/routes'
 import { adminRoutes } from '@/features/admin/routes'
 import { settingsRoutes } from '@/features/settings/routes'
@@ -85,7 +84,6 @@ export const featureRoutes = [
   ...withFeature(billingRoutes, 'billing'),
   ...withFeature(laboratoryRoutes, 'laboratory'),
   ...withFeature(pharmacyRoutes, 'pharmacy'),
-  ...withFeature(nursingRoutes, 'nursing_workflows'),
   ...dashboardRoutes,
   ...adminRoutes,
   ...settingsRoutes,

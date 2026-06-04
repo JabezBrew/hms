@@ -128,6 +128,26 @@ function AdmissionActionError({ message }) {
   );
 }
 
+function buildDischargeWorkflowPath({ dischargeCase, patientId }) {
+  const dischargeCaseId = dischargeCase?.id || null;
+  const resolvedPatientId = patientId
+    || dischargeCase?.patient
+    || dischargeCase?.patient_id
+    || null;
+
+  if (!resolvedPatientId) {
+    const params = new URLSearchParams({ view: 'discharge' });
+    if (dischargeCaseId) params.set('case', dischargeCaseId);
+    return `/ward-board?${params.toString()}`;
+  }
+
+  const params = new URLSearchParams({ view: 'discharge' });
+  params.set('patient', resolvedPatientId);
+  if (dischargeCaseId) params.set('case', dischargeCaseId);
+
+  return `/ward-board?${params.toString()}`;
+}
+
 function AdmissionSummaryField({ label, value, className = '' }) {
   return (
     <div>
@@ -421,8 +441,7 @@ export default function AdmissionDetailPage() {
       setRequestingDischarge(true);
       setActionError(null);
       const dischargeCase = await dischargeApi.requestCase(admission.id);
-      const dischargeCaseId = dischargeCase?.id;
-      navigate(dischargeCaseId ? `/nursing/discharges?case=${dischargeCaseId}` : '/nursing/discharges');
+      navigate(buildDischargeWorkflowPath({ dischargeCase, patientId }));
     } catch {
       setActionError('Unable to request discharge. Please try again.');
     } finally {

@@ -128,13 +128,23 @@ directory and log, and the VM-side install uses `/tmp/hms-deploy.lock` so a
 second deploy cannot race an active one. The install runs detached and the
 wrapper polls `/tmp/hms-deploy-<run-id>.log` plus the remote PID for a final
 `REMOTE_INSTALL_EXIT_STATUS` marker, so a long build, SSH session reset, or
-dead remote runner does not require remembering a second deploy command. It
-refuses dirty working trees so uncommitted local changes do not accidentally
-become a staging release. It also verifies Cloud SQL backups, PITR, and
-deletion protection through GCP before allowing migrations. The backup gate
-also verifies that the Cloud SQL instance private IP matches the expected
-deployment database host and that there is a recent successful backup run. The
-default freshness window is 36 hours and can be adjusted with
+dead remote runner does not require remembering a second deploy command. By
+default it refuses dirty working trees so uncommitted local changes do not
+accidentally get mistaken for a staging release. If the intended release really
+is the last commit, `./deploy staging --ignore-dirty` prints the dirty file
+count summary, announces the committed SHA being deployed, validates the
+committed migration snapshot, and uploads the archive installer from the same
+commit object.
+It still deploys only the committed checkout, and it refuses the override when
+the deploy control scripts themselves are dirty because local deploy machinery
+would no longer match the committed release path. The full dirty path list is
+omitted from deploy logs; run `git status --short` locally if you need it. The
+wrapper also verifies Cloud SQL backups, PITR, and deletion
+protection through GCP before allowing
+migrations. The backup gate also verifies that the Cloud SQL instance private
+IP matches the expected deployment database host and that there is a recent
+successful backup run. The default freshness window is 36 hours and can be
+adjusted with
 `GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS`.
 
 The remote deploy poll defaults to a 15-second interval and a 40-minute timeout.
