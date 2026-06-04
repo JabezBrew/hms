@@ -73,7 +73,7 @@ describe('Omni Search', () => {
     )
   })
 
-  it('toggles open with Ctrl+K and closes with Esc (clears query)', async () => {
+  it('persists an unselected draft query and clears it after opening a result', async () => {
     const user = userEvent.setup()
     useAuth.mockReturnValue({
       user: { id: 'u1', role: 'doctor' },
@@ -125,10 +125,135 @@ describe('Omni Search', () => {
       expect(screen.queryByPlaceholderText('Type a command or search...')).not.toBeInTheDocument()
     })
 
-    // Re-open; query should be cleared.
+    // Re-open; the draft query should still be available in this app session.
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input2 = await screen.findByPlaceholderText('Type a command or search...')
+    expect(input2).toHaveValue('hello')
+
+    await user.clear(input2)
+    await user.type(input2, '> settings')
+    await waitFor(() => {
+      expect(screen.getByText('/settings')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('/settings'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/settings')
+    })
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input3 = await screen.findByPlaceholderText('Type a command or search...')
+    expect(input3).toHaveValue('')
+  })
+
+  it('clears the draft query when facility scope changes for the same user', async () => {
+    const user = userEvent.setup()
+    let authState = {
+      user: { id: 'u1', role: 'doctor' },
+      facilityCode: 'TEST-A',
+    }
+    useAuth.mockImplementation(() => authState)
+
+    server.use(
+      http.get('/api/search/omni/', ({ request }) => {
+        const url = new URL(request.url)
+        return HttpResponse.json({
+          query: (url.searchParams.get('q') || '').trim(),
+          types: [],
+          limit: 8,
+          groups: {
+            recent_patients: [],
+            patients: [],
+            wards: [],
+            encounters: [],
+            appointments: [],
+            admissions: [],
+            staff: [],
+          },
+        })
+      })
+    )
+
+    const queryClient = createTestQueryClient()
+    const renderTree = (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <OmniSearchProvider>
+            <div />
+          </OmniSearchProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    const { rerender } = render(renderTree)
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('Type a command or search...')
+    await user.type(input, 'ama')
+    expect(input).toHaveValue('ama')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText('Type a command or search...')).not.toBeInTheDocument()
+    })
+
+    authState = {
+      user: { id: 'u1', role: 'doctor' },
+      facilityCode: 'TEST-B',
+    }
+    rerender(renderTree)
+
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
     const input2 = await screen.findByPlaceholderText('Type a command or search...')
     expect(input2).toHaveValue('')
+  })
+
+  it('does not clear the active query while the dialog remains open past the draft TTL', async () => {
+    const user = userEvent.setup()
+    useAuth.mockReturnValue({
+      user: { id: 'u1', role: 'doctor' },
+      facilityCode: 'TEST',
+    })
+
+    server.use(
+      http.get('/api/search/omni/', ({ request }) => {
+        const url = new URL(request.url)
+        return HttpResponse.json({
+          query: (url.searchParams.get('q') || '').trim(),
+          types: [],
+          limit: 8,
+          groups: {
+            recent_patients: [],
+            patients: [],
+            wards: [],
+            encounters: [],
+            appointments: [],
+            admissions: [],
+            staff: [],
+          },
+        })
+      })
+    )
+
+    renderWithProviders(
+      <OmniSearchProvider>
+        <div />
+      </OmniSearchProvider>
+    )
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('Type a command or search...')
+    await user.type(input, 'ama')
+
+    vi.useFakeTimers()
+    try {
+      act(() => {
+        vi.advanceTimersByTime(10 * 60 * 1000 + 1)
+      })
+
+      expect(input).toHaveValue('ama')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('filters pages by role in pages-only mode', async () => {
@@ -438,20 +563,102 @@ describe('Omni Search', () => {
     await waitFor(() => {
       expect(screen.getAllByText('John Mensah')).toHaveLength(2)
     })
-    expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward.*Bed B-12/)).toBeInTheDocument()
-    expect(screen.getByText(/MRN B2042.*DOB 1991-08-04.*Male.*Not currently admitted/)).toBeInTheDocument()
-    expect(screen.getAllByText('2 same-name matches')).toHaveLength(2)
+    expect(screen.getByText('MRN A1042 · DOB 1984-03-12 · Male')).toBeInTheDocument()
+    expect(screen.getByText('Surgical Ward · Bed B-12')).toBeInTheDocument()
+    expect(screen.getByText('MRN B2042 · DOB 1991-08-04 · Male')).toBeInTheDocument()
+    expect(screen.getByText('Not currently admitted')).toBeInTheDocument()
+    expect(screen.queryByText('Status unknown')).not.toBeInTheDocument()
+    expect(screen.getByText('2 patients named John Mensah')).toBeInTheDocument()
+    expect(screen.getByText('Use MRN, DOB, sex, and location to choose the correct record.')).toBeInTheDocument()
+    expect(screen.queryByText('2 same-name matches')).not.toBeInTheDocument()
 
     await user.click(screen.getAllByText('John Mensah')[0])
 
     expect(await screen.findByText('Confirm Patient Identity')).toBeInTheDocument()
     expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward.*Bed B-12/)).toBeInTheDocument()
+    expect(screen.getByText('This name appears on 2 records. Confirm DOB and MRN before continuing.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Confirm Patient Identity')).not.toBeInTheDocument()
+    })
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const inputAfterCancel = await screen.findByPlaceholderText('Type a command or search...')
+    expect(inputAfterCancel).toHaveValue('# john')
+    await waitFor(() => {
+      expect(screen.getByText('2 patients named John Mensah')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getAllByText('John Mensah')[0])
+    expect(await screen.findByText('Confirm Patient Identity')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('/patients/p1')
     })
+  })
+
+  it('does not treat repeated recent context rows for one patient as a duplicate-name group', async () => {
+    useAuth.mockReturnValue({
+      user: { id: 'u1', role: 'doctor' },
+      facilityCode: 'TEST',
+    })
+
+    server.use(
+      http.get('/api/search/omni/', () => {
+        return HttpResponse.json({
+          query: '',
+          types: [],
+          limit: 8,
+          groups: {
+            recent_patients: [
+              {
+                id: 'p1',
+                medical_record_number: 'A1042',
+                name: 'John Mensah',
+                date_of_birth: '1984-03-12',
+                gender: 'M',
+                current_ward: 'Surgical Ward',
+                bed_number: 'B-12',
+                admission_status: 'admitted',
+              },
+              {
+                id: 'p1',
+                medical_record_number: 'A1042',
+                name: 'John Mensah',
+                date_of_birth: '1984-03-12',
+                gender: 'M',
+                current_ward: 'Surgical Ward',
+                bed_number: 'B-12',
+                admission_status: 'admitted',
+              },
+            ],
+            patients: [],
+            wards: [],
+            encounters: [],
+            appointments: [],
+            admissions: [],
+            staff: [],
+          },
+        })
+      })
+    )
+
+    renderWithProviders(
+      <OmniSearchProvider>
+        <div />
+      </OmniSearchProvider>
+    )
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    await screen.findByPlaceholderText('Type a command or search...')
+
+    await waitFor(() => {
+      expect(screen.getAllByText('John Mensah')).toHaveLength(1)
+    })
+    expect(screen.queryByText('2 patients named John Mensah')).not.toBeInTheDocument()
   })
 
   it('stores only static routes in recent pages', async () => {

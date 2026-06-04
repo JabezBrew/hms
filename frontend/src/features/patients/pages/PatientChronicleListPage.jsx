@@ -187,7 +187,7 @@ const PatientChronicleListPage = () => {
       ordering: searchOrdering,
       page: searchPage,
       page_size: SEARCH_TABLE_PAGE_SIZE,
-      include_total: 'false',
+      include_total: 'true',
     }),
     [baseSearchParams, searchOrdering, searchPage]
   );
@@ -361,7 +361,9 @@ const PatientChronicleListPage = () => {
             <h2 className="font-heading text-sm font-medium text-foreground">
               {listHeaderLabel}
             </h2>
-            <span className="text-xs">({searchMeta.totalLabel})</span>
+            {searchMeta.totalLabel ? (
+              <span className="text-xs">({searchMeta.totalLabel})</span>
+            ) : null}
           </div>
           <PatientListRefreshButton onRefresh={refetchSearch} />
         </div>

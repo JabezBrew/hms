@@ -46,6 +46,8 @@ Scope: patient registry, patient forms, Patient Chronicle, print, ward round, br
 
 - Patient Chronicle is the product home for patient clinical data.
 - Registry and my-patients lists must stay lightweight and server-paginated.
+- Patient Registry location displays current admission ward/bed context; use
+  `Not admitted` when no current admission location is present.
 - Break-glass requires backend permission, fresh auth, grant expiry, and audit.
 - Do not prefetch heavy Chronicle data unless performance budgets allow it.
 - Patient identity fields must not appear in query keys, logs, browser events,

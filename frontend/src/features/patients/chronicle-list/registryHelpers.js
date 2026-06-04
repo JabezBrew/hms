@@ -4,6 +4,8 @@ import {
   SEARCH_TABLE_PAGE_SIZE,
 } from './registryConstants';
 
+export const NO_CURRENT_ADMISSION_LOCATION_LABEL = 'Not admitted';
+
 export const createEmptyFilters = () => ({
   admissionStart: null,
   admissionEnd: null,
@@ -135,7 +137,7 @@ export const getPatientLocationDisplay = (patient) => {
   }
 
   return {
-    label: patient?.patient_location || getAdmissionLocationLabel(patient) || '-',
+    label: patient?.patient_location || getAdmissionLocationLabel(patient) || NO_CURRENT_ADMISSION_LOCATION_LABEL,
     tooltip: null,
   };
 };
@@ -151,7 +153,7 @@ const formatResultCountLabel = ({ count, isExact, hasNextPage }) => {
   if (isExact || !hasNextPage) {
     return String(count);
   }
-  return `${count}+`;
+  return null;
 };
 
 export function buildSearchResultMeta({

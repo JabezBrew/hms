@@ -80,13 +80,12 @@ function createRegistryRows(count, startIndex = 1, overrides = {}) {
   })
 }
 
-function createCursorSearchResponse({ page, rows, hasNext }) {
-  const knownCount = ((page - 1) * 25) + rows.length
+function createCursorSearchResponse({ page, rows, hasNext, total = ((page - 1) * 25) + rows.length }) {
   return {
-    total: knownCount,
-    count: knownCount,
-    count_exact: false,
-    total_is_lower_bound: hasNext,
+    total,
+    count: total,
+    count_exact: true,
+    total_is_lower_bound: false,
     page,
     page_size: 25,
     next: hasNext ? `cursor-${page + 1}` : null,
@@ -161,7 +160,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
     expect(firstCallParams.registry_scope).toBe('active')
     expect(firstCallParams.ordering).toBe('-created_at')
-    expect(firstCallParams.include_total).toBe('false')
+    expect(firstCallParams.include_total).toBe('true')
     expect(screen.getByText('Active patients')).toBeInTheDocument()
     expect(screen.getByText('(2)')).toBeInTheDocument()
   })
@@ -214,7 +213,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
       const lastCallParams = mockUsePatientSearch.mock.calls.at(-1)[0]
       expect(lastCallParams.query).toBe('jo')
       expect(lastCallParams.registry_scope).toBe('all')
-      expect(lastCallParams.include_total).toBe('false')
+      expect(lastCallParams.include_total).toBe('true')
       expect(screen.getByText('Search results')).toBeInTheDocument()
       expect(screen.getByText('(4)')).toBeInTheDocument()
     })
@@ -262,7 +261,31 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     expect(await screen.findByRole('tooltip', { name: 'Clinic A, Clinic B, Clinic C' })).toBeInTheDocument()
   })
 
-  it('labels cursor-paginated results as a known range instead of a fake exact total', async () => {
+  it('labels patients without a current admission location as not admitted', () => {
+    mockUsePatientSearch.mockImplementation(() => ({
+      data: createSearchResponse(1, [
+        {
+          id: 'patient-without-location',
+          created_at: '2026-02-13T10:00:00Z',
+          medical_record_number: 'MRN-404',
+          name: 'Patient Without Location',
+          date_of_birth: '1990-01-01',
+          gender: 'female',
+          registry_status: 'active',
+          patient_location: null,
+          active_clinic_names: [],
+        },
+      ]),
+      isLoading: false,
+      refetch: vi.fn(),
+    }))
+
+    renderPage()
+
+    expect(screen.getByText('Not admitted')).toBeInTheDocument()
+  })
+
+  it('shows exact totals for cursor-paginated results without fake page numbering', async () => {
     const user = userEvent.setup()
     mockUsePatientSearch.mockImplementation((params) => {
       const page = params?.page || 1
@@ -271,6 +294,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
           page,
           rows: createRegistryRows(25, ((page - 1) * 25) + 1),
           hasNext: true,
+          total: 2700,
         }),
         isLoading: false,
         refetch: vi.fn(),
@@ -279,34 +303,27 @@ describe('PatientChronicleListPage registry scope behavior', () => {
 
     renderPage()
 
-    expect(screen.getByText('(25+)')).toBeInTheDocument()
+    expect(screen.getByText('(2700)')).toBeInTheDocument()
     expect(screen.getByText((_, element) => (
       element?.tagName === 'P'
-      && element.textContent?.includes('Showing 1 to 25 of 25+ patients')
+      && element.textContent?.includes('Showing 1 to 25 of 2700 patients')
     ))).toBeInTheDocument()
-    expect(screen.getByText((_, element) => (
-      element?.tagName === 'SPAN'
-      && element.textContent?.includes('Page')
-      && element.textContent?.includes('More available')
-    ))).toBeInTheDocument()
-    expect(screen.queryByText(/26 results/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/More results available/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/25\+/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Page 1/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Page 1 of 2/)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Next/i }))
 
     await waitFor(() => {
-      expect(screen.getByText('(50+)')).toBeInTheDocument()
+      expect(screen.getByText('(2700)')).toBeInTheDocument()
       expect(screen.getByText((_, element) => (
         element?.tagName === 'P'
-        && element.textContent?.includes('Showing 26 to 50 of 50+ patients')
-      ))).toBeInTheDocument()
-      expect(screen.getByText((_, element) => (
-        element?.tagName === 'SPAN'
-        && element.textContent?.includes('Page')
-        && element.textContent?.includes('More available')
+        && element.textContent?.includes('Showing 26 to 50 of 2700 patients')
       ))).toBeInTheDocument()
     })
-    expect(screen.queryByText(/51 results/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/50\+/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Page 2/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Page 2 of 3/)).not.toBeInTheDocument()
   })
 

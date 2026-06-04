@@ -42,6 +42,9 @@ Scope: shared components, legacy product components, Chronicle components, and U
 - Large lists should use virtualization primitives from `ui/`.
 - Heavy charts should be lazy/deferred when not needed for first useful view.
 - Prefer shared primitives over duplicating controls inside features.
+- Table pagination must match the endpoint contract: cursor-backed lists may
+  show exact totals when supplied, but should only expose previous/next controls
+  unless random page access is supported.
 - Keep Patient Chronicle clinical-data actions in `chronicle/` or panels
   launched from Patient Chronicle; do not create standalone clinical patient
   data pages.

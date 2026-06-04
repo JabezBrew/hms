@@ -12,6 +12,7 @@ import {
 
 const STORAGE_KEY = 'omni_recent_pages'
 const MAX_RECENT_PAGES = 8
+const DRAFT_QUERY_TTL_MS = 10 * 60 * 1000
 const OmniSearchDialog = React.lazy(() =>
   import('./OmniSearchDialog').then((module) => ({ default: module.OmniSearchDialog }))
 )
@@ -38,8 +39,9 @@ function normalizeRecentPages(value) {
 }
 
 export function OmniSearchProvider({ children }) {
-  const { user } = useAuth()
+  const { user, facilityCode } = useAuth()
   const role = user?.role || ''
+  const userId = user?.id || null
 
   const location = useLocation()
   const staticPaths = React.useMemo(() => getStaticPathSetForRole(role), [role])
@@ -50,6 +52,25 @@ export function OmniSearchProvider({ children }) {
   const [recentPages, setRecentPages] = React.useState(() =>
     normalizeRecentPages(safeStorage.getJSON(STORAGE_KEY, []))
   )
+  const [draftQuery, setDraftQueryState] = React.useState({ value: '', ts: 0 })
+
+  const clearDraftQuery = React.useCallback(() => {
+    setDraftQueryState({ value: '', ts: 0 })
+  }, [])
+
+  const setDraftQuery = React.useCallback((value) => {
+    setDraftQueryState({
+      value: String(value || ''),
+      ts: Date.now(),
+    })
+  }, [])
+
+  const visibleDraftQuery = React.useMemo(() => {
+    if (!draftQuery.value || !draftQuery.ts) return ''
+    if (open) return draftQuery.value
+    if (Date.now() - draftQuery.ts > DRAFT_QUERY_TTL_MS) return ''
+    return draftQuery.value
+  }, [draftQuery, open])
 
   const setOpen = React.useCallback((nextOpen) => {
     if (nextOpen) {
@@ -74,6 +95,18 @@ export function OmniSearchProvider({ children }) {
   }, [open, setOpen])
 
   React.useEffect(() => {
+    clearDraftQuery()
+  }, [clearDraftQuery, facilityCode, role, userId])
+
+  React.useEffect(() => {
+    if (!draftQuery.value || !draftQuery.ts) return undefined
+    if (open) return undefined
+    const remaining = Math.max(0, DRAFT_QUERY_TTL_MS - (Date.now() - draftQuery.ts))
+    const id = window.setTimeout(clearDraftQuery, remaining)
+    return () => window.clearTimeout(id)
+  }, [clearDraftQuery, draftQuery, open])
+
+  React.useEffect(() => {
     const path = location?.pathname
     if (!path) return
     if (!staticPaths.has(path)) return
@@ -94,9 +127,12 @@ export function OmniSearchProvider({ children }) {
       setOpen,
       openDialog,
       closeDialog,
+      clearDraftQuery,
+      draftQuery: visibleDraftQuery,
       recentPages,
+      setDraftQuery,
     }),
-    [open, setOpen, openDialog, closeDialog, recentPages]
+    [open, setOpen, openDialog, closeDialog, clearDraftQuery, visibleDraftQuery, recentPages, setDraftQuery]
   )
 
   return (

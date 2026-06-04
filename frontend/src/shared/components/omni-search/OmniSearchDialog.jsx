@@ -299,12 +299,31 @@ function normalizeNameKey(value) {
 
 function buildPatientNameCounts(patients) {
   const counts = new Map()
+  const seenPatientIds = new Set()
   for (const patient of patients || []) {
+    if (patient?.id) {
+      if (seenPatientIds.has(patient.id)) continue
+      seenPatientIds.add(patient.id)
+    }
     const key = normalizeNameKey(patient?.name)
     if (!key) continue
     counts.set(key, (counts.get(key) || 0) + 1)
   }
   return counts
+}
+
+function dedupePatientsById(patients) {
+  const out = []
+  const seen = new Set()
+  for (const patient of patients || []) {
+    const id = patient?.id
+    if (id) {
+      if (seen.has(id)) continue
+      seen.add(id)
+    }
+    out.push(patient)
+  }
+  return out
 }
 
 function formatPatientDate(value) {
@@ -346,6 +365,25 @@ function getPatientLocationLabel(patient) {
   return 'Not currently admitted'
 }
 
+function getPatientCurrentLocationLabel(patient) {
+  const ward = patient?.current_ward || null
+  const bedNumber = patient?.bed_number || patient?.current_bed || null
+  const patientLocation = patient?.patient_location || null
+
+  if (ward && bedNumber) return `${ward} · Bed ${bedNumber}`
+  if (ward) return ward
+  if (patientLocation) return patientLocation
+  return null
+}
+
+function buildPatientCareContextParts(patient) {
+  const status = formatPatientStatus(patient?.admission_status)
+  const location = getPatientCurrentLocationLabel(patient)
+  if (location) return [status, location].filter(Boolean)
+  if (status) return [status]
+  return ['Not currently admitted']
+}
+
 function getPatientDuplicateCount(patient, nameCounts) {
   const key = normalizeNameKey(patient?.name)
   if (!key) return 0
@@ -366,9 +404,8 @@ function buildPatientIdentityParts(patient) {
   ].filter(Boolean)
 }
 
-function buildPatientIdentityWarnings(patient, duplicateCount) {
+function buildPatientIdentityWarnings(patient) {
   const warnings = []
-  if (duplicateCount > 1) warnings.push(`${duplicateCount} same-name matches`)
   if (!patient?.medical_record_number || !patient?.date_of_birth) {
     warnings.push('Identity needs verification')
   }
@@ -382,6 +419,51 @@ function shouldConfirmPatientSelection(patient, { action, duplicateCount }) {
   if (!patient?.medical_record_number || !patient?.date_of_birth) return true
   if (patient?.match_reason === 'name_fuzzy') return true
   return Boolean(action && patient?.match_reason && !['id_exact', 'id_prefix'].includes(patient.match_reason))
+}
+
+function buildDuplicateNameSummaries(patients, nameCounts) {
+  const summaries = []
+  const seen = new Set()
+  for (const patient of patients || []) {
+    const key = normalizeNameKey(patient?.name)
+    if (!key || seen.has(key)) continue
+    const count = nameCounts.get(key) || 0
+    if (count <= 1) continue
+    seen.add(key)
+    summaries.push({
+      key,
+      name: patient?.name || 'this name',
+      count,
+    })
+  }
+  return summaries
+}
+
+function PatientIdentityNotice({ summaries }) {
+  if (!Array.isArray(summaries) || summaries.length === 0) return null
+
+  const summaryText = summaries
+    .slice(0, 2)
+    .map((summary) => `${summary.count} patients named ${summary.name}`)
+    .join(' · ')
+  const extraCount = summaries.length - 2
+
+  return (
+    <div
+      role="note"
+      className="mx-1 mb-1 rounded-lg border border-border/70 bg-muted/35 px-3 py-2"
+    >
+      <div className="min-w-0">
+        <div className="font-heading text-xs font-semibold text-foreground">
+          {summaryText}
+          {extraCount > 0 ? ` · ${extraCount} more same-name group${extraCount === 1 ? '' : 's'}` : ''}
+        </div>
+        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+          Use MRN, DOB, sex, and location to choose the correct record.
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function NoResultsItem({ value, children }) {
@@ -431,13 +513,28 @@ function PatientCommandItem({ patient, action, patientNameCounts, onSelectPatien
   const destination = action ? `/patients/${id}?action=${action}` : `/patients/${id}`
   const duplicateCount = getPatientDuplicateCount(patient, patientNameCounts)
   const identityParts = buildPatientIdentityParts(patient)
-  const identityWarnings = buildPatientIdentityWarnings(patient, duplicateCount)
+  const identityWarnings = buildPatientIdentityWarnings(patient)
   const actionLabel = getPatientActionLabel(action)
+  const identifierParts = [
+    patient?.medical_record_number ? `MRN ${patient.medical_record_number}` : null,
+    patient?.date_of_birth ? `DOB ${formatPatientDate(patient.date_of_birth)}` : null,
+    formatPatientGender(patient?.gender),
+  ].filter(Boolean)
+  const careContextParts = buildPatientCareContextParts(patient)
+  const duplicateAssistiveText =
+    duplicateCount > 1 ? `${duplicateCount} patients share this name. Confirm DOB and MRN before opening.` : null
+  const patientAriaLabel = [
+    name,
+    duplicateAssistiveText,
+    identifierParts.join(', '),
+    careContextParts.join(', '),
+  ].filter(Boolean).join('. ')
 
   return (
     <CommandItem
       key={`patient:${id}:${action || 'view'}`}
       value={`${name} ${patient?.medical_record_number || ''} ${patient?.date_of_birth || ''}`.trim()}
+      aria-label={patientAriaLabel}
       onSelect={() => {
         if (shouldConfirmPatientSelection(patient, { action, duplicateCount })) {
           onConfirmPatient({
@@ -457,31 +554,40 @@ function PatientCommandItem({ patient, action, patientNameCounts, onSelectPatien
     >
       <div className="flex min-w-0 items-start gap-3">
         <LeadingIcon Icon={UserRound} tone="sky" />
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate font-display text-base text-foreground">{name}</span>
-            {actionLabel && (
-              <span className="shrink-0 rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
-                {actionLabel}
-              </span>
-            )}
-            {identityWarnings.map((warning) => (
-              <span
-                key={`${id}:${warning}`}
-                className={cn(
-                  "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
-                  warning === 'Fuzzy match'
-                    ? "border-amber-200 bg-amber-50 text-amber-700"
-                    : "border-rose-200 bg-rose-50 text-rose-700"
-                )}
-              >
-                {warning}
-              </span>
-            ))}
+        <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,auto)] sm:items-start">
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="truncate font-display text-base text-foreground">{name}</span>
+              {actionLabel && (
+                <span className="shrink-0 rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
+                  {actionLabel}
+                </span>
+              )}
+              {identityWarnings.map((warning) => (
+                <span
+                  key={`${id}:${warning}`}
+                  className={cn(
+                    "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                    warning === 'Identity needs verification'
+                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      : "border-amber-200 bg-amber-50 text-amber-700"
+                  )}
+                >
+                  {warning}
+                </span>
+              ))}
+            </div>
+            <div className="break-words font-mono text-[10px] text-muted-foreground">
+              {identifierParts.length > 0 ? identifierParts.join('  ·  ') : 'No verified identifiers available'}
+            </div>
           </div>
-          <div className="break-words font-mono text-[10px] text-muted-foreground">
-            {identityParts.length > 0 ? identityParts.join('  ·  ') : 'No verified identifiers available'}
+          <div className="min-w-0 font-mono text-[10px] text-muted-foreground sm:text-right">
+            <div className="break-words text-foreground/75">{careContextParts[0]}</div>
+            <div className="break-words">{careContextParts.slice(1).join('  ·  ')}</div>
           </div>
+          {identityParts.length === 0 && (
+            <span className="sr-only">No verified identifiers available</span>
+          )}
         </div>
       </div>
     </CommandItem>
@@ -619,11 +725,14 @@ function EmptyOmniSearchGroups({
   onChooseCommand,
 }) {
   if (hasQuery) return null
+  const visibleRecentPatients = dedupePatientsById(recentPatients)
+  const duplicateSummaries = buildDuplicateNameSummaries(visibleRecentPatients, patientNameCounts)
 
   return (
     <>
       <CommandGroup heading="Recent Patients">
-        {(recentPatients || []).map((patient) => (
+        <PatientIdentityNotice summaries={duplicateSummaries} />
+        {visibleRecentPatients.map((patient) => (
           <PatientCommandItem
             key={`recent-patient:${patient?.id}`}
             patient={patient}
@@ -632,7 +741,7 @@ function EmptyOmniSearchGroups({
             onConfirmPatient={onConfirmPatient}
           />
         ))}
-        {(recentPatients || []).length === 0 && (
+        {visibleRecentPatients.length === 0 && (
           <NoResultsItem value="No recent patients">No recent patients</NoResultsItem>
         )}
       </CommandGroup>
@@ -759,11 +868,14 @@ function PatientResultsGroup({
   if (!(hasQuery && serverEnabled && serverQueryReady && mode !== 'staff' && mode !== 'pages' && isPatientMode)) {
     return null
   }
+  const visiblePatientPickerItems = dedupePatientsById(patientPickerItems)
+  const duplicateSummaries = buildDuplicateNameSummaries(visiblePatientPickerItems, patientNameCounts)
 
   return (
     <>
       <CommandGroup heading={getPatientGroupHeading({ mode, effectiveQuery })}>
-        {patientPickerItems.map((patient) => (
+        <PatientIdentityNotice summaries={duplicateSummaries} />
+        {visiblePatientPickerItems.map((patient) => (
           <PatientCommandItem
             key={`patient-result:${patient?.id}:${patientAction || 'view'}`}
             patient={patient}
@@ -773,7 +885,7 @@ function PatientResultsGroup({
             onConfirmPatient={onConfirmPatient}
           />
         ))}
-        {patientPickerItems.length === 0 && !isLoading && (
+        {visiblePatientPickerItems.length === 0 && !isLoading && (
           <NoResultsItem value={effectiveQuery.length >= 2 ? 'No matching patients' : 'No recent patients'}>
             {effectiveQuery.length >= 2 ? 'No matching patients' : 'No recent patients'}
           </NoResultsItem>
@@ -1152,6 +1264,11 @@ function OmniSearchConfirmationDialog({
                 ? pendingExecution.identityParts.join('  ·  ')
                 : 'No verified identifiers available'}
             </div>
+            {pendingExecution?.duplicateCount > 1 && (
+              <div className="mt-3 rounded-md border border-border/70 bg-background/70 px-3 py-2 font-mono text-[10px] text-muted-foreground">
+                This name appears on {pendingExecution.duplicateCount} records. Confirm DOB and MRN before continuing.
+              </div>
+            )}
             {(pendingExecution?.identityWarnings || []).length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {pendingExecution.identityWarnings.map((warning) => (
@@ -1213,8 +1330,15 @@ function useOmniSearchDialogModel({ inputRef, navigate }) {
   const isAdmin = role === ROLES.ADMIN
   const isClinical = isUserClinical(role)
 
-  const { open, setOpen, recentPages } = useOmniSearch()
-  const [rawQuery, setRawQuery] = React.useState('')
+  const {
+    open,
+    setOpen,
+    recentPages,
+    draftQuery,
+    setDraftQuery,
+    clearDraftQuery,
+  } = useOmniSearch()
+  const [rawQuery, setRawQueryState] = React.useState(() => draftQuery || '')
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [pendingExecution, setPendingExecution] = React.useState(null)
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: Boolean(user && open) })
@@ -1234,15 +1358,20 @@ function useOmniSearchDialogModel({ inputRef, navigate }) {
     [isAdmin, isClinical]
   )
 
-  const closeDialog = React.useCallback(() => {
+  const setRawQuery = React.useCallback((value) => {
+    setRawQueryState(value)
+    setDraftQuery(value)
+  }, [setDraftQuery])
+
+  const closeDialogAndClearDraft = React.useCallback(() => {
+    clearDraftQuery()
+    setRawQueryState('')
     setOpen(false)
-    setRawQuery('')
-  }, [setOpen])
+  }, [clearDraftQuery, setOpen])
 
   const handleDialogOpenChange = React.useCallback(
     (nextOpen) => {
       setOpen(nextOpen)
-      if (!nextOpen) setRawQuery('')
     },
     [setOpen]
   )
@@ -1254,6 +1383,12 @@ function useOmniSearchDialogModel({ inputRef, navigate }) {
     const id = window.setTimeout(() => inputRef.current?.focus(), 0)
     return () => window.clearTimeout(id)
   }, [open, inputRef])
+
+  React.useEffect(() => {
+    if (open) {
+      setRawQueryState(draftQuery || '')
+    }
+  }, [draftQuery, open])
 
   React.useEffect(() => {
     if (!open || effectiveQuery.length === 0) {
@@ -1337,10 +1472,10 @@ function useOmniSearchDialogModel({ inputRef, navigate }) {
 
   const onSelectAndClose = React.useCallback(
     (to) => {
-      closeDialog()
+      closeDialogAndClearDraft()
       if (to) navigate(to)
     },
-    [closeDialog, navigate]
+    [closeDialogAndClearDraft, navigate]
   )
 
   const closeConfirmation = React.useCallback(() => {
@@ -1352,9 +1487,11 @@ function useOmniSearchDialogModel({ inputRef, navigate }) {
     const target = pendingExecution?.href
     closeConfirmation()
     if (target) {
+      clearDraftQuery()
+      setRawQueryState('')
       navigate(target)
     }
-  }, [closeConfirmation, navigate, pendingExecution?.href])
+  }, [clearDraftQuery, closeConfirmation, navigate, pendingExecution?.href])
 
   const patientNameCounts = React.useMemo(
     () => buildPatientNameCounts([...(groups.recent_patients || []), ...(groups.patients || [])]),
@@ -1401,7 +1538,7 @@ function useOmniSearchDialogModel({ inputRef, navigate }) {
       }
 
       if (previewDecision.requires_confirmation || previewIntent.requires_confirmation) {
-        closeDialog()
+        setOpen(false)
         setPendingExecution({
           href,
           intent: previewIntent,
@@ -1424,26 +1561,26 @@ function useOmniSearchDialogModel({ inputRef, navigate }) {
     aiIntentPreview?.denial_reasons,
     aiIntentResult,
     executePreviewMutation,
-    closeDialog,
     onSelectAndClose,
     serverQuery,
+    setOpen,
   ])
 
   const handleConfirmPatient = React.useCallback(
     (execution) => {
-      closeDialog()
+      setOpen(false)
       setPendingExecution(execution)
       setConfirmOpen(true)
     },
-    [closeDialog]
+    [setOpen]
   )
 
   const handleRunAction = React.useCallback(
     (action) => {
-      closeDialog()
+      closeDialogAndClearDraft()
       action.run({ navigate, user })
     },
-    [closeDialog, navigate, user]
+    [closeDialogAndClearDraft, navigate, user]
   )
 
   const handleConfirmationOpenChange = React.useCallback(

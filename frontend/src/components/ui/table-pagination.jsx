@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ChevronsLeft from 'lucide-react/dist/esm/icons/chevrons-left.js';
@@ -19,22 +19,18 @@ function formatRange({ currentPage, pageSize, totalCount, countExact, hasNextPag
   const startItem = totalCount > 0 ? ((currentPage - 1) * pageSize) + 1 : 0;
   const knownEnd = Math.min(currentPage * pageSize, totalCount);
   const endItem = countExact ? knownEnd : Math.max(knownEnd, startItem);
-  const totalSuffix = countExact ? String(totalCount) : `${totalCount}+`;
+  const canShowTotal = countExact || !hasNextPage;
 
   return {
     startItem,
     endItem,
-    totalSuffix: hasNextPage && !countExact ? `${totalCount}+` : totalSuffix,
+    totalLabel: canShowTotal ? String(totalCount) : null,
   };
 }
 
 function TablePageJump({ currentPage, exactTotalPages, onPageChange }) {
   const pageJumpId = useId();
   const [pageInput, setPageInput] = useState(String(currentPage));
-
-  useEffect(() => {
-    setPageInput(String(currentPage));
-  }, [currentPage]);
 
   const handleJumpSubmit = (event) => {
     event.preventDefault();
@@ -110,9 +106,8 @@ export function TablePagination({
   // Use overrides if provided, otherwise calculate from page numbers
   const hasPrevPage = hasPrevPageOverride ?? normalizedPage > 1;
   const hasNextPage = hasNextPageOverride ?? (countExact ? normalizedPage < exactTotalPages : false);
-  const hasCursorAvailabilityOverrides = hasNextPageOverride !== undefined || hasPrevPageOverride !== undefined;
-  const canRandomAccessPages = canJumpToPage ?? !hasCursorAvailabilityOverrides;
-  const { startItem, endItem, totalSuffix } = formatRange({
+  const canRandomAccessPages = canJumpToPage ?? true;
+  const { startItem, endItem, totalLabel } = formatRange({
     currentPage: normalizedPage,
     pageSize: normalizedPageSize,
     totalCount: normalizedTotal,
@@ -121,6 +116,8 @@ export function TablePagination({
   });
   const showFirstLast = countExact && canRandomAccessPages;
   const showPageJump = countExact && canRandomAccessPages && exactTotalPages > 2;
+  const showPageIndicator = countExact && canRandomAccessPages;
+  const showMoreAvailableHint = !countExact && hasNextPage;
 
   if (normalizedTotal === 0 && !hasPrevPage && normalizedPage <= 1) {
     return null;
@@ -135,8 +132,16 @@ export function TablePagination({
     >
       <p className="text-sm text-muted-foreground">
         Showing <span className="font-medium text-foreground">{startItem}</span> to{' '}
-        <span className="font-medium text-foreground">{endItem}</span> of{' '}
-        <span className="font-medium text-foreground">{totalSuffix}</span> {itemLabel}
+        <span className="font-medium text-foreground">{endItem}</span>
+        {totalLabel ? (
+          <>
+            {' '}of <span className="font-medium text-foreground">{totalLabel}</span>
+          </>
+        ) : null}{' '}
+        {itemLabel}
+        {showMoreAvailableHint ? (
+          <span className="ml-2 whitespace-nowrap">More results available</span>
+        ) : null}
       </p>
       <div className="flex items-center gap-1">
         {/* First page */}
@@ -164,16 +169,12 @@ export function TablePagination({
           <ChevronLeft className="size-4" />
         </Button>
         {/* Page indicator */}
-        <span className="px-3 text-sm text-muted-foreground">
-          Page <span className="font-medium text-foreground">{normalizedPage}</span>
-          {countExact ? (
-            <>
-              {' '}of <span className="font-medium text-foreground">{exactTotalPages}</span>
-            </>
-          ) : hasNextPage ? (
-            <span> · More available</span>
-          ) : null}
-        </span>
+        {showPageIndicator && (
+          <span className="px-3 text-sm text-muted-foreground">
+            Page <span className="font-medium text-foreground">{normalizedPage}</span>
+            {' '}of <span className="font-medium text-foreground">{exactTotalPages}</span>
+          </span>
+        )}
         {/* Next page */}
         <Button
           variant="outline"
