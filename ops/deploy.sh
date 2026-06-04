@@ -21,6 +21,13 @@ GCP_CLOUDSQL_INSTANCE="${GCP_CLOUDSQL_INSTANCE:-hms-staging-pg-1}"
 GCP_CLOUDSQL_HOST="${GCP_CLOUDSQL_HOST:-10.216.13.2}"
 GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS="${GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS:-36}"
 GCP_SSH_MODE="${GCP_SSH_MODE:-iap}"
+GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS="${GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS:-15}"
+GCP_REMOTE_DEPLOY_TIMEOUT_SECONDS="${GCP_REMOTE_DEPLOY_TIMEOUT_SECONDS:-2400}"
+GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS="${GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS:-3}"
+GCP_SSH_COMMAND_TIMEOUT_SECONDS="${GCP_SSH_COMMAND_TIMEOUT_SECONDS:-900}"
+GCP_SSH_CONNECT_TIMEOUT_SECONDS="${GCP_SSH_CONNECT_TIMEOUT_SECONDS:-20}"
+GCP_SSH_ALIVE_INTERVAL_SECONDS="${GCP_SSH_ALIVE_INTERVAL_SECONDS:-15}"
+GCP_SSH_ALIVE_COUNT_MAX="${GCP_SSH_ALIVE_COUNT_MAX:-4}"
 
 usage() {
   cat <<'EOF'
@@ -46,8 +53,8 @@ Options:
                                   HMS_ROLLBACK_SKIP_MIGRATIONS_ALLOWED=true.
   --edge-verify=auto|required|skip
                                   Override GCP edge verification after deploy.
-  --ssh-mode=iap|direct           Use IAP tunneling or direct SSH/SCP for GCP
-                                  staging archive upload. Default: iap.
+  --ssh-mode=iap|direct           Use IAP tunneling or direct SSH for GCP
+                                  staging SSH. Default: iap.
   --assume-managed-backup         Skip live Cloud SQL backup/PITR verification after
                                   explicitly confirming managed backups.
   --apply                         With "verify", reconcile GCP backend/firewall first.
@@ -56,7 +63,11 @@ Options:
 
 Environment:
   GCP_PROJECT, GCP_ZONE, GCP_APP_INSTANCE, GCP_CLOUDSQL_INSTANCE,
-  GCP_CLOUDSQL_HOST, GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS, GCP_SSH_MODE
+  GCP_CLOUDSQL_HOST, GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS, GCP_SSH_MODE,
+  GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS, GCP_REMOTE_DEPLOY_TIMEOUT_SECONDS,
+  GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS, GCP_SSH_COMMAND_TIMEOUT_SECONDS,
+  GCP_SSH_CONNECT_TIMEOUT_SECONDS, GCP_SSH_ALIVE_INTERVAL_SECONDS,
+  GCP_SSH_ALIVE_COUNT_MAX
 EOF
 }
 
@@ -142,6 +153,31 @@ require_command() {
   fi
 }
 
+require_positive_integer() {
+  name="$1"
+  value="$2"
+  case "$value" in
+    ''|*[!0-9]*)
+      printf '%s must be a positive integer, got: %s\n' "$name" "$value" >&2
+      exit 2
+      ;;
+  esac
+  if [ "$value" -le 0 ]; then
+    printf '%s must be greater than zero, got: %s\n' "$name" "$value" >&2
+    exit 2
+  fi
+}
+
+validate_gcp_remote_timing() {
+  require_positive_integer GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS "$GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS"
+  require_positive_integer GCP_REMOTE_DEPLOY_TIMEOUT_SECONDS "$GCP_REMOTE_DEPLOY_TIMEOUT_SECONDS"
+  require_positive_integer GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS "$GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS"
+  require_positive_integer GCP_SSH_COMMAND_TIMEOUT_SECONDS "$GCP_SSH_COMMAND_TIMEOUT_SECONDS"
+  require_positive_integer GCP_SSH_CONNECT_TIMEOUT_SECONDS "$GCP_SSH_CONNECT_TIMEOUT_SECONDS"
+  require_positive_integer GCP_SSH_ALIVE_INTERVAL_SECONDS "$GCP_SSH_ALIVE_INTERVAL_SECONDS"
+  require_positive_integer GCP_SSH_ALIVE_COUNT_MAX "$GCP_SSH_ALIVE_COUNT_MAX"
+}
+
 has_git_checkout() {
   [ -d "$ROOT_DIR/.git" ] &&
     command -v git >/dev/null 2>&1 &&
@@ -178,40 +214,51 @@ require_rollback_skip_migrations_gate() {
   fi
 }
 
+run_command_with_timeout() {
+  timeout_seconds="$1"
+  shift
+  python3 -c '
+import subprocess
+import sys
+
+timeout_seconds = float(sys.argv[1])
+command = sys.argv[2:]
+
+try:
+    completed = subprocess.run(command, stdin=sys.stdin.buffer, timeout=timeout_seconds)
+except subprocess.TimeoutExpired:
+    printable = " ".join(command[:4])
+    if len(command) > 4:
+        printable += " ..."
+    print(f"Timed out after {timeout_seconds:g}s: {printable}", file=sys.stderr)
+    raise SystemExit(124)
+
+raise SystemExit(completed.returncode)
+' "$timeout_seconds" "$@"
+}
+
 gcp_compute_ssh() {
   case "$GCP_SSH_MODE" in
     iap)
-      gcloud compute ssh "$GCP_APP_INSTANCE" \
+      run_command_with_timeout "$GCP_SSH_COMMAND_TIMEOUT_SECONDS" \
+        gcloud compute ssh "$GCP_APP_INSTANCE" \
         --project "$GCP_PROJECT" \
         --zone "$GCP_ZONE" \
         --tunnel-through-iap \
+        --ssh-flag="-o ConnectTimeout=$GCP_SSH_CONNECT_TIMEOUT_SECONDS" \
+        --ssh-flag="-o ServerAliveInterval=$GCP_SSH_ALIVE_INTERVAL_SECONDS" \
+        --ssh-flag="-o ServerAliveCountMax=$GCP_SSH_ALIVE_COUNT_MAX" \
         "$@"
       ;;
     direct)
-      gcloud compute ssh "$GCP_APP_INSTANCE" \
+      run_command_with_timeout "$GCP_SSH_COMMAND_TIMEOUT_SECONDS" \
+        gcloud compute ssh "$GCP_APP_INSTANCE" \
         --project "$GCP_PROJECT" \
         --zone "$GCP_ZONE" \
+        --ssh-flag="-o ConnectTimeout=$GCP_SSH_CONNECT_TIMEOUT_SECONDS" \
+        --ssh-flag="-o ServerAliveInterval=$GCP_SSH_ALIVE_INTERVAL_SECONDS" \
+        --ssh-flag="-o ServerAliveCountMax=$GCP_SSH_ALIVE_COUNT_MAX" \
         "$@"
-      ;;
-    *)
-      printf 'Invalid GCP_SSH_MODE: %s (expected iap or direct)\n' "$GCP_SSH_MODE" >&2
-      exit 2
-      ;;
-  esac
-}
-
-gcp_compute_scp() {
-  case "$GCP_SSH_MODE" in
-    iap)
-      gcloud compute scp "$@" \
-        --project "$GCP_PROJECT" \
-        --zone "$GCP_ZONE" \
-        --tunnel-through-iap
-      ;;
-    direct)
-      gcloud compute scp "$@" \
-        --project "$GCP_PROJECT" \
-        --zone "$GCP_ZONE"
       ;;
     *)
       printf 'Invalid GCP_SSH_MODE: %s (expected iap or direct)\n' "$GCP_SSH_MODE" >&2
@@ -434,9 +481,117 @@ ensure_clean_committed_checkout() {
   fi
 }
 
+print_remote_deploy_log_tail() {
+  remote_log="$1"
+  lines="${2:-120}"
+  gcp_compute_ssh \
+    --command "tail -n '$lines' '$remote_log' 2>/dev/null || true" || true
+}
+
+wait_for_remote_deploy() {
+  remote_log="$1"
+  remote_pid_file="$2"
+  timeout_seconds="$3"
+  interval_seconds="$4"
+  max_alive_timeouts="$5"
+  elapsed_seconds=0
+  last_progress=""
+  ssh_failures=0
+  alive_timeout_count=0
+
+  printf 'Waiting for remote deploy to finish (remote log: %s, timeout %ss)\n' "$remote_log" "$timeout_seconds"
+  while :; do
+    if poll_output="$(
+      gcp_compute_ssh \
+        --command "if [ -f '$remote_log' ]; then grep 'REMOTE_INSTALL_EXIT_STATUS=' '$remote_log' 2>/dev/null | tail -n 1 || true; grep -E '^(==>|Deployment complete|Public edge health check passed|.*Container .* Started|.* is healthy|.* Compiling hms-|.* Finished |.* Built )' '$remote_log' 2>/dev/null | tail -n 1 || true; fi; if [ -f '$remote_pid_file' ]; then pid=\$(cat '$remote_pid_file' 2>/dev/null || true); if [ -n \"\$pid\" ]; then if kill -0 \"\$pid\" 2>/dev/null; then printf 'REMOTE_INSTALL_PID_ALIVE=%s\n' \"\$pid\"; else printf 'REMOTE_INSTALL_PID_DEAD=%s\n' \"\$pid\"; fi; fi; fi" \
+        2>&1
+    )"; then
+      ssh_failures=0
+    else
+      ssh_failures=$((ssh_failures + 1))
+      if [ "$ssh_failures" -eq 1 ] || [ $((ssh_failures % 4)) -eq 0 ]; then
+        printf '\nRemote deploy poll failed (%s consecutive); deploy may still be running. Last SSH output:\n' "$ssh_failures" >&2
+        printf '%s\n' "$poll_output" | tail -n 8 >&2
+      else
+        printf '!'
+      fi
+      poll_output=""
+    fi
+    status_line="$(printf '%s\n' "$poll_output" | grep 'REMOTE_INSTALL_EXIT_STATUS=' | tail -n 1 || true)"
+    pid_alive_line="$(printf '%s\n' "$poll_output" | grep 'REMOTE_INSTALL_PID_ALIVE=' | tail -n 1 || true)"
+    pid_dead_line="$(printf '%s\n' "$poll_output" | grep 'REMOTE_INSTALL_PID_DEAD=' | tail -n 1 || true)"
+    progress_line="$(printf '%s\n' "$poll_output" | grep -v '^REMOTE_INSTALL_' | tail -n 1 || true)"
+
+    if printf '%s\n' "$status_line" | grep -Fx 'REMOTE_INSTALL_EXIT_STATUS=0' >/dev/null 2>&1; then
+      printf '\nRemote deploy finished successfully.\n'
+      return 0
+    fi
+
+    if [ -n "$status_line" ]; then
+      printf '\nRemote deploy failed: %s\n' "$status_line" >&2
+      printf 'Recent remote deploy log:\n' >&2
+      print_remote_deploy_log_tail "$remote_log" 160 >&2
+      return 1
+    fi
+
+    if [ -n "$pid_dead_line" ]; then
+      late_status_line="$(
+        gcp_compute_ssh \
+          --command "grep 'REMOTE_INSTALL_EXIT_STATUS=' '$remote_log' 2>/dev/null | tail -n 1 || true" \
+          2>/dev/null || true
+      )"
+      if printf '%s\n' "$late_status_line" | grep -Fx 'REMOTE_INSTALL_EXIT_STATUS=0' >/dev/null 2>&1; then
+        printf '\nRemote deploy finished successfully.\n'
+        return 0
+      fi
+      if [ -n "$late_status_line" ]; then
+        printf '\nRemote deploy failed: %s\n' "$late_status_line" >&2
+        printf 'Recent remote deploy log:\n' >&2
+        print_remote_deploy_log_tail "$remote_log" 160 >&2
+        return 1
+      fi
+      printf '\nRemote deploy process exited before writing a status marker: %s\n' "$pid_dead_line" >&2
+      printf 'Recent remote deploy log:\n' >&2
+      print_remote_deploy_log_tail "$remote_log" 160 >&2
+      return 1
+    fi
+
+    if [ -n "$progress_line" ] && [ "$progress_line" != "$last_progress" ]; then
+      printf '%s\n' "$progress_line"
+      last_progress="$progress_line"
+    else
+      printf '.'
+    fi
+
+    sleep "$interval_seconds"
+    elapsed_seconds=$((elapsed_seconds + interval_seconds))
+    if [ "$elapsed_seconds" -gt "$timeout_seconds" ]; then
+      if [ -n "$pid_alive_line" ]; then
+        alive_timeout_count=$((alive_timeout_count + 1))
+        if [ "$alive_timeout_count" -ge "$max_alive_timeouts" ]; then
+          printf '\nRemote deploy is still running after %s timeout windows (%s); refusing to wait forever.\n' "$alive_timeout_count" "$pid_alive_line" >&2
+          printf 'The remote lock remains in place while the installer is alive. Recent remote deploy log:\n' >&2
+          print_remote_deploy_log_tail "$remote_log" 160 >&2
+          return 1
+        fi
+        printf '\nRemote deploy is still running after %ss (%s); continuing to avoid an ambiguous deploy state.\n' "$timeout_seconds" "$pid_alive_line" >&2
+        elapsed_seconds=0
+      else
+        break
+      fi
+    fi
+  done
+
+  printf '\nTimed out waiting for remote deploy after %ss.\n' "$timeout_seconds" >&2
+  printf 'Recent remote deploy log:\n' >&2
+  print_remote_deploy_log_tail "$remote_log" 160 >&2
+  return 1
+}
+
 run_gcp_remote() {
   require_command git
   validate_gcp_remote_root
+  validate_gcp_remote_timing
   if [ "$SKIP_MIGRATIONS" = "true" ]; then
     printf '%s\n' '--skip-migrations is only allowed for in-place rollback runtime recreation.' >&2
     exit 2
@@ -447,12 +602,15 @@ run_gcp_remote() {
   fi
 
   sha="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)"
+  remote_deploy_id="$sha-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
   if [ "$DRY_RUN" = "true" ]; then
     print_selected
     printf 'Would archive committed SHA: %s\n' "$sha"
     printf 'Would use GCP SSH mode: %s\n' "$GCP_SSH_MODE"
-    printf 'Would upload to: %s:%s\n' "$GCP_APP_INSTANCE" "/tmp/hms-deploy-$sha"
+    printf 'Would stream archive over SSH to: %s:%s\n' "$GCP_APP_INSTANCE" "/tmp/hms-deploy-$remote_deploy_id"
+    printf 'Would verify remote archive byte count before install.\n'
+    printf 'Would run detached remote installer and poll /tmp/hms-deploy-%s.log.\n' "$remote_deploy_id"
     printf 'Would deploy into: %s\n' "$GCP_REMOTE_ROOT"
     printf 'Would verify Cloud SQL backups/PITR before migrations.\n'
     case "${GCP_EDGE_VERIFY:-required}" in
@@ -469,31 +627,101 @@ run_gcp_remote() {
   require_command gcloud
   require_command gzip
   require_command mktemp
+  require_command python3
+  require_command wc
+  require_command date
   ensure_clean_committed_checkout
   validate_migration_versions_in "$ROOT_DIR"
   confirm_external_database_backup
 
   archive="$(mktemp "${TMPDIR:-/tmp}/hms-${sha}.XXXXXX.tgz")"
-  remote_tmp="/tmp/hms-deploy-$sha"
+  runner="$(mktemp "${TMPDIR:-/tmp}/hms-remote-runner-${sha}.XXXXXX.sh")"
+  remote_tmp="/tmp/hms-deploy-$remote_deploy_id"
   archive_name="hms-$sha.tgz"
+  remote_log="/tmp/hms-deploy-$remote_deploy_id.log"
+  remote_pid_file="$remote_tmp/install.pid"
 
   cleanup() {
-    rm -f "$archive"
+    rm -f "$archive" "$runner"
   }
   trap cleanup EXIT HUP INT TERM
 
   printf 'Packaging committed checkout %s...\n' "$sha"
   git -C "$ROOT_DIR" archive --format=tar HEAD | gzip >"$archive"
+  archive_bytes="$(wc -c <"$archive" | tr -d '[:space:]')"
 
-  printf 'Uploading deploy archive to %s...\n' "$GCP_APP_INSTANCE"
+  {
+    printf '#!/usr/bin/env sh\n'
+    printf 'cd "%s"\n' "$remote_tmp"
+    printf 'lock_dir="/tmp/hms-deploy.lock"\n'
+    printf 'if ! mkdir "$lock_dir" 2>/dev/null; then\n'
+    printf '  lock_pid="$(sed -n '\''s/^runner_pid=//p'\'' "$lock_dir/info" 2>/dev/null | tail -n 1 || true)"\n'
+    printf '  if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then\n'
+    printf '    printf "Removing stale HMS deploy lock for dead runner pid %%s\\n" "$lock_pid" >&2\n'
+    printf '    stale_lock_dir="${lock_dir}.stale.$$"\n'
+    printf '    mv "$lock_dir" "$stale_lock_dir" 2>/dev/null || {\n'
+    printf '      printf "Another HMS deploy changed the lock during stale-lock cleanup.\\n" >&2\n'
+    printf '      printf "\\nREMOTE_INSTALL_EXIT_STATUS=75\\n"\n'
+    printf '      exit 75\n'
+    printf '    }\n'
+    printf '    mkdir "$lock_dir" 2>/dev/null || {\n'
+    printf '      mv "$stale_lock_dir" "$lock_dir" 2>/dev/null || true\n'
+    printf '      printf "Another HMS deploy is already running and won the lock retry.\\n" >&2\n'
+    printf '      printf "\\nREMOTE_INSTALL_EXIT_STATUS=75\\n"\n'
+    printf '      exit 75\n'
+    printf '    }\n'
+    printf '    rm -rf "$stale_lock_dir"\n'
+    printf '  else\n'
+    printf '  printf "Another HMS deploy is already running. Existing lock:\\n" >&2\n'
+    printf '  cat "$lock_dir/info" >&2 2>/dev/null || true\n'
+    printf '  printf "\\nREMOTE_INSTALL_EXIT_STATUS=75\\n"\n'
+    printf '  exit 75\n'
+    printf '  fi\n'
+    printf 'fi\n'
+    printf 'printf "runner_pid=$$\\n" >"$lock_dir/info"\n'
+    printf 'trap '\''rm -rf "$lock_dir"'\'' EXIT HUP INT TERM\n'
+    printf 'printf "sha=%s\\nrunner_pid=$$\\nremote_tmp=%s\\nremote_log=%s\\nstarted_at=%s\\n" >"$lock_dir/info"\n' "$sha" "$remote_tmp" "$remote_log" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'EXTERNAL_DB_BACKUP_CONFIRMED=true GCP_EDGE_VERIFY=skip sh ./install-archive.sh "./%s" "%s" "%s"\n' "$archive_name" "$sha" "$GCP_REMOTE_ROOT"
+    printf 'status=$?\n'
+    printf 'printf "\\nREMOTE_INSTALL_EXIT_STATUS=%%s\\n" "$status"\n'
+    printf 'exit "$status"\n'
+  } >"$runner"
+
+  printf 'Streaming deploy archive to %s over SSH...\n' "$GCP_APP_INSTANCE"
   gcp_compute_ssh \
     --command "rm -rf '$remote_tmp' && mkdir -p '$remote_tmp'"
-  gcp_compute_scp "$archive" "$GCP_APP_INSTANCE:$remote_tmp/$archive_name"
-  gcp_compute_scp "$ROOT_DIR/ops/gcp-staging/install-archive.sh" "$GCP_APP_INSTANCE:$remote_tmp/install-archive.sh"
-
-  printf 'Installing archive and running deploy on %s...\n' "$GCP_APP_INSTANCE"
   gcp_compute_ssh \
-    --command "cd '$remote_tmp' && EXTERNAL_DB_BACKUP_CONFIRMED='true' GCP_EDGE_VERIFY='skip' sh ./install-archive.sh './$archive_name' '$sha' '/opt/hms'"
+    --command "cat > '$remote_tmp/$archive_name'" <"$archive"
+  remote_archive_bytes="$(
+    gcp_compute_ssh \
+      --command "wc -c < '$remote_tmp/$archive_name'"
+  )"
+  remote_archive_bytes="$(printf '%s' "$remote_archive_bytes" | tr -d '[:space:]')"
+  if [ "$remote_archive_bytes" != "$archive_bytes" ]; then
+    printf 'Remote archive byte count mismatch for %s.\n' "$remote_tmp/$archive_name" >&2
+    printf 'local bytes=%s remote bytes=%s\n' "$archive_bytes" "$remote_archive_bytes" >&2
+    exit 1
+  fi
+  gcp_compute_ssh \
+    --command "cat > '$remote_tmp/install-archive.sh' && chmod +x '$remote_tmp/install-archive.sh'" <"$ROOT_DIR/ops/gcp-staging/install-archive.sh"
+  gcp_compute_ssh \
+    --command "cat > '$remote_tmp/run-install.sh' && chmod +x '$remote_tmp/run-install.sh'" <"$runner"
+
+  printf 'Starting detached archive install on %s...\n' "$GCP_APP_INSTANCE"
+  start_status=0
+  start_output="$(
+    gcp_compute_ssh \
+      --command "cd '$remote_tmp' && rm -f '$remote_log' '$remote_pid_file' && (nohup sh ./run-install.sh >'$remote_log' 2>&1 </dev/null & echo \$! > '$remote_pid_file') && printf 'Remote install pid: ' && cat '$remote_pid_file'" \
+      2>&1
+  )" || start_status="$?"
+  if [ "$start_status" -ne 0 ]; then
+    printf 'Remote installer start command returned %s; polling pid/log in case it launched before SSH disconnected.\n' "$start_status" >&2
+    printf '%s\n' "$start_output" | tail -n 12 >&2
+  else
+    printf '%s\n' "$start_output"
+  fi
+
+  wait_for_remote_deploy "$remote_log" "$remote_pid_file" "$GCP_REMOTE_DEPLOY_TIMEOUT_SECONDS" "$GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS" "$GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS"
 
   case "${GCP_EDGE_VERIFY:-required}" in
     skip)

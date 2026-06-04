@@ -111,13 +111,13 @@ Example local medium seed:
 
 ```bash
 cd backend-rs
-HMS_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/hms_perf_medium \
+HMS_DATABASE_URL="$HMS_LOCAL_PERF_DATABASE_URL" \
 HMS_PROVISION_BASELINE=true \
 HMS_SEED_DEMO_DATA=true \
 HMS_PERF_SEED_SCALE=medium \
 HMS_ENV=development \
-HMS_BOOTSTRAP_ADMIN_EMAIL=owner@hms.local \
-HMS_BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123! \
+HMS_BOOTSTRAP_ADMIN_EMAIL="$HMS_LOCAL_BOOTSTRAP_ADMIN_EMAIL" \
+HMS_BOOTSTRAP_ADMIN_PASSWORD="$HMS_LOCAL_BOOTSTRAP_ADMIN_PASSWORD" \
 cargo run -p hms-migrator
 ```
 

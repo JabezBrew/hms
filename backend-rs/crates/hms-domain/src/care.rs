@@ -108,6 +108,7 @@ pub struct AppointmentListGetQuery {
     pub date: Option<NaiveDate>,
     pub clinic_id: Option<Uuid>,
     pub status: Option<AppointmentStatus>,
+    pub search: Option<String>,
 }
 
 impl From<AppointmentListGetQuery> for AppointmentListQuery {
@@ -118,7 +119,7 @@ impl From<AppointmentListGetQuery> for AppointmentListQuery {
             date: value.date,
             clinic_id: value.clinic_id,
             status: value.status,
-            search: None,
+            search: value.search,
         }
     }
 }
@@ -155,6 +156,9 @@ pub struct EncounterListQuery {
 pub struct EncounterListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub patient_search: Option<String>,
+    pub practitioner_search: Option<String>,
     pub date: Option<NaiveDate>,
     pub status: Option<EncounterStatus>,
     pub encounter_type: Option<EncounterType>,
@@ -165,9 +169,9 @@ impl From<EncounterListGetQuery> for EncounterListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            patient_id: None,
-            patient_search: None,
-            practitioner_search: None,
+            patient_id: value.patient_id,
+            patient_search: value.patient_search,
+            practitioner_search: value.practitioner_search,
             date: value.date,
             status: value.status,
             encounter_type: value.encounter_type,
@@ -359,4 +363,49 @@ pub struct CareTeamAssignment {
 pub struct CreateCareTeamAssignmentRequest {
     pub user_id: Uuid,
     pub role: CareTeamRole,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appointment_get_query_preserves_search_filter() {
+        let query = AppointmentListQuery::from(AppointmentListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            date: None,
+            clinic_id: Some(Uuid::from_u128(0x200)),
+            status: Some(AppointmentStatus::Scheduled),
+            search: Some("patient".to_owned()),
+        });
+
+        assert_eq!(query.search.as_deref(), Some("patient"));
+        assert_eq!(query.clinic_id, Some(Uuid::from_u128(0x200)));
+        assert!(matches!(query.status, Some(AppointmentStatus::Scheduled)));
+    }
+
+    #[test]
+    fn encounter_get_query_preserves_patient_and_search_filters() {
+        let patient_id = Uuid::from_u128(0x201);
+        let query = EncounterListQuery::from(EncounterListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            patient_id: Some(patient_id),
+            patient_search: Some("patient".to_owned()),
+            practitioner_search: Some("doctor".to_owned()),
+            date: None,
+            status: Some(EncounterStatus::InProgress),
+            encounter_type: Some(EncounterType::Outpatient),
+        });
+
+        assert_eq!(query.patient_id, Some(patient_id));
+        assert_eq!(query.patient_search.as_deref(), Some("patient"));
+        assert_eq!(query.practitioner_search.as_deref(), Some("doctor"));
+        assert!(matches!(query.status, Some(EncounterStatus::InProgress)));
+        assert!(matches!(
+            query.encounter_type,
+            Some(EncounterType::Outpatient)
+        ));
+    }
 }

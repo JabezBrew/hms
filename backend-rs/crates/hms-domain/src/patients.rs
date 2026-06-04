@@ -159,6 +159,8 @@ pub struct PatientListQuery {
 pub struct PatientListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub patient_id: Option<Uuid>,
     pub status: Option<PatientAdministrativeStatus>,
     pub admission_start: Option<NaiveDate>,
     pub admission_end: Option<NaiveDate>,
@@ -177,8 +179,8 @@ impl From<PatientListGetQuery> for PatientListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            search: None,
-            patient_id: None,
+            search: value.search,
+            patient_id: value.patient_id,
             status: value.status,
             admission_start: value.admission_start,
             admission_end: value.admission_end,
@@ -205,6 +207,8 @@ pub struct PatientContextListQuery {
 pub struct PatientContextListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub patient_id: Option<Uuid>,
 }
 
 impl From<PatientContextListGetQuery> for PatientContextListQuery {
@@ -212,8 +216,8 @@ impl From<PatientContextListGetQuery> for PatientContextListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            search: None,
-            patient_id: None,
+            search: value.search,
+            patient_id: value.patient_id,
         }
     }
 }
@@ -233,4 +237,51 @@ pub struct UpdatePatientRequest {
     pub date_of_birth: Option<NaiveDate>,
     pub sex: Option<Sex>,
     pub status: Option<PatientAdministrativeStatus>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn patient_list_get_query_preserves_filter_and_ordering_fields() {
+        let patient_id = Uuid::from_u128(0x400);
+        let query = PatientListQuery::from(PatientListGetQuery {
+            cursor: Some("cursor".to_owned()),
+            limit: Some(10),
+            search: Some("Sortorderprobe".to_owned()),
+            patient_id: Some(patient_id),
+            status: Some(PatientAdministrativeStatus::Active),
+            admission_start: None,
+            admission_end: None,
+            ward_id: None,
+            admission_status: None,
+            attending_id: None,
+            age_min: Some(18),
+            age_max: Some(99),
+            include_total: Some(true),
+            ordering: Some("name".to_owned()),
+        });
+
+        assert_eq!(query.search.as_deref(), Some("Sortorderprobe"));
+        assert_eq!(query.patient_id, Some(patient_id));
+        assert_eq!(query.ordering.as_deref(), Some("name"));
+        assert_eq!(query.age_min, Some(18));
+        assert_eq!(query.age_max, Some(99));
+        assert_eq!(query.include_total, Some(true));
+    }
+
+    #[test]
+    fn patient_context_get_query_preserves_patient_and_search_filters() {
+        let patient_id = Uuid::from_u128(0x401);
+        let query = PatientContextListQuery::from(PatientContextListGetQuery {
+            cursor: None,
+            limit: Some(5),
+            search: Some("context".to_owned()),
+            patient_id: Some(patient_id),
+        });
+
+        assert_eq!(query.search.as_deref(), Some("context"));
+        assert_eq!(query.patient_id, Some(patient_id));
+    }
 }

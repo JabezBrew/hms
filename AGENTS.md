@@ -136,11 +136,20 @@ Do not create standalone clinical patient-data pages such as
 Backend:
 
 ```bash
+docker compose up -d postgres redis
 cd backend-rs
 cargo fmt --all --check
 cargo test --workspace
 cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json
 ```
+
+Rust tests use the Docker Compose Postgres/Redis services by default. Keep
+the local Docker database password in your private shell environment when
+Postgres client tools require it; do not commit or print DB passwords. The
+`hms-db` test support should create and drop isolated `hms_v2_test_*` databases
+inside the Docker Postgres instance with `createdb`/`dropdb`. Do not rely on a
+machine-local temporary Postgres cluster or Homebrew `initdb` path for HMS Rust
+verification.
 
 Focused backend suites:
 

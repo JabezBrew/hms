@@ -12,14 +12,15 @@ INSTALL_ARCHIVE = REPO_ROOT / 'ops' / 'gcp-staging' / 'install-archive.sh'
 
 
 def test_deploy_frontdoor_shell_syntax_is_valid():
-    result = subprocess.run(
-        ['sh', '-n', str(ROOT_DEPLOY), str(OPS_DEPLOY), str(INSTALL_ARCHIVE)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    for script in (ROOT_DEPLOY, OPS_DEPLOY, INSTALL_ARCHIVE):
+        result = subprocess.run(
+            ['sh', '-n', str(script)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
 
-    assert result.returncode == 0, result.stderr
+        assert result.returncode == 0, f'{script}: {result.stderr}'
 
 
 def test_deploy_help_shows_short_happy_paths():
@@ -36,6 +37,9 @@ def test_deploy_help_shows_short_happy_paths():
     assert './deploy verify' in result.stdout
     assert '--edge-verify=auto|required|skip' in result.stdout
     assert 'GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS' in result.stdout
+    assert 'GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS' in result.stdout
+    assert 'GCP_SSH_COMMAND_TIMEOUT_SECONDS' in result.stdout
+    assert 'GCP_SSH_CONNECT_TIMEOUT_SECONDS' in result.stdout
 
 
 def test_deploy_remote_dry_run_defaults_to_gcp_staging():
@@ -50,6 +54,9 @@ def test_deploy_remote_dry_run_defaults_to_gcp_staging():
     assert 'Target: gcp-staging' in result.stdout
     assert 'Mode: remote' in result.stdout
     assert 'Would archive committed SHA:' in result.stdout
+    assert 'Would stream archive over SSH' in result.stdout
+    assert 'Would verify remote archive byte count before install.' in result.stdout
+    assert 'Would run detached remote installer' in result.stdout
     assert 'Would verify edge after remote deploy.' in result.stdout
 
 
@@ -113,6 +120,22 @@ def test_deploy_remote_rejects_noncanonical_gcp_root():
     assert 'Current staging deploy root is /opt/hms' in result.stderr
 
 
+def test_deploy_remote_rejects_invalid_timing_env():
+    env = os.environ.copy()
+    env['GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS'] = '0'
+
+    result = subprocess.run(
+        [str(ROOT_DEPLOY), 'staging', '--dry-run'],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert 'GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS must be greater than zero' in result.stderr
+
+
 def test_deploy_frontdoor_preserves_safety_in_script_text():
     script = OPS_DEPLOY.read_text(encoding='utf-8')
     installer = INSTALL_ARCHIVE.read_text(encoding='utf-8')
@@ -130,7 +153,28 @@ def test_deploy_frontdoor_preserves_safety_in_script_text():
     assert 'ipAddresses.type,ipAddresses.ipAddress' in script
     assert 'Using explicit EXTERNAL_DB_BACKUP_CONFIRMED=true' not in script
     assert 'HMS_DEPLOY_ALLOW_LOCAL_IN_PLACE' not in script
-    assert "GCP_EDGE_VERIFY='skip'" in script
+    assert 'gcloud compute scp' not in script
+    assert 'run_command_with_timeout "$GCP_SSH_COMMAND_TIMEOUT_SECONDS"' in script
+    assert 'Timed out after {timeout_seconds:g}s' in script
+    assert '--ssh-flag="-o ConnectTimeout=$GCP_SSH_CONNECT_TIMEOUT_SECONDS"' in script
+    assert '--ssh-flag="-o ServerAliveInterval=$GCP_SSH_ALIVE_INTERVAL_SECONDS"' in script
+    assert 'cat > \'$remote_tmp/$archive_name\'' in script
+    assert 'remote_archive_bytes' in script
+    assert 'nohup sh ./run-install.sh' in script
+    assert 'install.pid' in script
+    assert 'REMOTE_INSTALL_EXIT_STATUS' in script
+    assert 'REMOTE_INSTALL_PID_ALIVE' in script
+    assert 'REMOTE_INSTALL_PID_DEAD' in script
+    assert 'continuing to avoid an ambiguous deploy state' in script
+    assert 'refusing to wait forever' in script
+    assert 'late_status_line' in script
+    assert 'polling pid/log in case it launched before SSH disconnected' in script
+    assert 'hms-deploy.lock' in script
+    assert 'stale_lock_dir' in script
+    assert 'runner_pid=$$' in script
+    assert 'Removing stale HMS deploy lock' in script
+    assert 'require_positive_integer' in script
+    assert 'GCP_EDGE_VERIFY=skip sh ./install-archive.sh' in script
     assert 'EXTERNAL_DB_BACKUP_CONFIRMED="true"' in installer
     assert 'restore_previous_tree' in installer
     assert 'Recreating runtime from restored tree' in installer

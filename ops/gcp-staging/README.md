@@ -121,13 +121,33 @@ Use the root deploy front door for normal GCP staging deploys from this laptop:
 
 That command archives the committed checkout, uploads it to `hms-gcp-app-1`,
 preserves the private env file on the VM, deploys from `/opt/hms`, and runs the
-GCP edge verifier from the operator machine. It refuses dirty working trees so
-uncommitted local changes do not accidentally become a staging release. It also
-verifies Cloud SQL backups, PITR, and deletion protection through GCP before
-allowing migrations. The backup gate also verifies that the Cloud SQL instance
-private IP matches the expected deployment database host and that there is a
-recent successful backup run. The default freshness window is 36 hours and can
-be adjusted with `GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS`.
+GCP edge verifier from the operator machine. The archive is streamed over SSH
+instead of `gcloud compute scp`, and the wrapper verifies the remote byte count
+before it starts the VM-side install. Each run gets a unique remote temp
+directory and log, and the VM-side install uses `/tmp/hms-deploy.lock` so a
+second deploy cannot race an active one. The install runs detached and the
+wrapper polls `/tmp/hms-deploy-<run-id>.log` plus the remote PID for a final
+`REMOTE_INSTALL_EXIT_STATUS` marker, so a long build, SSH session reset, or
+dead remote runner does not require remembering a second deploy command. It
+refuses dirty working trees so uncommitted local changes do not accidentally
+become a staging release. It also verifies Cloud SQL backups, PITR, and
+deletion protection through GCP before allowing migrations. The backup gate
+also verifies that the Cloud SQL instance private IP matches the expected
+deployment database host and that there is a recent successful backup run. The
+default freshness window is 36 hours and can be adjusted with
+`GCP_CLOUDSQL_BACKUP_MAX_AGE_HOURS`.
+
+The remote deploy poll defaults to a 15-second interval and a 40-minute timeout.
+Override with `GCP_REMOTE_DEPLOY_POLL_INTERVAL_SECONDS` or
+`GCP_REMOTE_DEPLOY_TIMEOUT_SECONDS` only for unusual incident work. If the
+timeout window elapses while the remote installer PID is still alive, the
+wrapper keeps waiting instead of returning an ambiguous failure while staging
+may still be changing. It refuses to wait forever after three live-PID timeout
+windows by default; override `GCP_REMOTE_DEPLOY_MAX_ALIVE_TIMEOUTS` only during
+incident work. SSH uses bounded connect and keepalive settings; override
+`GCP_SSH_COMMAND_TIMEOUT_SECONDS`, `GCP_SSH_CONNECT_TIMEOUT_SECONDS`,
+`GCP_SSH_ALIVE_INTERVAL_SECONDS`, or `GCP_SSH_ALIVE_COUNT_MAX` only when
+debugging the IAP path itself.
 
 When already SSH'd into `/opt/hms` on the VM, use:
 

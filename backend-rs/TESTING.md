@@ -94,9 +94,14 @@ cargo test -p hms-db laboratory -- --nocapture
 cargo test -p hms-api --test auth_contract --test patients_contract --test ward_contract
 ```
 
-The test database lifecycle uses `HMS_TEST_DATABASE_URL` when supplied. Without
-it, tests try a local Postgres database first, then a temporary local Postgres
-cluster if the Postgres binaries are available.
+Rust DB-backed tests should run against the root Docker Compose `postgres`
+service. Start it with `docker compose up -d postgres redis`, then keep any
+client-tool password in a private shell environment; do not commit or print DB
+passwords. Without `HMS_TEST_DATABASE_URL`, the `hms-db` test support uses
+`createdb`/`dropdb` to create isolated `hms_v2_test_*` databases on
+`127.0.0.1:5432`. `HMS_TEST_DATABASE_URL` is only for explicitly pinning tests
+to a supplied database, and agents should not depend on a machine-local
+temporary Postgres cluster for normal HMS verification.
 
 ## Failure Locality
 

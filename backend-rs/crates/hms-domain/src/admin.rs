@@ -27,6 +27,7 @@ pub struct AuditEventListQuery {
 pub struct AuditEventListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub search: Option<String>,
     pub category: Option<String>,
     pub action: Option<String>,
     pub start_date: Option<NaiveDate>,
@@ -39,7 +40,7 @@ impl From<AuditEventListGetQuery> for AuditEventListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            search: None,
+            search: value.search,
             category: value.category,
             action: value.action,
             start_date: value.start_date,
@@ -401,4 +402,27 @@ pub struct AuditEventListItem {
     pub resource_type: String,
     pub resource_id: Option<Uuid>,
     pub occurred_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audit_event_get_query_preserves_search_filter() {
+        let query = AuditEventListQuery::from(AuditEventListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            search: Some("delegation".to_owned()),
+            category: Some("ADMIN".to_owned()),
+            action: Some("CREATE".to_owned()),
+            start_date: None,
+            end_date: None,
+            ordering: None,
+        });
+
+        assert_eq!(query.search.as_deref(), Some("delegation"));
+        assert_eq!(query.category.as_deref(), Some("ADMIN"));
+        assert_eq!(query.action.as_deref(), Some("CREATE"));
+    }
 }

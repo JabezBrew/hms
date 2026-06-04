@@ -49,7 +49,7 @@ runbooks, prefer the newer source of truth.
 - Rust stable toolchain
 - Node.js 20+
 - Docker Desktop or another Docker daemon for local PostgreSQL/Redis
-- PostgreSQL client tools if you want Rust tests to create isolated local test
+- PostgreSQL client tools so Rust tests can create isolated Docker Postgres
   databases with `createdb`/`dropdb`
 
 ### Local Dependencies
@@ -70,11 +70,17 @@ cargo fmt --all --check
 cargo test --workspace
 ```
 
+Rust tests are expected to use the Docker Compose `postgres` service on
+`127.0.0.1:5432`. Keep the Docker database password in your private shell
+environment when Postgres client tools require it; do not commit or print DB
+passwords. The `hms-db` test support creates and drops isolated
+`hms_v2_test_*` databases inside that Docker Postgres instance.
+
 Run the API locally:
 
 ```bash
 cd backend-rs
-HMS_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/hms \
+HMS_DATABASE_URL="$HMS_LOCAL_DATABASE_URL" \
 HMS_API_LISTEN_ADDR=127.0.0.1:8080 \
 cargo run -p hms-api
 ```

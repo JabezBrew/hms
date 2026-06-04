@@ -115,6 +115,7 @@ pub struct BillingListQuery {
 pub struct BillingListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
 }
 
 impl From<BillingListGetQuery> for BillingListQuery {
@@ -122,7 +123,7 @@ impl From<BillingListGetQuery> for BillingListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            patient_id: None,
+            patient_id: value.patient_id,
         }
     }
 }
@@ -142,6 +143,8 @@ pub struct InvoiceListQuery {
 pub struct InvoiceListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
     pub status: Option<InvoiceStatus>,
     pub date_from: Option<NaiveDate>,
     pub date_to: Option<NaiveDate>,
@@ -152,8 +155,8 @@ impl From<InvoiceListGetQuery> for InvoiceListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            patient_id: None,
-            search: None,
+            patient_id: value.patient_id,
+            search: value.search,
             status: value.status,
             date_from: value.date_from,
             date_to: value.date_to,
@@ -177,6 +180,8 @@ pub struct PaymentListQuery {
 pub struct PaymentListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
     pub status: Option<PaymentStatus>,
     pub payment_method: Option<PaymentMethod>,
     pub date_from: Option<NaiveDate>,
@@ -188,8 +193,8 @@ impl From<PaymentListGetQuery> for PaymentListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            patient_id: None,
-            search: None,
+            patient_id: value.patient_id,
+            search: value.search,
             status: value.status,
             payment_method: value.payment_method,
             date_from: value.date_from,
@@ -213,6 +218,8 @@ pub struct ClaimListQuery {
 pub struct ClaimListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
     pub status: Option<ClaimStatus>,
     pub date_from: Option<NaiveDate>,
     pub date_to: Option<NaiveDate>,
@@ -223,8 +230,8 @@ impl From<ClaimListGetQuery> for ClaimListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            patient_id: None,
-            search: None,
+            patient_id: value.patient_id,
+            search: value.search,
             status: value.status,
             date_from: value.date_from,
             date_to: value.date_to,
@@ -278,6 +285,8 @@ pub struct PatientInsuranceListQuery {
 pub struct PatientInsuranceListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
     pub is_active: Option<bool>,
 }
 
@@ -286,8 +295,8 @@ impl From<PatientInsuranceListGetQuery> for PatientInsuranceListQuery {
         Self {
             cursor: value.cursor,
             limit: value.limit,
-            patient_id: None,
-            search: None,
+            patient_id: value.patient_id,
+            search: value.search,
             is_active: value.is_active,
         }
     }
@@ -451,6 +460,7 @@ pub struct PspPaymentIntentListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub status: Option<String>,
+    pub search: Option<String>,
 }
 
 impl From<PspPaymentIntentListGetQuery> for PspPaymentIntentListQuery {
@@ -459,7 +469,7 @@ impl From<PspPaymentIntentListGetQuery> for PspPaymentIntentListQuery {
             cursor: value.cursor,
             limit: value.limit,
             status: value.status,
-            search: None,
+            search: value.search,
         }
     }
 }
@@ -477,6 +487,7 @@ pub struct PspSettlementBatchListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub status: Option<String>,
+    pub search: Option<String>,
 }
 
 impl From<PspSettlementBatchListGetQuery> for PspSettlementBatchListQuery {
@@ -485,7 +496,7 @@ impl From<PspSettlementBatchListGetQuery> for PspSettlementBatchListQuery {
             cursor: value.cursor,
             limit: value.limit,
             status: value.status,
-            search: None,
+            search: value.search,
         }
     }
 }
@@ -503,6 +514,7 @@ pub struct PspSettlementLineListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub match_status: Option<String>,
+    pub search: Option<String>,
 }
 
 impl From<PspSettlementLineListGetQuery> for PspSettlementLineListQuery {
@@ -511,7 +523,7 @@ impl From<PspSettlementLineListGetQuery> for PspSettlementLineListQuery {
             cursor: value.cursor,
             limit: value.limit,
             match_status: value.match_status,
-            search: None,
+            search: value.search,
         }
     }
 }
@@ -535,6 +547,7 @@ pub struct RemittanceLineListGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub match_status: Option<String>,
+    pub search: Option<String>,
 }
 
 impl From<RemittanceLineListGetQuery> for RemittanceLineListQuery {
@@ -543,7 +556,7 @@ impl From<RemittanceLineListGetQuery> for RemittanceLineListQuery {
             cursor: value.cursor,
             limit: value.limit,
             match_status: value.match_status,
-            search: None,
+            search: value.search,
         }
     }
 }
@@ -842,4 +855,111 @@ pub struct OpenCashSessionRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CloseCashSessionRequest {
     pub counted_cash_minor: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn billing_get_query_preserves_patient_filter() {
+        let patient_id = Uuid::from_u128(0x100);
+        let query = BillingListQuery::from(BillingListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            patient_id: Some(patient_id),
+        });
+
+        assert_eq!(query.patient_id, Some(patient_id));
+    }
+
+    #[test]
+    fn invoice_get_query_preserves_patient_and_search_filters() {
+        let patient_id = Uuid::from_u128(0x101);
+        let query = InvoiceListQuery::from(InvoiceListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            patient_id: Some(patient_id),
+            search: Some("INV".to_owned()),
+            status: Some(InvoiceStatus::Issued),
+            date_from: None,
+            date_to: None,
+        });
+
+        assert_eq!(query.patient_id, Some(patient_id));
+        assert_eq!(query.search.as_deref(), Some("INV"));
+        assert!(matches!(query.status, Some(InvoiceStatus::Issued)));
+    }
+
+    #[test]
+    fn billing_get_query_variants_preserve_search_filters() {
+        let patient_id = Uuid::from_u128(0x102);
+
+        let payment = PaymentListQuery::from(PaymentListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            patient_id: Some(patient_id),
+            search: Some("receipt".to_owned()),
+            status: None,
+            payment_method: None,
+            date_from: None,
+            date_to: None,
+        });
+        assert_eq!(payment.patient_id, Some(patient_id));
+        assert_eq!(payment.search.as_deref(), Some("receipt"));
+
+        let claim = ClaimListQuery::from(ClaimListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            patient_id: Some(patient_id),
+            search: Some("claim".to_owned()),
+            status: None,
+            date_from: None,
+            date_to: None,
+        });
+        assert_eq!(claim.patient_id, Some(patient_id));
+        assert_eq!(claim.search.as_deref(), Some("claim"));
+
+        let insurance = PatientInsuranceListQuery::from(PatientInsuranceListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            patient_id: Some(patient_id),
+            search: Some("policy".to_owned()),
+            is_active: Some(true),
+        });
+        assert_eq!(insurance.patient_id, Some(patient_id));
+        assert_eq!(insurance.search.as_deref(), Some("policy"));
+
+        let intent = PspPaymentIntentListQuery::from(PspPaymentIntentListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            status: Some("pending".to_owned()),
+            search: Some("intent".to_owned()),
+        });
+        assert_eq!(intent.search.as_deref(), Some("intent"));
+
+        let batch = PspSettlementBatchListQuery::from(PspSettlementBatchListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            status: Some("open".to_owned()),
+            search: Some("batch".to_owned()),
+        });
+        assert_eq!(batch.search.as_deref(), Some("batch"));
+
+        let line = PspSettlementLineListQuery::from(PspSettlementLineListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            match_status: Some("matched".to_owned()),
+            search: Some("line".to_owned()),
+        });
+        assert_eq!(line.search.as_deref(), Some("line"));
+
+        let remittance = RemittanceLineListQuery::from(RemittanceLineListGetQuery {
+            cursor: None,
+            limit: Some(10),
+            match_status: Some("matched".to_owned()),
+            search: Some("remittance".to_owned()),
+        });
+        assert_eq!(remittance.search.as_deref(), Some("remittance"));
+    }
 }

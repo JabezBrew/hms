@@ -282,6 +282,8 @@ pub struct WardBoardGetQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub ward_id: Option<Uuid>,
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
     pub monitoring_filter: Option<WardBoardMonitoringFilter>,
 }
 
@@ -291,8 +293,8 @@ impl From<WardBoardGetQuery> for WardBoardQuery {
             cursor: value.cursor,
             limit: value.limit,
             ward_id: value.ward_id,
-            patient_id: None,
-            search: None,
+            patient_id: value.patient_id,
+            search: value.search,
             monitoring_filter: value.monitoring_filter,
         }
     }
@@ -575,4 +577,31 @@ pub struct CreateWardStockRequestRequest {
     pub ward_id: Uuid,
     pub requested_item: String,
     pub quantity_requested: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ward_board_get_query_preserves_patient_and_search_filters() {
+        let ward_id = Uuid::from_u128(0x300);
+        let patient_id = Uuid::from_u128(0x301);
+        let query = WardBoardQuery::from(WardBoardGetQuery {
+            cursor: None,
+            limit: Some(10),
+            ward_id: Some(ward_id),
+            patient_id: Some(patient_id),
+            search: Some("monitor".to_owned()),
+            monitoring_filter: Some(WardBoardMonitoringFilter::Alerts),
+        });
+
+        assert_eq!(query.ward_id, Some(ward_id));
+        assert_eq!(query.patient_id, Some(patient_id));
+        assert_eq!(query.search.as_deref(), Some("monitor"));
+        assert!(matches!(
+            query.monitoring_filter,
+            Some(WardBoardMonitoringFilter::Alerts)
+        ));
+    }
 }
