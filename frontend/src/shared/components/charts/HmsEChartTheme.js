@@ -88,6 +88,82 @@ export function createStableBarStyle({ borderRadius, color, opacity = 1 }) {
   };
 }
 
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function createStableStateStyle(normalStyle, stateStyle) {
+  const normal = isObject(normalStyle) ? normalStyle : {};
+  const state = isObject(stateStyle) ? stateStyle : {};
+  return {
+    ...normal,
+    ...state,
+    opacity: state.opacity ?? normal.opacity ?? 1,
+  };
+}
+
+function createStableChartState(series, state) {
+  const resolvedState = isObject(state) ? state : {};
+  const stableState = {
+    ...resolvedState,
+    focus: 'none',
+  };
+
+  if (
+    ['bar', 'line', 'pie', 'scatter'].includes(series?.type) ||
+    isObject(series?.itemStyle) ||
+    isObject(resolvedState.itemStyle)
+  ) {
+    stableState.itemStyle = createStableStateStyle(series?.itemStyle, resolvedState.itemStyle);
+  }
+
+  if (series?.type === 'line' || isObject(series?.lineStyle) || isObject(resolvedState.lineStyle)) {
+    stableState.lineStyle = createStableStateStyle(series?.lineStyle, resolvedState.lineStyle);
+  }
+
+  if (isObject(series?.areaStyle) || isObject(resolvedState.areaStyle)) {
+    stableState.areaStyle = createStableStateStyle(series?.areaStyle, resolvedState.areaStyle);
+  }
+
+  return stableState;
+}
+
+function stabilizeDataItemHoverStates(item) {
+  if (!isObject(item)) return item;
+
+  return {
+    ...item,
+    blur: createStableChartState(item, item.blur),
+    emphasis: createStableChartState(item, item.emphasis),
+    select: createStableChartState(item, item.select),
+  };
+}
+
+export function stabilizeChartOption(option) {
+  if (!isObject(option)) return option;
+
+  const normalizeSeries = (series) => {
+    if (!isObject(series)) return series;
+
+    return {
+      ...series,
+      blur: createStableChartState(series, series.blur),
+      data: Array.isArray(series.data)
+        ? series.data.map(stabilizeDataItemHoverStates)
+        : series.data,
+      emphasis: createStableChartState(series, series.emphasis),
+      select: createStableChartState(series, series.select),
+    };
+  };
+
+  return {
+    ...option,
+    series: Array.isArray(option.series)
+      ? option.series.map(normalizeSeries)
+      : normalizeSeries(option.series),
+  };
+}
+
 export function createBaseChartOption(theme) {
   return {
     backgroundColor: theme.background,

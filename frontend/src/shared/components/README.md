@@ -12,6 +12,7 @@ Scope: shared page shell and global UI providers.
 | `page/PageShell.jsx` | standard route page shell. |
 | `page/PageHeader.jsx` | standard page header/title/action area. |
 | `page/PageState.jsx` | loading, empty, and error states. |
+| `charts/HmsEChart.jsx` | shared ECharts wrapper and HMS chart interaction defaults. |
 | `omni-search/` | global Omni search provider, dialog, actions, and page index. |
 
 ## Invariants
@@ -27,3 +28,5 @@ Scope: shared page shell and global UI providers.
   result group; rows should emphasize MRN, DOB, sex, status, and location for
   disambiguation.
 - Shared components should not own domain-specific data fetching.
+- HMS ECharts surfaces should use `charts/HmsEChart.jsx`; its shared option
+  normalizer keeps hover, blur, and select states from hiding rendered data.

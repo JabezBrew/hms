@@ -6,7 +6,7 @@ import { install as GridSimpleComponent } from 'echarts/lib/component/grid/insta
 import { install as TooltipComponent } from 'echarts/lib/component/tooltip/install.js';
 import { install as CanvasRenderer } from 'echarts/lib/renderer/installCanvasRenderer.js';
 import { cn } from '@/lib/utils';
-import { useChronicleChartTheme } from './HmsEChartTheme';
+import { stabilizeChartOption, useChronicleChartTheme } from './HmsEChartTheme';
 
 registerEChartsModules([
   BarChart,
@@ -35,26 +35,30 @@ export function HmsEChart({
     () => (typeof option === 'function' ? option(theme) : option),
     [option, theme],
   );
+  const stableOption = useMemo(() => stabilizeChartOption(resolvedOption), [resolvedOption]);
   const chartOption = useMemo(() => {
-    if (!resolvedOption) return resolvedOption;
+    if (!stableOption) return stableOption;
 
-    const { legend: _legend, ...optionWithoutLegend } = resolvedOption;
+    const { legend: _legend, ...optionWithoutLegend } = stableOption;
     return optionWithoutLegend;
-  }, [resolvedOption]);
+  }, [stableOption]);
   const legendItems = useMemo(() => {
-    if (!resolvedOption?.legend?.show) return [];
+    if (!stableOption?.legend?.show) return [];
 
-    const series = Array.isArray(resolvedOption.series)
-      ? resolvedOption.series
-      : [resolvedOption.series].filter(Boolean);
+    const series = Array.isArray(stableOption.series)
+      ? stableOption.series
+      : [stableOption.series].filter(Boolean);
 
-    return series
-      .filter((entry) => entry?.name && !entry.silent)
-      .map((entry, index) => ({
-        color: getSeriesColor(entry, resolvedOption.color, index),
+    return series.reduce((items, entry, index) => {
+      if (!entry?.name || entry.silent) return items;
+
+      items.push({
+        color: getSeriesColor(entry, stableOption.color, index),
         name: entry.name,
-      }));
-  }, [resolvedOption]);
+      });
+      return items;
+    }, []);
+  }, [stableOption]);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
@@ -89,11 +93,10 @@ export function HmsEChart({
 
   return (
     <div className={cn('w-full', className)}>
-      <div
+      <figure
         ref={containerRef}
         aria-label={ariaLabel}
-        className="w-full"
-        role="img"
+        className="m-0 w-full"
         style={{ height }}
       />
       {legendItems.length > 0 ? (
