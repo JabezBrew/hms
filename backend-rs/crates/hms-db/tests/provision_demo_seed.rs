@@ -60,8 +60,8 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
     let second_counts = demo_counts(&pool, baseline.facility_id).await;
 
     assert_eq!(first_counts, second_counts);
-    assert_eq!(second_counts.patients, 9);
-    assert_eq!(second_counts.contexts, 9);
+    assert_eq!(second_counts.patients, 50);
+    assert_eq!(second_counts.contexts, 100);
     assert!(second_counts.appointments >= 30);
     assert_eq!(second_counts.appointments, second_counts.visits);
     assert!(second_counts.encounters >= second_counts.appointments);
@@ -162,6 +162,15 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
     .expect("archetype coverage query succeeds");
     assert_eq!(archetype_count, 9);
 
+    let hospital_counts = demo_hospital_counts(&pool, baseline.facility_id).await;
+    assert_eq!(hospital_counts.staff, 35);
+    assert_eq!(hospital_counts.practitioners, 28);
+    assert_eq!(hospital_counts.departments, 9);
+    assert_eq!(hospital_counts.clinics, 6);
+    assert_eq!(hospital_counts.wards, 9);
+    assert_eq!(hospital_counts.beds, 183);
+    assert!(hospital_counts.clinic_sessions >= 32);
+
     let visible_admitted_patient_count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)
@@ -169,18 +178,22 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
         JOIN patient_contexts
           ON patient_contexts.patient_id = patients.id
          AND patient_contexts.facility_id = patients.facility_id
+        JOIN staff_profiles
+          ON staff_profiles.user_id = patient_contexts.user_id
+         AND staff_profiles.facility_id = patients.facility_id
+        JOIN practitioner_profiles
+          ON practitioner_profiles.staff_id = staff_profiles.id
+         AND practitioner_profiles.facility_id = patients.facility_id
         JOIN admission_cases
           ON admission_cases.patient_id = patients.id
          AND admission_cases.facility_id = patients.facility_id
         WHERE patients.facility_id = $1
           AND patients.patient_code LIKE 'DEMO-%'
-          AND patient_contexts.user_id = $2
           AND patient_contexts.context_kind = 'assigned'
           AND admission_cases.status IN ('admitted', 'discharge_pending')
         "#,
     )
     .bind(baseline.facility_id)
-    .bind(uuid::Uuid::from_u128(hms_db::provision::OWNER_USER_ID))
     .fetch_one(&pool)
     .await
     .expect("visible admitted patient query succeeds");
@@ -315,6 +328,7 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
     .await
     .expect("billing path query succeeds");
     assert!(linked_billing_path_exists);
+    assert_demo_actor_links(&pool, baseline.facility_id).await;
 }
 
 #[tokio::test]
@@ -332,6 +346,10 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
         .expect("baseline provisions");
 
     let sentinel_ward_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000100);
+    let sentinel_clinic_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000101);
+    let sentinel_session_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000102);
+    let sentinel_org_unit_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000103);
+    let sentinel_user_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000104);
     sqlx::query(
         r#"
         INSERT INTO wards (id, facility_id, code, name, status)
@@ -343,6 +361,69 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
     .execute(&pool)
     .await
     .expect("sentinel non-seed demo ward inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO clinics (id, facility_id, code, name)
+        VALUES ($1, $2, 'demo-other', 'Non-seed Demo Clinic')
+        "#,
+    )
+    .bind(sentinel_clinic_id)
+    .bind(baseline.facility_id)
+    .execute(&pool)
+    .await
+    .expect("sentinel non-seed demo clinic inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO clinic_sessions (
+            id,
+            facility_id,
+            clinic_id,
+            owner_type,
+            name,
+            mode,
+            starts_at,
+            ends_at,
+            capacity
+        )
+        VALUES ($1, $2, $3, 'clinic', 'Demo Non-seed Session', 'fixed_slot', now(), now() + interval '1 hour', 1)
+        "#,
+    )
+    .bind(sentinel_session_id)
+    .bind(baseline.facility_id)
+    .bind(sentinel_clinic_id)
+    .execute(&pool)
+    .await
+    .expect("sentinel non-seed demo session inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO organization_units (id, facility_id, code, name, unit_type)
+        VALUES ($1, $2, 'DEMO-OTHER', 'Non-seed Demo Unit', 'department')
+        "#,
+    )
+    .bind(sentinel_org_unit_id)
+    .bind(baseline.facility_id)
+    .execute(&pool)
+    .await
+    .expect("sentinel non-seed demo org unit inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO users (
+            id,
+            facility_id,
+            email,
+            display_name,
+            password_hash,
+            password_change_required,
+            is_active
+        )
+        VALUES ($1, $2, 'seed.staff.other.9999@hms.local', 'Non-seed Staff-like User', 'disabled', TRUE, FALSE)
+        "#,
+    )
+    .bind(sentinel_user_id)
+    .bind(baseline.facility_id)
+    .execute(&pool)
+    .await
+    .expect("sentinel staff-like user inserts");
 
     provision_demo_seed(&pool, &baseline, DemoSeedProfile::Staging)
         .await
@@ -366,6 +447,18 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
     assert!(
         sentinel_ward_exists(&pool, baseline.facility_id, sentinel_ward_id).await,
         "demo seed cleanup must not delete non-seed demo-prefixed wards"
+    );
+    assert!(
+        sentinel_setup_exists(
+            &pool,
+            baseline.facility_id,
+            sentinel_clinic_id,
+            sentinel_session_id,
+            sentinel_org_unit_id,
+            sentinel_user_id,
+        )
+        .await,
+        "demo seed cleanup must not delete non-seed demo-prefixed setup"
     );
     assert_eq!(
         unsupported_appointment_status_count(&pool, baseline.facility_id).await,
@@ -404,8 +497,8 @@ async fn demo_counts(pool: &hms_db::PgPool, facility_id: uuid::Uuid) -> DemoCoun
           (SELECT count(*) FROM nursing_alerts WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS nursing_alerts,
           (SELECT count(*) FROM monitoring_events WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS monitoring_events,
           (SELECT count(*) FROM fluid_balance_entries WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS fluid_balance_entries,
-          (SELECT count(*) FROM ward_stock_requests WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code IN ('demo-medical', 'demo-surgical', 'demo-maternity', 'demo-paediatric'))) AS ward_stock_requests,
-          (SELECT count(*) FROM handoffs WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code IN ('demo-medical', 'demo-surgical', 'demo-maternity', 'demo-paediatric'))) AS handoffs,
+          (SELECT count(*) FROM ward_stock_requests WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%')) AS ward_stock_requests,
+          (SELECT count(*) FROM handoffs WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%')) AS handoffs,
           (SELECT count(*) FROM clinical_notes WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS notes,
           (SELECT count(*) FROM lab_orders WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS lab_orders,
           (SELECT count(*) FROM lab_results WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS lab_results,
@@ -418,6 +511,142 @@ async fn demo_counts(pool: &hms_db::PgPool, facility_id: uuid::Uuid) -> DemoCoun
     .fetch_one(pool)
     .await
     .expect("demo counts query succeeds")
+}
+
+#[derive(Debug, FromRow)]
+struct DemoHospitalCounts {
+    staff: i64,
+    practitioners: i64,
+    departments: i64,
+    clinics: i64,
+    clinic_sessions: i64,
+    wards: i64,
+    beds: i64,
+}
+
+async fn demo_hospital_counts(
+    pool: &hms_db::PgPool,
+    facility_id: uuid::Uuid,
+) -> DemoHospitalCounts {
+    sqlx::query_as::<_, DemoHospitalCounts>(
+        r#"
+        SELECT
+          (SELECT count(*) FROM staff_profiles WHERE facility_id = $1 AND employee_id LIKE '%-SEED-%') AS staff,
+          (SELECT count(*) FROM practitioner_profiles WHERE facility_id = $1 AND fhir_practitioner_id LIKE 'Practitioner/seed-%') AS practitioners,
+          (SELECT count(*) FROM organization_units WHERE facility_id = $1 AND code LIKE 'DEMO-%') AS departments,
+          (SELECT count(*) FROM clinics WHERE facility_id = $1 AND code LIKE 'demo-%') AS clinics,
+          (SELECT count(*) FROM clinic_sessions WHERE facility_id = $1 AND name LIKE 'Demo %') AS clinic_sessions,
+          (SELECT count(*) FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%') AS wards,
+          (SELECT count(*) FROM beds WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%')) AS beds
+        "#,
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("demo hospital counts query succeeds")
+}
+
+async fn assert_demo_actor_links(pool: &hms_db::PgPool, facility_id: uuid::Uuid) {
+    let owner_user_id = uuid::Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
+    let role_counts = sqlx::query_as::<_, DemoActorRoleCounts>(
+        r#"
+        WITH demo_patients AS (
+            SELECT id
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code LIKE 'DEMO-%'
+        ),
+        staff_roles AS (
+            SELECT users.id AS user_id,
+                   staff_profiles.department,
+                   staff_profiles.position
+            FROM users
+            JOIN staff_profiles ON staff_profiles.user_id = users.id
+            WHERE users.facility_id = $1
+              AND users.email LIKE 'seed.staff.%'
+        )
+        SELECT
+          (
+            SELECT count(*)
+            FROM appointments
+            JOIN staff_roles ON staff_roles.user_id = appointments.practitioner_user_id
+            WHERE appointments.facility_id = $1
+              AND appointments.patient_id IN (SELECT id FROM demo_patients)
+              AND appointments.clinic_session_id IS NOT NULL
+              AND staff_roles.position LIKE 'Consultant%'
+          ) AS doctor_appointments,
+          (
+            SELECT count(*)
+            FROM visits
+            JOIN staff_roles ON staff_roles.user_id = visits.created_by_user_id
+            WHERE visits.facility_id = $1
+              AND visits.patient_id IN (SELECT id FROM demo_patients)
+              AND staff_roles.position = 'Front Desk Officer'
+          ) AS receptionist_visits,
+          (
+            SELECT count(*)
+            FROM chart_entries
+            JOIN staff_roles ON staff_roles.user_id = chart_entries.created_by_user_id
+            WHERE chart_entries.facility_id = $1
+              AND chart_entries.patient_id IN (SELECT id FROM demo_patients)
+              AND staff_roles.position IN ('Registered Nurse', 'Midwife', 'Emergency Nurse')
+          ) AS nurse_chart_entries,
+          (
+            SELECT count(*)
+            FROM lab_results
+            JOIN staff_roles ON staff_roles.user_id = lab_results.entered_by_user_id
+            WHERE lab_results.facility_id = $1
+              AND lab_results.patient_id IN (SELECT id FROM demo_patients)
+              AND staff_roles.position = 'Med. Lab. Scientist'
+          ) AS lab_result_entries,
+          (
+            SELECT count(*)
+            FROM invoices
+            JOIN staff_roles ON staff_roles.user_id = invoices.issued_by_user_id
+            WHERE invoices.facility_id = $1
+              AND invoices.patient_id IN (SELECT id FROM demo_patients)
+              AND staff_roles.position = 'Front Desk Officer'
+          ) AS receptionist_invoices,
+          (
+            SELECT count(*)
+            FROM ward_stock_requests
+            JOIN staff_roles ON staff_roles.user_id = ward_stock_requests.fulfilled_by_user_id
+            WHERE ward_stock_requests.facility_id = $1
+              AND staff_roles.position = 'Clinical Pharmacist'
+          ) AS pharmacist_stock_fulfillments,
+          (
+            SELECT count(*)
+            FROM appointments
+            WHERE appointments.facility_id = $1
+              AND appointments.patient_id IN (SELECT id FROM demo_patients)
+              AND appointments.practitioner_user_id = $2
+          ) AS owner_appointments
+        "#,
+    )
+    .bind(facility_id)
+    .bind(owner_user_id)
+    .fetch_one(pool)
+    .await
+    .expect("demo actor role query succeeds");
+
+    assert!(role_counts.doctor_appointments > 0);
+    assert!(role_counts.receptionist_visits > 0);
+    assert!(role_counts.nurse_chart_entries > 0);
+    assert!(role_counts.lab_result_entries > 0);
+    assert!(role_counts.receptionist_invoices > 0);
+    assert!(role_counts.pharmacist_stock_fulfillments > 0);
+    assert_eq!(role_counts.owner_appointments, 0);
+}
+
+#[derive(Debug, FromRow)]
+struct DemoActorRoleCounts {
+    doctor_appointments: i64,
+    receptionist_visits: i64,
+    nurse_chart_entries: i64,
+    lab_result_entries: i64,
+    receptionist_invoices: i64,
+    pharmacist_stock_fulfillments: i64,
+    owner_appointments: i64,
 }
 
 async fn sentinel_ward_exists(
@@ -441,6 +670,57 @@ async fn sentinel_ward_exists(
     .fetch_one(pool)
     .await
     .expect("sentinel ward query succeeds")
+}
+
+async fn sentinel_setup_exists(
+    pool: &hms_db::PgPool,
+    facility_id: uuid::Uuid,
+    clinic_id: uuid::Uuid,
+    session_id: uuid::Uuid,
+    org_unit_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT
+          EXISTS (
+              SELECT 1
+              FROM clinics
+              WHERE facility_id = $1
+                AND id = $2
+                AND code = 'demo-other'
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM clinic_sessions
+              WHERE facility_id = $1
+                AND id = $3
+                AND name = 'Demo Non-seed Session'
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM organization_units
+              WHERE facility_id = $1
+                AND id = $4
+                AND code = 'DEMO-OTHER'
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM users
+              WHERE facility_id = $1
+                AND id = $5
+                AND email = 'seed.staff.other.9999@hms.local'
+          )
+        "#,
+    )
+    .bind(facility_id)
+    .bind(clinic_id)
+    .bind(session_id)
+    .bind(org_unit_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .expect("sentinel setup query succeeds")
 }
 
 async fn unsupported_appointment_status_count(

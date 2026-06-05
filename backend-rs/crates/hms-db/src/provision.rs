@@ -109,6 +109,7 @@ const DEMO_SECTION_ID: u128 = DEMO_SECTION_BASE_ID + 1;
 const DEMO_BED_BASE_ID: u128 = 0xd1100000000000000000000000000000;
 const DEMO_PATIENT_BASE_ID: u128 = 0xd2000000000000000000000000000000;
 const DEMO_CONTEXT_BASE_ID: u128 = 0xd2100000000000000000000000000000;
+const DEMO_STAFF_CONTEXT_BASE_ID: u128 = 0xd2110000000000000000000000000000;
 const DEMO_APPOINTMENT_BASE_ID: u128 = 0xd2200000000000000000000000000000;
 const DEMO_VISIT_BASE_ID: u128 = 0xd2300000000000000000000000000000;
 const DEMO_ENCOUNTER_BASE_ID: u128 = 0xd2400000000000000000000000000000;
@@ -141,6 +142,12 @@ const DEMO_MONITORING_EVENT_BASE_ID: u128 = 0xd8200000000000000000000000000000;
 const DEMO_FLUID_BALANCE_BASE_ID: u128 = 0xd8300000000000000000000000000000;
 const DEMO_WARD_STOCK_REQUEST_BASE_ID: u128 = 0xd8400000000000000000000000000000;
 const DEMO_HANDOFF_BASE_ID: u128 = 0xd8500000000000000000000000000000;
+const DEMO_STAFF_USER_BASE_ID: u128 = 0xd9000000000000000000000000000000;
+const DEMO_STAFF_PROFILE_BASE_ID: u128 = 0xd9100000000000000000000000000000;
+const DEMO_PRACTITIONER_PROFILE_BASE_ID: u128 = 0xd9200000000000000000000000000000;
+const DEMO_ORG_UNIT_BASE_ID: u128 = 0xd9300000000000000000000000000000;
+const DEMO_CLINIC_BASE_ID: u128 = 0xd9400000000000000000000000000000;
+const DEMO_CLINIC_SESSION_BASE_ID: u128 = 0xd9500000000000000000000000000000;
 
 #[derive(Clone, Debug)]
 pub struct BaselineProvisioning {
@@ -304,34 +311,29 @@ impl DemoSeedProfile {
     fn config(self) -> DemoSeedConfig {
         match self {
             Self::Smoke => DemoSeedConfig {
-                patient_count: 9,
+                patient_count: 50,
                 years: 1,
-                active_admission_target: 4,
-                beds_per_ward: 8,
+                active_admission_target: 8,
             },
             Self::Staging => DemoSeedConfig {
                 patient_count: 150,
                 years: 1,
                 active_admission_target: 24,
-                beds_per_ward: 48,
             },
             Self::Small => DemoSeedConfig {
                 patient_count: 500,
                 years: 2,
                 active_admission_target: 75,
-                beds_per_ward: 160,
             },
             Self::Medium => DemoSeedConfig {
                 patient_count: 2_000,
                 years: 3,
                 active_admission_target: 300,
-                beds_per_ward: 640,
             },
             Self::Large => DemoSeedConfig {
                 patient_count: 10_000,
                 years: 5,
                 active_admission_target: 1_500,
-                beds_per_ward: 3_000,
             },
         }
     }
@@ -342,7 +344,6 @@ struct DemoSeedConfig {
     patient_count: usize,
     years: u16,
     active_admission_target: usize,
-    beds_per_ward: u32,
 }
 
 impl DemoSeedConfig {
@@ -356,12 +357,445 @@ impl DemoSeedConfig {
             self.active_admission_target <= self.patient_count,
             "demo active admissions must fit inside patient_count"
         );
-        ensure!(
-            self.beds_per_ward > 0,
-            "demo beds_per_ward must be greater than zero"
-        );
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DemoDepartmentConfig {
+    name: &'static str,
+    code: &'static str,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DemoWardConfig {
+    name: &'static str,
+    code: &'static str,
+    bed_prefix: &'static str,
+    bed_count: u32,
+    department: &'static str,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DemoStaffSpec {
+    user_type: &'static str,
+    department: &'static str,
+    specialization: &'static str,
+    position: &'static str,
+    qualification: &'static str,
+    count_per_facility: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DemoStaffActor {
+    user_id: Uuid,
+    department: &'static str,
+}
+
+#[derive(Clone, Debug)]
+struct DemoHospitalContext {
+    facility_id: Uuid,
+    owner_user_id: Uuid,
+    appointment_type_id: Uuid,
+    doctors: Vec<DemoStaffActor>,
+    nurses: Vec<DemoStaffActor>,
+    lab_techs: Vec<DemoStaffActor>,
+    pharmacists: Vec<DemoStaffActor>,
+    receptionists: Vec<DemoStaffActor>,
+}
+
+impl DemoHospitalContext {
+    fn doctor_for(&self, journey: &ChronicleDemoPatient, sequence: u32) -> Uuid {
+        self.actor_for_department(
+            &self.doctors,
+            journey.archetype.department,
+            journey.ordinal + sequence,
+        )
+    }
+
+    fn nurse_for(&self, journey: &ChronicleDemoPatient, sequence: u32) -> Uuid {
+        self.actor_for_department(
+            &self.nurses,
+            journey.archetype.department,
+            journey.ordinal + sequence,
+        )
+    }
+
+    fn lab_tech_for(&self, journey: &ChronicleDemoPatient, sequence: u32) -> Uuid {
+        self.actor_for(&self.lab_techs, journey.ordinal + sequence)
+    }
+
+    fn pharmacist_for(&self, journey: &ChronicleDemoPatient, sequence: u32) -> Uuid {
+        self.actor_for(&self.pharmacists, journey.ordinal + sequence)
+    }
+
+    fn receptionist_for(&self, journey: &ChronicleDemoPatient, sequence: u32) -> Uuid {
+        self.actor_for(&self.receptionists, journey.ordinal + sequence)
+    }
+
+    fn clinic_id_for(&self, department: &str) -> Uuid {
+        demo_clinic_id(department).unwrap_or(Uuid::from_u128(DEFAULT_CLINIC_ID))
+    }
+
+    fn actor_for_department(&self, actors: &[DemoStaffActor], department: &str, seed: u32) -> Uuid {
+        let department_matches: Vec<&DemoStaffActor> = actors
+            .iter()
+            .filter(|actor| actor.department == department)
+            .collect();
+        if department_matches.is_empty() {
+            self.actor_for(actors, seed)
+        } else {
+            department_matches[(seed as usize - 1) % department_matches.len()].user_id
+        }
+    }
+
+    fn actor_for(&self, actors: &[DemoStaffActor], seed: u32) -> Uuid {
+        actors
+            .get((seed as usize).saturating_sub(1) % actors.len().max(1))
+            .map(|actor| actor.user_id)
+            .unwrap_or(self.owner_user_id)
+    }
+}
+
+fn demo_staff_actor_for_department(
+    actors: &[DemoStaffActor],
+    department: &str,
+    seed: u32,
+) -> Option<Uuid> {
+    let department_matches: Vec<&DemoStaffActor> = actors
+        .iter()
+        .filter(|actor| actor.department == department)
+        .collect();
+    if department_matches.is_empty() {
+        actors
+            .get((seed as usize).saturating_sub(1) % actors.len().max(1))
+            .map(|actor| actor.user_id)
+    } else {
+        Some(department_matches[(seed as usize - 1) % department_matches.len()].user_id)
+    }
+}
+
+fn demo_departments() -> &'static [DemoDepartmentConfig] {
+    &[
+        DemoDepartmentConfig {
+            name: "General Outpatient",
+            code: "GOPD",
+        },
+        DemoDepartmentConfig {
+            name: "Internal Medicine",
+            code: "MED",
+        },
+        DemoDepartmentConfig {
+            name: "Surgery",
+            code: "SURG",
+        },
+        DemoDepartmentConfig {
+            name: "Obstetrics & Gynaecology",
+            code: "OBGYN",
+        },
+        DemoDepartmentConfig {
+            name: "Paediatrics",
+            code: "PAEDS",
+        },
+        DemoDepartmentConfig {
+            name: "Emergency Medicine",
+            code: "EMERG",
+        },
+        DemoDepartmentConfig {
+            name: "Laboratory Services",
+            code: "LAB",
+        },
+        DemoDepartmentConfig {
+            name: "Pharmacy",
+            code: "PHARM",
+        },
+        DemoDepartmentConfig {
+            name: "Administration",
+            code: "ADMIN",
+        },
+    ]
+}
+
+fn demo_ward_configs() -> &'static [DemoWardConfig] {
+    &[
+        DemoWardConfig {
+            name: "Medical Ward A",
+            code: "demo-medical-a",
+            bed_prefix: "MEDA",
+            bed_count: 30,
+            department: "Internal Medicine",
+        },
+        DemoWardConfig {
+            name: "Medical Ward B",
+            code: "demo-medical-b",
+            bed_prefix: "MEDB",
+            bed_count: 28,
+            department: "Internal Medicine",
+        },
+        DemoWardConfig {
+            name: "Surgical Ward",
+            code: "demo-surgical",
+            bed_prefix: "SURG",
+            bed_count: 25,
+            department: "Surgery",
+        },
+        DemoWardConfig {
+            name: "Women's Ward",
+            code: "demo-womens",
+            bed_prefix: "WMN",
+            bed_count: 25,
+            department: "Obstetrics & Gynaecology",
+        },
+        DemoWardConfig {
+            name: "Children's Ward",
+            code: "demo-childrens",
+            bed_prefix: "CHD",
+            bed_count: 20,
+            department: "Paediatrics",
+        },
+        DemoWardConfig {
+            name: "Emergency Ward",
+            code: "demo-emergency",
+            bed_prefix: "EMG",
+            bed_count: 15,
+            department: "Emergency Medicine",
+        },
+        DemoWardConfig {
+            name: "ICU",
+            code: "demo-icu",
+            bed_prefix: "ICU",
+            bed_count: 8,
+            department: "Internal Medicine",
+        },
+        DemoWardConfig {
+            name: "Maternity Ward",
+            code: "demo-maternity",
+            bed_prefix: "MAT",
+            bed_count: 20,
+            department: "Obstetrics & Gynaecology",
+        },
+        DemoWardConfig {
+            name: "Private Ward",
+            code: "demo-private",
+            bed_prefix: "PRV",
+            bed_count: 12,
+            department: "Internal Medicine",
+        },
+    ]
+}
+
+fn demo_staff_specs() -> &'static [DemoStaffSpec] {
+    &[
+        DemoStaffSpec {
+            user_type: "doctor",
+            department: "Internal Medicine",
+            specialization: "General Medicine",
+            position: "Consultant Physician",
+            qualification: "MBChB, FWACP",
+            count_per_facility: 3,
+        },
+        DemoStaffSpec {
+            user_type: "doctor",
+            department: "Internal Medicine",
+            specialization: "Cardiology",
+            position: "Consultant Cardiologist",
+            qualification: "MBChB, FWACP",
+            count_per_facility: 1,
+        },
+        DemoStaffSpec {
+            user_type: "doctor",
+            department: "Surgery",
+            specialization: "General Surgery",
+            position: "Consultant Surgeon",
+            qualification: "MBChB, FWACS",
+            count_per_facility: 2,
+        },
+        DemoStaffSpec {
+            user_type: "doctor",
+            department: "Obstetrics & Gynaecology",
+            specialization: "Obstetrics & Gynaecology",
+            position: "Consultant OB/GYN",
+            qualification: "MBChB, FWACS (O&G)",
+            count_per_facility: 2,
+        },
+        DemoStaffSpec {
+            user_type: "doctor",
+            department: "Paediatrics",
+            specialization: "Paediatrics",
+            position: "Consultant Paediatrician",
+            qualification: "MBChB, FWACP (Paeds)",
+            count_per_facility: 2,
+        },
+        DemoStaffSpec {
+            user_type: "doctor",
+            department: "Emergency Medicine",
+            specialization: "Emergency Medicine",
+            position: "Emergency Physician",
+            qualification: "MBChB, FGCS",
+            count_per_facility: 2,
+        },
+        DemoStaffSpec {
+            user_type: "nurse",
+            department: "Internal Medicine",
+            specialization: "General Nursing",
+            position: "Registered Nurse",
+            qualification: "BSc Nursing, RN",
+            count_per_facility: 6,
+        },
+        DemoStaffSpec {
+            user_type: "nurse",
+            department: "Surgery",
+            specialization: "Surgical Nursing",
+            position: "Registered Nurse",
+            qualification: "BSc Nursing, RN",
+            count_per_facility: 3,
+        },
+        DemoStaffSpec {
+            user_type: "nurse",
+            department: "Obstetrics & Gynaecology",
+            specialization: "Midwifery",
+            position: "Midwife",
+            qualification: "BSc Midwifery",
+            count_per_facility: 3,
+        },
+        DemoStaffSpec {
+            user_type: "nurse",
+            department: "Paediatrics",
+            specialization: "Paediatric Nursing",
+            position: "Registered Nurse",
+            qualification: "BSc Nursing, RN",
+            count_per_facility: 2,
+        },
+        DemoStaffSpec {
+            user_type: "nurse",
+            department: "Emergency Medicine",
+            specialization: "Emergency Nursing",
+            position: "Emergency Nurse",
+            qualification: "BSc Nursing, RN",
+            count_per_facility: 2,
+        },
+        DemoStaffSpec {
+            user_type: "lab_technician",
+            department: "Laboratory Services",
+            specialization: "Medical Laboratory Sci.",
+            position: "Med. Lab. Scientist",
+            qualification: "BSc MLS",
+            count_per_facility: 3,
+        },
+        DemoStaffSpec {
+            user_type: "pharmacist",
+            department: "Pharmacy",
+            specialization: "Clinical Pharmacy",
+            position: "Clinical Pharmacist",
+            qualification: "BPharm",
+            count_per_facility: 2,
+        },
+        DemoStaffSpec {
+            user_type: "receptionist",
+            department: "Administration",
+            specialization: "",
+            position: "Front Desk Officer",
+            qualification: "HND Administration",
+            count_per_facility: 2,
+        },
+    ]
+}
+
+fn demo_department_id(index: usize) -> Uuid {
+    demo_uuid(
+        DEMO_ORG_UNIT_BASE_ID,
+        u32::try_from(index + 1).expect("department index fits u32"),
+    )
+}
+
+fn demo_clinic_id(department: &str) -> Option<Uuid> {
+    demo_departments()
+        .iter()
+        .position(|config| config.name == department)
+        .map(|index| {
+            demo_uuid(
+                DEMO_CLINIC_BASE_ID,
+                u32::try_from(index + 1).expect("clinic index fits u32"),
+            )
+        })
+}
+
+fn demo_clinic_session_id(index: usize) -> Uuid {
+    demo_uuid(
+        DEMO_CLINIC_SESSION_BASE_ID,
+        u32::try_from(index + 1).expect("clinic session index fits u32"),
+    )
+}
+
+fn demo_clinic_session_id_for_department(department: &str, sequence: u32) -> Option<Uuid> {
+    demo_departments()
+        .iter()
+        .position(|config| config.name == department)
+        .map(|department_index| {
+            let operates_24_hours = department == "Emergency Medicine";
+            let sessions_per_week = if operates_24_hours { 7 } else { 5 };
+            let day_offset = usize::try_from((sequence - 1) % sessions_per_week)
+                .expect("clinic session day offset fits usize");
+            demo_clinic_session_id(department_index * 7 + day_offset)
+        })
+}
+
+fn demo_staff_user_id(ordinal: u32) -> Uuid {
+    demo_uuid(DEMO_STAFF_USER_BASE_ID, ordinal)
+}
+
+fn demo_staff_profile_id(ordinal: u32) -> Uuid {
+    demo_uuid(DEMO_STAFF_PROFILE_BASE_ID, ordinal)
+}
+
+fn demo_practitioner_profile_id(ordinal: u32) -> Uuid {
+    demo_uuid(DEMO_PRACTITIONER_PROFILE_BASE_ID, ordinal)
+}
+
+fn demo_staff_first_name(user_type: &str, ordinal: u32) -> &'static str {
+    match user_type {
+        "nurse" => {
+            const NAMES: &[&str] = &[
+                "Ama", "Akua", "Abena", "Adjoa", "Afia", "Efua", "Esi", "Grace",
+            ];
+            NAMES[(ordinal as usize - 1) % NAMES.len()]
+        }
+        _ => {
+            const NAMES: &[&str] = &[
+                "Kwame", "Kofi", "Yaw", "Kweku", "Kojo", "Kwesi", "Samuel", "Daniel",
+            ];
+            NAMES[(ordinal as usize - 1) % NAMES.len()]
+        }
+    }
+}
+
+fn demo_staff_last_name(ordinal: u32) -> &'static str {
+    const SURNAMES: &[&str] = &[
+        "Mensah",
+        "Owusu",
+        "Asante",
+        "Boateng",
+        "Darko",
+        "Agyei",
+        "Amponsah",
+        "Frimpong",
+        "Adusei",
+        "Appiah",
+        "Ofori",
+        "Acheampong",
+    ];
+    SURNAMES[(ordinal as usize - 1) % SURNAMES.len()]
+}
+
+fn demo_staff_license(facility_code: &str, user_type: &str, ordinal: u32) -> String {
+    let prefix = match user_type {
+        "doctor" => "DOC",
+        "nurse" => "NUR",
+        "pharmacist" => "PHAR",
+        "lab_technician" => "LAB",
+        _ => "STF",
+    };
+    format!("{prefix}-{facility_code}-{ordinal:04}")
 }
 
 pub async fn provision_baseline(
@@ -409,10 +843,362 @@ pub async fn provision_demo_seed(
 
     let mut tx = pool.begin().await?;
     delete_demo_seed_graph(&mut tx, baseline.facility_id).await?;
-    seed_chronicle_demo_ward_resources(&mut tx, baseline, config, &journeys).await?;
-    seed_chronicle_demo_patient_graph(&mut tx, baseline, &journeys).await?;
+    let hospital = seed_demo_hospital_context(&mut tx, baseline).await?;
+    seed_chronicle_demo_ward_resources(&mut tx, &hospital, &journeys).await?;
+    seed_chronicle_demo_patient_graph(&mut tx, &hospital, &journeys).await?;
     tx.commit().await?;
     Ok(())
+}
+
+async fn seed_demo_hospital_context(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+) -> anyhow::Result<DemoHospitalContext> {
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    for (department_index, department) in demo_departments().iter().enumerate() {
+        sqlx::query(
+            r#"
+            INSERT INTO organization_units (
+                id,
+                facility_id,
+                parent_unit_id,
+                code,
+                name,
+                unit_type
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (facility_id, code) DO UPDATE
+            SET id = EXCLUDED.id,
+                parent_unit_id = EXCLUDED.parent_unit_id,
+                name = EXCLUDED.name,
+                unit_type = EXCLUDED.unit_type,
+                is_active = TRUE,
+                updated_at = now()
+            "#,
+        )
+        .bind(demo_department_id(department_index))
+        .bind(baseline.facility_id)
+        .bind(Uuid::from_u128(DEFAULT_ORG_UNIT_CLINICAL_ID))
+        .bind(format!("DEMO-{}", department.code))
+        .bind(department.name)
+        .bind(codec::encode(OrgUnitType::Department)?)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    for (department_index, department) in
+        demo_departments()
+            .iter()
+            .enumerate()
+            .filter(|(_, department)| {
+                matches!(
+                    department.name,
+                    "General Outpatient"
+                        | "Internal Medicine"
+                        | "Surgery"
+                        | "Obstetrics & Gynaecology"
+                        | "Paediatrics"
+                        | "Emergency Medicine"
+                )
+            })
+    {
+        let Some(clinic_id) = demo_clinic_id(department.name) else {
+            continue;
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO clinics (id, facility_id, code, name)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (facility_id, code) DO UPDATE
+            SET id = EXCLUDED.id,
+                name = EXCLUDED.name,
+                is_active = TRUE,
+                updated_at = now()
+            "#,
+        )
+        .bind(clinic_id)
+        .bind(baseline.facility_id)
+        .bind(format!("demo-{}", department.code.to_ascii_lowercase()))
+        .bind(format!("{} Clinic", department.name))
+        .execute(&mut **transaction)
+        .await?;
+
+        let operates_24_hours = department.name == "Emergency Medicine";
+        let sessions_per_week = if operates_24_hours { 7 } else { 5 };
+        for day_offset in 0..sessions_per_week {
+            let starts_at = demo_chronicle_anchor()
+                + Duration::days(i64::from(day_offset))
+                + if operates_24_hours {
+                    Duration::hours(0)
+                } else {
+                    Duration::hours(8)
+                };
+            let ends_at = if operates_24_hours {
+                starts_at + Duration::hours(23) + Duration::minutes(59)
+            } else {
+                starts_at + Duration::hours(9)
+            };
+            let session_index = department_index * 7 + usize::try_from(day_offset).unwrap_or(0);
+            let session_id = demo_clinic_session_id(session_index);
+            sqlx::query(
+                r#"
+                INSERT INTO clinic_sessions (
+                    id,
+                    facility_id,
+                    clinic_id,
+                    practitioner_user_id,
+                    owner_type,
+                    owner_id,
+                    name,
+                    mode,
+                    starts_at,
+                    ends_at,
+                    slot_minutes,
+                    capacity,
+                    allow_overbooking,
+                    overbook_limit,
+                    created_by_user_id
+                )
+                VALUES ($1, $2, $3, NULL, 'department', $4, $5, 'fixed_slot', $6, $7, 30, $8, TRUE, 4, $9)
+                ON CONFLICT (id) DO UPDATE
+                SET clinic_id = EXCLUDED.clinic_id,
+                    owner_id = EXCLUDED.owner_id,
+                    name = EXCLUDED.name,
+                    starts_at = EXCLUDED.starts_at,
+                    ends_at = EXCLUDED.ends_at,
+                    capacity = EXCLUDED.capacity,
+                    is_active = TRUE,
+                    updated_at = now()
+                "#,
+            )
+            .bind(session_id)
+            .bind(baseline.facility_id)
+            .bind(clinic_id)
+            .bind(demo_department_id(department_index))
+            .bind(format!("Demo {} {}", department.name, day_offset + 1))
+            .bind(starts_at)
+            .bind(ends_at)
+            .bind(if operates_24_hours { 80 } else { 24 })
+            .bind(owner_user_id)
+            .execute(&mut **transaction)
+            .await?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO clinic_session_appointment_types (
+                    facility_id,
+                    clinic_session_id,
+                    appointment_type_id
+                )
+                VALUES ($1, $2, $3)
+                ON CONFLICT (clinic_session_id, appointment_type_id) DO NOTHING
+                "#,
+            )
+            .bind(baseline.facility_id)
+            .bind(session_id)
+            .bind(Uuid::from_u128(DEFAULT_APPOINTMENT_TYPE_GENERAL_ID))
+            .execute(&mut **transaction)
+            .await?;
+        }
+    }
+
+    let staff_password_hash =
+        hash_password(&format!("disabled-seed-staff-{}", baseline.facility_code))?;
+    let mut doctors = Vec::new();
+    let mut nurses = Vec::new();
+    let mut lab_techs = Vec::new();
+    let mut pharmacists = Vec::new();
+    let mut receptionists = Vec::new();
+    let mut ordinal = 0_u32;
+    for spec in demo_staff_specs() {
+        for _ in 0..spec.count_per_facility {
+            ordinal += 1;
+            let user_id = demo_staff_user_id(ordinal);
+            let staff_profile_id = demo_staff_profile_id(ordinal);
+            let practitioner_profile_id = matches!(spec.user_type, "doctor" | "nurse")
+                .then_some(demo_practitioner_profile_id(ordinal));
+            let first_name = demo_staff_first_name(spec.user_type, ordinal);
+            let last_name = demo_staff_last_name(ordinal);
+            let display_name = format!("{first_name} {last_name}");
+            let email = format!(
+                "seed.staff.{}.{ordinal:04}@hms.local",
+                baseline.facility_code.to_ascii_lowercase()
+            );
+
+            sqlx::query(
+                r#"
+                INSERT INTO users (
+                    id,
+                    facility_id,
+                    email,
+                    display_name,
+                    password_hash,
+                    password_change_required,
+                    is_active
+                )
+                VALUES ($1, $2, $3, $4, $5, TRUE, FALSE)
+                ON CONFLICT (id) DO UPDATE
+                SET facility_id = EXCLUDED.facility_id,
+                    email = EXCLUDED.email,
+                    display_name = EXCLUDED.display_name,
+                    password_change_required = TRUE,
+                    is_active = FALSE,
+                    updated_at = now()
+                "#,
+            )
+            .bind(user_id)
+            .bind(baseline.facility_id)
+            .bind(&email)
+            .bind(&display_name)
+            .bind(&staff_password_hash)
+            .execute(&mut **transaction)
+            .await?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO staff_profiles (
+                    id,
+                    facility_id,
+                    user_id,
+                    employee_id,
+                    department,
+                    position,
+                    hire_date,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+                ON CONFLICT (facility_id, employee_id) DO UPDATE
+                SET id = EXCLUDED.id,
+                    user_id = EXCLUDED.user_id,
+                    department = EXCLUDED.department,
+                    position = EXCLUDED.position,
+                    hire_date = EXCLUDED.hire_date,
+                    updated_by_user_id = EXCLUDED.updated_by_user_id,
+                    updated_at = now()
+                "#,
+            )
+            .bind(staff_profile_id)
+            .bind(baseline.facility_id)
+            .bind(user_id)
+            .bind(format!("{}-SEED-{ordinal:04}", baseline.facility_code))
+            .bind(spec.department)
+            .bind(spec.position)
+            .bind(
+                NaiveDate::from_ymd_opt(2018, (ordinal % 12) + 1, ((ordinal * 2) % 27) + 1)
+                    .expect("deterministic staff hire date is valid"),
+            )
+            .bind(owner_user_id)
+            .execute(&mut **transaction)
+            .await?;
+
+            if let Some(practitioner_id) = practitioner_profile_id {
+                sqlx::query(
+                    r#"
+                    INSERT INTO practitioner_profiles (
+                        id,
+                        facility_id,
+                        staff_id,
+                        license_number,
+                        specialization,
+                        qualification,
+                        fhir_practitioner_id,
+                        created_by_user_id,
+                        updated_by_user_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+                    ON CONFLICT (facility_id, license_number) DO UPDATE
+                    SET id = EXCLUDED.id,
+                        staff_id = EXCLUDED.staff_id,
+                        specialization = EXCLUDED.specialization,
+                        qualification = EXCLUDED.qualification,
+                        fhir_practitioner_id = EXCLUDED.fhir_practitioner_id,
+                        updated_by_user_id = EXCLUDED.updated_by_user_id,
+                        updated_at = now()
+                    "#,
+                )
+                .bind(practitioner_id)
+                .bind(baseline.facility_id)
+                .bind(staff_profile_id)
+                .bind(demo_staff_license(
+                    &baseline.facility_code,
+                    spec.user_type,
+                    ordinal,
+                ))
+                .bind(spec.specialization)
+                .bind(spec.qualification)
+                .bind(format!("Practitioner/seed-{ordinal:04}"))
+                .bind(owner_user_id)
+                .execute(&mut **transaction)
+                .await?;
+            }
+
+            let actor = DemoStaffActor {
+                user_id,
+                department: spec.department,
+            };
+            match spec.user_type {
+                "doctor" => doctors.push(actor),
+                "nurse" => nurses.push(actor),
+                "lab_technician" => lab_techs.push(actor),
+                "pharmacist" => pharmacists.push(actor),
+                "receptionist" => receptionists.push(actor),
+                _ => {}
+            }
+        }
+    }
+
+    for (department_index, department) in
+        demo_departments()
+            .iter()
+            .enumerate()
+            .filter(|(_, department)| {
+                matches!(
+                    department.name,
+                    "General Outpatient"
+                        | "Internal Medicine"
+                        | "Surgery"
+                        | "Obstetrics & Gynaecology"
+                        | "Paediatrics"
+                        | "Emergency Medicine"
+                )
+            })
+    {
+        let operates_24_hours = department.name == "Emergency Medicine";
+        let sessions_per_week = if operates_24_hours { 7 } else { 5 };
+        for day_offset in 0..sessions_per_week {
+            let session_index = department_index * 7 + usize::try_from(day_offset).unwrap_or(0);
+            let session_id = demo_clinic_session_id(session_index);
+            let practitioner_user_id =
+                demo_staff_actor_for_department(&doctors, department.name, day_offset + 1)
+                    .unwrap_or(owner_user_id);
+            sqlx::query(
+                r#"
+                UPDATE clinic_sessions
+                SET practitioner_user_id = $3,
+                    updated_at = now()
+                WHERE facility_id = $1
+                  AND id = $2
+                "#,
+            )
+            .bind(baseline.facility_id)
+            .bind(session_id)
+            .bind(practitioner_user_id)
+            .execute(&mut **transaction)
+            .await?;
+        }
+    }
+
+    Ok(DemoHospitalContext {
+        facility_id: baseline.facility_id,
+        owner_user_id,
+        appointment_type_id: Uuid::from_u128(DEFAULT_APPOINTMENT_TYPE_GENERAL_ID),
+        doctors,
+        nurses,
+        lab_techs,
+        pharmacists,
+        receptionists,
+    })
 }
 
 async fn delete_demo_seed_graph(
@@ -741,10 +1527,15 @@ async fn delete_demo_seed_graph(
               FROM wards
               WHERE wards.facility_id = $1
                 AND wards.code IN (
-                    'demo-medical',
+                    'demo-medical-a',
+                    'demo-medical-b',
                     'demo-surgical',
+                    'demo-womens',
+                    'demo-childrens',
+                    'demo-emergency',
+                    'demo-icu',
                     'demo-maternity',
-                    'demo-paediatric'
+                    'demo-private'
                 )
           )
         "#,
@@ -756,10 +1547,15 @@ async fn delete_demo_seed_graph(
               FROM wards
               WHERE wards.facility_id = $1
                 AND wards.code IN (
-                    'demo-medical',
+                    'demo-medical-a',
+                    'demo-medical-b',
                     'demo-surgical',
+                    'demo-womens',
+                    'demo-childrens',
+                    'demo-emergency',
+                    'demo-icu',
                     'demo-maternity',
-                    'demo-paediatric'
+                    'demo-private'
                 )
           )
         "#,
@@ -771,10 +1567,15 @@ async fn delete_demo_seed_graph(
               FROM wards
               WHERE wards.facility_id = $1
                 AND wards.code IN (
-                    'demo-medical',
+                    'demo-medical-a',
+                    'demo-medical-b',
                     'demo-surgical',
+                    'demo-womens',
+                    'demo-childrens',
+                    'demo-emergency',
+                    'demo-icu',
                     'demo-maternity',
-                    'demo-paediatric'
+                    'demo-private'
                 )
           )
         "#,
@@ -786,10 +1587,15 @@ async fn delete_demo_seed_graph(
               FROM wards
               WHERE wards.facility_id = $1
                 AND wards.code IN (
-                    'demo-medical',
+                    'demo-medical-a',
+                    'demo-medical-b',
                     'demo-surgical',
+                    'demo-womens',
+                    'demo-childrens',
+                    'demo-emergency',
+                    'demo-icu',
                     'demo-maternity',
-                    'demo-paediatric'
+                    'demo-private'
                 )
           )
         "#,
@@ -797,10 +1603,66 @@ async fn delete_demo_seed_graph(
         DELETE FROM wards
         WHERE facility_id = $1
           AND code IN (
-              'demo-medical',
+              'demo-medical-a',
+              'demo-medical-b',
               'demo-surgical',
+              'demo-womens',
+              'demo-childrens',
+              'demo-emergency',
+              'demo-icu',
               'demo-maternity',
-              'demo-paediatric'
+              'demo-private'
+          )
+        "#,
+        r#"
+        DELETE FROM clinic_session_appointment_types
+        WHERE facility_id = $1
+          AND clinic_session_id IN (
+              SELECT ('d95000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid
+              FROM generate_series(1, 42) AS generated(i)
+          )
+        "#,
+        r#"
+        DELETE FROM clinic_sessions
+        WHERE facility_id = $1
+          AND id IN (
+              SELECT ('d95000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid
+              FROM generate_series(1, 42) AS generated(i)
+          )
+        "#,
+        r#"
+        DELETE FROM clinics
+        WHERE facility_id = $1
+          AND code IN (
+              'demo-gopd',
+              'demo-med',
+              'demo-surg',
+              'demo-obgyn',
+              'demo-paeds',
+              'demo-emerg'
+          )
+        "#,
+        r#"
+        DELETE FROM users
+        WHERE facility_id = $1
+          AND id IN (
+              SELECT ('d90000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid
+              FROM generate_series(1, 35) AS generated(i)
+          )
+        "#,
+        r#"
+        DELETE FROM organization_units
+        WHERE facility_id = $1
+          AND code IN (
+              'DEMO-GOPD',
+              'DEMO-MED',
+              'DEMO-SURG',
+              'DEMO-OBGYN',
+              'DEMO-PAEDS',
+              'DEMO-EMERG',
+              'DEMO-LAB',
+              'DEMO-PHARM',
+              'DEMO-ADMIN'
           )
         "#,
     ];
@@ -2436,6 +3298,8 @@ struct ChronicleDemoWard {
     code: &'static str,
     name: &'static str,
     bed_prefix: &'static str,
+    bed_count: u32,
+    department: &'static str,
 }
 
 impl ChronicleDemoWard {
@@ -2478,6 +3342,7 @@ struct ChronicleDemoArchetype {
     complaints: &'static [&'static str],
     icd_codes: &'static [&'static str],
     ward: ChronicleDemoWard,
+    department: &'static str,
     allergy: Option<DemoAllergy>,
     urgent_labs: bool,
     claimable: bool,
@@ -2512,11 +3377,9 @@ struct ChronicleDemoObservationValues {
 
 async fn seed_chronicle_demo_ward_resources(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
-    config: DemoSeedConfig,
+    hospital: &DemoHospitalContext,
     journeys: &[ChronicleDemoPatient],
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
     let occupied_beds: HashSet<(ChronicleDemoWard, u32)> = journeys
         .iter()
         .flat_map(|journey| {
@@ -2540,7 +3403,7 @@ async fn seed_chronicle_demo_ward_resources(
             "#,
         )
         .bind(ward.id())
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(ward.code)
         .bind(ward.name)
         .execute(&mut **transaction)
@@ -2567,15 +3430,15 @@ async fn seed_chronicle_demo_ward_resources(
             "#,
         )
         .bind(ward.section_id())
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(ward.id())
         .bind(format!("DEMO-{}", ward.bed_prefix))
         .bind(format!("{} Section", ward.name))
-        .bind(owner_user_id)
+        .bind(hospital.owner_user_id)
         .execute(&mut **transaction)
         .await?;
 
-        for bed_ordinal in 1..=config.beds_per_ward {
+        for bed_ordinal in 1..=ward.bed_count {
             let occupied = occupied_beds.contains(&(ward, bed_ordinal));
             sqlx::query(
                 r#"
@@ -2598,12 +3461,12 @@ async fn seed_chronicle_demo_ward_resources(
                 "#,
             )
             .bind(ward.bed_id(bed_ordinal))
-            .bind(baseline.facility_id)
+            .bind(hospital.facility_id)
             .bind(ward.id())
             .bind(ward.section_id())
             .bind(format!("{}-{bed_ordinal:02}", ward.bed_prefix))
             .bind(if occupied { "occupied" } else { "available" })
-            .bind(owner_user_id)
+            .bind(hospital.owner_user_id)
             .execute(&mut **transaction)
             .await?;
         }
@@ -2614,21 +3477,20 @@ async fn seed_chronicle_demo_ward_resources(
 
 async fn seed_chronicle_demo_patient_graph(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journeys: &[ChronicleDemoPatient],
 ) -> anyhow::Result<()> {
     for journey in journeys {
-        seed_chronicle_demo_patient_journey(transaction, baseline, journey).await?;
+        seed_chronicle_demo_patient_journey(transaction, hospital, journey).await?;
     }
     Ok(())
 }
 
 async fn seed_chronicle_demo_patient_journey(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
     let created_at = demo_time(i64::from(journey.ordinal));
     sqlx::query(
         r#"
@@ -2656,7 +3518,7 @@ async fn seed_chronicle_demo_patient_journey(
         "#,
     )
     .bind(journey.patient_id())
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_code())
     .bind(&journey.first_name)
     .bind(&journey.last_name)
@@ -2666,40 +3528,51 @@ async fn seed_chronicle_demo_patient_journey(
     .execute(&mut **transaction)
     .await?;
 
-    sqlx::query(
-        r#"
-        INSERT INTO patient_contexts (
-            id,
-            facility_id,
-            user_id,
-            patient_id,
-            context_kind,
-            label,
-            created_at,
-            updated_at
+    for (context_id, user_id) in [
+        (
+            demo_uuid(DEMO_CONTEXT_BASE_ID, journey.ordinal),
+            hospital.owner_user_id,
+        ),
+        (
+            demo_uuid(DEMO_STAFF_CONTEXT_BASE_ID, journey.ordinal),
+            hospital.doctor_for(journey, 1),
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO patient_contexts (
+                id,
+                facility_id,
+                user_id,
+                patient_id,
+                context_kind,
+                label,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+            ON CONFLICT (user_id, patient_id, context_kind) DO UPDATE
+            SET label = EXCLUDED.label,
+                updated_at = EXCLUDED.updated_at
+            "#,
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-        ON CONFLICT (user_id, patient_id, context_kind) DO UPDATE
-        SET label = EXCLUDED.label,
-            updated_at = EXCLUDED.updated_at
-        "#,
-    )
-    .bind(demo_uuid(DEMO_CONTEXT_BASE_ID, journey.ordinal))
-    .bind(baseline.facility_id)
-    .bind(owner_user_id)
-    .bind(journey.patient_id())
-    .bind(codec::encode(PatientContextKind::Assigned)?)
-    .bind(format!("demo-seed: {}", journey.archetype.label))
-    .bind(created_at)
-    .execute(&mut **transaction)
-    .await?;
+        .bind(context_id)
+        .bind(hospital.facility_id)
+        .bind(user_id)
+        .bind(journey.patient_id())
+        .bind(codec::encode(PatientContextKind::Assigned)?)
+        .bind(format!("demo-seed: {}", journey.archetype.label))
+        .bind(created_at)
+        .execute(&mut **transaction)
+        .await?;
+    }
 
-    seed_chronicle_demo_problem_and_allergy(transaction, baseline, journey).await?;
+    seed_chronicle_demo_problem_and_allergy(transaction, hospital, journey).await?;
     for sequence in 1..=journey.outpatient_count {
-        seed_chronicle_demo_outpatient(transaction, baseline, journey, sequence).await?;
+        seed_chronicle_demo_outpatient(transaction, hospital, journey, sequence).await?;
     }
     for admission in &journey.admissions {
-        seed_chronicle_demo_admission(transaction, baseline, journey, admission).await?;
+        seed_chronicle_demo_admission(transaction, hospital, journey, admission).await?;
     }
 
     sqlx::query(
@@ -2719,7 +3592,7 @@ async fn seed_chronicle_demo_patient_journey(
         "#,
     )
     .bind(journey.patient_id())
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.latest_event_at())
     .execute(&mut **transaction)
     .await?;
@@ -2729,10 +3602,10 @@ async fn seed_chronicle_demo_patient_journey(
 
 async fn seed_chronicle_demo_problem_and_allergy(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let doctor_user_id = hospital.doctor_for(journey, 1);
     sqlx::query(
         r#"
         INSERT INTO patient_problems (
@@ -2755,11 +3628,11 @@ async fn seed_chronicle_demo_problem_and_allergy(
         "#,
     )
     .bind(demo_uuid(DEMO_PROBLEM_BASE_ID, journey.ordinal))
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(journey.archetype.problem_label)
     .bind(journey.problem_onset)
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .bind(demo_time(30 + i64::from(journey.ordinal)))
     .execute(&mut **transaction)
     .await?;
@@ -2789,12 +3662,12 @@ async fn seed_chronicle_demo_problem_and_allergy(
             "#,
         )
         .bind(demo_uuid(DEMO_ALLERGY_BASE_ID, journey.ordinal))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(journey.patient_id())
         .bind(allergy.substance)
         .bind(allergy.reaction)
         .bind(allergy.severity)
-        .bind(owner_user_id)
+        .bind(doctor_user_id)
         .bind(demo_time(31 + i64::from(journey.ordinal)))
         .execute(&mut **transaction)
         .await?;
@@ -2804,11 +3677,15 @@ async fn seed_chronicle_demo_problem_and_allergy(
 
 async fn seed_chronicle_demo_outpatient(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     sequence: u32,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let doctor_user_id = hospital.doctor_for(journey, sequence);
+    let receptionist_user_id = hospital.receptionist_for(journey, sequence);
+    let clinic_id = hospital.clinic_id_for(journey.archetype.department);
+    let clinic_session_id =
+        demo_clinic_session_id_for_department(journey.archetype.department, sequence);
     let starts_at = journey.outpatient_time(sequence);
     let ends_at = starts_at + Duration::minutes(35);
     let appointment_id = journey.appointment_id(sequence);
@@ -2829,26 +3706,30 @@ async fn seed_chronicle_demo_outpatient(
             created_at,
             updated_at,
             appointment_type_id,
-            practitioner_user_id
+            practitioner_user_id,
+            clinic_session_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'completed', $7, $5, $6, $8, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, 'completed', $7, $5, $6, $8, $9, $10)
         ON CONFLICT (id) DO UPDATE
         SET starts_at = EXCLUDED.starts_at,
             ends_at = EXCLUDED.ends_at,
             status = EXCLUDED.status,
             appointment_type_id = EXCLUDED.appointment_type_id,
             practitioner_user_id = EXCLUDED.practitioner_user_id,
+            clinic_session_id = EXCLUDED.clinic_session_id,
             updated_at = EXCLUDED.updated_at
         "#,
     )
     .bind(appointment_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
-    .bind(Uuid::from_u128(DEFAULT_CLINIC_ID))
+    .bind(clinic_id)
     .bind(starts_at)
     .bind(ends_at)
-    .bind(owner_user_id)
-    .bind(Uuid::from_u128(DEFAULT_APPOINTMENT_TYPE_GENERAL_ID))
+    .bind(receptionist_user_id)
+    .bind(hospital.appointment_type_id)
+    .bind(doctor_user_id)
+    .bind(clinic_session_id)
     .execute(&mut **transaction)
     .await?;
 
@@ -2881,21 +3762,21 @@ async fn seed_chronicle_demo_outpatient(
         "#,
     )
     .bind(visit_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(appointment_id)
-    .bind(Uuid::from_u128(DEFAULT_CLINIC_ID))
+    .bind(clinic_id)
     .bind(starts_at - Duration::minutes(10))
     .bind(starts_at)
     .bind(starts_at + Duration::minutes(8))
     .bind(ends_at)
-    .bind(owner_user_id)
+    .bind(receptionist_user_id)
     .execute(&mut **transaction)
     .await?;
 
     seed_chronicle_demo_encounter(
         transaction,
-        baseline,
+        hospital,
         journey,
         encounter_id,
         Some(visit_id),
@@ -2908,7 +3789,7 @@ async fn seed_chronicle_demo_outpatient(
     .await?;
     seed_chronicle_demo_note(
         transaction,
-        baseline,
+        hospital,
         journey,
         encounter_id,
         sequence,
@@ -2918,7 +3799,7 @@ async fn seed_chronicle_demo_outpatient(
     .await?;
     seed_chronicle_demo_chart_entries(
         transaction,
-        baseline,
+        hospital,
         journey,
         sequence,
         starts_at + Duration::minutes(12),
@@ -2926,7 +3807,7 @@ async fn seed_chronicle_demo_outpatient(
     .await?;
     seed_chronicle_demo_prescription(
         transaction,
-        baseline,
+        hospital,
         journey,
         sequence,
         starts_at + Duration::minutes(24),
@@ -2934,7 +3815,7 @@ async fn seed_chronicle_demo_outpatient(
     .await?;
     seed_chronicle_demo_labs(
         transaction,
-        baseline,
+        hospital,
         journey,
         sequence,
         starts_at + Duration::minutes(25),
@@ -2942,7 +3823,7 @@ async fn seed_chronicle_demo_outpatient(
     .await?;
     seed_chronicle_demo_billing(
         transaction,
-        baseline,
+        hospital,
         journey,
         sequence,
         starts_at + Duration::minutes(32),
@@ -2953,7 +3834,7 @@ async fn seed_chronicle_demo_outpatient(
 
 async fn seed_chronicle_demo_encounter(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     encounter_id: Uuid,
     visit_id: Option<Uuid>,
@@ -2963,7 +3844,8 @@ async fn seed_chronicle_demo_encounter(
     started_at: DateTime<Utc>,
     ended_at: Option<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let doctor_user_id = hospital.doctor_for(journey, sequence);
+    let nurse_user_id = hospital.nurse_for(journey, sequence);
     sqlx::query(
         r#"
         INSERT INTO encounters (
@@ -2990,14 +3872,14 @@ async fn seed_chronicle_demo_encounter(
         "#,
     )
     .bind(encounter_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(visit_id)
     .bind(encounter_type)
     .bind(status)
     .bind(started_at)
     .bind(ended_at)
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .execute(&mut **transaction)
     .await?;
 
@@ -3023,8 +3905,37 @@ async fn seed_chronicle_demo_encounter(
         sequence,
     ))
     .bind(encounter_id)
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .bind(started_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO encounter_care_team_assignments (
+            id,
+            encounter_id,
+            user_id,
+            role,
+            is_active,
+            created_by_user_id,
+            created_at
+        )
+        VALUES ($1, $2, $3, 'nursing', TRUE, $4, $5)
+        ON CONFLICT (encounter_id, user_id, role) DO UPDATE
+        SET is_active = TRUE
+        "#,
+    )
+    .bind(demo_compound_uuid(
+        DEMO_CARE_TEAM_BASE_ID,
+        journey.ordinal,
+        sequence,
+        2,
+    ))
+    .bind(encounter_id)
+    .bind(nurse_user_id)
+    .bind(doctor_user_id)
+    .bind(started_at + Duration::minutes(1))
     .execute(&mut **transaction)
     .await?;
     Ok(())
@@ -3032,14 +3943,14 @@ async fn seed_chronicle_demo_encounter(
 
 async fn seed_chronicle_demo_note(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     encounter_id: Uuid,
     sequence: u32,
     note_type: &'static str,
     note_time: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let doctor_user_id = hospital.doctor_for(journey, sequence);
     let body = chronicle_demo_note_body(journey, sequence);
     let note_id = demo_graph_uuid(DEMO_NOTE_BASE_ID, journey.ordinal, sequence);
     sqlx::query(
@@ -3070,7 +3981,7 @@ async fn seed_chronicle_demo_note(
         "#,
     )
     .bind(note_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(encounter_id)
     .bind(note_type)
@@ -3079,7 +3990,7 @@ async fn seed_chronicle_demo_note(
         journey.archetype.label, sequence
     ))
     .bind(&body)
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .bind(note_time)
     .execute(&mut **transaction)
     .await?;
@@ -3108,7 +4019,7 @@ async fn seed_chronicle_demo_note(
     ))
     .bind(note_id)
     .bind(body)
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .bind(note_time)
     .execute(&mut **transaction)
     .await?;
@@ -3117,12 +4028,12 @@ async fn seed_chronicle_demo_note(
 
 async fn seed_chronicle_demo_chart_entries(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     sequence: u32,
     measured_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let nurse_user_id = hospital.nurse_for(journey, sequence);
     let vitals = chronicle_demo_vitals(journey, sequence);
     for (entry_index, (entry_type, value, unit)) in [
         ("blood_pressure", vitals.blood_pressure, Some("mmHg")),
@@ -3162,13 +4073,13 @@ async fn seed_chronicle_demo_chart_entries(
             sequence,
             entry_index as u32 + 1,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(journey.patient_id())
         .bind(entry_type)
         .bind(measured_at + Duration::minutes(i64::try_from(entry_index).unwrap_or(0)))
         .bind(value)
         .bind(unit)
-        .bind(owner_user_id)
+        .bind(nurse_user_id)
         .execute(&mut **transaction)
         .await?;
     }
@@ -3177,12 +4088,12 @@ async fn seed_chronicle_demo_chart_entries(
 
 async fn seed_chronicle_demo_prescription(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     sequence: u32,
     prescribed_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let doctor_user_id = hospital.doctor_for(journey, sequence);
     sqlx::query(
         r#"
         INSERT INTO prescriptions (
@@ -3212,13 +4123,13 @@ async fn seed_chronicle_demo_prescription(
         journey.ordinal,
         sequence,
     ))
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(journey.archetype.medication_name)
     .bind(journey.archetype.medication_dose)
     .bind(journey.archetype.medication_frequency)
     .bind(prescribed_at)
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .execute(&mut **transaction)
     .await?;
     Ok(())
@@ -3226,12 +4137,13 @@ async fn seed_chronicle_demo_prescription(
 
 async fn seed_chronicle_demo_labs(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     sequence: u32,
     order_time: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let doctor_user_id = hospital.doctor_for(journey, sequence);
+    let lab_tech_user_id = hospital.lab_tech_for(journey, sequence);
     let order_id = demo_graph_uuid(DEMO_LAB_ORDER_BASE_ID, journey.ordinal, sequence);
     let specimen_id = demo_graph_uuid(DEMO_LAB_SPECIMEN_BASE_ID, journey.ordinal, sequence);
     let selected_tests = journey.selected_lab_codes(sequence);
@@ -3258,14 +4170,14 @@ async fn seed_chronicle_demo_labs(
         "#,
     )
     .bind(order_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(if journey.archetype.urgent_labs {
         "urgent"
     } else {
         "routine"
     })
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .bind(order_time)
     .execute(&mut **transaction)
     .await?;
@@ -3302,10 +4214,10 @@ async fn seed_chronicle_demo_labs(
         "#,
     )
     .bind(specimen_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(order_id)
     .bind(journey.patient_id())
-    .bind(owner_user_id)
+    .bind(lab_tech_user_id)
     .bind(order_time + Duration::minutes(20))
     .execute(&mut **transaction)
     .await?;
@@ -3348,14 +4260,14 @@ async fn seed_chronicle_demo_labs(
             sequence,
             index as u32 + 1,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(order_id)
         .bind(specimen_id)
         .bind(journey.patient_id())
         .bind(chronicle_demo_lab_test_id(code))
         .bind(value)
         .bind(unit)
-        .bind(owner_user_id)
+        .bind(lab_tech_user_id)
         .bind(order_time + Duration::minutes(50))
         .bind(order_time + Duration::minutes(60))
         .execute(&mut **transaction)
@@ -3366,12 +4278,12 @@ async fn seed_chronicle_demo_labs(
 
 async fn seed_chronicle_demo_billing(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     sequence: u32,
     issued_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let receptionist_user_id = hospital.receptionist_for(journey, sequence);
     let invoice_id = demo_graph_uuid(DEMO_INVOICE_BASE_ID, journey.ordinal, sequence);
     let billing_number = chronicle_demo_billing_number(journey.ordinal, sequence);
     let amount_minor = journey.invoice_amount_minor(sequence);
@@ -3415,13 +4327,13 @@ async fn seed_chronicle_demo_billing(
         "#,
     )
     .bind(invoice_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(format!("DEMO-{billing_number:08}"))
     .bind(status)
     .bind(amount_minor)
     .bind(paid_amount_minor)
-    .bind(owner_user_id)
+    .bind(receptionist_user_id)
     .bind(issued_at)
     .execute(&mut **transaction)
     .await?;
@@ -3474,7 +4386,7 @@ async fn seed_chronicle_demo_billing(
             sequence,
             line_index as u32 + 1,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(invoice_id)
         .bind(service_price_id)
         .bind(description)
@@ -3487,7 +4399,7 @@ async fn seed_chronicle_demo_billing(
     if paid_amount_minor > 0 {
         seed_chronicle_demo_payment(
             transaction,
-            baseline,
+            hospital,
             journey,
             sequence,
             invoice_id,
@@ -3531,12 +4443,12 @@ async fn seed_chronicle_demo_billing(
             journey.ordinal,
             sequence,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(invoice_id)
         .bind(journey.patient_id())
         .bind(format!("DEMO-CLM-{billing_number:08}"))
         .bind(amount_minor - paid_amount_minor)
-        .bind(owner_user_id)
+        .bind(receptionist_user_id)
         .bind(issued_at + Duration::minutes(8))
         .execute(&mut **transaction)
         .await?;
@@ -3546,14 +4458,14 @@ async fn seed_chronicle_demo_billing(
 
 async fn seed_chronicle_demo_payment(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     sequence: u32,
     invoice_id: Uuid,
     amount_minor: i64,
     paid_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let receptionist_user_id = hospital.receptionist_for(journey, sequence);
     let billing_number = chronicle_demo_billing_number(journey.ordinal, sequence);
     let receipt_number = format!("DEMO-RCPT-{billing_number:08}");
     let payment_id = demo_graph_uuid(DEMO_PAYMENT_BASE_ID, journey.ordinal, sequence);
@@ -3581,11 +4493,11 @@ async fn seed_chronicle_demo_payment(
         "#,
     )
     .bind(payment_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(invoice_id)
     .bind(&receipt_number)
     .bind(amount_minor)
-    .bind(owner_user_id)
+    .bind(receptionist_user_id)
     .bind(paid_at)
     .execute(&mut **transaction)
     .await?;
@@ -3613,7 +4525,7 @@ async fn seed_chronicle_demo_payment(
         journey.ordinal,
         sequence,
     ))
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(payment_id)
     .bind(invoice_id)
     .bind(receipt_number)
@@ -3626,13 +4538,14 @@ async fn seed_chronicle_demo_payment(
 
 async fn seed_chronicle_demo_admission(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     admission: &ChronicleDemoAdmission,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
-    let admission_id = journey.admission_id(admission);
     let inpatient_sequence = admission.inpatient_sequence();
+    let doctor_user_id = hospital.doctor_for(journey, inpatient_sequence);
+    let nurse_user_id = hospital.nurse_for(journey, inpatient_sequence);
+    let admission_id = journey.admission_id(admission);
     sqlx::query(
         r#"
         INSERT INTO admission_cases (
@@ -3662,20 +4575,20 @@ async fn seed_chronicle_demo_admission(
         "#,
     )
     .bind(admission_id)
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(journey.patient_id())
     .bind(admission.ward.id())
     .bind(admission.bed_ordinal.map(|bed| admission.ward.bed_id(bed)))
     .bind(admission.status)
     .bind(admission.admitted_at)
     .bind(admission.discharged_at)
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .execute(&mut **transaction)
     .await?;
 
     seed_chronicle_demo_encounter(
         transaction,
-        baseline,
+        hospital,
         journey,
         journey.encounter_id(inpatient_sequence),
         None,
@@ -3692,7 +4605,7 @@ async fn seed_chronicle_demo_admission(
     .await?;
     seed_chronicle_demo_note(
         transaction,
-        baseline,
+        hospital,
         journey,
         journey.encounter_id(inpatient_sequence),
         inpatient_sequence,
@@ -3754,7 +4667,7 @@ async fn seed_chronicle_demo_admission(
             DEMO_NURSING_TASK_BASE_ID,
             journey.ordinal * 1_000 + inpatient_sequence + task_index as u32 + 1,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(admission_id)
         .bind(journey.patient_id())
         .bind(admission.ward.id())
@@ -3762,7 +4675,7 @@ async fn seed_chronicle_demo_admission(
         .bind(title)
         .bind(instruction)
         .bind(admission.admitted_at + Duration::hours(i64::try_from(task_index + 1).unwrap_or(1)))
-        .bind(owner_user_id)
+        .bind(nurse_user_id)
         .bind(admission.admitted_at)
         .execute(&mut **transaction)
         .await?;
@@ -3785,7 +4698,7 @@ async fn seed_chronicle_demo_admission(
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
             ON CONFLICT (id) DO UPDATE
             SET medication_name = EXCLUDED.medication_name,
                 scheduled_at = EXCLUDED.scheduled_at,
@@ -3799,7 +4712,7 @@ async fn seed_chronicle_demo_admission(
             journey.ordinal,
             inpatient_sequence + med_index,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(admission_id)
         .bind(journey.patient_id())
         .bind(journey.archetype.medication_name)
@@ -3814,7 +4727,12 @@ async fn seed_chronicle_demo_admission(
         } else {
             "scheduled"
         })
-        .bind(owner_user_id)
+        .bind(if med_index == 1 {
+            Some(nurse_user_id)
+        } else {
+            None
+        })
+        .bind(doctor_user_id)
         .bind(admission.admitted_at)
         .execute(&mut **transaction)
         .await?;
@@ -3844,21 +4762,21 @@ async fn seed_chronicle_demo_admission(
         journey.ordinal,
         admission.sequence,
     ))
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(admission_id)
     .bind(journey.patient_id())
     .bind(admission.admitted_at.date_naive())
-    .bind(owner_user_id)
+    .bind(doctor_user_id)
     .bind(admission.admitted_at)
     .execute(&mut **transaction)
     .await?;
 
-    seed_chronicle_demo_inpatient_operations(transaction, baseline, journey, admission).await?;
+    seed_chronicle_demo_inpatient_operations(transaction, hospital, journey, admission).await?;
 
     for day in 1..=3 {
         seed_chronicle_demo_chart_entries(
             transaction,
-            baseline,
+            hospital,
             journey,
             inpatient_sequence + day,
             admission.admitted_at + Duration::days(i64::from(day - 1)) + Duration::hours(8),
@@ -3867,7 +4785,7 @@ async fn seed_chronicle_demo_admission(
     }
     seed_chronicle_demo_prescription(
         transaction,
-        baseline,
+        hospital,
         journey,
         inpatient_sequence,
         admission.admitted_at + Duration::hours(2),
@@ -3875,7 +4793,7 @@ async fn seed_chronicle_demo_admission(
     .await?;
     seed_chronicle_demo_labs(
         transaction,
-        baseline,
+        hospital,
         journey,
         inpatient_sequence,
         admission.admitted_at + Duration::hours(3),
@@ -3883,7 +4801,7 @@ async fn seed_chronicle_demo_admission(
     .await?;
     seed_chronicle_demo_billing(
         transaction,
-        baseline,
+        hospital,
         journey,
         inpatient_sequence,
         admission.admitted_at + Duration::hours(5),
@@ -3891,20 +4809,21 @@ async fn seed_chronicle_demo_admission(
     .await?;
 
     if admission.status == "discharged" || admission.status == "discharge_pending" {
-        seed_chronicle_demo_discharge_case(transaction, baseline, journey, admission).await?;
+        seed_chronicle_demo_discharge_case(transaction, hospital, journey, admission).await?;
     }
     if admission.is_active() {
-        seed_chronicle_demo_ward_rounds(transaction, baseline, journey, admission).await?;
+        seed_chronicle_demo_ward_rounds(transaction, hospital, journey, admission).await?;
     }
     Ok(())
 }
 
 async fn seed_chronicle_demo_discharge_case(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     admission: &ChronicleDemoAdmission,
 ) -> anyhow::Result<()> {
+    let doctor_user_id = hospital.doctor_for(journey, admission.inpatient_sequence());
     let admission_id = journey.admission_id(admission);
     sqlx::query(
         r#"
@@ -3932,7 +4851,7 @@ async fn seed_chronicle_demo_discharge_case(
         journey.ordinal,
         admission.sequence,
     ))
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(admission_id)
     .bind(journey.patient_id())
     .bind(if admission.status == "discharged" {
@@ -3942,7 +4861,7 @@ async fn seed_chronicle_demo_discharge_case(
     })
     .bind(admission.admitted_at + Duration::days(1))
     .bind(admission.discharged_at)
-    .bind(Uuid::from_u128(OWNER_USER_ID))
+    .bind(doctor_user_id)
     .execute(&mut **transaction)
     .await?;
     Ok(())
@@ -3950,14 +4869,16 @@ async fn seed_chronicle_demo_discharge_case(
 
 async fn seed_chronicle_demo_inpatient_operations(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     admission: &ChronicleDemoAdmission,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
-    let handoff_to_user_id = Uuid::from_u128(LIMITED_USER_ID);
     let admission_id = journey.admission_id(admission);
     let inpatient_sequence = admission.inpatient_sequence();
+    let doctor_user_id = hospital.doctor_for(journey, inpatient_sequence);
+    let nurse_user_id = hospital.nurse_for(journey, inpatient_sequence);
+    let handoff_to_user_id = hospital.nurse_for(journey, inpatient_sequence + 1);
+    let pharmacist_user_id = hospital.pharmacist_for(journey, inpatient_sequence);
 
     for observation_index in 1..=6 {
         let sequence = inpatient_sequence + observation_index;
@@ -3998,7 +4919,7 @@ async fn seed_chronicle_demo_inpatient_operations(
             inpatient_sequence,
             observation_index,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(admission_id)
         .bind(journey.patient_id())
         .bind(recorded_at)
@@ -4008,7 +4929,7 @@ async fn seed_chronicle_demo_inpatient_operations(
         .bind(values.pulse)
         .bind(values.respiratory_rate)
         .bind(values.oxygen_saturation)
-        .bind(owner_user_id)
+        .bind(nurse_user_id)
         .execute(&mut **transaction)
         .await?;
     }
@@ -4061,24 +4982,25 @@ async fn seed_chronicle_demo_inpatient_operations(
             inpatient_sequence,
             event_index as u32 + 1,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(admission_id)
         .bind(journey.patient_id())
         .bind(codec::encode(event_kind)?)
         .bind(summary)
         .bind(recorded_at)
-        .bind(owner_user_id)
+        .bind(doctor_user_id)
         .execute(&mut **transaction)
         .await?;
     }
 
-    if journey.archetype.urgent_labs
+    if admission.is_active()
+        || journey.archetype.urgent_labs
         || journey.archetype.spo2_base <= 94
         || admission.status == "discharge_pending"
     {
         let alert_created_at = admission.admitted_at + Duration::hours(2);
-        let acknowledged_at =
-            (!admission.is_active()).then_some(alert_created_at + Duration::hours(3));
+        let acknowledged_at = (!admission.is_active() || journey.ordinal % 3 == 0)
+            .then_some(alert_created_at + Duration::hours(3));
         sqlx::query(
             r#"
             INSERT INTO nursing_alerts (
@@ -4110,14 +5032,17 @@ async fn seed_chronicle_demo_inpatient_operations(
             journey.ordinal,
             admission.sequence,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(admission_id)
         .bind(journey.patient_id())
-        .bind(codec::encode(if journey.archetype.urgent_labs {
-            NursingAlertSeverity::High
-        } else {
-            NursingAlertSeverity::Medium
-        })?)
+        .bind(codec::encode(
+            if journey.archetype.urgent_labs || (admission.is_active() && journey.ordinal % 2 == 0)
+            {
+                NursingAlertSeverity::High
+            } else {
+                NursingAlertSeverity::Medium
+            },
+        )?)
         .bind(format!(
             "Synthetic {} ward follow-up",
             journey.archetype.label
@@ -4127,8 +5052,8 @@ async fn seed_chronicle_demo_inpatient_operations(
         } else {
             NursingAlertStatus::Open
         })?)
-        .bind(owner_user_id)
-        .bind(acknowledged_at.map(|_| owner_user_id))
+        .bind(nurse_user_id)
+        .bind(acknowledged_at.map(|_| nurse_user_id))
         .bind(acknowledged_at)
         .bind(alert_created_at)
         .execute(&mut **transaction)
@@ -4167,13 +5092,13 @@ async fn seed_chronicle_demo_inpatient_operations(
             inpatient_sequence,
             entry_index,
         ))
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(admission_id)
         .bind(journey.patient_id())
         .bind(recorded_at)
         .bind(intake_ml)
         .bind(output_ml)
-        .bind(owner_user_id)
+        .bind(nurse_user_id)
         .execute(&mut **transaction)
         .await?;
     }
@@ -4221,7 +5146,7 @@ async fn seed_chronicle_demo_inpatient_operations(
         journey.ordinal,
         admission.sequence,
     ))
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(admission.ward.id())
     .bind(match journey.archetype.key {
         "surgical" => "Sterile dressing pack",
@@ -4231,8 +5156,8 @@ async fn seed_chronicle_demo_inpatient_operations(
     })
     .bind(2 + i32::try_from(journey.ordinal % 3).unwrap_or(0))
     .bind(codec::encode(stock_status)?)
-    .bind(owner_user_id)
-    .bind(stock_fulfilled_at.map(|_| owner_user_id))
+    .bind(nurse_user_id)
+    .bind(stock_fulfilled_at.map(|_| pharmacist_user_id))
     .bind(stock_requested_at)
     .bind(stock_requested_at + Duration::minutes(30))
     .bind(stock_fulfilled_at)
@@ -4269,9 +5194,9 @@ async fn seed_chronicle_demo_inpatient_operations(
         journey.ordinal,
         admission.sequence,
     ))
-    .bind(baseline.facility_id)
+    .bind(hospital.facility_id)
     .bind(admission.ward.id())
-    .bind(owner_user_id)
+    .bind(nurse_user_id)
     .bind(handoff_to_user_id)
     .bind(if admission.is_active() {
         "Demo day to night shift"
@@ -4293,11 +5218,12 @@ async fn seed_chronicle_demo_inpatient_operations(
 
 async fn seed_chronicle_demo_ward_rounds(
     transaction: &mut Transaction<'_, Postgres>,
-    baseline: &BaselineProvisioning,
+    hospital: &DemoHospitalContext,
     journey: &ChronicleDemoPatient,
     admission: &ChronicleDemoAdmission,
 ) -> anyhow::Result<()> {
-    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let doctor_user_id = hospital.doctor_for(journey, admission.inpatient_sequence());
+    let nurse_user_id = hospital.nurse_for(journey, admission.inpatient_sequence());
     let admission_id = journey.admission_id(admission);
     let inpatient_sequence = admission.inpatient_sequence();
     let committed_round_id = demo_graph_uuid(
@@ -4368,7 +5294,7 @@ async fn seed_chronicle_demo_ward_rounds(
             "#,
         )
         .bind(round_id)
-        .bind(baseline.facility_id)
+        .bind(hospital.facility_id)
         .bind(journey.patient_id())
         .bind(admission_id)
         .bind(status)
@@ -4380,7 +5306,7 @@ async fn seed_chronicle_demo_ward_rounds(
             "discharge_blocker_count": if admission.status == "discharge_pending" { 1 } else { 0 }
         }))
         .bind(rendered_note)
-        .bind(owner_user_id)
+        .bind(doctor_user_id)
         .bind(signed_at)
         .bind(admission.admitted_at + Duration::hours(16))
         .execute(&mut **transaction)
@@ -4436,7 +5362,7 @@ async fn seed_chronicle_demo_ward_rounds(
                 "instruction": journey.archetype.nursing_instruction,
                 "due_at": admission.admitted_at + Duration::hours(24),
                 "task_type": "ward_round",
-                "assigned_to_user_id": null
+                "assigned_to_user_id": nurse_user_id
             }),
             committed_resource_type: Some("nursing_task"),
             committed_resource_id: Some(demo_uuid(
@@ -4448,7 +5374,8 @@ async fn seed_chronicle_demo_ward_rounds(
     ] {
         seed_chronicle_demo_ward_round_action(
             transaction,
-            baseline.facility_id,
+            hospital.facility_id,
+            doctor_user_id,
             journey,
             admission,
             committed_round_id,
@@ -4461,7 +5388,8 @@ async fn seed_chronicle_demo_ward_rounds(
     if admission.status == "discharge_pending" {
         seed_chronicle_demo_ward_round_action(
             transaction,
-            baseline.facility_id,
+            hospital.facility_id,
+            doctor_user_id,
             journey,
             admission,
             committed_round_id,
@@ -4492,7 +5420,8 @@ async fn seed_chronicle_demo_ward_rounds(
 
     seed_chronicle_demo_ward_round_action(
         transaction,
-        baseline.facility_id,
+        hospital.facility_id,
+        doctor_user_id,
         journey,
         admission,
         draft_round_id,
@@ -4507,7 +5436,7 @@ async fn seed_chronicle_demo_ward_rounds(
                 "instruction": "Confirm symptoms, intake, and urine output at next review.",
                 "due_at": admission.admitted_at + Duration::hours(30),
                 "task_type": "ward_round",
-                "assigned_to_user_id": null
+                "assigned_to_user_id": nurse_user_id
             }),
             committed_resource_type: None,
             committed_resource_id: None,
@@ -4534,6 +5463,7 @@ struct ChronicleDemoWardRoundAction {
 async fn seed_chronicle_demo_ward_round_action(
     transaction: &mut Transaction<'_, Postgres>,
     facility_id: Uuid,
+    actor_user_id: Uuid,
     journey: &ChronicleDemoPatient,
     admission: &ChronicleDemoAdmission,
     ward_round_id: Uuid,
@@ -4590,7 +5520,7 @@ async fn seed_chronicle_demo_ward_round_action(
     .bind(action.payload)
     .bind(action.committed_resource_type)
     .bind(action.committed_resource_id)
-    .bind(Uuid::from_u128(OWNER_USER_ID))
+    .bind(actor_user_id)
     .bind(journey.latest_event_at() + Duration::minutes(i64::from(action.ordinal)))
     .execute(&mut **transaction)
     .await?;
@@ -4645,10 +5575,10 @@ fn build_chronicle_demo_patients(config: DemoSeedConfig) -> Vec<ChronicleDemoPat
     let archetypes = chronicle_demo_archetypes();
     let weighted_archetypes = chronicle_demo_weighted_archetypes(&archetypes);
     let mut active_admission_count = 0usize;
-    let mut active_beds_by_ward = [0_u32; 4];
+    let mut active_beds_by_ward = vec![0_u32; chronicle_demo_wards().len()];
     (1..=config.patient_count as u32)
         .map(|ordinal| {
-            let archetype = if config.patient_count == archetypes.len() {
+            let archetype = if ordinal as usize <= archetypes.len() {
                 archetypes[(ordinal as usize - 1) % archetypes.len()].clone()
             } else {
                 weighted_archetypes[(ordinal as usize - 1) % weighted_archetypes.len()].clone()
@@ -4707,7 +5637,7 @@ fn chronicle_demo_admissions_for_patient(
     ordinal: u32,
     config: DemoSeedConfig,
     active_admission_count: &mut usize,
-    active_beds_by_ward: &mut [u32; 4],
+    active_beds_by_ward: &mut [u32],
 ) -> Vec<ChronicleDemoAdmission> {
     let threshold = archetype.admission_probability_per_year * u32::from(config.years);
     let mut admission_count = threshold / 100;
@@ -4729,8 +5659,13 @@ fn chronicle_demo_admissions_for_patient(
         let ward_index =
             usize::try_from(archetype.ward.index - 1).expect("demo ward index fits usize");
         let bed_ordinal = if active {
-            active_beds_by_ward[ward_index] += 1;
-            Some(active_beds_by_ward[ward_index])
+            let next_bed = active_beds_by_ward[ward_index] + 1;
+            if next_bed <= archetype.ward.bed_count {
+                active_beds_by_ward[ward_index] = next_bed;
+                Some(next_bed)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -4767,47 +5702,44 @@ fn chronicle_demo_admissions_for_patient(
     admissions
 }
 
-fn chronicle_demo_wards() -> [ChronicleDemoWard; 4] {
-    [
-        ChronicleDemoWard {
-            index: 1,
-            code: "demo-medical",
-            name: "Demo Medical Ward",
-            bed_prefix: "MED",
-        },
-        ChronicleDemoWard {
-            index: 2,
-            code: "demo-surgical",
-            name: "Demo Surgical Ward",
-            bed_prefix: "SURG",
-        },
-        ChronicleDemoWard {
-            index: 3,
-            code: "demo-maternity",
-            name: "Demo Maternity Ward",
-            bed_prefix: "MAT",
-        },
-        ChronicleDemoWard {
-            index: 4,
-            code: "demo-paediatric",
-            name: "Demo Paediatric Ward",
-            bed_prefix: "PAED",
-        },
-    ]
+fn chronicle_demo_wards() -> Vec<ChronicleDemoWard> {
+    demo_ward_configs()
+        .iter()
+        .enumerate()
+        .map(|(index, ward)| ChronicleDemoWard {
+            index: u32::try_from(index + 1).expect("ward index fits u32"),
+            code: ward.code,
+            name: ward.name,
+            bed_prefix: ward.bed_prefix,
+            bed_count: ward.bed_count,
+            department: ward.department,
+        })
+        .collect()
 }
 
 fn chronicle_demo_archetypes() -> [ChronicleDemoArchetype; 9] {
-    let [medical, surgical, maternity, pediatric] = chronicle_demo_wards();
+    let wards = chronicle_demo_wards();
+    let ward = |code: &str| {
+        wards
+            .iter()
+            .copied()
+            .find(|ward| ward.code == code)
+            .expect("demo ward exists")
+    };
+    let medical = ward("demo-medical-a");
+    let surgical = ward("demo-surgical");
+    let maternity = ward("demo-maternity");
+    let pediatric = ward("demo-childrens");
     [
-        ChronicleDemoArchetype { key: "healthy_adult", weight: 25, label: "healthy adult", op_min: 1, op_max: 3, admission_probability_per_year: 5, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 70, lab_codes: &["FBC", "RBG", "URE"], sbp: (100, 130), dbp: (60, 85), pulse: (60, 90), temp_tenths: (362, 372), spo2_base: 98, problem_label: "Wellness review", medication_name: "Paracetamol", medication_dose: "1 g", medication_frequency: "as needed", nursing_instruction: "Repeat observations if symptoms develop.", ward_round_plan: "No inpatient escalation required.", complaints: &["Routine check-up", "Mild fatigue", "Headache and body aches"], icd_codes: &["Z00.0", "J06.9", "K29.7", "M54.5"], ward: medical, allergy: None, urgent_labs: false, claimable: false, base_invoice_minor: 7_500 },
-        ChronicleDemoArchetype { key: "hypertensive", weight: 20, label: "hypertensive", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 35, age_max: 82, lab_codes: &["FBC", "U&E", "CRE", "LFT", "LIPID"], sbp: (140, 190), dbp: (90, 120), pulse: (60, 90), temp_tenths: (362, 370), spo2_base: 96, problem_label: "Essential hypertension", medication_name: "Amlodipine", medication_dose: "10 mg", medication_frequency: "daily", nursing_instruction: "Recheck blood pressure after rest and document counselling points.", ward_round_plan: "Trend BP, review renal function, and reinforce medication adherence.", complaints: &["Known hypertensive for BP review", "Headache and dizziness", "Chest tightness"], icd_codes: &["I10", "I25.1", "N18.3", "I63.9"], ward: medical, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 12_500 },
-        ChronicleDemoArchetype { key: "diabetic", weight: 15, label: "diabetic", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 30, age_max: 78, lab_codes: &["FBS", "HBA1C", "U&E", "CRE", "LIPID"], sbp: (120, 155), dbp: (75, 100), pulse: (60, 95), temp_tenths: (362, 373), spo2_base: 95, problem_label: "Type 2 diabetes mellitus", medication_name: "Metformin", medication_dose: "500 mg", medication_frequency: "twice daily", nursing_instruction: "Check capillary glucose before meals and document symptoms.", ward_round_plan: "Review glucose trend, renal function, foot status, and discharge education.", complaints: &["Routine diabetic review", "Increased thirst and polyuria", "HbA1c monitoring"], icd_codes: &["E11.9", "E11.65", "N18.3"], ward: medical, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 13_000 },
-        ChronicleDemoArchetype { key: "chronic_complex", weight: 10, label: "chronic complex", op_min: 6, op_max: 12, admission_probability_per_year: 60, sex_rule: ChronicleDemoSexRule::Any, age_min: 45, age_max: 88, lab_codes: &["FBC", "U&E", "CRE", "LFT", "HBA1C", "CRP"], sbp: (145, 200), dbp: (90, 125), pulse: (65, 105), temp_tenths: (362, 375), spo2_base: 90, problem_label: "Hypertension with diabetes and chronic kidney disease", medication_name: "Furosemide", medication_dose: "40 mg", medication_frequency: "daily", nursing_instruction: "Record fluid balance, oedema check, and daily weight.", ward_round_plan: "Review fluid balance, renal profile, medication tolerance, and discharge blockers.", complaints: &["Multi-morbidity review", "Worsening pedal oedema", "Shortness of breath on exertion"], icd_codes: &["I10", "E11.9", "N18.3", "I50.9"], ward: medical, allergy: Some(DemoAllergy { substance: "Penicillin", reaction: Some("rash"), severity: "moderate" }), urgent_labs: true, claimable: true, base_invoice_minor: 24_000 },
-        ChronicleDemoArchetype { key: "respiratory", weight: 8, label: "respiratory", op_min: 3, op_max: 7, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 82, lab_codes: &["FBC", "CRP", "AFB"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 115), temp_tenths: (365, 390), spo2_base: 90, problem_label: "Respiratory infection with bronchospasm", medication_name: "Salbutamol inhaler", medication_dose: "2 puffs", medication_frequency: "every 6 hours", nursing_instruction: "Record respiratory rate and oxygen saturation every four hours.", ward_round_plan: "Continue bronchodilator, review oxygen requirement, and check inflammatory markers.", complaints: &["Wheeze and shortness of breath", "Productive cough", "Cough, fever, pleuritic pain"], icd_codes: &["J45.9", "J18.9", "A15.0", "J44.1"], ward: medical, allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 18_500 },
-        ChronicleDemoArchetype { key: "surgical", weight: 7, label: "surgical", op_min: 2, op_max: 5, admission_probability_per_year: 150, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 76, lab_codes: &["FBC", "U&E", "CRE", "LFT", "COAG", "GS"], sbp: (110, 140), dbp: (65, 90), pulse: (65, 100), temp_tenths: (365, 385), spo2_base: 96, problem_label: "Acute surgical abdomen observation", medication_name: "Ceftriaxone", medication_dose: "1 g", medication_frequency: "daily", nursing_instruction: "Monitor pain score, wound status, and oral intake.", ward_round_plan: "Review surgical site, analgesia, labs, and readiness for theatre or discharge.", complaints: &["Right iliac fossa pain", "Epigastric pain", "Post-operative wound review"], icd_codes: &["K80.2", "K35.9", "K40.9", "K57.3"], ward: surgical, allergy: Some(DemoAllergy { substance: "Co-trimoxazole", reaction: Some("itching"), severity: "mild" }), urgent_labs: true, claimable: true, base_invoice_minor: 32_000 },
-        ChronicleDemoArchetype { key: "maternity", weight: 7, label: "maternity", op_min: 6, op_max: 12, admission_probability_per_year: 100, sex_rule: ChronicleDemoSexRule::Female, age_min: 18, age_max: 42, lab_codes: &["FBC", "GS", "HBS", "HIV", "URE"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 95), temp_tenths: (362, 375), spo2_base: 98, problem_label: "Antenatal and maternity observation", medication_name: "Ferrous sulfate", medication_dose: "200 mg", medication_frequency: "daily", nursing_instruction: "Monitor bleeding, pain score, and fetal movement report during each shift.", ward_round_plan: "Confirm maternal observations, education, and discharge readiness.", complaints: &["First ANC visit", "Routine ANC review", "Term pregnancy contractions"], icd_codes: &["Z34.0", "O80", "O14.1", "O20.0"], ward: maternity, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 16_000 },
-        ChronicleDemoArchetype { key: "pediatric", weight: 5, label: "pediatric", op_min: 3, op_max: 8, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Pediatric, age_min: 1, age_max: 12, lab_codes: &["FBC", "MP", "RBG"], sbp: (80, 110), dbp: (50, 75), pulse: (80, 130), temp_tenths: (365, 400), spo2_base: 94, problem_label: "Paediatric febrile illness", medication_name: "Artemether-lumefantrine", medication_dose: "20/120 mg", medication_frequency: "twice daily", nursing_instruction: "Document temperature, oral intake, urine output, and caregiver education.", ward_round_plan: "Review fever curve, hydration, malaria result, and caregiver instructions.", complaints: &["Fever and rigors", "Diarrhoea and vomiting", "Cough and difficulty breathing"], icd_codes: &["B54", "J18.9", "A09", "E43"], ward: pediatric, allergy: None, urgent_labs: true, claimable: false, base_invoice_minor: 9_000 },
-        ChronicleDemoArchetype { key: "infectious", weight: 3, label: "infectious", op_min: 2, op_max: 5, admission_probability_per_year: 50, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 70, lab_codes: &["FBC", "MP", "WIDAL", "LFT"], sbp: (100, 135), dbp: (60, 85), pulse: (70, 115), temp_tenths: (375, 405), spo2_base: 95, problem_label: "Acute infectious syndrome", medication_name: "Azithromycin", medication_dose: "500 mg", medication_frequency: "daily", nursing_instruction: "Record fever chart, hydration status, and isolation precautions.", ward_round_plan: "Review fever trend, cultures if available, hydration, and antimicrobial response.", complaints: &["High grade fever", "Fever with abdominal pain", "Body pains and vomiting"], icd_codes: &["B54", "A01.0", "B15.9", "A09"], ward: medical, allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 15_000 },
+        ChronicleDemoArchetype { key: "healthy_adult", weight: 25, label: "healthy adult", op_min: 1, op_max: 3, admission_probability_per_year: 5, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 70, lab_codes: &["FBC", "RBG", "URE"], sbp: (100, 130), dbp: (60, 85), pulse: (60, 90), temp_tenths: (362, 372), spo2_base: 98, problem_label: "Wellness review", medication_name: "Paracetamol", medication_dose: "1 g", medication_frequency: "as needed", nursing_instruction: "Repeat observations if symptoms develop.", ward_round_plan: "No inpatient escalation required.", complaints: &["Routine check-up", "Mild fatigue", "Headache and body aches"], icd_codes: &["Z00.0", "J06.9", "K29.7", "M54.5"], ward: medical, department: "General Outpatient", allergy: None, urgent_labs: false, claimable: false, base_invoice_minor: 7_500 },
+        ChronicleDemoArchetype { key: "hypertensive", weight: 20, label: "hypertensive", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 35, age_max: 82, lab_codes: &["FBC", "U&E", "CRE", "LFT", "LIPID"], sbp: (140, 190), dbp: (90, 120), pulse: (60, 90), temp_tenths: (362, 370), spo2_base: 96, problem_label: "Essential hypertension", medication_name: "Amlodipine", medication_dose: "10 mg", medication_frequency: "daily", nursing_instruction: "Recheck blood pressure after rest and document counselling points.", ward_round_plan: "Trend BP, review renal function, and reinforce medication adherence.", complaints: &["Known hypertensive for BP review", "Headache and dizziness", "Chest tightness"], icd_codes: &["I10", "I25.1", "N18.3", "I63.9"], ward: medical, department: "Internal Medicine", allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 12_500 },
+        ChronicleDemoArchetype { key: "diabetic", weight: 15, label: "diabetic", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 30, age_max: 78, lab_codes: &["FBS", "HBA1C", "U&E", "CRE", "LIPID"], sbp: (120, 155), dbp: (75, 100), pulse: (60, 95), temp_tenths: (362, 373), spo2_base: 95, problem_label: "Type 2 diabetes mellitus", medication_name: "Metformin", medication_dose: "500 mg", medication_frequency: "twice daily", nursing_instruction: "Check capillary glucose before meals and document symptoms.", ward_round_plan: "Review glucose trend, renal function, foot status, and discharge education.", complaints: &["Routine diabetic review", "Increased thirst and polyuria", "HbA1c monitoring"], icd_codes: &["E11.9", "E11.65", "N18.3"], ward: medical, department: "Internal Medicine", allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 13_000 },
+        ChronicleDemoArchetype { key: "chronic_complex", weight: 10, label: "chronic complex", op_min: 6, op_max: 12, admission_probability_per_year: 60, sex_rule: ChronicleDemoSexRule::Any, age_min: 45, age_max: 88, lab_codes: &["FBC", "U&E", "CRE", "LFT", "HBA1C", "CRP"], sbp: (145, 200), dbp: (90, 125), pulse: (65, 105), temp_tenths: (362, 375), spo2_base: 90, problem_label: "Hypertension with diabetes and chronic kidney disease", medication_name: "Furosemide", medication_dose: "40 mg", medication_frequency: "daily", nursing_instruction: "Record fluid balance, oedema check, and daily weight.", ward_round_plan: "Review fluid balance, renal profile, medication tolerance, and discharge blockers.", complaints: &["Multi-morbidity review", "Worsening pedal oedema", "Shortness of breath on exertion"], icd_codes: &["I10", "E11.9", "N18.3", "I50.9"], ward: medical, department: "Internal Medicine", allergy: Some(DemoAllergy { substance: "Penicillin", reaction: Some("rash"), severity: "moderate" }), urgent_labs: true, claimable: true, base_invoice_minor: 24_000 },
+        ChronicleDemoArchetype { key: "respiratory", weight: 8, label: "respiratory", op_min: 3, op_max: 7, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 82, lab_codes: &["FBC", "CRP", "AFB"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 115), temp_tenths: (365, 390), spo2_base: 90, problem_label: "Respiratory infection with bronchospasm", medication_name: "Salbutamol inhaler", medication_dose: "2 puffs", medication_frequency: "every 6 hours", nursing_instruction: "Record respiratory rate and oxygen saturation every four hours.", ward_round_plan: "Continue bronchodilator, review oxygen requirement, and check inflammatory markers.", complaints: &["Wheeze and shortness of breath", "Productive cough", "Cough, fever, pleuritic pain"], icd_codes: &["J45.9", "J18.9", "A15.0", "J44.1"], ward: medical, department: "Internal Medicine", allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 18_500 },
+        ChronicleDemoArchetype { key: "surgical", weight: 7, label: "surgical", op_min: 2, op_max: 5, admission_probability_per_year: 150, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 76, lab_codes: &["FBC", "U&E", "CRE", "LFT", "COAG", "GS"], sbp: (110, 140), dbp: (65, 90), pulse: (65, 100), temp_tenths: (365, 385), spo2_base: 96, problem_label: "Acute surgical abdomen observation", medication_name: "Ceftriaxone", medication_dose: "1 g", medication_frequency: "daily", nursing_instruction: "Monitor pain score, wound status, and oral intake.", ward_round_plan: "Review surgical site, analgesia, labs, and readiness for theatre or discharge.", complaints: &["Right iliac fossa pain", "Epigastric pain", "Post-operative wound review"], icd_codes: &["K80.2", "K35.9", "K40.9", "K57.3"], ward: surgical, department: "Surgery", allergy: Some(DemoAllergy { substance: "Co-trimoxazole", reaction: Some("itching"), severity: "mild" }), urgent_labs: true, claimable: true, base_invoice_minor: 32_000 },
+        ChronicleDemoArchetype { key: "maternity", weight: 7, label: "maternity", op_min: 6, op_max: 12, admission_probability_per_year: 100, sex_rule: ChronicleDemoSexRule::Female, age_min: 18, age_max: 42, lab_codes: &["FBC", "GS", "HBS", "HIV", "URE"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 95), temp_tenths: (362, 375), spo2_base: 98, problem_label: "Antenatal and maternity observation", medication_name: "Ferrous sulfate", medication_dose: "200 mg", medication_frequency: "daily", nursing_instruction: "Monitor bleeding, pain score, and fetal movement report during each shift.", ward_round_plan: "Confirm maternal observations, education, and discharge readiness.", complaints: &["First ANC visit", "Routine ANC review", "Term pregnancy contractions"], icd_codes: &["Z34.0", "O80", "O14.1", "O20.0"], ward: maternity, department: "Obstetrics & Gynaecology", allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 16_000 },
+        ChronicleDemoArchetype { key: "pediatric", weight: 5, label: "pediatric", op_min: 3, op_max: 8, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Pediatric, age_min: 1, age_max: 12, lab_codes: &["FBC", "MP", "RBG"], sbp: (80, 110), dbp: (50, 75), pulse: (80, 130), temp_tenths: (365, 400), spo2_base: 94, problem_label: "Paediatric febrile illness", medication_name: "Artemether-lumefantrine", medication_dose: "20/120 mg", medication_frequency: "twice daily", nursing_instruction: "Document temperature, oral intake, urine output, and caregiver education.", ward_round_plan: "Review fever curve, hydration, malaria result, and caregiver instructions.", complaints: &["Fever and rigors", "Diarrhoea and vomiting", "Cough and difficulty breathing"], icd_codes: &["B54", "J18.9", "A09", "E43"], ward: pediatric, department: "Paediatrics", allergy: None, urgent_labs: true, claimable: false, base_invoice_minor: 9_000 },
+        ChronicleDemoArchetype { key: "infectious", weight: 3, label: "infectious", op_min: 2, op_max: 5, admission_probability_per_year: 50, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 70, lab_codes: &["FBC", "MP", "WIDAL", "LFT"], sbp: (100, 135), dbp: (60, 85), pulse: (70, 115), temp_tenths: (375, 405), spo2_base: 95, problem_label: "Acute infectious syndrome", medication_name: "Azithromycin", medication_dose: "500 mg", medication_frequency: "daily", nursing_instruction: "Record fever chart, hydration status, and isolation precautions.", ward: medical, department: "Emergency Medicine", ward_round_plan: "Review fever trend, cultures if available, hydration, and antimicrobial response.", complaints: &["High grade fever", "Fever with abdominal pain", "Body pains and vomiting"], icd_codes: &["B54", "A01.0", "B15.9", "A09"], allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 15_000 },
     ]
 }
 
@@ -5039,11 +5971,29 @@ mod tests {
 
             assert_eq!(journeys.len(), config.patient_count);
             assert_eq!(active_admissions, config.active_admission_target);
-            assert_eq!(occupied_beds.len(), active_admissions);
+            assert!(occupied_beds.len() <= active_admissions);
             assert!(occupied_beds
                 .iter()
-                .all(|(_, bed_ordinal)| *bed_ordinal <= config.beds_per_ward));
+                .all(|(ward, bed_ordinal)| *bed_ordinal <= ward.bed_count));
         }
+    }
+
+    #[test]
+    fn demo_profile_counts_match_python_prod_profiles() {
+        assert_eq!(DemoSeedProfile::Smoke.config().patient_count, 50);
+        assert_eq!(DemoSeedProfile::Staging.config().patient_count, 150);
+        assert_eq!(DemoSeedProfile::Small.config().patient_count, 500);
+        assert_eq!(DemoSeedProfile::Medium.config().patient_count, 2_000);
+        assert_eq!(DemoSeedProfile::Large.config().patient_count, 10_000);
+        assert_eq!(
+            demo_staff_specs()
+                .iter()
+                .map(|spec| spec.count_per_facility)
+                .sum::<u32>(),
+            35
+        );
+        assert_eq!(demo_departments().len(), 9);
+        assert_eq!(demo_ward_configs().len(), 9);
     }
 
     #[test]

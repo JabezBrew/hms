@@ -9,7 +9,7 @@ Profiles:
 
 | Profile | Patients | Years | Purpose |
 | --- | ---: | ---: | --- |
-| `smoke` | 9 | 1 | One patient per legacy archetype with longitudinal sanity coverage. |
+| `smoke` | 50 | 1 | Fast production-style sanity dataset; guarantees all legacy archetypes are present, then continues weighted generation. |
 | `staging` | 150 | 1 | Useful local UI/demo dataset with active ward-round patients. |
 | `small` | 500 | 2 | Bounded hundreds-scale production-like dataset for local development. |
 | `medium` | 2,000 | 3 | Richer clinical workflow dataset for staging-scale product validation. |
@@ -21,25 +21,38 @@ graph remains in place instead of leaving a partially rebuilt facility. Treat
 database capacity, not the routine load-test path; use `HMS_PERF_SEED_SCALE`
 only for high-volume synthetic performance datasets.
 
-The port covers all legacy production archetypes with the same production-seeder
-weights: `healthy_adult`, `hypertensive`, `diabetic`, `chronic_complex`,
-`respiratory`, `surgical`, `maternity`, `pediatric`, and `infectious`.
-Production-sized profiles can create multiple historical admissions for high
-acuity archetypes; at most one seeded admission per patient remains active.
-Outpatient and inpatient billing journeys use separate deterministic sequence
-slots so invoice, receipt, claim, and invoice-line identifiers remain stable and
-collision-free as history depth grows.
+The port covers the legacy production seeder's facility operating graph for the
+active facility: nine departments, six department clinics, deterministic clinic
+sessions, the nine-ward Ghanaian hospital catalog, and the legacy staff mix of
+35 inactive staff users per facility (12 doctors, 16 nurses, 3 lab scientists, 2
+pharmacists, and 2 receptionists). Doctor and nurse users receive practitioner
+profiles, and patient journeys reference those staff actors rather than the
+admin/owner user. The admin/owner keeps assigned patient context so existing
+admin login and demo-patient access remain intact after reseeds.
+
+The patient graph covers all legacy production archetypes with the same
+production-seeder weights: `healthy_adult`, `hypertensive`, `diabetic`,
+`chronic_complex`, `respiratory`, `surgical`, `maternity`, `pediatric`, and
+`infectious`. Production-sized profiles can create multiple historical
+admissions for high acuity archetypes; at most one seeded admission per patient
+remains active. Outpatient and inpatient billing journeys use separate
+deterministic sequence slots so invoice, receipt, claim, and invoice-line
+identifiers remain stable and collision-free as history depth grows.
 
 Journey mapping:
 
-- Outpatient journeys create appointments, visits, encounters, encounter care
-  team assignments, signed encounter-linked clinical notes, vitals/chart
-  entries, prescriptions, lab orders/specimens/results, invoices, payments, and
-  NHIS claims where appropriate.
+- Outpatient journeys create appointments linked to department clinic sessions,
+  visits, encounters, encounter care team assignments, signed encounter-linked
+  clinical notes, vitals/chart entries, prescriptions, lab
+  orders/specimens/results, invoices, payments, and NHIS claims where
+  appropriate. Receptionists check patients in and issue bills; doctors see
+  patients, write notes, order labs, and prescribe; nurses record vitals; lab
+  scientists collect and verify lab results.
 - Inpatient journeys create admission cases, inpatient encounters, nursing
   tasks, medication administrations, treatment sheets, discharge cases where
   appropriate, active admissions, committed/draft ward rounds, ward-round
-  actions, and ward-round artifact links.
+  actions, and ward-round artifact links. Attending doctors, ward nurses,
+  pharmacists, and lab scientists are assigned from the seeded staff graph.
 - Inpatient nursing operations also create numeric inpatient vitals,
   monitoring events, nursing alerts, fluid balance entries, ward stock requests,
   and shift handoffs so ward, nursing, and operational surfaces have realistic
