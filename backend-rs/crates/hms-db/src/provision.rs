@@ -2325,7 +2325,9 @@ fn demo_time(offset_minutes: i64) -> DateTime<Utc> {
         + Duration::minutes(offset_minutes)
 }
 
-const CHRONICLE_DEMO_INPATIENT_SEQUENCE: u32 = 90;
+const CHRONICLE_DEMO_SEQUENCE_SLOT: u64 = 10_000;
+const CHRONICLE_DEMO_COMPOUND_ITEM_SLOT: u64 = 1_000;
+const CHRONICLE_DEMO_INPATIENT_SEQUENCE: u32 = 1_000;
 
 #[derive(Clone, Debug)]
 struct ChronicleDemoPatient {
@@ -3371,6 +3373,7 @@ async fn seed_chronicle_demo_billing(
 ) -> anyhow::Result<()> {
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
     let invoice_id = demo_graph_uuid(DEMO_INVOICE_BASE_ID, journey.ordinal, sequence);
+    let billing_number = chronicle_demo_billing_number(journey.ordinal, sequence);
     let amount_minor = journey.invoice_amount_minor(sequence);
     let paid_amount_minor = match (journey.ordinal + sequence) % 5 {
         0 => 0,
@@ -3414,7 +3417,7 @@ async fn seed_chronicle_demo_billing(
     .bind(invoice_id)
     .bind(baseline.facility_id)
     .bind(journey.patient_id())
-    .bind(format!("DEMO-{:06}", journey.ordinal * 100 + sequence))
+    .bind(format!("DEMO-{billing_number:08}"))
     .bind(status)
     .bind(amount_minor)
     .bind(paid_amount_minor)
@@ -3531,7 +3534,7 @@ async fn seed_chronicle_demo_billing(
         .bind(baseline.facility_id)
         .bind(invoice_id)
         .bind(journey.patient_id())
-        .bind(format!("DEMO-CLM-{:06}", journey.ordinal * 100 + sequence))
+        .bind(format!("DEMO-CLM-{billing_number:08}"))
         .bind(amount_minor - paid_amount_minor)
         .bind(owner_user_id)
         .bind(issued_at + Duration::minutes(8))
@@ -3551,7 +3554,8 @@ async fn seed_chronicle_demo_payment(
     paid_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
-    let receipt_number = format!("DEMO-RCPT-{:06}", journey.ordinal * 100 + sequence);
+    let billing_number = chronicle_demo_billing_number(journey.ordinal, sequence);
+    let receipt_number = format!("DEMO-RCPT-{billing_number:08}");
     let payment_id = demo_graph_uuid(DEMO_PAYMENT_BASE_ID, journey.ordinal, sequence);
     sqlx::query(
         r#"
@@ -4985,14 +4989,22 @@ fn chronicle_demo_lab_test_id(code: &str) -> Uuid {
 fn demo_graph_uuid(base: u128, patient_ordinal: u32, sequence: u32) -> Uuid {
     demo_uuid(
         base,
-        u64::from(patient_ordinal) * 1_000 + u64::from(sequence),
+        u64::from(patient_ordinal) * CHRONICLE_DEMO_SEQUENCE_SLOT + u64::from(sequence),
     )
+}
+
+fn chronicle_demo_billing_number(patient_ordinal: u32, sequence: u32) -> u64 {
+    u64::from(patient_ordinal) * CHRONICLE_DEMO_SEQUENCE_SLOT + u64::from(sequence)
 }
 
 fn demo_compound_uuid(base: u128, patient_ordinal: u32, sequence: u32, item: u32) -> Uuid {
     demo_uuid(
         base,
-        u64::from(patient_ordinal) * 1_000_000 + u64::from(sequence) * 1_000 + u64::from(item),
+        u64::from(patient_ordinal)
+            * CHRONICLE_DEMO_SEQUENCE_SLOT
+            * CHRONICLE_DEMO_COMPOUND_ITEM_SLOT
+            + u64::from(sequence) * CHRONICLE_DEMO_COMPOUND_ITEM_SLOT
+            + u64::from(item),
     )
 }
 
@@ -5031,6 +5043,88 @@ mod tests {
             assert!(occupied_beds
                 .iter()
                 .all(|(_, bed_ordinal)| *bed_ordinal <= config.beds_per_ward));
+        }
+    }
+
+    #[test]
+    fn large_chronicle_demo_billing_identifiers_do_not_collide() {
+        let journeys = build_chronicle_demo_patients(DemoSeedProfile::Large.config());
+        let mut invoice_numbers = HashSet::new();
+        let mut invoice_ids = HashSet::new();
+
+        for journey in &journeys {
+            for sequence in 1..=journey.outpatient_count {
+                assert!(
+                    invoice_numbers
+                        .insert(chronicle_demo_billing_number(journey.ordinal, sequence)),
+                    "duplicate outpatient invoice number for patient {} sequence {}",
+                    journey.ordinal,
+                    sequence
+                );
+                assert!(
+                    invoice_ids.insert(demo_graph_uuid(
+                        DEMO_INVOICE_BASE_ID,
+                        journey.ordinal,
+                        sequence
+                    )),
+                    "duplicate outpatient invoice id for patient {} sequence {}",
+                    journey.ordinal,
+                    sequence
+                );
+                for line_item in 1..=3 {
+                    assert!(
+                        invoice_ids.insert(demo_compound_uuid(
+                            DEMO_INVOICE_LINE_BASE_ID,
+                            journey.ordinal,
+                            sequence,
+                            line_item
+                        )),
+                        "duplicate outpatient invoice line id for patient {} sequence {} item {}",
+                        journey.ordinal,
+                        sequence,
+                        line_item
+                    );
+                }
+            }
+
+            for admission in &journey.admissions {
+                let sequence = admission.inpatient_sequence();
+                assert!(
+                    u64::from(sequence) < CHRONICLE_DEMO_SEQUENCE_SLOT,
+                    "inpatient sequence must fit inside the per-patient demo sequence slot"
+                );
+                assert!(
+                    invoice_numbers
+                        .insert(chronicle_demo_billing_number(journey.ordinal, sequence)),
+                    "duplicate inpatient invoice number for patient {} sequence {}",
+                    journey.ordinal,
+                    sequence
+                );
+                assert!(
+                    invoice_ids.insert(demo_graph_uuid(
+                        DEMO_INVOICE_BASE_ID,
+                        journey.ordinal,
+                        sequence
+                    )),
+                    "duplicate inpatient invoice id for patient {} sequence {}",
+                    journey.ordinal,
+                    sequence
+                );
+                for line_item in 1..=3 {
+                    assert!(
+                        invoice_ids.insert(demo_compound_uuid(
+                            DEMO_INVOICE_LINE_BASE_ID,
+                            journey.ordinal,
+                            sequence,
+                            line_item
+                        )),
+                        "duplicate inpatient invoice line id for patient {} sequence {} item {}",
+                        journey.ordinal,
+                        sequence,
+                        line_item
+                    );
+                }
+            }
         }
     }
 }

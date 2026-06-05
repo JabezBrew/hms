@@ -26,6 +26,9 @@ weights: `healthy_adult`, `hypertensive`, `diabetic`, `chronic_complex`,
 `respiratory`, `surgical`, `maternity`, `pediatric`, and `infectious`.
 Production-sized profiles can create multiple historical admissions for high
 acuity archetypes; at most one seeded admission per patient remains active.
+Outpatient and inpatient billing journeys use separate deterministic sequence
+slots so invoice, receipt, claim, and invoice-line identifiers remain stable and
+collision-free as history depth grows.
 
 Journey mapping:
 
