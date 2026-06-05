@@ -3899,11 +3899,7 @@ async fn seed_chronicle_demo_encounter(
         SET is_active = TRUE
         "#,
     )
-    .bind(demo_graph_uuid(
-        DEMO_CARE_TEAM_BASE_ID,
-        journey.ordinal,
-        sequence,
-    ))
+    .bind(demo_care_team_assignment_id(journey.ordinal, sequence, 1))
     .bind(encounter_id)
     .bind(doctor_user_id)
     .bind(started_at)
@@ -3926,12 +3922,7 @@ async fn seed_chronicle_demo_encounter(
         SET is_active = TRUE
         "#,
     )
-    .bind(demo_compound_uuid(
-        DEMO_CARE_TEAM_BASE_ID,
-        journey.ordinal,
-        sequence,
-        2,
-    ))
+    .bind(demo_care_team_assignment_id(journey.ordinal, sequence, 2))
     .bind(encounter_id)
     .bind(nurse_user_id)
     .bind(doctor_user_id)
@@ -5940,6 +5931,10 @@ fn demo_compound_uuid(base: u128, patient_ordinal: u32, sequence: u32, item: u32
     )
 }
 
+fn demo_care_team_assignment_id(patient_ordinal: u32, sequence: u32, role_slot: u32) -> Uuid {
+    demo_compound_uuid(DEMO_CARE_TEAM_BASE_ID, patient_ordinal, sequence, role_slot)
+}
+
 fn demo_chronicle_anchor() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-05-20T08:00:00Z")
         .expect("static demo seed timestamp is valid")
@@ -6072,6 +6067,47 @@ mod tests {
                         journey.ordinal,
                         sequence,
                         line_item
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn large_chronicle_demo_care_team_identifiers_do_not_collide() {
+        let journeys = build_chronicle_demo_patients(DemoSeedProfile::Large.config());
+        let mut care_team_ids = HashSet::new();
+
+        for journey in &journeys {
+            for sequence in 1..=journey.outpatient_count {
+                for role_slot in 1..=2 {
+                    assert!(
+                        care_team_ids.insert(demo_care_team_assignment_id(
+                            journey.ordinal,
+                            sequence,
+                            role_slot
+                        )),
+                        "duplicate outpatient care-team id for patient {} sequence {} role {}",
+                        journey.ordinal,
+                        sequence,
+                        role_slot
+                    );
+                }
+            }
+
+            for admission in &journey.admissions {
+                let sequence = admission.inpatient_sequence();
+                for role_slot in 1..=2 {
+                    assert!(
+                        care_team_ids.insert(demo_care_team_assignment_id(
+                            journey.ordinal,
+                            sequence,
+                            role_slot
+                        )),
+                        "duplicate inpatient care-team id for patient {} sequence {} role {}",
+                        journey.ordinal,
+                        sequence,
+                        role_slot
                     );
                 }
             }
