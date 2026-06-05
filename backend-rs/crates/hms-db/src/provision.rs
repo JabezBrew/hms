@@ -310,28 +310,28 @@ impl DemoSeedProfile {
                 beds_per_ward: 8,
             },
             Self::Staging => DemoSeedConfig {
-                patient_count: 90,
+                patient_count: 150,
                 years: 1,
-                active_admission_target: 14,
-                beds_per_ward: 18,
+                active_admission_target: 24,
+                beds_per_ward: 48,
             },
             Self::Small => DemoSeedConfig {
-                patient_count: 270,
+                patient_count: 500,
                 years: 2,
-                active_admission_target: 32,
-                beds_per_ward: 40,
+                active_admission_target: 75,
+                beds_per_ward: 160,
             },
             Self::Medium => DemoSeedConfig {
-                patient_count: 900,
+                patient_count: 2_000,
                 years: 3,
-                active_admission_target: 120,
-                beds_per_ward: 180,
+                active_admission_target: 300,
+                beds_per_ward: 640,
             },
             Self::Large => DemoSeedConfig {
-                patient_count: 2_700,
-                years: 4,
-                active_admission_target: 360,
-                beds_per_ward: 480,
+                patient_count: 10_000,
+                years: 5,
+                active_admission_target: 1_500,
+                beds_per_ward: 3_000,
             },
         }
     }
@@ -427,8 +427,8 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = invoices.patient_id
             WHERE invoices.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
-              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM receipts
         USING demo_invoices
@@ -442,8 +442,8 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = invoices.patient_id
             WHERE invoices.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
-              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM payments
         USING demo_invoices
@@ -459,8 +459,8 @@ async fn delete_demo_seed_graph(
             WHERE nhis_claims.facility_id = $1
               AND invoices.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
-              AND nhis_claims.claim_number ~ '^DEMO-CLM-[0-9]{4,6}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
+              AND nhis_claims.claim_number ~ '^DEMO-CLM-[0-9]+$'
         )
         DELETE FROM nhis_batch_claims
         USING demo_claims
@@ -474,14 +474,14 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = invoices.patient_id
             WHERE invoices.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
-              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM nhis_claims
         USING demo_invoices
         WHERE nhis_claims.facility_id = $1
           AND nhis_claims.invoice_id = demo_invoices.id
-          AND nhis_claims.claim_number ~ '^DEMO-CLM-[0-9]{4,6}$'
+          AND nhis_claims.claim_number ~ '^DEMO-CLM-[0-9]+$'
         "#,
         r#"
         WITH demo_invoices AS (
@@ -490,8 +490,8 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = invoices.patient_id
             WHERE invoices.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
-              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM invoice_lines
         USING demo_invoices
@@ -504,8 +504,8 @@ async fn delete_demo_seed_graph(
         WHERE invoices.facility_id = $1
           AND patients.facility_id = $1
           AND invoices.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
-          AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
+          AND invoices.invoice_number ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         WITH demo_rounds AS (
@@ -514,7 +514,7 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = ward_rounds.patient_id
             WHERE ward_rounds.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM ward_round_artifact_links
         USING demo_rounds
@@ -528,7 +528,7 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = ward_rounds.patient_id
             WHERE ward_rounds.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM ward_round_actions
         USING demo_rounds
@@ -541,7 +541,7 @@ async fn delete_demo_seed_graph(
         WHERE ward_rounds.facility_id = $1
           AND patients.facility_id = $1
           AND ward_rounds.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         WITH demo_admissions AS (
@@ -550,7 +550,7 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = admission_cases.patient_id
             WHERE admission_cases.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM patient_vitals
         USING demo_admissions
@@ -564,7 +564,7 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = admission_cases.patient_id
             WHERE admission_cases.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM nursing_alerts
         USING demo_admissions
@@ -578,7 +578,7 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = admission_cases.patient_id
             WHERE admission_cases.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM monitoring_events
         USING demo_admissions
@@ -592,7 +592,7 @@ async fn delete_demo_seed_graph(
             JOIN patients ON patients.id = admission_cases.patient_id
             WHERE admission_cases.facility_id = $1
               AND patients.facility_id = $1
-              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND patients.patient_code ~ '^DEMO-[0-9]+$'
         )
         DELETE FROM fluid_balance_entries
         USING demo_admissions
@@ -605,7 +605,7 @@ async fn delete_demo_seed_graph(
         WHERE discharge_cases.facility_id = $1
           AND patients.facility_id = $1
           AND discharge_cases.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM treatment_sheets
@@ -613,7 +613,7 @@ async fn delete_demo_seed_graph(
         WHERE treatment_sheets.facility_id = $1
           AND patients.facility_id = $1
           AND treatment_sheets.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM medication_administrations
@@ -621,7 +621,7 @@ async fn delete_demo_seed_graph(
         WHERE medication_administrations.facility_id = $1
           AND patients.facility_id = $1
           AND medication_administrations.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM nursing_tasks
@@ -629,7 +629,7 @@ async fn delete_demo_seed_graph(
         WHERE nursing_tasks.facility_id = $1
           AND patients.facility_id = $1
           AND nursing_tasks.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM lab_orders
@@ -637,7 +637,7 @@ async fn delete_demo_seed_graph(
         WHERE lab_orders.facility_id = $1
           AND patients.facility_id = $1
           AND lab_orders.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM admission_cases
@@ -645,7 +645,7 @@ async fn delete_demo_seed_graph(
         WHERE admission_cases.facility_id = $1
           AND patients.facility_id = $1
           AND admission_cases.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM encounter_care_team_assignments
@@ -654,7 +654,7 @@ async fn delete_demo_seed_graph(
           AND encounters.facility_id = $1
           AND patients.facility_id = $1
           AND encounters.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM encounters
@@ -662,7 +662,7 @@ async fn delete_demo_seed_graph(
         WHERE encounters.facility_id = $1
           AND patients.facility_id = $1
           AND encounters.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM visits
@@ -670,7 +670,7 @@ async fn delete_demo_seed_graph(
         WHERE visits.facility_id = $1
           AND patients.facility_id = $1
           AND visits.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM appointments
@@ -678,7 +678,7 @@ async fn delete_demo_seed_graph(
         WHERE appointments.facility_id = $1
           AND patients.facility_id = $1
           AND appointments.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM clinical_notes
@@ -686,7 +686,7 @@ async fn delete_demo_seed_graph(
         WHERE clinical_notes.facility_id = $1
           AND patients.facility_id = $1
           AND clinical_notes.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM patient_problems
@@ -694,7 +694,7 @@ async fn delete_demo_seed_graph(
         WHERE patient_problems.facility_id = $1
           AND patients.facility_id = $1
           AND patient_problems.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM patient_allergies
@@ -702,7 +702,7 @@ async fn delete_demo_seed_graph(
         WHERE patient_allergies.facility_id = $1
           AND patients.facility_id = $1
           AND patient_allergies.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM prescriptions
@@ -710,7 +710,7 @@ async fn delete_demo_seed_graph(
         WHERE prescriptions.facility_id = $1
           AND patients.facility_id = $1
           AND prescriptions.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM chart_entries
@@ -718,7 +718,7 @@ async fn delete_demo_seed_graph(
         WHERE chart_entries.facility_id = $1
           AND patients.facility_id = $1
           AND chart_entries.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM patient_contexts
@@ -726,42 +726,82 @@ async fn delete_demo_seed_graph(
         WHERE patient_contexts.facility_id = $1
           AND patients.facility_id = $1
           AND patient_contexts.patient_id = patients.id
-          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patients.patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM patients
         WHERE facility_id = $1
-          AND patient_code ~ '^DEMO-[0-9]{4}$'
+          AND patient_code ~ '^DEMO-[0-9]+$'
         "#,
         r#"
         DELETE FROM handoffs
         WHERE handoffs.facility_id = $1
-          AND handoffs.id >= 'd8500000-0000-0000-0000-000000000000'::uuid
-          AND handoffs.id < 'd8500000-0000-0000-0000-000001000000'::uuid
+          AND handoffs.ward_id IN (
+              SELECT wards.id
+              FROM wards
+              WHERE wards.facility_id = $1
+                AND wards.code IN (
+                    'demo-medical',
+                    'demo-surgical',
+                    'demo-maternity',
+                    'demo-paediatric'
+                )
+          )
         "#,
         r#"
         DELETE FROM ward_stock_requests
         WHERE ward_stock_requests.facility_id = $1
-          AND ward_stock_requests.id >= 'd8400000-0000-0000-0000-000000000000'::uuid
-          AND ward_stock_requests.id < 'd8400000-0000-0000-0000-000001000000'::uuid
+          AND ward_stock_requests.ward_id IN (
+              SELECT wards.id
+              FROM wards
+              WHERE wards.facility_id = $1
+                AND wards.code IN (
+                    'demo-medical',
+                    'demo-surgical',
+                    'demo-maternity',
+                    'demo-paediatric'
+                )
+          )
         "#,
         r#"
         DELETE FROM beds
         WHERE beds.facility_id = $1
-          AND beds.id >= 'd1100000-0000-0000-0000-000000000000'::uuid
-          AND beds.id < 'd1100000-0000-0000-0000-000000010000'::uuid
+          AND beds.ward_id IN (
+              SELECT wards.id
+              FROM wards
+              WHERE wards.facility_id = $1
+                AND wards.code IN (
+                    'demo-medical',
+                    'demo-surgical',
+                    'demo-maternity',
+                    'demo-paediatric'
+                )
+          )
         "#,
         r#"
         DELETE FROM ward_sections
         WHERE ward_sections.facility_id = $1
-          AND ward_sections.id >= 'd1000000-0000-0000-0000-000000000100'::uuid
-          AND ward_sections.id < 'd1000000-0000-0000-0000-000000000200'::uuid
+          AND ward_sections.ward_id IN (
+              SELECT wards.id
+              FROM wards
+              WHERE wards.facility_id = $1
+                AND wards.code IN (
+                    'demo-medical',
+                    'demo-surgical',
+                    'demo-maternity',
+                    'demo-paediatric'
+                )
+          )
         "#,
         r#"
         DELETE FROM wards
         WHERE facility_id = $1
-          AND id >= 'd1000000-0000-0000-0000-000000000000'::uuid
-          AND id < 'd1000000-0000-0000-0000-000000000100'::uuid
+          AND code IN (
+              'demo-medical',
+              'demo-surgical',
+              'demo-maternity',
+              'demo-paediatric'
+          )
         "#,
     ];
 
@@ -2269,8 +2309,8 @@ fn demo_patient_archetypes() -> Vec<DemoPatientArchetype> {
     ]
 }
 
-fn demo_uuid(base: u128, ordinal: u32) -> Uuid {
-    Uuid::from_u128(base + u128::from(ordinal))
+fn demo_uuid(base: u128, ordinal: impl Into<u128>) -> Uuid {
+    Uuid::from_u128(base + ordinal.into())
 }
 
 #[allow(dead_code)]
@@ -2297,7 +2337,7 @@ struct ChronicleDemoPatient {
     sex: Sex,
     outpatient_count: u32,
     problem_onset: NaiveDate,
-    admission: Option<ChronicleDemoAdmission>,
+    admissions: Vec<ChronicleDemoAdmission>,
 }
 
 impl ChronicleDemoPatient {
@@ -2309,8 +2349,8 @@ impl ChronicleDemoPatient {
         demo_uuid(DEMO_PATIENT_BASE_ID, self.ordinal)
     }
 
-    fn admission_id(&self) -> Uuid {
-        demo_uuid(DEMO_ADMISSION_BASE_ID, self.ordinal)
+    fn admission_id(&self, admission: &ChronicleDemoAdmission) -> Uuid {
+        demo_graph_uuid(DEMO_ADMISSION_BASE_ID, self.ordinal, admission.sequence)
     }
 
     fn appointment_id(&self, sequence: u32) -> Uuid {
@@ -2333,10 +2373,17 @@ impl ChronicleDemoPatient {
     }
 
     fn latest_event_at(&self) -> DateTime<Utc> {
-        self.admission
-            .as_ref()
+        self.admissions
+            .iter()
             .filter(|admission| admission.is_active())
             .map(|admission| admission.admitted_at + Duration::hours(30))
+            .max()
+            .or_else(|| {
+                self.admissions
+                    .iter()
+                    .filter_map(|admission| admission.discharged_at)
+                    .max()
+            })
             .unwrap_or_else(|| self.outpatient_time(self.outpatient_count) + Duration::hours(2))
     }
 
@@ -2363,6 +2410,7 @@ impl ChronicleDemoPatient {
 
 #[derive(Clone, Copy, Debug)]
 struct ChronicleDemoAdmission {
+    sequence: u32,
     status: &'static str,
     ward: ChronicleDemoWard,
     bed_ordinal: Option<u32>,
@@ -2373,6 +2421,10 @@ struct ChronicleDemoAdmission {
 impl ChronicleDemoAdmission {
     fn is_active(self) -> bool {
         matches!(self.status, "admitted" | "discharge_pending")
+    }
+
+    fn inpatient_sequence(self) -> u32 {
+        CHRONICLE_DEMO_INPATIENT_SEQUENCE + ((self.sequence - 1) * 10)
     }
 }
 
@@ -2394,13 +2446,14 @@ impl ChronicleDemoWard {
     }
 
     fn bed_id(self, bed_ordinal: u32) -> Uuid {
-        demo_uuid(DEMO_BED_BASE_ID, self.index * 1_000 + bed_ordinal)
+        demo_uuid(DEMO_BED_BASE_ID, self.index * 100_000 + bed_ordinal)
     }
 }
 
 #[derive(Clone, Debug)]
 struct ChronicleDemoArchetype {
     key: &'static str,
+    weight: u16,
     label: &'static str,
     op_min: u16,
     op_max: u16,
@@ -2464,11 +2517,11 @@ async fn seed_chronicle_demo_ward_resources(
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
     let occupied_beds: HashSet<(ChronicleDemoWard, u32)> = journeys
         .iter()
-        .filter_map(|journey| {
+        .flat_map(|journey| {
             journey
-                .admission
-                .as_ref()
-                .and_then(|admission| admission.bed_ordinal.map(|bed| (admission.ward, bed)))
+                .admissions
+                .iter()
+                .filter_map(|admission| admission.bed_ordinal.map(|bed| (admission.ward, bed)))
         })
         .collect();
 
@@ -2643,7 +2696,7 @@ async fn seed_chronicle_demo_patient_journey(
     for sequence in 1..=journey.outpatient_count {
         seed_chronicle_demo_outpatient(transaction, baseline, journey, sequence).await?;
     }
-    if let Some(admission) = &journey.admission {
+    for admission in &journey.admissions {
         seed_chronicle_demo_admission(transaction, baseline, journey, admission).await?;
     }
 
@@ -3574,6 +3627,8 @@ async fn seed_chronicle_demo_admission(
     admission: &ChronicleDemoAdmission,
 ) -> anyhow::Result<()> {
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let admission_id = journey.admission_id(admission);
+    let inpatient_sequence = admission.inpatient_sequence();
     sqlx::query(
         r#"
         INSERT INTO admission_cases (
@@ -3602,7 +3657,7 @@ async fn seed_chronicle_demo_admission(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(journey.admission_id())
+    .bind(admission_id)
     .bind(baseline.facility_id)
     .bind(journey.patient_id())
     .bind(admission.ward.id())
@@ -3618,9 +3673,9 @@ async fn seed_chronicle_demo_admission(
         transaction,
         baseline,
         journey,
-        journey.encounter_id(CHRONICLE_DEMO_INPATIENT_SEQUENCE),
+        journey.encounter_id(inpatient_sequence),
         None,
-        CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+        inpatient_sequence,
         "inpatient",
         if admission.is_active() {
             "in_progress"
@@ -3635,8 +3690,8 @@ async fn seed_chronicle_demo_admission(
         transaction,
         baseline,
         journey,
-        journey.encounter_id(CHRONICLE_DEMO_INPATIENT_SEQUENCE),
-        CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+        journey.encounter_id(inpatient_sequence),
+        inpatient_sequence,
         "doctor_note",
         admission.admitted_at + Duration::minutes(50),
     )
@@ -3693,10 +3748,10 @@ async fn seed_chronicle_demo_admission(
         )
         .bind(demo_uuid(
             DEMO_NURSING_TASK_BASE_ID,
-            journey.ordinal * 10 + task_index as u32 + 1,
+            journey.ordinal * 1_000 + inpatient_sequence + task_index as u32 + 1,
         ))
         .bind(baseline.facility_id)
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(journey.patient_id())
         .bind(admission.ward.id())
         .bind(task_type)
@@ -3738,10 +3793,10 @@ async fn seed_chronicle_demo_admission(
         .bind(demo_graph_uuid(
             DEMO_MED_ADMIN_BASE_ID,
             journey.ordinal,
-            med_index,
+            inpatient_sequence + med_index,
         ))
         .bind(baseline.facility_id)
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(journey.patient_id())
         .bind(journey.archetype.medication_name)
         .bind(admission.admitted_at + Duration::hours(i64::from(med_index * 8)))
@@ -3780,9 +3835,13 @@ async fn seed_chronicle_demo_admission(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(demo_uuid(DEMO_TREATMENT_SHEET_BASE_ID, journey.ordinal))
+    .bind(demo_graph_uuid(
+        DEMO_TREATMENT_SHEET_BASE_ID,
+        journey.ordinal,
+        admission.sequence,
+    ))
     .bind(baseline.facility_id)
-    .bind(journey.admission_id())
+    .bind(admission_id)
     .bind(journey.patient_id())
     .bind(admission.admitted_at.date_naive())
     .bind(owner_user_id)
@@ -3797,7 +3856,7 @@ async fn seed_chronicle_demo_admission(
             transaction,
             baseline,
             journey,
-            CHRONICLE_DEMO_INPATIENT_SEQUENCE + day,
+            inpatient_sequence + day,
             admission.admitted_at + Duration::days(i64::from(day - 1)) + Duration::hours(8),
         )
         .await?;
@@ -3806,7 +3865,7 @@ async fn seed_chronicle_demo_admission(
         transaction,
         baseline,
         journey,
-        CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+        inpatient_sequence,
         admission.admitted_at + Duration::hours(2),
     )
     .await?;
@@ -3814,7 +3873,7 @@ async fn seed_chronicle_demo_admission(
         transaction,
         baseline,
         journey,
-        CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+        inpatient_sequence,
         admission.admitted_at + Duration::hours(3),
     )
     .await?;
@@ -3822,7 +3881,7 @@ async fn seed_chronicle_demo_admission(
         transaction,
         baseline,
         journey,
-        CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+        inpatient_sequence,
         admission.admitted_at + Duration::hours(5),
     )
     .await?;
@@ -3842,6 +3901,7 @@ async fn seed_chronicle_demo_discharge_case(
     journey: &ChronicleDemoPatient,
     admission: &ChronicleDemoAdmission,
 ) -> anyhow::Result<()> {
+    let admission_id = journey.admission_id(admission);
     sqlx::query(
         r#"
         INSERT INTO discharge_cases (
@@ -3863,9 +3923,13 @@ async fn seed_chronicle_demo_discharge_case(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(demo_uuid(DEMO_DISCHARGE_CASE_BASE_ID, journey.ordinal))
+    .bind(demo_graph_uuid(
+        DEMO_DISCHARGE_CASE_BASE_ID,
+        journey.ordinal,
+        admission.sequence,
+    ))
     .bind(baseline.facility_id)
-    .bind(journey.admission_id())
+    .bind(admission_id)
     .bind(journey.patient_id())
     .bind(if admission.status == "discharged" {
         "completed"
@@ -3888,9 +3952,11 @@ async fn seed_chronicle_demo_inpatient_operations(
 ) -> anyhow::Result<()> {
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
     let handoff_to_user_id = Uuid::from_u128(LIMITED_USER_ID);
+    let admission_id = journey.admission_id(admission);
+    let inpatient_sequence = admission.inpatient_sequence();
 
     for observation_index in 1..=6 {
-        let sequence = CHRONICLE_DEMO_INPATIENT_SEQUENCE + observation_index;
+        let sequence = inpatient_sequence + observation_index;
         let recorded_at = admission.admitted_at + Duration::hours(i64::from(observation_index * 6));
         let values = chronicle_demo_observation_values(journey, sequence);
         sqlx::query(
@@ -3925,11 +3991,11 @@ async fn seed_chronicle_demo_inpatient_operations(
         .bind(demo_compound_uuid(
             DEMO_PATIENT_VITAL_BASE_ID,
             journey.ordinal,
-            CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+            inpatient_sequence,
             observation_index,
         ))
         .bind(baseline.facility_id)
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(journey.patient_id())
         .bind(recorded_at)
         .bind(values.temperature_c)
@@ -3988,11 +4054,11 @@ async fn seed_chronicle_demo_inpatient_operations(
         .bind(demo_compound_uuid(
             DEMO_MONITORING_EVENT_BASE_ID,
             journey.ordinal,
-            CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+            inpatient_sequence,
             event_index as u32 + 1,
         ))
         .bind(baseline.facility_id)
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(journey.patient_id())
         .bind(codec::encode(event_kind)?)
         .bind(summary)
@@ -4035,9 +4101,13 @@ async fn seed_chronicle_demo_inpatient_operations(
                 updated_at = EXCLUDED.updated_at
             "#,
         )
-        .bind(demo_uuid(DEMO_NURSING_ALERT_BASE_ID, journey.ordinal))
+        .bind(demo_graph_uuid(
+            DEMO_NURSING_ALERT_BASE_ID,
+            journey.ordinal,
+            admission.sequence,
+        ))
         .bind(baseline.facility_id)
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(journey.patient_id())
         .bind(codec::encode(if journey.archetype.urgent_labs {
             NursingAlertSeverity::High
@@ -4090,11 +4160,11 @@ async fn seed_chronicle_demo_inpatient_operations(
         .bind(demo_compound_uuid(
             DEMO_FLUID_BALANCE_BASE_ID,
             journey.ordinal,
-            CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+            inpatient_sequence,
             entry_index,
         ))
         .bind(baseline.facility_id)
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(journey.patient_id())
         .bind(recorded_at)
         .bind(intake_ml)
@@ -4142,7 +4212,11 @@ async fn seed_chronicle_demo_inpatient_operations(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(demo_uuid(DEMO_WARD_STOCK_REQUEST_BASE_ID, journey.ordinal))
+    .bind(demo_graph_uuid(
+        DEMO_WARD_STOCK_REQUEST_BASE_ID,
+        journey.ordinal,
+        admission.sequence,
+    ))
     .bind(baseline.facility_id)
     .bind(admission.ward.id())
     .bind(match journey.archetype.key {
@@ -4186,7 +4260,11 @@ async fn seed_chronicle_demo_inpatient_operations(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(demo_uuid(DEMO_HANDOFF_BASE_ID, journey.ordinal))
+    .bind(demo_graph_uuid(
+        DEMO_HANDOFF_BASE_ID,
+        journey.ordinal,
+        admission.sequence,
+    ))
     .bind(baseline.facility_id)
     .bind(admission.ward.id())
     .bind(owner_user_id)
@@ -4216,8 +4294,18 @@ async fn seed_chronicle_demo_ward_rounds(
     admission: &ChronicleDemoAdmission,
 ) -> anyhow::Result<()> {
     let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
-    let committed_round_id = demo_graph_uuid(DEMO_WARD_ROUND_BASE_ID, journey.ordinal, 1);
-    let draft_round_id = demo_graph_uuid(DEMO_WARD_ROUND_BASE_ID, journey.ordinal, 2);
+    let admission_id = journey.admission_id(admission);
+    let inpatient_sequence = admission.inpatient_sequence();
+    let committed_round_id = demo_graph_uuid(
+        DEMO_WARD_ROUND_BASE_ID,
+        journey.ordinal,
+        inpatient_sequence + 1,
+    );
+    let draft_round_id = demo_graph_uuid(
+        DEMO_WARD_ROUND_BASE_ID,
+        journey.ordinal,
+        inpatient_sequence + 2,
+    );
     for (round_id, status, signed_at, rendered_note, note_sections) in [
         (
             committed_round_id,
@@ -4278,7 +4366,7 @@ async fn seed_chronicle_demo_ward_rounds(
         .bind(round_id)
         .bind(baseline.facility_id)
         .bind(journey.patient_id())
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(status)
         .bind(note_sections)
         .bind(json!({
@@ -4302,7 +4390,7 @@ async fn seed_chronicle_demo_ward_rounds(
             title: journey.archetype.medication_name,
             instruction: None,
             payload: json!({
-                "prescription_id": demo_graph_uuid(DEMO_PRESCRIPTION_BASE_ID, journey.ordinal, CHRONICLE_DEMO_INPATIENT_SEQUENCE),
+                "prescription_id": demo_graph_uuid(DEMO_PRESCRIPTION_BASE_ID, journey.ordinal, inpatient_sequence),
                 "medication_name": journey.archetype.medication_name,
                 "dose": journey.archetype.medication_dose,
                 "frequency": journey.archetype.medication_frequency,
@@ -4312,7 +4400,7 @@ async fn seed_chronicle_demo_ward_rounds(
             committed_resource_id: Some(demo_graph_uuid(
                 DEMO_PRESCRIPTION_BASE_ID,
                 journey.ordinal,
-                CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+                inpatient_sequence,
             )),
             link_title: Some(journey.archetype.medication_name),
         },
@@ -4330,7 +4418,7 @@ async fn seed_chronicle_demo_ward_rounds(
             committed_resource_id: Some(demo_graph_uuid(
                 DEMO_LAB_ORDER_BASE_ID,
                 journey.ordinal,
-                CHRONICLE_DEMO_INPATIENT_SEQUENCE,
+                inpatient_sequence,
             )),
             link_title: Some("Demo lab order"),
         },
@@ -4349,7 +4437,7 @@ async fn seed_chronicle_demo_ward_rounds(
             committed_resource_type: Some("nursing_task"),
             committed_resource_id: Some(demo_uuid(
                 DEMO_NURSING_TASK_BASE_ID,
-                journey.ordinal * 10 + 1,
+                journey.ordinal * 1_000 + inpatient_sequence + 1,
             )),
             link_title: Some("Continue observation chart"),
         },
@@ -4358,6 +4446,7 @@ async fn seed_chronicle_demo_ward_rounds(
             transaction,
             baseline.facility_id,
             journey,
+            admission,
             committed_round_id,
             "committed",
             action,
@@ -4370,6 +4459,7 @@ async fn seed_chronicle_demo_ward_rounds(
             transaction,
             baseline.facility_id,
             journey,
+            admission,
             committed_round_id,
             "committed",
             ChronicleDemoWardRoundAction {
@@ -4385,9 +4475,10 @@ async fn seed_chronicle_demo_ward_rounds(
                     "reason": "Synthetic discharge-readiness review"
                 }),
                 committed_resource_type: Some("discharge_case"),
-                committed_resource_id: Some(demo_uuid(
+                committed_resource_id: Some(demo_graph_uuid(
                     DEMO_DISCHARGE_CASE_BASE_ID,
                     journey.ordinal,
+                    admission.sequence,
                 )),
                 link_title: Some("Discharge request"),
             },
@@ -4399,6 +4490,7 @@ async fn seed_chronicle_demo_ward_rounds(
         transaction,
         baseline.facility_id,
         journey,
+        admission,
         draft_round_id,
         "draft",
         ChronicleDemoWardRoundAction {
@@ -4439,14 +4531,18 @@ async fn seed_chronicle_demo_ward_round_action(
     transaction: &mut Transaction<'_, Postgres>,
     facility_id: Uuid,
     journey: &ChronicleDemoPatient,
+    admission: &ChronicleDemoAdmission,
     ward_round_id: Uuid,
     status: &'static str,
     action: ChronicleDemoWardRoundAction,
 ) -> anyhow::Result<()> {
-    let action_id = demo_uuid(
+    let action_id = demo_compound_uuid(
         DEMO_WARD_ROUND_ACTION_BASE_ID,
-        journey.ordinal * 100 + action.ordinal,
+        journey.ordinal,
+        admission.inpatient_sequence(),
+        action.ordinal,
     );
+    let admission_id = journey.admission_id(admission);
     sqlx::query(
         r#"
         INSERT INTO ward_round_actions (
@@ -4482,7 +4578,7 @@ async fn seed_chronicle_demo_ward_round_action(
     .bind(facility_id)
     .bind(ward_round_id)
     .bind(journey.patient_id())
-    .bind(journey.admission_id())
+    .bind(admission_id)
     .bind(action.action_type)
     .bind(status)
     .bind(action.title)
@@ -4520,15 +4616,17 @@ async fn seed_chronicle_demo_ward_round_action(
                 action_id = EXCLUDED.action_id
             "#,
         )
-        .bind(demo_uuid(
+        .bind(demo_compound_uuid(
             DEMO_WARD_ROUND_LINK_BASE_ID,
-            journey.ordinal * 100 + action.ordinal,
+            journey.ordinal,
+            admission.inpatient_sequence(),
+            action.ordinal,
         ))
         .bind(facility_id)
         .bind(ward_round_id)
         .bind(action_id)
         .bind(journey.patient_id())
-        .bind(journey.admission_id())
+        .bind(admission_id)
         .bind(resource_type)
         .bind(resource_id)
         .bind(title)
@@ -4541,18 +4639,23 @@ async fn seed_chronicle_demo_ward_round_action(
 
 fn build_chronicle_demo_patients(config: DemoSeedConfig) -> Vec<ChronicleDemoPatient> {
     let archetypes = chronicle_demo_archetypes();
+    let weighted_archetypes = chronicle_demo_weighted_archetypes(&archetypes);
     let mut active_admission_count = 0usize;
     let mut active_beds_by_ward = [0_u32; 4];
     (1..=config.patient_count as u32)
         .map(|ordinal| {
-            let archetype = archetypes[(ordinal as usize - 1) % archetypes.len()].clone();
+            let archetype = if config.patient_count == archetypes.len() {
+                archetypes[(ordinal as usize - 1) % archetypes.len()].clone()
+            } else {
+                weighted_archetypes[(ordinal as usize - 1) % weighted_archetypes.len()].clone()
+            };
             let sex = chronicle_demo_sex(archetype.sex_rule, ordinal);
             let age_span = u32::from(archetype.age_max - archetype.age_min + 1);
             let age = u32::from(archetype.age_min) + ((ordinal * 7) % age_span);
             let outpatient_count = (u32::from(archetype.op_min)
                 + (ordinal % u32::from(archetype.op_max - archetype.op_min + 1)))
                 * u32::from(config.years);
-            let admission = chronicle_demo_admission_for_patient(
+            let admissions = chronicle_demo_admissions_for_patient(
                 &archetype,
                 ordinal,
                 config,
@@ -4573,60 +4676,91 @@ fn build_chronicle_demo_patients(config: DemoSeedConfig) -> Vec<ChronicleDemoPat
                 outpatient_count: outpatient_count.max(2),
                 problem_onset: demo_chronicle_anchor().date_naive()
                     - Duration::days(i64::from(ordinal % 180 + 30)),
-                admission,
+                admissions,
                 archetype,
             }
         })
         .collect()
 }
 
-fn chronicle_demo_admission_for_patient(
+fn chronicle_demo_weighted_archetypes(
+    archetypes: &[ChronicleDemoArchetype; 9],
+) -> Vec<ChronicleDemoArchetype> {
+    let mut weighted = Vec::with_capacity(
+        archetypes
+            .iter()
+            .map(|archetype| usize::from(archetype.weight))
+            .sum(),
+    );
+    for archetype in archetypes {
+        weighted.extend(std::iter::repeat(archetype.clone()).take(usize::from(archetype.weight)));
+    }
+    weighted
+}
+
+fn chronicle_demo_admissions_for_patient(
     archetype: &ChronicleDemoArchetype,
     ordinal: u32,
     config: DemoSeedConfig,
     active_admission_count: &mut usize,
     active_beds_by_ward: &mut [u32; 4],
-) -> Option<ChronicleDemoAdmission> {
+) -> Vec<ChronicleDemoAdmission> {
     let threshold = archetype.admission_probability_per_year * u32::from(config.years);
+    let mut admission_count = threshold / 100;
     let score = (ordinal * 37 + archetype.key.as_bytes()[0] as u32) % 100;
-    let should_admit = threshold >= 50 || score < threshold.min(100);
-    if !should_admit {
-        return None;
+    if score < threshold % 100 {
+        admission_count += 1;
+    }
+    if admission_count == 0 {
+        return Vec::new();
     }
 
-    let active = *active_admission_count < config.active_admission_target
-        && archetype.admission_probability_per_year >= 25;
-    let ward_index = usize::try_from(archetype.ward.index - 1).expect("demo ward index fits usize");
-    let bed_ordinal = if active {
-        active_beds_by_ward[ward_index] += 1;
-        Some(active_beds_by_ward[ward_index])
-    } else {
-        None
-    };
-    if active {
-        *active_admission_count += 1;
+    let active_admission_sequence = (*active_admission_count < config.active_admission_target
+        && archetype.admission_probability_per_year >= 25)
+        .then_some(admission_count);
+    let mut admissions = Vec::with_capacity(usize::try_from(admission_count).unwrap_or(0));
+
+    for sequence in 1..=admission_count {
+        let active = active_admission_sequence == Some(sequence);
+        let ward_index =
+            usize::try_from(archetype.ward.index - 1).expect("demo ward index fits usize");
+        let bed_ordinal = if active {
+            active_beds_by_ward[ward_index] += 1;
+            Some(active_beds_by_ward[ward_index])
+        } else {
+            None
+        };
+        if active {
+            *active_admission_count += 1;
+        }
+        let admitted_at = if active {
+            demo_chronicle_anchor() - Duration::hours(i64::from((ordinal % 72) + 6))
+        } else {
+            let history_days = i64::from(config.years) * 365;
+            let spacing_days = (history_days / i64::from(admission_count.max(1))).max(14);
+            demo_chronicle_anchor()
+                - Duration::days(spacing_days * i64::from(admission_count - sequence + 1))
+                + Duration::hours(i64::from((ordinal + sequence) % 18))
+        };
+        let discharged_at = (!active)
+            .then_some(admitted_at + Duration::days(i64::from((ordinal + sequence) % 7 + 2)));
+        let status = if active && (ordinal % 5 == 0 || archetype.key == "maternity") {
+            "discharge_pending"
+        } else if active {
+            "admitted"
+        } else {
+            "discharged"
+        };
+        admissions.push(ChronicleDemoAdmission {
+            sequence,
+            status,
+            ward: archetype.ward,
+            bed_ordinal,
+            admitted_at,
+            discharged_at,
+        });
     }
-    let admitted_at = if active {
-        demo_chronicle_anchor() - Duration::hours(i64::from((ordinal % 72) + 6))
-    } else {
-        demo_chronicle_anchor() - Duration::days(i64::from((ordinal % 300) + 30))
-    };
-    let discharged_at =
-        (!active).then_some(admitted_at + Duration::days(i64::from((ordinal % 7) + 2)));
-    let status = if active && (ordinal % 5 == 0 || archetype.key == "maternity") {
-        "discharge_pending"
-    } else if active {
-        "admitted"
-    } else {
-        "discharged"
-    };
-    Some(ChronicleDemoAdmission {
-        status,
-        ward: archetype.ward,
-        bed_ordinal,
-        admitted_at,
-        discharged_at,
-    })
+    admissions
 }
 
 fn chronicle_demo_wards() -> [ChronicleDemoWard; 4] {
@@ -4661,15 +4795,15 @@ fn chronicle_demo_wards() -> [ChronicleDemoWard; 4] {
 fn chronicle_demo_archetypes() -> [ChronicleDemoArchetype; 9] {
     let [medical, surgical, maternity, pediatric] = chronicle_demo_wards();
     [
-        ChronicleDemoArchetype { key: "healthy_adult", label: "healthy adult", op_min: 1, op_max: 3, admission_probability_per_year: 5, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 70, lab_codes: &["FBC", "RBG", "URE"], sbp: (100, 130), dbp: (60, 85), pulse: (60, 90), temp_tenths: (362, 372), spo2_base: 98, problem_label: "Wellness review", medication_name: "Paracetamol", medication_dose: "1 g", medication_frequency: "as needed", nursing_instruction: "Repeat observations if symptoms develop.", ward_round_plan: "No inpatient escalation required.", complaints: &["Routine check-up", "Mild fatigue", "Headache and body aches"], icd_codes: &["Z00.0", "J06.9", "K29.7", "M54.5"], ward: medical, allergy: None, urgent_labs: false, claimable: false, base_invoice_minor: 7_500 },
-        ChronicleDemoArchetype { key: "hypertensive", label: "hypertensive", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 35, age_max: 82, lab_codes: &["FBC", "U&E", "CRE", "LFT", "LIPID"], sbp: (140, 190), dbp: (90, 120), pulse: (60, 90), temp_tenths: (362, 370), spo2_base: 96, problem_label: "Essential hypertension", medication_name: "Amlodipine", medication_dose: "10 mg", medication_frequency: "daily", nursing_instruction: "Recheck blood pressure after rest and document counselling points.", ward_round_plan: "Trend BP, review renal function, and reinforce medication adherence.", complaints: &["Known hypertensive for BP review", "Headache and dizziness", "Chest tightness"], icd_codes: &["I10", "I25.1", "N18.3", "I63.9"], ward: medical, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 12_500 },
-        ChronicleDemoArchetype { key: "diabetic", label: "diabetic", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 30, age_max: 78, lab_codes: &["FBS", "HBA1C", "U&E", "CRE", "LIPID"], sbp: (120, 155), dbp: (75, 100), pulse: (60, 95), temp_tenths: (362, 373), spo2_base: 95, problem_label: "Type 2 diabetes mellitus", medication_name: "Metformin", medication_dose: "500 mg", medication_frequency: "twice daily", nursing_instruction: "Check capillary glucose before meals and document symptoms.", ward_round_plan: "Review glucose trend, renal function, foot status, and discharge education.", complaints: &["Routine diabetic review", "Increased thirst and polyuria", "HbA1c monitoring"], icd_codes: &["E11.9", "E11.65", "N18.3"], ward: medical, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 13_000 },
-        ChronicleDemoArchetype { key: "chronic_complex", label: "chronic complex", op_min: 6, op_max: 12, admission_probability_per_year: 60, sex_rule: ChronicleDemoSexRule::Any, age_min: 45, age_max: 88, lab_codes: &["FBC", "U&E", "CRE", "LFT", "HBA1C", "CRP"], sbp: (145, 200), dbp: (90, 125), pulse: (65, 105), temp_tenths: (362, 375), spo2_base: 90, problem_label: "Hypertension with diabetes and chronic kidney disease", medication_name: "Furosemide", medication_dose: "40 mg", medication_frequency: "daily", nursing_instruction: "Record fluid balance, oedema check, and daily weight.", ward_round_plan: "Review fluid balance, renal profile, medication tolerance, and discharge blockers.", complaints: &["Multi-morbidity review", "Worsening pedal oedema", "Shortness of breath on exertion"], icd_codes: &["I10", "E11.9", "N18.3", "I50.9"], ward: medical, allergy: Some(DemoAllergy { substance: "Penicillin", reaction: Some("rash"), severity: "moderate" }), urgent_labs: true, claimable: true, base_invoice_minor: 24_000 },
-        ChronicleDemoArchetype { key: "respiratory", label: "respiratory", op_min: 3, op_max: 7, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 82, lab_codes: &["FBC", "CRP", "AFB"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 115), temp_tenths: (365, 390), spo2_base: 90, problem_label: "Respiratory infection with bronchospasm", medication_name: "Salbutamol inhaler", medication_dose: "2 puffs", medication_frequency: "every 6 hours", nursing_instruction: "Record respiratory rate and oxygen saturation every four hours.", ward_round_plan: "Continue bronchodilator, review oxygen requirement, and check inflammatory markers.", complaints: &["Wheeze and shortness of breath", "Productive cough", "Cough, fever, pleuritic pain"], icd_codes: &["J45.9", "J18.9", "A15.0", "J44.1"], ward: medical, allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 18_500 },
-        ChronicleDemoArchetype { key: "surgical", label: "surgical", op_min: 2, op_max: 5, admission_probability_per_year: 150, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 76, lab_codes: &["FBC", "U&E", "CRE", "LFT", "COAG", "GS"], sbp: (110, 140), dbp: (65, 90), pulse: (65, 100), temp_tenths: (365, 385), spo2_base: 96, problem_label: "Acute surgical abdomen observation", medication_name: "Ceftriaxone", medication_dose: "1 g", medication_frequency: "daily", nursing_instruction: "Monitor pain score, wound status, and oral intake.", ward_round_plan: "Review surgical site, analgesia, labs, and readiness for theatre or discharge.", complaints: &["Right iliac fossa pain", "Epigastric pain", "Post-operative wound review"], icd_codes: &["K80.2", "K35.9", "K40.9", "K57.3"], ward: surgical, allergy: Some(DemoAllergy { substance: "Co-trimoxazole", reaction: Some("itching"), severity: "mild" }), urgent_labs: true, claimable: true, base_invoice_minor: 32_000 },
-        ChronicleDemoArchetype { key: "maternity", label: "maternity", op_min: 6, op_max: 12, admission_probability_per_year: 100, sex_rule: ChronicleDemoSexRule::Female, age_min: 18, age_max: 42, lab_codes: &["FBC", "GS", "HBS", "HIV", "URE"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 95), temp_tenths: (362, 375), spo2_base: 98, problem_label: "Antenatal and maternity observation", medication_name: "Ferrous sulfate", medication_dose: "200 mg", medication_frequency: "daily", nursing_instruction: "Monitor bleeding, pain score, and fetal movement report during each shift.", ward_round_plan: "Confirm maternal observations, education, and discharge readiness.", complaints: &["First ANC visit", "Routine ANC review", "Term pregnancy contractions"], icd_codes: &["Z34.0", "O80", "O14.1", "O20.0"], ward: maternity, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 16_000 },
-        ChronicleDemoArchetype { key: "pediatric", label: "pediatric", op_min: 3, op_max: 8, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Pediatric, age_min: 1, age_max: 12, lab_codes: &["FBC", "MP", "RBG"], sbp: (80, 110), dbp: (50, 75), pulse: (80, 130), temp_tenths: (365, 400), spo2_base: 94, problem_label: "Paediatric febrile illness", medication_name: "Artemether-lumefantrine", medication_dose: "20/120 mg", medication_frequency: "twice daily", nursing_instruction: "Document temperature, oral intake, urine output, and caregiver education.", ward_round_plan: "Review fever curve, hydration, malaria result, and caregiver instructions.", complaints: &["Fever and rigors", "Diarrhoea and vomiting", "Cough and difficulty breathing"], icd_codes: &["B54", "J18.9", "A09", "E43"], ward: pediatric, allergy: None, urgent_labs: true, claimable: false, base_invoice_minor: 9_000 },
-        ChronicleDemoArchetype { key: "infectious", label: "infectious", op_min: 2, op_max: 5, admission_probability_per_year: 50, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 70, lab_codes: &["FBC", "MP", "WIDAL", "LFT"], sbp: (100, 135), dbp: (60, 85), pulse: (70, 115), temp_tenths: (375, 405), spo2_base: 95, problem_label: "Acute infectious syndrome", medication_name: "Azithromycin", medication_dose: "500 mg", medication_frequency: "daily", nursing_instruction: "Record fever chart, hydration status, and isolation precautions.", ward_round_plan: "Review fever trend, cultures if available, hydration, and antimicrobial response.", complaints: &["High grade fever", "Fever with abdominal pain", "Body pains and vomiting"], icd_codes: &["B54", "A01.0", "B15.9", "A09"], ward: medical, allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 15_000 },
+        ChronicleDemoArchetype { key: "healthy_adult", weight: 25, label: "healthy adult", op_min: 1, op_max: 3, admission_probability_per_year: 5, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 70, lab_codes: &["FBC", "RBG", "URE"], sbp: (100, 130), dbp: (60, 85), pulse: (60, 90), temp_tenths: (362, 372), spo2_base: 98, problem_label: "Wellness review", medication_name: "Paracetamol", medication_dose: "1 g", medication_frequency: "as needed", nursing_instruction: "Repeat observations if symptoms develop.", ward_round_plan: "No inpatient escalation required.", complaints: &["Routine check-up", "Mild fatigue", "Headache and body aches"], icd_codes: &["Z00.0", "J06.9", "K29.7", "M54.5"], ward: medical, allergy: None, urgent_labs: false, claimable: false, base_invoice_minor: 7_500 },
+        ChronicleDemoArchetype { key: "hypertensive", weight: 20, label: "hypertensive", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 35, age_max: 82, lab_codes: &["FBC", "U&E", "CRE", "LFT", "LIPID"], sbp: (140, 190), dbp: (90, 120), pulse: (60, 90), temp_tenths: (362, 370), spo2_base: 96, problem_label: "Essential hypertension", medication_name: "Amlodipine", medication_dose: "10 mg", medication_frequency: "daily", nursing_instruction: "Recheck blood pressure after rest and document counselling points.", ward_round_plan: "Trend BP, review renal function, and reinforce medication adherence.", complaints: &["Known hypertensive for BP review", "Headache and dizziness", "Chest tightness"], icd_codes: &["I10", "I25.1", "N18.3", "I63.9"], ward: medical, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 12_500 },
+        ChronicleDemoArchetype { key: "diabetic", weight: 15, label: "diabetic", op_min: 4, op_max: 8, admission_probability_per_year: 25, sex_rule: ChronicleDemoSexRule::Any, age_min: 30, age_max: 78, lab_codes: &["FBS", "HBA1C", "U&E", "CRE", "LIPID"], sbp: (120, 155), dbp: (75, 100), pulse: (60, 95), temp_tenths: (362, 373), spo2_base: 95, problem_label: "Type 2 diabetes mellitus", medication_name: "Metformin", medication_dose: "500 mg", medication_frequency: "twice daily", nursing_instruction: "Check capillary glucose before meals and document symptoms.", ward_round_plan: "Review glucose trend, renal function, foot status, and discharge education.", complaints: &["Routine diabetic review", "Increased thirst and polyuria", "HbA1c monitoring"], icd_codes: &["E11.9", "E11.65", "N18.3"], ward: medical, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 13_000 },
+        ChronicleDemoArchetype { key: "chronic_complex", weight: 10, label: "chronic complex", op_min: 6, op_max: 12, admission_probability_per_year: 60, sex_rule: ChronicleDemoSexRule::Any, age_min: 45, age_max: 88, lab_codes: &["FBC", "U&E", "CRE", "LFT", "HBA1C", "CRP"], sbp: (145, 200), dbp: (90, 125), pulse: (65, 105), temp_tenths: (362, 375), spo2_base: 90, problem_label: "Hypertension with diabetes and chronic kidney disease", medication_name: "Furosemide", medication_dose: "40 mg", medication_frequency: "daily", nursing_instruction: "Record fluid balance, oedema check, and daily weight.", ward_round_plan: "Review fluid balance, renal profile, medication tolerance, and discharge blockers.", complaints: &["Multi-morbidity review", "Worsening pedal oedema", "Shortness of breath on exertion"], icd_codes: &["I10", "E11.9", "N18.3", "I50.9"], ward: medical, allergy: Some(DemoAllergy { substance: "Penicillin", reaction: Some("rash"), severity: "moderate" }), urgent_labs: true, claimable: true, base_invoice_minor: 24_000 },
+        ChronicleDemoArchetype { key: "respiratory", weight: 8, label: "respiratory", op_min: 3, op_max: 7, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 82, lab_codes: &["FBC", "CRP", "AFB"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 115), temp_tenths: (365, 390), spo2_base: 90, problem_label: "Respiratory infection with bronchospasm", medication_name: "Salbutamol inhaler", medication_dose: "2 puffs", medication_frequency: "every 6 hours", nursing_instruction: "Record respiratory rate and oxygen saturation every four hours.", ward_round_plan: "Continue bronchodilator, review oxygen requirement, and check inflammatory markers.", complaints: &["Wheeze and shortness of breath", "Productive cough", "Cough, fever, pleuritic pain"], icd_codes: &["J45.9", "J18.9", "A15.0", "J44.1"], ward: medical, allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 18_500 },
+        ChronicleDemoArchetype { key: "surgical", weight: 7, label: "surgical", op_min: 2, op_max: 5, admission_probability_per_year: 150, sex_rule: ChronicleDemoSexRule::Any, age_min: 18, age_max: 76, lab_codes: &["FBC", "U&E", "CRE", "LFT", "COAG", "GS"], sbp: (110, 140), dbp: (65, 90), pulse: (65, 100), temp_tenths: (365, 385), spo2_base: 96, problem_label: "Acute surgical abdomen observation", medication_name: "Ceftriaxone", medication_dose: "1 g", medication_frequency: "daily", nursing_instruction: "Monitor pain score, wound status, and oral intake.", ward_round_plan: "Review surgical site, analgesia, labs, and readiness for theatre or discharge.", complaints: &["Right iliac fossa pain", "Epigastric pain", "Post-operative wound review"], icd_codes: &["K80.2", "K35.9", "K40.9", "K57.3"], ward: surgical, allergy: Some(DemoAllergy { substance: "Co-trimoxazole", reaction: Some("itching"), severity: "mild" }), urgent_labs: true, claimable: true, base_invoice_minor: 32_000 },
+        ChronicleDemoArchetype { key: "maternity", weight: 7, label: "maternity", op_min: 6, op_max: 12, admission_probability_per_year: 100, sex_rule: ChronicleDemoSexRule::Female, age_min: 18, age_max: 42, lab_codes: &["FBC", "GS", "HBS", "HIV", "URE"], sbp: (100, 140), dbp: (60, 90), pulse: (70, 95), temp_tenths: (362, 375), spo2_base: 98, problem_label: "Antenatal and maternity observation", medication_name: "Ferrous sulfate", medication_dose: "200 mg", medication_frequency: "daily", nursing_instruction: "Monitor bleeding, pain score, and fetal movement report during each shift.", ward_round_plan: "Confirm maternal observations, education, and discharge readiness.", complaints: &["First ANC visit", "Routine ANC review", "Term pregnancy contractions"], icd_codes: &["Z34.0", "O80", "O14.1", "O20.0"], ward: maternity, allergy: None, urgent_labs: false, claimable: true, base_invoice_minor: 16_000 },
+        ChronicleDemoArchetype { key: "pediatric", weight: 5, label: "pediatric", op_min: 3, op_max: 8, admission_probability_per_year: 35, sex_rule: ChronicleDemoSexRule::Pediatric, age_min: 1, age_max: 12, lab_codes: &["FBC", "MP", "RBG"], sbp: (80, 110), dbp: (50, 75), pulse: (80, 130), temp_tenths: (365, 400), spo2_base: 94, problem_label: "Paediatric febrile illness", medication_name: "Artemether-lumefantrine", medication_dose: "20/120 mg", medication_frequency: "twice daily", nursing_instruction: "Document temperature, oral intake, urine output, and caregiver education.", ward_round_plan: "Review fever curve, hydration, malaria result, and caregiver instructions.", complaints: &["Fever and rigors", "Diarrhoea and vomiting", "Cough and difficulty breathing"], icd_codes: &["B54", "J18.9", "A09", "E43"], ward: pediatric, allergy: None, urgent_labs: true, claimable: false, base_invoice_minor: 9_000 },
+        ChronicleDemoArchetype { key: "infectious", weight: 3, label: "infectious", op_min: 2, op_max: 5, admission_probability_per_year: 50, sex_rule: ChronicleDemoSexRule::Any, age_min: 16, age_max: 70, lab_codes: &["FBC", "MP", "WIDAL", "LFT"], sbp: (100, 135), dbp: (60, 85), pulse: (70, 115), temp_tenths: (375, 405), spo2_base: 95, problem_label: "Acute infectious syndrome", medication_name: "Azithromycin", medication_dose: "500 mg", medication_frequency: "daily", nursing_instruction: "Record fever chart, hydration status, and isolation precautions.", ward_round_plan: "Review fever trend, cultures if available, hydration, and antimicrobial response.", complaints: &["High grade fever", "Fever with abdominal pain", "Body pains and vomiting"], icd_codes: &["B54", "A01.0", "B15.9", "A09"], ward: medical, allergy: None, urgent_labs: true, claimable: true, base_invoice_minor: 15_000 },
     ]
 }
 
@@ -4849,11 +4983,17 @@ fn chronicle_demo_lab_test_id(code: &str) -> Uuid {
 }
 
 fn demo_graph_uuid(base: u128, patient_ordinal: u32, sequence: u32) -> Uuid {
-    demo_uuid(base, patient_ordinal * 100 + sequence)
+    demo_uuid(
+        base,
+        u64::from(patient_ordinal) * 1_000 + u64::from(sequence),
+    )
 }
 
 fn demo_compound_uuid(base: u128, patient_ordinal: u32, sequence: u32, item: u32) -> Uuid {
-    demo_uuid(base, patient_ordinal * 10_000 + sequence * 100 + item)
+    demo_uuid(
+        base,
+        u64::from(patient_ordinal) * 1_000_000 + u64::from(sequence) * 1_000 + u64::from(item),
+    )
 }
 
 fn demo_chronicle_anchor() -> DateTime<Utc> {
@@ -4873,13 +5013,13 @@ mod tests {
             let journeys = build_chronicle_demo_patients(config);
             let active_admissions = journeys
                 .iter()
-                .filter_map(|journey| journey.admission.as_ref())
+                .flat_map(|journey| journey.admissions.iter())
                 .filter(|admission| admission.is_active())
                 .count();
             let occupied_beds: HashSet<(ChronicleDemoWard, u32)> = journeys
                 .iter()
-                .filter_map(|journey| {
-                    journey.admission.as_ref().and_then(|admission| {
+                .flat_map(|journey| {
+                    journey.admissions.iter().filter_map(|admission| {
                         admission.bed_ordinal.map(|bed| (admission.ward, bed))
                     })
                 })

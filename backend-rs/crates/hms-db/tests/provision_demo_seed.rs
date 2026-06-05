@@ -331,6 +331,19 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
         .await
         .expect("baseline provisions");
 
+    let sentinel_ward_id = uuid::Uuid::from_u128(0xe0000000000000000000000000000100);
+    sqlx::query(
+        r#"
+        INSERT INTO wards (id, facility_id, code, name, status)
+        VALUES ($1, $2, 'demo-other', 'Non-seed Demo Ward', 'active')
+        "#,
+    )
+    .bind(sentinel_ward_id)
+    .bind(baseline.facility_id)
+    .execute(&pool)
+    .await
+    .expect("sentinel non-seed demo ward inserts");
+
     provision_demo_seed(&pool, &baseline, DemoSeedProfile::Staging)
         .await
         .expect("staging demo seed provisions");
@@ -341,8 +354,8 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
     let second_counts = demo_counts(&pool, baseline.facility_id).await;
 
     assert_eq!(first_counts, second_counts);
-    assert_eq!(second_counts.patients, 90);
-    assert!(second_counts.appointments > 400);
+    assert_eq!(second_counts.patients, 150);
+    assert!(second_counts.appointments > 500);
     assert!(second_counts.encounters >= second_counts.appointments);
     assert_eq!(second_counts.notes, second_counts.encounter_linked_notes);
     assert!(second_counts.patient_vitals >= 6 * second_counts.admissions);
@@ -350,6 +363,10 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
     assert!(second_counts.ward_stock_requests >= second_counts.admissions);
     assert!(second_counts.handoffs >= second_counts.admissions);
     assert!(second_counts.ward_rounds >= 20);
+    assert!(
+        sentinel_ward_exists(&pool, baseline.facility_id, sentinel_ward_id).await,
+        "demo seed cleanup must not delete non-seed demo-prefixed wards"
+    );
     assert_eq!(
         unsupported_appointment_status_count(&pool, baseline.facility_id).await,
         0
@@ -387,8 +404,8 @@ async fn demo_counts(pool: &hms_db::PgPool, facility_id: uuid::Uuid) -> DemoCoun
           (SELECT count(*) FROM nursing_alerts WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS nursing_alerts,
           (SELECT count(*) FROM monitoring_events WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS monitoring_events,
           (SELECT count(*) FROM fluid_balance_entries WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS fluid_balance_entries,
-          (SELECT count(*) FROM ward_stock_requests WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%')) AS ward_stock_requests,
-          (SELECT count(*) FROM handoffs WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code LIKE 'demo-%')) AS handoffs,
+          (SELECT count(*) FROM ward_stock_requests WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code IN ('demo-medical', 'demo-surgical', 'demo-maternity', 'demo-paediatric'))) AS ward_stock_requests,
+          (SELECT count(*) FROM handoffs WHERE facility_id = $1 AND ward_id IN (SELECT id FROM wards WHERE facility_id = $1 AND code IN ('demo-medical', 'demo-surgical', 'demo-maternity', 'demo-paediatric'))) AS handoffs,
           (SELECT count(*) FROM clinical_notes WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS notes,
           (SELECT count(*) FROM lab_orders WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS lab_orders,
           (SELECT count(*) FROM lab_results WHERE facility_id = $1 AND patient_id IN (SELECT id FROM demo_patients)) AS lab_results,
@@ -401,6 +418,29 @@ async fn demo_counts(pool: &hms_db::PgPool, facility_id: uuid::Uuid) -> DemoCoun
     .fetch_one(pool)
     .await
     .expect("demo counts query succeeds")
+}
+
+async fn sentinel_ward_exists(
+    pool: &hms_db::PgPool,
+    facility_id: uuid::Uuid,
+    ward_id: uuid::Uuid,
+) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM wards
+            WHERE facility_id = $1
+              AND id = $2
+              AND code = 'demo-other'
+        )
+        "#,
+    )
+    .bind(facility_id)
+    .bind(ward_id)
+    .fetch_one(pool)
+    .await
+    .expect("sentinel ward query succeeds")
 }
 
 async fn unsupported_appointment_status_count(
