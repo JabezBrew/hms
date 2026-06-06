@@ -66,6 +66,26 @@ as realtime.
 Repository Interfaces should describe product intent. SQL details should remain
 inside `hms-db`.
 
+Clinical care context is a first-class persistence contract:
+
+- Encounter/visit-scoped clinical events must store validated `encounter_id`
+  and/or `visit_id` when the caller supplies that context. If both are supplied,
+  they must describe the same patient journey.
+- Admission-scoped inpatient events should derive care journey context from the
+  owning `admission_case` when a visit/encounter led to admission, instead of
+  making every ward table repeat outpatient columns.
+- Discharge-scoped records should remain tied to the admission case and carry
+  the inherited or explicit care journey context for Chronicle, billing, and
+  audit joins.
+- Patient-longitudinal facts such as active problems and allergies remain
+  patient facts. They may carry an originating context in future, but focused
+  Chronicle views must not hide safety-critical patient facts merely because
+  they are not owned by a single encounter.
+- Billing rows must preserve clinical provenance when created from a clinical
+  source. Invoice context (`encounter_id`, `visit_id`, `admission_case_id`) and
+  line provenance (`source_type`, `source_id`, `is_auto_generated`) are
+  additive audit fields, not substitutes for patient access checks.
+
 For hot paths, repositories should prove:
 
 - no table scan caused by avoidable date functions

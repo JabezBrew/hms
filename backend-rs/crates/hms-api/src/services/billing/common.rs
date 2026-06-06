@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::billing::BillingCursor;
-use hms_domain::billing::BillingListQuery;
+use hms_domain::billing::{BillingListQuery, BillingSourceType};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
@@ -17,6 +17,13 @@ use crate::state::AppState;
 pub(super) const DEFAULT_LIMIT: u8 = 25;
 pub(super) const MAX_LIMIT: u8 = 100;
 const MAX_TEXT_LEN: usize = 160;
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BillingCareContext {
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+}
 
 pub(super) fn require_billing_access(
     ctx: &hms_access::RequestContext,
@@ -77,6 +84,385 @@ pub(super) async fn load_patient_for_access(
         )
     })?;
     Ok(patient)
+}
+
+pub(super) async fn validate_billing_care_context(
+    state: &AppState,
+    patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
+    admission_case_id: Option<Uuid>,
+) -> Result<BillingCareContext, ApiError> {
+    let encounter = if let Some(encounter_id) = encounter_id {
+        let encounter =
+            hms_db::care::get_encounter(state.db_pool(), state.facility_id(), encounter_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("encounter_load_failed", "Encounter could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("encounter_not_found", "Encounter was not found.")
+                })?;
+        if encounter.patient_id != patient_id {
+            return Err(validation_error(
+                "encounter_id",
+                "Encounter does not belong to this patient.",
+            ));
+        }
+        Some(encounter)
+    } else {
+        None
+    };
+
+    if let Some(visit_id) = visit_id {
+        let visit = hms_db::care::get_visit(state.db_pool(), state.facility_id(), visit_id)
+            .await
+            .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
+            .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+        if visit.patient_id != patient_id {
+            return Err(validation_error(
+                "visit_id",
+                "Visit does not belong to this patient.",
+            ));
+        }
+        if encounter
+            .as_ref()
+            .and_then(|encounter| encounter.visit_id)
+            .is_some_and(|encounter_visit_id| encounter_visit_id != visit_id)
+        {
+            return Err(validation_error(
+                "visit_id",
+                "Visit does not belong to the supplied encounter.",
+            ));
+        }
+    }
+
+    let mut resolved_encounter_id = encounter_id;
+    let mut resolved_visit_id =
+        visit_id.or_else(|| encounter.as_ref().and_then(|encounter| encounter.visit_id));
+
+    if let Some(admission_case_id) = admission_case_id {
+        let admission = hms_db::ward::get_admission_context(
+            state.db_pool(),
+            state.facility_id(),
+            admission_case_id,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
+        if admission.patient_id != patient_id {
+            return Err(validation_error(
+                "admission_case_id",
+                "Admission does not belong to this patient.",
+            ));
+        }
+        if let (Some(existing), Some(admission_encounter_id)) =
+            (resolved_encounter_id, admission.encounter_id)
+        {
+            if existing != admission_encounter_id {
+                return Err(validation_error(
+                    "encounter_id",
+                    "Encounter does not belong to the supplied admission.",
+                ));
+            }
+        }
+        if let (Some(existing), Some(admission_visit_id)) = (resolved_visit_id, admission.visit_id)
+        {
+            if existing != admission_visit_id {
+                return Err(validation_error(
+                    "visit_id",
+                    "Visit does not belong to the supplied admission.",
+                ));
+            }
+        }
+        resolved_encounter_id = resolved_encounter_id.or(admission.encounter_id);
+        resolved_visit_id = resolved_visit_id.or(admission.visit_id);
+    }
+
+    Ok(BillingCareContext {
+        encounter_id: resolved_encounter_id,
+        visit_id: resolved_visit_id,
+        admission_case_id,
+    })
+}
+
+pub(super) async fn validate_billing_source(
+    state: &AppState,
+    patient_id: Uuid,
+    source_type: Option<BillingSourceType>,
+    source_id: Option<Uuid>,
+    is_auto_generated: bool,
+) -> Result<Option<BillingCareContext>, ApiError> {
+    if source_type.is_some() != source_id.is_some() {
+        return Err(validation_error(
+            "source",
+            "Source type and source id must be supplied together.",
+        ));
+    }
+    if is_auto_generated && source_type.is_none() {
+        return Err(validation_error(
+            "is_auto_generated",
+            "Auto-generated invoice lines require a source.",
+        ));
+    }
+
+    let Some((source_type, source_id)) = source_type.zip(source_id) else {
+        return Ok(None);
+    };
+
+    let source_context = match source_type {
+        BillingSourceType::Encounter => {
+            hms_db::care::get_encounter(state.db_pool(), state.facility_id(), source_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?
+                .map(|source| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: Some(source.id),
+                            visit_id: source.visit_id,
+                            admission_case_id: None,
+                        },
+                    )
+                })
+        }
+        BillingSourceType::Visit => {
+            hms_db::care::get_visit(state.db_pool(), state.facility_id(), source_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?
+                .map(|source| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: None,
+                            visit_id: Some(source.id),
+                            admission_case_id: None,
+                        },
+                    )
+                })
+        }
+        BillingSourceType::AdmissionCase => {
+            hms_db::ward::get_admission_context(state.db_pool(), state.facility_id(), source_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?
+                .map(|source| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: source.encounter_id,
+                            visit_id: source.visit_id,
+                            admission_case_id: Some(source.id),
+                        },
+                    )
+                })
+        }
+        BillingSourceType::DischargeCase => {
+            hms_db::ward::get_discharge_case(state.db_pool(), state.facility_id(), source_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?
+                .map(|source| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: source.encounter_id,
+                            visit_id: source.visit_id,
+                            admission_case_id: Some(source.admission_case_id),
+                        },
+                    )
+                })
+        }
+        BillingSourceType::Prescription => {
+            hms_db::clinical::get_prescription(state.db_pool(), state.facility_id(), source_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?
+                .map(|source| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: source.encounter_id,
+                            visit_id: source.visit_id,
+                            admission_case_id: None,
+                        },
+                    )
+                })
+        }
+        BillingSourceType::LabOrder => {
+            hms_db::laboratory::get_order_context(state.db_pool(), state.facility_id(), source_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?
+                .map(|source| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: source.encounter_id,
+                            visit_id: source.visit_id,
+                            admission_case_id: None,
+                        },
+                    )
+                })
+        }
+        BillingSourceType::LabResult => {
+            hms_db::laboratory::get_result_context(state.db_pool(), state.facility_id(), source_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?
+                .map(|source| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: source.encounter_id,
+                            visit_id: source.visit_id,
+                            admission_case_id: None,
+                        },
+                    )
+                })
+        }
+        BillingSourceType::WardRound => {
+            let source = hms_db::ward_rounds::get_ward_round(
+                state.db_pool(),
+                state.facility_id(),
+                patient_id,
+                source_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+            })?;
+            if let Some(source) = source {
+                let admission = hms_db::ward::get_admission_context(
+                    state.db_pool(),
+                    state.facility_id(),
+                    source.admission_case_id,
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?;
+                admission.map(|admission| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: admission.encounter_id,
+                            visit_id: admission.visit_id,
+                            admission_case_id: Some(source.admission_case_id),
+                        },
+                    )
+                })
+            } else {
+                None
+            }
+        }
+        BillingSourceType::NursingTask => {
+            let source =
+                hms_db::ward::get_nursing_task(state.db_pool(), state.facility_id(), source_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict(
+                            "source_load_failed",
+                            "Billing source could not be loaded.",
+                        )
+                    })?;
+            if let Some(source) = source {
+                let admission = hms_db::ward::get_admission_context(
+                    state.db_pool(),
+                    state.facility_id(),
+                    source.admission_case_id,
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("source_load_failed", "Billing source could not be loaded.")
+                })?;
+                admission.map(|admission| {
+                    (
+                        source.patient_id,
+                        BillingCareContext {
+                            encounter_id: admission.encounter_id,
+                            visit_id: admission.visit_id,
+                            admission_case_id: Some(source.admission_case_id),
+                        },
+                    )
+                })
+            } else {
+                None
+            }
+        }
+        BillingSourceType::ManualCharge | BillingSourceType::Other => {
+            return Ok(Some(BillingCareContext {
+                encounter_id: None,
+                visit_id: None,
+                admission_case_id: None,
+            }));
+        }
+    }
+    .ok_or_else(|| ApiError::not_found("source_not_found", "Billing source was not found."))?;
+
+    let (source_patient_id, source_care_context) = source_context;
+    if source_patient_id != patient_id {
+        return Err(validation_error(
+            "source_id",
+            "Billing source does not belong to this patient.",
+        ));
+    }
+
+    Ok(Some(source_care_context))
+}
+
+pub(super) fn merge_billing_care_context(
+    mut care_context: BillingCareContext,
+    source_context: Option<BillingCareContext>,
+) -> Result<BillingCareContext, ApiError> {
+    let Some(source_context) = source_context else {
+        return Ok(care_context);
+    };
+
+    merge_context_id(
+        &mut care_context.encounter_id,
+        source_context.encounter_id,
+        "encounter_id",
+        "Billing source does not belong to the supplied encounter.",
+    )?;
+    merge_context_id(
+        &mut care_context.visit_id,
+        source_context.visit_id,
+        "visit_id",
+        "Billing source does not belong to the supplied visit.",
+    )?;
+    merge_context_id(
+        &mut care_context.admission_case_id,
+        source_context.admission_case_id,
+        "admission_case_id",
+        "Billing source does not belong to the supplied admission.",
+    )?;
+
+    Ok(care_context)
+}
+
+fn merge_context_id(
+    target: &mut Option<Uuid>,
+    source: Option<Uuid>,
+    field: &'static str,
+    message: &'static str,
+) -> Result<(), ApiError> {
+    if let (Some(existing), Some(source)) = (*target, source) {
+        if existing != source {
+            return Err(validation_error(field, message));
+        }
+    }
+    *target = (*target).or(source);
+    Ok(())
 }
 
 pub(super) async fn require_invoice_patient_access(

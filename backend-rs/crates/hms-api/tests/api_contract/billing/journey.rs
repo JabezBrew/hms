@@ -233,7 +233,7 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/api/v2/patients?limit=1")
+                .uri("/api/v2/patients?limit=2")
                 .header(AUTHORIZATION, format!("Bearer {owner_token}"))
                 .body(Body::empty())
                 .expect("request builds"),
@@ -246,6 +246,213 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
         .as_str()
         .expect("seed patient exists")
         .to_owned();
+    let other_patient_id = patients["data"]
+        .as_array()
+        .expect("patients are returned")
+        .iter()
+        .filter_map(|patient| patient["id"].as_str())
+        .find(|candidate| *candidate != patient_id)
+        .expect("second seed patient exists")
+        .to_owned();
+
+    let panels_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/laboratory/panels?limit=1")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("panel list succeeds");
+    assert_eq!(panels_response.status(), StatusCode::OK);
+    let panels = json_body(panels_response).await;
+    let panel_id = panels["data"][0]["id"]
+        .as_str()
+        .expect("seed panel exists")
+        .to_owned();
+
+    let source_encounter = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/encounters")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "encounter_type": "outpatient"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("source encounter create succeeds");
+    assert_eq!(source_encounter.status(), StatusCode::OK);
+    let source_encounter_body = json_body(source_encounter).await;
+    let source_encounter_id = source_encounter_body["data"]["id"]
+        .as_str()
+        .expect("source encounter id exists")
+        .to_owned();
+
+    let invoice_encounter = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/encounters")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "encounter_type": "outpatient"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("invoice encounter create succeeds");
+    assert_eq!(invoice_encounter.status(), StatusCode::OK);
+    let invoice_encounter_body = json_body(invoice_encounter).await;
+    let invoice_encounter_id = invoice_encounter_body["data"]["id"]
+        .as_str()
+        .expect("invoice encounter id exists")
+        .to_owned();
+
+    let source_lab_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/orders")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "encounter_id": source_encounter_id,
+                        "test_ids": [],
+                        "panel_ids": [panel_id],
+                        "priority": "routine"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("source lab order create succeeds");
+    assert_eq!(source_lab_order.status(), StatusCode::OK);
+    let source_lab_order_body = json_body(source_lab_order).await;
+    let source_lab_order_id = source_lab_order_body["data"]["id"]
+        .as_str()
+        .expect("source lab order id exists")
+        .to_owned();
+
+    let mismatched_context_invoice = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/billing/invoices")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "encounter_id": invoice_encounter_id,
+                        "service_price_id": service_price_id,
+                        "quantity": 1,
+                        "source_type": "lab_order",
+                        "source_id": source_lab_order_id,
+                        "is_auto_generated": true
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("mismatched context invoice request succeeds");
+    let mismatched_context_status = mismatched_context_invoice.status();
+    let mismatched_context_body = json_body(mismatched_context_invoice).await;
+    assert_eq!(
+        mismatched_context_status,
+        StatusCode::BAD_REQUEST,
+        "{mismatched_context_body}"
+    );
+    assert_eq!(
+        mismatched_context_body["error"]["details"]["encounter_id"][0],
+        "Billing source does not belong to the supplied encounter."
+    );
+
+    let other_patient_lab_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/orders")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": other_patient_id,
+                        "test_ids": [],
+                        "panel_ids": [panel_id],
+                        "priority": "routine"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("other patient lab order create succeeds");
+    assert_eq!(other_patient_lab_order.status(), StatusCode::OK);
+    let other_patient_lab_order_body = json_body(other_patient_lab_order).await;
+    let other_patient_lab_order_id = other_patient_lab_order_body["data"]["id"]
+        .as_str()
+        .expect("other patient lab order id exists")
+        .to_owned();
+
+    let mismatched_source_invoice = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/billing/invoices")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "service_price_id": service_price_id,
+                        "quantity": 1,
+                        "source_type": "lab_order",
+                        "source_id": other_patient_lab_order_id,
+                        "is_auto_generated": true
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("mismatched source invoice request succeeds");
+    let mismatched_source_status = mismatched_source_invoice.status();
+    let mismatched_source_body = json_body(mismatched_source_invoice).await;
+    assert_eq!(
+        mismatched_source_status,
+        StatusCode::BAD_REQUEST,
+        "{mismatched_source_body}"
+    );
+    assert_eq!(
+        mismatched_source_body["error"]["details"]["source_id"][0],
+        "Billing source does not belong to this patient."
+    );
 
     let invoice_response = app
         .clone()

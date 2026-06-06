@@ -136,6 +136,7 @@ const prescriptionReducer = (state, action) => {
 
 const buildPrescriptionPayload = ({
   patientId,
+  encounterId,
   admissionCaseId,
   formData,
   marGenerationAvailable,
@@ -152,12 +153,17 @@ const buildPrescriptionPayload = ({
     start_date: formData.start_date,
   };
 
+  if (encounterId) {
+    data.encounter_id = encounterId;
+  }
+
+  if (admissionCaseId) {
+    data.admission_case_id = admissionCaseId;
+  }
+
   if (marGenerationAvailable) {
     data.generate_mar = generateMAR ? 'yes' : 'no';
     data.mar_days = marDays;
-    if (admissionCaseId) {
-      data.admission_case_id = admissionCaseId;
-    }
   }
 
   if (formData.duration_days) {
@@ -225,6 +231,7 @@ const AddPrescriptionSlideOverContent = ({
     || patient?.local_data?.current_admission_id
     || patient?.current_admission_id
     || null;
+  const encounterId = encounter?.id || encounter?.encounter_id || null;
 
   // Hooks for drug safety - only fetch when slide-over is open
   const safetyCheck = useSafetyCheck();
@@ -363,6 +370,7 @@ const AddPrescriptionSlideOverContent = ({
   const createPrescription = async (overrideReason = '') => {
     const data = buildPrescriptionPayload({
       patientId,
+      encounterId,
       admissionCaseId,
       formData,
       marGenerationAvailable,

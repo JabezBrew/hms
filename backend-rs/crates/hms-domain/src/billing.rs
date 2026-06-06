@@ -49,6 +49,22 @@ pub enum PaymentStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum BillingSourceType {
+    Encounter,
+    Visit,
+    AdmissionCase,
+    DischargeCase,
+    Prescription,
+    LabOrder,
+    LabResult,
+    WardRound,
+    NursingTask,
+    ManualCharge,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum InvoiceLockReason {
     PaymentRecorded,
     ClaimCreated,
@@ -362,6 +378,9 @@ pub struct BillingDashboardSummary {
 pub struct InvoiceListItem {
     pub id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
     pub patient_code: String,
     pub invoice_number: String,
     pub status: InvoiceStatus,
@@ -383,8 +402,14 @@ pub struct InvoiceLockState {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateInvoiceRequest {
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
     pub service_price_id: Uuid,
     pub quantity: i64,
+    pub source_type: Option<BillingSourceType>,
+    pub source_id: Option<Uuid>,
+    pub is_auto_generated: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

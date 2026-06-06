@@ -160,6 +160,13 @@ impl AdmissionCasesService {
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         let _ward = common::load_ward(&self.state, payload.ward_id).await?;
+        let care_context = common::validate_care_context(
+            &self.state,
+            payload.patient_id,
+            payload.encounter_id,
+            payload.visit_id,
+        )
+        .await?;
         let admission_case = hms_db::ward::create_admission_case(
             self.state.db_pool(),
             NewAdmissionCase {
@@ -167,6 +174,8 @@ impl AdmissionCasesService {
                 facility_id: self.state.facility_id(),
                 patient_id: payload.patient_id,
                 ward_id: payload.ward_id,
+                encounter_id: care_context.encounter_id,
+                visit_id: care_context.visit_id,
                 actor_user_id: ctx.user_id,
             },
         )

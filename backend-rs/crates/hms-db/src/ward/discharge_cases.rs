@@ -17,6 +17,8 @@ struct DischargeCaseRow {
     id: Uuid,
     admission_case_id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
     patient_code: String,
     patient_display_name: String,
     ward_id: Uuid,
@@ -106,6 +108,8 @@ pub async fn request_discharge(
     id: Uuid,
     facility_id: Uuid,
     admission: &AdmissionContext,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
     actor_user_id: Uuid,
 ) -> anyhow::Result<DischargeCaseListItem> {
     let mut transaction = pool.begin().await?;
@@ -118,12 +122,16 @@ pub async fn request_discharge(
             facility_id,
             admission_case_id,
             patient_id,
+            encounter_id,
+            visit_id,
             status,
             created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (admission_case_id) DO UPDATE
         SET status = EXCLUDED.status,
+            encounter_id = COALESCE(EXCLUDED.encounter_id, discharge_cases.encounter_id),
+            visit_id = COALESCE(EXCLUDED.visit_id, discharge_cases.visit_id),
             updated_at = now()
         "#,
         )
@@ -131,6 +139,8 @@ pub async fn request_discharge(
         .bind(facility_id)
         .bind(admission.id)
         .bind(admission.patient_id)
+        .bind(encounter_id.or(admission.encounter_id))
+        .bind(visit_id.or(admission.visit_id))
         .bind(codec::encode(DischargeStatus::Requested)?)
         .bind(actor_user_id)
         .execute(&mut *transaction),
@@ -481,6 +491,8 @@ fn discharge_query() -> QueryBuilder<'static, Postgres> {
         SELECT discharge_cases.id,
                discharge_cases.admission_case_id,
                discharge_cases.patient_id,
+               discharge_cases.encounter_id,
+               discharge_cases.visit_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                admission_cases.ward_id,
@@ -604,6 +616,8 @@ fn discharge_from_row(row: DischargeCaseRow) -> anyhow::Result<DischargeCaseList
         id: row.id,
         admission_case_id: row.admission_case_id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
         ward_id: row.ward_id,

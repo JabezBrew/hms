@@ -91,6 +91,24 @@ impl FinancialWorkflowService {
         common::require_positive(payload.quantity, "quantity")?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
+        let is_auto_generated = payload.is_auto_generated.unwrap_or(false);
+        let source_context = common::validate_billing_source(
+            &self.state,
+            payload.patient_id,
+            payload.source_type,
+            payload.source_id,
+            is_auto_generated,
+        )
+        .await?;
+        let care_context = common::validate_billing_care_context(
+            &self.state,
+            payload.patient_id,
+            payload.encounter_id,
+            payload.visit_id,
+            payload.admission_case_id,
+        )
+        .await?;
+        let care_context = common::merge_billing_care_context(care_context, source_context)?;
         let id = Uuid::new_v4();
         let invoice = hms_db::billing::create_invoice(
             self.pool(),
@@ -98,9 +116,15 @@ impl FinancialWorkflowService {
                 id,
                 facility_id: self.facility_id(),
                 patient_id: payload.patient_id,
+                encounter_id: care_context.encounter_id,
+                visit_id: care_context.visit_id,
+                admission_case_id: care_context.admission_case_id,
                 service_price_id: payload.service_price_id,
                 quantity: payload.quantity,
                 invoice_number: format!("INV-{}", &id.simple().to_string()[..10].to_uppercase()),
+                source_type: payload.source_type,
+                source_id: payload.source_id,
+                is_auto_generated,
                 actor_user_id: ctx.user_id,
             },
         )

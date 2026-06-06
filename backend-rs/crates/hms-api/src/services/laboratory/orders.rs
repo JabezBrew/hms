@@ -98,12 +98,21 @@ impl LabOrdersService {
         }
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
+        let care_context = common::validate_care_context(
+            &self.state,
+            payload.patient_id,
+            payload.encounter_id,
+            payload.visit_id,
+        )
+        .await?;
         let order = hms_db::laboratory::create_order(
             self.pool(),
             NewLabOrder {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 patient_id: payload.patient_id,
+                encounter_id: care_context.encounter_id,
+                visit_id: care_context.visit_id,
                 test_ids: payload.test_ids,
                 panel_ids: payload.panel_ids,
                 priority: payload.priority,

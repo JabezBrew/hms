@@ -181,6 +181,13 @@
               "null"
             ]
           },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -197,6 +204,13 @@
           },
           "status": {
             "$ref": "#/components/schemas/AdmissionStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "ward_id": {
             "format": "uuid",
@@ -1327,6 +1341,22 @@
           "cash_required",
           "nhis_covered",
           "co_pay"
+        ],
+        "type": "string"
+      },
+      "BillingSourceType": {
+        "enum": [
+          "encounter",
+          "visit",
+          "admission_case",
+          "discharge_case",
+          "prescription",
+          "lab_order",
+          "lab_result",
+          "ward_round",
+          "nursing_task",
+          "manual_charge",
+          "other"
         ],
         "type": "string"
       },
@@ -3372,9 +3402,23 @@
       },
       "CreateAdmissionCaseRequest": {
         "properties": {
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "patient_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "ward_id": {
             "format": "uuid",
@@ -4063,6 +4107,20 @@
           "admission_case_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4188,6 +4246,26 @@
       },
       "CreateInvoiceRequest": {
         "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_auto_generated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "patient_id": {
             "format": "uuid",
             "type": "string"
@@ -4199,6 +4277,30 @@
           "service_price_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BillingSourceType"
+              }
+            ]
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4210,6 +4312,13 @@
       },
       "CreateLabOrderRequest": {
         "properties": {
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "panel_ids": {
             "items": {
               "format": "uuid",
@@ -4230,6 +4339,13 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4671,6 +4787,13 @@
               "null"
             ]
           },
+          "discharge_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "dose": {
             "type": "string"
           },
@@ -4678,6 +4801,13 @@
             "format": "int32",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -4723,6 +4853,13 @@
           },
           "start_date": {
             "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visit_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -5479,6 +5616,13 @@
               "null"
             ]
           },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -5505,6 +5649,13 @@
           },
           "status": {
             "$ref": "#/components/schemas/DischargeStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "ward_id": {
             "format": "uuid",
@@ -6766,12 +6917,26 @@
       },
       "InvoiceListItem": {
         "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "balance_minor": {
             "format": "int64",
             "type": "integer"
           },
           "currency": {
             "type": "string"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "gross_amount_minor": {
             "format": "int64",
@@ -6801,6 +6966,13 @@
           },
           "status": {
             "$ref": "#/components/schemas/InvoiceStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -6884,6 +7056,13 @@
       },
       "LabOrderListItem": {
         "properties": {
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -6920,6 +7099,13 @@
           "test_count": {
             "format": "int64",
             "type": "integer"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -7555,6 +7741,13 @@
                     "null"
                   ]
                 },
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -7571,6 +7764,13 @@
                 },
                 "status": {
                   "$ref": "#/components/schemas/AdmissionStatus"
+                },
+                "visit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "ward_id": {
                   "format": "uuid",
@@ -9497,6 +9697,13 @@
                     "null"
                   ]
                 },
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -9523,6 +9730,13 @@
                 },
                 "status": {
                   "$ref": "#/components/schemas/DischargeStatus"
+                },
+                "visit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "ward_id": {
                   "format": "uuid",
@@ -10144,12 +10358,26 @@
           "data": {
             "items": {
               "properties": {
+                "admission_case_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "balance_minor": {
                   "format": "int64",
                   "type": "integer"
                 },
                 "currency": {
                   "type": "string"
+                },
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "gross_amount_minor": {
                   "format": "int64",
@@ -10179,6 +10407,13 @@
                 },
                 "status": {
                   "$ref": "#/components/schemas/InvoiceStatus"
+                },
+                "visit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -10214,6 +10449,13 @@
           "data": {
             "items": {
               "properties": {
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -10250,6 +10492,13 @@
                 "test_count": {
                   "format": "int64",
                   "type": "integer"
+                },
+                "visit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -12128,6 +12377,13 @@
           "data": {
             "items": {
               "properties": {
+                "discharge_case_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "dose": {
                   "type": "string"
                 },
@@ -12135,6 +12391,13 @@
                   "format": "int32",
                   "type": [
                     "integer",
+                    "null"
+                  ]
+                },
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
                     "null"
                   ]
                 },
@@ -12182,6 +12445,13 @@
                 },
                 "status": {
                   "$ref": "#/components/schemas/PrescriptionStatus"
+                },
+                "visit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -15298,6 +15568,13 @@
                   "null"
                 ]
               },
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -15314,6 +15591,13 @@
               },
               "status": {
                 "$ref": "#/components/schemas/AdmissionStatus"
+              },
+              "visit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "ward_id": {
                 "format": "uuid",
@@ -17524,6 +17808,13 @@
                   "null"
                 ]
               },
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -17550,6 +17841,13 @@
               },
               "status": {
                 "$ref": "#/components/schemas/DischargeStatus"
+              },
+              "visit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "ward_id": {
                 "format": "uuid",
@@ -18217,12 +18515,26 @@
         "properties": {
           "data": {
             "properties": {
+              "admission_case_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "balance_minor": {
                 "format": "int64",
                 "type": "integer"
               },
               "currency": {
                 "type": "string"
+              },
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "gross_amount_minor": {
                 "format": "int64",
@@ -18252,6 +18564,13 @@
               },
               "status": {
                 "$ref": "#/components/schemas/InvoiceStatus"
+              },
+              "visit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -18280,6 +18599,13 @@
         "properties": {
           "data": {
             "properties": {
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -18316,6 +18642,13 @@
               "test_count": {
                 "format": "int64",
                 "type": "integer"
+              },
+              "visit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -20831,6 +21164,13 @@
         "properties": {
           "data": {
             "properties": {
+              "discharge_case_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "dose": {
                 "type": "string"
               },
@@ -20838,6 +21178,13 @@
                 "format": "int32",
                 "type": [
                   "integer",
+                  "null"
+                ]
+              },
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
                   "null"
                 ]
               },
@@ -20885,6 +21232,13 @@
               },
               "status": {
                 "$ref": "#/components/schemas/PrescriptionStatus"
+              },
+              "visit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -26143,6 +26497,13 @@
       },
       "PrescriptionListItem": {
         "properties": {
+          "discharge_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "dose": {
             "type": "string"
           },
@@ -26150,6 +26511,13 @@
             "format": "int32",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -26197,6 +26565,13 @@
           },
           "status": {
             "$ref": "#/components/schemas/PrescriptionStatus"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [

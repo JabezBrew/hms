@@ -1,10 +1,12 @@
 use chrono::TimeZone;
+use hms_db::care::{NewEncounter, NewVisit};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::{
     AdmissionContext, BedUpdate, NewAdmissionCase, NewBed, NewFluidBalanceEntry,
     NewMonitoringEvent, NewNursingAlert, NewNursingTask, NewPatientVitals, NewWard, NewWardSection,
     NewWardStockRequest, WardSectionUpdate, WardUpdate,
 };
+use hms_domain::care::EncounterType;
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::{
     AdmissionStatus, BedStatus, DischargeBlockerKind, DischargeBlockerStatus, DischargeStatus,
@@ -528,6 +530,33 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
     .await
     .expect("patients exist");
 
+    let visit = hms_db::care::check_in_visit(
+        &pool,
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id: patient_ids[0],
+            appointment_id: None,
+            clinic_id: None,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("visit creates");
+    let encounter = hms_db::care::create_encounter(
+        &pool,
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id: patient_ids[0],
+            visit_id: Some(visit.id),
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("encounter creates");
+
     let admission_case = hms_db::ward::create_admission_case(
         &pool,
         NewAdmissionCase {
@@ -535,12 +564,16 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
             facility_id,
             patient_id: patient_ids[0],
             ward_id,
+            encounter_id: Some(encounter.id),
+            visit_id: Some(visit.id),
             actor_user_id: owner_id,
         },
     )
     .await
     .expect("admission case is created");
     assert_eq!(admission_case.status, AdmissionStatus::ReadyForActivation);
+    assert_eq!(admission_case.encounter_id, Some(encounter.id));
+    assert_eq!(admission_case.visit_id, Some(visit.id));
     assert!(admission_case.bed_id.is_none());
 
     let reserved =
@@ -573,12 +606,18 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
             patient_id: activated.patient_id,
             ward_id: activated.ward_id,
             bed_id: activated.bed_id,
+            encounter_id: activated.encounter_id,
+            visit_id: activated.visit_id,
         },
+        None,
+        None,
         owner_id,
     )
     .await
     .expect("discharge request succeeds");
     assert_eq!(discharge.status, DischargeStatus::Requested);
+    assert_eq!(discharge.encounter_id, Some(encounter.id));
+    assert_eq!(discharge.visit_id, Some(visit.id));
 
     let cancelled_discharge = hms_db::ward::cancel_discharge(&pool, facility_id, discharge.id)
         .await
@@ -607,6 +646,8 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
             facility_id,
             patient_id: patient_ids[1],
             ward_id,
+            encounter_id: None,
+            visit_id: None,
             actor_user_id: owner_id,
         },
     )
@@ -656,7 +697,11 @@ async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
             patient_id: admission.patient_id,
             ward_id: admission.ward_id,
             bed_id: admission.bed_id,
+            encounter_id: None,
+            visit_id: None,
         },
+        None,
+        None,
         db.owner_user_id(),
     )
     .await
@@ -860,7 +905,11 @@ async fn discharge_completion_moves_bed_to_cleaning_then_releases_after_policy_i
             patient_id: admission.patient_id,
             ward_id: admission.ward_id,
             bed_id: admission.bed_id,
+            encounter_id: None,
+            visit_id: None,
         },
+        None,
+        None,
         db.owner_user_id(),
     )
     .await
@@ -1015,6 +1064,8 @@ async fn ward_board_can_be_filtered_by_ward_and_patient() {
                 facility_id,
                 patient_id: *patient_id,
                 ward_id: *ward_id,
+                encounter_id: None,
+                visit_id: None,
                 actor_user_id: owner_id,
             },
         )
@@ -1106,6 +1157,8 @@ async fn admission_case_invalid_transitions_fail_without_partial_writes() {
             facility_id: db.facility_id(),
             patient_id: second_patient.id,
             ward_id: scenario.ward.id,
+            encounter_id: None,
+            visit_id: None,
             actor_user_id: db.owner_user_id(),
         },
     )
@@ -1215,6 +1268,8 @@ async fn concurrent_bed_reservations_allow_only_one_admission_case() {
             facility_id: db.facility_id(),
             patient_id: second_patient.id,
             ward_id: first.ward.id,
+            encounter_id: None,
+            visit_id: None,
             actor_user_id: db.owner_user_id(),
         },
     )
@@ -1317,6 +1372,8 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
             facility_id,
             patient_id,
             ward_id,
+            encounter_id: None,
+            visit_id: None,
             actor_user_id: owner_id,
         },
     )

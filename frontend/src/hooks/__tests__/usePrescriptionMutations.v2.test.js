@@ -160,6 +160,7 @@ describe('Rust V2 prescription mutations bridge', () => {
       route: 'oral',
       start_date: '2026-06-04',
       duration_days: 7,
+      admission_case_id: 'admission-1',
     });
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,

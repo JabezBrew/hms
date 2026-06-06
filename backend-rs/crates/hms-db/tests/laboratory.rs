@@ -267,6 +267,8 @@ async fn create_order(
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            encounter_id: None,
+            visit_id: None,
             test_ids: vec![test_id],
             panel_ids: Vec::new(),
             priority: LabPriority::Routine,

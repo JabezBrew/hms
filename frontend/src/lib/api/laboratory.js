@@ -302,6 +302,8 @@ function adaptV2LabSpecimen(item = {}) {
 function buildV2LabOrderPayload(data = {}) {
   return {
     patient_id: pickEntityId(data.patient_id ?? data.patient),
+    encounter_id: pickEntityId(data.encounter_id ?? data.encounter) || undefined,
+    visit_id: pickEntityId(data.visit_id ?? data.visit) || undefined,
     test_ids: pickEntityIds(data.test_ids ?? data.tests),
     panel_ids: pickEntityIds(data.panel_ids ?? data.panels),
     priority: data.priority || 'routine',

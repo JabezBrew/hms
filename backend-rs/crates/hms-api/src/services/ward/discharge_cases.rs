@@ -90,11 +90,38 @@ impl DischargeCasesService {
         )?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
+        let care_context = common::validate_care_context(
+            &self.state,
+            admission.patient_id,
+            payload.encounter_id,
+            payload.visit_id,
+        )
+        .await?;
+        if let (Some(existing), Some(supplied)) =
+            (admission.encounter_id, care_context.encounter_id)
+        {
+            if existing != supplied {
+                return Err(ApiError::bad_request(
+                    "invalid_encounter",
+                    "Encounter does not belong to the supplied admission.",
+                ));
+            }
+        }
+        if let (Some(existing), Some(supplied)) = (admission.visit_id, care_context.visit_id) {
+            if existing != supplied {
+                return Err(ApiError::bad_request(
+                    "invalid_visit",
+                    "Visit does not belong to the supplied admission.",
+                ));
+            }
+        }
         let discharge = hms_db::ward::request_discharge(
             self.state.db_pool(),
             Uuid::new_v4(),
             self.state.facility_id(),
             &admission,
+            care_context.encounter_id,
+            care_context.visit_id,
             ctx.user_id,
         )
         .await

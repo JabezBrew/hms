@@ -1,12 +1,12 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::billing::{
     BillingDashboardSummary, BillingDischargeClearance, BillingRuleListItem, BillingRuleType,
-    CashDrawerListItem, CashSessionListItem, CashSessionStatus, ClaimListItem, ClaimStatus,
-    InsurancePlanListItem, InsuranceProviderListItem, InvoiceListItem, InvoiceLockReason,
-    InvoiceLockState, InvoiceStatus, NhisArAdjustmentEntry, NhisArAdjustmentKind, NhisBatchExport,
-    NhisBatchListItem, NhisBatchStatus, NhisClaimArState, NhisExportJobListItem,
-    NhisServiceMappingListItem, PatientInsuranceListItem, PaymentListItem, PaymentMethod,
-    PaymentReversalLedgerEntry, PaymentStatus, PspPaymentIntentListItem,
+    BillingSourceType, CashDrawerListItem, CashSessionListItem, CashSessionStatus, ClaimListItem,
+    ClaimStatus, InsurancePlanListItem, InsuranceProviderListItem, InvoiceListItem,
+    InvoiceLockReason, InvoiceLockState, InvoiceStatus, NhisArAdjustmentEntry,
+    NhisArAdjustmentKind, NhisBatchExport, NhisBatchListItem, NhisBatchStatus, NhisClaimArState,
+    NhisExportJobListItem, NhisServiceMappingListItem, PatientInsuranceListItem, PaymentListItem,
+    PaymentMethod, PaymentReversalLedgerEntry, PaymentStatus, PspPaymentIntentListItem,
     PspSettlementBatchListItem, PspSettlementLineListItem, ReceiptListItem,
     RemittanceImportListItem, RemittanceImportStatus, RemittanceLineListItem, ReversalKind,
     ServiceCatalogItem, ServiceKind, ServicePriceListItem,
@@ -82,9 +82,15 @@ pub struct NewInvoice {
     pub id: Uuid,
     pub facility_id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
     pub service_price_id: Uuid,
     pub quantity: i64,
     pub invoice_number: String,
+    pub source_type: Option<BillingSourceType>,
+    pub source_id: Option<Uuid>,
+    pub is_auto_generated: bool,
     pub actor_user_id: Uuid,
 }
 
@@ -293,6 +299,9 @@ struct BillingDashboardSummaryRow {
 struct InvoiceRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
+    admission_case_id: Option<Uuid>,
     patient_code: String,
     invoice_number: String,
     status: String,
@@ -922,13 +931,14 @@ pub async fn create_invoice(pool: &PgPool, invoice: NewInvoice) -> anyhow::Resul
         .ok_or_else(|| anyhow::anyhow!("invoice amount overflow"))?;
 
     let mut transaction = pool.begin().await?;
+    let source_type = invoice.source_type.map(codec::encode).transpose()?;
     sqlx::query(
         r#"
         INSERT INTO invoices (
             id, facility_id, patient_id, invoice_number, status, gross_amount_minor,
-            paid_amount_minor, currency, issued_by_user_id
+            paid_amount_minor, currency, encounter_id, visit_id, admission_case_id, issued_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, $11)
         "#,
     )
     .bind(invoice.id)
@@ -938,6 +948,9 @@ pub async fn create_invoice(pool: &PgPool, invoice: NewInvoice) -> anyhow::Resul
     .bind(codec::encode(InvoiceStatus::Issued)?)
     .bind(line_amount)
     .bind(&price.currency)
+    .bind(invoice.encounter_id)
+    .bind(invoice.visit_id)
+    .bind(invoice.admission_case_id)
     .bind(invoice.actor_user_id)
     .execute(&mut *transaction)
     .await?;
@@ -946,9 +959,9 @@ pub async fn create_invoice(pool: &PgPool, invoice: NewInvoice) -> anyhow::Resul
         r#"
         INSERT INTO invoice_lines (
             id, facility_id, invoice_id, service_price_id, description, quantity,
-            unit_amount_minor, line_amount_minor, currency
+            unit_amount_minor, line_amount_minor, currency, is_auto_generated, source_type, source_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
     )
     .bind(Uuid::new_v4())
@@ -960,6 +973,9 @@ pub async fn create_invoice(pool: &PgPool, invoice: NewInvoice) -> anyhow::Resul
     .bind(price.amount_minor)
     .bind(line_amount)
     .bind(&price.currency)
+    .bind(invoice.is_auto_generated)
+    .bind(source_type)
+    .bind(invoice.source_id)
     .execute(&mut *transaction)
     .await?;
 
@@ -2787,6 +2803,9 @@ fn invoice_query() -> QueryBuilder<'static, Postgres> {
         r#"
         SELECT invoices.id,
                invoices.patient_id,
+               invoices.encounter_id,
+               invoices.visit_id,
+               invoices.admission_case_id,
                patients.patient_code,
                invoices.invoice_number,
                invoices.status,
@@ -3421,6 +3440,9 @@ fn invoice_from_row(row: InvoiceRow) -> anyhow::Result<InvoiceListItem> {
     Ok(InvoiceListItem {
         id: row.id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
+        admission_case_id: row.admission_case_id,
         patient_code: row.patient_code,
         invoice_number: row.invoice_number,
         status: codec::decode::<InvoiceStatus>(&row.status)?,

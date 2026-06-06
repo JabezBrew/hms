@@ -73,6 +73,22 @@ function normalizeCreatePrescriptionPayload(data = {}) {
   if (data.first_dose_at !== undefined) {
     payload.first_dose_at = data.first_dose_at;
   }
+  const encounterId = normalizeIdentifier(data.encounter_id || data.encounterId || data.encounter);
+  if (encounterId) {
+    payload.encounter_id = encounterId;
+  }
+  const visitId = normalizeIdentifier(data.visit_id || data.visitId || data.visit);
+  if (visitId) {
+    payload.visit_id = visitId;
+  }
+  const admissionCaseId = normalizeIdentifier(data.admission_case_id || data.admissionCaseId || data.admission);
+  if (admissionCaseId) {
+    payload.admission_case_id = admissionCaseId;
+  }
+  const dischargeCaseId = normalizeIdentifier(data.discharge_case_id || data.dischargeCaseId || data.discharge);
+  if (dischargeCaseId) {
+    payload.discharge_case_id = dischargeCaseId;
+  }
 
   return payload;
 }

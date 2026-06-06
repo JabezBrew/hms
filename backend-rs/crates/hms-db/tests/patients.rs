@@ -1,4 +1,5 @@
 use chrono::{Datelike, Days, NaiveDate, Utc};
+use hms_db::care::{NewEncounter, NewVisit};
 use hms_db::clinical::{
     NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate, NewPrescription,
     NewProblem, UpdateClinicalNoteTemplate,
@@ -10,6 +11,7 @@ use hms_db::patients::{
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::NewAdmissionCase;
+use hms_domain::care::EncounterType;
 use hms_domain::clinical::{
     AllergySeverity, AllergyStatus, ChartEntryType, ClinicalNoteType, PrescriptionStatus,
     ProblemStatus, UpdateAllergyRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
@@ -406,6 +408,8 @@ async fn patient_registry_ward_filter_defaults_to_current_admissions() {
             facility_id: db.facility_id(),
             patient_id: historical_patient_id,
             ward_id: current.ward.id,
+            encounter_id: None,
+            visit_id: None,
             actor_user_id: db.owner_user_id(),
         },
     )
@@ -588,6 +592,32 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
     .fetch_one(&pool)
     .await
     .expect("patient exists");
+    let visit = hms_db::care::check_in_visit(
+        &pool,
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            appointment_id: None,
+            clinic_id: None,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("visit is created");
+    let encounter = hms_db::care::create_encounter(
+        &pool,
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            visit_id: Some(visit.id),
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("encounter is created");
 
     let note = hms_db::clinical::create_note(
         &pool,
@@ -595,7 +625,7 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
-            encounter_id: None,
+            encounter_id: Some(encounter.id),
             note_type: ClinicalNoteType::DoctorNote,
             title: "Summary note".to_owned(),
             body: "Clinical summary body.".to_owned(),
@@ -650,6 +680,9 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            encounter_id: Some(encounter.id),
+            visit_id: Some(visit.id),
+            discharge_case_id: None,
             medication_name: "Amlodipine".to_owned(),
             dose: "5 mg".to_owned(),
             route: "oral".to_owned(),
@@ -669,8 +702,8 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
-            encounter_id: None,
-            visit_id: None,
+            encounter_id: Some(encounter.id),
+            visit_id: Some(visit.id),
             entry_type: ChartEntryType::BloodPressure,
             measured_at: Utc::now(),
             value: "130/82".to_owned(),
@@ -693,6 +726,8 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            encounter_id: Some(encounter.id),
+            visit_id: Some(visit.id),
             test_ids: vec![test_id],
             panel_ids: vec![],
             priority: LabPriority::Routine,
@@ -786,6 +821,33 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
         .timeline_entries
         .iter()
         .all(|entry| { !entry.data.to_string().contains("Clinical summary body.") }));
+
+    let focused_timeline = hms_db::clinical::patient_chronicle_timeline(
+        &pool,
+        facility_id,
+        patient_id,
+        None,
+        21,
+        hms_db::clinical::ChronicleTimelineFilters {
+            entry_type: None,
+            search: None,
+            encounter_id: Some(encounter.id),
+        },
+    )
+    .await
+    .expect("focused timeline loads");
+    assert!(focused_timeline
+        .iter()
+        .any(|entry| entry.entry_type == "prescription"));
+    assert!(focused_timeline
+        .iter()
+        .any(|entry| entry.entry_type == "lab_result"));
+    assert!(focused_timeline
+        .iter()
+        .any(|entry| entry.entry_type == "problem"));
+    assert!(focused_timeline
+        .iter()
+        .any(|entry| entry.entry_type == "allergy"));
 
     assert!(hms_db::clinical::patient_chronicle_summary(
         &pool,
@@ -1115,6 +1177,9 @@ async fn prescription_detail_updates_are_facility_scoped() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            encounter_id: None,
+            visit_id: None,
+            discharge_case_id: None,
             medication_name: "Amlodipine".to_owned(),
             dose: "5 mg".to_owned(),
             route: "oral".to_owned(),

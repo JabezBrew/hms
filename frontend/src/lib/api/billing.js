@@ -222,6 +222,16 @@ function normalizePatientId(params = {}) {
   return params.patient_id || params.patient || null;
 }
 
+function normalizeEntityId(value) {
+  if (!value) {
+    return undefined;
+  }
+  if (typeof value === 'object') {
+    return value.id || value.uuid || undefined;
+  }
+  return value;
+}
+
 function addStringQueryParam(query, params, sourceKey, targetKey = sourceKey) {
   const value = params[sourceKey];
   if (value === undefined || value === null) {
@@ -815,11 +825,20 @@ export const billingApi = {
         if (!servicePriceId) {
           throw new Error('Selected service does not have an active Rust V2 price.');
         }
-        const response = await v2Api.postBillingInvoices({
-          patient_id: data.patient_id || data.patient,
+        const invoicePayload = {
+          patient_id: normalizeEntityId(data.patient_id || data.patient),
+          encounter_id: normalizeEntityId(data.encounter_id || data.encounter),
+          visit_id: normalizeEntityId(data.visit_id || data.visit),
+          admission_case_id: normalizeEntityId(data.admission_case_id || data.admission),
           service_price_id: servicePriceId,
           quantity: Number.parseInt(String(firstItem.quantity || 1), 10) || 1,
-        }, {
+          source_type: firstItem.source_type || data.source_type || undefined,
+          source_id: normalizeEntityId(firstItem.source_id || data.source_id),
+        };
+        if (firstItem.is_auto_generated || data.is_auto_generated) {
+          invoicePayload.is_auto_generated = true;
+        }
+        const response = await v2Api.postBillingInvoices(invoicePayload, {
           signal,
         });
         return adaptV2Invoice(response?.data);

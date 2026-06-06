@@ -19,6 +19,12 @@ pub(super) const MAX_WARD_CODE_LEN: usize = 64;
 pub(super) const MAX_WARD_NAME_LEN: usize = 160;
 pub(super) const MAX_BED_CODE_LEN: usize = 64;
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct CareContextIds {
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+}
+
 pub(super) fn require_patient_workflow_access(
     ctx: &hms_access::RequestContext,
     facility_id: Uuid,
@@ -129,6 +135,62 @@ pub(super) async fn load_patient_for_access(
         )
     })?;
     Ok(patient)
+}
+
+pub(super) async fn validate_care_context(
+    state: &AppState,
+    patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
+) -> Result<CareContextIds, ApiError> {
+    let encounter = if let Some(encounter_id) = encounter_id {
+        let encounter =
+            hms_db::care::get_encounter(state.db_pool(), state.facility_id(), encounter_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("encounter_load_failed", "Encounter could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("encounter_not_found", "Encounter was not found.")
+                })?;
+        if encounter.patient_id != patient_id {
+            return Err(ApiError::bad_request(
+                "invalid_encounter",
+                "Encounter does not belong to this patient.",
+            ));
+        }
+        Some(encounter)
+    } else {
+        None
+    };
+
+    if let Some(visit_id) = visit_id {
+        let visit = hms_db::care::get_visit(state.db_pool(), state.facility_id(), visit_id)
+            .await
+            .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
+            .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+        if visit.patient_id != patient_id {
+            return Err(ApiError::bad_request(
+                "invalid_visit",
+                "Visit does not belong to this patient.",
+            ));
+        }
+        if encounter
+            .as_ref()
+            .and_then(|encounter| encounter.visit_id)
+            .is_some_and(|encounter_visit_id| encounter_visit_id != visit_id)
+        {
+            return Err(ApiError::bad_request(
+                "invalid_visit",
+                "Visit does not belong to the supplied encounter.",
+            ));
+        }
+    }
+
+    Ok(CareContextIds {
+        encounter_id,
+        visit_id: visit_id.or_else(|| encounter.and_then(|encounter| encounter.visit_id)),
+    })
 }
 
 pub(super) fn page_request(query: CursorListQuery) -> Result<CursorPage<WardCursor>, ApiError> {

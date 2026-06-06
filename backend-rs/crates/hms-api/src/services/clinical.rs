@@ -33,6 +33,12 @@ const MAX_TITLE_LEN: usize = 160;
 const MAX_SHORT_TEXT_LEN: usize = 120;
 const MAX_NOTE_BODY_LEN: usize = 20_000;
 
+#[derive(Clone, Copy, Debug)]
+struct CareContextIds {
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
+}
+
 #[derive(Clone)]
 pub struct ClinicalService {
     state: AppState,
@@ -813,12 +819,61 @@ impl ClinicalService {
         let route = normalize_optional_text(payload.route, "route", MAX_SHORT_TEXT_LEN)?
             .unwrap_or_else(|| "oral".to_owned());
         let frequency = normalize_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
+        let mut care_context = validate_care_context(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            payload.encounter_id,
+            payload.visit_id,
+        )
+        .await?;
+        let discharge_case_id = if let Some(discharge_case_id) = payload.discharge_case_id {
+            let discharge = hms_db::ward::get_discharge_case(
+                self.pool(),
+                self.facility_id(),
+                discharge_case_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "discharge_load_failed",
+                    "Discharge case could not be loaded.",
+                )
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("discharge_not_found", "Discharge case was not found.")
+            })?;
+            if discharge.patient_id != patient_id {
+                return Err(validation_error(
+                    "discharge_case_id",
+                    "Discharge case does not belong to this patient.",
+                ));
+            }
+            merge_care_context_id(
+                &mut care_context.encounter_id,
+                discharge.encounter_id,
+                "encounter_id",
+                "Encounter does not belong to the supplied discharge case.",
+            )?;
+            merge_care_context_id(
+                &mut care_context.visit_id,
+                discharge.visit_id,
+                "visit_id",
+                "Visit does not belong to the supplied discharge case.",
+            )?;
+            Some(discharge_case_id)
+        } else {
+            None
+        };
         let prescription = hms_db::clinical::create_prescription(
             self.pool(),
             NewPrescription {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 patient_id,
+                encounter_id: care_context.encounter_id,
+                visit_id: care_context.visit_id,
+                discharge_case_id,
                 medication_name,
                 dose,
                 route,
@@ -1014,51 +1069,14 @@ impl ClinicalService {
     ) -> Result<ObjectResponse<ChartEntryListItem>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
-        let encounter = if let Some(encounter_id) = payload.encounter_id {
-            let encounter =
-                hms_db::care::get_encounter(self.pool(), self.facility_id(), encounter_id)
-                    .await
-                    .map_err(|_| {
-                        ApiError::conflict(
-                            "encounter_load_failed",
-                            "Encounter could not be loaded.",
-                        )
-                    })?
-                    .ok_or_else(|| {
-                        ApiError::not_found("encounter_not_found", "Encounter was not found.")
-                    })?;
-            if encounter.patient_id != patient_id {
-                return Err(validation_error(
-                    "encounter_id",
-                    "Encounter does not belong to this patient.",
-                ));
-            }
-            Some(encounter)
-        } else {
-            None
-        };
-        if let Some(visit_id) = payload.visit_id {
-            let visit = hms_db::care::get_visit(self.pool(), self.facility_id(), visit_id)
-                .await
-                .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
-                .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
-            if visit.patient_id != patient_id {
-                return Err(validation_error(
-                    "visit_id",
-                    "Visit does not belong to this patient.",
-                ));
-            }
-            if encounter
-                .as_ref()
-                .and_then(|encounter| encounter.visit_id)
-                .is_some_and(|encounter_visit_id| encounter_visit_id != visit_id)
-            {
-                return Err(validation_error(
-                    "visit_id",
-                    "Visit does not belong to the supplied encounter.",
-                ));
-            }
-        }
+        let care_context = validate_care_context(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            payload.encounter_id,
+            payload.visit_id,
+        )
+        .await?;
         let value = normalize_text(payload.value, "value", MAX_SHORT_TEXT_LEN)?;
         let unit = normalize_optional_text(payload.unit, "unit", MAX_SHORT_TEXT_LEN)?;
         let entry = hms_db::clinical::create_chart_entry(
@@ -1067,8 +1085,8 @@ impl ClinicalService {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 patient_id,
-                encounter_id: payload.encounter_id,
-                visit_id: payload.visit_id,
+                encounter_id: care_context.encounter_id,
+                visit_id: care_context.visit_id,
                 entry_type: payload.entry_type,
                 measured_at: payload.measured_at,
                 value,
@@ -1135,6 +1153,77 @@ async fn load_patient_for_access(
     })?;
 
     Ok(patient)
+}
+
+async fn validate_care_context(
+    pool: &hms_db::PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
+) -> Result<CareContextIds, ApiError> {
+    let encounter = if let Some(encounter_id) = encounter_id {
+        let encounter = hms_db::care::get_encounter(pool, facility_id, encounter_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("encounter_load_failed", "Encounter could not be loaded.")
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("encounter_not_found", "Encounter was not found.")
+            })?;
+        if encounter.patient_id != patient_id {
+            return Err(validation_error(
+                "encounter_id",
+                "Encounter does not belong to this patient.",
+            ));
+        }
+        Some(encounter)
+    } else {
+        None
+    };
+
+    if let Some(visit_id) = visit_id {
+        let visit = hms_db::care::get_visit(pool, facility_id, visit_id)
+            .await
+            .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
+            .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+        if visit.patient_id != patient_id {
+            return Err(validation_error(
+                "visit_id",
+                "Visit does not belong to this patient.",
+            ));
+        }
+        if encounter
+            .as_ref()
+            .and_then(|encounter| encounter.visit_id)
+            .is_some_and(|encounter_visit_id| encounter_visit_id != visit_id)
+        {
+            return Err(validation_error(
+                "visit_id",
+                "Visit does not belong to the supplied encounter.",
+            ));
+        }
+    }
+
+    Ok(CareContextIds {
+        encounter_id,
+        visit_id: visit_id.or_else(|| encounter.and_then(|encounter| encounter.visit_id)),
+    })
+}
+
+fn merge_care_context_id(
+    target: &mut Option<Uuid>,
+    source: Option<Uuid>,
+    field: &'static str,
+    message: &'static str,
+) -> Result<(), ApiError> {
+    if let (Some(existing), Some(source)) = (*target, source) {
+        if existing != source {
+            return Err(validation_error(field, message));
+        }
+    }
+    *target = (*target).or(source);
+    Ok(())
 }
 
 async fn load_problem_for_access(

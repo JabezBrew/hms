@@ -20,6 +20,8 @@ pub struct LabCursor {
 pub struct OrderContext {
     pub id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug)]
@@ -34,6 +36,8 @@ pub struct ResultContext {
     pub id: Uuid,
     pub order_id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug)]
@@ -41,6 +45,8 @@ pub struct NewLabOrder {
     pub id: Uuid,
     pub facility_id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub test_ids: Vec<Uuid>,
     pub panel_ids: Vec<Uuid>,
     pub priority: LabPriority,
@@ -126,6 +132,8 @@ struct PanelRow {
 struct OrderRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
     patient_code: String,
     priority: String,
     status: String,
@@ -167,6 +175,8 @@ struct ResultRow {
 struct ContextRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -174,6 +184,15 @@ struct SpecimenContextRow {
     id: Uuid,
     order_id: Uuid,
     patient_id: Uuid,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ResultContextRow {
+    id: Uuid,
+    order_id: Uuid,
+    patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
 }
 
 pub async fn list_test_catalog(
@@ -397,14 +416,16 @@ pub async fn create_order(pool: &PgPool, order: NewLabOrder) -> anyhow::Result<L
     sqlx::query(
         r#"
         INSERT INTO lab_orders (
-            id, facility_id, patient_id, priority, status, ordered_by_user_id
+            id, facility_id, patient_id, encounter_id, visit_id, priority, status, ordered_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
     )
     .bind(order.id)
     .bind(order.facility_id)
     .bind(order.patient_id)
+    .bind(order.encounter_id)
+    .bind(order.visit_id)
     .bind(codec::encode(order.priority)?)
     .bind(codec::encode(LabOrderStatus::Ordered)?)
     .bind(order.actor_user_id)
@@ -445,7 +466,7 @@ pub async fn get_order_context(
     order_id: Uuid,
 ) -> anyhow::Result<Option<OrderContext>> {
     Ok(sqlx::query_as::<_, ContextRow>(
-        "SELECT id, patient_id FROM lab_orders WHERE facility_id = $1 AND id = $2",
+        "SELECT id, patient_id, encounter_id, visit_id FROM lab_orders WHERE facility_id = $1 AND id = $2",
     )
     .bind(facility_id)
     .bind(order_id)
@@ -454,6 +475,8 @@ pub async fn get_order_context(
     .map(|row| OrderContext {
         id: row.id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
     }))
 }
 
@@ -900,11 +923,19 @@ pub async fn get_result_context(
     facility_id: Uuid,
     result_id: Uuid,
 ) -> anyhow::Result<Option<ResultContext>> {
-    Ok(sqlx::query_as::<_, SpecimenContextRow>(
+    Ok(sqlx::query_as::<_, ResultContextRow>(
         r#"
-        SELECT id, order_id, patient_id
+        SELECT lab_results.id,
+               lab_results.order_id,
+               lab_results.patient_id,
+               lab_orders.encounter_id,
+               lab_orders.visit_id
         FROM lab_results
-        WHERE facility_id = $1 AND id = $2
+        JOIN lab_orders
+          ON lab_orders.facility_id = lab_results.facility_id
+         AND lab_orders.id = lab_results.order_id
+        WHERE lab_results.facility_id = $1
+          AND lab_results.id = $2
         "#,
     )
     .bind(facility_id)
@@ -915,6 +946,8 @@ pub async fn get_result_context(
         id: row.id,
         order_id: row.order_id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
     }))
 }
 
@@ -1194,6 +1227,8 @@ fn order_query() -> QueryBuilder<'static, Postgres> {
         r#"
         SELECT lab_orders.id,
                lab_orders.patient_id,
+               lab_orders.encounter_id,
+               lab_orders.visit_id,
                patients.patient_code,
                lab_orders.priority,
                lab_orders.status,
@@ -1479,6 +1514,8 @@ fn order_from_row(row: OrderRow) -> anyhow::Result<LabOrderListItem> {
     Ok(LabOrderListItem {
         id: row.id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
         patient_code: row.patient_code,
         priority: codec::decode(&row.priority)?,
         status: codec::decode(&row.status)?,

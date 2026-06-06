@@ -200,6 +200,8 @@ impl ScenarioBuilder<'_> {
                 facility_id: self.db.facility_id(),
                 patient_id: patient.id,
                 ward_id: ward.id,
+                encounter_id: None,
+                visit_id: None,
                 actor_user_id: self.db.owner_user_id(),
             },
         )

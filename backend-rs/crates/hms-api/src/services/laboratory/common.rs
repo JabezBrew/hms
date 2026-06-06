@@ -17,6 +17,12 @@ pub(super) const MAX_SHORT_TEXT_LEN: usize = 120;
 pub(super) const MAX_BULK_CREATE_RESULTS: usize = 50;
 pub(super) const MAX_BULK_VERIFY_RESULTS: usize = 50;
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct CareContextIds {
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+}
+
 pub(super) async fn load_order_for_access(
     state: &AppState,
     ctx: &hms_access::RequestContext,
@@ -87,6 +93,62 @@ pub(super) async fn load_patient_for_access(
     })?;
 
     Ok(patient)
+}
+
+pub(super) async fn validate_care_context(
+    state: &AppState,
+    patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
+) -> Result<CareContextIds, ApiError> {
+    let encounter = if let Some(encounter_id) = encounter_id {
+        let encounter =
+            hms_db::care::get_encounter(state.db_pool(), state.facility_id(), encounter_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("encounter_load_failed", "Encounter could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("encounter_not_found", "Encounter was not found.")
+                })?;
+        if encounter.patient_id != patient_id {
+            return Err(validation_error(
+                "encounter_id",
+                "Encounter does not belong to this patient.",
+            ));
+        }
+        Some(encounter)
+    } else {
+        None
+    };
+
+    if let Some(visit_id) = visit_id {
+        let visit = hms_db::care::get_visit(state.db_pool(), state.facility_id(), visit_id)
+            .await
+            .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
+            .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+        if visit.patient_id != patient_id {
+            return Err(validation_error(
+                "visit_id",
+                "Visit does not belong to this patient.",
+            ));
+        }
+        if encounter
+            .as_ref()
+            .and_then(|encounter| encounter.visit_id)
+            .is_some_and(|encounter_visit_id| encounter_visit_id != visit_id)
+        {
+            return Err(validation_error(
+                "visit_id",
+                "Visit does not belong to the supplied encounter.",
+            ));
+        }
+    }
+
+    Ok(CareContextIds {
+        encounter_id,
+        visit_id: visit_id.or_else(|| encounter.and_then(|encounter| encounter.visit_id)),
+    })
 }
 
 pub(super) fn require_laboratory_list_access(

@@ -409,6 +409,8 @@ impl From<WardBoardGetQuery> for WardBoardQuery {
 pub struct AdmissionCaseListItem {
     pub id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub patient_code: String,
     pub patient_display_name: String,
     pub ward_id: Uuid,
@@ -432,6 +434,8 @@ pub struct AdmitPatientRequest {
 pub struct CreateAdmissionCaseRequest {
     pub patient_id: Uuid,
     pub ward_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -442,6 +446,8 @@ pub struct ReserveAdmissionBedRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateDischargeRequest {
     pub admission_case_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -466,6 +472,8 @@ pub struct DischargeCaseListItem {
     pub id: Uuid,
     pub admission_case_id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub patient_code: String,
     pub patient_display_name: String,
     pub ward_id: Uuid,

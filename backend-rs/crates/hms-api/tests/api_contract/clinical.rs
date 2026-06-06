@@ -24,6 +24,56 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .as_str()
         .expect("patient id exists");
 
+    let discharge_encounter_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/encounters")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "encounter_type": "outpatient"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("discharge encounter create succeeds");
+    assert_eq!(discharge_encounter_response.status(), StatusCode::OK);
+    let discharge_encounter_body = json_body(discharge_encounter_response).await;
+    let discharge_encounter_id = discharge_encounter_body["data"]["id"]
+        .as_str()
+        .expect("discharge encounter id exists");
+
+    let prescription_encounter_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/encounters")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "encounter_type": "outpatient"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("prescription encounter create succeeds");
+    assert_eq!(prescription_encounter_response.status(), StatusCode::OK);
+    let prescription_encounter_body = json_body(prescription_encounter_response).await;
+    let prescription_encounter_id = prescription_encounter_body["data"]["id"]
+        .as_str()
+        .expect("prescription encounter id exists");
+
     let ward_response = app
         .clone()
         .oneshot(
@@ -51,7 +101,8 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
                 .body(Body::from(
                     json!({
                         "patient_id": patient_id,
-                        "ward_id": ward_id
+                        "ward_id": ward_id,
+                        "encounter_id": discharge_encounter_id
                     })
                     .to_string(),
                 ))
@@ -80,6 +131,67 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .await
         .expect("admission activation succeeds");
     assert_eq!(activate_response.status(), StatusCode::OK);
+
+    let discharge_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/discharges")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_case_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("discharge request succeeds");
+    assert_eq!(discharge_response.status(), StatusCode::OK);
+    let discharge_body = json_body(discharge_response).await;
+    let discharge_case_id = discharge_body["data"]["id"]
+        .as_str()
+        .expect("discharge case id exists");
+
+    let mismatched_discharge_prescription = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/clinical/prescriptions"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "medication_name": "Discharge mismatch",
+                        "dose": "5 mg",
+                        "route": "oral",
+                        "frequency": "daily",
+                        "encounter_id": prescription_encounter_id,
+                        "discharge_case_id": discharge_case_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("mismatched discharge prescription request succeeds");
+    let mismatched_discharge_status = mismatched_discharge_prescription.status();
+    let mismatched_discharge_body = json_body(mismatched_discharge_prescription).await;
+    assert_eq!(
+        mismatched_discharge_status,
+        StatusCode::BAD_REQUEST,
+        "{mismatched_discharge_body}"
+    );
+    assert_eq!(
+        mismatched_discharge_body["error"]["details"]["encounter_id"][0],
+        "Encounter does not belong to the supplied discharge case."
+    );
 
     let items_response = app
         .clone()

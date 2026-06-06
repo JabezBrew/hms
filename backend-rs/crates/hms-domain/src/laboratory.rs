@@ -66,6 +66,8 @@ pub struct LabPanelListItem {
 pub struct LabOrderListItem {
     pub id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub patient_code: String,
     pub priority: LabPriority,
     pub status: LabOrderStatus,
@@ -106,6 +108,8 @@ pub struct LabOrderTestResultSummary {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateLabOrderRequest {
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     #[serde(default)]
     pub test_ids: Vec<Uuid>,
     #[serde(default)]

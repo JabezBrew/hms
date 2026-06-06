@@ -17,6 +17,8 @@ pub struct AdmissionContext {
     pub patient_id: Uuid,
     pub ward_id: Uuid,
     pub bed_id: Option<Uuid>,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,6 +37,8 @@ pub struct NewAdmissionCase {
     pub facility_id: Uuid,
     pub patient_id: Uuid,
     pub ward_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub actor_user_id: Uuid,
 }
 
@@ -60,6 +64,8 @@ struct WardBoardRow {
 struct AdmissionCaseRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
     patient_code: String,
     patient_display_name: String,
     ward_id: Uuid,
@@ -188,7 +194,9 @@ pub async fn get_admission_context(
         SELECT id,
                patient_id,
                ward_id,
-               bed_id
+               bed_id,
+               encounter_id,
+               visit_id
         FROM admission_cases
         WHERE facility_id = $1 AND id = $2
         "#,
@@ -203,6 +211,8 @@ pub async fn get_admission_context(
         patient_id: row.patient_id,
         ward_id: row.ward_id,
         bed_id: row.bed_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
     }))
 }
 
@@ -257,11 +267,13 @@ pub async fn create_admission_case(
             patient_id,
             ward_id,
             bed_id,
+            encounter_id,
+            visit_id,
             status,
             attending_user_id,
             created_by_user_id
         )
-        SELECT $1, $2, $3, $4, NULL, $5, $6, $6
+        SELECT $1, $2, $3, $4, NULL, $5, $6, $7, $8, $8
         WHERE EXISTS (
             SELECT 1
             FROM patients
@@ -282,6 +294,8 @@ pub async fn create_admission_case(
         .bind(admission.facility_id)
         .bind(admission.patient_id)
         .bind(admission.ward_id)
+        .bind(admission.encounter_id)
+        .bind(admission.visit_id)
         .bind(codec::encode(AdmissionStatus::ReadyForActivation)?)
         .bind(admission.actor_user_id)
         .fetch_optional(pool),
@@ -789,6 +803,8 @@ fn admission_case_query() -> QueryBuilder<'static, Postgres> {
         r#"
         SELECT admission_cases.id,
                admission_cases.patient_id,
+               admission_cases.encounter_id,
+               admission_cases.visit_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                admission_cases.ward_id,
@@ -915,6 +931,8 @@ struct AdmissionContextRow {
     patient_id: Uuid,
     ward_id: Uuid,
     bed_id: Option<Uuid>,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -1041,6 +1059,8 @@ fn admission_case_from_row(row: AdmissionCaseRow) -> anyhow::Result<AdmissionCas
     Ok(AdmissionCaseListItem {
         id: row.id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
         ward_id: row.ward_id,

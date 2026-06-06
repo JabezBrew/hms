@@ -5,8 +5,8 @@ use hms_db::billing::{
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::billing::{
-    BillingRuleType, CashSessionStatus, ClaimStatus, InvoiceStatus, NhisArAdjustmentKind,
-    PaymentMethod, ReversalKind,
+    BillingRuleType, BillingSourceType, CashSessionStatus, ClaimStatus, InvoiceStatus,
+    NhisArAdjustmentKind, PaymentMethod, ReversalKind,
 };
 use hms_domain::deployment::DeploymentProfile;
 
@@ -180,9 +180,15 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            encounter_id: None,
+            visit_id: None,
+            admission_case_id: None,
             service_price_id,
             quantity: 1,
             invoice_number: "INV-TEST-1".to_owned(),
+            source_type: Some(BillingSourceType::ManualCharge),
+            source_id: Some(service_price_id),
+            is_auto_generated: true,
             actor_user_id: owner_id,
         },
     )
@@ -194,9 +200,15 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id: other_patient_id,
+            encounter_id: None,
+            visit_id: None,
+            admission_case_id: None,
             service_price_id,
             quantity: 1,
             invoice_number: "INV-TEST-2".to_owned(),
+            source_type: None,
+            source_id: None,
+            is_auto_generated: false,
             actor_user_id: owner_id,
         },
     )
@@ -209,6 +221,21 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
         .expect("invoice exists");
     assert_eq!(invoice_detail.id, invoice.id);
     assert_eq!(invoice_detail.patient_id, patient_id);
+    let line_provenance = sqlx::query_as::<_, (bool, Option<String>, Option<uuid::Uuid>)>(
+        r#"
+        SELECT is_auto_generated, source_type, source_id
+        FROM invoice_lines
+        WHERE facility_id = $1 AND invoice_id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(invoice.id)
+    .fetch_one(&pool)
+    .await
+    .expect("invoice line provenance loads");
+    assert_eq!(line_provenance.0, true);
+    assert_eq!(line_provenance.1.as_deref(), Some("manual_charge"));
+    assert_eq!(line_provenance.2, Some(service_price_id));
     assert!(
         hms_db::billing::get_invoice(&pool, uuid::Uuid::new_v4(), invoice.id)
             .await
@@ -402,9 +429,15 @@ async fn billing_dashboard_summary_uses_facility_scoped_aggregates() {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            encounter_id: None,
+            visit_id: None,
+            admission_case_id: None,
             service_price_id,
             quantity: 2,
             invoice_number: "INV-DASH-1".to_owned(),
+            source_type: None,
+            source_id: None,
+            is_auto_generated: false,
             actor_user_id: owner_id,
         },
     )
@@ -1082,9 +1115,15 @@ impl BillingFixture {
                 id: uuid::Uuid::new_v4(),
                 facility_id: self.facility_id,
                 patient_id: self.patient_id,
+                encounter_id: None,
+                visit_id: None,
+                admission_case_id: None,
                 service_price_id: self.service_price_id,
                 quantity,
                 invoice_number: invoice_number.to_owned(),
+                source_type: None,
+                source_id: None,
+                is_auto_generated: false,
                 actor_user_id: self.owner_id,
             },
         )

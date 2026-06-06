@@ -57,8 +57,8 @@ Journey mapping:
   monitoring events, nursing alerts, fluid balance entries, ward stock requests,
   and shift handoffs so ward, nursing, and operational surfaces have realistic
   activity texture.
-- Rust V2 stores care context on `clinical_notes` and, for newly recorded
-  observations, on `chart_entries` through optional `encounter_id`/`visit_id`.
-  `prescriptions`, `lab_orders`, and billing rows do not yet have encounter
-  foreign keys. The seed aligns those rows by deterministic encounter timing and
-  patient journey sequence.
+- Rust V2 stores care context on `clinical_notes`, `chart_entries`, new
+  prescriptions, lab orders, admission/discharge cases, and billing rows through
+  optional encounter/visit/admission fields. Older rows that predate those
+  columns may still rely on deterministic encounter timing and patient journey
+  sequence until they are backfilled.

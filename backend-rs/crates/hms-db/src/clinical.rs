@@ -87,6 +87,9 @@ pub struct NewPrescription {
     pub id: Uuid,
     pub facility_id: Uuid,
     pub patient_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub discharge_case_id: Option<Uuid>,
     pub medication_name: String,
     pub dose: String,
     pub route: String,
@@ -202,6 +205,9 @@ struct AllergyRow {
 struct PrescriptionRow {
     id: Uuid,
     patient_id: Uuid,
+    encounter_id: Option<Uuid>,
+    visit_id: Option<Uuid>,
+    discharge_case_id: Option<Uuid>,
     medication_name: String,
     dose: String,
     route: String,
@@ -1064,7 +1070,7 @@ pub async fn list_prescriptions(
 ) -> anyhow::Result<Vec<PrescriptionListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         FROM prescriptions
         WHERE facility_id =
         "#,
@@ -1095,15 +1101,18 @@ pub async fn create_prescription(
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
         INSERT INTO prescriptions (
-            id, facility_id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id
+            id, facility_id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        RETURNING id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         "#,
     )
     .bind(prescription.id)
     .bind(prescription.facility_id)
     .bind(prescription.patient_id)
+    .bind(prescription.encounter_id)
+    .bind(prescription.visit_id)
+    .bind(prescription.discharge_case_id)
     .bind(prescription.medication_name)
     .bind(prescription.dose)
     .bind(prescription.route)
@@ -1126,7 +1135,7 @@ pub async fn get_prescription(
 ) -> anyhow::Result<Option<PrescriptionListItem>> {
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
-        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         FROM prescriptions
         WHERE facility_id = $1 AND id = $2
         "#,
@@ -1159,7 +1168,7 @@ pub async fn update_prescription(
             status = COALESCE($11, status),
             updated_at = now()
         WHERE facility_id = $1 AND id = $2
-        RETURNING id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         "#,
     )
     .bind(facility_id)
@@ -1491,7 +1500,7 @@ care_team AS (
   ORDER BY assignments.created_at ASC, assignments.id ASC
   LIMIT 10
 ),
-timeline_entries AS (
+	timeline_entries AS (
   SELECT entries.entry_id,
          entries.entry_type,
          entries.occurred_at,
@@ -1531,8 +1540,8 @@ timeline_entries AS (
            'prescription' AS entry_type,
            'prescription' AS entry_category,
            prescriptions.prescribed_at AS occurred_at,
-           NULL::uuid AS encounter_id,
-           NULL::uuid AS visit_id,
+	           prescriptions.encounter_id AS encounter_id,
+	           prescriptions.visit_id AS visit_id,
            prescriptions.medication_name AS title,
            concat_ws(' ', prescriptions.dose, prescriptions.frequency, prescriptions.status) AS summary,
            jsonb_build_object(
@@ -1579,8 +1588,8 @@ timeline_entries AS (
            'lab_result' AS entry_type,
            'lab_result' AS entry_category,
            lab_results.entered_at AS occurred_at,
-           NULL::uuid AS encounter_id,
-           NULL::uuid AS visit_id,
+	           lab_orders.encounter_id AS encounter_id,
+	           lab_orders.visit_id AS visit_id,
            lab_tests.name AS title,
            concat_ws(' ', lab_results.value, lab_results.unit, lab_results.status) AS summary,
            jsonb_build_object(
@@ -1593,8 +1602,11 @@ timeline_entries AS (
              'status', lab_results.status,
              'verified_at', lab_results.verified_at
            ) AS data
-    FROM lab_results
-    JOIN lab_tests
+	    FROM lab_results
+	    JOIN lab_orders
+	      ON lab_orders.id = lab_results.order_id
+	     AND lab_orders.facility_id = lab_results.facility_id
+	    JOIN lab_tests
       ON lab_tests.id = lab_results.test_id
      AND lab_tests.facility_id = lab_results.facility_id
     WHERE lab_results.facility_id = $1
@@ -1683,17 +1695,38 @@ timeline_entries AS (
   WHERE ($5::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($5::timestamptz, $6::uuid))
     AND ($7::text IS NULL OR entries.entry_category = $7)
     AND ($8::text IS NULL OR entries.title ILIKE $8 OR entries.summary ILIKE $8)
-    AND (
-      $9::uuid IS NULL
-      OR entries.encounter_id = $9
-      OR entries.visit_id = (
-        SELECT encounters.visit_id
+	    AND (
+	      $9::uuid IS NULL
+	      OR entries.encounter_id = $9
+	      OR entries.visit_id = (
+	        SELECT encounters.visit_id
         FROM encounters
         WHERE encounters.facility_id = $1
           AND encounters.patient_id = $2
-          AND encounters.id = $9
-      )
-    )
+	          AND encounters.id = $9
+	      )
+	      OR entries.entry_category IN ('problem', 'allergy')
+	      OR (
+	        entries.encounter_id IS NULL
+	        AND entries.visit_id IS NULL
+	        AND entries.entry_category IN ('prescription', 'lab_result', 'ward_round')
+	        AND entries.occurred_at >= (
+	          SELECT encounters.started_at
+	          FROM encounters
+	          WHERE encounters.facility_id = $1
+	            AND encounters.patient_id = $2
+	            AND encounters.id = $9
+	        )
+	        AND (
+	          SELECT encounters.ended_at IS NULL
+	            OR entries.occurred_at < encounters.ended_at
+	          FROM encounters
+	          WHERE encounters.facility_id = $1
+	            AND encounters.patient_id = $2
+	            AND encounters.id = $9
+	        )
+	      )
+	    )
   ORDER BY entries.occurred_at DESC, entries.entry_id DESC
   LIMIT $4
 )
@@ -1831,8 +1864,8 @@ FROM (
          'prescription' AS entry_type,
          'prescription' AS entry_category,
          prescriptions.prescribed_at AS occurred_at,
-         NULL::uuid AS encounter_id,
-         NULL::uuid AS visit_id,
+         prescriptions.encounter_id AS encounter_id,
+         prescriptions.visit_id AS visit_id,
          prescriptions.medication_name AS title,
          concat_ws(' ', prescriptions.dose, prescriptions.frequency, prescriptions.status) AS summary,
          jsonb_build_object(
@@ -1879,8 +1912,8 @@ FROM (
          'lab_result' AS entry_type,
          'lab_result' AS entry_category,
          lab_results.entered_at AS occurred_at,
-         NULL::uuid AS encounter_id,
-         NULL::uuid AS visit_id,
+         lab_orders.encounter_id AS encounter_id,
+         lab_orders.visit_id AS visit_id,
          lab_tests.name AS title,
          concat_ws(' ', lab_results.value, lab_results.unit, lab_results.status) AS summary,
          jsonb_build_object(
@@ -1893,8 +1926,11 @@ FROM (
            'status', lab_results.status,
            'verified_at', lab_results.verified_at
          ) AS data
-  FROM lab_results
-  JOIN lab_tests
+	  FROM lab_results
+	  JOIN lab_orders
+	    ON lab_orders.id = lab_results.order_id
+	   AND lab_orders.facility_id = lab_results.facility_id
+	  JOIN lab_tests
     ON lab_tests.id = lab_results.test_id
    AND lab_tests.facility_id = lab_results.facility_id
   WHERE lab_results.facility_id = $1
@@ -1983,17 +2019,38 @@ FROM (
 WHERE ($4::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($4::timestamptz, $5::uuid))
   AND ($6::text IS NULL OR entries.entry_category = $6)
   AND ($7::text IS NULL OR entries.title ILIKE $7 OR entries.summary ILIKE $7)
-  AND (
-    $8::uuid IS NULL
-    OR entries.encounter_id = $8
-    OR entries.visit_id = (
+	  AND (
+	    $8::uuid IS NULL
+	    OR entries.encounter_id = $8
+	    OR entries.visit_id = (
       SELECT encounters.visit_id
       FROM encounters
       WHERE encounters.facility_id = $1
         AND encounters.patient_id = $2
-        AND encounters.id = $8
-    )
-  )
+	        AND encounters.id = $8
+	    )
+	    OR entries.entry_category IN ('problem', 'allergy')
+	    OR (
+	      entries.encounter_id IS NULL
+	      AND entries.visit_id IS NULL
+	      AND entries.entry_category IN ('prescription', 'lab_result', 'ward_round')
+	      AND entries.occurred_at >= (
+	        SELECT encounters.started_at
+	        FROM encounters
+	        WHERE encounters.facility_id = $1
+	          AND encounters.patient_id = $2
+	          AND encounters.id = $8
+	      )
+	      AND (
+	        SELECT encounters.ended_at IS NULL
+	          OR entries.occurred_at < encounters.ended_at
+	        FROM encounters
+	        WHERE encounters.facility_id = $1
+	          AND encounters.patient_id = $2
+	          AND encounters.id = $8
+	      )
+	    )
+	  )
 ORDER BY entries.occurred_at DESC, entries.entry_id DESC
 LIMIT $3
 "#;
@@ -2139,7 +2196,7 @@ async fn list_active_prescriptions(
 ) -> anyhow::Result<Vec<PrescriptionListItem>> {
     let rows = sqlx::query_as::<_, PrescriptionRow>(
         r#"
-        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
         FROM prescriptions
         WHERE facility_id = $1
           AND patient_id = $2
@@ -2278,6 +2335,9 @@ fn prescription_from_row(row: PrescriptionRow) -> anyhow::Result<PrescriptionLis
     Ok(PrescriptionListItem {
         id: row.id,
         patient_id: row.patient_id,
+        encounter_id: row.encounter_id,
+        visit_id: row.visit_id,
+        discharge_case_id: row.discharge_case_id,
         medication_name: row.medication_name,
         dose: row.dose,
         route: row.route,
