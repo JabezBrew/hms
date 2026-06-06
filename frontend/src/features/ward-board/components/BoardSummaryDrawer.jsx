@@ -2,21 +2,29 @@ import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import Info from 'lucide-react/dist/esm/icons/info.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import { cn } from '@/lib/utils';
+import {
+  getPatientBed,
+  getPatientDischargeCount,
+  getPatientDueMedicationCount,
+  getPatientName,
+  getPatientOverdueTaskCount,
+  getPatientResultCount,
+} from './wardBoardUtils';
 
 const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 
 const DEFAULT_EMPTY_ARRAY = [];
+const SUMMARY_TITLE_COLORS = {
+  rose: 'text-rose-600',
+  amber: 'text-amber-600',
+  emerald: 'text-emerald-600',
+  neutral: 'text-foreground',
+};
 
 function SummarySection({ title, items, accent }) {
-  const titleColors = {
-    rose: 'text-rose-600',
-    amber: 'text-amber-600',
-    emerald: 'text-emerald-600',
-    neutral: 'text-foreground',
-  };
   return (
     <div className="min-w-[12rem] flex-1">
-      <h3 className={cn('mb-2 font-mono text-[11px] font-semibold uppercase tracking-wide', titleColors[accent])}>
+      <h3 className={cn('mb-2 font-mono text-[11px] font-semibold uppercase tracking-wide', SUMMARY_TITLE_COLORS[accent])}>
         {title}
       </h3>
       {items.length === 0 ? (
@@ -45,40 +53,49 @@ function SummarySection({ title, items, accent }) {
 
 export function BoardSummaryDrawer({ open, onOpenChange, summary, patients = DEFAULT_EMPTY_ARRAY }) {
   const critical = patients
-    .filter((p) => ['critical', 'urgent', 'high'].includes(String(p?.urgency ?? p?.priority ?? p?.risk_level ?? p?.status ?? '').toLowerCase()))
+    .filter((p) => Number(p?.active_alert_count ?? 0) > 0)
     .slice(0, 4)
     .map((p) => ({
-      bed: p?.bed_label ?? p?.bed_name ?? p?.bed?.label ?? p?.bed_number ?? '—',
-      label: p?.patient_name ?? p?.name ?? 'Patient',
-      badge: p?.problem_summary ? String(p.problem_summary).split(',')[0].trim() : null,
+      bed: getPatientBed(p) ?? '—',
+      label: getPatientName(p),
+      badge: Number(p?.critical_alert_count ?? 0) > 0
+        ? `${p.critical_alert_count} critical`
+        : `${p.active_alert_count} active`,
+      badgeClass: Number(p?.critical_alert_count ?? 0) > 0 ? 'text-rose-600' : 'text-amber-600',
     }));
 
-  const pending = patients
-    .filter((p) => (p?.reviews_due_count ?? 0) > 0 || (p?.pending_results_count ?? 0) > 0)
+  const dueWork = patients
+    .filter((p) => getPatientOverdueTaskCount(p) > 0 || getPatientDueMedicationCount(p) > 0)
     .slice(0, 4)
     .map((p) => ({
-      bed: p?.bed_label ?? p?.bed_name ?? p?.bed?.label ?? p?.bed_number ?? '—',
-      label: p?.patient_name ?? p?.name ?? 'Patient',
-      badge: (p?.reviews_due_count ?? 0) > 0 ? '1 due soon' : null,
-      badgeClass: 'text-amber-600',
+      bed: getPatientBed(p) ?? '—',
+      label: getPatientName(p),
+      badge: getPatientOverdueTaskCount(p) > 0
+        ? `${getPatientOverdueTaskCount(p)} overdue`
+        : `${getPatientDueMedicationCount(p)} meds due`,
+      badgeClass: getPatientOverdueTaskCount(p) > 0 ? 'text-rose-600' : 'text-amber-600',
+    }));
+
+  const results = patients
+    .filter((p) => getPatientResultCount(p) > 0)
+    .slice(0, 4)
+    .map((p) => ({
+      bed: getPatientBed(p) ?? '—',
+      label: getPatientName(p),
+      badge: Number(p?.critical_unverified_result_count ?? 0) > 0
+        ? `${p.critical_unverified_result_count} critical`
+        : `${getPatientResultCount(p)} review`,
+      badgeClass: Number(p?.critical_unverified_result_count ?? 0) > 0 ? 'text-rose-600' : 'text-sky-600',
     }));
 
   const discharge = patients
-    .filter((p) => p?.discharge_status && p.discharge_status !== 'none')
+    .filter((p) => getPatientDischargeCount(p) > 0)
     .slice(0, 4)
     .map((p) => ({
-      bed: p?.bed_label ?? p?.bed_name ?? p?.bed?.label ?? p?.bed_number ?? '—',
-      label: p?.patient_name ?? p?.name ?? 'Patient',
-      badge: p?.discharge_blocker_count ? `${p.discharge_blocker_count} reasons` : null,
-    }));
-
-  const contingency = patients
-    .filter((p) => p?.contingency_plan || p?.escalation_plan)
-    .slice(0, 4)
-    .map((p) => ({
-      bed: p?.bed_label ?? p?.bed_name ?? p?.bed?.label ?? p?.bed_number ?? '—',
-      label: p?.patient_name ?? p?.name ?? 'Patient',
-      badge: p?.contingency_plan ?? p?.escalation_plan ?? null,
+      bed: getPatientBed(p) ?? '—',
+      label: getPatientName(p),
+      badge: `${getPatientDischargeCount(p)} blockers`,
+      badgeClass: 'text-amber-600',
     }));
 
   if (!open) return null;
@@ -113,24 +130,24 @@ export function BoardSummaryDrawer({ open, onOpenChange, summary, patients = DEF
 
       <div className="flex flex-wrap gap-6 overflow-x-auto p-4">
         <SummarySection
-          title={`Critical (${critical.length})`}
+          title={`Safety Alerts (${critical.length})`}
           items={critical}
           accent="rose"
         />
         <SummarySection
-          title={`Pending Reviews (${pending.length})`}
-          items={pending}
+          title={`Due Work (${dueWork.length})`}
+          items={dueWork}
           accent="amber"
+        />
+        <SummarySection
+          title={`Results to Review (${results.length})`}
+          items={results}
+          accent="neutral"
         />
         <SummarySection
           title={`Discharge Blockers (${discharge.length})`}
           items={discharge}
-          accent="emerald"
-        />
-        <SummarySection
-          title={`Contingency Plans (${contingency.length})`}
-          items={contingency}
-          accent="neutral"
+          accent="amber"
         />
         <div className="flex min-w-[14rem] flex-1 items-start gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
           <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />

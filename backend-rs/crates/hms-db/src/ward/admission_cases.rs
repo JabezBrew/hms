@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use hms_domain::ward::{
-    AdmissionCaseListItem, AdmissionStatus, BedStatus, WardBoardItem, WardBoardMonitoringFilter,
+    AdmissionCaseListItem, AdmissionStatus, BedStatus, DischargeStatus, WardBoardItem,
+    WardBoardMonitoringFilter, WardBoardSort,
 };
 use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder, Transaction};
@@ -9,7 +10,7 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
-use super::WardCursor;
+use super::{WardBoardCursor, WardCursor};
 
 #[derive(Clone, Debug)]
 pub struct AdmissionContext {
@@ -55,9 +56,20 @@ struct WardBoardRow {
     admission_status: String,
     admitted_at: DateTime<Utc>,
     open_nursing_task_count: i64,
+    overdue_nursing_task_count: i64,
+    next_nursing_task_due_at: Option<DateTime<Utc>>,
     due_medication_count: i64,
+    next_due_medication_at: Option<DateTime<Utc>>,
     active_alert_count: i64,
     critical_alert_count: i64,
+    last_vitals_recorded_at: Option<DateTime<Utc>>,
+    unverified_result_count: i64,
+    critical_unverified_result_count: i64,
+    pending_lab_order_count: i64,
+    discharge_case_id: Option<Uuid>,
+    discharge_status: Option<String>,
+    open_discharge_blocker_count: i64,
+    last_activity_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -85,7 +97,8 @@ pub async fn list_ward_board(
     patient_id: Option<Uuid>,
     search: Option<String>,
     monitoring_filter: Option<WardBoardMonitoringFilter>,
-    cursor: Option<WardCursor>,
+    sort: WardBoardSort,
+    cursor: Option<WardBoardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<WardBoardItem>> {
     let mut query = ward_board_list_query();
@@ -143,17 +156,12 @@ pub async fn list_ward_board(
         push_monitoring_filter(&mut query, monitoring_filter);
     }
 
-    if let Some(cursor) = cursor {
-        query.push(" AND (admitted_at, id) > (");
-        query.push_bind(cursor.occurred_at);
-        query.push(", ");
-        query.push_bind(cursor.id);
-        query.push(")");
-    }
-
-    query.push(" ORDER BY admitted_at ASC, id ASC LIMIT ");
+    push_ward_board_cursor(&mut query, cursor);
+    push_ward_board_order(&mut query, sort);
+    query.push(" LIMIT ");
     query.push_bind(limit);
     query.push(ward_board_list_select());
+    push_ward_board_order(&mut query, sort);
 
     let rows = observe_db_query(
         "ward.admission_cases.ward_board.list",
@@ -699,32 +707,255 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
                admission_cases.status AS admission_status,
                admission_cases.admitted_at,
                COALESCE(task_counts.open_nursing_task_count, 0) AS open_nursing_task_count,
+               COALESCE(task_counts.overdue_nursing_task_count, 0) AS overdue_nursing_task_count,
+               task_counts.next_nursing_task_due_at,
                COALESCE(med_counts.due_medication_count, 0) AS due_medication_count,
+               med_counts.next_due_medication_at,
                COALESCE(alert_counts.active_alert_count, 0) AS active_alert_count,
-               COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count
+               COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count,
+               vitals.last_vitals_recorded_at,
+               COALESCE(result_counts.unverified_result_count, 0) AS unverified_result_count,
+               COALESCE(result_counts.critical_unverified_result_count, 0) AS critical_unverified_result_count,
+               COALESCE(lab_order_counts.pending_lab_order_count, 0) AS pending_lab_order_count,
+               discharge_counts.discharge_case_id,
+               discharge_counts.discharge_status,
+               COALESCE(discharge_counts.open_discharge_blocker_count, 0) AS open_discharge_blocker_count,
+               GREATEST(
+                   admission_cases.updated_at,
+                   COALESCE(task_counts.last_task_activity_at, admission_cases.updated_at),
+                   COALESCE(med_counts.last_medication_activity_at, admission_cases.updated_at),
+                   COALESCE(alert_counts.last_alert_activity_at, admission_cases.updated_at),
+                   COALESCE(vitals.last_vitals_recorded_at, admission_cases.updated_at),
+                   COALESCE(result_counts.last_result_activity_at, admission_cases.updated_at),
+                   COALESCE(lab_order_counts.last_lab_order_activity_at, admission_cases.updated_at),
+                   COALESCE(discharge_counts.discharge_last_activity_at, admission_cases.updated_at)
+               ) AS last_activity_at
         FROM admission_cases
-        JOIN patients ON patients.id = admission_cases.patient_id
-        JOIN wards ON wards.id = admission_cases.ward_id
-        LEFT JOIN beds ON beds.id = admission_cases.bed_id
-        LEFT JOIN (
-            SELECT admission_case_id, count(*) AS open_nursing_task_count
+        JOIN patients
+          ON patients.id = admission_cases.patient_id
+         AND patients.facility_id = admission_cases.facility_id
+        JOIN wards
+          ON wards.id = admission_cases.ward_id
+         AND wards.facility_id = admission_cases.facility_id
+        LEFT JOIN beds
+          ON beds.id = admission_cases.bed_id
+         AND beds.facility_id = admission_cases.facility_id
+        LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE status = 'open') AS open_nursing_task_count,
+                   count(*) FILTER (WHERE status = 'open' AND due_at <= now()) AS overdue_nursing_task_count,
+                   min(due_at) FILTER (WHERE status = 'open') AS next_nursing_task_due_at,
+                   max(updated_at) FILTER (WHERE status = 'open') AS last_task_activity_at
             FROM nursing_tasks
-            WHERE status = 'open'
-            GROUP BY admission_case_id
-        ) task_counts ON task_counts.admission_case_id = admission_cases.id
-        LEFT JOIN (
-            SELECT admission_case_id, count(*) AS due_medication_count
+            WHERE nursing_tasks.facility_id = admission_cases.facility_id
+              AND nursing_tasks.admission_case_id = admission_cases.id
+        ) task_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE status = 'scheduled' AND scheduled_at <= now()) AS due_medication_count,
+                   min(scheduled_at) FILTER (WHERE status = 'scheduled' AND scheduled_at <= now()) AS next_due_medication_at,
+                   max(updated_at) FILTER (WHERE status = 'scheduled') AS last_medication_activity_at
             FROM medication_administrations
-            WHERE status = 'scheduled' AND scheduled_at <= now()
-            GROUP BY admission_case_id
-        ) med_counts ON med_counts.admission_case_id = admission_cases.id
-        LEFT JOIN (
-            SELECT admission_case_id,
-                   count(*) FILTER (WHERE status = 'open') AS active_alert_count,
-                   count(*) FILTER (WHERE status = 'open' AND severity IN ('critical', 'high')) AS critical_alert_count
+            WHERE medication_administrations.facility_id = admission_cases.facility_id
+              AND medication_administrations.admission_case_id = admission_cases.id
+        ) med_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE nursing_alerts.status = 'open') AS active_alert_count,
+                   count(*) FILTER (
+                       WHERE nursing_alerts.status = 'open'
+                         AND nursing_alerts.severity IN ('critical', 'high')
+                   ) AS critical_alert_count,
+                   max(updated_at) FILTER (WHERE nursing_alerts.status = 'open') AS last_alert_activity_at
             FROM nursing_alerts
-            GROUP BY admission_case_id
-        ) alert_counts ON alert_counts.admission_case_id = admission_cases.id
+            WHERE nursing_alerts.facility_id = admission_cases.facility_id
+              AND nursing_alerts.admission_case_id = admission_cases.id
+        ) alert_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT max(recorded_at) AS last_vitals_recorded_at
+            FROM patient_vitals
+            WHERE patient_vitals.facility_id = admission_cases.facility_id
+              AND patient_vitals.admission_case_id = admission_cases.id
+        ) vitals ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE lab_results.verified_at IS NULL) AS unverified_result_count,
+                   count(*) FILTER (
+                       WHERE lab_results.verified_at IS NULL
+                         AND lab_results.is_critical = TRUE
+                   ) AS critical_unverified_result_count,
+                   max(lab_results.updated_at) FILTER (WHERE lab_results.verified_at IS NULL) AS last_result_activity_at
+            FROM lab_results
+            JOIN lab_orders
+              ON lab_orders.id = lab_results.order_id
+             AND lab_orders.facility_id = lab_results.facility_id
+            WHERE lab_results.facility_id = admission_cases.facility_id
+              AND lab_results.patient_id = admission_cases.patient_id
+              AND lab_results.status <> 'verified'
+              AND (
+                  (
+                      admission_cases.encounter_id IS NOT NULL
+                      AND (
+                          lab_orders.encounter_id = admission_cases.encounter_id
+                          OR (
+                              lab_orders.encounter_id IS NULL
+                              AND admission_cases.visit_id IS NOT NULL
+                              AND lab_orders.visit_id = admission_cases.visit_id
+                          )
+                      )
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NOT NULL
+                      AND lab_orders.visit_id = admission_cases.visit_id
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NULL
+                      AND lab_orders.ordered_at >= admission_cases.admitted_at
+                  )
+              )
+        ) result_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS pending_lab_order_count,
+                   max(lab_orders.updated_at) AS last_lab_order_activity_at
+            FROM lab_orders
+            WHERE lab_orders.facility_id = admission_cases.facility_id
+              AND lab_orders.patient_id = admission_cases.patient_id
+              AND lab_orders.status IN ('ordered', 'specimen_collected')
+              AND (
+                  (
+                      admission_cases.encounter_id IS NOT NULL
+                      AND (
+                          lab_orders.encounter_id = admission_cases.encounter_id
+                          OR (
+                              lab_orders.encounter_id IS NULL
+                              AND admission_cases.visit_id IS NOT NULL
+                              AND lab_orders.visit_id = admission_cases.visit_id
+                          )
+                      )
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NOT NULL
+                      AND lab_orders.visit_id = admission_cases.visit_id
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NULL
+                      AND lab_orders.ordered_at >= admission_cases.admitted_at
+                  )
+              )
+        ) lab_order_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT dc.id AS discharge_case_id,
+                   dc.status AS discharge_status,
+                   dc.updated_at AS discharge_last_activity_at,
+                   (
+                       CASE
+                           WHEN NOT EXISTS (
+                               SELECT 1
+                               FROM clinical_notes
+                               WHERE clinical_notes.facility_id = dc.facility_id
+                                 AND clinical_notes.patient_id = dc.patient_id
+                                 AND clinical_notes.note_type = 'doctor_note'
+                                 AND lower(clinical_notes.title) = 'discharge summary'
+                                 AND clinical_notes.status IN ('signed', 'amended')
+                                 AND (
+                                     (
+                                         COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NOT NULL
+                                         AND clinical_notes.encounter_id = COALESCE(dc.encounter_id, admission_cases.encounter_id)
+                                     )
+                                     OR (
+                                         COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NULL
+                                         AND COALESCE(dc.visit_id, admission_cases.visit_id) IS NOT NULL
+                                         AND EXISTS (
+                                             SELECT 1
+                                             FROM encounters
+                                             WHERE encounters.facility_id = dc.facility_id
+                                               AND encounters.id = clinical_notes.encounter_id
+                                               AND encounters.visit_id = COALESCE(dc.visit_id, admission_cases.visit_id)
+                                         )
+                                     )
+                                 )
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'discharge_summary'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                       + CASE
+                           WHEN (
+                               trim(COALESCE(dc.nursing_release_education, '')) = ''
+                               OR trim(COALESCE(dc.nursing_release_instructions, '')) = ''
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'nursing_release'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                       + CASE
+                           WHEN EXISTS (
+                               SELECT 1
+                               FROM invoices
+                               WHERE invoices.facility_id = dc.facility_id
+                                 AND invoices.patient_id = dc.patient_id
+                                 AND invoices.status <> 'void'
+                                 AND GREATEST(invoices.gross_amount_minor - invoices.paid_amount_minor, 0) > 0
+                                 AND (
+                                     invoices.admission_case_id = dc.admission_case_id
+                                     OR (
+                                         invoices.admission_case_id IS NULL
+                                         AND COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NOT NULL
+                                         AND invoices.encounter_id = COALESCE(dc.encounter_id, admission_cases.encounter_id)
+                                     )
+                                     OR (
+                                         invoices.admission_case_id IS NULL
+                                         AND COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NULL
+                                         AND COALESCE(dc.visit_id, admission_cases.visit_id) IS NOT NULL
+                                         AND invoices.visit_id = COALESCE(dc.visit_id, admission_cases.visit_id)
+                                     )
+                                 )
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'billing_clearance'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                       + CASE
+                           WHEN dc.pharmacy_required
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM pharmacy_fulfillments
+                               WHERE pharmacy_fulfillments.facility_id = dc.facility_id
+                                 AND pharmacy_fulfillments.patient_id = dc.patient_id
+                                 AND pharmacy_fulfillments.admission_case_id = dc.admission_case_id
+                                 AND pharmacy_fulfillments.status = 'dispensed'
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'pharmacy_clearance'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                   )::bigint AS open_discharge_blocker_count
+            FROM discharge_cases dc
+            WHERE dc.facility_id = admission_cases.facility_id
+              AND dc.admission_case_id = admission_cases.id
+              AND dc.status = 'requested'
+            LIMIT 1
+        ) discharge_counts ON true
         "#,
     )
 }
@@ -732,15 +963,182 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
 fn ward_board_list_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::<Postgres>::new(
         r#"
-        WITH selected_admissions AS (
+        WITH ranked_admissions AS (
             SELECT id,
                    facility_id,
                    patient_id,
                    ward_id,
                    bed_id,
+                   encounter_id,
+                   visit_id,
                    status,
-                   admitted_at
+                   admitted_at,
+                   updated_at,
+                   CASE
+                       WHEN EXISTS (
+                           SELECT 1
+                           FROM nursing_alerts
+                           WHERE nursing_alerts.facility_id = admission_cases.facility_id
+                             AND nursing_alerts.admission_case_id = admission_cases.id
+                             AND nursing_alerts.status = 'open'
+                             AND nursing_alerts.severity IN ('critical', 'high')
+                       )
+                       OR EXISTS (
+                           SELECT 1
+                           FROM lab_results
+                           JOIN lab_orders
+                             ON lab_orders.id = lab_results.order_id
+                            AND lab_orders.facility_id = lab_results.facility_id
+                           WHERE lab_results.facility_id = admission_cases.facility_id
+                             AND lab_results.patient_id = admission_cases.patient_id
+                             AND lab_results.verified_at IS NULL
+                             AND lab_results.status <> 'verified'
+                             AND lab_results.is_critical = TRUE
+                             AND (
+                                 (
+                                     admission_cases.encounter_id IS NOT NULL
+                                     AND (
+                                         lab_orders.encounter_id = admission_cases.encounter_id
+                                         OR (
+                                             lab_orders.encounter_id IS NULL
+                                             AND admission_cases.visit_id IS NOT NULL
+                                             AND lab_orders.visit_id = admission_cases.visit_id
+                                         )
+                                     )
+                                 )
+                                 OR (
+                                     admission_cases.encounter_id IS NULL
+                                     AND admission_cases.visit_id IS NOT NULL
+                                     AND lab_orders.visit_id = admission_cases.visit_id
+                                 )
+                                 OR (
+                                     admission_cases.encounter_id IS NULL
+                                     AND admission_cases.visit_id IS NULL
+                                     AND lab_orders.ordered_at >= admission_cases.admitted_at
+                                 )
+                             )
+                       )
+                       THEN 0
+                       WHEN EXISTS (
+                           SELECT 1
+                           FROM nursing_alerts
+                           WHERE nursing_alerts.facility_id = admission_cases.facility_id
+                             AND nursing_alerts.admission_case_id = admission_cases.id
+                             AND nursing_alerts.status = 'open'
+                       )
+                       OR EXISTS (
+                           SELECT 1
+                           FROM nursing_tasks
+                           WHERE nursing_tasks.facility_id = admission_cases.facility_id
+                             AND nursing_tasks.admission_case_id = admission_cases.id
+                             AND nursing_tasks.status = 'open'
+                             AND nursing_tasks.due_at <= now()
+                       )
+                       OR EXISTS (
+                           SELECT 1
+                           FROM medication_administrations
+                           WHERE medication_administrations.facility_id = admission_cases.facility_id
+                             AND medication_administrations.admission_case_id = admission_cases.id
+                             AND medication_administrations.status = 'scheduled'
+                             AND medication_administrations.scheduled_at <= now()
+                       )
+                       THEN 1
+                       WHEN EXISTS (
+                           SELECT 1
+                           FROM nursing_tasks
+                           WHERE nursing_tasks.facility_id = admission_cases.facility_id
+                             AND nursing_tasks.admission_case_id = admission_cases.id
+                             AND nursing_tasks.status = 'open'
+                       )
+                       OR EXISTS (
+                           SELECT 1
+                           FROM lab_results
+                           JOIN lab_orders
+                             ON lab_orders.id = lab_results.order_id
+                            AND lab_orders.facility_id = lab_results.facility_id
+                           WHERE lab_results.facility_id = admission_cases.facility_id
+                             AND lab_results.patient_id = admission_cases.patient_id
+                             AND lab_results.verified_at IS NULL
+                             AND lab_results.status <> 'verified'
+                             AND (
+                                 (
+                                     admission_cases.encounter_id IS NOT NULL
+                                     AND (
+                                         lab_orders.encounter_id = admission_cases.encounter_id
+                                         OR (
+                                             lab_orders.encounter_id IS NULL
+                                             AND admission_cases.visit_id IS NOT NULL
+                                             AND lab_orders.visit_id = admission_cases.visit_id
+                                         )
+                                     )
+                                 )
+                                 OR (
+                                     admission_cases.encounter_id IS NULL
+                                     AND admission_cases.visit_id IS NOT NULL
+                                     AND lab_orders.visit_id = admission_cases.visit_id
+                                 )
+                                 OR (
+                                     admission_cases.encounter_id IS NULL
+                                     AND admission_cases.visit_id IS NULL
+                                     AND lab_orders.ordered_at >= admission_cases.admitted_at
+                                 )
+                             )
+                       )
+                       OR EXISTS (
+                           SELECT 1
+                           FROM lab_orders
+                           WHERE lab_orders.facility_id = admission_cases.facility_id
+                             AND lab_orders.patient_id = admission_cases.patient_id
+                             AND lab_orders.status IN ('ordered', 'specimen_collected')
+                             AND (
+                                 (
+                                     admission_cases.encounter_id IS NOT NULL
+                                     AND (
+                                         lab_orders.encounter_id = admission_cases.encounter_id
+                                         OR (
+                                             lab_orders.encounter_id IS NULL
+                                             AND admission_cases.visit_id IS NOT NULL
+                                             AND lab_orders.visit_id = admission_cases.visit_id
+                                         )
+                                     )
+                                 )
+                                 OR (
+                                     admission_cases.encounter_id IS NULL
+                                     AND admission_cases.visit_id IS NOT NULL
+                                     AND lab_orders.visit_id = admission_cases.visit_id
+                                 )
+                                 OR (
+                                     admission_cases.encounter_id IS NULL
+                                     AND admission_cases.visit_id IS NULL
+                                     AND lab_orders.ordered_at >= admission_cases.admitted_at
+                                 )
+                             )
+                       )
+                       OR EXISTS (
+                           SELECT 1
+                           FROM discharge_cases
+                           WHERE discharge_cases.facility_id = admission_cases.facility_id
+                             AND discharge_cases.admission_case_id = admission_cases.id
+                             AND discharge_cases.status = 'requested'
+                       )
+                       THEN 2
+                       ELSE 3
+                   END AS attention_rank
             FROM admission_cases
+        ),
+        selected_admissions AS (
+            SELECT id,
+                   facility_id,
+                   patient_id,
+                   ward_id,
+                   bed_id,
+                   encounter_id,
+                   visit_id,
+                   status,
+                   admitted_at,
+                   updated_at,
+                   attention_rank
+            FROM ranked_admissions admission_cases
         "#,
     )
 }
@@ -759,9 +1157,29 @@ fn ward_board_list_select() -> &'static str {
                admission_cases.status AS admission_status,
                admission_cases.admitted_at,
                COALESCE(task_counts.open_nursing_task_count, 0) AS open_nursing_task_count,
+               COALESCE(task_counts.overdue_nursing_task_count, 0) AS overdue_nursing_task_count,
+               task_counts.next_nursing_task_due_at,
                COALESCE(med_counts.due_medication_count, 0) AS due_medication_count,
+               med_counts.next_due_medication_at,
                COALESCE(alert_counts.active_alert_count, 0) AS active_alert_count,
-               COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count
+               COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count,
+               vitals.last_vitals_recorded_at,
+               COALESCE(result_counts.unverified_result_count, 0) AS unverified_result_count,
+               COALESCE(result_counts.critical_unverified_result_count, 0) AS critical_unverified_result_count,
+               COALESCE(lab_order_counts.pending_lab_order_count, 0) AS pending_lab_order_count,
+               discharge_counts.discharge_case_id,
+               discharge_counts.discharge_status,
+               COALESCE(discharge_counts.open_discharge_blocker_count, 0) AS open_discharge_blocker_count,
+               GREATEST(
+                   admission_cases.updated_at,
+                   COALESCE(task_counts.last_task_activity_at, admission_cases.updated_at),
+                   COALESCE(med_counts.last_medication_activity_at, admission_cases.updated_at),
+                   COALESCE(alert_counts.last_alert_activity_at, admission_cases.updated_at),
+                   COALESCE(vitals.last_vitals_recorded_at, admission_cases.updated_at),
+                   COALESCE(result_counts.last_result_activity_at, admission_cases.updated_at),
+                   COALESCE(lab_order_counts.last_lab_order_activity_at, admission_cases.updated_at),
+                   COALESCE(discharge_counts.discharge_last_activity_at, admission_cases.updated_at)
+               ) AS last_activity_at
         FROM selected_admissions admission_cases
         JOIN patients
           ON patients.id = admission_cases.patient_id
@@ -773,29 +1191,275 @@ fn ward_board_list_select() -> &'static str {
           ON beds.id = admission_cases.bed_id
          AND beds.facility_id = admission_cases.facility_id
         LEFT JOIN LATERAL (
-            SELECT count(*) AS open_nursing_task_count
+            SELECT count(*) FILTER (WHERE nursing_tasks.status = 'open') AS open_nursing_task_count,
+                   count(*) FILTER (
+                       WHERE nursing_tasks.status = 'open'
+                         AND nursing_tasks.due_at <= now()
+                   ) AS overdue_nursing_task_count,
+                   min(nursing_tasks.due_at) FILTER (WHERE nursing_tasks.status = 'open') AS next_nursing_task_due_at,
+                   max(nursing_tasks.updated_at) FILTER (WHERE nursing_tasks.status = 'open') AS last_task_activity_at
             FROM nursing_tasks
             WHERE nursing_tasks.admission_case_id = admission_cases.id
-              AND nursing_tasks.status = 'open'
+              AND nursing_tasks.facility_id = admission_cases.facility_id
         ) task_counts ON true
         LEFT JOIN LATERAL (
-            SELECT count(*) AS due_medication_count
+            SELECT count(*) FILTER (
+                       WHERE medication_administrations.status = 'scheduled'
+                         AND medication_administrations.scheduled_at <= now()
+                   ) AS due_medication_count,
+                   min(medication_administrations.scheduled_at) FILTER (
+                       WHERE medication_administrations.status = 'scheduled'
+                         AND medication_administrations.scheduled_at <= now()
+                   ) AS next_due_medication_at,
+                   max(medication_administrations.updated_at) FILTER (
+                       WHERE medication_administrations.status = 'scheduled'
+                   ) AS last_medication_activity_at
             FROM medication_administrations
             WHERE medication_administrations.admission_case_id = admission_cases.id
-              AND medication_administrations.status = 'scheduled'
-              AND medication_administrations.scheduled_at <= now()
+              AND medication_administrations.facility_id = admission_cases.facility_id
         ) med_counts ON true
         LEFT JOIN LATERAL (
             SELECT count(*) FILTER (WHERE nursing_alerts.status = 'open') AS active_alert_count,
                    count(*) FILTER (
                        WHERE nursing_alerts.status = 'open'
                          AND nursing_alerts.severity IN ('critical', 'high')
-                   ) AS critical_alert_count
+                   ) AS critical_alert_count,
+                   max(nursing_alerts.updated_at) FILTER (WHERE nursing_alerts.status = 'open') AS last_alert_activity_at
             FROM nursing_alerts
             WHERE nursing_alerts.admission_case_id = admission_cases.id
+              AND nursing_alerts.facility_id = admission_cases.facility_id
         ) alert_counts ON true
-        ORDER BY admission_cases.admitted_at ASC, admission_cases.id ASC
+        LEFT JOIN LATERAL (
+            SELECT max(patient_vitals.recorded_at) AS last_vitals_recorded_at
+            FROM patient_vitals
+            WHERE patient_vitals.facility_id = admission_cases.facility_id
+              AND patient_vitals.admission_case_id = admission_cases.id
+        ) vitals ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE lab_results.verified_at IS NULL) AS unverified_result_count,
+                   count(*) FILTER (
+                       WHERE lab_results.verified_at IS NULL
+                         AND lab_results.is_critical = TRUE
+                   ) AS critical_unverified_result_count,
+                   max(lab_results.updated_at) FILTER (WHERE lab_results.verified_at IS NULL) AS last_result_activity_at
+            FROM lab_results
+            JOIN lab_orders
+              ON lab_orders.id = lab_results.order_id
+             AND lab_orders.facility_id = lab_results.facility_id
+            WHERE lab_results.facility_id = admission_cases.facility_id
+              AND lab_results.patient_id = admission_cases.patient_id
+              AND lab_results.status <> 'verified'
+              AND (
+                  (
+                      admission_cases.encounter_id IS NOT NULL
+                      AND (
+                          lab_orders.encounter_id = admission_cases.encounter_id
+                          OR (
+                              lab_orders.encounter_id IS NULL
+                              AND admission_cases.visit_id IS NOT NULL
+                              AND lab_orders.visit_id = admission_cases.visit_id
+                          )
+                      )
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NOT NULL
+                      AND lab_orders.visit_id = admission_cases.visit_id
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NULL
+                      AND lab_orders.ordered_at >= admission_cases.admitted_at
+                  )
+              )
+        ) result_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS pending_lab_order_count,
+                   max(lab_orders.updated_at) AS last_lab_order_activity_at
+            FROM lab_orders
+            WHERE lab_orders.facility_id = admission_cases.facility_id
+              AND lab_orders.patient_id = admission_cases.patient_id
+              AND lab_orders.status IN ('ordered', 'specimen_collected')
+              AND (
+                  (
+                      admission_cases.encounter_id IS NOT NULL
+                      AND (
+                          lab_orders.encounter_id = admission_cases.encounter_id
+                          OR (
+                              lab_orders.encounter_id IS NULL
+                              AND admission_cases.visit_id IS NOT NULL
+                              AND lab_orders.visit_id = admission_cases.visit_id
+                          )
+                      )
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NOT NULL
+                      AND lab_orders.visit_id = admission_cases.visit_id
+                  )
+                  OR (
+                      admission_cases.encounter_id IS NULL
+                      AND admission_cases.visit_id IS NULL
+                      AND lab_orders.ordered_at >= admission_cases.admitted_at
+                  )
+              )
+        ) lab_order_counts ON true
+        LEFT JOIN LATERAL (
+            SELECT dc.id AS discharge_case_id,
+                   dc.status AS discharge_status,
+                   dc.updated_at AS discharge_last_activity_at,
+                   (
+                       CASE
+                           WHEN NOT EXISTS (
+                               SELECT 1
+                               FROM clinical_notes
+                               WHERE clinical_notes.facility_id = dc.facility_id
+                                 AND clinical_notes.patient_id = dc.patient_id
+                                 AND clinical_notes.note_type = 'doctor_note'
+                                 AND lower(clinical_notes.title) = 'discharge summary'
+                                 AND clinical_notes.status IN ('signed', 'amended')
+                                 AND (
+                                     (
+                                         COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NOT NULL
+                                         AND clinical_notes.encounter_id = COALESCE(dc.encounter_id, admission_cases.encounter_id)
+                                     )
+                                     OR (
+                                         COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NULL
+                                         AND COALESCE(dc.visit_id, admission_cases.visit_id) IS NOT NULL
+                                         AND EXISTS (
+                                             SELECT 1
+                                             FROM encounters
+                                             WHERE encounters.facility_id = dc.facility_id
+                                               AND encounters.id = clinical_notes.encounter_id
+                                               AND encounters.visit_id = COALESCE(dc.visit_id, admission_cases.visit_id)
+                                         )
+                                     )
+                                 )
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'discharge_summary'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                       + CASE
+                           WHEN (
+                               trim(COALESCE(dc.nursing_release_education, '')) = ''
+                               OR trim(COALESCE(dc.nursing_release_instructions, '')) = ''
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'nursing_release'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                       + CASE
+                           WHEN EXISTS (
+                               SELECT 1
+                               FROM invoices
+                               WHERE invoices.facility_id = dc.facility_id
+                                 AND invoices.patient_id = dc.patient_id
+                                 AND invoices.status <> 'void'
+                                 AND GREATEST(invoices.gross_amount_minor - invoices.paid_amount_minor, 0) > 0
+                                 AND (
+                                     invoices.admission_case_id = dc.admission_case_id
+                                     OR (
+                                         invoices.admission_case_id IS NULL
+                                         AND COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NOT NULL
+                                         AND invoices.encounter_id = COALESCE(dc.encounter_id, admission_cases.encounter_id)
+                                     )
+                                     OR (
+                                         invoices.admission_case_id IS NULL
+                                         AND COALESCE(dc.encounter_id, admission_cases.encounter_id) IS NULL
+                                         AND COALESCE(dc.visit_id, admission_cases.visit_id) IS NOT NULL
+                                         AND invoices.visit_id = COALESCE(dc.visit_id, admission_cases.visit_id)
+                                     )
+                                 )
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'billing_clearance'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                       + CASE
+                           WHEN dc.pharmacy_required
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM pharmacy_fulfillments
+                               WHERE pharmacy_fulfillments.facility_id = dc.facility_id
+                                 AND pharmacy_fulfillments.patient_id = dc.patient_id
+                                 AND pharmacy_fulfillments.admission_case_id = dc.admission_case_id
+                                 AND pharmacy_fulfillments.status = 'dispensed'
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM discharge_blocker_overrides
+                               WHERE discharge_blocker_overrides.facility_id = dc.facility_id
+                                 AND discharge_blocker_overrides.discharge_case_id = dc.id
+                                 AND discharge_blocker_overrides.blocker_type = 'pharmacy_clearance'
+                           )
+                           THEN 1 ELSE 0
+                       END
+                   )::bigint AS open_discharge_blocker_count
+            FROM discharge_cases dc
+            WHERE dc.facility_id = admission_cases.facility_id
+              AND dc.admission_case_id = admission_cases.id
+              AND dc.status = 'requested'
+            LIMIT 1
+        ) discharge_counts ON true
         "#
+}
+
+fn push_ward_board_cursor(
+    query: &mut QueryBuilder<'static, Postgres>,
+    cursor: Option<WardBoardCursor>,
+) {
+    match cursor {
+        Some(WardBoardCursor::Admitted(cursor)) => {
+            query.push(" AND (admitted_at, id) > (");
+            query.push_bind(cursor.occurred_at);
+            query.push(", ");
+            query.push_bind(cursor.id);
+            query.push(")");
+        }
+        Some(WardBoardCursor::Attention {
+            rank,
+            occurred_at,
+            id,
+        }) => {
+            query.push(" AND (attention_rank, admitted_at, id) > (");
+            query.push_bind(rank);
+            query.push(", ");
+            query.push_bind(occurred_at);
+            query.push(", ");
+            query.push_bind(id);
+            query.push(")");
+        }
+        None => {}
+    }
+}
+
+fn push_ward_board_order(query: &mut QueryBuilder<'static, Postgres>, sort: WardBoardSort) {
+    match sort {
+        WardBoardSort::Attention => {
+            query.push(
+                " ORDER BY admission_cases.attention_rank ASC, admission_cases.admitted_at ASC, admission_cases.id ASC",
+            );
+        }
+        WardBoardSort::Admitted => {
+            query.push(" ORDER BY admission_cases.admitted_at ASC, admission_cases.id ASC");
+        }
+    }
 }
 
 fn admission_case_query() -> QueryBuilder<'static, Postgres> {
@@ -956,9 +1620,24 @@ fn ward_board_from_row(row: WardBoardRow) -> anyhow::Result<WardBoardItem> {
         admission_status: codec::decode(&row.admission_status)?,
         admitted_at: row.admitted_at,
         open_nursing_task_count: row.open_nursing_task_count,
+        overdue_nursing_task_count: row.overdue_nursing_task_count,
+        next_nursing_task_due_at: row.next_nursing_task_due_at,
         due_medication_count: row.due_medication_count,
+        next_due_medication_at: row.next_due_medication_at,
         active_alert_count: row.active_alert_count,
         critical_alert_count: row.critical_alert_count,
+        last_vitals_recorded_at: row.last_vitals_recorded_at,
+        unverified_result_count: row.unverified_result_count,
+        critical_unverified_result_count: row.critical_unverified_result_count,
+        pending_lab_order_count: row.pending_lab_order_count,
+        discharge_case_id: row.discharge_case_id,
+        discharge_status: row
+            .discharge_status
+            .as_deref()
+            .map(codec::decode::<DischargeStatus>)
+            .transpose()?,
+        open_discharge_blocker_count: row.open_discharge_blocker_count,
+        last_activity_at: row.last_activity_at,
     })
 }
 
@@ -979,14 +1658,55 @@ fn push_monitoring_filter(
     monitoring_filter: WardBoardMonitoringFilter,
 ) {
     match monitoring_filter {
+        WardBoardMonitoringFilter::NeedsAttention => {
+            query.push(" AND admission_cases.attention_rank < 3");
+        }
         WardBoardMonitoringFilter::Critical => {
             query.push(
-                r#" AND EXISTS (
-                    SELECT 1
-                    FROM nursing_alerts
-                    WHERE nursing_alerts.admission_case_id = admission_cases.id
-                      AND nursing_alerts.status = 'open'
-                      AND nursing_alerts.severity IN ('critical', 'high')
+                r#" AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM nursing_alerts
+                        WHERE nursing_alerts.facility_id = admission_cases.facility_id
+                          AND nursing_alerts.admission_case_id = admission_cases.id
+                          AND nursing_alerts.status = 'open'
+                          AND nursing_alerts.severity IN ('critical', 'high')
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM lab_results
+                        JOIN lab_orders
+                          ON lab_orders.id = lab_results.order_id
+                         AND lab_orders.facility_id = lab_results.facility_id
+                        WHERE lab_results.facility_id = admission_cases.facility_id
+                          AND lab_results.patient_id = admission_cases.patient_id
+                          AND lab_results.verified_at IS NULL
+                          AND lab_results.status <> 'verified'
+                          AND lab_results.is_critical = TRUE
+                          AND (
+                              (
+                                  admission_cases.encounter_id IS NOT NULL
+                                  AND (
+                                      lab_orders.encounter_id = admission_cases.encounter_id
+                                      OR (
+                                          lab_orders.encounter_id IS NULL
+                                          AND admission_cases.visit_id IS NOT NULL
+                                          AND lab_orders.visit_id = admission_cases.visit_id
+                                      )
+                                  )
+                              )
+                              OR (
+                                  admission_cases.encounter_id IS NULL
+                                  AND admission_cases.visit_id IS NOT NULL
+                                  AND lab_orders.visit_id = admission_cases.visit_id
+                              )
+                              OR (
+                                  admission_cases.encounter_id IS NULL
+                                  AND admission_cases.visit_id IS NULL
+                                  AND lab_orders.ordered_at >= admission_cases.admitted_at
+                              )
+                          )
+                    )
                 )"#,
             );
         }
@@ -995,7 +1715,8 @@ fn push_monitoring_filter(
                 r#" AND EXISTS (
                     SELECT 1
                     FROM nursing_alerts
-                    WHERE nursing_alerts.admission_case_id = admission_cases.id
+                    WHERE nursing_alerts.facility_id = admission_cases.facility_id
+                      AND nursing_alerts.admission_case_id = admission_cases.id
                       AND nursing_alerts.status = 'open'
                 )"#,
             );
@@ -1005,7 +1726,8 @@ fn push_monitoring_filter(
                 r#" AND EXISTS (
                     SELECT 1
                     FROM nursing_tasks
-                    WHERE nursing_tasks.admission_case_id = admission_cases.id
+                    WHERE nursing_tasks.facility_id = admission_cases.facility_id
+                      AND nursing_tasks.admission_case_id = admission_cases.id
                       AND nursing_tasks.status = 'open'
                 )"#,
             );
@@ -1016,36 +1738,96 @@ fn push_monitoring_filter(
                     EXISTS (
                         SELECT 1
                         FROM lab_results
+                        JOIN lab_orders
+                          ON lab_orders.id = lab_results.order_id
+                         AND lab_orders.facility_id = lab_results.facility_id
                         WHERE lab_results.facility_id = admission_cases.facility_id
                           AND lab_results.patient_id = admission_cases.patient_id
                           AND lab_results.verified_at IS NULL
+                          AND lab_results.status <> 'verified'
+                          AND (
+                              (
+                                  admission_cases.encounter_id IS NOT NULL
+                                  AND (
+                                      lab_orders.encounter_id = admission_cases.encounter_id
+                                      OR (
+                                          lab_orders.encounter_id IS NULL
+                                          AND admission_cases.visit_id IS NOT NULL
+                                          AND lab_orders.visit_id = admission_cases.visit_id
+                                      )
+                                  )
+                              )
+                              OR (
+                                  admission_cases.encounter_id IS NULL
+                                  AND admission_cases.visit_id IS NOT NULL
+                                  AND lab_orders.visit_id = admission_cases.visit_id
+                              )
+                              OR (
+                                  admission_cases.encounter_id IS NULL
+                                  AND admission_cases.visit_id IS NULL
+                                  AND lab_orders.ordered_at >= admission_cases.admitted_at
+                              )
+                          )
                     )
                     OR EXISTS (
                         SELECT 1
                         FROM lab_orders
                         WHERE lab_orders.facility_id = admission_cases.facility_id
                           AND lab_orders.patient_id = admission_cases.patient_id
-                          AND lab_orders.status IN ('ordered', 'specimen_collected', 'result_entered')
+                          AND lab_orders.status IN ('ordered', 'specimen_collected')
+                          AND (
+                              (
+                                  admission_cases.encounter_id IS NOT NULL
+                                  AND (
+                                      lab_orders.encounter_id = admission_cases.encounter_id
+                                      OR (
+                                          lab_orders.encounter_id IS NULL
+                                          AND admission_cases.visit_id IS NOT NULL
+                                          AND lab_orders.visit_id = admission_cases.visit_id
+                                      )
+                                  )
+                              )
+                              OR (
+                                  admission_cases.encounter_id IS NULL
+                                  AND admission_cases.visit_id IS NOT NULL
+                                  AND lab_orders.visit_id = admission_cases.visit_id
+                              )
+                              OR (
+                                  admission_cases.encounter_id IS NULL
+                                  AND admission_cases.visit_id IS NULL
+                                  AND lab_orders.ordered_at >= admission_cases.admitted_at
+                              )
+                          )
                     )
                 )"#,
             );
         }
         WardBoardMonitoringFilter::Discharge => {
-            query.push(" AND admission_cases.status = 'discharge_pending'");
+            query.push(
+                r#" AND EXISTS (
+                    SELECT 1
+                    FROM discharge_cases
+                    WHERE discharge_cases.facility_id = admission_cases.facility_id
+                      AND discharge_cases.admission_case_id = admission_cases.id
+                      AND discharge_cases.status = 'requested'
+                )"#,
+            );
         }
-        WardBoardMonitoringFilter::MyWork => {
+        WardBoardMonitoringFilter::DueWork | WardBoardMonitoringFilter::MyWork => {
             query.push(
                 r#" AND (
                     EXISTS (
                         SELECT 1
                         FROM nursing_tasks
-                        WHERE nursing_tasks.admission_case_id = admission_cases.id
+                        WHERE nursing_tasks.facility_id = admission_cases.facility_id
+                          AND nursing_tasks.admission_case_id = admission_cases.id
                           AND nursing_tasks.status = 'open'
                     )
                     OR EXISTS (
                         SELECT 1
                         FROM medication_administrations
-                        WHERE medication_administrations.admission_case_id = admission_cases.id
+                        WHERE medication_administrations.facility_id = admission_cases.facility_id
+                          AND medication_administrations.admission_case_id = admission_cases.id
                           AND medication_administrations.status = 'scheduled'
                           AND medication_administrations.scheduled_at <= now()
                     )

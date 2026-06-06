@@ -2,6 +2,7 @@ import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import FileCheck2 from 'lucide-react/dist/esm/icons/file-check-2.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import { cn } from '@/lib/utils';
 
@@ -44,15 +45,21 @@ export function MetricStrip({ summary, className }) {
 
       <Metric
         icon={AlertTriangle}
-        label="Critical"
-        value={summary.critical}
-        accent={summary.critical > 0 ? 'rose' : 'neutral'}
+        label="Safety"
+        value={summary.safety}
+        accent={summary.criticalSafety > 0 ? 'rose' : summary.safety > 0 ? 'amber' : 'neutral'}
       />
       <Metric
         icon={Clock}
-        label="Overdue"
-        value={summary.overdue ?? summary.openTasks}
-        accent={summary.overdue > 0 ? 'amber' : 'neutral'}
+        label="Open Tasks"
+        value={summary.openTasks}
+        accent={summary.openTasks > 0 ? 'amber' : 'neutral'}
+      />
+      <Metric
+        icon={Pill}
+        label="Meds Due"
+        value={summary.dueMedications}
+        accent={summary.dueMedications > 0 ? 'amber' : 'neutral'}
       />
 
       <span className="hidden h-6 w-px shrink-0 bg-border sm:block" aria-hidden="true" />
@@ -65,15 +72,9 @@ export function MetricStrip({ summary, className }) {
       />
       <Metric
         icon={FileCheck2}
-        label="My Tasks"
-        value={summary.myWork}
-        accent={summary.myWork > 0 ? 'amber' : 'neutral'}
-      />
-      <Metric
-        icon={FileCheck2}
         label="Discharge Blockers"
-        value={summary.dischargeReady}
-        accent={summary.dischargeReady > 0 ? 'amber' : 'neutral'}
+        value={summary.dischargeBlockers}
+        accent={summary.dischargeBlockers > 0 ? 'amber' : 'neutral'}
       />
     </div>
   );

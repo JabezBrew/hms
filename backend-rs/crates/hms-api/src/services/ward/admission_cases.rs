@@ -1,13 +1,15 @@
-use hms_db::ward::{NewAdmission, NewAdmissionCase};
+use chrono::{DateTime, Utc};
+use hms_db::ward::{NewAdmission, NewAdmissionCase, WardBoardCursor, WardCursor};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
     AdmissionCaseListItem, AdmitPatientRequest, CreateAdmissionCaseRequest,
-    ReserveAdmissionBedRequest, WardBoardItem, WardBoardQuery,
+    ReserveAdmissionBedRequest, WardBoardItem, WardBoardQuery, WardBoardSort,
 };
 use uuid::Uuid;
 
 use super::{common, staff_assignments};
+use crate::cursor_list::{self, CursorListError, CursorPage};
 use crate::error::ApiError;
 use crate::response::{object, ListResponse, ObjectResponse};
 use crate::state::AppState;
@@ -33,10 +35,14 @@ impl AdmissionCasesService {
             PermissionCode::WardView,
         )?;
         self.require_ward_board_scope(ctx, query.ward_id).await?;
-        let page = common::page_request(CursorListQuery {
-            cursor: query.cursor,
-            limit: query.limit,
-        })?;
+        let sort = query.sort.unwrap_or(WardBoardSort::Admitted);
+        let page = ward_board_page_request(
+            CursorListQuery {
+                cursor: query.cursor,
+                limit: query.limit,
+            },
+            sort,
+        )?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
         let has_search = query
@@ -50,6 +56,7 @@ impl AdmissionCasesService {
         let cacheable_hot_page = page.cursor.is_none()
             && query.patient_id.is_none()
             && query.monitoring_filter.is_none()
+            && sort == WardBoardSort::Admitted
             && !has_search;
         if cacheable_hot_page {
             if let Some(response) = self.state.cached_ward_board(ctx, query.ward_id, page_size) {
@@ -63,15 +70,15 @@ impl AdmissionCasesService {
             query.patient_id,
             query.search,
             query.monitoring_filter,
+            sort,
             page.cursor,
             fetch_limit,
         )
         .await
         .map_err(|_| ApiError::conflict("ward_board_failed", "Ward board could not be loaded."))?;
 
-        let response = common::page_response(rows, page_size, |item| {
-            common::encode_cursor(item.admitted_at, item.admission_id)
-        });
+        let response =
+            common::page_response(rows, page_size, |item| ward_board_cursor_for(item, sort));
         if cacheable_hot_page {
             self.state
                 .put_cached_ward_board(ctx, query.ward_id, page_size, response.clone());
@@ -382,4 +389,100 @@ impl AdmissionCasesService {
         self.state.invalidate_patient_chronicle_cache();
         Ok(object(admission))
     }
+}
+
+fn ward_board_page_request(
+    query: CursorListQuery,
+    sort: WardBoardSort,
+) -> Result<CursorPage<WardBoardCursor>, ApiError> {
+    match sort {
+        WardBoardSort::Admitted => Ok(cursor_list::page_request(
+            query.cursor.as_deref(),
+            query.limit,
+            common::DEFAULT_LIMIT,
+            common::MAX_LIMIT,
+            |occurred_at, id| WardBoardCursor::Admitted(WardCursor { occurred_at, id }),
+        )?),
+        WardBoardSort::Attention => {
+            let limit = query
+                .limit
+                .unwrap_or(common::DEFAULT_LIMIT)
+                .clamp(1, common::MAX_LIMIT);
+            let cursor = query
+                .cursor
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(decode_attention_cursor)
+                .transpose()?;
+            Ok(CursorPage { cursor, limit })
+        }
+    }
+}
+
+fn ward_board_cursor_for(item: &WardBoardItem, sort: WardBoardSort) -> String {
+    match sort {
+        WardBoardSort::Attention => encode_attention_cursor(
+            ward_board_attention_rank(item),
+            item.admitted_at,
+            item.admission_id,
+        ),
+        WardBoardSort::Admitted => common::encode_cursor(item.admitted_at, item.admission_id),
+    }
+}
+
+fn ward_board_attention_rank(item: &WardBoardItem) -> i32 {
+    if item.critical_alert_count > 0 || item.critical_unverified_result_count > 0 {
+        return 0;
+    }
+    if item.active_alert_count > 0
+        || item.overdue_nursing_task_count > 0
+        || item.due_medication_count > 0
+    {
+        return 1;
+    }
+    if item.open_nursing_task_count > 0
+        || item.unverified_result_count > 0
+        || item.pending_lab_order_count > 0
+        || item.discharge_case_id.is_some()
+    {
+        return 2;
+    }
+    3
+}
+
+fn encode_attention_cursor(rank: i32, occurred_at: DateTime<Utc>, id: Uuid) -> String {
+    format!("a:{}:{}:{}", rank, occurred_at.timestamp_micros(), id)
+}
+
+fn decode_attention_cursor(value: &str) -> Result<WardBoardCursor, CursorListError> {
+    let mut parts = value.split(':');
+    if parts.next() != Some("a") {
+        return Err(CursorListError::InvalidCursor);
+    }
+    let rank = parts
+        .next()
+        .ok_or(CursorListError::InvalidCursor)?
+        .parse::<i32>()
+        .map_err(|_| CursorListError::InvalidCursor)?;
+    let micros = parts
+        .next()
+        .ok_or(CursorListError::InvalidCursor)?
+        .parse::<i64>()
+        .map_err(|_| CursorListError::InvalidCursor)?;
+    let id = parts
+        .next()
+        .ok_or(CursorListError::InvalidCursor)?
+        .parse::<Uuid>()
+        .map_err(|_| CursorListError::InvalidCursor)?;
+    if parts.next().is_some() {
+        return Err(CursorListError::InvalidCursor);
+    }
+    let occurred_at =
+        DateTime::<Utc>::from_timestamp_micros(micros).ok_or(CursorListError::InvalidCursor)?;
+    Ok(WardBoardCursor::Attention {
+        rank,
+        occurred_at,
+        id,
+    })
 }

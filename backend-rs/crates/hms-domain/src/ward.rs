@@ -285,20 +285,40 @@ pub struct WardBoardItem {
     pub admission_status: AdmissionStatus,
     pub admitted_at: DateTime<Utc>,
     pub open_nursing_task_count: i64,
+    pub overdue_nursing_task_count: i64,
+    pub next_nursing_task_due_at: Option<DateTime<Utc>>,
     pub due_medication_count: i64,
+    pub next_due_medication_at: Option<DateTime<Utc>>,
     pub active_alert_count: i64,
     pub critical_alert_count: i64,
+    pub last_vitals_recorded_at: Option<DateTime<Utc>>,
+    pub unverified_result_count: i64,
+    pub critical_unverified_result_count: i64,
+    pub pending_lab_order_count: i64,
+    pub discharge_case_id: Option<Uuid>,
+    pub discharge_status: Option<DischargeStatus>,
+    pub open_discharge_blocker_count: i64,
+    pub last_activity_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WardBoardMonitoringFilter {
+    NeedsAttention,
     Critical,
     Alerts,
     Tasks,
     Results,
     Discharge,
+    DueWork,
     MyWork,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WardBoardSort {
+    Admitted,
+    Attention,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -379,6 +399,7 @@ pub struct WardBoardQuery {
     pub patient_id: Option<Uuid>,
     pub search: Option<String>,
     pub monitoring_filter: Option<WardBoardMonitoringFilter>,
+    pub sort: Option<WardBoardSort>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -390,6 +411,7 @@ pub struct WardBoardGetQuery {
     pub patient_id: Option<Uuid>,
     pub search: Option<String>,
     pub monitoring_filter: Option<WardBoardMonitoringFilter>,
+    pub sort: Option<WardBoardSort>,
 }
 
 impl From<WardBoardGetQuery> for WardBoardQuery {
@@ -401,6 +423,7 @@ impl From<WardBoardGetQuery> for WardBoardQuery {
             patient_id: value.patient_id,
             search: value.search,
             monitoring_filter: value.monitoring_filter,
+            sort: value.sort,
         }
     }
 }
@@ -853,6 +876,7 @@ mod tests {
             patient_id: Some(patient_id),
             search: Some("monitor".to_owned()),
             monitoring_filter: Some(WardBoardMonitoringFilter::Alerts),
+            sort: Some(WardBoardSort::Attention),
         });
 
         assert_eq!(query.ward_id, Some(ward_id));
@@ -862,5 +886,6 @@ mod tests {
             query.monitoring_filter,
             Some(WardBoardMonitoringFilter::Alerts)
         ));
+        assert_eq!(query.sort, Some(WardBoardSort::Attention));
     }
 }

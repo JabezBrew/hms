@@ -1,4 +1,3 @@
-export { AuditEventTimeline } from './AuditEventTimeline';
 export { BoardSummaryDrawer } from './BoardSummaryDrawer';
 export { BoardToolbar } from './BoardToolbar';
 export { ExpandedPatientDetailPanel } from './ExpandedPatientDetailPanel';

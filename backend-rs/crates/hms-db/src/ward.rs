@@ -64,3 +64,13 @@ pub struct WardCursor {
     pub occurred_at: DateTime<Utc>,
     pub id: Uuid,
 }
+
+#[derive(Clone, Debug)]
+pub enum WardBoardCursor {
+    Admitted(WardCursor),
+    Attention {
+        rank: i32,
+        occurred_at: DateTime<Utc>,
+        id: Uuid,
+    },
+}

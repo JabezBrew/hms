@@ -75,6 +75,7 @@ function boardCursorCacheKey(_params = {}, limit) {
     ward_id: _params.ward_id ?? _params.ward ?? '',
     view: _params.view ?? '',
     monitoring_filter: _params.monitoring_filter ?? '',
+    sort: _params.sort ?? viewToSort(_params.view) ?? '',
     search: _params.search ? 'search' : '',
     patient_id: patientId ? hashQueryValue(patientId) : '',
   });
@@ -98,6 +99,7 @@ function getV2BoardQuery(params = {}) {
   const wardId = params.ward_id ?? params.ward;
   const patientId = params.patient_id ?? params.patient;
   const monitoringFilter = params.monitoring_filter ?? viewToMonitoringFilter(params.view);
+  const sort = params.sort ?? viewToSort(params.view);
   const isAllWardScope = params.scope === 'all' || wardId === 'all';
 
   return {
@@ -107,20 +109,27 @@ function getV2BoardQuery(params = {}) {
     ...(patientId ? { patient_id: patientId } : {}),
     ...(params.search ? { search: String(params.search).trim() } : {}),
     ...(monitoringFilter ? { monitoring_filter: monitoringFilter } : {}),
+    ...(sort ? { sort } : {}),
   };
 }
 
 function viewToMonitoringFilter(view) {
   switch (view) {
+    case 'by-urgency':
+      return 'needs_attention';
     case 'results':
       return 'results';
     case 'discharge':
       return 'discharge';
     case 'my-work':
-      return 'my_work';
+      return 'due_work';
     default:
       return null;
   }
+}
+
+function viewToSort(view) {
+  return view === 'by-urgency' ? 'attention' : null;
 }
 
 function adaptV2WardBoardItem(item = {}) {
@@ -145,8 +154,27 @@ function adaptV2WardBoardItem(item = {}) {
     admission_status: item.admission_status,
     open_task_count: item.open_nursing_task_count ?? 0,
     open_tasks_count: item.open_nursing_task_count ?? 0,
+    overdue_task_count: item.overdue_nursing_task_count ?? 0,
+    overdue_tasks: item.overdue_nursing_task_count ?? 0,
+    next_nursing_task_due_at: item.next_nursing_task_due_at ?? null,
     due_medication_count: item.due_medication_count ?? 0,
     medication_due_count: item.due_medication_count ?? 0,
+    next_due_medication_at: item.next_due_medication_at ?? null,
+    active_alert_count: item.active_alert_count ?? 0,
+    critical_alert_count: item.critical_alert_count ?? 0,
+    last_vitals_recorded_at: item.last_vitals_recorded_at ?? null,
+    last_obs_at: item.last_vitals_recorded_at ?? null,
+    unverified_result_count: item.unverified_result_count ?? 0,
+    critical_unverified_result_count: item.critical_unverified_result_count ?? 0,
+    pending_results_count: item.unverified_result_count ?? 0,
+    open_lab_order_count: item.pending_lab_order_count ?? 0,
+    pending_lab_order_count: item.pending_lab_order_count ?? 0,
+    discharge_case_id: item.discharge_case_id ?? null,
+    discharge_status: item.discharge_status ?? null,
+    discharge_blocker_count: item.open_discharge_blocker_count ?? 0,
+    open_discharge_blocker_count: item.open_discharge_blocker_count ?? 0,
+    last_event_at: item.last_activity_at ?? item.admitted_at ?? null,
+    updated_at: item.last_activity_at ?? item.admitted_at ?? null,
     tasks: [],
   };
 }

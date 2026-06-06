@@ -4,18 +4,16 @@ import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
-  URGENCY_STYLES,
+  formatTime,
   formatTimestamp,
-  getPatientAge,
   getPatientBed,
   getPatientDischargeCount,
+  getPatientDueMedicationCount,
   getPatientMrn,
   getPatientName,
-  getPatientNextAction,
-  getPatientOwner,
-  getPatientProblems,
+  getPatientOverdueTaskCount,
+  getPatientPendingLabOrderCount,
   getPatientResultCount,
-  getPatientSex,
   getPatientStatus,
   getPatientTaskCount,
   getPatientUrgency,
@@ -24,17 +22,36 @@ import {
 } from './wardBoardUtils';
 
 const DISCHARGE_STATUS_STYLES = {
-  blocked: 'border-rose-200 bg-rose-50 text-rose-700',
-  possible: 'border-amber-200 bg-amber-50 text-amber-700',
-  ready: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  requested: 'border-amber-200 bg-amber-50 text-amber-700',
+  completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  cancelled: 'border-border bg-muted text-muted-foreground',
 };
+
+function SafetyCell({ patient }) {
+  const active = Number(patient?.active_alert_count ?? 0);
+  const critical = Number(patient?.critical_alert_count ?? 0);
+  if (active === 0 && critical === 0) {
+    return <span className="font-mono text-[11px] text-muted-foreground">-</span>;
+  }
+  return (
+    <div className="space-y-0.5">
+      {critical > 0 ? (
+        <Badge variant="outline" className="border-rose-200 bg-rose-50 font-mono text-[10px] text-rose-700">
+          {critical} critical
+        </Badge>
+      ) : null}
+      {active > critical ? (
+        <p className="font-mono text-[10px] text-amber-600">{active - critical} active</p>
+      ) : null}
+    </div>
+  );
+}
 
 function DischargeCell({ patient }) {
   const count = getPatientDischargeCount(patient);
   const status = String(patient?.discharge_status ?? '').toLowerCase();
-  const blockerCount = patient?.discharge_blocker_count ?? patient?.discharge_blocker_reasons?.length ?? 0;
 
-  if (status === 'none' || (!status && count === 0)) {
+  if (!status && count === 0) {
     return <span className="font-mono text-[11px] text-muted-foreground">-</span>;
   }
 
@@ -44,8 +61,8 @@ function DischargeCell({ patient }) {
       <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', styleClass)}>
         {status || 'pending'}
       </Badge>
-      {blockerCount > 0 ? (
-        <p className="font-mono text-[10px] text-muted-foreground">{blockerCount} {blockerCount === 1 ? 'reason' : 'reasons'}</p>
+      {count > 0 ? (
+        <p className="font-mono text-[10px] text-muted-foreground">{count} {count === 1 ? 'blocker' : 'blockers'}</p>
       ) : null}
     </div>
   );
@@ -53,12 +70,29 @@ function DischargeCell({ patient }) {
 
 function TaskCell({ patient }) {
   const total = getPatientTaskCount(patient);
-  const overdue = patient?.overdue_task_count ?? patient?.overdue_tasks ?? 0;
+  const overdue = getPatientOverdueTaskCount(patient);
   return (
     <div>
       <span className="font-mono text-sm text-foreground">{total}</span>
       {Number(overdue) > 0 ? (
         <p className="font-mono text-[11px] text-rose-600">{overdue} overdue</p>
+      ) : patient?.next_nursing_task_due_at ? (
+        <p className="font-mono text-[11px] text-muted-foreground">{formatTime(patient.next_nursing_task_due_at)}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function MedicationCell({ patient }) {
+  const due = getPatientDueMedicationCount(patient);
+  if (due === 0) {
+    return <span className="font-mono text-[11px] text-muted-foreground">-</span>;
+  }
+  return (
+    <div>
+      <span className="font-mono text-sm text-foreground">{due}</span>
+      {patient?.next_due_medication_at ? (
+        <p className="font-mono text-[11px] text-amber-600">{formatTime(patient.next_due_medication_at)}</p>
       ) : null}
     </div>
   );
@@ -80,36 +114,29 @@ function StatusCell({ patient }) {
 
 function ResultCell({ patient }) {
   const count = getPatientResultCount(patient);
-  const due = patient?.reviews_due_count ?? 0;
-  if (count === 0 && due === 0) {
+  const critical = Number(patient?.critical_unverified_result_count ?? 0);
+  const pendingOrders = getPatientPendingLabOrderCount(patient);
+  if (count === 0 && pendingOrders === 0) {
     return <span className="font-mono text-[11px] text-muted-foreground">-</span>;
   }
   return (
     <div className="space-y-0.5">
       {count > 0 ? (
-        <Badge variant="outline" className="border-sky-200 bg-sky-50 font-mono text-[10px] text-sky-700">
-          {count} pending
+        <Badge
+          variant="outline"
+          className={cn(
+            'font-mono text-[10px]',
+            critical > 0
+              ? 'border-rose-200 bg-rose-50 text-rose-700'
+              : 'border-sky-200 bg-sky-50 text-sky-700'
+          )}
+        >
+          {critical > 0 ? `${critical} critical` : `${count} review`}
         </Badge>
       ) : null}
-      {due > 0 ? (
-        <p className="font-mono text-[10px] text-amber-600">Due soon</p>
+      {pendingOrders > 0 ? (
+        <p className="font-mono text-[10px] text-muted-foreground">{pendingOrders} ordered</p>
       ) : null}
-    </div>
-  );
-}
-
-function NextActionCell({ patient }) {
-  const nextAction = getPatientNextAction(patient);
-  const toneClassName = URGENCY_STYLES[nextAction.tone] ?? URGENCY_STYLES.stable;
-  return (
-    <div className="min-w-0">
-      <p className="truncate text-xs font-medium text-foreground">{nextAction.label}</p>
-      <div className="mt-1 flex items-center gap-1.5">
-        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full border', toneClassName)} aria-hidden="true" />
-        <span className="truncate font-mono text-[10px] text-muted-foreground">
-          {nextAction.meta || 'Next routine check'}
-        </span>
-      </div>
     </div>
   );
 }
@@ -120,12 +147,8 @@ export function PatientRow({ patient, selected, onOpenDetail }) {
   const bed = getPatientBed(patient);
   const wardName = getPatientWardName(patient);
   const urgency = getPatientUrgency(patient);
-  const age = getPatientAge(patient);
-  const sex = getPatientSex(patient);
-  const problems = getPatientProblems(patient);
-  const owner = getPatientOwner(patient);
   const lastEvent = patient?.last_event_at ?? patient?.updated_at ?? patient?.last_updated;
-  const urgencyClassName = URGENCY_STYLES[urgency] ?? URGENCY_STYLES.stable;
+  const lastObs = patient?.last_vitals_recorded_at ?? patient?.last_obs_at;
   const isCritical = ['critical', 'urgent', 'high'].includes(urgency);
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -160,11 +183,8 @@ export function PatientRow({ patient, selected, onOpenDetail }) {
         <div className="min-w-0">
           <p className="truncate font-display text-base leading-tight text-foreground">{name}</p>
           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-            {[mrn, age != null ? `${age} Y` : null, sex].filter(Boolean).join(' · ')}
+            {mrn}
           </p>
-          {problems ? (
-            <p className="mt-1 truncate text-[11px] text-muted-foreground">{problems}</p>
-          ) : null}
         </div>
       </td>
 
@@ -173,17 +193,7 @@ export function PatientRow({ patient, selected, onOpenDetail }) {
       </td>
 
       <td className="p-3 align-middle">
-        <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', urgencyClassName)}>
-          {urgency}
-        </Badge>
-      </td>
-
-      <td className="p-3 align-middle">
-        <NextActionCell patient={patient} />
-      </td>
-
-      <td className="p-3 align-middle">
-        <ResultCell patient={patient} />
+        <SafetyCell patient={patient} />
       </td>
 
       <td className="p-3 align-middle">
@@ -191,11 +201,21 @@ export function PatientRow({ patient, selected, onOpenDetail }) {
       </td>
 
       <td className="p-3 align-middle">
+        <MedicationCell patient={patient} />
+      </td>
+
+      <td className="p-3 align-middle">
+        <ResultCell patient={patient} />
+      </td>
+
+      <td className="p-3 align-middle">
         <DischargeCell patient={patient} />
       </td>
 
       <td className="p-3 align-middle">
-        <p className="truncate font-mono text-[11px] text-foreground">{owner ?? '—'}</p>
+        <span className={cn('font-mono text-[11px]', lastObs ? 'text-foreground' : 'text-muted-foreground')}>
+          {lastObs ? formatTimestamp(lastObs) : '—'}
+        </span>
       </td>
 
       <td className="p-3 align-middle">
@@ -224,22 +244,22 @@ export function PatientRow({ patient, selected, onOpenDetail }) {
 
 export function PatientTable({ children }) {
   return (
-    <table className="w-full min-w-[1040px] border-collapse text-left">
+    <table className="w-full min-w-[1080px] border-collapse text-left">
       <colgroup>
         <col className="w-20" />
         <col className="w-56" />
         <col className="w-28" />
+        <col className="w-28" />
         <col className="w-24" />
-        <col className="w-56" />
+        <col className="w-24" />
         <col className="w-32" />
-        <col className="w-24" />
         <col className="w-28" />
         <col className="w-36" />
         <col />
       </colgroup>
       <thead className="sticky top-0 z-10">
         <tr className="border-b border-border bg-muted/80 backdrop-blur-sm">
-          {['Bed', 'Patient', 'Status', 'Risk', 'Next due', 'Results', 'Tasks', 'Discharge', 'Owner', 'Updated'].map((col) => (
+          {['Bed', 'Patient', 'Status', 'Safety', 'Tasks', 'Meds', 'Results', 'Discharge', 'Last Obs', 'Updated'].map((col) => (
             <th
               key={col}
               scope="col"

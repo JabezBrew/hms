@@ -11,7 +11,7 @@ use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::{
     AdmissionStatus, BedStatus, DischargeBlockerKind, DischargeBlockerStatus, DischargeStatus,
     MonitoringEventKind, NursingAlertSeverity, NursingAlertStatus, NursingTaskStatus,
-    NursingTaskType, WardStatus, WardStockRequestStatus,
+    NursingTaskType, WardBoardSort, WardStatus, WardStockRequestStatus,
 };
 
 #[tokio::test]
@@ -262,6 +262,92 @@ fn blocker(
         .iter()
         .find(|blocker| blocker.blocker_type == kind)
         .expect("expected blocker exists")
+}
+
+async fn insert_dispensed_pharmacy_fulfillment(
+    pool: &hms_db::PgPool,
+    facility_id: uuid::Uuid,
+    patient_id: uuid::Uuid,
+    admission_case_id: uuid::Uuid,
+    encounter_id: uuid::Uuid,
+    visit_id: uuid::Uuid,
+    actor_user_id: uuid::Uuid,
+    label: &str,
+) -> uuid::Uuid {
+    let prescription_id = uuid::Uuid::new_v4();
+    let course_id = uuid::Uuid::new_v4();
+    let fulfillment_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO prescriptions (
+            id, facility_id, patient_id, encounter_id, visit_id, medication_name, dose,
+            frequency, status, prescribed_at, created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, '500 mg', 'twice daily', 'active', now(), $7)
+        "#,
+    )
+    .bind(prescription_id)
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(encounter_id)
+    .bind(visit_id)
+    .bind(format!("{label} discharge medicine"))
+    .bind(actor_user_id)
+    .execute(pool)
+    .await
+    .expect("prescription inserts");
+
+    sqlx::query(
+        r#"
+        INSERT INTO medication_courses (
+            id, facility_id, patient_id, admission_case_id, prescription_id, medication_name,
+            dose, route, frequency, first_dose_at, interval_minutes, generation_window_start,
+            generation_window_end, status, created_by_user_id
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, '500 mg', 'oral', 'twice daily', now(), 720,
+            now(), now() + interval '1 day', 'active', $7
+        )
+        "#,
+    )
+    .bind(course_id)
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(admission_case_id)
+    .bind(prescription_id)
+    .bind(format!("{label} discharge medicine"))
+    .bind(actor_user_id)
+    .execute(pool)
+    .await
+    .expect("medication course inserts");
+
+    sqlx::query(
+        r#"
+        INSERT INTO pharmacy_fulfillments (
+            id, facility_id, patient_id, admission_case_id, prescription_id,
+            medication_course_id, status, medication_name, dose, route, frequency,
+            coverage_start, coverage_end, requested_dose_count, dispensed_dose_count,
+            created_by_user_id, dispensed_by_user_id, dispensed_at
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, 'dispensed', $7, '500 mg', 'oral', 'twice daily',
+            now(), now() + interval '1 day', 1, 1, $8, $8, now()
+        )
+        "#,
+    )
+    .bind(fulfillment_id)
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(admission_case_id)
+    .bind(prescription_id)
+    .bind(course_id)
+    .bind(format!("{label} discharge medicine"))
+    .bind(actor_user_id)
+    .execute(pool)
+    .await
+    .expect("pharmacy fulfillment inserts");
+
+    fulfillment_id
 }
 
 #[tokio::test]
@@ -678,6 +764,39 @@ async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
         .admission_case_with_available_bed()
         .await
         .expect("admission scenario builds");
+    let visit = hms_db::care::check_in_visit(
+        db.pool(),
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: scenario.patient.id,
+            appointment_id: None,
+            clinic_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("visit creates");
+    let encounter = hms_db::care::create_encounter(
+        db.pool(),
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: scenario.patient.id,
+            visit_id: Some(visit.id),
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("encounter creates");
+    sqlx::query("UPDATE admission_cases SET encounter_id = $1, visit_id = $2 WHERE id = $3")
+        .bind(encounter.id)
+        .bind(visit.id)
+        .bind(scenario.admission.id)
+        .execute(db.pool())
+        .await
+        .expect("admission context updates");
     let admission = hms_db::ward::activate_admission_case(
         db.pool(),
         db.facility_id(),
@@ -697,8 +816,8 @@ async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
             patient_id: admission.patient_id,
             ward_id: admission.ward_id,
             bed_id: admission.bed_id,
-            encounter_id: None,
-            visit_id: None,
+            encounter_id: admission.encounter_id,
+            visit_id: admission.visit_id,
         },
         None,
         None,
@@ -759,14 +878,19 @@ async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
     sqlx::query(
         r#"
         INSERT INTO clinical_notes (
-            id, facility_id, patient_id, note_type, title, body, status, created_by_user_id
+            id, facility_id, patient_id, encounter_id, note_type, title, body, status,
+            created_by_user_id
         )
-        VALUES ($1, $2, $3, 'doctor_note', 'Discharge summary', 'Stable for discharge.', 'signed', $4)
+        VALUES (
+            $1, $2, $3, $4, 'doctor_note', 'Discharge summary',
+            'Stable for discharge.', 'signed', $5
+        )
         "#,
     )
     .bind(uuid::Uuid::new_v4())
     .bind(db.facility_id())
     .bind(admission.patient_id)
+    .bind(encounter.id)
     .bind(db.owner_user_id())
     .execute(db.pool())
     .await
@@ -777,14 +901,17 @@ async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
         r#"
         INSERT INTO invoices (
             id, facility_id, patient_id, invoice_number, status, gross_amount_minor,
-            paid_amount_minor, issued_by_user_id
+            paid_amount_minor, encounter_id, visit_id, admission_case_id, issued_by_user_id
         )
-        VALUES ($1, $2, $3, 'INV-DISCHARGE-BLOCKER', 'issued', 12500, 0, $4)
+        VALUES ($1, $2, $3, 'INV-DISCHARGE-BLOCKER', 'issued', 12500, 0, $4, $5, $6, $7)
         "#,
     )
     .bind(invoice_id)
     .bind(db.facility_id())
     .bind(admission.patient_id)
+    .bind(encounter.id)
+    .bind(visit.id)
+    .bind(admission.id)
     .bind(db.owner_user_id())
     .execute(db.pool())
     .await
@@ -872,6 +999,546 @@ async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
 }
 
 #[tokio::test]
+async fn admission_only_discharge_blockers_ignore_legacy_patient_wide_sources() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let scenario = db
+        .scenario("legacy-discharge-sources")
+        .admission_case_with_available_bed()
+        .await
+        .expect("admission scenario builds");
+    let facility_id = db.facility_id();
+    let owner_id = db.owner_user_id();
+    let admission = hms_db::ward::activate_admission_case(
+        db.pool(),
+        facility_id,
+        scenario.admission.id,
+        owner_id,
+    )
+    .await
+    .expect("activation query succeeds")
+    .expect("admission activates");
+    let discharge = hms_db::ward::request_discharge(
+        db.pool(),
+        uuid::Uuid::new_v4(),
+        facility_id,
+        &AdmissionContext {
+            id: admission.id,
+            patient_id: admission.patient_id,
+            ward_id: admission.ward_id,
+            bed_id: admission.bed_id,
+            encounter_id: None,
+            visit_id: None,
+        },
+        None,
+        None,
+        owner_id,
+    )
+    .await
+    .expect("discharge request succeeds");
+    sqlx::query("UPDATE discharge_cases SET pharmacy_required = true WHERE id = $1")
+        .bind(discharge.id)
+        .execute(db.pool())
+        .await
+        .expect("pharmacy requirement updates");
+
+    sqlx::query(
+        r#"
+        INSERT INTO clinical_notes (
+            id, facility_id, patient_id, note_type, title, body, status, created_by_user_id
+        )
+        VALUES (
+            $1, $2, $3, 'doctor_note', 'Discharge summary',
+            'Legacy note without admission provenance.', 'signed', $4
+        )
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(admission.patient_id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("legacy patient-wide summary inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO invoices (
+            id, facility_id, patient_id, invoice_number, status, gross_amount_minor,
+            paid_amount_minor, issued_by_user_id
+        )
+        VALUES ($1, $2, $3, 'INV-LEGACY-DISCHARGE', 'issued', 9000, 0, $4)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(admission.patient_id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("legacy patient-wide invoice inserts");
+    let item_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM inventory_items WHERE facility_id = $1 AND controlled = false LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(db.pool())
+    .await
+    .expect("legacy pharmacy item exists");
+    let location_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM storage_locations WHERE facility_id = $1 LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(db.pool())
+    .await
+    .expect("legacy pharmacy location exists");
+    sqlx::query(
+        r#"
+        INSERT INTO pharmacy_dispenses (
+            id, facility_id, patient_id, item_id, location_id, quantity, status,
+            dispensed_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, 1, 'dispensed', $6)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(admission.patient_id)
+    .bind(item_id)
+    .bind(location_id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("legacy patient-wide dispense inserts");
+
+    let reloaded = hms_db::ward::get_discharge_case(db.pool(), facility_id, discharge.id)
+        .await
+        .expect("contextless discharge reload succeeds")
+        .expect("contextless discharge exists");
+    assert_eq!(
+        blocker(&reloaded, DischargeBlockerKind::DischargeSummary).status,
+        DischargeBlockerStatus::Pending
+    );
+    assert_eq!(
+        blocker(&reloaded, DischargeBlockerKind::BillingClearance).status,
+        DischargeBlockerStatus::Completed
+    );
+    assert_eq!(
+        blocker(&reloaded, DischargeBlockerKind::PharmacyClearance).status,
+        DischargeBlockerStatus::Pending
+    );
+    assert_eq!(reloaded.invoice_summary.invoice_count, 0);
+
+    let board_rows = hms_db::ward::list_ward_board(
+        db.pool(),
+        facility_id,
+        Some(admission.ward_id),
+        Some(admission.patient_id),
+        None,
+        None,
+        WardBoardSort::Attention,
+        None,
+        10,
+    )
+    .await
+    .expect("ward board reload succeeds");
+    assert_eq!(board_rows.len(), 1);
+    assert_eq!(board_rows[0].admission_id, admission.id);
+    assert_eq!(board_rows[0].open_discharge_blocker_count, 3);
+}
+
+#[tokio::test]
+async fn discharge_blockers_use_current_admission_context() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let scenario = db
+        .scenario("discharge-context")
+        .admission_case_with_available_bed()
+        .await
+        .expect("admission scenario builds");
+    let facility_id = db.facility_id();
+    let owner_id = db.owner_user_id();
+    let patient_id = scenario.patient.id;
+
+    let prior_visit = hms_db::care::check_in_visit(
+        db.pool(),
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            appointment_id: None,
+            clinic_id: None,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("prior visit creates");
+    let prior_encounter = hms_db::care::create_encounter(
+        db.pool(),
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            visit_id: Some(prior_visit.id),
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("prior encounter creates");
+    sqlx::query("UPDATE admission_cases SET encounter_id = $1, visit_id = $2 WHERE id = $3")
+        .bind(prior_encounter.id)
+        .bind(prior_visit.id)
+        .bind(scenario.admission.id)
+        .execute(db.pool())
+        .await
+        .expect("prior admission context updates");
+    let prior_admission = hms_db::ward::activate_admission_case(
+        db.pool(),
+        facility_id,
+        scenario.admission.id,
+        owner_id,
+    )
+    .await
+    .expect("prior admission activation query succeeds")
+    .expect("prior admission activates");
+    let prior_discharge = hms_db::ward::request_discharge(
+        db.pool(),
+        uuid::Uuid::new_v4(),
+        facility_id,
+        &AdmissionContext {
+            id: prior_admission.id,
+            patient_id: prior_admission.patient_id,
+            ward_id: prior_admission.ward_id,
+            bed_id: prior_admission.bed_id,
+            encounter_id: prior_admission.encounter_id,
+            visit_id: prior_admission.visit_id,
+        },
+        None,
+        None,
+        owner_id,
+    )
+    .await
+    .expect("prior discharge request succeeds");
+
+    sqlx::query(
+        r#"
+        INSERT INTO clinical_notes (
+            id, facility_id, patient_id, encounter_id, note_type, title, body, status,
+            created_by_user_id
+        )
+        VALUES (
+            $1, $2, $3, $4, 'doctor_note', 'Discharge summary',
+            'Prior admission discharge summary.', 'signed', $5
+        )
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(prior_encounter.id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("prior summary inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO invoices (
+            id, facility_id, patient_id, invoice_number, status, gross_amount_minor,
+            paid_amount_minor, encounter_id, visit_id, admission_case_id, issued_by_user_id
+        )
+        VALUES ($1, $2, $3, 'INV-PRIOR-DISCHARGE', 'issued', 5000, 0, $4, $5, $6, $7)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(prior_encounter.id)
+    .bind(prior_visit.id)
+    .bind(prior_admission.id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("prior unpaid invoice inserts");
+    insert_dispensed_pharmacy_fulfillment(
+        db.pool(),
+        facility_id,
+        patient_id,
+        prior_admission.id,
+        prior_encounter.id,
+        prior_visit.id,
+        owner_id,
+        "prior",
+    )
+    .await;
+
+    let legacy_item_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM inventory_items WHERE facility_id = $1 AND controlled = false LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(db.pool())
+    .await
+    .expect("legacy pharmacy item exists");
+    let legacy_location_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM storage_locations WHERE facility_id = $1 LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(db.pool())
+    .await
+    .expect("legacy pharmacy location exists");
+    sqlx::query(
+        r#"
+        INSERT INTO pharmacy_dispenses (
+            id, facility_id, patient_id, item_id, location_id, quantity, status,
+            dispensed_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, 1, 'dispensed', $6)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(legacy_item_id)
+    .bind(legacy_location_id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("legacy dispense inserts");
+
+    sqlx::query("UPDATE discharge_cases SET status = 'completed', discharged_at = now(), updated_at = now() WHERE id = $1")
+        .bind(prior_discharge.id)
+        .execute(db.pool())
+        .await
+        .expect("prior discharge completes for test setup");
+    sqlx::query("UPDATE admission_cases SET status = 'discharged', discharged_at = now(), updated_at = now() WHERE id = $1")
+        .bind(prior_admission.id)
+        .execute(db.pool())
+        .await
+        .expect("prior admission marks discharged for test setup");
+    sqlx::query("UPDATE beds SET status = 'available', updated_at = now() WHERE id = $1")
+        .bind(prior_admission.bed_id.expect("prior admission has bed"))
+        .execute(db.pool())
+        .await
+        .expect("prior bed is released for test setup");
+
+    let current_visit = hms_db::care::check_in_visit(
+        db.pool(),
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            appointment_id: None,
+            clinic_id: None,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("current visit creates");
+    let current_encounter = hms_db::care::create_encounter(
+        db.pool(),
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            visit_id: Some(current_visit.id),
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("current encounter creates");
+    let current_case = hms_db::ward::create_admission_case(
+        db.pool(),
+        NewAdmissionCase {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            ward_id: scenario.ward.id,
+            encounter_id: Some(current_encounter.id),
+            visit_id: Some(current_visit.id),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("current admission case creates");
+    let current_admission =
+        hms_db::ward::activate_admission_case(db.pool(), facility_id, current_case.id, owner_id)
+            .await
+            .expect("current admission activation query succeeds")
+            .expect("current admission activates");
+    let current_discharge = hms_db::ward::request_discharge(
+        db.pool(),
+        uuid::Uuid::new_v4(),
+        facility_id,
+        &AdmissionContext {
+            id: current_admission.id,
+            patient_id,
+            ward_id: current_admission.ward_id,
+            bed_id: current_admission.bed_id,
+            encounter_id: current_admission.encounter_id,
+            visit_id: current_admission.visit_id,
+        },
+        None,
+        None,
+        owner_id,
+    )
+    .await
+    .expect("current discharge request succeeds");
+    sqlx::query("UPDATE discharge_cases SET pharmacy_required = true WHERE id = $1")
+        .bind(current_discharge.id)
+        .execute(db.pool())
+        .await
+        .expect("current pharmacy requirement updates");
+
+    let current_without_sources =
+        hms_db::ward::get_discharge_case(db.pool(), facility_id, current_discharge.id)
+            .await
+            .expect("current discharge reload succeeds")
+            .expect("current discharge exists");
+    assert_eq!(
+        blocker(
+            &current_without_sources,
+            DischargeBlockerKind::DischargeSummary
+        )
+        .status,
+        DischargeBlockerStatus::Pending
+    );
+    assert_eq!(
+        blocker(
+            &current_without_sources,
+            DischargeBlockerKind::BillingClearance
+        )
+        .status,
+        DischargeBlockerStatus::Completed
+    );
+    assert_eq!(
+        blocker(
+            &current_without_sources,
+            DischargeBlockerKind::PharmacyClearance
+        )
+        .status,
+        DischargeBlockerStatus::Pending
+    );
+    assert_eq!(current_without_sources.invoice_summary.invoice_count, 0);
+
+    let board_without_sources = hms_db::ward::list_ward_board(
+        db.pool(),
+        facility_id,
+        Some(scenario.ward.id),
+        Some(patient_id),
+        None,
+        None,
+        WardBoardSort::Attention,
+        None,
+        10,
+    )
+    .await
+    .expect("board reload without current sources succeeds");
+    assert_eq!(board_without_sources.len(), 1);
+    assert_eq!(board_without_sources[0].admission_id, current_admission.id);
+    assert_eq!(board_without_sources[0].open_discharge_blocker_count, 3);
+
+    sqlx::query(
+        r#"
+        INSERT INTO clinical_notes (
+            id, facility_id, patient_id, encounter_id, note_type, title, body, status,
+            created_by_user_id
+        )
+        VALUES (
+            $1, $2, $3, $4, 'doctor_note', 'Discharge summary',
+            'Current admission discharge summary.', 'signed', $5
+        )
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(current_encounter.id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("current summary inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO invoices (
+            id, facility_id, patient_id, invoice_number, status, gross_amount_minor,
+            paid_amount_minor, encounter_id, visit_id, admission_case_id, issued_by_user_id
+        )
+        VALUES ($1, $2, $3, 'INV-CURRENT-DISCHARGE', 'issued', 7500, 0, $4, $5, $6, $7)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(current_encounter.id)
+    .bind(current_visit.id)
+    .bind(current_admission.id)
+    .bind(owner_id)
+    .execute(db.pool())
+    .await
+    .expect("current unpaid invoice inserts");
+    insert_dispensed_pharmacy_fulfillment(
+        db.pool(),
+        facility_id,
+        patient_id,
+        current_admission.id,
+        current_encounter.id,
+        current_visit.id,
+        owner_id,
+        "current",
+    )
+    .await;
+
+    let current_with_sources =
+        hms_db::ward::get_discharge_case(db.pool(), facility_id, current_discharge.id)
+            .await
+            .expect("current discharge with sources reload succeeds")
+            .expect("current discharge exists");
+    assert_eq!(
+        blocker(
+            &current_with_sources,
+            DischargeBlockerKind::DischargeSummary
+        )
+        .status,
+        DischargeBlockerStatus::Completed
+    );
+    assert_eq!(
+        blocker(
+            &current_with_sources,
+            DischargeBlockerKind::BillingClearance
+        )
+        .status,
+        DischargeBlockerStatus::Pending
+    );
+    assert_eq!(
+        blocker(
+            &current_with_sources,
+            DischargeBlockerKind::PharmacyClearance
+        )
+        .status,
+        DischargeBlockerStatus::Completed
+    );
+    assert_eq!(current_with_sources.invoice_summary.invoice_count, 1);
+
+    let board_with_sources = hms_db::ward::list_ward_board(
+        db.pool(),
+        facility_id,
+        Some(scenario.ward.id),
+        Some(patient_id),
+        None,
+        None,
+        WardBoardSort::Attention,
+        None,
+        10,
+    )
+    .await
+    .expect("board reload with current sources succeeds");
+    assert_eq!(board_with_sources.len(), 1);
+    assert_eq!(board_with_sources[0].admission_id, current_admission.id);
+    assert_eq!(board_with_sources[0].open_discharge_blocker_count, 2);
+}
+
+#[tokio::test]
 async fn discharge_completion_moves_bed_to_cleaning_then_releases_after_policy_interval() {
     let db = hms_db::test_support::TestDb::hospital()
         .await
@@ -881,6 +1548,39 @@ async fn discharge_completion_moves_bed_to_cleaning_then_releases_after_policy_i
         .admission_case_with_available_bed()
         .await
         .expect("admission scenario builds");
+    let visit = hms_db::care::check_in_visit(
+        db.pool(),
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: scenario.patient.id,
+            appointment_id: None,
+            clinic_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("visit creates");
+    let encounter = hms_db::care::create_encounter(
+        db.pool(),
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: scenario.patient.id,
+            visit_id: Some(visit.id),
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("encounter creates");
+    sqlx::query("UPDATE admission_cases SET encounter_id = $1, visit_id = $2 WHERE id = $3")
+        .bind(encounter.id)
+        .bind(visit.id)
+        .bind(scenario.admission.id)
+        .execute(db.pool())
+        .await
+        .expect("admission context updates");
     sqlx::query("UPDATE wards SET bed_cleaning_minutes_override = 5 WHERE id = $1")
         .bind(scenario.ward.id)
         .execute(db.pool())
@@ -905,8 +1605,8 @@ async fn discharge_completion_moves_bed_to_cleaning_then_releases_after_policy_i
             patient_id: admission.patient_id,
             ward_id: admission.ward_id,
             bed_id: admission.bed_id,
-            encounter_id: None,
-            visit_id: None,
+            encounter_id: admission.encounter_id,
+            visit_id: admission.visit_id,
         },
         None,
         None,
@@ -917,14 +1617,16 @@ async fn discharge_completion_moves_bed_to_cleaning_then_releases_after_policy_i
     sqlx::query(
         r#"
         INSERT INTO clinical_notes (
-            id, facility_id, patient_id, note_type, title, body, status, created_by_user_id
+            id, facility_id, patient_id, encounter_id, note_type, title, body, status,
+            created_by_user_id
         )
-        VALUES ($1, $2, $3, 'doctor_note', 'Discharge summary', 'Stable.', 'signed', $4)
+        VALUES ($1, $2, $3, $4, 'doctor_note', 'Discharge summary', 'Stable.', 'signed', $5)
         "#,
     )
     .bind(uuid::Uuid::new_v4())
     .bind(db.facility_id())
     .bind(admission.patient_id)
+    .bind(encounter.id)
     .bind(db.owner_user_id())
     .execute(db.pool())
     .await
@@ -1077,10 +1779,19 @@ async fn ward_board_can_be_filtered_by_ward_and_patient() {
             .expect("case is activated");
     }
 
-    let all_board =
-        hms_db::ward::list_ward_board(&pool, facility_id, None, None, None, None, None, 25)
-            .await
-            .expect("ward board list succeeds");
+    let all_board = hms_db::ward::list_ward_board(
+        &pool,
+        facility_id,
+        None,
+        None,
+        None,
+        None,
+        WardBoardSort::Admitted,
+        None,
+        25,
+    )
+    .await
+    .expect("ward board list succeeds");
     assert!(all_board.iter().any(|item| item.ward_id == ward_ids[0]));
     assert!(all_board.iter().any(|item| item.ward_id == ward_ids[1]));
 
@@ -1091,6 +1802,7 @@ async fn ward_board_can_be_filtered_by_ward_and_patient() {
         None,
         None,
         None,
+        WardBoardSort::Admitted,
         None,
         25,
     )
@@ -1107,6 +1819,7 @@ async fn ward_board_can_be_filtered_by_ward_and_patient() {
         Some(patient_ids[0]),
         None,
         None,
+        WardBoardSort::Admitted,
         None,
         25,
     )

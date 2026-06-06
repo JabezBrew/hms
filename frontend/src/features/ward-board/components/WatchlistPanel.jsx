@@ -8,11 +8,11 @@ import {
   URGENCY_STYLES,
   getAbnormalResults,
   getDischargeBlockerList,
-  getOverdueTaskList,
+  getPatientDueMedicationCount,
   getPatientBed,
   getPatientId,
   getPatientName,
-  getPatientUrgency,
+  getPatientOverdueTaskCount,
   getTaskTitle,
   formatTime,
 } from './wardBoardUtils';
@@ -77,10 +77,43 @@ function itemPatientId(item) {
   return item?._patient_id ?? item?.patient_id ?? item?.patient?.id ?? item?.patient_uuid;
 }
 
+function getDueWorkList(patients) {
+  const list = [];
+  patients.forEach((patient) => {
+    const patientId = getPatientId(patient);
+    const patientName = getPatientName(patient);
+    const bed = getPatientBed(patient);
+    const overdueTasks = getPatientOverdueTaskCount(patient);
+    if (overdueTasks > 0) {
+      list.push({
+        id: `${patientId}:overdue-task`,
+        title: 'Overdue nursing task',
+        due_at: patient?.next_nursing_task_due_at,
+        _bed: bed,
+        _patient_id: patientId,
+        _patient_name: patientName,
+      });
+      return;
+    }
+    const dueMedications = getPatientDueMedicationCount(patient);
+    if (dueMedications > 0) {
+      list.push({
+        id: `${patientId}:due-medication`,
+        title: 'Medication due',
+        due_at: patient?.next_due_medication_at,
+        _bed: bed,
+        _patient_id: patientId,
+        _patient_name: patientName,
+      });
+    }
+  });
+  return list.slice(0, 7);
+}
+
 export function WatchlistPanel({ patients, boardData, onOpenPatient, onViewChange, className }) {
-  const critical = patients.filter((p) => ['critical', 'urgent', 'high'].includes(getPatientUrgency(p)));
+  const critical = patients.filter((p) => Number(p?.active_alert_count ?? 0) > 0);
   const abnormal = getAbnormalResults(boardData, patients);
-  const overdue = getOverdueTaskList(boardData, patients);
+  const overdue = getDueWorkList(patients);
   const dischargeBlockers = getDischargeBlockerList(boardData, patients);
 
   return (
@@ -99,19 +132,20 @@ export function WatchlistPanel({ patients, boardData, onOpenPatient, onViewChang
         <section>
           <SectionHeader
             icon={AlertTriangle}
-            label="Critical Patients"
+            label="Safety Alerts"
             count={critical.length}
             accent="rose"
             onViewAll={() => onViewChange?.('by-urgency')}
           />
           {critical.length === 0 ? (
-            <QuietEmpty>No critical patients</QuietEmpty>
+            <QuietEmpty>No active safety alerts</QuietEmpty>
           ) : (
             <div className="space-y-1">
               {critical.slice(0, 5).map((patient, index) => {
                 const patientId = getPatientId(patient);
                 const bed = getPatientBed(patient);
-                const urgency = getPatientUrgency(patient);
+                const criticalCount = Number(patient?.critical_alert_count ?? 0);
+                const activeCount = Number(patient?.active_alert_count ?? 0);
                 return (
                   <WatchlistButton
                     key={patientId ?? index}
@@ -127,9 +161,9 @@ export function WatchlistPanel({ patients, boardData, onOpenPatient, onViewChang
                     </span>
                     <span className={cn(
                       'shrink-0 rounded-sm border px-1 font-mono text-[9px] capitalize',
-                      URGENCY_STYLES[urgency] ?? URGENCY_STYLES.critical
+                      criticalCount > 0 ? URGENCY_STYLES.critical : URGENCY_STYLES.moderate
                     )}>
-                      {urgency}
+                      {criticalCount > 0 ? `${criticalCount} critical` : `${activeCount} active`}
                     </span>
                   </WatchlistButton>
                 );
@@ -143,13 +177,13 @@ export function WatchlistPanel({ patients, boardData, onOpenPatient, onViewChang
         <section>
           <SectionHeader
             icon={FlaskConical}
-            label="Abnormal Results"
+            label="Results to Review"
             count={abnormal.length}
             accent="sky"
             onViewAll={() => onViewChange?.('results')}
           />
           {abnormal.length === 0 ? (
-            <QuietEmpty>No abnormal results</QuietEmpty>
+            <QuietEmpty>No results awaiting review</QuietEmpty>
           ) : (
             <div className="space-y-1">
               {abnormal.slice(0, 5).map((result, index) => (
@@ -159,11 +193,11 @@ export function WatchlistPanel({ patients, boardData, onOpenPatient, onViewChang
                   onOpenPatient={onOpenPatient}
                 >
                   <span className="shrink-0 w-9 font-mono text-[10px] font-medium text-muted-foreground">
-                    {result?._bed ?? '—'}
+                      {result?._bed ?? '—'}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-mono text-[11px] text-foreground">
-                      {result?.name ?? result?.test_name ?? 'Result'}
+                      {result?.name ?? result?.test_name ?? 'Result review'}
                     </span>
                     {result?._patient_name ? (
                       <span className="block truncate font-mono text-[10px] text-muted-foreground">{result._patient_name}</span>
@@ -180,13 +214,13 @@ export function WatchlistPanel({ patients, boardData, onOpenPatient, onViewChang
         <section>
           <SectionHeader
             icon={Clock}
-            label="Overdue Tasks"
+            label="Due Work"
             count={overdue.length}
             accent="amber"
             onViewAll={() => onViewChange?.('my-work')}
           />
           {overdue.length === 0 ? (
-            <QuietEmpty>No overdue tasks</QuietEmpty>
+            <QuietEmpty>No due tasks or medications</QuietEmpty>
           ) : (
             <div className="space-y-1">
               {overdue.slice(0, 7).map((task, index) => (

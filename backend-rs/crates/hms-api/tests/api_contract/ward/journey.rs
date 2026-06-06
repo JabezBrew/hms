@@ -352,6 +352,47 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .as_str()
         .expect("case patient id exists");
 
+    let lab_catalog_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/laboratory/test-catalog?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("lab catalog succeeds");
+    assert_eq!(lab_catalog_response.status(), StatusCode::OK);
+    let lab_catalog_body = json_body(lab_catalog_response).await;
+    let lab_test_id = lab_catalog_body["data"][0]["id"]
+        .as_str()
+        .expect("lab test id exists");
+
+    let pre_admission_lab_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/orders")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "test_ids": [lab_test_id],
+                        "panel_ids": [],
+                        "priority": "routine"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("pre-admission lab order create succeeds");
+    assert_eq!(pre_admission_lab_order.status(), StatusCode::OK);
+
     let admission_case_response = app
         .clone()
         .oneshot(
@@ -625,7 +666,9 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/api/v2/wards/board?limit=1")
+                .uri(format!(
+                    "/api/v2/wards/board?limit=1&patient_id={patient_id}"
+                ))
                 .header(AUTHORIZATION, auth_header.clone())
                 .body(Body::empty())
                 .expect("request builds"),
@@ -635,6 +678,59 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     assert_eq!(board_response.status(), StatusCode::OK);
     let board_body = json_body(board_response).await;
     assert_eq!(board_body["data"].as_array().unwrap().len(), 1);
+    let board_row = &board_body["data"][0];
+    assert_eq!(board_row["open_nursing_task_count"], 0);
+    assert_eq!(board_row["overdue_nursing_task_count"], 0);
+    assert_eq!(board_row["due_medication_count"], 0);
+    assert_eq!(board_row["active_alert_count"], 0);
+    assert_eq!(board_row["critical_alert_count"], 0);
+    assert_eq!(board_row["unverified_result_count"], 0);
+    assert_eq!(board_row["critical_unverified_result_count"], 0);
+    assert_eq!(board_row["pending_lab_order_count"], 0);
+    assert_eq!(board_row["open_discharge_blocker_count"], 0);
+    assert!(board_row["last_activity_at"].is_string());
+
+    let current_lab_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/orders")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "test_ids": [lab_test_id],
+                        "panel_ids": [],
+                        "priority": "routine"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("current lab order create succeeds");
+    assert_eq!(current_lab_order.status(), StatusCode::OK);
+
+    let results_board = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/wards/board?limit=1&patient_id={patient_id}&monitoring_filter=results"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("results ward board succeeds");
+    assert_eq!(results_board.status(), StatusCode::OK);
+    let results_board_body = json_body(results_board).await;
+    let results_row = &results_board_body["data"][0];
+    assert_eq!(results_row["pending_lab_order_count"], 1);
 
     let task_response = app
         .clone()
@@ -749,6 +845,26 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .as_str()
         .expect("medication administration id exists");
     assert_eq!(medication_body["data"]["status"], "scheduled");
+
+    let attention_board = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/wards/board?ward_id={ward_id}&patient_id={patient_id}&limit=1&monitoring_filter=needs_attention&sort=attention"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("attention ward board succeeds");
+    assert_eq!(attention_board.status(), StatusCode::OK);
+    let attention_board_body = json_body(attention_board).await;
+    let attention_row = &attention_board_body["data"][0];
+    assert_eq!(attention_row["due_medication_count"], 1);
+    assert!(attention_row["next_due_medication_at"].is_string());
 
     let administer_response = app
         .clone()

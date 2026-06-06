@@ -24,12 +24,15 @@ async fn ward_round_commit_links_outputs_and_adds_safe_chronicle_parent_entry() 
         NewPatient {
             id: uuid::Uuid::new_v4(),
             facility_id,
+            created_by_user_id: owner_id,
+            request_id: None,
             patient_code: format!("WR-{}", uuid::Uuid::new_v4().simple()),
             first_name: "Ward".to_owned(),
             last_name: "Round".to_owned(),
             date_of_birth: chrono::NaiveDate::from_ymd_opt(1984, 1, 1)
                 .expect("static test date is valid"),
             sex: Sex::Female,
+            duplicate_override: None,
         },
     )
     .await

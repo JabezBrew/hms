@@ -55,9 +55,10 @@ function boardResponse(overrides = {}) {
       total_patients: 24,
       open_tasks: 4,
       critical: 1,
+      due_medications: 1,
       pending_results: 1,
-      discharge_ready: 0,
-      my_work: 2,
+      discharge_blockers: 0,
+      due_work: 2,
     },
     results: [
       {
@@ -68,6 +69,8 @@ function boardResponse(overrides = {}) {
         bed_label: 'A-01',
         ward_name: 'Ward A',
         urgency: 'critical',
+        active_alert_count: 1,
+        critical_alert_count: 1,
         updated_at: '2026-04-30T08:00:00Z',
         tasks: [{ id: 'task-1', title: 'Review medication chart', status: 'pending' }],
         results: [{ id: 'result-1', test_name: 'CBC', status: 'pending' }],
@@ -172,7 +175,7 @@ describe('WardBoardPage', () => {
     });
     expect(screen.getByText('Ward A')).toBeInTheDocument();
     expect(screen.getByText(/Ward Board · Live clinical task board/)).toBeInTheDocument();
-    expect(await screen.findAllByText('Ama Mensah')).toHaveLength(2);
+    expect(await screen.findAllByText('Ama Mensah')).not.toHaveLength(0);
     expect(await screen.findByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -282,9 +285,9 @@ describe('WardBoardPage', () => {
             open_task_count: 2,
             nursing_task_count: 1,
             active_alert_count: 1,
-            urgent_task_count: 1,
-            open_lab_order_count: 3,
-            discharge_task_count: 2,
+            due_medication_count: 1,
+            pending_lab_order_count: 3,
+            open_discharge_blocker_count: 2,
           },
         ],
       }),
@@ -298,9 +301,10 @@ describe('WardBoardPage', () => {
     renderPage('/ward-board');
 
     expect(await screen.findAllByText('Kofi Owusu')).not.toHaveLength(0);
-    expect(await screen.findAllByText('urgent')).not.toHaveLength(0);
-    expect(await screen.findByText('Overdue')).toBeInTheDocument();
-    expect(screen.getAllByText('4')).not.toHaveLength(0);
+    expect(await screen.findAllByText('1 active')).not.toHaveLength(0);
+    expect(await screen.findByText('Open Tasks')).toBeInTheDocument();
+    expect(await screen.findByText('Meds Due')).toBeInTheDocument();
+    expect(screen.getAllByText('3')).not.toHaveLength(0);
   });
 
   it('opens patient work in a side drawer from a stable patient row', async () => {

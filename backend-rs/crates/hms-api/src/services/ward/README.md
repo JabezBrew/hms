@@ -51,6 +51,15 @@ lives in `hms-db::ward`.
   `/api/v2/wards/my-board-context` aligned with the same assignment source used
   by staff-assignment management, and do not treat the plain Wards feature as
   permission to load the house board.
+- Ward-board rows are sourced operational projections, not placeholders. Keep
+  the list DTO limited to admission/census fields plus lightweight counts and
+  timestamps from nursing tasks, MAR, alerts, vitals, lab review/order state,
+  and discharge blockers. Do not expose free-text blocker reasons, result
+  values, note bodies, or broad patient clinical records in the hot board list.
+- Discharge blocker sources must match the current discharge/admission by
+  `admission_case_id`, inherited `encounter_id`, or inherited `visit_id`; do not
+  clear or block a current discharge from patient-wide legacy notes, invoices,
+  or dispenses that lack care-journey provenance.
 - MAR, observation, and handoff paths must keep PHI out of logs and metric
   labels.
 - External side effects belong in worker jobs or later async paths, not inside

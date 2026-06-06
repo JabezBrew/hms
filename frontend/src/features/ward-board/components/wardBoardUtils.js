@@ -8,11 +8,11 @@ const SHORT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
 const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 
 export const BOARD_VIEWS = [
-  { value: 'by-patient', label: 'All Patients' },
-  { value: 'by-urgency', label: 'Needs Attention' },
+  { value: 'by-patient', label: 'Patients' },
+  { value: 'by-urgency', label: 'Attention' },
   { value: 'results', label: 'Results' },
   { value: 'discharge', label: 'Discharges' },
-  { value: 'my-work', label: 'My Tasks' },
+  { value: 'my-work', label: 'Due Work' },
 ];
 
 export const DEFAULT_BOARD_VIEW = BOARD_VIEWS[0].value;
@@ -75,32 +75,46 @@ export function getBoardSummary(boardData, patients) {
   const visiblePatients = patients.length;
 
   let openTasks = 0;
-  let critical = 0;
+  let overdueTasks = 0;
+  let safety = 0;
+  let criticalSafety = 0;
+  let dueMedications = 0;
   let pendingResults = 0;
-  let dischargeReady = 0;
-  let overdue = 0;
+  let criticalResults = 0;
+  let pendingLabOrders = 0;
+  let dischargeBlockers = 0;
+  let attentionRows = 0;
 
   patients.forEach((patient) => {
     openTasks += getPatientTaskCount(patient);
-    overdue += asCount(patient?.overdue_task_count ?? patient?.overdue_tasks);
-    if (['critical', 'urgent', 'high'].includes(getPatientUrgency(patient))) {
-      critical += 1;
-    }
+    overdueTasks += getPatientOverdueTaskCount(patient);
+    safety += asCount(patient?.active_alert_count);
+    criticalSafety += asCount(patient?.critical_alert_count);
+    dueMedications += getPatientDueMedicationCount(patient);
     pendingResults += getPatientResultCount(patient);
-    if (getPatientDischargeCount(patient) > 0 || patient?.discharge_ready) {
-      dischargeReady += 1;
+    criticalResults += asCount(patient?.critical_unverified_result_count);
+    pendingLabOrders += getPatientPendingLabOrderCount(patient);
+    dischargeBlockers += getPatientDischargeCount(patient);
+    if (patientNeedsAttention(patient)) {
+      attentionRows += 1;
     }
   });
+  const dueWork = openTasks + dueMedications;
 
   return {
     totalPatients: summary.total_patients ?? summary.patients ?? boardData?.count ?? visiblePatients,
     visiblePatients,
     openTasks: summary.open_tasks ?? summary.tasks_open ?? openTasks,
-    overdue: summary.overdue ?? summary.overdue_tasks ?? overdue,
-    critical: summary.critical ?? summary.urgent ?? critical,
+    overdueTasks: summary.overdue ?? summary.overdue_tasks ?? overdueTasks,
+    dueMedications: summary.due_medications ?? summary.medications_due ?? dueMedications,
+    safety,
+    criticalSafety: summary.critical ?? summary.urgent ?? criticalSafety,
     pendingResults: summary.pending_results ?? summary.results_pending ?? pendingResults,
-    dischargeReady: summary.discharge_blockers ?? summary.discharge_ready ?? summary.discharges ?? dischargeReady,
-    myWork: summary.reviews ?? summary.my_work ?? summary.assigned_to_me ?? 0,
+    criticalResults,
+    pendingLabOrders,
+    dischargeBlockers: summary.discharge_blockers ?? summary.discharge_ready ?? summary.discharges ?? dischargeBlockers,
+    attentionRows: summary.attention ?? summary.needs_attention ?? attentionRows,
+    dueWork: summary.due_work ?? summary.my_work ?? summary.reviews ?? dueWork,
     lastUpdated: summary.last_updated ?? boardData?.last_updated ?? boardData?.generated_at,
   };
 }
@@ -131,44 +145,33 @@ export function getPatientStatus(patient) {
   return String(raw).replace(/_/g, ' ');
 }
 
-export function getPatientAge(patient) {
-  return patient?.age ?? patient?.patient?.age ?? null;
-}
-
-export function getPatientSex(patient) {
-  const raw = patient?.sex ?? patient?.gender ?? patient?.patient?.sex ?? patient?.patient?.gender;
-  if (!raw) return null;
-  const s = String(raw).toLowerCase();
-  if (s === 'male' || s === 'm') return 'M';
-  if (s === 'female' || s === 'f') return 'F';
-  return raw;
-}
-
-export function getPatientProblems(patient) {
-  const p = patient?.problem_summary ?? patient?.active_problems ?? patient?.diagnosis ?? patient?.chief_complaint;
-  if (Array.isArray(p)) return p.slice(0, 3).join(', ');
-  return p ?? null;
-}
-
-export function getPatientOwner(patient) {
-  return patient?.owner ?? patient?.attending ?? patient?.primary_doctor ?? patient?.responsible_doctor ?? patient?.doctor_name ?? null;
-}
-
 export function getPatientUrgency(patient) {
-  const supplied = patient?.urgency ?? patient?.priority ?? patient?.risk_level ?? patient?.risk;
-  if (supplied) {
-    return String(supplied).toLowerCase();
+  if (asCount(patient?.critical_alert_count) > 0 || asCount(patient?.critical_unverified_result_count) > 0) {
+    return 'critical';
   }
-  if (asCount(patient?.active_alert_count) > 0 || asCount(patient?.urgent_task_count) > 0) {
+  if (asCount(patient?.active_alert_count) > 0 || getPatientOverdueTaskCount(patient) > 0) {
     return 'urgent';
   }
-  if (asCount(patient?.overdue_task_count) > 0) {
+  if (getPatientDueMedicationCount(patient) > 0) {
     return 'high';
   }
-  if (getPatientTaskCount(patient) > 0 || getPatientResultCount(patient) > 0) {
+  if (getPatientTaskCount(patient) > 0
+    || getPatientResultCount(patient) > 0
+    || getPatientDischargeCount(patient) > 0
+    || getPatientPendingLabOrderCount(patient) > 0) {
     return 'pending';
   }
   return 'stable';
+}
+
+export function patientNeedsAttention(patient) {
+  return asCount(patient?.active_alert_count) > 0
+    || getPatientTaskCount(patient) > 0
+    || getPatientDueMedicationCount(patient) > 0
+    || getPatientResultCount(patient) > 0
+    || getPatientPendingLabOrderCount(patient) > 0
+    || Boolean(patient?.discharge_case_id)
+    || getPatientDischargeCount(patient) > 0;
 }
 
 export function getPatientTasks(patient) {
@@ -183,8 +186,15 @@ export function getPatientTaskCount(patient) {
   return (
     asCount(patient?.open_task_count)
     + asCount(patient?.nursing_task_count)
-    + asCount(patient?.active_alert_count)
   );
+}
+
+export function getPatientOverdueTaskCount(patient) {
+  return asCount(patient?.overdue_nursing_task_count ?? patient?.overdue_task_count ?? patient?.overdue_tasks);
+}
+
+export function getPatientDueMedicationCount(patient) {
+  return asCount(patient?.due_medication_count ?? patient?.medication_due_count);
 }
 
 export function getPatientResults(patient) {
@@ -193,7 +203,13 @@ export function getPatientResults(patient) {
 
 export function getPatientResultCount(patient) {
   const results = getPatientResults(patient);
-  return results.length > 0 ? results.length : asCount(patient?.pending_results_count ?? patient?.open_lab_order_count);
+  return results.length > 0
+    ? results.length
+    : asCount(patient?.unverified_result_count ?? patient?.pending_results_count);
+}
+
+export function getPatientPendingLabOrderCount(patient) {
+  return asCount(patient?.pending_lab_order_count ?? patient?.open_lab_order_count);
 }
 
 export function getPatientDischargeItems(patient) {
@@ -209,7 +225,9 @@ export function getPatientDischargeItems(patient) {
 
 export function getPatientDischargeCount(patient) {
   const items = getPatientDischargeItems(patient);
-  return items.length > 0 ? items.length : asCount(patient?.discharge_task_count);
+  return items.length > 0
+    ? items.length
+    : asCount(patient?.open_discharge_blocker_count ?? patient?.discharge_blocker_count ?? patient?.discharge_task_count);
 }
 
 export function getPatientNextAction(patient) {
@@ -229,33 +247,63 @@ export function getPatientNextAction(patient) {
     };
   }
 
-  const results = getPatientResults(patient);
-  if (results.length > 0 || asCount(patient?.open_lab_order_count) > 0) {
+  if (asCount(patient?.critical_alert_count) > 0) {
     return {
-      label: 'Review pending result',
-      meta: results[0]?.test_name ?? results[0]?.name ?? null,
+      label: 'Review safety alert',
+      meta: `${asCount(patient?.critical_alert_count)} critical`,
+      tone: 'critical',
+    };
+  }
+
+  if (getPatientOverdueTaskCount(patient) > 0) {
+    return {
+      label: 'Overdue nursing task',
+      meta: formatTime(patient?.next_nursing_task_due_at),
+      tone: 'critical',
+    };
+  }
+
+  if (getPatientDueMedicationCount(patient) > 0) {
+    return {
+      label: 'Medication due',
+      meta: formatTime(patient?.next_due_medication_at),
+      tone: 'high',
+    };
+  }
+
+  if (getPatientResultCount(patient) > 0) {
+    return {
+      label: 'Review lab result',
+      meta: `${getPatientResultCount(patient)} unverified`,
       tone: 'info',
     };
   }
 
-  const dischargeItems = getPatientDischargeItems(patient);
-  if (dischargeItems.length > 0 || asCount(patient?.discharge_task_count) > 0) {
+  if (getPatientDischargeCount(patient) > 0) {
     return {
       label: 'Clear discharge blocker',
-      meta: dischargeItems[0]?.owner ?? dischargeItems[0]?.status ?? null,
+      meta: `${getPatientDischargeCount(patient)} open`,
       tone: 'moderate',
     };
   }
 
-  return {
-    label: 'Routine observation',
-    meta: null,
-    tone: 'stable',
-  };
-}
+  if (getPatientTaskCount(patient) > 0) {
+    return {
+      label: 'Nursing task',
+      meta: formatTime(patient?.next_nursing_task_due_at),
+      tone: 'pending',
+    };
+  }
 
-export function getPatientEvents(patient) {
-  return asArray(patient?.events ?? patient?.timeline ?? patient?.audit_events);
+  if (getPatientPendingLabOrderCount(patient) > 0) {
+    return {
+      label: 'Lab order pending',
+      meta: `${getPatientPendingLabOrderCount(patient)} ordered`,
+      tone: 'info',
+    };
+  }
+
+  return null;
 }
 
 export function getWatchlist(boardData, patients) {
@@ -263,7 +311,9 @@ export function getWatchlist(boardData, patients) {
   if (supplied.length > 0) {
     return supplied;
   }
-  return patients.filter((patient) => ['critical', 'urgent', 'high'].includes(getPatientUrgency(patient))).slice(0, 6);
+  return patients
+    .filter((patient) => asCount(patient?.critical_alert_count) > 0 || asCount(patient?.critical_unverified_result_count) > 0)
+    .slice(0, 6);
 }
 
 export function getOverdueTaskList(boardData, patients) {
@@ -280,6 +330,16 @@ export function getOverdueTaskList(boardData, patients) {
         _bed: getPatientBed(p),
       });
     });
+    if (tasks.length === 0 && getPatientOverdueTaskCount(p) > 0) {
+      list.push({
+        id: `${getPatientId(p)}:overdue-task`,
+        title: 'Overdue nursing task',
+        due_at: p?.next_nursing_task_due_at,
+        _patient_name: getPatientName(p),
+        _patient_id: getPatientId(p),
+        _bed: getPatientBed(p),
+      });
+    }
   });
   return list.slice(0, 7);
 }
@@ -298,6 +358,15 @@ export function getAbnormalResults(boardData, patients) {
         _patient_id: getPatientId(p),
       });
     });
+    if (results.length === 0 && getPatientResultCount(p) > 0) {
+      list.push({
+        id: `${getPatientId(p)}:result-review`,
+        name: asCount(p?.critical_unverified_result_count) > 0 ? 'Critical result review' : 'Result review',
+        _bed: getPatientBed(p),
+        _patient_name: getPatientName(p),
+        _patient_id: getPatientId(p),
+      });
+    }
   });
   return list.slice(0, 5);
 }
@@ -315,6 +384,15 @@ export function getDischargeBlockerList(boardData, patients) {
         _patient_id: getPatientId(p),
       });
     });
+    if (getPatientDischargeItems(p).length === 0 && getPatientDischargeCount(p) > 0) {
+      list.push({
+        id: `${getPatientId(p)}:discharge-blockers`,
+        title: 'Discharge blockers',
+        _bed: getPatientBed(p),
+        _patient_name: getPatientName(p),
+        _patient_id: getPatientId(p),
+      });
+    }
   });
   return list.slice(0, 7);
 }

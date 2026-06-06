@@ -67,6 +67,10 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
   blocker counts/status. Do not put placeholder risk labels, result values,
   note bodies, discharge hold reasons, or broad patient clinical records in the
   hot board DTO.
+- Discharge blocker source checks must be tied to the current discharge or
+  admission care journey. A patient-wide legacy discharge summary, invoice, or
+  dispense without `admission_case_id`, `encounter_id`, or `visit_id`
+  provenance must not clear or block the current admission's discharge state.
 
 ## Access Contract Rules
 

@@ -527,40 +527,63 @@ fn discharge_query() -> QueryBuilder<'static, Postgres> {
         JOIN wards
           ON wards.id = admission_cases.ward_id
          AND wards.facility_id = admission_cases.facility_id
-        LEFT JOIN (
-            SELECT facility_id,
-                   patient_id,
-                   max(updated_at) AS completed_at
+        LEFT JOIN LATERAL (
+            SELECT max(updated_at) AS completed_at
             FROM clinical_notes
-            WHERE note_type = 'doctor_note'
-              AND lower(title) = 'discharge summary'
-              AND status IN ('signed', 'amended')
-            GROUP BY facility_id, patient_id
-        ) summary_sources
-          ON summary_sources.facility_id = discharge_cases.facility_id
-         AND summary_sources.patient_id = discharge_cases.patient_id
-        LEFT JOIN (
-            SELECT facility_id,
-                   patient_id,
-                   max(dispensed_at) AS dispensed_at
-            FROM pharmacy_dispenses
-            WHERE status = 'dispensed'
-            GROUP BY facility_id, patient_id
-        ) pharmacy_sources
-          ON pharmacy_sources.facility_id = discharge_cases.facility_id
-         AND pharmacy_sources.patient_id = discharge_cases.patient_id
-        LEFT JOIN (
-            SELECT facility_id,
-                   patient_id,
-                   count(*) FILTER (WHERE status <> 'void') AS invoice_count,
-                   COALESCE(sum(GREATEST(gross_amount_minor - paid_amount_minor, 0))
-                       FILTER (WHERE status <> 'void'), 0)::bigint AS patient_balance_due_minor,
-                   max(currency) FILTER (WHERE status <> 'void') AS currency
+            WHERE clinical_notes.facility_id = discharge_cases.facility_id
+              AND clinical_notes.patient_id = discharge_cases.patient_id
+              AND clinical_notes.note_type = 'doctor_note'
+              AND lower(clinical_notes.title) = 'discharge summary'
+              AND clinical_notes.status IN ('signed', 'amended')
+              AND (
+                  (
+                      COALESCE(discharge_cases.encounter_id, admission_cases.encounter_id) IS NOT NULL
+                      AND clinical_notes.encounter_id = COALESCE(discharge_cases.encounter_id, admission_cases.encounter_id)
+                  )
+                  OR (
+                      COALESCE(discharge_cases.encounter_id, admission_cases.encounter_id) IS NULL
+                      AND COALESCE(discharge_cases.visit_id, admission_cases.visit_id) IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM encounters
+                          WHERE encounters.facility_id = discharge_cases.facility_id
+                            AND encounters.id = clinical_notes.encounter_id
+                            AND encounters.visit_id = COALESCE(discharge_cases.visit_id, admission_cases.visit_id)
+                      )
+                  )
+              )
+        ) summary_sources ON true
+        LEFT JOIN LATERAL (
+            SELECT max(pharmacy_fulfillments.dispensed_at) AS dispensed_at
+            FROM pharmacy_fulfillments
+            WHERE pharmacy_fulfillments.facility_id = discharge_cases.facility_id
+              AND pharmacy_fulfillments.patient_id = discharge_cases.patient_id
+              AND pharmacy_fulfillments.admission_case_id = discharge_cases.admission_case_id
+              AND pharmacy_fulfillments.status = 'dispensed'
+        ) pharmacy_sources ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE invoices.status <> 'void') AS invoice_count,
+                   COALESCE(sum(GREATEST(invoices.gross_amount_minor - invoices.paid_amount_minor, 0))
+                       FILTER (WHERE invoices.status <> 'void'), 0)::bigint AS patient_balance_due_minor,
+                   max(invoices.currency) FILTER (WHERE invoices.status <> 'void') AS currency
             FROM invoices
-            GROUP BY facility_id, patient_id
-        ) invoice_sources
-          ON invoice_sources.facility_id = discharge_cases.facility_id
-         AND invoice_sources.patient_id = discharge_cases.patient_id
+            WHERE invoices.facility_id = discharge_cases.facility_id
+              AND invoices.patient_id = discharge_cases.patient_id
+              AND (
+                  invoices.admission_case_id = discharge_cases.admission_case_id
+                  OR (
+                      invoices.admission_case_id IS NULL
+                      AND COALESCE(discharge_cases.encounter_id, admission_cases.encounter_id) IS NOT NULL
+                      AND invoices.encounter_id = COALESCE(discharge_cases.encounter_id, admission_cases.encounter_id)
+                  )
+                  OR (
+                      invoices.admission_case_id IS NULL
+                      AND COALESCE(discharge_cases.encounter_id, admission_cases.encounter_id) IS NULL
+                      AND COALESCE(discharge_cases.visit_id, admission_cases.visit_id) IS NOT NULL
+                      AND invoices.visit_id = COALESCE(discharge_cases.visit_id, admission_cases.visit_id)
+                  )
+              )
+        ) invoice_sources ON true
         LEFT JOIN (
             SELECT discharge_case_id,
                    max(reason) FILTER (WHERE blocker_type = 'discharge_summary' AND released_at IS NULL)

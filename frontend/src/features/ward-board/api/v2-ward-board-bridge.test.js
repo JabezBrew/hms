@@ -94,7 +94,20 @@ describe('Rust V2 ward-board bridge', () => {
               admission_status: 'admitted',
               admitted_at: '2026-05-12T08:00:00Z',
               open_nursing_task_count: 2,
+              overdue_nursing_task_count: 1,
+              next_nursing_task_due_at: '2026-05-12T09:30:00Z',
               due_medication_count: 1,
+              next_due_medication_at: '2026-05-12T09:00:00Z',
+              active_alert_count: 1,
+              critical_alert_count: 0,
+              last_vitals_recorded_at: '2026-05-12T08:30:00Z',
+              unverified_result_count: 1,
+              critical_unverified_result_count: 0,
+              pending_lab_order_count: 2,
+              discharge_case_id: 'discharge-1',
+              discharge_status: 'requested',
+              open_discharge_blocker_count: 3,
+              last_activity_at: '2026-05-12T08:45:00Z',
             },
           ],
           page: { limit: 25, has_next: false, next_cursor: null },
@@ -142,7 +155,12 @@ describe('Rust V2 ward-board bridge', () => {
           bed_label: 'B-1',
           status: 'admitted',
           open_task_count: 2,
+          overdue_task_count: 1,
           due_medication_count: 1,
+          pending_results_count: 1,
+          pending_lab_order_count: 2,
+          discharge_blocker_count: 3,
+          last_obs_at: '2026-05-12T08:30:00Z',
         }),
       ],
     });
@@ -171,6 +189,52 @@ describe('Rust V2 ward-board bridge', () => {
         method: 'POST',
         body: JSON.stringify({ limit: 25, patient_id: 'patient-1' }),
       }),
+    );
+  });
+
+  it('requests server-side attention sorting for the attention view', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await wardBoardApi.getBoard({ ward: 'ward-1', view: 'by-urgency', page_size: 25 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/board?limit=25&ward_id=ward-1&monitoring_filter=needs_attention&sort=attention',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('uses due-work filtering instead of user-owned my-work semantics', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await wardBoardApi.getBoard({ ward: 'ward-1', view: 'my-work', page_size: 25 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/board?limit=25&ward_id=ward-1&monitoring_filter=due_work',
+      expect.objectContaining({ method: 'GET' }),
     );
   });
 

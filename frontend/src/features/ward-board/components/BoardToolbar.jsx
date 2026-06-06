@@ -48,9 +48,10 @@ export function BoardToolbar({
   );
 
   const viewCounts = {
+    'by-urgency': summary?.attentionRows,
     'results': summary?.pendingResults,
-    'discharge': summary?.dischargeReady,
-    'my-work': summary?.myWork,
+    'discharge': summary?.dischargeBlockers,
+    'my-work': summary?.dueWork,
   };
 
   return (

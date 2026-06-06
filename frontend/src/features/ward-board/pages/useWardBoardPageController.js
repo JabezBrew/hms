@@ -16,7 +16,6 @@ import {
   getPatientBed,
   getPatientId,
   getPatientMrn,
-  getPatientUrgency,
   getPatientWardName,
 } from '@/features/ward-board/components';
 import {
@@ -27,32 +26,9 @@ import {
 } from '@/features/ward-board/hooks';
 
 const VIEW_VALUES = new Set(BOARD_VIEWS.map((view) => view.value));
-const URGENCY_ORDER = {
-  critical: 0,
-  urgent: 1,
-  high: 2,
-  moderate: 3,
-  medium: 4,
-  pending: 5,
-  low: 6,
-  stable: 7,
-  normal: 8,
-};
-
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function orderRowsForView(rows, view) {
-  if (view !== 'by-urgency') {
-    return rows;
-  }
-  return rows.toSorted((left, right) => {
-    const leftOrder = URGENCY_ORDER[getPatientUrgency(left)] ?? 99;
-    const rightOrder = URGENCY_ORDER[getPatientUrgency(right)] ?? 99;
-    return leftOrder - rightOrder;
-  });
 }
 
 export function rowPatientKey(patient, index) {
@@ -240,7 +216,6 @@ export function useWardBoardPageController() {
   });
 
   const patients = useMemo(() => getBoardPatients(boardData), [boardData]);
-  const orderedPatients = useMemo(() => orderRowsForView(patients, view), [patients, view]);
   const summary = useMemo(() => getBoardSummary(boardData, patients), [boardData, patients]);
   const assignedWards = useMemo(
     () => (Array.isArray(boardContext?.assigned_wards) ? boardContext.assigned_wards : []),
@@ -257,8 +232,8 @@ export function useWardBoardPageController() {
     if (selectedPatientId == null) {
       return null;
     }
-    return orderedPatients.find((patient, index) => rowPatientKey(patient, index) === selectedPatientId) ?? null;
-  }, [orderedPatients, selectedPatientId]);
+    return patients.find((patient, index) => rowPatientKey(patient, index) === selectedPatientId) ?? null;
+  }, [patients, selectedPatientId]);
   const selectedPatientContext = selectedPatient
     ? [getPatientBed(selectedPatient), getPatientWardName(selectedPatient), getPatientMrn(selectedPatient)]
         .filter(Boolean)
@@ -449,7 +424,7 @@ export function useWardBoardPageController() {
       isError,
       isFetching,
       isLiveConnected,
-      orderedPatients,
+      orderedPatients: patients,
       pageSize,
       pendingAction,
       queryPatient,

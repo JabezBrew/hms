@@ -4,17 +4,18 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useWardBoardPatient } from '@/features/ward-board/hooks';
-import { AuditEventTimeline } from './AuditEventTimeline';
 import { TaskActionControls } from './TaskActionControls';
 import {
   TASK_STATUS_STYLES,
   URGENCY_STYLES,
   formatTime,
   formatTimestamp,
-  getPatientDischargeItems,
-  getPatientEvents,
+  getPatientDischargeCount,
+  getPatientDueMedicationCount,
   getPatientId,
-  getPatientResults,
+  getPatientOverdueTaskCount,
+  getPatientPendingLabOrderCount,
+  getPatientResultCount,
   getPatientTasks,
   getTaskCategory,
   getTaskOwner,
@@ -45,12 +46,14 @@ function patientChronicleActionHref(patient, action) {
     return href;
   }
 
-  const params = new URLSearchParams({ action });
+  const [pathname, search = ''] = href.split('?');
+  const params = new URLSearchParams(search);
+  params.set('action', action);
   const admissionId = patient?.admission_id || patient?.admission_case_id || patient?.current_admission_id;
   if (admissionId) {
-    params.set('admission', admissionId);
+    params.set('admission', String(admissionId));
   }
-  return `${href}?${params.toString()}`;
+  return `${pathname}?${params.toString()}`;
 }
 
 function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
@@ -141,53 +144,68 @@ function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
   );
 }
 
-function ResultRows({ results }) {
-  if (results.length === 0) {
-    return <p className="px-1 py-2 font-mono text-xs text-muted-foreground">No pending result summaries</p>;
-  }
+function SignalCard({ label, value, meta, tone = 'info' }) {
+  const toneClassName = URGENCY_STYLES[tone] ?? URGENCY_STYLES.info;
   return (
-    <div className="space-y-1">
-      {results.slice(0, 4).map((result, index) => {
-        const status = String(result?.status ?? result?.state ?? 'pending').toLowerCase();
-        const isCritical = result?.is_critical || status === 'critical';
-        return (
-          <div key={result?.id ?? index} className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-1.5">
-            <span className={cn('size-2 rounded-full shrink-0', isCritical ? 'bg-rose-500' : 'bg-sky-400')} aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-              {result?.name ?? result?.test_name ?? result?.panel ?? 'Result'}
-            </span>
-            <Badge variant="outline" className={cn('shrink-0 font-mono text-[10px]', isCritical ? URGENCY_STYLES.critical : URGENCY_STYLES.info)}>
-              {status}
-            </Badge>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-              {formatTimestamp(result?.reported_at ?? result?.created_at)}
-            </span>
-          </div>
-        );
-      })}
+    <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+      <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 font-mono text-lg font-semibold tabular-nums text-foreground">{value}</p>
+      {meta ? (
+        <Badge variant="outline" className={cn('mt-1 font-mono text-[10px]', toneClassName)}>
+          {meta}
+        </Badge>
+      ) : null}
     </div>
   );
 }
 
-function DischargeRows({ items }) {
-  if (items.length === 0) {
-    return <p className="px-1 py-2 font-mono text-xs text-muted-foreground">No discharge blockers listed</p>;
-  }
+function BoardSignals({ patient }) {
+  const criticalAlerts = Number(patient?.critical_alert_count ?? 0);
+  const activeAlerts = Number(patient?.active_alert_count ?? 0);
+  const overdueTasks = getPatientOverdueTaskCount(patient);
+  const dueMeds = getPatientDueMedicationCount(patient);
+  const results = getPatientResultCount(patient);
+  const criticalResults = Number(patient?.critical_unverified_result_count ?? 0);
+  const labOrders = getPatientPendingLabOrderCount(patient);
+  const dischargeBlockers = getPatientDischargeCount(patient);
+  const lastObs = patient?.last_vitals_recorded_at ?? patient?.last_obs_at;
+
   return (
-    <div className="space-y-1">
-      {items.slice(0, 4).map((item, index) => (
-        <div key={item?.id ?? item?.key ?? index} className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-            {item?.title ?? item?.label ?? item?.summary ?? 'Discharge item'}
-          </span>
-          <Badge variant="outline" className={cn('shrink-0 font-mono text-[10px]', URGENCY_STYLES[String(item?.status ?? 'pending').toLowerCase()] ?? URGENCY_STYLES.moderate)}>
-            {item?.status ?? 'pending'}
-          </Badge>
-          {item?.owner ? (
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.owner}</span>
-          ) : null}
-        </div>
-      ))}
+    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <SignalCard
+        label="Safety"
+        value={activeAlerts}
+        meta={criticalAlerts > 0 ? `${criticalAlerts} critical` : null}
+        tone={criticalAlerts > 0 ? 'critical' : 'moderate'}
+      />
+      <SignalCard
+        label="Due Meds"
+        value={dueMeds}
+        meta={patient?.next_due_medication_at ? formatTime(patient.next_due_medication_at) : null}
+        tone={dueMeds > 0 ? 'high' : 'stable'}
+      />
+      <SignalCard
+        label="Results"
+        value={results}
+        meta={criticalResults > 0 ? `${criticalResults} critical` : labOrders > 0 ? `${labOrders} orders` : null}
+        tone={criticalResults > 0 ? 'critical' : 'info'}
+      />
+      <SignalCard
+        label="Discharge"
+        value={dischargeBlockers}
+        meta={patient?.discharge_status || null}
+        tone={dischargeBlockers > 0 ? 'moderate' : 'stable'}
+      />
+      <SignalCard
+        label="Overdue Tasks"
+        value={overdueTasks}
+        meta={patient?.next_nursing_task_due_at ? formatTime(patient.next_nursing_task_due_at) : null}
+        tone={overdueTasks > 0 ? 'critical' : 'stable'}
+      />
+      <SignalCard
+        label="Last Obs"
+        value={lastObs ? formatTimestamp(lastObs) : '—'}
+      />
     </div>
   );
 }
@@ -197,9 +215,6 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
   const { data, isLoading, isError, error } = useWardBoardPatient(patientId);
   const detail = data && typeof data === 'object' ? { ...patient, ...data } : patient;
   const tasks = getPatientTasks(detail);
-  const results = getPatientResults(detail);
-  const dischargeItems = getPatientDischargeItems(detail);
-  const events = getPatientEvents(detail);
 
   return (
     <div className="bg-background">
@@ -218,7 +233,7 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
       ) : null}
 
       {!isLoading ? (
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="grid gap-0">
           <div className="min-w-0 space-y-4 p-4">
             <div>
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -252,21 +267,10 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <h3 className="mb-2 font-heading text-sm font-semibold text-foreground">Pending Results</h3>
-                <ResultRows results={results} />
-              </div>
-              <div>
-                <h3 className="mb-2 font-heading text-sm font-semibold text-foreground">Discharge Blockers</h3>
-                <DischargeRows items={dischargeItems} />
-              </div>
+            <div>
+              <h3 className="mb-2 font-heading text-sm font-semibold text-foreground">Board Signals</h3>
+              <BoardSignals patient={detail} />
             </div>
-          </div>
-
-          <div className="border-t border-border/60 p-4 lg:border-l lg:border-t-0">
-            <h3 className="mb-3 font-heading text-sm font-semibold text-foreground">Audit Trail</h3>
-            <AuditEventTimeline events={events} />
           </div>
         </div>
       ) : null}

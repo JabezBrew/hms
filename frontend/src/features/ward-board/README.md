@@ -32,11 +32,18 @@ Scope: ward clinical task board UI.
   may switch between assigned wards, but the in-board toolbar must not default
   them into a hospital-wide admitted-patient list.
 - Patient rows stay fixed-height launch points. Patient-specific work opens in
-  the side drawer so task details, Chronicle shortcuts, pending results, and
-  discharge blockers do not stretch the board table.
-- Admission state and clinical risk are separate concepts in the board UI.
-  `Admitted` belongs in the status column; the risk column is only for urgency,
-  alerts, overdue work, or pending clinical attention.
+  the side drawer so task details, Chronicle shortcuts, and sourced board
+  signal cards do not stretch the board table.
+- The patient detail drawer prioritizes current clinical work and board
+  signals. Audit/compliance history must not occupy a permanent drawer rail;
+  route deeper history through Chronicle or an explicit audit surface.
+- Admission state and board attention are separate concepts in the board UI.
+  `Admitted` belongs in the status column; attention is derived only from
+  sourced signals: open alerts, open/overdue nursing tasks, due MAR items,
+  unverified results, pending lab orders, and active discharge blockers.
+- Do not show placeholder ward-board data. A visible row field must come from a
+  backend board projection, the patient task detail query, or an explicit
+  upstream workflow link.
 - Watchlist sections are board actions, not static summaries. Items should open
   the matching patient drawer when the row is visible, and section controls
   should move the board to the relevant operational view.
