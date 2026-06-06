@@ -18,9 +18,9 @@ import {
   getPatientTasks,
   getTaskCategory,
   getTaskOwner,
+  getTaskPriority,
   getTaskStatus,
   getTaskTitle,
-  getTaskUrgency,
   isAcknowledged,
   isTerminalTask,
   patientChronicleHref,
@@ -74,7 +74,7 @@ function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
         <tbody>
           {tasks.slice(0, 8).map((task, index) => {
             const status = getTaskStatus(task);
-            const urgency = getTaskUrgency(task);
+            const priority = getTaskPriority(task);
             const acked = isAcknowledged(task);
             const terminal = isTerminalTask(task);
             const isOverdue = status === 'overdue' || Boolean(task?.is_overdue);
@@ -95,9 +95,9 @@ function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
                 <td className="px-3 py-2">
                   <Badge
                     variant="outline"
-                    className={cn('font-mono text-[10px] capitalize', URGENCY_STYLES[urgency] ?? URGENCY_STYLES.pending)}
+                    className={cn('font-mono text-[10px] capitalize', URGENCY_STYLES[priority] ?? URGENCY_STYLES.pending)}
                   >
-                    {urgency}
+                    {priority}
                   </Badge>
                 </td>
                 <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
@@ -202,7 +202,7 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
   const events = getPatientEvents(detail);
 
   return (
-    <div className="border-t border-border bg-muted/10">
+    <div className="bg-background">
       {isLoading ? (
         <div className="space-y-2 p-4">
           <Skeleton className="h-8 w-full rounded" />
@@ -223,7 +223,7 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
             <div>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="font-heading text-sm font-semibold text-foreground">
-                  Active Tasks for this patient
+                  Patient Work
                 </h3>
                 <Link
                   to={patientChronicleHref(detail)}
@@ -234,7 +234,7 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
                 </Link>
               </div>
               <div className="mb-3 flex flex-wrap gap-2">
-                  {PATIENT_CHRONICLE_QUICK_ACTIONS.map((item) => (
+                {PATIENT_CHRONICLE_QUICK_ACTIONS.map((item) => (
                   <Link
                     key={item.action}
                     to={patientChronicleActionHref(detail, item.action)}

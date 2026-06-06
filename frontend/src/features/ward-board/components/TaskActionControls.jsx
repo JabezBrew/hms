@@ -9,13 +9,13 @@ import { getTaskId, getTaskStatus, isTerminalTask } from './wardBoardUtils';
 
 const LEGACY_ACTIONS = [
   { action: 'acknowledge', label: 'Ack', icon: Check },
-  { action: 'complete', label: 'Done', icon: CheckCircle2 },
+  { action: 'complete', label: 'Complete', icon: CheckCircle2 },
   { action: 'cancel', label: 'Cancel', icon: XCircle },
   { action: 'escalate', label: 'Escalate', icon: ArrowUpRight },
 ];
 
 const RUST_V2_ACTIONS = [
-  { action: 'complete', label: 'Done', icon: CheckCircle2 },
+  { action: 'complete', label: 'Complete', icon: CheckCircle2 },
   { action: 'cancel', label: 'Cancel', icon: XCircle },
 ];
 
@@ -31,7 +31,7 @@ export function TaskActionControls({
   const terminal = isTerminalTask(task);
   const actions = isRustV2ApiMode() ? RUST_V2_ACTIONS : LEGACY_ACTIONS;
 
-  if (!taskId) {
+  if (!taskId || terminal) {
     return null;
   }
 
@@ -40,7 +40,7 @@ export function TaskActionControls({
       {actions.map((item) => {
         const Icon = item.icon;
         const isPending = pendingAction?.taskId === taskId && pendingAction?.action === item.action;
-        const disabled = terminal || isPending;
+        const disabled = isPending;
         return (
           <Button
             key={item.action}

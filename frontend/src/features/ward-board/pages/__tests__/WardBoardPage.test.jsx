@@ -1,19 +1,27 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import WardBoardPage from '../WardBoardPage';
 import {
   useWardBoard,
+  useWardBoardContext,
   useWardBoardLiveUpdates,
   useWardBoardTaskAction,
   useWardBoardPatient,
 } from '@/features/ward-board/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 vi.mock('@/features/ward-board/hooks', () => ({
   useWardBoard: vi.fn(),
+  useWardBoardContext: vi.fn(),
   useWardBoardLiveUpdates: vi.fn(),
   useWardBoardTaskAction: vi.fn(),
   useWardBoardPatient: vi.fn(),
+}));
+
+vi.mock('@/lib/api/v2/runtime', () => ({
+  isRustV2ApiMode: vi.fn(() => false),
 }));
 
 vi.mock('@/shared/hooks/usePageMeta', () => ({
@@ -32,9 +40,11 @@ vi.mock('sonner', () => ({
 }));
 
 const mockUseWardBoard = vi.mocked(useWardBoard);
+const mockUseWardBoardContext = vi.mocked(useWardBoardContext);
 const mockUseWardBoardLiveUpdates = vi.mocked(useWardBoardLiveUpdates);
 const mockUseWardBoardTaskAction = vi.mocked(useWardBoardTaskAction);
 const mockUseWardBoardPatient = vi.mocked(useWardBoardPatient);
+const mockIsRustV2ApiMode = vi.mocked(isRustV2ApiMode);
 
 function boardResponse(overrides = {}) {
   return {
@@ -78,9 +88,45 @@ function renderPage(route, path = '/ward-board') {
   );
 }
 
+function LocationProbe({ onLocation }) {
+  const location = useLocation();
+  useEffect(() => {
+    onLocation(location);
+  }, [location, onLocation]);
+  return null;
+}
+
+function renderPageWithLocation(route, onLocation) {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <Routes>
+        <Route
+          path="/ward-board"
+          element={(
+            <>
+              <WardBoardPage />
+              <LocationProbe onLocation={onLocation} />
+            </>
+          )}
+        />
+        <Route
+          path="/wards/:wardId/board"
+          element={(
+            <>
+              <WardBoardPage />
+              <LocationProbe onLocation={onLocation} />
+            </>
+          )}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
 describe('WardBoardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsRustV2ApiMode.mockReturnValue(false);
     mockUseWardBoard.mockReturnValue({
       data: boardResponse(),
       isLoading: false,
@@ -90,6 +136,18 @@ describe('WardBoardPage', () => {
       refetch: vi.fn(),
     });
     mockUseWardBoardTaskAction.mockReturnValue({ mutate: vi.fn() });
+    mockUseWardBoardContext.mockReturnValue({
+      data: {
+        assigned_wards: [],
+        default_ward_id: null,
+        can_view_all_wards: true,
+        default_route: '/ward-board',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     mockUseWardBoardLiveUpdates.mockReturnValue({
       isConnected: true,
       connectionError: null,
@@ -105,14 +163,15 @@ describe('WardBoardPage', () => {
   it('reads ward board filters from query params and renders patient rows', async () => {
     renderPage('/ward-board?ward=ward-1&view=results&search=cbc&page=2&page_size=10');
 
-    expect(mockUseWardBoard).toHaveBeenCalledWith({
+    expect(mockUseWardBoard.mock.calls.at(-1)[0]).toEqual({
       ward: 'ward-1',
       view: 'results',
       search: 'cbc',
       page: 2,
       page_size: 10,
     });
-    expect(screen.getByText('Ward Board')).toBeInTheDocument();
+    expect(screen.getByText('Ward A')).toBeInTheDocument();
+    expect(screen.getByText(/Ward Board · Live clinical task board/)).toBeInTheDocument();
     expect(await screen.findAllByText('Ama Mensah')).toHaveLength(2);
     expect(await screen.findByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true');
   });
@@ -120,11 +179,60 @@ describe('WardBoardPage', () => {
   it('passes patient-scoped board query params into the ward board query', () => {
     renderPage('/ward-board?patient=patient-1');
 
-    expect(mockUseWardBoard).toHaveBeenCalledWith({
+    expect(mockUseWardBoard.mock.calls.at(-1)[0]).toEqual({
       patient: 'patient-1',
       view: 'by-patient',
       page: 1,
       page_size: 25,
+    });
+  });
+
+  it('preserves patient filters when the Rust V2 resolver redirects to the default ward', async () => {
+    mockIsRustV2ApiMode.mockReturnValue(true);
+    mockUseWardBoardContext.mockReturnValue({
+      data: {
+        assigned_wards: [{
+          assignment_id: 'assignment-1',
+          ward_id: 'ward-default',
+          ward_name: 'Default Ward',
+          role_name: 'Staff Nurse',
+          is_primary: true,
+        }],
+        default_ward_id: 'ward-default',
+        can_view_all_wards: false,
+        default_route: '/wards/ward-default/board',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const locations = [];
+
+    renderPageWithLocation('/ward-board?patient=patient-1&view=discharge', (location) => {
+      locations.push({
+        pathname: location.pathname,
+        search: location.search,
+        state: location.state,
+      });
+    });
+
+    await waitFor(() => {
+      expect(locations.at(-1)?.pathname).toBe('/wards/ward-default/board');
+    });
+    expect(locations.at(-1)?.search).toBe('?view=discharge&page=1');
+    expect(locations.at(-1)?.state?.['wardBoard:privateFilters']).toEqual({
+      search: '',
+      patient: 'patient-1',
+    });
+    await waitFor(() => {
+      expect(mockUseWardBoard.mock.calls.at(-1)[0]).toEqual({
+        ward: 'ward-default',
+        patient: 'patient-1',
+        view: 'discharge',
+        page: 1,
+        page_size: 25,
+      });
     });
   });
 
@@ -137,7 +245,7 @@ describe('WardBoardPage', () => {
       page: 1,
       page_size: 30,
     });
-    expect(screen.getByText(/ward-7/)).toBeInTheDocument();
+    expect(screen.getByText('Ward A')).toBeInTheDocument();
   });
 
   it('shows the empty board state when no patients match', async () => {
@@ -153,7 +261,7 @@ describe('WardBoardPage', () => {
     renderPage('/ward-board?view=my-work');
 
     expect(await screen.findByText('No ward board patients')).toBeInTheDocument();
-    expect(mockUseWardBoard).toHaveBeenCalledWith({
+    expect(mockUseWardBoard.mock.calls.at(-1)[0]).toEqual({
       view: 'my-work',
       page: 1,
       page_size: 25,
@@ -193,5 +301,53 @@ describe('WardBoardPage', () => {
     expect(await screen.findAllByText('urgent')).not.toHaveLength(0);
     expect(await screen.findByText('Overdue')).toBeInTheDocument();
     expect(screen.getAllByText('4')).not.toHaveLength(0);
+  });
+
+  it('opens patient work in a side drawer from a stable patient row', async () => {
+    renderPage('/ward-board');
+
+    const patientRows = await screen.findAllByLabelText(/Open ward-board details for Ama Mensah/);
+    fireEvent.click(patientRows[0]);
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Patient Work')).toBeInTheDocument();
+    expect(screen.getAllByText('Review medication chart')).not.toHaveLength(0);
+  });
+
+  it('uses assigned-ward switching instead of an all-ward selector on ward boards', async () => {
+    mockIsRustV2ApiMode.mockReturnValue(true);
+    mockUseWardBoardContext.mockReturnValue({
+      data: {
+        assigned_wards: [
+          {
+            assignment_id: 'assignment-a',
+            ward_id: 'ward-a',
+            ward_name: 'Medical Ward',
+            role_name: 'Staff Nurse',
+            is_primary: true,
+          },
+          {
+            assignment_id: 'assignment-b',
+            ward_id: 'ward-b',
+            ward_name: 'Surgical Ward',
+            role_name: 'Staff Nurse',
+            is_primary: false,
+          },
+        ],
+        default_ward_id: 'ward-a',
+        can_view_all_wards: false,
+        default_route: '/wards/ward-a/board',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/wards/ward-a/board', '/wards/:wardId/board');
+
+    expect(await screen.findByText('Medical Ward')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Assigned ward')).toBeInTheDocument();
+    expect(screen.queryByText('All Wards')).not.toBeInTheDocument();
   });
 });

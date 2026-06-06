@@ -8,11 +8,11 @@ const SHORT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
 const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 
 export const BOARD_VIEWS = [
-  { value: 'by-patient', label: 'By Patient' },
-  { value: 'by-urgency', label: 'By Urgency' },
+  { value: 'by-patient', label: 'All Patients' },
+  { value: 'by-urgency', label: 'Needs Attention' },
   { value: 'results', label: 'Results' },
-  { value: 'discharge', label: 'Discharge' },
-  { value: 'my-work', label: 'My Work' },
+  { value: 'discharge', label: 'Discharges' },
+  { value: 'my-work', label: 'My Tasks' },
 ];
 
 export const DEFAULT_BOARD_VIEW = BOARD_VIEWS[0].value;
@@ -27,6 +27,7 @@ export const URGENCY_STYLES = {
   medium: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300',
   pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300',
   low: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300',
+  routine: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300',
   stable: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300',
   normal: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300',
   info: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300',
@@ -120,6 +121,16 @@ export function getPatientBed(patient) {
   return patient?.bed_label ?? patient?.bed_name ?? patient?.bed?.label ?? patient?.bed?.name ?? patient?.bed_number ?? patient?.room_bed;
 }
 
+export function getPatientWardName(patient) {
+  return patient?.ward_name ?? patient?.ward?.name ?? patient?.ward_label ?? null;
+}
+
+export function getPatientStatus(patient) {
+  const raw = patient?.admission_status ?? patient?.status ?? patient?.patient_status ?? patient?.state;
+  if (!raw) return 'admitted';
+  return String(raw).replace(/_/g, ' ');
+}
+
 export function getPatientAge(patient) {
   return patient?.age ?? patient?.patient?.age ?? null;
 }
@@ -144,7 +155,7 @@ export function getPatientOwner(patient) {
 }
 
 export function getPatientUrgency(patient) {
-  const supplied = patient?.urgency ?? patient?.priority ?? patient?.risk_level ?? patient?.risk ?? patient?.status;
+  const supplied = patient?.urgency ?? patient?.priority ?? patient?.risk_level ?? patient?.risk;
   if (supplied) {
     return String(supplied).toLowerCase();
   }
@@ -201,6 +212,48 @@ export function getPatientDischargeCount(patient) {
   return items.length > 0 ? items.length : asCount(patient?.discharge_task_count);
 }
 
+export function getPatientNextAction(patient) {
+  const tasks = getPatientTasks(patient).filter((task) => !isTerminalTask(task));
+  if (tasks.length > 0) {
+    const task = tasks.toSorted((left, right) => {
+      const leftTime = new Date(left?.due_at ?? left?.due_time ?? left?.target_time ?? 0).getTime();
+      const rightTime = new Date(right?.due_at ?? right?.due_time ?? right?.target_time ?? 0).getTime();
+      return (Number.isFinite(leftTime) ? leftTime : Number.MAX_SAFE_INTEGER)
+        - (Number.isFinite(rightTime) ? rightTime : Number.MAX_SAFE_INTEGER);
+    })[0];
+    const due = formatTime(task?.due_at ?? task?.due_time ?? task?.target_time);
+    return {
+      label: getTaskTitle(task),
+      meta: due ? `Due ${due}` : getTaskCategory(task),
+      tone: getTaskStatus(task) === 'overdue' || task?.is_overdue ? 'critical' : getTaskPriority(task),
+    };
+  }
+
+  const results = getPatientResults(patient);
+  if (results.length > 0 || asCount(patient?.open_lab_order_count) > 0) {
+    return {
+      label: 'Review pending result',
+      meta: results[0]?.test_name ?? results[0]?.name ?? null,
+      tone: 'info',
+    };
+  }
+
+  const dischargeItems = getPatientDischargeItems(patient);
+  if (dischargeItems.length > 0 || asCount(patient?.discharge_task_count) > 0) {
+    return {
+      label: 'Clear discharge blocker',
+      meta: dischargeItems[0]?.owner ?? dischargeItems[0]?.status ?? null,
+      tone: 'moderate',
+    };
+  }
+
+  return {
+    label: 'Routine observation',
+    meta: null,
+    tone: 'stable',
+  };
+}
+
 export function getPatientEvents(patient) {
   return asArray(patient?.events ?? patient?.timeline ?? patient?.audit_events);
 }
@@ -220,7 +273,12 @@ export function getOverdueTaskList(boardData, patients) {
   patients.forEach((p) => {
     const tasks = getPatientTasks(p).filter((t) => getTaskStatus(t) === 'overdue');
     tasks.slice(0, 2).forEach((t) => {
-      list.push({ ...t, _patient_name: getPatientName(p), _bed: getPatientBed(p) });
+      list.push({
+        ...t,
+        _patient_name: getPatientName(p),
+        _patient_id: getPatientId(p),
+        _bed: getPatientBed(p),
+      });
     });
   });
   return list.slice(0, 7);
@@ -233,10 +291,32 @@ export function getAbnormalResults(boardData, patients) {
   patients.forEach((p) => {
     const results = getPatientResults(p).filter((r) => r?.is_critical || r?.is_abnormal || r?.flag === 'critical');
     results.slice(0, 2).forEach((r) => {
-      list.push({ ...r, _bed: getPatientBed(p), _patient_name: getPatientName(p) });
+      list.push({
+        ...r,
+        _bed: getPatientBed(p),
+        _patient_name: getPatientName(p),
+        _patient_id: getPatientId(p),
+      });
     });
   });
   return list.slice(0, 5);
+}
+
+export function getDischargeBlockerList(boardData, patients) {
+  const supplied = asArray(boardData?.discharge_blockers ?? boardData?.discharge_items);
+  if (supplied.length > 0) return supplied;
+  const list = [];
+  patients.forEach((p) => {
+    getPatientDischargeItems(p).slice(0, 2).forEach((item) => {
+      list.push({
+        ...item,
+        _bed: getPatientBed(p),
+        _patient_name: getPatientName(p),
+        _patient_id: getPatientId(p),
+      });
+    });
+  });
+  return list.slice(0, 7);
 }
 
 export function getTaskId(task) {
@@ -252,7 +332,19 @@ export function getTaskStatus(task) {
 }
 
 export function getTaskUrgency(task) {
-  return String(task?.urgency ?? task?.priority ?? task?.risk_level ?? getTaskStatus(task)).toLowerCase();
+  return getTaskPriority(task);
+}
+
+export function getTaskPriority(task) {
+  const supplied = task?.urgency ?? task?.priority ?? task?.risk_level;
+  if (supplied) {
+    return String(supplied).toLowerCase();
+  }
+  const status = getTaskStatus(task);
+  if (['overdue', 'blocked', 'escalated'].includes(status) || task?.is_overdue) {
+    return 'critical';
+  }
+  return 'routine';
 }
 
 export function getTaskCategory(task) {
@@ -291,5 +383,14 @@ export function formatTime(value) {
 
 export function patientChronicleHref(patient) {
   const patientId = getPatientId(patient);
-  return patientId ? `/patients/${patientId}` : '/patients';
+  if (!patientId) {
+    return '/patients';
+  }
+  const params = new URLSearchParams();
+  const admissionId = patient?.admission_id || patient?.admission_case_id || patient?.current_admission_id;
+  if (admissionId) {
+    params.set('admission', String(admissionId));
+  }
+  const query = params.toString();
+  return `/patients/${patientId}${query ? `?${query}` : ''}`;
 }

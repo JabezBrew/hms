@@ -1,9 +1,8 @@
-import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ExpandedPatientDetailPanel } from './ExpandedPatientDetailPanel';
 import {
   URGENCY_STYLES,
   formatTimestamp,
@@ -12,12 +11,15 @@ import {
   getPatientDischargeCount,
   getPatientMrn,
   getPatientName,
+  getPatientNextAction,
   getPatientOwner,
   getPatientProblems,
   getPatientResultCount,
   getPatientSex,
+  getPatientStatus,
   getPatientTaskCount,
   getPatientUrgency,
+  getPatientWardName,
   patientChronicleHref,
 } from './wardBoardUtils';
 
@@ -62,6 +64,20 @@ function TaskCell({ patient }) {
   );
 }
 
+function StatusCell({ patient }) {
+  const status = getPatientStatus(patient);
+  const normalized = String(status).toLowerCase();
+  const className = normalized.includes('discharge')
+    ? 'border-amber-200 bg-amber-50 text-amber-700'
+    : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+
+  return (
+    <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', className)}>
+      {status}
+    </Badge>
+  );
+}
+
 function ResultCell({ patient }) {
   const count = getPatientResultCount(patient);
   const due = patient?.reviews_due_count ?? 0;
@@ -82,10 +98,27 @@ function ResultCell({ patient }) {
   );
 }
 
-export function PatientRow({ patient, expanded, onToggle, onTaskAction, pendingAction }) {
+function NextActionCell({ patient }) {
+  const nextAction = getPatientNextAction(patient);
+  const toneClassName = URGENCY_STYLES[nextAction.tone] ?? URGENCY_STYLES.stable;
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-xs font-medium text-foreground">{nextAction.label}</p>
+      <div className="mt-1 flex items-center gap-1.5">
+        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full border', toneClassName)} aria-hidden="true" />
+        <span className="truncate font-mono text-[10px] text-muted-foreground">
+          {nextAction.meta || 'Next routine check'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function PatientRow({ patient, selected, onOpenDetail }) {
   const name = getPatientName(patient);
   const mrn = getPatientMrn(patient);
   const bed = getPatientBed(patient);
+  const wardName = getPatientWardName(patient);
   const urgency = getPatientUrgency(patient);
   const age = getPatientAge(patient);
   const sex = getPatientSex(patient);
@@ -94,118 +127,111 @@ export function PatientRow({ patient, expanded, onToggle, onTaskAction, pendingA
   const lastEvent = patient?.last_event_at ?? patient?.updated_at ?? patient?.last_updated;
   const urgencyClassName = URGENCY_STYLES[urgency] ?? URGENCY_STYLES.stable;
   const isCritical = ['critical', 'urgent', 'high'].includes(urgency);
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onOpenDetail?.();
+    }
+  };
 
   return (
-    <>
-      <tr
-        className={cn(
-          'group cursor-pointer border-b border-border transition-colors last:border-b-0',
-          isCritical ? 'bg-rose-50/30 dark:bg-rose-950/10' : 'bg-card hover:bg-muted/20'
-        )}
-        onClick={onToggle}
-        aria-expanded={expanded}
-      >
-        <td className="p-3 align-middle">
-          <div className="flex flex-col">
-            <span className="font-mono text-[9px] uppercase leading-none text-muted-foreground">Bed</span>
-            <span className="font-mono text-sm font-medium leading-tight text-foreground">{bed ?? '—'}</span>
-          </div>
-        </td>
+    <tr
+      className={cn(
+        'group cursor-pointer border-b border-border transition-colors last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500',
+        selected && 'bg-amber-50/50 dark:bg-amber-950/10',
+        isCritical ? 'bg-rose-50/30 dark:bg-rose-950/10' : 'bg-card hover:bg-muted/20'
+      )}
+      onClick={onOpenDetail}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      aria-label={`Open ward-board details for ${name}`}
+    >
+      <td className="p-3 align-middle">
+        <div className="flex flex-col">
+          <span className="font-mono text-[9px] uppercase leading-none text-muted-foreground">Bed</span>
+          <span className="font-mono text-sm font-medium leading-tight text-foreground">{bed ?? '—'}</span>
+          {wardName ? (
+            <span className="mt-1 max-w-20 truncate font-mono text-[9px] text-muted-foreground">{wardName}</span>
+          ) : null}
+        </div>
+      </td>
 
-        <td className="p-3 align-middle">
-          <div className="min-w-0">
-            <p className="truncate font-display text-base leading-tight text-foreground">{name}</p>
-            <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-              {[mrn, age != null ? `${age} Y` : null, sex].filter(Boolean).join(' · ')}
-            </p>
-          </div>
-        </td>
-
-        <td className="p-3 align-middle">
-          <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', urgencyClassName)}>
-            {urgency}
-          </Badge>
-        </td>
-
-        <td className="p-3 align-middle">
-          <p className="truncate text-xs text-foreground">
-            {problems ?? <span className="text-muted-foreground">-</span>}
+      <td className="p-3 align-middle">
+        <div className="min-w-0">
+          <p className="truncate font-display text-base leading-tight text-foreground">{name}</p>
+          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+            {[mrn, age != null ? `${age} Y` : null, sex].filter(Boolean).join(' · ')}
           </p>
-        </td>
+          {problems ? (
+            <p className="mt-1 truncate text-[11px] text-muted-foreground">{problems}</p>
+          ) : null}
+        </div>
+      </td>
 
-        <td className="p-3 align-middle">
-          <ResultCell patient={patient} />
-        </td>
+      <td className="p-3 align-middle">
+        <StatusCell patient={patient} />
+      </td>
 
-        <td className="p-3 align-middle">
-          {(patient?.reviews_due_count ?? 0) > 0 ? (
-            <Badge variant="outline" className="border-amber-200 bg-amber-50 font-mono text-[10px] text-amber-700">
-              Due soon
-            </Badge>
-          ) : (
-            <span className="font-mono text-[11px] text-muted-foreground">-</span>
-          )}
-        </td>
+      <td className="p-3 align-middle">
+        <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', urgencyClassName)}>
+          {urgency}
+        </Badge>
+      </td>
 
-        <td className="p-3 align-middle">
-          <TaskCell patient={patient} />
-        </td>
+      <td className="p-3 align-middle">
+        <NextActionCell patient={patient} />
+      </td>
 
-        <td className="p-3 align-middle">
-          <DischargeCell patient={patient} />
-        </td>
+      <td className="p-3 align-middle">
+        <ResultCell patient={patient} />
+      </td>
 
-        <td className="p-3 align-middle">
-          <p className="truncate font-mono text-[11px] text-foreground">{owner ?? '—'}</p>
-        </td>
+      <td className="p-3 align-middle">
+        <TaskCell patient={patient} />
+      </td>
 
-        <td className="p-3 align-middle">
-          <div className="flex items-center justify-between gap-1">
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {lastEvent ? formatTimestamp(lastEvent) : '—'}
-            </span>
-            <Link
-              to={patientChronicleHref(patient)}
-              onClick={(e) => e.stopPropagation()}
-              className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-              tabIndex={-1}
-              aria-label={`Open Chronicle for ${name}`}
-            >
-              <ExternalLink className="size-3 text-muted-foreground hover:text-amber-700" />
-            </Link>
-            <ChevronDown
-              className={cn('size-4 shrink-0 text-muted-foreground transition-transform duration-150', expanded && 'rotate-180')}
-              aria-hidden="true"
-            />
-          </div>
-        </td>
-      </tr>
+      <td className="p-3 align-middle">
+        <DischargeCell patient={patient} />
+      </td>
 
-      {expanded ? (
-        <tr>
-          <td colSpan={10} className="p-0">
-            <ExpandedPatientDetailPanel
-              patient={patient}
-              onTaskAction={onTaskAction}
-              pendingAction={pendingAction}
-            />
-          </td>
-        </tr>
-      ) : null}
-    </>
+      <td className="p-3 align-middle">
+        <p className="truncate font-mono text-[11px] text-foreground">{owner ?? '—'}</p>
+      </td>
+
+      <td className="p-3 align-middle">
+        <div className="flex items-center justify-between gap-1">
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {lastEvent ? formatTimestamp(lastEvent) : '—'}
+          </span>
+          <Link
+            to={patientChronicleHref(patient)}
+            onClick={(e) => e.stopPropagation()}
+            className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+            tabIndex={-1}
+            aria-label={`Open Chronicle for ${name}`}
+          >
+            <ExternalLink className="size-3 text-muted-foreground hover:text-amber-700" />
+          </Link>
+          <ChevronRight
+            className={cn('size-4 shrink-0 text-muted-foreground transition-transform duration-150', selected && 'text-amber-600')}
+            aria-hidden="true"
+          />
+        </div>
+      </td>
+    </tr>
   );
 }
 
 export function PatientTable({ children }) {
   return (
-    <table className="w-full min-w-[900px] border-collapse text-left">
+    <table className="w-full min-w-[1040px] border-collapse text-left">
       <colgroup>
-        <col className="w-16" />
-        <col className="w-48" />
+        <col className="w-20" />
+        <col className="w-56" />
+        <col className="w-28" />
         <col className="w-24" />
-        <col className="w-48" />
+        <col className="w-56" />
         <col className="w-32" />
-        <col className="w-24" />
         <col className="w-24" />
         <col className="w-28" />
         <col className="w-36" />
@@ -213,7 +239,7 @@ export function PatientTable({ children }) {
       </colgroup>
       <thead className="sticky top-0 z-10">
         <tr className="border-b border-border bg-muted/80 backdrop-blur-sm">
-          {['Bed', 'Patient', 'Risk', 'Active Problems', 'Pending Results', 'Reviews', 'Tasks', 'Discharge', 'Owner', 'Updated'].map((col) => (
+          {['Bed', 'Patient', 'Status', 'Risk', 'Next due', 'Results', 'Tasks', 'Discharge', 'Owner', 'Updated'].map((col) => (
             <th
               key={col}
               scope="col"
