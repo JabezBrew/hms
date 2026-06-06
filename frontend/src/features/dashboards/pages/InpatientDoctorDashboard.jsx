@@ -38,6 +38,15 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 
+function dischargeWardBoardPath(discharge) {
+  const params = new URLSearchParams({ view: 'discharge' });
+  if (discharge?.patient_id) params.set('patient', discharge.patient_id);
+  if (discharge?.id) params.set('case', discharge.id);
+  const wardId = discharge?.ward_id || discharge?.ward || discharge?.admission_ward_id || null;
+  const basePath = wardId ? `/wards/${wardId}/board` : '/ward-board';
+  return `${basePath}?${params.toString()}`;
+}
+
 export default function InpatientDoctorDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
@@ -325,9 +334,7 @@ export default function InpatientDoctorDashboard() {
               moduleGate={moduleGate}
               canUseDischarge={canUseDischarge}
               canUsePatientChronicle={canUsePatientChronicle}
-              onStartDischarge={(discharge) => navigate(
-                `/ward-board?view=discharge&patient=${discharge.patient_id}&case=${discharge.id}`
-              )}
+              onStartDischarge={(discharge) => navigate(dischargeWardBoardPath(discharge))}
               onViewPatient={(patientId) => navigate(`/patients/${patientId}`)}
             />
           ) : null}

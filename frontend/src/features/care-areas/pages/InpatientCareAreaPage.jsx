@@ -4,6 +4,7 @@ import FileStack from 'lucide-react/dist/esm/icons/files.js';
 import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
+import { useWardBoardContext } from '@/features/ward-board/hooks';
 import { useWards } from '@/features/wards/hooks/useWardQueries';
 import { normalizeApiResults } from '@/lib/utils';
 
@@ -13,6 +14,10 @@ import {
   CareAreaGrid,
   CareAreaScaffold,
 } from '../components/CareAreaScaffold';
+import {
+  CareAreaSection,
+  MyWorkPreviewList,
+} from '../components/CareAreaWorkTables';
 
 export default function InpatientCareAreaPage() {
   const {
@@ -21,7 +26,14 @@ export default function InpatientCareAreaPage() {
     error,
     refetch,
   } = useWards({ is_active: true });
+  const {
+    data: boardContext,
+    isLoading: isContextLoading,
+    error: contextError,
+    refetch: refetchContext,
+  } = useWardBoardContext();
   const wards = normalizeApiResults(wardsData);
+  const assignedWards = Array.isArray(boardContext?.assigned_wards) ? boardContext.assigned_wards : [];
 
   return (
     <CareAreaScaffold
@@ -50,6 +62,29 @@ export default function InpatientCareAreaPage() {
           actionLabel="Open queue"
         />
       </CareAreaGrid>
+
+      <CareAreaSection
+        title="Assigned Wards"
+        description="Ward-board entry points scoped to your current inpatient assignments"
+        action={boardContext?.can_view_all_wards ? (
+          <Button asChild size="sm" variant="outline" className="font-mono text-xs">
+            <Link to="/ward-board?scope=all">All wards</Link>
+          </Button>
+        ) : null}
+      >
+        {isContextLoading ? (
+          <p className="px-4 py-8 text-sm text-muted-foreground">Loading ward assignments</p>
+        ) : contextError ? (
+          <div className="space-y-3 px-4 py-6">
+            <p className="text-sm text-muted-foreground">{contextError.message || 'Ward assignments could not be loaded.'}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetchContext()}>
+              Retry
+            </Button>
+          </div>
+        ) : (
+          <MyWorkPreviewList items={assignedWards} type="ward" />
+        )}
+      </CareAreaSection>
 
       {isLoading ? (
         <CareAreaEmptyState

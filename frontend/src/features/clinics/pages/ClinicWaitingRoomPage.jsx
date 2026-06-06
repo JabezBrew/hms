@@ -136,7 +136,16 @@ export default function ClinicWaitingRoomPage() {
   }
 
   const handlePatientClick = (visit) => {
-    navigate(`/patients/${visit.patient_id || visit.encounter_id}`);
+    const patientId = visit.patient_id || visit.patient;
+    if (!patientId) {
+      return;
+    }
+    const params = new URLSearchParams();
+    if (visit.encounter_id) {
+      params.set('visit', String(visit.encounter_id));
+    }
+    const query = params.toString();
+    navigate(`/patients/${patientId}${query ? `?${query}` : ''}`);
   };
 
   return (

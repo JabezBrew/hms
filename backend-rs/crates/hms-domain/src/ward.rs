@@ -405,6 +405,131 @@ impl From<WardBoardGetQuery> for WardBoardQuery {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WardStaffRoleCategory {
+    Nursing,
+    Medical,
+    Allied,
+    Operational,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct WardStaffRoleListQuery {
+    pub category: Option<WardStaffRoleCategory>,
+    pub show_inactive: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardStaffRoleItem {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub category: WardStaffRoleCategory,
+    pub description: Option<String>,
+    pub is_active: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct WardStaffListQuery {
+    pub category: Option<WardStaffRoleCategory>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardStaffListItem {
+    pub id: Uuid,
+    pub practitioner_id: Uuid,
+    pub user_id: Uuid,
+    pub full_name: String,
+    pub role_name: String,
+    pub role_category: WardStaffRoleCategory,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct WardStaffAssignmentListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    #[serde(alias = "ward")]
+    pub ward_id: Option<Uuid>,
+    #[serde(alias = "practitioner")]
+    pub practitioner_id: Option<Uuid>,
+    pub category: Option<WardStaffRoleCategory>,
+    pub show_inactive: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct WardStaffAssignmentByPractitionerQuery {
+    pub practitioner_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WardStaffAssignmentListItem {
+    pub id: Uuid,
+    pub ward_id: Uuid,
+    pub ward: Uuid,
+    pub ward_name: String,
+    pub practitioner_id: Uuid,
+    pub practitioner: Uuid,
+    pub practitioner_name: String,
+    pub user_id: Uuid,
+    pub role_code: String,
+    pub role: String,
+    pub role_name: String,
+    pub role_category: WardStaffRoleCategory,
+    pub is_active: bool,
+    pub is_primary: bool,
+    pub assigned_at: DateTime<Utc>,
+    pub assigned_by_user_id: Option<Uuid>,
+    pub assigned_by_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateWardStaffAssignmentRequest {
+    #[serde(alias = "ward")]
+    pub ward_id: Uuid,
+    #[serde(alias = "practitioner")]
+    pub practitioner_id: Uuid,
+    #[serde(alias = "role")]
+    pub role_code: String,
+    pub is_active: Option<bool>,
+    pub is_primary: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateWardStaffAssignmentRequest {
+    #[serde(alias = "ward")]
+    pub ward_id: Option<Uuid>,
+    #[serde(alias = "practitioner")]
+    pub practitioner_id: Option<Uuid>,
+    #[serde(alias = "role")]
+    pub role_code: Option<String>,
+    pub is_active: Option<bool>,
+    pub is_primary: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct MyWardBoardAssignment {
+    pub assignment_id: Uuid,
+    pub ward_id: Uuid,
+    pub ward_name: String,
+    pub role_name: String,
+    pub role_category: WardStaffRoleCategory,
+    pub is_primary: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct MyWardBoardContextResponse {
+    pub assigned_wards: Vec<MyWardBoardAssignment>,
+    pub primary_ward_id: Option<Uuid>,
+    pub default_ward_id: Option<Uuid>,
+    pub can_view_all_wards: bool,
+    pub default_route: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct AdmissionCaseListItem {
     pub id: Uuid,

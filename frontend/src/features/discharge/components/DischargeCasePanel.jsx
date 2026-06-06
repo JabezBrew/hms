@@ -45,7 +45,13 @@ function dischargeWorkflowPath(caseItem) {
   const params = new URLSearchParams({ view: 'discharge' })
   if (caseItem?.patient) params.set('patient', caseItem.patient)
   if (caseItem.id) params.set('case', caseItem.id)
-  return `/ward-board?${params.toString()}`
+  const wardId = caseItem?.ward_id
+    || caseItem?.ward
+    || caseItem?.admission_ward_id
+    || caseItem?.admission?.ward_id
+    || null
+  const basePath = wardId ? `/wards/${wardId}/board` : '/ward-board'
+  return `${basePath}?${params.toString()}`
 }
 
 export function DischargeCasePanel({ admissionId, title = 'Discharge Status', className = '', enabled = true }) {

@@ -23,8 +23,17 @@ pub struct CareCursor {
 pub struct AppointmentFilters {
     pub date: Option<NaiveDate>,
     pub clinic_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
     pub status: Option<AppointmentStatus>,
     pub search: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VisitFilters {
+    pub clinic_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub status: Option<VisitStatus>,
+    pub active_only: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -41,6 +50,7 @@ pub struct EncounterFilters {
 pub struct TriageFilters {
     pub acuity: Option<TriageAcuity>,
     pub status: Option<TriageStatus>,
+    pub assigned_to_user_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug)]
@@ -307,6 +317,7 @@ struct VisitRow {
     patient_code: String,
     patient_display_name: String,
     appointment_id: Option<Uuid>,
+    encounter_id: Option<Uuid>,
     clinic_id: Option<Uuid>,
     status: String,
     checked_in_at: DateTime<Utc>,
@@ -316,11 +327,14 @@ struct VisitRow {
 struct TriageRow {
     id: Uuid,
     visit_id: Uuid,
+    encounter_id: Option<Uuid>,
     patient_id: Uuid,
     patient_code: String,
     patient_display_name: String,
     acuity: String,
     status: String,
+    assigned_to_user_id: Option<Uuid>,
+    assigned_to_name: Option<String>,
     triage_notes: Option<String>,
     created_at: DateTime<Utc>,
 }
@@ -404,6 +418,11 @@ pub async fn list_appointments(
     if let Some(clinic_id) = filters.clinic_id {
         query.push(" AND appointments.clinic_id = ");
         query.push_bind(clinic_id);
+    }
+
+    if let Some(practitioner_user_id) = filters.practitioner_user_id {
+        query.push(" AND appointments.practitioner_user_id = ");
+        query.push_bind(practitioner_user_id);
     }
 
     if let Some(status) = filters.status {
@@ -1243,7 +1262,7 @@ pub async fn cancel_appointment(
 pub async fn list_visits(
     pool: &PgPool,
     facility_id: Uuid,
-    clinic_id: Option<Uuid>,
+    filters: VisitFilters,
     cursor: Option<CareCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<VisitListItem>> {
@@ -1254,11 +1273,23 @@ pub async fn list_visits(
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                visits.appointment_id,
+               encounter_scope.id AS encounter_id,
                visits.clinic_id,
                visits.status,
                visits.checked_in_at
         FROM visits
         JOIN patients ON patients.id = visits.patient_id
+        LEFT JOIN appointments
+          ON appointments.id = visits.appointment_id
+         AND appointments.facility_id = visits.facility_id
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = visits.facility_id
+              AND encounters.visit_id = visits.id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE visits.facility_id =
         "#,
     );
@@ -1266,9 +1297,37 @@ pub async fn list_visits(
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
 
-    if let Some(clinic_id) = clinic_id {
+    if let Some(clinic_id) = filters.clinic_id {
         query.push(" AND visits.clinic_id = ");
         query.push_bind(clinic_id);
+    }
+
+    if let Some(practitioner_user_id) = filters.practitioner_user_id {
+        query.push(" AND appointments.practitioner_user_id = ");
+        query.push_bind(practitioner_user_id);
+    }
+
+    if let Some(status) = filters.status {
+        query.push(" AND visits.status = ");
+        query.push_bind(codec::encode(status)?);
+    } else if filters.active_only {
+        query.push(" AND visits.status IN (");
+        let active_statuses = [
+            VisitStatus::Waiting,
+            VisitStatus::Called,
+            VisitStatus::InTriage,
+            VisitStatus::Triaged,
+            VisitStatus::InConsultation,
+            VisitStatus::OnHold,
+            VisitStatus::ReadyCheckout,
+        ];
+        for (index, status) in active_statuses.into_iter().enumerate() {
+            if index > 0 {
+                query.push(", ");
+            }
+            query.push_bind(codec::encode(status)?);
+        }
+        query.push(")");
     }
 
     if let Some(cursor) = cursor {
@@ -1393,11 +1452,20 @@ pub async fn get_visit(
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                visits.appointment_id,
+               encounter_scope.id AS encounter_id,
                visits.clinic_id,
                visits.status,
                visits.checked_in_at
         FROM visits
         JOIN patients ON patients.id = visits.patient_id
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = visits.facility_id
+              AND encounters.visit_id = visits.id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE visits.facility_id = $1
           AND patients.facility_id = $1
           AND visits.id = $2
@@ -1442,6 +1510,7 @@ pub async fn check_in_visit(pool: &PgPool, visit: NewVisit) -> anyhow::Result<Vi
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                inserted.appointment_id,
+               NULL::uuid AS encounter_id,
                inserted.clinic_id,
                inserted.status,
                inserted.checked_in_at
@@ -1525,11 +1594,20 @@ pub async fn update_visit_status(
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                updated.appointment_id,
+               encounter_scope.id AS encounter_id,
                updated.clinic_id,
                updated.status,
                updated.checked_in_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = $2
+              AND encounters.visit_id = updated.id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE patients.facility_id = $2
         "#,
     );
@@ -1555,15 +1633,29 @@ pub async fn list_triage(
         r#"
         SELECT triage_queue.id,
                triage_queue.visit_id,
+               encounter_scope.id AS encounter_id,
                triage_queue.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                triage_queue.acuity,
                triage_queue.status,
+               triage_queue.assigned_to_user_id,
+               assigned_to.display_name AS assigned_to_name,
                triage_queue.triage_notes,
                triage_queue.created_at
         FROM triage_queue
         JOIN patients ON patients.id = triage_queue.patient_id
+        LEFT JOIN users AS assigned_to
+          ON assigned_to.id = triage_queue.assigned_to_user_id
+         AND assigned_to.facility_id = triage_queue.facility_id
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = triage_queue.facility_id
+              AND encounters.visit_id = triage_queue.visit_id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE triage_queue.facility_id =
         "#,
     );
@@ -1578,6 +1670,10 @@ pub async fn list_triage(
     if let Some(status) = filters.status {
         query.push(" AND triage_queue.status = ");
         query.push_bind(codec::encode(status)?);
+    }
+    if let Some(assigned_to_user_id) = filters.assigned_to_user_id {
+        query.push(" AND triage_queue.assigned_to_user_id = ");
+        query.push_bind(assigned_to_user_id);
     }
 
     if let Some(cursor) = cursor {
@@ -1615,20 +1711,35 @@ pub async fn create_triage(pool: &PgPool, triage: NewTriage) -> anyhow::Result<T
                       patient_id,
                       acuity,
                       status,
+                      assigned_to_user_id,
                       triage_notes,
                       created_at
         )
         SELECT inserted.id,
                inserted.visit_id,
+               encounter_scope.id AS encounter_id,
                inserted.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                inserted.acuity,
                inserted.status,
+               inserted.assigned_to_user_id,
+               assigned_to.display_name AS assigned_to_name,
                inserted.triage_notes,
                inserted.created_at
         FROM inserted
         JOIN patients ON patients.id = inserted.patient_id
+        LEFT JOIN users AS assigned_to
+          ON assigned_to.id = inserted.assigned_to_user_id
+         AND assigned_to.facility_id = $2
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = $2
+              AND encounters.visit_id = inserted.visit_id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         "#,
     )
     .bind(triage.id)
@@ -1685,20 +1796,35 @@ pub async fn assess_triage(
                       patient_id,
                       acuity,
                       status,
+                      assigned_to_user_id,
                       triage_notes,
                       created_at
         )
         SELECT updated.id,
                updated.visit_id,
+               encounter_scope.id AS encounter_id,
                updated.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                updated.acuity,
                updated.status,
+               updated.assigned_to_user_id,
+               assigned_to.display_name AS assigned_to_name,
                updated.triage_notes,
                updated.created_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
+        LEFT JOIN users AS assigned_to
+          ON assigned_to.id = updated.assigned_to_user_id
+         AND assigned_to.facility_id = $4
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = $4
+              AND encounters.visit_id = updated.visit_id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE patients.facility_id = $4
         "#,
     )
@@ -1731,25 +1857,41 @@ pub async fn assign_triage(
                 updated_at = now()
             WHERE facility_id = $3
               AND id = $4
+              AND status IN ($5, $6)
             RETURNING id,
                       visit_id,
                       patient_id,
                       acuity,
                       status,
+                      assigned_to_user_id,
                       triage_notes,
                       created_at
         )
         SELECT updated.id,
                updated.visit_id,
+               encounter_scope.id AS encounter_id,
                updated.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                updated.acuity,
                updated.status,
+               updated.assigned_to_user_id,
+               assigned_to.display_name AS assigned_to_name,
                updated.triage_notes,
                updated.created_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
+        LEFT JOIN users AS assigned_to
+          ON assigned_to.id = updated.assigned_to_user_id
+         AND assigned_to.facility_id = $3
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = $3
+              AND encounters.visit_id = updated.visit_id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE patients.facility_id = $3
         "#,
     )
@@ -1757,6 +1899,8 @@ pub async fn assign_triage(
     .bind(assigned_to_user_id)
     .bind(facility_id)
     .bind(triage_id)
+    .bind(codec::encode(TriageStatus::Waiting)?)
+    .bind(codec::encode(TriageStatus::Assigned)?)
     .fetch_optional(pool)
     .await?;
 
@@ -1783,20 +1927,35 @@ pub async fn cancel_triage(
                       patient_id,
                       acuity,
                       status,
+                      assigned_to_user_id,
                       triage_notes,
                       created_at
         )
         SELECT updated.id,
                updated.visit_id,
+               encounter_scope.id AS encounter_id,
                updated.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                updated.acuity,
                updated.status,
+               updated.assigned_to_user_id,
+               assigned_to.display_name AS assigned_to_name,
                updated.triage_notes,
                updated.created_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
+        LEFT JOIN users AS assigned_to
+          ON assigned_to.id = updated.assigned_to_user_id
+         AND assigned_to.facility_id = $2
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = $2
+              AND encounters.visit_id = updated.visit_id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE patients.facility_id = $2
         "#,
     )
@@ -1839,15 +1998,29 @@ pub async fn get_triage(
         r#"
         SELECT triage_queue.id,
                triage_queue.visit_id,
+               encounter_scope.id AS encounter_id,
                triage_queue.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                triage_queue.acuity,
                triage_queue.status,
+               triage_queue.assigned_to_user_id,
+               assigned_to.display_name AS assigned_to_name,
                triage_queue.triage_notes,
                triage_queue.created_at
         FROM triage_queue
         JOIN patients ON patients.id = triage_queue.patient_id
+        LEFT JOIN users AS assigned_to
+          ON assigned_to.id = triage_queue.assigned_to_user_id
+         AND assigned_to.facility_id = triage_queue.facility_id
+        LEFT JOIN LATERAL (
+            SELECT encounters.id
+            FROM encounters
+            WHERE encounters.facility_id = triage_queue.facility_id
+              AND encounters.visit_id = triage_queue.visit_id
+            ORDER BY encounters.started_at DESC, encounters.id DESC
+            LIMIT 1
+        ) AS encounter_scope ON TRUE
         WHERE triage_queue.facility_id = $1
           AND patients.facility_id = $1
           AND triage_queue.id = $2
@@ -2601,6 +2774,7 @@ fn visit_from_row(row: VisitRow) -> anyhow::Result<VisitListItem> {
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
         appointment_id: row.appointment_id,
+        encounter_id: row.encounter_id,
         clinic_id: row.clinic_id,
         status: codec::decode(&row.status)?,
         checked_in_at: row.checked_in_at,
@@ -2611,11 +2785,14 @@ fn triage_from_row(row: TriageRow) -> anyhow::Result<TriageListItem> {
     Ok(TriageListItem {
         id: row.id,
         visit_id: row.visit_id,
+        encounter_id: row.encounter_id,
         patient_id: row.patient_id,
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
         acuity: codec::decode(&row.acuity)?,
         status: codec::decode(&row.status)?,
+        assigned_to_user_id: row.assigned_to_user_id,
+        assigned_to_name: row.assigned_to_name,
         triage_notes: row.triage_notes,
         created_at: row.created_at,
     })

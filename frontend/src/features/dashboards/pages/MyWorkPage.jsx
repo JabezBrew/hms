@@ -10,10 +10,13 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { MyWorkPreviewList } from '@/features/care-areas/components/CareAreaWorkTables';
+import { useCareAreaMyWork } from '@/features/care-areas/hooks/useCareAreaQueries';
 import { useDashboardModuleGates } from '@/features/dashboards/hooks';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -24,7 +27,7 @@ const WORK_AREAS = [
   {
     key: 'outpatient',
     title: 'Outpatient',
-    description: 'Clinic sessions and waiting rooms',
+    description: 'Clinic sessions today',
     href: '/care-areas/outpatient',
     icon: Stethoscope,
     features: ['outpatient_encounters'],
@@ -32,7 +35,7 @@ const WORK_AREAS = [
   {
     key: 'inpatient',
     title: 'Inpatient',
-    description: 'Ward census and inpatient work',
+    description: 'Assigned wards and ward board',
     href: '/care-areas/inpatient',
     icon: Bed,
     features: ['ward_task_board', 'patient_chronicle', 'wards', 'inpatient_admissions', 'nursing_workflows'],
@@ -40,7 +43,7 @@ const WORK_AREAS = [
   {
     key: 'emergency',
     title: 'Emergency',
-    description: 'Triage and emergency flow',
+    description: 'Emergency assignments and triage',
     href: '/care-areas/emergency',
     icon: Siren,
     features: ['emergency_encounters'],
@@ -65,6 +68,9 @@ const WORK_AREAS = [
 
 export default function MyWorkPage() {
   const moduleGate = useDashboardModuleGates();
+  const myWorkQuery = useCareAreaMyWork({
+    enabled: moduleGate.hasFeatureMap,
+  });
   const pageMeta = usePageMeta({
     title: 'My Work | Hospital Management System',
     breadcrumbs: [{ label: 'My Work', path: '/my-work' }],
@@ -108,7 +114,13 @@ export default function MyWorkPage() {
         {!moduleGate.isResolving && moduleGate.hasFeatureMap && visibleAreas.length > 0 ? (
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Care contexts">
             {visibleAreas.map((area) => (
-              <WorkAreaCard key={area.key} area={area} />
+              <WorkAreaCard
+                key={area.key}
+                area={area}
+                myWork={myWorkQuery.data}
+                isLoading={myWorkQuery.isLoading}
+                error={myWorkQuery.error}
+              />
             ))}
           </section>
         ) : null}
@@ -117,8 +129,9 @@ export default function MyWorkPage() {
   );
 }
 
-function WorkAreaCard({ area }) {
+function WorkAreaCard({ area, myWork, isLoading, error }) {
   const Icon = area.icon;
+  const preview = getAreaPreview(area.key, myWork);
 
   return (
     <Card className="rounded-lg">
@@ -141,6 +154,68 @@ function WorkAreaCard({ area }) {
           </Button>
         </CardAction>
       </CardHeader>
+      <CardContent className="border-t border-border p-0">
+        {isLoading ? (
+          <p className="px-4 py-4 text-sm text-muted-foreground">Loading current work</p>
+        ) : error ? (
+          <p className="px-4 py-4 text-sm text-muted-foreground">Current work unavailable</p>
+        ) : preview ? (
+          <>
+            <MyWorkPreviewList items={preview.items} type={preview.type} />
+            {preview.hasMore ? (
+              <p className="border-t border-border px-4 py-2 font-mono text-[10px] text-muted-foreground">
+                More in {area.title}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p className="px-4 py-4 text-sm text-muted-foreground">Open this area to continue</p>
+        )}
+      </CardContent>
     </Card>
   );
+}
+
+function getAreaPreview(key, myWork) {
+  if (!myWork) return null;
+
+  if (key === 'outpatient') {
+    return {
+      items: [
+        ...(myWork.outpatient?.active_visits || []),
+        ...(myWork.outpatient?.appointments || []),
+      ].slice(0, 5),
+      hasMore: Boolean(myWork.outpatient?.has_more_active_visits || myWork.outpatient?.has_more_appointments),
+      type: 'patient',
+    };
+  }
+
+  if (key === 'inpatient') {
+    return {
+      items: myWork.inpatient?.assigned_wards || [],
+      hasMore: false,
+      type: 'ward',
+    };
+  }
+
+  if (key === 'emergency') {
+    return {
+      items: [
+        ...(myWork.emergency?.assigned_triage || []),
+        ...(myWork.emergency?.waiting_triage || []),
+      ].slice(0, 5),
+      hasMore: Boolean(myWork.emergency?.has_more_assigned_triage || myWork.emergency?.has_more_waiting_triage),
+      type: 'patient',
+    };
+  }
+
+  if (key === 'my-patients') {
+    return {
+      items: myWork.patient_context?.recent_patients || [],
+      hasMore: Boolean(myWork.patient_context?.has_more_recent_patients),
+      type: 'patient',
+    };
+  }
+
+  return null;
 }

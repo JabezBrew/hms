@@ -57,7 +57,7 @@ describe('Rust V2 visits and triage bridge', () => {
     const response = await visitsApi.waitingRoom('clinic-1');
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/visits?limit=50&clinic_id=clinic-1',
+      'http://localhost:8080/api/v2/visits?limit=50&clinic_id=clinic-1&active_only=true',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',
@@ -71,7 +71,8 @@ describe('Rust V2 visits and triage bridge', () => {
       {
         id: 'visit-1',
         visit_id: 'visit-1',
-        encounter_id: 'visit-1',
+        encounter_id: null,
+        encounter: null,
         patient: 'patient-1',
         patient_id: 'patient-1',
         patient_name: 'Ama Mensah',
@@ -239,6 +240,7 @@ describe('Rust V2 visits and triage bridge', () => {
               {
                 id: 'triage-1',
                 visit_id: 'visit-1',
+                encounter_id: 'encounter-1',
                 patient_id: 'patient-1',
                 patient_code: 'MRN-MAIN-2026-000001',
                 patient_display_name: 'Ama Mensah',
@@ -295,6 +297,8 @@ describe('Rust V2 visits and triage bridge', () => {
         expect.objectContaining({
           id: 'triage-1',
           visit_id: 'visit-1',
+          encounter_id: 'encounter-1',
+          encounter: 'encounter-1',
           patient: 'patient-1',
           patient_id: 'patient-1',
           patient_name: 'Ama Mensah',

@@ -8,6 +8,7 @@ mod handoff;
 mod mar;
 mod nursing_task_board;
 mod observations_monitoring;
+mod staff_assignments;
 mod ward_stock;
 
 pub use admin::WardAdminService;
@@ -19,6 +20,7 @@ pub use handoff::HandoffService;
 pub use mar::MarService;
 pub use nursing_task_board::NursingTaskBoardService;
 pub use observations_monitoring::ObservationsMonitoringService;
+pub use staff_assignments::WardStaffAssignmentService;
 pub use ward_stock::WardStockService;
 
 use crate::state::AppState;
@@ -71,6 +73,10 @@ impl WardServices {
 
     pub fn ward_stock(&self) -> WardStockService {
         WardStockService::new(self.state.clone())
+    }
+
+    pub fn staff_assignments(&self) -> WardStaffAssignmentService {
+        WardStaffAssignmentService::new(self.state.clone())
     }
 }
 

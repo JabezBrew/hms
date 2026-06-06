@@ -67,7 +67,8 @@ function adaptV2Visit(visit, index = 0) {
   return {
     id: visit.id,
     visit_id: visit.id,
-    encounter_id: visit.id,
+    encounter_id: visit.encounter_id || null,
+    encounter: visit.encounter_id || null,
     patient: visit.patient_id,
     patient_id: visit.patient_id,
     patient_name: visit.patient_display_name,
@@ -132,6 +133,8 @@ function adaptV2TriageEntry(entry) {
   return {
     id: entry.id,
     visit_id: entry.visit_id,
+    encounter_id: entry.encounter_id || null,
+    encounter: entry.encounter_id || null,
     patient: entry.patient_id,
     patient_id: entry.patient_id,
     patient_name: entry.patient_display_name,
@@ -141,6 +144,10 @@ function adaptV2TriageEntry(entry) {
     acuity: entry.acuity,
     status: adaptV2TriageStatus(entry.status),
     v2_status: entry.status,
+    assigned_to_user_id: entry.assigned_to_user_id || null,
+    assigned_to_name: entry.assigned_to_name || null,
+    assigned_to: entry.assigned_to_user_id || null,
+    assigned_to_display: entry.assigned_to_name || null,
     chief_complaint: '',
     triage_notes: entry.triage_notes || '',
     created_at: entry.created_at,
@@ -370,6 +377,9 @@ export const visitsApi = {
           query: {
             limit: normalizeLimit(options),
             clinic_id: clinicId,
+            active_only: true,
+            ...(options.practitioner_user_id ? { practitioner_user_id: options.practitioner_user_id } : {}),
+            ...(options.status ? { status: options.status } : {}),
           },
           signal: options.signal,
         });
@@ -409,6 +419,7 @@ export const triageApi = {
             cursor,
             status: v2TriageStatusFromUi(params.status),
             acuity: v2TriageAcuityFromUi(params.priority || params.acuity),
+            assigned_to_user_id: params.assigned_to_user_id,
           },
           signal: params.signal,
         });

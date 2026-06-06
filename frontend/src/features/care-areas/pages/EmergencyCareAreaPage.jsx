@@ -5,15 +5,27 @@ import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { useDashboardModuleGates } from '@/features/dashboards/hooks';
+import { useTriageQueue } from '@/hooks/useVisitQueries';
 
 import {
   CareAreaCard,
   CareAreaGrid,
   CareAreaScaffold,
 } from '../components/CareAreaScaffold';
+import {
+  CareAreaSection,
+  EmergencyQueueTable,
+} from '../components/CareAreaWorkTables';
 
 export default function EmergencyCareAreaPage() {
   const moduleGate = useDashboardModuleGates();
+  const {
+    data: triageQueue,
+    isLoading,
+    error,
+    refetch,
+  } = useTriageQueue({ status: 'waiting', page_size: 25 });
+  const triageEntries = Array.isArray(triageQueue?.results) ? triageQueue.results : [];
 
   return (
     <CareAreaScaffold
@@ -53,6 +65,29 @@ export default function EmergencyCareAreaPage() {
           />
         ) : null}
       </CareAreaGrid>
+
+      <CareAreaSection
+        title="Emergency Queue"
+        description="Waiting triage patients ordered by arrival"
+        action={(
+          <Button type="button" size="sm" variant="outline" className="font-mono text-xs" onClick={() => refetch()}>
+            Refresh
+          </Button>
+        )}
+      >
+        {isLoading ? (
+          <p className="px-4 py-8 text-sm text-muted-foreground">Loading emergency queue</p>
+        ) : error ? (
+          <div className="space-y-3 px-4 py-6">
+            <p className="text-sm text-muted-foreground">{error.message || 'Emergency queue could not be loaded.'}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              Retry
+            </Button>
+          </div>
+        ) : (
+          <EmergencyQueueTable entries={triageEntries} />
+        )}
+      </CareAreaSection>
     </CareAreaScaffold>
   );
 }

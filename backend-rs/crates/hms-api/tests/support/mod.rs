@@ -14,7 +14,8 @@ pub use hms_api::config::Config;
 use hms_api::extractors::RequestContext;
 use hms_api::middleware::request_id;
 use hms_api::state::AppState;
-pub use hms_domain::deployment::{DeploymentProfile, PermissionCode};
+pub use hms_domain::auth::PatientDataVisibility;
+pub use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 pub use jsonwebtoken::{encode, EncodingKey, Header};
 pub use serde_json::{json, Value};
 use std::convert::Infallible;
@@ -356,7 +357,132 @@ pub(crate) async fn grant_test_permission(
     .bind(user_id)
     .execute(&pool)
     .await
+        .expect("test permission version updates");
+}
+
+pub(crate) async fn grant_test_patient_visibility(
+    app: &TestApp,
+    user_id: Uuid,
+    visibility: PatientDataVisibility,
+) {
+    let pool = hms_db::connect(app._database.database_url())
+        .await
+        .expect("test database connects for patient visibility grant");
+    let visibility_code = hms_db::codec::encode(visibility).expect("visibility encodes");
+    sqlx::query(
+        r#"
+        INSERT INTO user_patient_visibility (user_id, visibility)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, visibility) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(&visibility_code)
+    .execute(&pool)
+    .await
+    .expect("test patient visibility grant inserts");
+    sqlx::query(
+        "UPDATE users SET permission_version = permission_version + 1, updated_at = now() WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
+        .expect("test permission version updates");
+}
+
+pub(crate) async fn grant_test_feature(app: &TestApp, user_id: Uuid, feature: FeatureKey) {
+    let pool = hms_db::connect(app._database.database_url())
+        .await
+        .expect("test database connects for feature grant");
+    let feature_key = hms_db::codec::encode(feature).expect("feature encodes");
+    sqlx::query(
+        r#"
+        INSERT INTO user_features (user_id, feature_key)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, feature_key) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(&feature_key)
+    .execute(&pool)
+    .await
+    .expect("test feature grant inserts");
+    sqlx::query(
+        "UPDATE users SET permission_version = permission_version + 1, updated_at = now() WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
     .expect("test permission version updates");
+}
+
+pub(crate) async fn create_test_practitioner_for_user(
+    app: &TestApp,
+    user_id: Uuid,
+    employee_id: &str,
+    license_number: &str,
+) -> Uuid {
+    let pool = hms_db::connect(app._database.database_url())
+        .await
+        .expect("test database connects for practitioner profile");
+    let facility_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT facility_id FROM users WHERE id = $1 AND is_active = TRUE",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("test user facility loads");
+    let staff_id = Uuid::new_v4();
+    let practitioner_id = Uuid::new_v4();
+    let staff_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO staff_profiles (
+            id,
+            facility_id,
+            user_id,
+            employee_id,
+            department,
+            position,
+            hire_date
+        )
+        VALUES ($1, $2, $3, $4, 'Clinical', 'Ward Practitioner', DATE '2026-05-10')
+        ON CONFLICT (user_id) DO UPDATE
+        SET employee_id = EXCLUDED.employee_id,
+            updated_at = now()
+        RETURNING id
+        "#,
+    )
+    .bind(staff_id)
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(employee_id)
+    .fetch_one(&pool)
+    .await
+    .expect("test staff profile upserts");
+    sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO practitioner_profiles (
+            id,
+            facility_id,
+            staff_id,
+            license_number,
+            specialization,
+            qualification
+        )
+        VALUES ($1, $2, $3, $4, 'Inpatient Medicine', 'MBChB')
+        ON CONFLICT (staff_id) DO UPDATE
+        SET license_number = EXCLUDED.license_number,
+            updated_at = now()
+        RETURNING id
+        "#,
+    )
+    .bind(practitioner_id)
+    .bind(facility_id)
+    .bind(staff_id)
+    .bind(license_number)
+    .fetch_one(&pool)
+    .await
+    .expect("test practitioner profile upserts")
 }
 
 pub(crate) async fn login_with_password(

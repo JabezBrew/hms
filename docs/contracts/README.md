@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Engineering
-Last reviewed: 2026-06-01
+Last reviewed: 2026-06-06
 Scope: durable Interfaces that code, tests, deploys, and frontend integrations rely on.
 
 ## Contract Registry
@@ -29,6 +29,14 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
 - Hot list endpoints must be bounded and cursor-paginated.
 - Contract tests should assert access behavior, response shape, pagination, and
   error mode.
+- Patient Directory, My Work, Outpatient, Inpatient, and Emergency are distinct
+  surfaces. A global patient list must not be used as a frontend substitute for
+  care-area work queues.
+- Care-area work uses `/api/v2/care-areas/my-work` for bounded landing previews,
+  `/api/v2/visits` with server-side `clinic_id`, `practitioner_user_id`,
+  `status`, or `active_only` filters for OPD, `/api/v2/triage` with server-side
+  `status`, `acuity`, or `assigned_to_user_id` filters for Emergency, and
+  `/api/v2/wards/my-board-context` plus `/api/v2/wards/board` for Inpatient.
 
 ## Access Contract Rules
 
@@ -37,6 +45,14 @@ returning or mutating data.
 
 Access behavior belongs in `hms-access` and request context guards. It should be
 covered through tests that call the same Interface production code uses.
+
+Ward-board access is scoped. Ordinary clinical users need `ward.view`, patient
+demographics visibility, the Wards feature, and an active ward staff assignment
+for the requested `ward_id`. Loading `/api/v2/wards/board` without a `ward_id`
+is the house-board path and requires `ward_board.view_all` or admin
+staff/authority permission; enabling the Wards feature alone must not grant
+house-board access. The `/api/v2/wards/my-board-context` resolver is the
+frontend source of truth for redirects and assigned-ward choices.
 
 Authorization-sensitive cache keys must include all visibility-changing scope:
 facility, user/profile, patient or ward scope, feature set, permission version,
@@ -71,6 +87,9 @@ Clinical care context is a first-class persistence contract:
 - Encounter/visit-scoped clinical events must store validated `encounter_id`
   and/or `visit_id` when the caller supplies that context. If both are supplied,
   they must describe the same patient journey.
+- Patient administrative record status is not encounter/admission/care status.
+  Discharge, checkout, triage completion, and admission cancellation must not
+  imply patient-record deactivation.
 - Admission-scoped inpatient events should derive care journey context from the
   owning `admission_case` when a visit/encounter led to admission, instead of
   making every ward table repeat outpatient columns.
@@ -94,6 +113,9 @@ For hot paths, repositories should prove:
 - bounded limit
 - selected columns match DTO needs
 - facility scope is part of the predicate
+- care-area hot lists use indexed filters for clinic, practitioner, ward,
+  assignee, status, and stable cursor columns; frontend callers must not sort or
+  filter partial server pages as a substitute.
 
 ## Frontend Bridge Rules
 
@@ -108,6 +130,11 @@ Adapters must preserve:
 - server-side pagination
 - feature gating
 - PHI-safe, scoped query keys and browser events
+
+Chronicle context handoff must preserve real workflow context. OPD and
+Emergency links may set `visit=<encounter_id>` only when the list row carries a
+real encounter id; ward-board links may set `admission=<admission_case_id>`.
+Adapters must not translate raw visit ids into Chronicle visit scope.
 
 OmniSearch result `id` values are target resource IDs, not search-index document
 IDs. The server-provided `route_path` is the canonical internal navigation path

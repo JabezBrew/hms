@@ -1,9 +1,12 @@
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import { Link } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDashboardModuleGates } from '@/features/dashboards/hooks';
+import { useWaitingRoom } from '@/hooks/useVisitQueries';
 import { useClinics } from '@/hooks/useOrganization';
 import { normalizeApiResults } from '@/lib/utils';
 
@@ -13,9 +16,14 @@ import {
   CareAreaGrid,
   CareAreaScaffold,
 } from '../components/CareAreaScaffold';
+import {
+  CareAreaSection,
+  OutpatientVisitTable,
+} from '../components/CareAreaWorkTables';
 
 export default function OutpatientCareAreaPage() {
   const moduleGate = useDashboardModuleGates();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     data: clinicsData,
     isLoading,
@@ -23,6 +31,32 @@ export default function OutpatientCareAreaPage() {
     refetch,
   } = useClinics({ is_active: true });
   const clinics = normalizeApiResults(clinicsData);
+  const selectedClinicId = searchParams.get('clinic') || clinics[0]?.id || null;
+  const selectedClinic = useMemo(
+    () => clinics.find((clinic) => String(clinic.id) === String(selectedClinicId)) || clinics[0] || null,
+    [clinics, selectedClinicId],
+  );
+  const waitingRoomHref = selectedClinic ? `/clinics/${selectedClinic.id}/waiting-room` : null;
+  const {
+    data: queue = [],
+    isLoading: isQueueLoading,
+    error: queueError,
+    refetch: refetchQueue,
+  } = useWaitingRoom(selectedClinic?.id, {
+    enabled: Boolean(selectedClinic?.id),
+  });
+
+  const handleClinicChange = (clinicId) => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (clinicId) {
+        next.set('clinic', clinicId);
+      } else {
+        next.delete('clinic');
+      }
+      return next;
+    }, { replace: true });
+  };
 
   return (
     <CareAreaScaffold
@@ -65,6 +99,51 @@ export default function OutpatientCareAreaPage() {
           ))}
         </CareAreaGrid>
       )}
+
+      {clinics.length > 0 ? (
+        <CareAreaSection
+          title="Clinic Queue"
+          description="Patients currently checked in for the selected clinic"
+          action={(
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={selectedClinic?.id || ''} onValueChange={handleClinicChange}>
+                <SelectTrigger className="h-9 w-64 max-w-full font-mono text-xs">
+                  <SelectValue placeholder="Select clinic" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clinics.map((clinic) => (
+                    <SelectItem key={clinic.id} value={clinic.id}>
+                      {clinic.name || clinic.code || 'Clinic'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {waitingRoomHref ? (
+                <Button asChild size="sm" variant="outline" className="font-mono text-xs">
+                  <Link to={waitingRoomHref}>Waiting room</Link>
+                </Button>
+              ) : null}
+            </div>
+          )}
+        >
+          {isQueueLoading ? (
+            <p className="px-4 py-8 text-sm text-muted-foreground">Loading clinic queue</p>
+          ) : queueError ? (
+            <div className="space-y-3 px-4 py-6">
+              <p className="text-sm text-muted-foreground">{queueError.message || 'Clinic queue could not be loaded.'}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => refetchQueue()}>
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <OutpatientVisitTable
+              visits={queue}
+              clinicName={selectedClinic?.name || selectedClinic?.code || 'Clinic'}
+              waitingRoomHref={waitingRoomHref}
+            />
+          )}
+        </CareAreaSection>
+      ) : null}
 
       {error ? (
         <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>

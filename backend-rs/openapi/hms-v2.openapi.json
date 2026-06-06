@@ -384,6 +384,13 @@
               "null"
             ]
           },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "search": {
             "type": [
               "string",
@@ -527,6 +534,13 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -2089,6 +2103,147 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "CareAreaEmergencyMyWork": {
+        "properties": {
+          "assigned_triage": {
+            "items": {
+              "$ref": "#/components/schemas/TriageListItem"
+            },
+            "type": "array"
+          },
+          "has_more_assigned_triage": {
+            "type": "boolean"
+          },
+          "has_more_waiting_triage": {
+            "type": "boolean"
+          },
+          "waiting_triage": {
+            "items": {
+              "$ref": "#/components/schemas/TriageListItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assigned_triage",
+          "has_more_assigned_triage",
+          "waiting_triage",
+          "has_more_waiting_triage"
+        ],
+        "type": "object"
+      },
+      "CareAreaInpatientMyWork": {
+        "properties": {
+          "assigned_wards": {
+            "items": {
+              "$ref": "#/components/schemas/MyWardBoardAssignment"
+            },
+            "type": "array"
+          },
+          "can_view_all_wards": {
+            "type": "boolean"
+          },
+          "default_ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary_ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "assigned_wards",
+          "can_view_all_wards"
+        ],
+        "type": "object"
+      },
+      "CareAreaMyWorkResponse": {
+        "properties": {
+          "emergency": {
+            "$ref": "#/components/schemas/CareAreaEmergencyMyWork"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "inpatient": {
+            "$ref": "#/components/schemas/CareAreaInpatientMyWork"
+          },
+          "outpatient": {
+            "$ref": "#/components/schemas/CareAreaOutpatientMyWork"
+          },
+          "patient_context": {
+            "$ref": "#/components/schemas/CareAreaPatientContextMyWork"
+          }
+        },
+        "required": [
+          "generated_at",
+          "outpatient",
+          "inpatient",
+          "emergency",
+          "patient_context"
+        ],
+        "type": "object"
+      },
+      "CareAreaOutpatientMyWork": {
+        "properties": {
+          "active_visits": {
+            "items": {
+              "$ref": "#/components/schemas/VisitListItem"
+            },
+            "type": "array"
+          },
+          "appointments": {
+            "items": {
+              "$ref": "#/components/schemas/AppointmentListItem"
+            },
+            "type": "array"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "has_more_active_visits": {
+            "type": "boolean"
+          },
+          "has_more_appointments": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "date",
+          "appointments",
+          "has_more_appointments",
+          "active_visits",
+          "has_more_active_visits"
+        ],
+        "type": "object"
+      },
+      "CareAreaPatientContextMyWork": {
+        "properties": {
+          "has_more_recent_patients": {
+            "type": "boolean"
+          },
+          "recent_patients": {
+            "items": {
+              "$ref": "#/components/schemas/PatientContextListItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recent_patients",
+          "has_more_recent_patients"
+        ],
         "type": "object"
       },
       "CareTeamAssignment": {
@@ -5235,6 +5390,39 @@
         "required": [
           "code",
           "name"
+        ],
+        "type": "object"
+      },
+      "CreateWardStaffAssignmentRequest": {
+        "properties": {
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "is_primary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "practitioner_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role_code": {
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ward_id",
+          "practitioner_id",
+          "role_code"
         ],
         "type": "object"
       },
@@ -14168,9 +14356,29 @@
                 "acuity": {
                   "$ref": "#/components/schemas/TriageAcuity"
                 },
+                "assigned_to_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assigned_to_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "created_at": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "id": {
                   "format": "uuid",
@@ -14243,6 +14451,13 @@
                   "type": "string"
                 },
                 "clinic_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "encounter_id": {
                   "format": "uuid",
                   "type": [
                     "string",
@@ -14514,6 +14729,211 @@
                 "reserved_bed_count",
                 "cleaning_bed_count",
                 "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_WardStaffAssignmentListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "assigned_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "assigned_by_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assigned_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "is_primary": {
+                  "type": "boolean"
+                },
+                "practitioner": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "practitioner_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "practitioner_name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "role_category": {
+                  "$ref": "#/components/schemas/WardStaffRoleCategory"
+                },
+                "role_code": {
+                  "type": "string"
+                },
+                "role_name": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "ward": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "ward_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "ward_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "ward_id",
+                "ward",
+                "ward_name",
+                "practitioner_id",
+                "practitioner",
+                "practitioner_name",
+                "user_id",
+                "role_code",
+                "role",
+                "role_name",
+                "role_category",
+                "is_active",
+                "is_primary",
+                "assigned_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_WardStaffListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "full_name": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "practitioner_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "role_category": {
+                  "$ref": "#/components/schemas/WardStaffRoleCategory"
+                },
+                "role_name": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "practitioner_id",
+                "user_id",
+                "full_name",
+                "role_name",
+                "role_category"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_WardStaffRoleItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "category": {
+                  "$ref": "#/components/schemas/WardStaffRoleCategory"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "category",
+                "is_active"
               ],
               "type": "object"
             },
@@ -14849,6 +15269,75 @@
           "event_kind",
           "summary",
           "recorded_at"
+        ],
+        "type": "object"
+      },
+      "MyWardBoardAssignment": {
+        "properties": {
+          "assignment_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "role_category": {
+            "$ref": "#/components/schemas/WardStaffRoleCategory"
+          },
+          "role_name": {
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "ward_id",
+          "ward_name",
+          "role_name",
+          "role_category",
+          "is_primary"
+        ],
+        "type": "object"
+      },
+      "MyWardBoardContextResponse": {
+        "properties": {
+          "assigned_wards": {
+            "items": {
+              "$ref": "#/components/schemas/MyWardBoardAssignment"
+            },
+            "type": "array"
+          },
+          "can_view_all_wards": {
+            "type": "boolean"
+          },
+          "default_route": {
+            "type": "string"
+          },
+          "default_ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary_ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "assigned_wards",
+          "can_view_all_wards",
+          "default_route"
         ],
         "type": "object"
       },
@@ -16660,6 +17149,44 @@
             "required": [
               "verified_count",
               "message"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_CareAreaMyWorkResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "emergency": {
+                "$ref": "#/components/schemas/CareAreaEmergencyMyWork"
+              },
+              "generated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "inpatient": {
+                "$ref": "#/components/schemas/CareAreaInpatientMyWork"
+              },
+              "outpatient": {
+                "$ref": "#/components/schemas/CareAreaOutpatientMyWork"
+              },
+              "patient_context": {
+                "$ref": "#/components/schemas/CareAreaPatientContextMyWork"
+              }
+            },
+            "required": [
+              "generated_at",
+              "outpatient",
+              "inpatient",
+              "emergency",
+              "patient_context"
             ],
             "type": "object"
           },
@@ -19123,6 +19650,52 @@
               "event_kind",
               "summary",
               "recorded_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_MyWardBoardContextResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "assigned_wards": {
+                "items": {
+                  "$ref": "#/components/schemas/MyWardBoardAssignment"
+                },
+                "type": "array"
+              },
+              "can_view_all_wards": {
+                "type": "boolean"
+              },
+              "default_route": {
+                "type": "string"
+              },
+              "default_ward_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "primary_ward_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "assigned_wards",
+              "can_view_all_wards",
+              "default_route"
             ],
             "type": "object"
           },
@@ -22375,9 +22948,29 @@
               "acuity": {
                 "$ref": "#/components/schemas/TriageAcuity"
               },
+              "assigned_to_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "assigned_to_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "created_at": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "id": {
                 "format": "uuid",
@@ -22454,6 +23047,13 @@
                 "type": "string"
               },
               "clinic_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "encounter_id": {
                 "format": "uuid",
                 "type": [
                   "string",
@@ -22880,6 +23480,103 @@
               "reserved_bed_count",
               "cleaning_bed_count",
               "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_WardStaffAssignmentListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "assigned_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "assigned_by_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "assigned_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "is_primary": {
+                "type": "boolean"
+              },
+              "practitioner": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "practitioner_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "practitioner_name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "role_category": {
+                "$ref": "#/components/schemas/WardStaffRoleCategory"
+              },
+              "role_code": {
+                "type": "string"
+              },
+              "role_name": {
+                "type": "string"
+              },
+              "user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "ward": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "ward_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "ward_name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "ward_id",
+              "ward",
+              "ward_name",
+              "practitioner_id",
+              "practitioner",
+              "practitioner_name",
+              "user_id",
+              "role_code",
+              "role",
+              "role_name",
+              "role_category",
+              "is_active",
+              "is_primary",
+              "assigned_at"
             ],
             "type": "object"
           },
@@ -26036,6 +26733,7 @@
           "encounter.view",
           "encounter.manage",
           "ward.view",
+          "ward_board.view_all",
           "ward.manage_beds",
           "admission.manage",
           "nursing.task.manage",
@@ -29267,9 +29965,29 @@
           "acuity": {
             "$ref": "#/components/schemas/TriageAcuity"
           },
+          "assigned_to_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigned_to_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -29321,6 +30039,13 @@
               {
                 "$ref": "#/components/schemas/TriageAcuity"
               }
+            ]
+          },
+          "assigned_to_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "cursor": {
@@ -29835,6 +30560,43 @@
         },
         "type": "object"
       },
+      "UpdateWardStaffAssignmentRequest": {
+        "properties": {
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "is_primary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "practitioner_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UpsertPractitionerProfileRequest": {
         "properties": {
           "fhir_practitioner_id": {
@@ -29881,6 +30643,13 @@
               "null"
             ]
           },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -29911,6 +30680,12 @@
       },
       "VisitListQuery": {
         "properties": {
+          "active_only": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "clinic_id": {
             "format": "uuid",
             "type": [
@@ -29930,6 +30705,23 @@
             "type": [
               "integer",
               "null"
+            ]
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VisitStatus"
+              }
             ]
           }
         },
@@ -30974,6 +31766,266 @@
           "cleaning_bed_count",
           "created_at"
         ],
+        "type": "object"
+      },
+      "WardStaffAssignmentByPractitionerQuery": {
+        "properties": {
+          "practitioner_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "practitioner_id"
+        ],
+        "type": "object"
+      },
+      "WardStaffAssignmentListItem": {
+        "properties": {
+          "assigned_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "assigned_by_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigned_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "practitioner": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "practitioner_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "practitioner_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "role_category": {
+            "$ref": "#/components/schemas/WardStaffRoleCategory"
+          },
+          "role_code": {
+            "type": "string"
+          },
+          "role_name": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ward_id",
+          "ward",
+          "ward_name",
+          "practitioner_id",
+          "practitioner",
+          "practitioner_name",
+          "user_id",
+          "role_code",
+          "role",
+          "role_name",
+          "role_category",
+          "is_active",
+          "is_primary",
+          "assigned_at"
+        ],
+        "type": "object"
+      },
+      "WardStaffAssignmentListQuery": {
+        "properties": {
+          "category": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardStaffRoleCategory"
+              }
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "practitioner_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "show_inactive": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "WardStaffListItem": {
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "practitioner_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role_category": {
+            "$ref": "#/components/schemas/WardStaffRoleCategory"
+          },
+          "role_name": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "practitioner_id",
+          "user_id",
+          "full_name",
+          "role_name",
+          "role_category"
+        ],
+        "type": "object"
+      },
+      "WardStaffListQuery": {
+        "properties": {
+          "category": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardStaffRoleCategory"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "WardStaffRoleCategory": {
+        "enum": [
+          "nursing",
+          "medical",
+          "allied",
+          "operational"
+        ],
+        "type": "string"
+      },
+      "WardStaffRoleItem": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/WardStaffRoleCategory"
+          },
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "category",
+          "is_active"
+        ],
+        "type": "object"
+      },
+      "WardStaffRoleListQuery": {
+        "properties": {
+          "category": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardStaffRoleCategory"
+              }
+            ]
+          },
+          "show_inactive": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "WardStatus": {
@@ -34319,6 +35371,18 @@
           {
             "in": "query",
             "name": "clinic_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "practitioner_user_id",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -38079,6 +39143,51 @@
         ]
       }
     },
+    "/api/v2/care-areas/my-work": {
+      "get": {
+        "operationId": "getCareAreaMyWork",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_CareAreaMyWorkResponse"
+                }
+              }
+            },
+            "description": "Scoped care-area work summary"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
     "/api/v2/clinical/allergies/{id}": {
       "delete": {
         "operationId": "deleteClinicalAllergy",
@@ -39614,6 +40723,44 @@
               "format": "uuid",
               "type": [
                 "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "practitioner_user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/VisitStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "active_only",
+            "required": true,
+            "schema": {
+              "type": [
+                "boolean",
                 "null"
               ]
             }
@@ -58072,6 +59219,15 @@
             "schema": {
               "$ref": "#/components/schemas/TriageAcuity"
             }
+          },
+          {
+            "in": "query",
+            "name": "assigned_to_user_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -58523,6 +59679,44 @@
               "format": "uuid",
               "type": [
                 "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "practitioner_user_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/VisitStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
                 "null"
               ]
             }
@@ -59650,6 +60844,51 @@
         ]
       }
     },
+    "/api/v2/wards/my-board-context": {
+      "get": {
+        "operationId": "getMyWardBoardContext",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_MyWardBoardContextResponse"
+                }
+              }
+            },
+            "description": "Current user's ward-board context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
     "/api/v2/wards/sections/{id}": {
       "get": {
         "operationId": "getWardSectionById",
@@ -59891,6 +61130,544 @@
               }
             },
             "description": "Ward section not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/staff-assignments": {
+      "get": {
+        "operationId": "getWardStaffAssignments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "practitioner_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WardStaffRoleCategory"
+            }
+          },
+          {
+            "in": "query",
+            "name": "show_inactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_WardStaffAssignmentListItem"
+                }
+              }
+            },
+            "description": "Ward staff assignments"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      },
+      "post": {
+        "operationId": "postWardStaffAssignment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWardStaffAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardStaffAssignmentListItem"
+                }
+              }
+            },
+            "description": "Ward staff assignment created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid assignment"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ward or practitioner not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Assignment could not be created"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/staff-assignments/by_practitioner": {
+      "get": {
+        "operationId": "getWardStaffAssignmentsByPractitioner",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "practitioner_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_WardStaffAssignmentListItem"
+                }
+              }
+            },
+            "description": "Ward staff assignments for a practitioner"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/staff-assignments/{id}": {
+      "delete": {
+        "operationId": "deleteWardStaffAssignment",
+        "parameters": [
+          {
+            "description": "Ward staff assignment id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardStaffAssignmentListItem"
+                }
+              }
+            },
+            "description": "Ward staff assignment deactivated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Assignment not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Assignment could not be removed"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      },
+      "get": {
+        "operationId": "getWardStaffAssignmentById",
+        "parameters": [
+          {
+            "description": "Ward staff assignment id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardStaffAssignmentListItem"
+                }
+              }
+            },
+            "description": "Ward staff assignment"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Assignment not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      },
+      "patch": {
+        "operationId": "patchWardStaffAssignment",
+        "parameters": [
+          {
+            "description": "Ward staff assignment id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWardStaffAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardStaffAssignmentListItem"
+                }
+              }
+            },
+            "description": "Ward staff assignment updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid assignment"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Assignment not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Assignment could not be updated"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/staff-roles": {
+      "get": {
+        "operationId": "getWardStaffRoles",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WardStaffRoleCategory"
+            }
+          },
+          {
+            "in": "query",
+            "name": "show_inactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_WardStaffRoleItem"
+                }
+              }
+            },
+            "description": "Ward staff roles"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
           }
         },
         "security": [
@@ -60452,6 +62229,81 @@
               }
             },
             "description": "Invalid section"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ward not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/wards/{id}/staff": {
+      "get": {
+        "operationId": "getWardStaff",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WardStaffRoleCategory"
+            }
+          },
+          {
+            "description": "Ward id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_WardStaffListItem"
+                }
+              }
+            },
+            "description": "Ward staff"
           },
           "401": {
             "content": {

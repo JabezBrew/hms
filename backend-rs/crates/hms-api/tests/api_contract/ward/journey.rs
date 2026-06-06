@@ -1064,6 +1064,12 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     grant_test_permission(
         &app,
         Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        PermissionCode::PatientDemographicsView,
+    )
+    .await;
+    grant_test_permission(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
         PermissionCode::WardView,
     )
     .await;
@@ -1083,6 +1089,295 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .await
         .expect("ward analytics denial succeeds");
     assert_eq!(analytics_denied.status(), StatusCode::FORBIDDEN);
+
+    grant_test_feature(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        FeatureKey::Wards,
+    )
+    .await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        PatientDataVisibility::Demographics,
+    )
+    .await;
+    let limited_practitioner_id = create_test_practitioner_for_user(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        "EMP-HMS-LIMITED-WARD",
+        "MDC/LIMITED/WARD",
+    )
+    .await;
+    let secondary_ward_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/wards")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "code": "TEST-WARD-STAFF",
+                        "name": "Staff Assignment Test Ward"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("secondary ward create succeeds");
+    assert_eq!(secondary_ward_response.status(), StatusCode::OK);
+    let secondary_ward_body = json_body(secondary_ward_response).await;
+    let secondary_ward_id = secondary_ward_body["data"]["id"]
+        .as_str()
+        .expect("secondary ward id exists");
+    let (assigned_scope_token, _, _) = login(app.clone(), "limited@hms.local").await;
+
+    let unassigned_context = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/wards/my-board-context")
+                .header(AUTHORIZATION, format!("Bearer {assigned_scope_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("unassigned ward board context succeeds");
+    assert_eq!(unassigned_context.status(), StatusCode::OK);
+    let unassigned_context_body = json_body(unassigned_context).await;
+    assert!(unassigned_context_body["data"]["assigned_wards"]
+        .as_array()
+        .expect("assigned wards are listed")
+        .is_empty());
+    assert_eq!(unassigned_context_body["data"]["can_view_all_wards"], false);
+
+    let all_wards_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/wards/board?limit=1")
+                .header(AUTHORIZATION, format!("Bearer {assigned_scope_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("all-ward board denial succeeds");
+    assert_eq!(all_wards_denied.status(), StatusCode::FORBIDDEN);
+
+    let assignment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/wards/staff-assignments")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "ward_id": ward_id,
+                        "practitioner_id": limited_practitioner_id,
+                        "role_code": "staff_nurse",
+                        "is_primary": true
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward staff assignment create succeeds");
+    let assignment_status = assignment_response.status();
+    let assignment_body = json_body(assignment_response).await;
+    assert_eq!(assignment_status, StatusCode::OK, "{assignment_body}");
+    assert_eq!(assignment_body["data"]["ward_id"], ward_id.to_string());
+    assert_eq!(assignment_body["data"]["is_primary"], true);
+    let primary_assignment_id = assignment_body["data"]["id"]
+        .as_str()
+        .expect("primary assignment id exists");
+
+    let invalid_primary_create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/wards/staff-assignments")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "ward_id": Uuid::new_v4(),
+                        "practitioner_id": limited_practitioner_id,
+                        "role_code": "charge_nurse",
+                        "is_primary": true
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("invalid primary assignment create returns");
+    assert_eq!(invalid_primary_create.status(), StatusCode::NOT_FOUND);
+
+    let primary_after_invalid_create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/wards/staff-assignments/{primary_assignment_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("primary assignment reload succeeds");
+    assert_eq!(primary_after_invalid_create.status(), StatusCode::OK);
+    let primary_after_invalid_create_body = json_body(primary_after_invalid_create).await;
+    assert_eq!(
+        primary_after_invalid_create_body["data"]["is_primary"],
+        true
+    );
+
+    let secondary_assignment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/wards/staff-assignments")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "ward_id": secondary_ward_id,
+                        "practitioner_id": limited_practitioner_id,
+                        "role_code": "staff_nurse",
+                        "is_primary": false
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("secondary assignment create succeeds");
+    assert_eq!(secondary_assignment_response.status(), StatusCode::OK);
+    let secondary_assignment_body = json_body(secondary_assignment_response).await;
+    let secondary_assignment_id = secondary_assignment_body["data"]["id"]
+        .as_str()
+        .expect("secondary assignment id exists");
+
+    let invalid_primary_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!(
+                    "/api/v2/wards/staff-assignments/{secondary_assignment_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "ward_id": Uuid::new_v4(),
+                        "is_primary": true
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("invalid primary assignment update returns");
+    assert_eq!(invalid_primary_update.status(), StatusCode::NOT_FOUND);
+
+    let primary_after_invalid_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/wards/staff-assignments/{primary_assignment_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("primary assignment reload after invalid update succeeds");
+    assert_eq!(primary_after_invalid_update.status(), StatusCode::OK);
+    let primary_after_invalid_update_body = json_body(primary_after_invalid_update).await;
+    assert_eq!(
+        primary_after_invalid_update_body["data"]["is_primary"],
+        true
+    );
+
+    let assigned_context = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/wards/my-board-context")
+                .header(AUTHORIZATION, format!("Bearer {assigned_scope_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("assigned ward board context succeeds");
+    assert_eq!(assigned_context.status(), StatusCode::OK);
+    let assigned_context_body = json_body(assigned_context).await;
+    assert_eq!(
+        assigned_context_body["data"]["default_ward_id"],
+        ward_id.to_string()
+    );
+    assert_eq!(
+        assigned_context_body["data"]["assigned_wards"][0]["ward_id"],
+        ward_id.to_string()
+    );
+
+    let assigned_board = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/board?ward_id={ward_id}&limit=1"))
+                .header(AUTHORIZATION, format!("Bearer {assigned_scope_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("assigned ward board succeeds");
+    let assigned_board_status = assigned_board.status();
+    let assigned_board_body = json_body(assigned_board).await;
+    assert_eq!(
+        assigned_board_status,
+        StatusCode::OK,
+        "{assigned_board_body}"
+    );
+    assert_eq!(assigned_board_body["data"].as_array().unwrap().len(), 1);
+
+    grant_test_permission(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        PermissionCode::WardBoardViewAll,
+    )
+    .await;
+    let (all_board_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let all_board_allowed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/wards/board?limit=1")
+                .header(AUTHORIZATION, format!("Bearer {all_board_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("all-ward board succeeds with broad permission");
+    assert_eq!(all_board_allowed.status(), StatusCode::OK);
 }
 
 #[tokio::test]

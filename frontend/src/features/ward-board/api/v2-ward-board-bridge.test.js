@@ -26,6 +26,57 @@ describe('Rust V2 ward-board bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it('loads the current user ward-board context through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            assigned_wards: [
+              {
+                assignment_id: 'assignment-1',
+                ward_id: 'ward-1',
+                ward_name: 'Medical Ward',
+                role_name: 'Staff Nurse',
+                role_category: 'nursing',
+                is_primary: true,
+              },
+            ],
+            primary_ward_id: 'ward-1',
+            default_ward_id: 'ward-1',
+            can_view_all_wards: false,
+            default_route: '/wards/ward-1/board',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await wardBoardApi.getBoardContext();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/my-board-context',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(response).toMatchObject({
+      default_ward_id: 'ward-1',
+      can_view_all_wards: false,
+      assigned_wards: [
+        expect.objectContaining({
+          ward_id: 'ward-1',
+          ward_name: 'Medical Ward',
+          is_primary: true,
+        }),
+      ],
+    });
+  });
+
   it('loads ward-scoped board rows through Rust /api/v2 and adapts them for the existing board UI', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

@@ -11,8 +11,13 @@ function rethrowAbortError(error) {
 
 function normalizeListResponse(response) {
   if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.data)) return response.data;
   if (Array.isArray(response?.results)) return response.results;
   return [];
+}
+
+function normalizeObjectResponse(response) {
+  return response?.data && typeof response.data === 'object' ? response.data : response;
 }
 
 function normalizeV2Limit(params = {}, fallback = 100) {
@@ -83,6 +88,33 @@ function adaptV2Bed(bed) {
     model.occupied_since = bed.occupied_since;
   }
   return model;
+}
+
+function v2AssignmentQuery(params = {}) {
+  return {
+    ...(params.cursor ? { cursor: params.cursor } : {}),
+    ...(params.limit || params.page_size ? { limit: params.limit || params.page_size } : {}),
+    ...(params.ward || params.ward_id ? { ward_id: params.ward || params.ward_id } : {}),
+    ...(params.practitioner || params.practitioner_id
+      ? { practitioner_id: params.practitioner || params.practitioner_id }
+      : {}),
+    ...(params.category ? { category: params.category } : {}),
+    ...(params.show_inactive !== undefined ? { show_inactive: params.show_inactive } : {}),
+  };
+}
+
+function adaptV2StaffAssignment(item = {}) {
+  return {
+    ...item,
+    ward: item.ward ?? item.ward_id,
+    practitioner: item.practitioner ?? item.practitioner_id,
+    role: item.role ?? item.role_code,
+    role_id: item.role_id ?? item.role_code,
+    practitioner_id: item.practitioner_id ?? item.practitioner,
+    practitioner_name: item.practitioner_name || '',
+    ward_name: item.ward_name || '',
+    role_name: item.role_name || item.role_code || '',
+  };
 }
 
 function adaptV2WardBoardAdmission(item = {}) {
@@ -1294,7 +1326,12 @@ export const wardsApi = {
   getWardStaff: async (wardId, params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return [];
+        const response = await v2Api.getWardStaff({ id: wardId }, {
+          query: {
+            ...(params.category ? { category: params.category } : {}),
+          },
+        });
+        return normalizeListResponse(response);
       }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/wards/${wardId}/staff/${queryString ? `?${queryString}` : ''}`;
@@ -1316,7 +1353,10 @@ export const wardsApi = {
   getStaffAssignments: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return [];
+        const response = await v2Api.getWardStaffAssignments({
+          query: v2AssignmentQuery(params),
+        });
+        return normalizeListResponse(response).map(adaptV2StaffAssignment);
       }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/staff-assignments/${queryString ? `?${queryString}` : ''}`;
@@ -1334,7 +1374,10 @@ export const wardsApi = {
   getStaffAssignmentsByPractitioner: async (practitionerId) => {
     try {
       if (isRustV2ApiMode()) {
-        return [];
+        const response = await v2Api.getWardStaffAssignmentsByPractitioner({
+          query: { practitioner_id: practitionerId },
+        });
+        return normalizeListResponse(response).map(adaptV2StaffAssignment);
       }
       return await apiClient.get(`/wards/staff-assignments/by_practitioner/?practitioner_id=${practitionerId}`);
     } catch (error) {
@@ -1350,7 +1393,8 @@ export const wardsApi = {
   getStaffAssignment: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('staff assignment detail');
+        const response = await v2Api.getWardStaffAssignmentById({ id });
+        return adaptV2StaffAssignment(normalizeObjectResponse(response));
       }
       return await apiClient.get(`/wards/staff-assignments/${id}/`);
     } catch (error) {
@@ -1369,7 +1413,8 @@ export const wardsApi = {
   createStaffAssignment: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('staff assignment mutations');
+        const response = await v2Api.postWardStaffAssignment(data);
+        return adaptV2StaffAssignment(normalizeObjectResponse(response));
       }
       return await apiClient.post('/wards/staff-assignments/', data);
     } catch (error) {
@@ -1389,7 +1434,8 @@ export const wardsApi = {
   updateStaffAssignment: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('staff assignment mutations');
+        const response = await v2Api.patchWardStaffAssignment({ id }, data);
+        return adaptV2StaffAssignment(normalizeObjectResponse(response));
       }
       return await apiClient.patch(`/wards/staff-assignments/${id}/`, data);
     } catch (error) {
@@ -1408,7 +1454,8 @@ export const wardsApi = {
   deleteStaffAssignment: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('staff assignment mutations');
+        const response = await v2Api.deleteWardStaffAssignment({ id });
+        return adaptV2StaffAssignment(normalizeObjectResponse(response));
       }
       return await apiClient.delete(`/wards/staff-assignments/${id}/`);
     } catch (error) {
@@ -1433,7 +1480,13 @@ export const wardsApi = {
   getStaffRoles: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return [];
+        const response = await v2Api.getWardStaffRoles({
+          query: {
+            ...(params.category ? { category: params.category } : {}),
+            ...(params.show_inactive !== undefined ? { show_inactive: params.show_inactive } : {}),
+          },
+        });
+        return normalizeListResponse(response);
       }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/staff-roles/${queryString ? `?${queryString}` : ''}`;

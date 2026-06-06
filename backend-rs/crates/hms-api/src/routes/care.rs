@@ -6,6 +6,7 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/v2/care-areas/my-work", get(care::my_work))
         .route(
             "/api/v2/appointments",
             get(care::list_appointments).post(care::create_appointment),

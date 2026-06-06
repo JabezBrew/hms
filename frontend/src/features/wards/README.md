@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Frontend/Ward Administration
-Last reviewed: 2026-06-01
+Last reviewed: 2026-06-06
 Scope: wards, sections, beds, ward reports, and ward detail UI.
 
 ## Routes
@@ -20,6 +20,9 @@ Scope: wards, sections, beds, ward reports, and ward detail UI.
 - `/api/v2/wards/:id/bed-map`
 - `/api/v2/wards/:id/beds`
 - `/api/v2/wards/:id/sections`
+- `/api/v2/wards/:id/staff`
+- `/api/v2/wards/staff-roles`
+- `/api/v2/wards/staff-assignments`
 
 ## Invariants
 
@@ -37,3 +40,6 @@ Scope: wards, sections, beds, ward reports, and ward detail UI.
 - Ward bed-grid details should stay in tooltips unless a future workflow needs
   an explicit action panel. Available beds should sort first within each bay.
 - Ward reports should use aggregate projections, not full clinical payloads.
+- Ward staff assignments link wards to practitioner profiles. They drive
+  ward-board default scope for clinical users, so assignment writes must remain
+  admin-scoped, same-facility, and should not be replaced by ad hoc user fields.

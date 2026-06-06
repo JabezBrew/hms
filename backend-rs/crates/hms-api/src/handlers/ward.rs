@@ -7,14 +7,18 @@ use hms_domain::ward::{
     CreateFluidBalanceEntryRequest, CreateHandoffRequest, CreateMonitoringEventRequest,
     CreateNursingAlertRequest, CreateNursingTaskRequest, CreatePatientVitalsRequest,
     CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
-    CreateWardStockRequestRequest, DischargeBlockerActionRequest, DischargeCaseListItem,
-    FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
-    MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery,
-    PatientVitalsListItem, PatientVitalsListQuery, RecordNursingReleaseRequest,
-    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
-    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest, WardAnalyticsQuery,
-    WardAnalyticsResponse, WardBedMapResponse, WardBoardGetQuery, WardBoardItem, WardBoardQuery,
-    WardListItem, WardListQuery, WardSectionListItem, WardStockRequestListItem,
+    CreateWardStaffAssignmentRequest, CreateWardStockRequestRequest, DischargeBlockerActionRequest,
+    DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
+    MonitoringEventListItem, MyWardBoardContextResponse, NursingAlertListItem, NursingTaskListItem,
+    NursingTaskListQuery, PatientVitalsListItem, PatientVitalsListQuery,
+    RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
+    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
+    UpdateWardRequest, UpdateWardSectionRequest, UpdateWardStaffAssignmentRequest,
+    WardAnalyticsQuery, WardAnalyticsResponse, WardBedMapResponse, WardBoardGetQuery,
+    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
+    WardStaffAssignmentByPractitionerQuery, WardStaffAssignmentListItem,
+    WardStaffAssignmentListQuery, WardStaffListItem, WardStaffListQuery, WardStaffRoleItem,
+    WardStaffRoleListQuery, WardStockRequestListItem,
 };
 use uuid::Uuid;
 
@@ -75,6 +79,259 @@ pub async fn ward_analytics(
             .ward_services()
             .analytics()
             .analytics(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/my-board-context",
+    operation_id = "getMyWardBoardContext",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Current user's ward-board context", body = ObjectResponse<MyWardBoardContextResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn my_ward_board_context(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+) -> Result<Json<ObjectResponse<MyWardBoardContextResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .my_board_context(&user)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/staff-roles",
+    operation_id = "getWardStaffRoles",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(WardStaffRoleListQuery),
+    responses(
+        (status = 200, description = "Ward staff roles", body = ListResponse<WardStaffRoleItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_staff_roles(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<WardStaffRoleListQuery>,
+) -> Result<Json<ListResponse<WardStaffRoleItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .list_staff_roles(&user, query)?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/{id}/staff",
+    operation_id = "getWardStaff",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(WardStaffListQuery, ("id" = Uuid, Path, description = "Ward id")),
+    responses(
+        (status = 200, description = "Ward staff", body = ListResponse<WardStaffListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_ward_staff(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Query(query): Query<WardStaffListQuery>,
+) -> Result<Json<ListResponse<WardStaffListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .list_ward_staff(&user, id, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/staff-assignments",
+    operation_id = "getWardStaffAssignments",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(WardStaffAssignmentListQuery),
+    responses(
+        (status = 200, description = "Ward staff assignments", body = ListResponse<WardStaffAssignmentListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_staff_assignments(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<WardStaffAssignmentListQuery>,
+) -> Result<Json<ListResponse<WardStaffAssignmentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .list_assignments(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/staff-assignments/by_practitioner",
+    operation_id = "getWardStaffAssignmentsByPractitioner",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(WardStaffAssignmentByPractitionerQuery),
+    responses(
+        (status = 200, description = "Ward staff assignments for a practitioner", body = ListResponse<WardStaffAssignmentListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_staff_assignments_by_practitioner(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<WardStaffAssignmentByPractitionerQuery>,
+) -> Result<Json<ListResponse<WardStaffAssignmentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .list_assignments_by_practitioner(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/staff-assignments/{id}",
+    operation_id = "getWardStaffAssignmentById",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward staff assignment id")),
+    responses(
+        (status = 200, description = "Ward staff assignment", body = ObjectResponse<WardStaffAssignmentListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Assignment not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_staff_assignment(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<WardStaffAssignmentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .get_assignment(&user, id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/wards/staff-assignments",
+    operation_id = "postWardStaffAssignment",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    request_body = CreateWardStaffAssignmentRequest,
+    responses(
+        (status = 200, description = "Ward staff assignment created", body = ObjectResponse<WardStaffAssignmentListItem>),
+        (status = 400, description = "Invalid assignment", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward or practitioner not found", body = ApiErrorResponse),
+        (status = 409, description = "Assignment could not be created", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_staff_assignment(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<CreateWardStaffAssignmentRequest>,
+) -> Result<Json<ObjectResponse<WardStaffAssignmentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .create_assignment(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/wards/staff-assignments/{id}",
+    operation_id = "patchWardStaffAssignment",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward staff assignment id")),
+    request_body = UpdateWardStaffAssignmentRequest,
+    responses(
+        (status = 200, description = "Ward staff assignment updated", body = ObjectResponse<WardStaffAssignmentListItem>),
+        (status = 400, description = "Invalid assignment", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Assignment not found", body = ApiErrorResponse),
+        (status = 409, description = "Assignment could not be updated", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_staff_assignment(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateWardStaffAssignmentRequest>,
+) -> Result<Json<ObjectResponse<WardStaffAssignmentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .update_assignment(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v2/wards/staff-assignments/{id}",
+    operation_id = "deleteWardStaffAssignment",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward staff assignment id")),
+    responses(
+        (status = 200, description = "Ward staff assignment deactivated", body = ObjectResponse<WardStaffAssignmentListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Assignment not found", body = ApiErrorResponse),
+        (status = 409, description = "Assignment could not be removed", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_staff_assignment(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<WardStaffAssignmentListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .staff_assignments()
+            .delete_assignment(&user, id)
             .await?,
     ))
 }

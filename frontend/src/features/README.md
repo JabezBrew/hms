@@ -19,7 +19,7 @@ domain-specific components. Shared primitives belong in `src/shared/` or
 | `admissions` | `/admissions/*`, billing admission queue | `/api/v2/admissions/*`, `/api/v2/admissions/cases/*` |
 | `appointments` | `/appointments/*`, `/practitioner-availability`, schedule slots | `/api/v2/appointments`, `/api/v2/scheduling/*` |
 | `billing` | `/billing/*`, invoices, payments, cash, NHIS | `/api/v2/billing/*`, `/api/v2/nhis/*` |
-| `care-areas` | `/care-areas/outpatient`, `/care-areas/inpatient`, `/care-areas/emergency` | routes into clinic waiting rooms, ward boards, and triage |
+| `care-areas` | `/care-areas/outpatient`, `/care-areas/inpatient`, `/care-areas/emergency` | scoped OPD/IPD/Emergency queues through clinics, ward board, triage, and `/api/v2/care-areas/my-work` |
 | `charts` | `/charts/templates`, `/charts/builder` | `/api/v2/patients/:id/clinical/chart-entries` and clinical template APIs |
 | `clinical-notes` | encounter note route and template admin | `/api/v2/clinical/*` |
 | `clinics` | clinic waiting room | `/api/v2/clinics`, `/api/v2/visits` |

@@ -61,6 +61,8 @@ pub enum PermissionCode {
     EncounterManage,
     #[serde(rename = "ward.view")]
     WardView,
+    #[serde(rename = "ward_board.view_all")]
+    WardBoardViewAll,
     #[serde(rename = "ward.manage_beds")]
     WardManageBeds,
     #[serde(rename = "admission.manage")]

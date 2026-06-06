@@ -52,6 +52,21 @@ function resolveDischargeCaseAdmissionId({
     || null;
 }
 
+function resolveWardBoardWardId({ chronicleActiveAdmission, patient }) {
+  if (chronicleActiveAdmission && typeof chronicleActiveAdmission === 'object') {
+    const admissionWard = chronicleActiveAdmission.ward;
+    return chronicleActiveAdmission.ward_id
+      || (typeof admissionWard === 'object' ? admissionWard?.id : admissionWard)
+      || null;
+  }
+
+  return patient?.local_data?.current_ward_id
+    || patient?.current_ward_id
+    || patient?.active_admission?.ward_id
+    || patient?.local_data?.active_admission?.ward_id
+    || null;
+}
+
 function useChronicleWardBoardAccess({
   chronicleActiveAdmission,
   deploymentCapabilities,
@@ -76,10 +91,12 @@ function useChronicleWardBoardAccess({
     && enabledFeatures?.nursing_workflows === true;
   const wardBoardHref = useMemo(() => {
     const boardPatientId = patientLocalId || id;
+    const wardBoardWardId = resolveWardBoardWardId({ chronicleActiveAdmission, patient });
+    const basePath = wardBoardWardId ? `/wards/${wardBoardWardId}/board` : '/ward-board';
     return boardPatientId
-      ? `/ward-board?patient=${encodeURIComponent(boardPatientId)}`
-      : '/ward-board';
-  }, [id, patientLocalId]);
+      ? `${basePath}?patient=${encodeURIComponent(boardPatientId)}`
+      : basePath;
+  }, [chronicleActiveAdmission, id, patient, patientLocalId]);
   const handleOpenWardBoard = useCallback(() => {
     navigate(wardBoardHref);
   }, [navigate, wardBoardHref]);

@@ -298,6 +298,81 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .expect("starts_at is a string")
         .starts_with("2026-05-10")));
 
+    let today = Utc::now().date_naive();
+    let practitioner_appointment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/appointments")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "practitioner_user_id": owner_id,
+                        "starts_at": format!("{today}T09:00:00Z"),
+                        "ends_at": format!("{today}T09:30:00Z")
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner appointment create succeeds");
+    assert_eq!(practitioner_appointment_response.status(), StatusCode::OK);
+    let practitioner_appointment_body = json_body(practitioner_appointment_response).await;
+    let practitioner_appointment_id = practitioner_appointment_body["data"]["id"]
+        .as_str()
+        .expect("practitioner appointment id exists");
+
+    let practitioner_filtered_appointments = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/appointments?date={today}&practitioner_user_id={owner_id}&limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner-filtered appointments list succeeds");
+    assert_eq!(practitioner_filtered_appointments.status(), StatusCode::OK);
+    let practitioner_filtered_body = json_body(practitioner_filtered_appointments).await;
+    assert!(practitioner_filtered_body["data"]
+        .as_array()
+        .expect("practitioner appointments listed")
+        .iter()
+        .any(|item| item["id"] == practitioner_appointment_id));
+
+    let other_practitioner_appointments = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/appointments?date={today}&practitioner_user_id={}&limit=10",
+                    Uuid::new_v4()
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("other practitioner appointments list succeeds");
+    assert_eq!(other_practitioner_appointments.status(), StatusCode::OK);
+    let other_practitioner_body = json_body(other_practitioner_appointments).await;
+    assert_eq!(
+        other_practitioner_body["data"]
+            .as_array()
+            .expect("other practitioner appointments are listed")
+            .len(),
+        0
+    );
+
     let appointment_to_cancel = app
         .clone()
         .oneshot(
@@ -414,6 +489,24 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     assert_eq!(filtered_visits_body["data"].as_array().unwrap().len(), 1);
     assert_eq!(filtered_visits_body["data"][0]["id"], visit_id);
 
+    let active_visits = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/visits?limit=10&clinic_id={clinic_id}&active_only=true"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("active clinic visits list succeeds");
+    assert_eq!(active_visits.status(), StatusCode::OK);
+    let active_visits_body = json_body(active_visits).await;
+    assert_eq!(active_visits_body["data"].as_array().unwrap().len(), 0);
+
     let other_clinic_visits = app
         .clone()
         .oneshot(
@@ -518,13 +611,110 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     let triage_detail_body = json_body(triage_detail).await;
     assert_eq!(triage_detail_body["data"]["id"], triage_id);
     assert_eq!(triage_detail_body["data"]["patient_id"], patient_id);
+    assert!(triage_detail_body["data"]["encounter_id"].is_null());
+
+    let triage_assign = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/triage/{triage_id}/assign"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "assigned_to_user_id": owner_id }).to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("triage assignment succeeds");
+    assert_eq!(triage_assign.status(), StatusCode::OK);
+    let triage_assign_body = json_body(triage_assign).await;
+    assert_eq!(triage_assign_body["data"]["status"], "assigned");
+    assert_eq!(
+        triage_assign_body["data"]["assigned_to_user_id"],
+        owner_id.to_string()
+    );
+    assert!(triage_assign_body["data"]["assigned_to_name"].is_string());
+
+    let assigned_triage = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/triage?assigned_to_user_id={owner_id}&limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("assigned triage list succeeds");
+    assert_eq!(assigned_triage.status(), StatusCode::OK);
+    let assigned_triage_body = json_body(assigned_triage).await;
+    assert!(assigned_triage_body["data"]
+        .as_array()
+        .expect("assigned triage rows exist")
+        .iter()
+        .any(|item| item["id"] == triage_id));
+
+    let assessment_visit = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/visits/check-in")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "clinic_id": clinic_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("assessment visit check-in succeeds");
+    assert_eq!(assessment_visit.status(), StatusCode::OK);
+    let assessment_visit_body = json_body(assessment_visit).await;
+    let assessment_visit_id = assessment_visit_body["data"]["id"]
+        .as_str()
+        .expect("assessment visit id exists");
+
+    let assessment_triage = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/triage")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "visit_id": assessment_visit_id,
+                        "acuity": "urgent"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("assessment triage create succeeds");
+    assert_eq!(assessment_triage.status(), StatusCode::OK);
+    let assessment_triage_body = json_body(assessment_triage).await;
+    let assessment_triage_id = assessment_triage_body["data"]["id"]
+        .as_str()
+        .expect("assessment triage id exists");
 
     let triage_assessment = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri(format!("/api/v2/triage/{triage_id}/assessment"))
+                .uri(format!("/api/v2/triage/{assessment_triage_id}/assessment"))
                 .header(AUTHORIZATION, auth_header.clone())
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -547,12 +737,12 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         "Chest pain and diaphoresis."
     );
 
-    let triage_assign = app
+    let completed_triage_assign = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri(format!("/api/v2/triage/{triage_id}/assign"))
+                .uri(format!("/api/v2/triage/{assessment_triage_id}/assign"))
                 .header(AUTHORIZATION, auth_header.clone())
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -561,10 +751,8 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
                 .expect("request builds"),
         )
         .await
-        .expect("triage assignment succeeds");
-    assert_eq!(triage_assign.status(), StatusCode::OK);
-    let triage_assign_body = json_body(triage_assign).await;
-    assert_eq!(triage_assign_body["data"]["status"], "assigned");
+        .expect("completed triage assignment is rejected");
+    assert_eq!(completed_triage_assign.status(), StatusCode::CONFLICT);
 
     let cancellable_visit = app
         .clone()
@@ -632,6 +820,23 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     let triage_cancel_body = json_body(triage_cancel).await;
     assert_eq!(triage_cancel_body["data"]["status"], "cancelled");
 
+    let cancelled_triage_assign = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/triage/{cancellable_triage_id}/assign"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "assigned_to_user_id": owner_id }).to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancelled triage assignment is rejected");
+    assert_eq!(cancelled_triage_assign.status(), StatusCode::CONFLICT);
+
     let encounter_response = app
         .clone()
         .oneshot(
@@ -658,6 +863,76 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .as_str()
         .expect("encounter id exists");
     assert_eq!(encounter_body["data"]["status"], "in_progress");
+
+    let visit_with_encounter = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/visits/{visit_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("visit detail with encounter succeeds");
+    assert_eq!(visit_with_encounter.status(), StatusCode::OK);
+    let visit_with_encounter_body = json_body(visit_with_encounter).await;
+    assert_eq!(
+        visit_with_encounter_body["data"]["encounter_id"],
+        encounter_id
+    );
+
+    let triage_with_encounter = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/triage/{triage_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("triage detail with encounter succeeds");
+    assert_eq!(triage_with_encounter.status(), StatusCode::OK);
+    let triage_with_encounter_body = json_body(triage_with_encounter).await;
+    assert_eq!(
+        triage_with_encounter_body["data"]["encounter_id"],
+        encounter_id
+    );
+
+    let my_work = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/care-areas/my-work")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("my work summary succeeds");
+    assert_eq!(my_work.status(), StatusCode::OK);
+    let my_work_body = json_body(my_work).await;
+    assert!(my_work_body["data"]["outpatient"]["appointments"]
+        .as_array()
+        .expect("my work outpatient appointments are listed")
+        .iter()
+        .any(|item| item["id"] == practitioner_appointment_id));
+    assert!(my_work_body["data"]["emergency"]["assigned_triage"]
+        .as_array()
+        .expect("my work assigned triage is listed")
+        .iter()
+        .any(|item| item["id"] == triage_id && item["encounter_id"] == encounter_id));
+    assert!(!my_work_body["data"]["emergency"]["assigned_triage"]
+        .as_array()
+        .expect("my work assigned triage is listed")
+        .iter()
+        .any(|item| item["id"] == assessment_triage_id));
+    assert!(my_work_body["data"]["inpatient"]["assigned_wards"].is_array());
+    assert!(my_work_body["data"]["patient_context"]["recent_patients"].is_array());
 
     let encounter_detail = app
         .clone()
@@ -879,4 +1154,18 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .await
         .expect("care list denial succeeds");
     assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    let denied_my_work = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/care-areas/my-work")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("my work denial succeeds");
+    assert_eq!(denied_my_work.status(), StatusCode::FORBIDDEN);
 }

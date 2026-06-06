@@ -525,7 +525,9 @@ fn feature_for_permission(permission: PermissionCode) -> Option<FeatureKey> {
         | PermissionCode::EncounterManage
         | PermissionCode::ClinicalDocumentationView
         | PermissionCode::ClinicalDocumentationManage => Some(FeatureKey::Encounters),
-        PermissionCode::WardView | PermissionCode::WardManageBeds => Some(FeatureKey::Wards),
+        PermissionCode::WardView
+        | PermissionCode::WardBoardViewAll
+        | PermissionCode::WardManageBeds => Some(FeatureKey::Wards),
         PermissionCode::AdmissionManage => Some(FeatureKey::Admissions),
         PermissionCode::NursingTaskManage => Some(FeatureKey::Nursing),
         PermissionCode::ReferralManage => Some(FeatureKey::Referrals),

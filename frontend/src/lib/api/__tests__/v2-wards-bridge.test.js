@@ -1181,10 +1181,103 @@ describe('Rust V2 wards bridge', () => {
 
     await expect(wardsApi.getTransfers()).resolves.toEqual([]);
     await expect(wardsApi.getAmenities()).resolves.toEqual([]);
-    await expect(wardsApi.getWardStaff('ward-1')).resolves.toEqual([]);
-    await expect(wardsApi.getStaffAssignments()).resolves.toEqual([]);
-    await expect(wardsApi.getStaffRoles()).resolves.toEqual([]);
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('bridges Rust V2 ward staff roles and assignments', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'staff_nurse',
+                code: 'staff_nurse',
+                name: 'Staff Nurse',
+                category: 'nursing',
+                is_active: true,
+              },
+            ],
+            page: { limit: 100, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'assignment-1',
+                ward_id: 'ward-1',
+                ward_name: 'Medical Ward',
+                practitioner_id: 'practitioner-1',
+                practitioner_name: 'Ama Clinician',
+                user_id: 'user-1',
+                role_code: 'staff_nurse',
+                role_name: 'Staff Nurse',
+                role_category: 'nursing',
+                is_active: true,
+                is_primary: true,
+              },
+            ],
+            page: { limit: 25, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'practitioner-1',
+                practitioner_id: 'practitioner-1',
+                user_id: 'user-1',
+                full_name: 'Ama Clinician',
+                role_name: 'Staff Nurse',
+                role_category: 'nursing',
+              },
+            ],
+            page: { limit: 100, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    await expect(wardsApi.getStaffRoles({ category: 'nursing' })).resolves.toEqual([
+      expect.objectContaining({ id: 'staff_nurse', name: 'Staff Nurse' }),
+    ]);
+    await expect(wardsApi.getStaffAssignments({ ward: 'ward-1' })).resolves.toEqual([
+      expect.objectContaining({
+        id: 'assignment-1',
+        ward: 'ward-1',
+        practitioner: 'practitioner-1',
+        role: 'staff_nurse',
+      }),
+    ]);
+    await expect(wardsApi.getWardStaff('ward-1', { category: 'nursing' })).resolves.toEqual([
+      expect.objectContaining({ practitioner_id: 'practitioner-1', full_name: 'Ama Clinician' }),
+    ]);
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/wards/staff-roles?category=nursing',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/wards/staff-assignments?ward_id=ward-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/wards/ward-1/staff?category=nursing',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
   });
 });

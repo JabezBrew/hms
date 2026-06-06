@@ -10,6 +10,7 @@ mod handoff;
 mod mar;
 mod nursing_task_board;
 mod observations_monitoring;
+mod staff_assignments;
 mod ward_stock;
 
 pub use admin::{
@@ -46,6 +47,12 @@ pub use observations_monitoring::{
     create_nursing_alert, create_patient_vitals, get_nursing_alert, list_fluid_balance_entries,
     list_monitoring_events, list_nursing_alerts, list_patient_vitals, NewFluidBalanceEntry,
     NewMonitoringEvent, NewNursingAlert, NewPatientVitals,
+};
+pub use staff_assignments::{
+    create_ward_staff_assignment, deactivate_ward_staff_assignment, get_ward_staff_assignment,
+    list_user_ward_board_assignments, list_ward_staff, list_ward_staff_assignments,
+    update_ward_staff_assignment, user_has_active_ward_assignment, ward_staff_role_by_code,
+    ward_staff_roles, NewWardStaffAssignment, WardStaffAssignmentUpdate,
 };
 pub use ward_stock::{
     approve_ward_stock_request, create_ward_stock_request, fulfill_ward_stock_request,

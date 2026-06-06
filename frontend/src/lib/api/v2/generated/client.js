@@ -63,6 +63,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "deleteWardStaffAssignment": {
+    "operationId": "deleteWardStaffAssignment",
+    "method": "DELETE",
+    "path": "/api/v2/wards/staff-assignments/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAdminAuditEvents": {
     "operationId": "getAdminAuditEvents",
     "method": "GET",
@@ -335,6 +345,7 @@ export const operations = {
       "limit",
       "date",
       "clinic_id",
+      "practitioner_user_id",
       "status",
       "search"
     ],
@@ -592,6 +603,14 @@ export const operations = {
       "status",
       "search"
     ],
+    "hasBody": false
+  },
+  "getCareAreaMyWork": {
+    "operationId": "getCareAreaMyWork",
+    "method": "GET",
+    "path": "/api/v2/care-areas/my-work",
+    "pathParamNames": [],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getCashDrawers": {
@@ -1203,6 +1222,14 @@ export const operations = {
       "cursor",
       "limit"
     ],
+    "hasBody": false
+  },
+  "getMyWardBoardContext": {
+    "operationId": "getMyWardBoardContext",
+    "method": "GET",
+    "path": "/api/v2/wards/my-board-context",
+    "pathParamNames": [],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getNhisBatches": {
@@ -2117,7 +2144,8 @@ export const operations = {
       "cursor",
       "limit",
       "status",
-      "acuity"
+      "acuity",
+      "assigned_to_user_id"
     ],
     "hasBody": false
   },
@@ -2139,7 +2167,10 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "clinic_id"
+      "clinic_id",
+      "practitioner_user_id",
+      "status",
+      "active_only"
     ],
     "hasBody": false
   },
@@ -2258,6 +2289,64 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit"
+    ],
+    "hasBody": false
+  },
+  "getWardStaff": {
+    "operationId": "getWardStaff",
+    "method": "GET",
+    "path": "/api/v2/wards/{id}/staff",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "category"
+    ],
+    "hasBody": false
+  },
+  "getWardStaffAssignmentById": {
+    "operationId": "getWardStaffAssignmentById",
+    "method": "GET",
+    "path": "/api/v2/wards/staff-assignments/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getWardStaffAssignments": {
+    "operationId": "getWardStaffAssignments",
+    "method": "GET",
+    "path": "/api/v2/wards/staff-assignments",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "ward_id",
+      "practitioner_id",
+      "category",
+      "show_inactive"
+    ],
+    "hasBody": false
+  },
+  "getWardStaffAssignmentsByPractitioner": {
+    "operationId": "getWardStaffAssignmentsByPractitioner",
+    "method": "GET",
+    "path": "/api/v2/wards/staff-assignments/by_practitioner",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "practitioner_id"
+    ],
+    "hasBody": false
+  },
+  "getWardStaffRoles": {
+    "operationId": "getWardStaffRoles",
+    "method": "GET",
+    "path": "/api/v2/wards/staff-roles",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "category",
+      "show_inactive"
     ],
     "hasBody": false
   },
@@ -2435,6 +2524,16 @@ export const operations = {
     "operationId": "patchWardSection",
     "method": "PATCH",
     "path": "/api/v2/wards/sections/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "patchWardStaffAssignment": {
+    "operationId": "patchWardStaffAssignment",
+    "method": "PATCH",
+    "path": "/api/v2/wards/staff-assignments/{id}",
     "pathParamNames": [
       "id"
     ],
@@ -3925,6 +4024,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postWardStaffAssignment": {
+    "operationId": "postWardStaffAssignment",
+    "method": "POST",
+    "path": "/api/v2/wards/staff-assignments",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postWardStockRequestApprove": {
     "operationId": "postWardStockRequestApprove",
     "method": "POST",
@@ -3973,6 +4080,7 @@ export function createGeneratedClient(request) {
     deleteClinicalProblemLink: createOperation(request, operations.deleteClinicalProblemLink),
     deleteClinicById: createOperation(request, operations.deleteClinicById),
     deletePatientChronicleWardRoundAction: createOperation(request, operations.deletePatientChronicleWardRoundAction),
+    deleteWardStaffAssignment: createOperation(request, operations.deleteWardStaffAssignment),
     getAdminAuditEvents: createOperation(request, operations.getAdminAuditEvents),
     getAdminAuthorityAppointments: createOperation(request, operations.getAdminAuthorityAppointments),
     getAdminCommittees: createOperation(request, operations.getAdminCommittees),
@@ -4019,6 +4127,7 @@ export function createGeneratedClient(request) {
     getBillingServicePrices: createOperation(request, operations.getBillingServicePrices),
     getBillingSettlementLines: createOperation(request, operations.getBillingSettlementLines),
     getBillingSettlements: createOperation(request, operations.getBillingSettlements),
+    getCareAreaMyWork: createOperation(request, operations.getCareAreaMyWork),
     getCashDrawers: createOperation(request, operations.getCashDrawers),
     getCashSessionById: createOperation(request, operations.getCashSessionById),
     getCashSessions: createOperation(request, operations.getCashSessions),
@@ -4074,6 +4183,7 @@ export function createGeneratedClient(request) {
     getMedicationAdministrations: createOperation(request, operations.getMedicationAdministrations),
     getMetrics: createOperation(request, operations.getMetrics),
     getMonitoringEvents: createOperation(request, operations.getMonitoringEvents),
+    getMyWardBoardContext: createOperation(request, operations.getMyWardBoardContext),
     getNhisBatches: createOperation(request, operations.getNhisBatches),
     getNhisClaimArState: createOperation(request, operations.getNhisClaimArState),
     getNhisClaimById: createOperation(request, operations.getNhisClaimById),
@@ -4157,6 +4267,11 @@ export function createGeneratedClient(request) {
     getWardSectionBeds: createOperation(request, operations.getWardSectionBeds),
     getWardSectionById: createOperation(request, operations.getWardSectionById),
     getWardSections: createOperation(request, operations.getWardSections),
+    getWardStaff: createOperation(request, operations.getWardStaff),
+    getWardStaffAssignmentById: createOperation(request, operations.getWardStaffAssignmentById),
+    getWardStaffAssignments: createOperation(request, operations.getWardStaffAssignments),
+    getWardStaffAssignmentsByPractitioner: createOperation(request, operations.getWardStaffAssignmentsByPractitioner),
+    getWardStaffRoles: createOperation(request, operations.getWardStaffRoles),
     getWardStockRequests: createOperation(request, operations.getWardStockRequests),
     ingestBrowserRum: createOperation(request, operations.ingestBrowserRum),
     patchAdminFeature: createOperation(request, operations.patchAdminFeature),
@@ -4175,6 +4290,7 @@ export function createGeneratedClient(request) {
     patchWard: createOperation(request, operations.patchWard),
     patchWardBed: createOperation(request, operations.patchWardBed),
     patchWardSection: createOperation(request, operations.patchWardSection),
+    patchWardStaffAssignment: createOperation(request, operations.patchWardStaffAssignment),
     postAdminAuthorityAppointments: createOperation(request, operations.postAdminAuthorityAppointments),
     postAdminCommittees: createOperation(request, operations.postAdminCommittees),
     postAdminDelegations: createOperation(request, operations.postAdminDelegations),
@@ -4340,6 +4456,7 @@ export function createGeneratedClient(request) {
     postWardBed: createOperation(request, operations.postWardBed),
     postWardBoardSearch: createOperation(request, operations.postWardBoardSearch),
     postWardSection: createOperation(request, operations.postWardSection),
+    postWardStaffAssignment: createOperation(request, operations.postWardStaffAssignment),
     postWardStockRequestApprove: createOperation(request, operations.postWardStockRequestApprove),
     postWardStockRequestFulfill: createOperation(request, operations.postWardStockRequestFulfill),
     postWardStockRequests: createOperation(request, operations.postWardStockRequests),

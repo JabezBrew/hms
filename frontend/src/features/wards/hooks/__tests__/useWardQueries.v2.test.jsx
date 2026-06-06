@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  useCreateStaffAssignment,
   useAllocationLogs,
   useAmenities,
   useAmenity,
@@ -16,6 +17,8 @@ import {
   useStaffAssignments,
   useStaffRoles,
   useTransfers,
+  useUpdateStaffAssignment,
+  useDeleteStaffAssignment,
   useWard,
   useWardBedMap,
   useWardBeds,
@@ -43,6 +46,9 @@ vi.mock('@/features/wards/api', () => ({
     getTransfers: vi.fn(),
     getWard: vi.fn(),
     getBedMap: vi.fn(),
+    createStaffAssignment: vi.fn(),
+    updateStaffAssignment: vi.fn(),
+    deleteStaffAssignment: vi.fn(),
     getWardStaff: vi.fn(),
     getWardSections: vi.fn(),
     getWards: vi.fn(),
@@ -50,8 +56,8 @@ vi.mock('@/features/wards/api', () => ({
   },
 }));
 
-function createWrapper() {
-  const queryClient = new QueryClient({
+function createTestQueryClient() {
+  return new QueryClient({
     defaultOptions: {
       queries: {
         gcTime: 0,
@@ -59,7 +65,9 @@ function createWrapper() {
       },
     },
   });
+}
 
+function createWrapper(queryClient = createTestQueryClient()) {
   return function Wrapper({ children }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   };
@@ -74,6 +82,9 @@ describe('useWardQueries Rust V2 behavior', () => {
     wardsApi.getAvailableBeds.mockResolvedValue([]);
     wardsApi.getBed.mockResolvedValue({});
     wardsApi.getBeds.mockResolvedValue([]);
+    wardsApi.createStaffAssignment.mockResolvedValue({ id: 'assignment-1', ward: 'ward-1', practitioner: 'practitioner-1' });
+    wardsApi.updateStaffAssignment.mockResolvedValue({ id: 'assignment-1', ward: 'ward-1', practitioner: 'practitioner-1' });
+    wardsApi.deleteStaffAssignment.mockResolvedValue({ id: 'assignment-1' });
     wardsApi.getStaffAssignments.mockResolvedValue([]);
     wardsApi.getStaffAssignmentsByPractitioner.mockResolvedValue([]);
     wardsApi.getStaffRoles.mockResolvedValue([]);
@@ -213,5 +224,41 @@ describe('useWardQueries Rust V2 behavior', () => {
         signal: expect.any(AbortSignal),
       });
     });
+  });
+
+  it('invalidates ward-board resolver and board lists after staff assignment mutations', async () => {
+    const queryClient = createTestQueryClient();
+    const wrapper = createWrapper(queryClient);
+    queryClient.setQueryData(['ward-board', 'context'], { assigned_wards: [] });
+    queryClient.setQueryData(['ward-board', 'list', { filters: { ward: 'ward-1' } }], { results: [] });
+
+    const { result: createResult } = renderHook(() => useCreateStaffAssignment(), { wrapper });
+    await createResult.current.mutateAsync({
+      ward: 'ward-1',
+      practitioner: 'practitioner-1',
+      role: 'staff_nurse',
+    });
+
+    expect(queryClient.getQueryState(['ward-board', 'context'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(['ward-board', 'list', { filters: { ward: 'ward-1' } }])?.isInvalidated).toBe(true);
+
+    queryClient.setQueryData(['ward-board', 'context'], { assigned_wards: [] });
+    queryClient.setQueryData(['ward-board', 'list', { filters: { ward: 'ward-1' } }], { results: [] });
+    const { result: updateResult } = renderHook(() => useUpdateStaffAssignment(), { wrapper });
+    await updateResult.current.mutateAsync({
+      id: 'assignment-1',
+      data: { is_primary: true },
+    });
+
+    expect(queryClient.getQueryState(['ward-board', 'context'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(['ward-board', 'list', { filters: { ward: 'ward-1' } }])?.isInvalidated).toBe(true);
+
+    queryClient.setQueryData(['ward-board', 'context'], { assigned_wards: [] });
+    queryClient.setQueryData(['ward-board', 'list', { filters: { ward: 'ward-1' } }], { results: [] });
+    const { result: deleteResult } = renderHook(() => useDeleteStaffAssignment(), { wrapper });
+    await deleteResult.current.mutateAsync('assignment-1');
+
+    expect(queryClient.getQueryState(['ward-board', 'context'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(['ward-board', 'list', { filters: { ward: 'ward-1' } }])?.isInvalidated).toBe(true);
   });
 });

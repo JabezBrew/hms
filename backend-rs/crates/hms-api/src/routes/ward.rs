@@ -12,6 +12,25 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/wards/analytics", get(ward::ward_analytics))
         .route(
+            "/api/v2/wards/my-board-context",
+            get(ward::my_ward_board_context),
+        )
+        .route("/api/v2/wards/staff-roles", get(ward::list_staff_roles))
+        .route(
+            "/api/v2/wards/staff-assignments",
+            get(ward::list_staff_assignments).post(ward::create_staff_assignment),
+        )
+        .route(
+            "/api/v2/wards/staff-assignments/by_practitioner",
+            get(ward::list_staff_assignments_by_practitioner),
+        )
+        .route(
+            "/api/v2/wards/staff-assignments/:id",
+            get(ward::get_staff_assignment)
+                .patch(ward::update_staff_assignment)
+                .delete(ward::delete_staff_assignment),
+        )
+        .route(
             "/api/v2/wards/:id",
             get(ward::get_ward).patch(ward::update_ward),
         )
@@ -28,6 +47,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/wards/:id/sections",
             get(ward::list_ward_sections).post(ward::create_ward_section),
         )
+        .route("/api/v2/wards/:id/staff", get(ward::list_ward_staff))
         .route(
             "/api/v2/wards/sections/:id",
             get(ward::get_ward_section).patch(ward::update_ward_section),

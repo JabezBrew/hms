@@ -1,18 +1,22 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
+use hms_access::AccessSubject;
 use hms_db::care::{
     AppointmentFilters, AppointmentUpdate, CareCursor, ClinicUpdate, EncounterFilters,
     EncounterUpdate, NewBookedAppointment, NewCareTeamAssignment, NewClinic, NewEncounter,
-    NewTriage, NewVisit, TriageFilters,
+    NewTriage, NewVisit, TriageFilters, VisitFilters,
 };
+use hms_db::patients::PatientContextFilters;
 use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem, AssignTriageRequest,
-    CancelAppointmentRequest, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
-    CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
-    CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
-    EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageListQuery,
-    TriageStatus, UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest,
-    VisitListItem, VisitListQuery, VisitStatus,
+    CancelAppointmentRequest, CareAreaEmergencyMyWork, CareAreaInpatientMyWork,
+    CareAreaMyWorkResponse, CareAreaOutpatientMyWork, CareAreaPatientContextMyWork,
+    CareTeamAssignment, CheckInVisitRequest, ClinicListItem, CreateAppointmentRequest,
+    CreateCareTeamAssignmentRequest, CreateClinicRequest, CreateEncounterRequest,
+    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery, EncounterStatus,
+    TriageAssessmentRequest, TriageListItem, TriageListQuery, TriageStatus,
+    UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest, VisitListItem,
+    VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -28,6 +32,7 @@ const MAX_LIMIT: u8 = 100;
 const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
 const MAX_CLINIC_CODE_LEN: usize = 48;
 const MAX_CLINIC_NAME_LEN: usize = 160;
+const MY_WORK_PREVIEW_LIMIT: usize = 5;
 
 #[derive(Clone)]
 pub struct CareService {
@@ -47,6 +52,197 @@ impl CareService {
         self.state.db_pool()
     }
 
+    pub async fn my_work(
+        &self,
+        ctx: &hms_access::RequestContext,
+    ) -> Result<ObjectResponse<CareAreaMyWorkResponse>, ApiError> {
+        let facility_id = self.facility_id();
+        let can_outpatient = can_access_workflow(ctx, facility_id, PermissionCode::AppointmentView);
+        let can_inpatient = can_access_workflow(ctx, facility_id, PermissionCode::WardView);
+        let can_emergency =
+            can_access_workflow(ctx, facility_id, PermissionCode::NursingTaskManage);
+        let can_patient_context =
+            can_access_workflow(ctx, facility_id, PermissionCode::PatientDemographicsView);
+
+        if !(can_outpatient || can_inpatient || can_emergency || can_patient_context) {
+            return Err(ApiError::forbidden(
+                "patient_access_denied",
+                "You do not have access to clinical work areas.",
+            ));
+        }
+
+        let today = Utc::now().date_naive();
+        let preview_fetch_limit = MY_WORK_PREVIEW_LIMIT as i64 + 1;
+
+        let (appointments, has_more_appointments, active_visits, has_more_active_visits) =
+            if can_outpatient {
+                let appointments = hms_db::care::list_appointments(
+                    self.pool(),
+                    facility_id,
+                    None,
+                    AppointmentFilters {
+                        date: Some(today),
+                        clinic_id: None,
+                        practitioner_user_id: Some(ctx.user_id),
+                        status: None,
+                        search: None,
+                    },
+                    preview_fetch_limit,
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "my_work_outpatient_failed",
+                        "Outpatient work could not be loaded.",
+                    )
+                })?;
+                let visits = hms_db::care::list_visits(
+                    self.pool(),
+                    facility_id,
+                    VisitFilters {
+                        clinic_id: None,
+                        practitioner_user_id: Some(ctx.user_id),
+                        status: None,
+                        active_only: true,
+                    },
+                    None,
+                    preview_fetch_limit,
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "my_work_outpatient_failed",
+                        "Outpatient work could not be loaded.",
+                    )
+                })?;
+                let (appointments, has_more_appointments) =
+                    split_preview(appointments, MY_WORK_PREVIEW_LIMIT);
+                let (active_visits, has_more_active_visits) =
+                    split_preview(visits, MY_WORK_PREVIEW_LIMIT);
+                (
+                    appointments,
+                    has_more_appointments,
+                    active_visits,
+                    has_more_active_visits,
+                )
+            } else {
+                (Vec::new(), false, Vec::new(), false)
+            };
+
+        let assigned_wards = if can_inpatient {
+            hms_db::ward::list_user_ward_board_assignments(self.pool(), facility_id, ctx.user_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "my_work_inpatient_failed",
+                        "Inpatient work could not be loaded.",
+                    )
+                })?
+        } else {
+            Vec::new()
+        };
+        let primary_ward_id = assigned_wards
+            .iter()
+            .find(|assignment| assignment.is_primary)
+            .map(|assignment| assignment.ward_id);
+        let default_ward_id = primary_ward_id
+            .or_else(|| (assigned_wards.len() == 1).then(|| assigned_wards[0].ward_id));
+        let can_view_all_wards = can_inpatient && can_view_all_ward_board(ctx, facility_id);
+
+        let (assigned_triage, has_more_assigned_triage, waiting_triage, has_more_waiting_triage) =
+            if can_emergency {
+                let assigned = hms_db::care::list_triage(
+                    self.pool(),
+                    facility_id,
+                    None,
+                    preview_fetch_limit,
+                    TriageFilters {
+                        acuity: None,
+                        status: Some(TriageStatus::Assigned),
+                        assigned_to_user_id: Some(ctx.user_id),
+                    },
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "my_work_emergency_failed",
+                        "Emergency work could not be loaded.",
+                    )
+                })?;
+                let waiting = hms_db::care::list_triage(
+                    self.pool(),
+                    facility_id,
+                    None,
+                    preview_fetch_limit,
+                    TriageFilters {
+                        acuity: None,
+                        status: Some(TriageStatus::Waiting),
+                        assigned_to_user_id: None,
+                    },
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "my_work_emergency_failed",
+                        "Emergency work could not be loaded.",
+                    )
+                })?;
+                let (assigned, has_more_assigned) = split_preview(assigned, MY_WORK_PREVIEW_LIMIT);
+                let (waiting, has_more_waiting) = split_preview(waiting, MY_WORK_PREVIEW_LIMIT);
+                (assigned, has_more_assigned, waiting, has_more_waiting)
+            } else {
+                (Vec::new(), false, Vec::new(), false)
+            };
+
+        let (recent_patients, has_more_recent_patients) = if can_patient_context {
+            let patients = hms_db::patients::list_context_patients(
+                self.pool(),
+                facility_id,
+                ctx.user_id,
+                None,
+                preview_fetch_limit,
+                PatientContextFilters::default(),
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "my_work_patient_context_failed",
+                    "Patient context could not be loaded.",
+                )
+            })?;
+            split_preview(patients, MY_WORK_PREVIEW_LIMIT)
+        } else {
+            (Vec::new(), false)
+        };
+
+        Ok(object(CareAreaMyWorkResponse {
+            generated_at: Utc::now(),
+            outpatient: CareAreaOutpatientMyWork {
+                date: today,
+                appointments,
+                has_more_appointments,
+                active_visits,
+                has_more_active_visits,
+            },
+            inpatient: CareAreaInpatientMyWork {
+                assigned_wards,
+                primary_ward_id,
+                default_ward_id,
+                can_view_all_wards,
+            },
+            emergency: CareAreaEmergencyMyWork {
+                assigned_triage,
+                has_more_assigned_triage,
+                waiting_triage,
+                has_more_waiting_triage,
+            },
+            patient_context: CareAreaPatientContextMyWork {
+                recent_patients,
+                has_more_recent_patients,
+            },
+        }))
+    }
+
     pub async fn list_appointments(
         &self,
         ctx: &hms_access::RequestContext,
@@ -64,6 +260,7 @@ impl CareService {
             AppointmentFilters {
                 date: query.date,
                 clinic_id: query.clinic_id,
+                practitioner_user_id: query.practitioner_user_id,
                 status: query.status,
                 search: query.search,
             },
@@ -355,7 +552,6 @@ impl CareService {
         query: VisitListQuery,
     ) -> Result<ListResponse<VisitListItem>, ApiError> {
         require_workflow_list_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
-        let clinic_id = query.clinic_id;
         let (cursor, page_size) = page_request(CursorListQuery {
             cursor: query.cursor,
             limit: query.limit,
@@ -363,7 +559,12 @@ impl CareService {
         let rows = hms_db::care::list_visits(
             self.pool(),
             self.facility_id(),
-            clinic_id,
+            VisitFilters {
+                clinic_id: query.clinic_id,
+                practitioner_user_id: query.practitioner_user_id,
+                status: query.status,
+                active_only: query.active_only.unwrap_or(false),
+            },
             cursor,
             page_size as i64 + 1,
         )
@@ -532,6 +733,7 @@ impl CareService {
             TriageFilters {
                 acuity: query.acuity,
                 status: query.status,
+                assigned_to_user_id: query.assigned_to_user_id,
             },
         )
         .await
@@ -619,7 +821,16 @@ impl CareService {
         payload: AssignTriageRequest,
     ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
         require_action_permission(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
-        let _existing = load_triage_for_access(&self.state, ctx, id).await?;
+        let existing = load_triage_for_access(&self.state, ctx, id).await?;
+        if !matches!(
+            existing.status,
+            TriageStatus::Waiting | TriageStatus::Assigned
+        ) {
+            return Err(ApiError::conflict(
+                "triage_assign_invalid_status",
+                "Only waiting or assigned triage entries can be assigned.",
+            ));
+        }
         let triage = hms_db::care::assign_triage(
             self.pool(),
             self.facility_id(),
@@ -630,7 +841,12 @@ impl CareService {
         .map_err(|_| {
             ApiError::conflict("triage_assign_failed", "Triage item could not be assigned.")
         })?
-        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "triage_assign_invalid_status",
+                "Only waiting or assigned triage entries can be assigned.",
+            )
+        })?;
 
         Ok(object(triage))
     }
@@ -995,6 +1211,26 @@ async fn load_patient_for_access(
     })?;
 
     Ok(patient)
+}
+
+fn split_preview<T>(mut rows: Vec<T>, limit: usize) -> (Vec<T>, bool) {
+    let has_more = rows.len() > limit;
+    rows.truncate(limit);
+    (rows, has_more)
+}
+
+fn can_access_workflow(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+    permission: PermissionCode,
+) -> bool {
+    hms_access::require_patient_workflow_access(ctx, facility_id, permission).is_ok()
+}
+
+fn can_view_all_ward_board(ctx: &hms_access::RequestContext, facility_id: Uuid) -> bool {
+    ctx.has_facility_permission(facility_id, PermissionCode::WardBoardViewAll)
+        || ctx.has_facility_permission(facility_id, PermissionCode::AdminStaffManage)
+        || ctx.has_facility_permission(facility_id, PermissionCode::AdminAuthorityManage)
 }
 
 fn require_workflow_list_access(

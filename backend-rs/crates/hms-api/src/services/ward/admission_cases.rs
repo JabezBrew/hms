@@ -7,7 +7,7 @@ use hms_domain::ward::{
 };
 use uuid::Uuid;
 
-use super::common;
+use super::{common, staff_assignments};
 use crate::error::ApiError;
 use crate::response::{object, ListResponse, ObjectResponse};
 use crate::state::AppState;
@@ -32,6 +32,7 @@ impl AdmissionCasesService {
             self.state.facility_id(),
             PermissionCode::WardView,
         )?;
+        self.require_ward_board_scope(ctx, query.ward_id).await?;
         let page = common::page_request(CursorListQuery {
             cursor: query.cursor,
             limit: query.limit,
@@ -76,6 +77,48 @@ impl AdmissionCasesService {
                 .put_cached_ward_board(ctx, query.ward_id, page_size, response.clone());
         }
         Ok(response)
+    }
+
+    async fn require_ward_board_scope(
+        &self,
+        ctx: &hms_access::RequestContext,
+        ward_id: Option<Uuid>,
+    ) -> Result<(), ApiError> {
+        if staff_assignments::can_view_all_ward_board(ctx, self.state.facility_id()) {
+            if let Some(ward_id) = ward_id {
+                let _ward = common::load_ward(&self.state, ward_id).await?;
+            }
+            return Ok(());
+        }
+
+        let Some(ward_id) = ward_id else {
+            return Err(ApiError::forbidden(
+                "ward_board_scope_denied",
+                "Select an assigned ward to open the ward board.",
+            ));
+        };
+        let _ward = common::load_ward(&self.state, ward_id).await?;
+        let assigned = hms_db::ward::user_has_active_ward_assignment(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            ctx.user_id,
+            ward_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_board_scope_check_failed",
+                "Ward board access could not be checked.",
+            )
+        })?;
+        if assigned {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden(
+                "ward_board_scope_denied",
+                "You are not assigned to this ward board.",
+            ))
+        }
     }
 
     pub async fn get_admission(

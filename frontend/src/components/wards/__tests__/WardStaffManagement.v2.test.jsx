@@ -62,7 +62,7 @@ vi.mock('@/components/ui/alert-dialog', () => ({
   AlertDialogTrigger: ({ children }) => <>{children}</>,
 }));
 
-describe('WardStaffManagement Rust V2 guards', () => {
+describe('WardStaffManagement Rust V2 support', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -71,18 +71,16 @@ describe('WardStaffManagement Rust V2 guards', () => {
     delete window.__HMS_RUNTIME_CONFIG__;
   });
 
-  it('renders ward staff assignments read-only in Rust V2 mode', () => {
+  it('keeps ward staff assignment actions available in Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
 
     render(<WardStaffManagement wardId="ward-1" />);
 
     expect(screen.getByText('Dr. Ama Mensah')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /assign staff/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/ward staff assignment management is not available in rust v2/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /assign staff/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^remove$/i })).toBeInTheDocument();
+    expect(screen.queryByText(/not available in rust v2/i)).not.toBeInTheDocument();
   });
 
   it('keeps ward staff assignment actions available outside Rust V2 mode', () => {

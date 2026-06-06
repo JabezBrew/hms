@@ -18,6 +18,7 @@ Scope: app root, My Work landing, shared provider dashboards, snapshot views, no
 ## Backend Contracts
 
 - `/api/v2/dashboards/*`
+- `/api/v2/care-areas/my-work`
 - `/api/v2/notifications/*`
 - `/api/v2/realtime/*`
 
@@ -26,6 +27,9 @@ Scope: app root, My Work landing, shared provider dashboards, snapshot views, no
 - Clinical users should land in My Work, then choose scoped workflow surfaces
   such as OPD waiting rooms, Ward Board, triage, or Patient Chronicle rather
   than defaulting into one broad patient list.
+- My Work previews are bounded, server-filtered summaries. They must not fetch a
+  broad patient directory page and sort/filter it locally.
+- My Work links to Patient Directory only for administrative/global lookup.
 - Dashboard snapshots must not block on FHIR or external I/O.
 - Dashboard route shells should become useful before heavy widget bodies finish.
 - Query keys must include role/profile/facility visibility scope.

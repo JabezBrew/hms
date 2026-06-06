@@ -5,6 +5,7 @@ import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
 const baseKeys = createKeyFactory('wards');
+const wardBoardBaseKeys = createKeyFactory('ward-board');
 
 export const wardKeys = {
   ...baseKeys,
@@ -41,6 +42,11 @@ export const wardKeys = {
   staffRolesList: (filters) => [...wardKeys.staffRoles(), 'list', { filters }],
 };
 
+const wardBoardAssignmentKeys = {
+  context: () => [...wardBoardBaseKeys.all, 'context'],
+  lists: () => wardBoardBaseKeys.lists(),
+};
+
 function invalidateWardBedState(queryClient, wardId) {
   if (!wardId) return;
 
@@ -55,6 +61,11 @@ function invalidateWardSectionState(queryClient, wardId) {
   queryClient.invalidateQueries({ queryKey: wardKeys.wardSections(wardId) });
   queryClient.invalidateQueries({ queryKey: wardKeys.wardBedMap(wardId) });
   queryClient.invalidateQueries({ queryKey: wardKeys.detail(wardId), exact: true });
+}
+
+function invalidateWardBoardAssignmentState(queryClient) {
+  queryClient.invalidateQueries({ queryKey: wardBoardAssignmentKeys.context() });
+  queryClient.invalidateQueries({ queryKey: wardBoardAssignmentKeys.lists() });
 }
 
 /**
@@ -735,6 +746,7 @@ export function useCreateStaffAssignment() {
     onSuccess: (responseData, variables) => {
       // Invalidate staff assignments list
       queryClient.invalidateQueries({ queryKey: wardKeys.staffAssignments() });
+      invalidateWardBoardAssignmentState(queryClient);
 
       // Invalidate ward staff (lightweight endpoint)
       if (variables.ward) {
@@ -770,6 +782,7 @@ export function useUpdateStaffAssignment() {
 
       // Invalidate staff assignments list
       queryClient.invalidateQueries({ queryKey: wardKeys.staffAssignments() });
+      invalidateWardBoardAssignmentState(queryClient);
 
       // Invalidate ward staff queries
       if (responseData?.ward) {
@@ -801,6 +814,7 @@ export function useDeleteStaffAssignment() {
       // Invalidate all staff assignment related queries
       queryClient.invalidateQueries({ queryKey: wardKeys.staffAssignments() });
       queryClient.invalidateQueries({ queryKey: wardKeys.staff() });
+      invalidateWardBoardAssignmentState(queryClient);
     },
   });
 }

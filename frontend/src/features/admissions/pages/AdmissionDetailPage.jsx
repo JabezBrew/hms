@@ -131,24 +131,25 @@ function AdmissionActionError({ message }) {
   );
 }
 
-function buildDischargeWorkflowPath({ dischargeCase, patientId }) {
+function buildDischargeWorkflowPath({ dischargeCase, patientId, wardId }) {
   const dischargeCaseId = dischargeCase?.id || null;
   const resolvedPatientId = patientId
     || dischargeCase?.patient
     || dischargeCase?.patient_id
     || null;
+  const basePath = wardId ? `/wards/${wardId}/board` : '/ward-board';
 
   if (!resolvedPatientId) {
     const params = new URLSearchParams({ view: 'discharge' });
     if (dischargeCaseId) params.set('case', dischargeCaseId);
-    return `/ward-board?${params.toString()}`;
+    return `${basePath}?${params.toString()}`;
   }
 
   const params = new URLSearchParams({ view: 'discharge' });
   params.set('patient', resolvedPatientId);
   if (dischargeCaseId) params.set('case', dischargeCaseId);
 
-  return `/ward-board?${params.toString()}`;
+  return `${basePath}?${params.toString()}`;
 }
 
 function AdmissionSummaryField({ label, value, className = '' }) {
@@ -450,7 +451,7 @@ export default function AdmissionDetailPage() {
       setRequestingDischarge(true);
       setActionError(null);
       const dischargeCase = await dischargeApi.requestCase(admission.id);
-      navigate(buildDischargeWorkflowPath({ dischargeCase, patientId }));
+      navigate(buildDischargeWorkflowPath({ dischargeCase, patientId, wardId }));
     } catch {
       setActionError('Unable to request discharge. Please try again.');
     } finally {

@@ -21,6 +21,7 @@ function sanitizeBoardFiltersForKey(filters = {}) {
 
 export const wardBoardKeys = {
   ...baseKeys,
+  context: () => [...baseKeys.all, 'context'],
   board: (filters) => [...baseKeys.lists(), { filters: sanitizeBoardFiltersForKey(filters) }],
   patients: () => [...baseKeys.all, 'patients'],
   patient: (patientId) => [...baseKeys.all, 'patients', hashQueryValue(patientId)],
@@ -345,6 +346,15 @@ export function useWardBoard(filters = {}, options = {}) {
     queryFn: ({ signal }) => wardBoardApi.getBoard(filters, { signal }),
     staleTime: 15 * 1000,
     placeholderData: (previousData) => previousData,
+    ...options,
+  });
+}
+
+export function useWardBoardContext(options = {}) {
+  return useQuery({
+    queryKey: wardBoardKeys.context(),
+    queryFn: ({ signal }) => wardBoardApi.getBoardContext({ signal }),
+    staleTime: 60 * 1000,
     ...options,
   });
 }

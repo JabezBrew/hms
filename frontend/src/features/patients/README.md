@@ -46,9 +46,14 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 
 - Patient Chronicle is the product home for patient clinical data.
 - Patient Directory and my-patients lists must stay lightweight and server-paginated.
-- Patient Directory is broad patient-record lookup; scoped patient workflow
-  lists live in care-area, clinic waiting-room, ward board, triage, and
-  Chronicle surfaces.
+- Patient Directory is broad patient-record lookup. It should default to search
+  and bounded recent-registration discovery, not a global active-patient work
+  queue.
+- Scoped patient workflow lists live in care-area, clinic waiting-room, Ward
+  Board, triage, My Work, and Chronicle surfaces.
+- Patient administrative record status is independent from encounter, admission,
+  discharge, triage, and visit status. Do not deactivate patient records because
+  an encounter or admission was discharged.
 - Patient Directory location displays current admission ward/bed context; use
   `Not admitted` when no current admission location is present.
 - Patient Directory ward filters default to current admissions
@@ -58,3 +63,6 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 - Do not prefetch heavy Chronicle data unless performance budgets allow it.
 - Patient identity fields must not appear in query keys, logs, browser events,
   or fixture names.
+- Chronicle workflow handoff must use real context ids: `visit=<encounter_id>`
+  for OPD/Emergency encounter context and `admission=<admission_case_id>` for
+  inpatient context. Do not pass a raw visit id as the Chronicle visit scope.

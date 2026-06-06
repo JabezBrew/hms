@@ -71,6 +71,7 @@ function boardCursorCacheKey(_params = {}, limit) {
   const patientId = _params.patient_id ?? _params.patient ?? '';
   const filterKey = JSON.stringify({
     limit,
+    scope: _params.scope === 'all' ? 'all' : '',
     ward_id: _params.ward_id ?? _params.ward ?? '',
     view: _params.view ?? '',
     monitoring_filter: _params.monitoring_filter ?? '',
@@ -97,11 +98,12 @@ function getV2BoardQuery(params = {}) {
   const wardId = params.ward_id ?? params.ward;
   const patientId = params.patient_id ?? params.patient;
   const monitoringFilter = params.monitoring_filter ?? viewToMonitoringFilter(params.view);
+  const isAllWardScope = params.scope === 'all' || wardId === 'all';
 
   return {
     limit,
     ...(cursor ? { cursor } : {}),
-    ...(wardId && wardId !== 'all' ? { ward_id: wardId } : {}),
+    ...(wardId && !isAllWardScope ? { ward_id: wardId } : {}),
     ...(patientId ? { patient_id: patientId } : {}),
     ...(params.search ? { search: String(params.search).trim() } : {}),
     ...(monitoringFilter ? { monitoring_filter: monitoringFilter } : {}),
@@ -229,6 +231,18 @@ function normalizeV2BoardResponse(response, params = {}) {
   };
 }
 
+function normalizeBoardContext(response) {
+  const data = response?.data && typeof response.data === 'object' ? response.data : response || {};
+  const assignedWards = Array.isArray(data.assigned_wards) ? data.assigned_wards : [];
+  return {
+    assigned_wards: assignedWards,
+    primary_ward_id: data.primary_ward_id ?? null,
+    default_ward_id: data.default_ward_id ?? null,
+    can_view_all_wards: Boolean(data.can_view_all_wards),
+    default_route: data.default_route || '/ward-board',
+  };
+}
+
 function wrapApiError(error, message) {
   rethrowAbortError(error);
   throw new Error(handleApiError(error, message));
@@ -240,6 +254,27 @@ function wrapV2ApiError(error, message) {
 }
 
 export const wardBoardApi = {
+  getBoardContext: async (options = {}) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.getMyWardBoardContext({
+          signal: options.signal,
+        });
+        return normalizeBoardContext(response);
+      } catch (error) {
+        wrapV2ApiError(error, 'Failed to fetch ward board context');
+      }
+    }
+
+    return normalizeBoardContext({
+      assigned_wards: [],
+      primary_ward_id: null,
+      default_ward_id: null,
+      can_view_all_wards: true,
+      default_route: '/ward-board',
+    });
+  },
+
   getBoard: async (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       try {

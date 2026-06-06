@@ -12,14 +12,16 @@ function getVisitPatientId(visit) {
   return visit?.patient_id || visit?.patientId || null;
 }
 
+function getVisitActionId(visit) {
+  return visit?.visit_id || visit?.id || visit?.encounter_id || null;
+}
+
 function patientChronicleActionPath(visit, action) {
   const patientId = getVisitPatientId(visit);
   if (!patientId) return null;
 
   const params = new URLSearchParams({ action });
-  const visitId = visit?.visit_id || visit?.id || null;
-  if (visitId) params.set('visit', visitId);
-  if (visit?.encounter_id) params.set('encounter', visit.encounter_id);
+  if (visit?.encounter_id) params.set('visit', visit.encounter_id);
 
   return `/patients/${encodeURIComponent(patientId)}?${params.toString()}`;
 }
@@ -61,7 +63,12 @@ export function WaitingRoomQueue({
       onPatientClick(visit);
     } else {
       // Default: navigate to patient chronicle
-      navigate(`/patients/${patientId || visit.encounter_id}`);
+      const params = new URLSearchParams();
+      if (visit.encounter_id) {
+        params.set('visit', String(visit.encounter_id));
+      }
+      const query = params.toString();
+      navigate(`/patients/${patientId}${query ? `?${query}` : ''}`);
     }
   };
 
@@ -94,14 +101,14 @@ export function WaitingRoomQueue({
         {
           label: 'Room Patient',
           variant: 'default',
-          onClick: () => callPatient.mutate(visit.encounter_id),
-          disabled: callPatient.isPending,
+          onClick: () => callPatient.mutate(getVisitActionId(visit)),
+          disabled: callPatient.isPending || !getVisitActionId(visit),
         },
         {
           label: 'No Show',
           variant: 'outline',
-          onClick: () => markNoShow.mutate(visit.encounter_id),
-          disabled: markNoShow.isPending,
+          onClick: () => markNoShow.mutate(getVisitActionId(visit)),
+          disabled: markNoShow.isPending || !getVisitActionId(visit),
         },
       ];
     }
@@ -112,14 +119,14 @@ export function WaitingRoomQueue({
         {
           label: 'Start Consultation',
           variant: 'default',
-          onClick: () => startConsultation.mutate(visit.encounter_id),
-          disabled: startConsultation.isPending,
+          onClick: () => startConsultation.mutate(getVisitActionId(visit)),
+          disabled: startConsultation.isPending || !getVisitActionId(visit),
         },
         {
           label: 'No Show',
           variant: 'outline',
-          onClick: () => markNoShow.mutate(visit.encounter_id),
-          disabled: markNoShow.isPending,
+          onClick: () => markNoShow.mutate(getVisitActionId(visit)),
+          disabled: markNoShow.isPending || !getVisitActionId(visit),
         },
       ];
     }
@@ -130,7 +137,8 @@ export function WaitingRoomQueue({
         {
           label: 'Checkout',
           variant: 'default',
-          onClick: () => setCheckoutEncounterId(visit.encounter_id),
+          onClick: () => setCheckoutEncounterId(getVisitActionId(visit)),
+          disabled: !getVisitActionId(visit),
         },
       ];
     }
@@ -187,7 +195,7 @@ export function WaitingRoomQueue({
             <div className="space-y-3">
               {readyCheckout.map((visit) => (
                 <ActionCard
-                  key={visit.encounter_id}
+                  key={getVisitActionId(visit)}
                   title={
                     <button
                       type="button"
@@ -233,7 +241,7 @@ export function WaitingRoomQueue({
             <div className="space-y-3">
               {called.map((visit) => (
                 <ActionCard
-                  key={visit.encounter_id}
+                  key={getVisitActionId(visit)}
                   title={
                     <button
                       type="button"
@@ -279,7 +287,7 @@ export function WaitingRoomQueue({
             <div className="space-y-3">
               {waiting.map((visit) => (
                 <ActionCard
-                  key={visit.encounter_id}
+                  key={getVisitActionId(visit)}
                   title={
                     <button
                       type="button"

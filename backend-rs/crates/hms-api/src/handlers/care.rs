@@ -2,8 +2,8 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::care::{
     AppointmentListGetQuery, AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem,
-    CancelAppointmentRequest, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
-    CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
+    CancelAppointmentRequest, CareAreaMyWorkResponse, CareTeamAssignment, CheckInVisitRequest,
+    ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
     CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListGetQuery,
     EncounterListItem, EncounterListQuery, TriageAssessmentRequest, TriageListItem,
     TriageListQuery, UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest,
@@ -15,6 +15,25 @@ use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
 use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/care-areas/my-work",
+    operation_id = "getCareAreaMyWork",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Scoped care-area work summary", body = ObjectResponse<CareAreaMyWorkResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn my_work(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+) -> Result<Json<ObjectResponse<CareAreaMyWorkResponse>>, ApiError> {
+    Ok(Json(state.care_service().my_work(&user).await?))
+}
 
 #[utoipa::path(
     get,

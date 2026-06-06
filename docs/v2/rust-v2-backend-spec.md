@@ -1273,10 +1273,18 @@ GET  /api/v2/patients/:id/chronicle
 POST /api/v2/patients/:id/break-glass
 ```
 
+Care-area work:
+
+```text
+GET  /api/v2/care-areas/my-work
+```
+
 Encounters and visits:
 
 ```text
+GET  /api/v2/visits
 POST /api/v2/triage
+GET  /api/v2/triage
 POST /api/v2/triage/:id/assign
 POST /api/v2/visits/check-in
 POST /api/v2/visits/:id/call
@@ -1650,6 +1658,8 @@ facility_id appears in composite indexes for scoped tables
 patient timelines indexed by (facility_id, patient_id, occurred_at desc)
 work queues indexed by (facility_id, status, priority, created_at)
 appointments indexed by (facility_id, clinic_id, starts_at)
+outpatient work indexed by clinic, practitioner, status, checked_in_at, and stable cursor ids
+emergency work indexed by assignee, status, created_at, and stable cursor ids
 admissions indexed by (facility_id, ward_id, status)
 billing indexed by (facility_id, invoice_status, created_at)
 inventory indexed by (facility_id, store_id, item_id)

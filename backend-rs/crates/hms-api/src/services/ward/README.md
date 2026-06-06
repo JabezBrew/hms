@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Backend/Ward Engineering
-Last reviewed: 2026-06-01
+Last reviewed: 2026-06-06
 Scope: ward, bed, admission, discharge, nursing, MAR, handoff, monitoring, and ward-stock workflow services.
 
 ## Purpose
@@ -17,7 +17,7 @@ lives in `hms-db::ward`.
 | --- | --- |
 | `mod.rs` | public service exports and shared ward service assembly. |
 | `common.rs` | shared request/response helpers, scope translation, and workflow utilities. |
-| `admin.rs` | ward, section, bed, amenity, and staff-assignment administration. |
+| `admin.rs` | ward, section, and bed administration. |
 | `analytics.rs` | ward occupancy, length-of-stay, admission, discharge, and utilization aggregate reporting. |
 | `bed_management.rs` | bed layout, bed status, assignment, hold, and movement workflows. |
 | `admission_cases.rs` | admission-case creation, status transitions, and active inpatient context. |
@@ -26,6 +26,7 @@ lives in `hms-db::ward`.
 | `mar.rs` | medication administration record workflows. |
 | `nursing_task_board.rs` | nursing task list, assignment, status, and board projections. |
 | `observations_monitoring.rs` | vitals/observation monitoring and alert-facing projections. |
+| `staff_assignments.rs` | ward staff assignments, role catalog, and current-user ward-board context. |
 | `ward_stock.rs` | ward stock requests, availability, and transfer-facing workflow. |
 
 ## Invariants
@@ -45,6 +46,11 @@ lives in `hms-db::ward`.
   ward-attributed revenue until a real source table/contract exists.
 - Ward analytics date filters are calendar dates, interpreted as an inclusive
   start/end range and converted inside the service to `[start, end)` timestamps.
+- Ward-board reads are assignment-scoped unless the user has
+  `ward_board.view_all` or admin staff/authority permission. Keep
+  `/api/v2/wards/my-board-context` aligned with the same assignment source used
+  by staff-assignment management, and do not treat the plain Wards feature as
+  permission to load the house board.
 - MAR, observation, and handoff paths must keep PHI out of logs and metric
   labels.
 - External side effects belong in worker jobs or later async paths, not inside

@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::patients::PatientContextListItem;
+use crate::ward::MyWardBoardAssignment;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AppointmentStatus {
@@ -97,6 +100,7 @@ pub struct AppointmentListQuery {
     pub limit: Option<u8>,
     pub date: Option<NaiveDate>,
     pub clinic_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
     pub status: Option<AppointmentStatus>,
     pub search: Option<String>,
 }
@@ -107,6 +111,7 @@ pub struct AppointmentListGetQuery {
     pub limit: Option<u8>,
     pub date: Option<NaiveDate>,
     pub clinic_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
     pub status: Option<AppointmentStatus>,
     pub search: Option<String>,
 }
@@ -118,6 +123,7 @@ impl From<AppointmentListGetQuery> for AppointmentListQuery {
             limit: value.limit,
             date: value.date,
             clinic_id: value.clinic_id,
+            practitioner_user_id: value.practitioner_user_id,
             status: value.status,
             search: value.search,
         }
@@ -129,6 +135,9 @@ pub struct VisitListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub clinic_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub status: Option<VisitStatus>,
+    pub active_only: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -138,6 +147,47 @@ pub struct TriageListQuery {
     pub limit: Option<u8>,
     pub status: Option<TriageStatus>,
     pub acuity: Option<TriageAcuity>,
+    pub assigned_to_user_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CareAreaMyWorkResponse {
+    pub generated_at: DateTime<Utc>,
+    pub outpatient: CareAreaOutpatientMyWork,
+    pub inpatient: CareAreaInpatientMyWork,
+    pub emergency: CareAreaEmergencyMyWork,
+    pub patient_context: CareAreaPatientContextMyWork,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CareAreaOutpatientMyWork {
+    pub date: NaiveDate,
+    pub appointments: Vec<AppointmentListItem>,
+    pub has_more_appointments: bool,
+    pub active_visits: Vec<VisitListItem>,
+    pub has_more_active_visits: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CareAreaInpatientMyWork {
+    pub assigned_wards: Vec<MyWardBoardAssignment>,
+    pub primary_ward_id: Option<Uuid>,
+    pub default_ward_id: Option<Uuid>,
+    pub can_view_all_wards: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CareAreaEmergencyMyWork {
+    pub assigned_triage: Vec<TriageListItem>,
+    pub has_more_assigned_triage: bool,
+    pub waiting_triage: Vec<TriageListItem>,
+    pub has_more_waiting_triage: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CareAreaPatientContextMyWork {
+    pub recent_patients: Vec<PatientContextListItem>,
+    pub has_more_recent_patients: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -281,6 +331,7 @@ pub struct VisitListItem {
     pub patient_code: String,
     pub patient_display_name: String,
     pub appointment_id: Option<Uuid>,
+    pub encounter_id: Option<Uuid>,
     pub clinic_id: Option<Uuid>,
     pub status: VisitStatus,
     pub checked_in_at: DateTime<Utc>,
@@ -297,11 +348,14 @@ pub struct CheckInVisitRequest {
 pub struct TriageListItem {
     pub id: Uuid,
     pub visit_id: Uuid,
+    pub encounter_id: Option<Uuid>,
     pub patient_id: Uuid,
     pub patient_code: String,
     pub patient_display_name: String,
     pub acuity: TriageAcuity,
     pub status: TriageStatus,
+    pub assigned_to_user_id: Option<Uuid>,
+    pub assigned_to_name: Option<String>,
     pub triage_notes: Option<String>,
     pub created_at: DateTime<Utc>,
 }
@@ -376,12 +430,14 @@ mod tests {
             limit: Some(10),
             date: None,
             clinic_id: Some(Uuid::from_u128(0x200)),
+            practitioner_user_id: Some(Uuid::from_u128(0x202)),
             status: Some(AppointmentStatus::Scheduled),
             search: Some("patient".to_owned()),
         });
 
         assert_eq!(query.search.as_deref(), Some("patient"));
         assert_eq!(query.clinic_id, Some(Uuid::from_u128(0x200)));
+        assert_eq!(query.practitioner_user_id, Some(Uuid::from_u128(0x202)));
         assert!(matches!(query.status, Some(AppointmentStatus::Scheduled)));
     }
 

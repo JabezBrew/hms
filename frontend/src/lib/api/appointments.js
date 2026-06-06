@@ -250,7 +250,8 @@ function adaptV2VisitCheckIn(visit) {
   return {
     id: visit.id,
     visit_id: visit.id,
-    encounter_id: visit.id,
+    encounter_id: visit.encounter_id || null,
+    encounter: visit.encounter_id || null,
     patient: visit.patient_id,
     patient_id: visit.patient_id,
     patient_name: visit.patient_display_name,
@@ -283,6 +284,10 @@ function getV2AppointmentListQuery(params = {}) {
   const clinicId = params.clinic_id || params.clinic;
   if (clinicId) {
     query.clinic_id = clinicId;
+  }
+  const practitionerUserId = params.practitioner_user_id || params.practitioner_id || params.practitioner;
+  if (practitionerUserId) {
+    query.practitioner_user_id = practitionerUserId;
   }
   if (params.status && params.status !== 'all') {
     query.status = mapUiAppointmentStatus(params.status);
