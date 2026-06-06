@@ -4,7 +4,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::patients::PatientContextListItem;
-use crate::ward::MyWardBoardAssignment;
+use crate::ward::{AdmissionCaseListItem, MyWardBoardAssignment};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -345,6 +345,43 @@ pub struct CheckInVisitRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct SpecialRecordOverride {
+    pub reason_code: String,
+    pub reason_note: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct OutpatientIntakeRequest {
+    pub patient_id: Uuid,
+    pub appointment_id: Option<Uuid>,
+    pub clinic_id: Option<Uuid>,
+    pub restricted_record_override: Option<SpecialRecordOverride>,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct OutpatientIntakeResponse {
+    pub patient_id: Uuid,
+    pub visit: VisitListItem,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct InpatientIntakeRequest {
+    pub patient_id: Uuid,
+    pub ward_id: Uuid,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub restricted_record_override: Option<SpecialRecordOverride>,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct InpatientIntakeResponse {
+    pub patient_id: Uuid,
+    pub admission_case: AdmissionCaseListItem,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct TriageListItem {
     pub id: Uuid,
     pub visit_id: Uuid,
@@ -364,6 +401,22 @@ pub struct TriageListItem {
 pub struct CreateTriageRequest {
     pub visit_id: Uuid,
     pub acuity: TriageAcuity,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct EmergencyIntakeRequest {
+    pub patient_id: Uuid,
+    pub clinic_id: Option<Uuid>,
+    pub acuity: TriageAcuity,
+    pub restricted_record_override: Option<SpecialRecordOverride>,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct EmergencyIntakeResponse {
+    pub patient_id: Uuid,
+    pub visit: VisitListItem,
+    pub triage: TriageListItem,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

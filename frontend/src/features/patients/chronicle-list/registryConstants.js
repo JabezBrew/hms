@@ -9,15 +9,24 @@ export const ADMISSION_STATUS_OPTIONS = [
 
 export const RECORD_STATUS_OPTIONS = [
   { value: 'all', label: 'Any record status' },
-  { value: 'active', label: 'Active record' },
+  { value: 'registered', label: 'Registered record' },
+  { value: 'restricted', label: 'Restricted' },
+  { value: 'entered_in_error', label: 'Entered in error' },
+  { value: 'superseded', label: 'Merged record' },
+];
+
+export const VITAL_STATUS_OPTIONS = [
+  { value: 'all', label: 'Any vital status' },
+  { value: 'presumed_alive', label: 'Presumed alive' },
   { value: 'deceased', label: 'Deceased' },
-  { value: 'inactive', label: 'Inactive' },
+  { value: 'unknown', label: 'Unknown' },
 ];
 
 export const DEFAULT_SEARCH_ORDERING = '-created_at';
 export const SEARCH_TABLE_PAGE_SIZE = 25;
 export const DEFAULT_RECORD_STATUS_FILTER = 'all';
-export const RECENT_REGISTRATION_STATUS = 'active';
+export const DEFAULT_VITAL_STATUS_FILTER = 'all';
+export const RECENT_REGISTRATION_STATUS = 'registered';
 
 export const DIRECTORY_SECTION_LABELS = {
   recent: 'Recent registrations',

@@ -22,11 +22,23 @@ Scope: entry hubs for scoped patient access by care context.
 - Outpatient hub uses `/api/v2/clinics` for clinic metadata and links to
   `/clinics/:clinicId/waiting-room`. The embedded queue table calls
   `/api/v2/visits` with `clinic_id` and `active_only=true`.
+- Outpatient intake starts at
+  `/patients/find-or-register?intent=outpatient&clinic_id=<clinic_id>` and then
+  calls `/api/v2/care-areas/outpatient/intake` with a resolved `patient_id`,
+  explicit `clinic_id`, and idempotency key.
 - Inpatient hub uses `/api/v2/wards` and `/api/v2/wards/my-board-context` for
   assigned ward entry points. The actual inpatient patient table remains Ward
   Board.
+- Inpatient intake starts at
+  `/patients/find-or-register?intent=inpatient&ward_id=<ward_id>` and then calls
+  `/api/v2/care-areas/inpatient/intake`. If the patient already has any current
+  admission, the workflow routes to Ward Board instead of creating another
+  admission case.
 - Emergency hub links to `/triage` and embeds `/api/v2/triage` with server-side
   status/assignment filters.
+- Emergency walk-in intake starts at
+  `/patients/find-or-register?intent=emergency` and then calls
+  `/api/v2/care-areas/emergency/intake` with an idempotency key.
 - Optional links, such as appointment scheduling, walk-in registration, and
   encounter lists, are shown only when their deployment modules are enabled.
 
@@ -51,6 +63,13 @@ Scope: entry hubs for scoped patient access by care context.
 - Preserve the distinction between patient record status and encounter,
   admission, or triage status; the hubs route users to the relevant context
   instead of redefining those statuses.
+- Care-area intake must only use opaque context ids in URLs. Patient identity
+  search text, MRNs, names, DOBs, phones, or duplicate-review notes stay in
+  request bodies and must not enter URLs or React Query keys.
+- Care-area intake idempotency keys must be generated client-side per action;
+  the backend persists only key hashes and request fingerprints.
+- Deceased, entered-in-error, and superseded patient records are blocked for
+  normal intake. Restricted records need an authorized override reason.
 - Chronicle links should include `visit=<encounter_id>` only when the row has a
   real encounter id. Raw visit ids are not Chronicle visit-scope ids.
 - Ward Board links may include `admission=<admission_case_id>` so Chronicle opens

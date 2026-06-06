@@ -139,12 +139,15 @@ impl ScenarioBuilder<'_> {
             crate::patients::NewPatient {
                 id: Uuid::new_v4(),
                 facility_id: self.db.facility_id(),
+                created_by_user_id: self.db.owner_user_id(),
+                request_id: None,
                 patient_code: format!("P-{token}"),
                 first_name: format!("Test{token}"),
                 last_name: "Patient".to_owned(),
                 date_of_birth: NaiveDate::from_ymd_opt(1990, 1, 1)
                     .expect("static test date is valid"),
                 sex: Sex::Female,
+                duplicate_override: None,
             },
         )
         .await

@@ -75,7 +75,7 @@ function adaptV2PatientListItem(patient) {
     created_at: patient.created_at,
     medical_record_number: patient.patient_code,
     name: patient.display_name,
-    date_of_birth: birthYearToDate(patient.birth_year),
+    date_of_birth: patient.date_of_birth || birthYearToDate(patient.birth_year),
     gender: patient.sex,
     patient_location: patient.patient_location || null,
     active_clinic_names: Array.isArray(patient.active_clinic_names) ? patient.active_clinic_names : [],
@@ -84,7 +84,12 @@ function adaptV2PatientListItem(patient) {
     bed_code: bedCode,
     current_ward: wardName,
     current_bed: bedCode,
-    registry_status: patient.status,
+    registry_status: patient.record_status || patient.status,
+    legacy_status: patient.status,
+    record_status: patient.record_status || patient.status,
+    vital_status: patient.vital_status || 'unknown',
+    superseded_by_patient_id: patient.superseded_by_patient_id || null,
+    record_status_reason_code: patient.record_status_reason_code || null,
   };
 }
 
@@ -101,7 +106,12 @@ function adaptV2PatientDetail(patient) {
     name: patient.display_name,
     date_of_birth: patient.date_of_birth,
     gender: patient.sex,
-    registry_status: patient.status,
+    registry_status: patient.record_status || patient.status,
+    legacy_status: patient.status,
+    record_status: patient.record_status || patient.status,
+    vital_status: patient.vital_status || 'unknown',
+    superseded_by_patient_id: patient.superseded_by_patient_id || null,
+    record_status_reason_code: patient.record_status_reason_code || null,
     created_at: patient.created_at,
     updated_at: patient.updated_at,
     local_data: {
@@ -111,6 +121,8 @@ function adaptV2PatientDetail(patient) {
       last_name: patient.last_name,
       date_of_birth: patient.date_of_birth,
       gender: patient.sex,
+      record_status: patient.record_status || patient.status,
+      vital_status: patient.vital_status || 'unknown',
     },
   };
 }
@@ -158,16 +170,13 @@ function getV2PatientListQuery(params = {}) {
   if (search) {
     query.search = search;
   }
-  const rawStatus = params.status || params.registry_scope;
-  const status = normalizePatientStatus(rawStatus);
-  if (status) {
-    query.status = status;
+  if (hasQueryValue(params.record_status)) {
+    query.record_status = params.record_status;
   }
-  if (rawStatus && String(rawStatus).trim().toLowerCase() === 'discharged') {
-    if (!hasQueryValue(params.admission_status)) {
-      query.admission_status = 'discharged';
-    }
+  if (hasQueryValue(params.vital_status)) {
+    query.vital_status = params.vital_status;
   }
+  applyLegacyRegistryStatusFilter(query, params.status || params.registry_scope);
   if (params.include_total === true || params.include_total === 'true') {
     query.include_total = true;
   }
@@ -290,6 +299,53 @@ function normalizePatientStatus(value) {
   return undefined;
 }
 
+function applyLegacyRegistryStatusFilter(query, value) {
+  if (!value) {
+    return;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized || normalized === 'all') {
+    return;
+  }
+
+  if (normalized === 'deceased') {
+    query.record_status = query.record_status || 'registered';
+    query.vital_status = query.vital_status || 'deceased';
+    return;
+  }
+
+  if (normalized === 'inactive' || normalized === 'restricted') {
+    query.record_status = query.record_status || 'restricted';
+    return;
+  }
+
+  if (normalized === 'entered_in_error') {
+    query.record_status = query.record_status || 'entered_in_error';
+    return;
+  }
+
+  if (normalized === 'superseded' || normalized === 'merged') {
+    query.record_status = query.record_status || 'superseded';
+    return;
+  }
+
+  if (normalized === 'discharged') {
+    query.record_status = query.record_status || 'registered';
+    query.admission_status = query.admission_status || 'discharged';
+    return;
+  }
+
+  if (normalized === 'active') {
+    query.record_status = query.record_status || 'registered';
+    query.vital_status = query.vital_status || 'presumed_alive';
+    return;
+  }
+
+  if (normalized === 'admitted' || normalized === 'registered') {
+    query.record_status = query.record_status || 'registered';
+  }
+}
+
 function normalizePatientOrdering(value) {
   if (!value) {
     return undefined;
@@ -325,6 +381,9 @@ function normalizeCreatePatientPayload(data = {}) {
     date_of_birth: normalizeDateOnly(source.date_of_birth || source.birth_date),
     sex: normalizePatientSex(source.sex || source.gender) || 'unknown',
   };
+  if (source.duplicate_review) {
+    payload.duplicate_review = source.duplicate_review;
+  }
 
   if (!payload.first_name || !payload.last_name || !payload.date_of_birth) {
     throw new Error('First name, last name, and date of birth are required to register a patient in Rust V2');
@@ -341,6 +400,11 @@ function normalizeUpdatePatientPayload(data = {}) {
     date_of_birth: normalizeDateOnly(source.date_of_birth || source.birth_date),
     sex: normalizePatientSex(source.sex || source.gender),
     status: normalizePatientStatus(source.status || source.registry_status),
+    record_status: source.record_status,
+    vital_status: source.vital_status,
+    superseded_by_patient_id: source.superseded_by_patient_id,
+    status_reason_code: source.status_reason_code,
+    status_reason_note: source.status_reason_note,
   });
 }
 
@@ -351,12 +415,37 @@ function adaptV2PatientContextListItem(patient) {
     created_at: patient.updated_at,
     medical_record_number: patient.patient_code,
     name: patient.display_name,
-    date_of_birth: birthYearToDate(patient.birth_year),
+    date_of_birth: patient.date_of_birth || birthYearToDate(patient.birth_year),
     gender: patient.sex,
     patient_location: null,
     active_clinic_names: [],
-    registry_status: patient.status,
+    registry_status: patient.record_status || patient.status,
+    legacy_status: patient.status,
+    record_status: patient.record_status || patient.status,
+    vital_status: patient.vital_status || 'unknown',
+    superseded_by_patient_id: patient.superseded_by_patient_id || null,
     context_kind: patient.context_kind,
+  };
+}
+
+function normalizeIdentityLookupPayload(data = {}) {
+  return compactDefined({
+    patient_code: data.patient_code || data.medical_record_number || data.mrn,
+    first_name: data.first_name,
+    last_name: data.last_name,
+    date_of_birth: normalizeDateOnly(data.date_of_birth || data.birth_date),
+    sex: normalizePatientSex(data.sex || data.gender),
+    limit: data.limit,
+  });
+}
+
+function normalizeCurrentContexts(response) {
+  const data = response?.data && typeof response.data === 'object' ? response.data : response;
+  return {
+    patient_id: data?.patient_id || null,
+    outpatient: Array.isArray(data?.outpatient) ? data.outpatient : [],
+    inpatient: Array.isArray(data?.inpatient) ? data.inpatient : [],
+    emergency: Array.isArray(data?.emergency) ? data.emergency : [],
   };
 }
 
@@ -443,6 +532,47 @@ export const patientsApi = {
         throw new Error(handleV2ApiError(error, 'Failed to fetch patient demographics'));
       }
       throw new Error(handleApiError(error, 'Failed to fetch patient demographics'));
+    }
+  },
+
+  lookupIdentity: async (data, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postPatientIdentityLookup(
+          normalizeIdentityLookupPayload(data),
+          { signal: options.signal },
+        );
+        return response?.data || response;
+      }
+      const queryString = new URLSearchParams(normalizeIdentityLookupPayload(data)).toString();
+      return await apiClient.get(`/patients/search/${queryString ? `?${queryString}` : ''}`);
+    } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to look up patient identity'));
+      }
+      throw new Error(handleApiError(error, 'Failed to look up patient identity'));
+    }
+  },
+
+  getCurrentContexts: async (id, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPatientCurrentContexts({ id }, { signal: options.signal });
+        return normalizeCurrentContexts(response);
+      }
+      return {
+        patient_id: id,
+        outpatient: [],
+        inpatient: [],
+        emergency: [],
+      };
+    } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch patient current contexts'));
+      }
+      throw new Error(handleApiError(error, 'Failed to fetch patient current contexts'));
     }
   },
 

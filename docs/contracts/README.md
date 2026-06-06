@@ -32,11 +32,41 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
 - Patient Directory, My Work, Outpatient, Inpatient, and Emergency are distinct
   surfaces. A global patient list must not be used as a frontend substitute for
   care-area work queues.
+- Patient identity lookup uses `POST /api/v2/patients/identity/lookup`. The
+  request may contain identity search fields, but the backend stores only a
+  lookup fingerprint, candidate ids, timestamps, and reviewer facts. Raw names,
+  DOBs, MRNs, phones, or free-text identity input must not be logged, cached, or
+  used as metric/query-key labels.
+- Patient creation through `POST /api/v2/patients` is guarded by backend
+  duplicate detection. Possible matches require `duplicate_review.lookup_id`,
+  `decision=new_distinct_patient`, and a reason. The write path must rerun
+  duplicate detection under a write-path identity lock and reject stale,
+  mismatched, or different-reviewer lookup sessions. Duplicate-candidate
+  disclosure requires patient demographics visibility.
+- Current care context projection uses
+  `GET /api/v2/patients/:id/current-contexts` and returns lightweight OPD, IPD,
+  and Emergency context rows for intake warnings and reuse. Current Emergency
+  context means waiting or assigned triage, not completed triage.
+- Care-area intake uses resolved patient ids:
+  `/api/v2/care-areas/outpatient/intake`,
+  `/api/v2/care-areas/inpatient/intake`, and
+  `/api/v2/care-areas/emergency/intake`. These endpoints create or reuse
+  bounded scoped care contexts and must not search or create broad patient
+  lists. They require idempotency keys; the backend stores only key hashes and
+  request fingerprints. Outpatient intake requires an explicit clinic context,
+  and inpatient intake must reuse or redirect any current admission instead of
+  creating a second current admission.
 - Care-area work uses `/api/v2/care-areas/my-work` for bounded landing previews,
   `/api/v2/visits` with server-side `clinic_id`, `practitioner_user_id`,
   `status`, or `active_only` filters for OPD, `/api/v2/triage` with server-side
   `status`, `acuity`, or `assigned_to_user_id` filters for Emergency, and
   `/api/v2/wards/my-board-context` plus `/api/v2/wards/board` for Inpatient.
+- Ward-board list rows are lightweight sourced projections: census, alert
+  counts, nursing-task counts/due timestamps, due MAR counts/timestamps, last
+  vitals timestamp, unverified-result and pending-order counts, and discharge
+  blocker counts/status. Do not put placeholder risk labels, result values,
+  note bodies, discharge hold reasons, or broad patient clinical records in the
+  hot board DTO.
 
 ## Access Contract Rules
 
@@ -90,6 +120,19 @@ Clinical care context is a first-class persistence contract:
 - Patient administrative record status is not encounter/admission/care status.
   Discharge, checkout, triage completion, and admission cancellation must not
   imply patient-record deactivation.
+- Patient identity status is split into administrative `record_status`
+  (`registered`, `restricted`, `entered_in_error`, `superseded`) and
+  `vital_status` (`presumed_alive`, `deceased`, `unknown`). Legacy
+  `patients.status` is compatibility output only while callers migrate.
+- Legacy status migration maps `active` to `registered + presumed_alive`,
+  `deceased` to `registered + deceased`, and `inactive` to
+  `restricted + presumed_alive + legacy_inactive_unreviewed`.
+- Normal care intake must block `deceased`, `entered_in_error`, and
+  `superseded` records. Restricted records require an explicit authorized
+  override and auditable reason before care intake can proceed.
+- `superseded_by_patient_id` must point to a same-facility registered canonical
+  patient record. Cross-facility canonical links and chains through
+  non-canonical records are invalid.
 - Admission-scoped inpatient events should derive care journey context from the
   owning `admission_case` when a visit/encounter led to admission, instead of
   making every ward table repeat outpatient columns.

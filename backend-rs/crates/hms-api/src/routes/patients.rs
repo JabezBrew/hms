@@ -25,6 +25,14 @@ pub fn routes() -> Router<AppState> {
             get(patients::list_patient_validation_rules),
         )
         .route(
+            "/api/v2/patients/identity/lookup",
+            post(patients::lookup_identity),
+        )
+        .route(
+            "/api/v2/patients/:id/current-contexts",
+            get(patients::get_current_contexts),
+        )
+        .route(
             "/api/v2/patients/:id/chronicle",
             get(patients::get_patient_chronicle),
         )

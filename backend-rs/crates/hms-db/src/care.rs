@@ -210,6 +210,65 @@ pub struct NewTriage {
     pub created_by_user_id: Uuid,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CareAreaIntakeKind {
+    Outpatient,
+    Inpatient,
+    Emergency,
+}
+
+impl CareAreaIntakeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CareAreaIntakeKind::Outpatient => "outpatient",
+            CareAreaIntakeKind::Inpatient => "inpatient",
+            CareAreaIntakeKind::Emergency => "emergency",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NewCareAreaIntakeIdempotencyKey {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub created_by_user_id: Uuid,
+    pub care_area: CareAreaIntakeKind,
+    pub idempotency_key_hash: String,
+    pub request_fingerprint: String,
+    pub patient_id: Uuid,
+    pub visit_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub triage_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompleteCareAreaIntakeIdempotencyKey {
+    pub facility_id: Uuid,
+    pub created_by_user_id: Uuid,
+    pub care_area: CareAreaIntakeKind,
+    pub idempotency_key_hash: String,
+    pub request_fingerprint: String,
+    pub visit_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub triage_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CareAreaIntakeIdempotencyRecord {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub created_by_user_id: Uuid,
+    pub care_area: String,
+    pub idempotency_key_hash: String,
+    pub request_fingerprint: String,
+    pub patient_id: Uuid,
+    pub visit_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub triage_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewEncounter {
     pub id: Uuid,
@@ -340,6 +399,22 @@ struct TriageRow {
 }
 
 #[derive(Clone, Debug, FromRow)]
+struct CareAreaIntakeIdempotencyRow {
+    id: Uuid,
+    facility_id: Uuid,
+    created_by_user_id: Uuid,
+    care_area: String,
+    idempotency_key_hash: String,
+    request_fingerprint: String,
+    patient_id: Uuid,
+    visit_id: Option<Uuid>,
+    admission_case_id: Option<Uuid>,
+    triage_id: Option<Uuid>,
+    created_at: DateTime<Utc>,
+    completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
 struct EncounterRow {
     id: Uuid,
     patient_id: Uuid,
@@ -360,6 +435,134 @@ struct CareTeamAssignmentRow {
     role: String,
     is_active: bool,
     created_at: DateTime<Utc>,
+}
+
+pub async fn create_care_area_intake_idempotency_reservation(
+    pool: &PgPool,
+    key: NewCareAreaIntakeIdempotencyKey,
+) -> anyhow::Result<Option<CareAreaIntakeIdempotencyRecord>> {
+    let row = sqlx::query_as::<_, CareAreaIntakeIdempotencyRow>(
+        r#"
+        INSERT INTO care_area_intake_idempotency_keys (
+            id,
+            facility_id,
+            created_by_user_id,
+            care_area,
+            idempotency_key_hash,
+            request_fingerprint,
+            patient_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (facility_id, created_by_user_id, care_area, idempotency_key_hash)
+        DO NOTHING
+        RETURNING id,
+                  facility_id,
+                  created_by_user_id,
+                  care_area,
+                  idempotency_key_hash,
+                  request_fingerprint,
+                  patient_id,
+                  visit_id,
+                  admission_case_id,
+                  triage_id,
+                  created_at,
+                  completed_at
+        "#,
+    )
+    .bind(key.id)
+    .bind(key.facility_id)
+    .bind(key.created_by_user_id)
+    .bind(key.care_area.as_str())
+    .bind(key.idempotency_key_hash)
+    .bind(key.request_fingerprint)
+    .bind(key.patient_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(care_area_intake_idempotency_from_row))
+}
+
+pub async fn get_care_area_intake_idempotency_record(
+    pool: &PgPool,
+    facility_id: Uuid,
+    created_by_user_id: Uuid,
+    care_area: CareAreaIntakeKind,
+    idempotency_key_hash: &str,
+) -> anyhow::Result<Option<CareAreaIntakeIdempotencyRecord>> {
+    let row = sqlx::query_as::<_, CareAreaIntakeIdempotencyRow>(
+        r#"
+        SELECT id,
+               facility_id,
+               created_by_user_id,
+               care_area,
+               idempotency_key_hash,
+               request_fingerprint,
+               patient_id,
+               visit_id,
+               admission_case_id,
+               triage_id,
+               created_at,
+               completed_at
+        FROM care_area_intake_idempotency_keys
+        WHERE facility_id = $1
+          AND created_by_user_id = $2
+          AND care_area = $3
+          AND idempotency_key_hash = $4
+        "#,
+    )
+    .bind(facility_id)
+    .bind(created_by_user_id)
+    .bind(care_area.as_str())
+    .bind(idempotency_key_hash)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(care_area_intake_idempotency_from_row))
+}
+
+pub async fn complete_care_area_intake_idempotency_key(
+    pool: &PgPool,
+    completion: CompleteCareAreaIntakeIdempotencyKey,
+) -> anyhow::Result<Option<CareAreaIntakeIdempotencyRecord>> {
+    let row = sqlx::query_as::<_, CareAreaIntakeIdempotencyRow>(
+        r#"
+        UPDATE care_area_intake_idempotency_keys
+        SET visit_id = $6,
+            admission_case_id = $7,
+            triage_id = $8,
+            completed_at = now()
+        WHERE facility_id = $1
+          AND created_by_user_id = $2
+          AND care_area = $3
+          AND idempotency_key_hash = $4
+          AND request_fingerprint = $5
+          AND completed_at IS NULL
+        RETURNING id,
+                  facility_id,
+                  created_by_user_id,
+                  care_area,
+                  idempotency_key_hash,
+                  request_fingerprint,
+                  patient_id,
+                  visit_id,
+                  admission_case_id,
+                  triage_id,
+                  created_at,
+                  completed_at
+        "#,
+    )
+    .bind(completion.facility_id)
+    .bind(completion.created_by_user_id)
+    .bind(completion.care_area.as_str())
+    .bind(completion.idempotency_key_hash)
+    .bind(completion.request_fingerprint)
+    .bind(completion.visit_id)
+    .bind(completion.admission_case_id)
+    .bind(completion.triage_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(care_area_intake_idempotency_from_row))
 }
 
 pub async fn list_appointments(
@@ -1773,6 +1976,135 @@ pub async fn create_triage(pool: &PgPool, triage: NewTriage) -> anyhow::Result<T
     triage_from_row(row)
 }
 
+pub async fn create_emergency_visit_with_triage(
+    pool: &PgPool,
+    visit: NewVisit,
+    triage: NewTriage,
+) -> anyhow::Result<(VisitListItem, TriageListItem)> {
+    if visit.id != triage.visit_id
+        || visit.facility_id != triage.facility_id
+        || visit.patient_id != triage.patient_id
+    {
+        anyhow::bail!("emergency visit and triage identifiers do not match");
+    }
+
+    let clinic_id = resolve_visit_clinic_id(pool, visit.facility_id, visit.clinic_id).await?;
+    let mut transaction = pool.begin().await?;
+    let mut visit_row = sqlx::query_as::<_, VisitRow>(
+        r#"
+        WITH inserted AS (
+            INSERT INTO visits (
+                id,
+                facility_id,
+                patient_id,
+                appointment_id,
+                clinic_id,
+                status,
+                created_by_user_id
+            )
+            VALUES ($1, $2, $3, NULL, $4, $5, $6)
+            RETURNING id,
+                      patient_id,
+                      appointment_id,
+                      clinic_id,
+                      status,
+                      checked_in_at
+        )
+        SELECT inserted.id,
+               inserted.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               inserted.appointment_id,
+               NULL::uuid AS encounter_id,
+               inserted.clinic_id,
+               inserted.status,
+               inserted.checked_in_at
+        FROM inserted
+        JOIN patients ON patients.id = inserted.patient_id
+        "#,
+    )
+    .bind(visit.id)
+    .bind(visit.facility_id)
+    .bind(visit.patient_id)
+    .bind(clinic_id)
+    .bind(codec::encode(VisitStatus::Waiting)?)
+    .bind(visit.created_by_user_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+
+    let triage_row = sqlx::query_as::<_, TriageRow>(
+        r#"
+        WITH inserted AS (
+            INSERT INTO triage_queue (
+                id,
+                facility_id,
+                visit_id,
+                patient_id,
+                acuity,
+                status,
+                created_by_user_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id,
+                      visit_id,
+                      patient_id,
+                      acuity,
+                      status,
+                      assigned_to_user_id,
+                      triage_notes,
+                      created_at
+        )
+        SELECT inserted.id,
+               inserted.visit_id,
+               NULL::uuid AS encounter_id,
+               inserted.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               inserted.acuity,
+               inserted.status,
+               inserted.assigned_to_user_id,
+               assigned_to.display_name AS assigned_to_name,
+               inserted.triage_notes,
+               inserted.created_at
+        FROM inserted
+        JOIN patients ON patients.id = inserted.patient_id
+        LEFT JOIN users AS assigned_to
+          ON assigned_to.id = inserted.assigned_to_user_id
+         AND assigned_to.facility_id = $2
+        "#,
+    )
+    .bind(triage.id)
+    .bind(triage.facility_id)
+    .bind(triage.visit_id)
+    .bind(triage.patient_id)
+    .bind(codec::encode(triage.acuity)?)
+    .bind(codec::encode(TriageStatus::Waiting)?)
+    .bind(triage.created_by_user_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE visits
+        SET status = $1,
+            updated_at = now()
+        WHERE facility_id = $2
+          AND id = $3
+          AND patient_id = $4
+        "#,
+    )
+    .bind(codec::encode(VisitStatus::InTriage)?)
+    .bind(visit.facility_id)
+    .bind(visit.id)
+    .bind(visit.patient_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    visit_row.status = codec::encode(VisitStatus::InTriage)?;
+    transaction.commit().await?;
+    Ok((visit_from_row(visit_row)?, triage_from_row(triage_row)?))
+}
+
 pub async fn assess_triage(
     pool: &PgPool,
     facility_id: Uuid,
@@ -2796,6 +3128,25 @@ fn triage_from_row(row: TriageRow) -> anyhow::Result<TriageListItem> {
         triage_notes: row.triage_notes,
         created_at: row.created_at,
     })
+}
+
+fn care_area_intake_idempotency_from_row(
+    row: CareAreaIntakeIdempotencyRow,
+) -> CareAreaIntakeIdempotencyRecord {
+    CareAreaIntakeIdempotencyRecord {
+        id: row.id,
+        facility_id: row.facility_id,
+        created_by_user_id: row.created_by_user_id,
+        care_area: row.care_area,
+        idempotency_key_hash: row.idempotency_key_hash,
+        request_fingerprint: row.request_fingerprint,
+        patient_id: row.patient_id,
+        visit_id: row.visit_id,
+        admission_case_id: row.admission_case_id,
+        triage_id: row.triage_id,
+        created_at: row.created_at,
+        completed_at: row.completed_at,
+    }
 }
 
 fn encounter_from_row(row: EncounterRow) -> anyhow::Result<EncounterListItem> {

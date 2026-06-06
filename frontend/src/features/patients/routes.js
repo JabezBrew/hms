@@ -3,7 +3,7 @@ import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS, ROLES } from '@/shared/constants/roles'
 
 const PatientChronicleListPage = lazy(() => import('./pages/PatientChronicleListPage'))
-const PatientCreatePage = lazy(() => import('./pages/PatientCreatePage'))
+const FindOrRegisterPatientPage = lazy(() => import('./pages/FindOrRegisterPatientPage'))
 const MyPatientsPage = lazy(() => import('./pages/MyPatientsPage'))
 const PatientPage = lazy(() => import('./pages/PatientPage'))
 const PatientEditPage = lazy(() => import('./pages/PatientEditPage'))
@@ -23,7 +23,7 @@ export const patientRoutes = [
   },
   {
     path: '/patients/create',
-    component: PatientCreatePage,
+    component: FindOrRegisterPatientPage,
     roles: [ROLES.ADMIN, ROLES.RECEPTIONIST],
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.PATIENTS,
@@ -31,6 +31,18 @@ export const patientRoutes = [
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
       { label: 'Register', path: '/patients/create' },
+    ],
+  },
+  {
+    path: '/patients/find-or-register',
+    component: FindOrRegisterPatientPage,
+    roles: [ROLES.ADMIN, ROLES.RECEPTIONIST, ...ROLE_GROUPS.CLINICAL],
+    layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENTS,
+    title: 'Find or Register Patient | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Patients', path: '/patients' },
+      { label: 'Find or Register', path: '/patients/find-or-register' },
     ],
   },
   {

@@ -226,6 +226,8 @@ function PatientSearchResultRow({
   const dobLabel = formatDateLabel(patient?.date_of_birth);
   const dobWithAge = age === null ? dobLabel : `${dobLabel} · ${age}y`;
   const locationDisplay = getPatientLocationDisplay(patient);
+  const recordStatus = patient?.record_status || patient?.registry_status || 'registered';
+  const vitalStatus = patient?.vital_status || null;
 
   return (
     <TableRow
@@ -283,8 +285,11 @@ function PatientSearchResultRow({
         )}
       </TableCell>
       <TableCell>
-        <Badge variant="outline" className="font-mono text-[10px]">
-          {formatAdmissionStatus(patient?.registry_status || patient?.admission_status)}
+        <Badge variant="outline" className="flex w-fit flex-col items-start gap-0.5 font-mono text-[10px] leading-tight">
+          <span>{formatAdmissionStatus(recordStatus)}</span>
+          {vitalStatus && vitalStatus !== 'presumed_alive' ? (
+            <span className="text-muted-foreground">{formatAdmissionStatus(vitalStatus)}</span>
+          ) : null}
         </Badge>
       </TableCell>
     </TableRow>

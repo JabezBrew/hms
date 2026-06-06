@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { careAreasApi } from '@/features/care-areas/api';
 import { useAuth } from '@/lib/auth';
@@ -49,5 +49,35 @@ export function useCareAreaMyWork(options = {}) {
     staleTime: 30 * 1000,
     ...options,
     enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(user?.id),
+  });
+}
+
+export function useOutpatientIntake() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => careAreasApi.startOutpatientIntake(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: baseKeys.all });
+    },
+  });
+}
+
+export function useInpatientIntake() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => careAreasApi.startInpatientIntake(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: baseKeys.all });
+    },
+  });
+}
+
+export function useEmergencyIntake() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => careAreasApi.startEmergencyIntake(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: baseKeys.all });
+    },
   });
 }

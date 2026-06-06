@@ -90,6 +90,97 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         "patient registry should default to most recently registered first"
     );
 
+    let lookup = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/patients/identity/lookup")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "first_name": "Efua",
+                        "last_name": "Owusu",
+                        "date_of_birth": "1995-03-10",
+                        "sex": "female"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("identity lookup succeeds");
+    assert_eq!(lookup.status(), StatusCode::OK);
+    let lookup_body = json_body(lookup).await;
+    assert_eq!(lookup_body["data"]["strong_duplicate_found"], true);
+    assert!(lookup_body["data"]["lookup_id"].is_string());
+    assert!(lookup_body["data"]["candidates"]
+        .as_array()
+        .expect("candidates array")
+        .iter()
+        .any(|candidate| candidate["patient_id"].as_str() == Some(registry_only_patient_id)));
+
+    let duplicate_create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/patients")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "first_name": "Efua",
+                        "last_name": "Owusu",
+                        "date_of_birth": "1995-03-10",
+                        "sex": "female"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("duplicate create evaluates");
+    assert_eq!(duplicate_create.status(), StatusCode::CONFLICT);
+    let duplicate_body = json_body(duplicate_create).await;
+    assert_eq!(
+        duplicate_body["error"]["code"].as_str(),
+        Some("patient_duplicate_review_required")
+    );
+    let duplicate_lookup_id = duplicate_body["error"]["details"]["lookup_id"]
+        .as_str()
+        .expect("lookup id is returned")
+        .to_owned();
+
+    let duplicate_override = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/patients")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "first_name": "Efua",
+                        "last_name": "Owusu",
+                        "date_of_birth": "1995-03-10",
+                        "sex": "female",
+                        "duplicate_review": {
+                            "lookup_id": duplicate_lookup_id,
+                            "decision": "new_distinct_patient",
+                            "reason_code": "different_person_confirmed"
+                        }
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("duplicate override create succeeds");
+    assert_eq!(duplicate_override.status(), StatusCode::OK);
+
     let denied_chronicle = app
         .clone()
         .oneshot(
@@ -646,6 +737,8 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
         search: Some("Ama".to_owned()),
         patient_id: None,
         status: None,
+        record_status: None,
+        vital_status: None,
         admission_start: None,
         admission_end: None,
         ward_id: None,
@@ -738,6 +831,7 @@ async fn patient_registry_hot_path_reuses_scoped_cache_and_invalidates_on_write(
                 last_name: "Probe".to_owned(),
                 date_of_birth: chrono::NaiveDate::from_ymd_opt(1999, 1, 1).expect("valid date"),
                 sex: hms_domain::patients::Sex::Female,
+                duplicate_review: None,
             },
         )
         .await

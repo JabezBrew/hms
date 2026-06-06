@@ -8,6 +8,18 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v2/care-areas/my-work", get(care::my_work))
         .route(
+            "/api/v2/care-areas/outpatient/intake",
+            post(care::outpatient_intake),
+        )
+        .route(
+            "/api/v2/care-areas/inpatient/intake",
+            post(care::inpatient_intake),
+        )
+        .route(
+            "/api/v2/care-areas/emergency/intake",
+            post(care::emergency_intake),
+        )
+        .route(
             "/api/v2/appointments",
             get(care::list_appointments).post(care::create_appointment),
         )

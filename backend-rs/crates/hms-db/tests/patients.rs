@@ -6,8 +6,8 @@ use hms_db::clinical::{
 };
 use hms_db::laboratory::{NewLabOrder, NewLabResult, NewSpecimen};
 use hms_db::patients::{
-    PatientContextCursor, PatientContextFilters, PatientListOrdering, PatientRegistryFilters,
-    PatientUpdate,
+    PatientContextCursor, PatientContextFilters, PatientIdentityLookupFilters, PatientListOrdering,
+    PatientRegistryFilters, PatientUpdate,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::NewAdmissionCase;
@@ -18,7 +18,10 @@ use hms_domain::clinical::{
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::laboratory::LabPriority;
-use hms_domain::patients::{PatientAdministrativeStatus, Sex};
+use hms_domain::patients::{
+    PatientAdministrativeStatus, PatientIdentityMatchStrength, PatientRecordStatus,
+    PatientVitalStatus, Sex,
+};
 use hms_domain::ward::AdmissionStatus;
 
 #[tokio::test]
@@ -88,6 +91,11 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
             date_of_birth: Some(NaiveDate::from_ymd_opt(1991, 5, 7).expect("static date is valid")),
             sex: Some(Sex::Female),
             status: Some(PatientAdministrativeStatus::Active),
+            record_status: None,
+            vital_status: None,
+            superseded_by_patient_id: None,
+            status_reason_code: None,
+            status_reason_note: None,
             actor_user_id: owner_id,
             request_id: Some("repo-patient-update".to_owned()),
         },
@@ -98,6 +106,8 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
 
     assert_eq!(updated.first_name, "Akua");
     assert_eq!(updated.date_of_birth.year(), 1991);
+    assert_eq!(updated.record_status, PatientRecordStatus::Registered);
+    assert_eq!(updated.vital_status, PatientVitalStatus::PresumedAlive);
 
     let context = hms_db::patients::list_context_patients(
         &pool,
@@ -178,6 +188,11 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
             date_of_birth: None,
             sex: None,
             status: Some(PatientAdministrativeStatus::Deceased),
+            record_status: None,
+            vital_status: None,
+            superseded_by_patient_id: None,
+            status_reason_code: None,
+            status_reason_note: None,
             actor_user_id: owner_id,
             request_id: Some("repo-patient-status-filter".to_owned()),
         },
@@ -185,6 +200,13 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
     .await
     .expect("patient status update succeeds")
     .expect("patient exists");
+    let deceased = hms_db::patients::get_patient(&pool, facility_id, deceased_patient_id)
+        .await
+        .expect("deceased patient reload succeeds")
+        .expect("deceased patient exists");
+    assert_eq!(deceased.status, PatientAdministrativeStatus::Deceased);
+    assert_eq!(deceased.record_status, PatientRecordStatus::Registered);
+    assert_eq!(deceased.vital_status, PatientVitalStatus::Deceased);
 
     let deceased_patients = hms_db::patients::list_patients(
         &pool,
@@ -199,6 +221,44 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
 
     assert_eq!(deceased_patients.len(), 1);
     assert_eq!(deceased_patients[0].id, deceased_patient_id);
+}
+
+#[tokio::test]
+async fn patient_identity_lookup_returns_strong_exact_matches() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test db starts");
+    let patient = db
+        .scenario("identity_lookup")
+        .registered_patient()
+        .await
+        .expect("patient creates");
+
+    let candidates = hms_db::patients::find_identity_candidates(
+        db.pool(),
+        db.facility_id(),
+        PatientIdentityLookupFilters {
+            patient_code: Some(patient.patient_code.clone()),
+            first_name: Some(patient.first_name.clone()),
+            last_name: Some(patient.last_name.clone()),
+            date_of_birth: Some(patient.date_of_birth),
+            sex: Some(patient.sex),
+            limit: 10,
+        },
+    )
+    .await
+    .expect("identity lookup succeeds");
+
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.patient_id == patient.id)
+        .expect("created patient is returned");
+    assert!(matches!(
+        candidate.match_strength,
+        PatientIdentityMatchStrength::Strong
+    ));
+    assert_eq!(candidate.record_status, PatientRecordStatus::Registered);
+    assert_eq!(candidate.vital_status, PatientVitalStatus::PresumedAlive);
 }
 
 #[tokio::test]
@@ -317,6 +377,8 @@ async fn patient_registry_filters_by_admission_and_age_without_duplication() {
         search: Some(scenario.patient.patient_code.clone()),
         patient_id: Some(scenario.patient.id),
         status: Some(PatientAdministrativeStatus::Active),
+        record_status: None,
+        vital_status: None,
         admission_start_at: Some(admission_start_at),
         admission_end_before: Some(admission_end_before),
         ward_id: Some(scenario.ward.id),

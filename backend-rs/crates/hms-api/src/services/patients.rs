@@ -1,7 +1,10 @@
-use chrono::{DateTime, Datelike, Days, NaiveDate, Utc};
+use axum::http::StatusCode;
+use base64::Engine;
+use chrono::{DateTime, Datelike, Days, Duration, NaiveDate, Utc};
 use hms_db::auth::{AuditBreakGlassChronicleView, EndBreakGlassGrants, StartBreakGlassGrant};
 use hms_db::patients::{
-    NewPatient, PatientContextCursor, PatientContextFilters, PatientCursor, PatientListOrdering,
+    DuplicateOverrideAudit, NewPatient, NewPatientIdentityLookupSession, PatientContextCursor,
+    PatientContextFilters, PatientCursor, PatientIdentityLookupFilters, PatientListOrdering,
     PatientRegistryFilters, PatientUpdate,
 };
 use hms_domain::auth::{
@@ -12,12 +15,15 @@ use hms_domain::auth::{
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use hms_domain::patients::{
-    CreatePatientRequest, PatientContextListItem, PatientContextListQuery, PatientDetail,
-    PatientListItem, PatientListQuery, PatientRecord, PatientRegistrationValidationRule, Sex,
+    CreatePatientRequest, DuplicateReviewDecision, PatientContextListItem, PatientContextListQuery,
+    PatientCurrentContexts, PatientDetail, PatientIdentityCandidate, PatientIdentityLookupRequest,
+    PatientIdentityLookupResponse, PatientIdentityMatchStrength, PatientListItem, PatientListQuery,
+    PatientRecord, PatientRecordStatus, PatientRegistrationValidationRule, Sex,
     UpdatePatientRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+use sha2::{Digest, Sha256};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -36,6 +42,11 @@ const CHRONICLE_STARTUP_SUMMARY_LIMIT: i64 = 5;
 const CHRONICLE_TIMELINE_DEFAULT_LIMIT: u8 = 20;
 const CHRONICLE_TIMELINE_MAX_LIMIT: u8 = 50;
 const MAX_BREAK_GLASS_REASON_LEN: usize = 500;
+const IDENTITY_LOOKUP_TTL_MINUTES: i64 = 15;
+const DEFAULT_IDENTITY_LOOKUP_LIMIT: i64 = 10;
+const MAX_IDENTITY_LOOKUP_LIMIT: i64 = 25;
+const MAX_IDENTITY_LOOKUP_TEXT_LEN: usize = 128;
+const MAX_DUPLICATE_REASON_LEN: usize = 500;
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in = Query)]
@@ -361,6 +372,49 @@ impl PatientsService {
         ))
     }
 
+    pub async fn lookup_identity(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: PatientIdentityLookupRequest,
+    ) -> Result<ObjectResponse<PatientIdentityLookupResponse>, ApiError> {
+        require_patient_registry_access(ctx, self.facility_id())?;
+        let filters = patient_identity_lookup_filters(payload)?;
+        let response = self.run_identity_lookup(ctx, filters).await.map_err(|_| {
+            ApiError::conflict(
+                "patient_identity_lookup_failed",
+                "Patient identity lookup failed.",
+            )
+        })?;
+        Ok(object(response))
+    }
+
+    pub async fn get_current_contexts(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+    ) -> Result<ObjectResponse<PatientCurrentContexts>, ApiError> {
+        let patient = load_patient_for_access(
+            &self.state,
+            ctx,
+            patient_id,
+            "You do not have access to this patient.",
+        )
+        .await?;
+        let contexts = hms_db::patients::get_patient_current_contexts(
+            self.pool(),
+            self.facility_id(),
+            patient.id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_current_contexts_failed",
+                "Patient current contexts could not be loaded.",
+            )
+        })?;
+        Ok(object(contexts))
+    }
+
     pub async fn create_patient(
         &self,
         ctx: &hms_access::RequestContext,
@@ -372,9 +426,95 @@ impl PatientsService {
                 "You do not have permission to register patients.",
             )
         })?;
+        require_patient_registry_access(ctx, self.facility_id())?;
 
         let first_name = normalize_name(payload.first_name, "first_name")?;
         let last_name = normalize_name(payload.last_name, "last_name")?;
+        let duplicate_filters = PatientIdentityLookupFilters {
+            patient_code: None,
+            first_name: Some(first_name.clone()),
+            last_name: Some(last_name.clone()),
+            date_of_birth: Some(payload.date_of_birth),
+            sex: Some(payload.sex),
+            limit: DEFAULT_IDENTITY_LOOKUP_LIMIT,
+        };
+        let candidates = hms_db::patients::find_identity_candidates(
+            self.pool(),
+            self.facility_id(),
+            duplicate_filters.clone(),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_identity_lookup_failed",
+                "Patient identity lookup failed.",
+            )
+        })?;
+        let duplicate_override = match (candidates.is_empty(), payload.duplicate_review.as_ref()) {
+            (true, _) => None,
+            (false, None) => {
+                let response = self
+                    .record_identity_lookup_session(ctx, &duplicate_filters, candidates)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict(
+                            "patient_identity_lookup_failed",
+                            "Patient identity lookup failed.",
+                        )
+                    })?;
+                return Err(patient_duplicate_review_required(response));
+            }
+            (false, Some(review)) => {
+                validate_duplicate_review(review)?;
+                let session = hms_db::patients::get_identity_lookup_session(
+                    self.pool(),
+                    self.facility_id(),
+                    ctx.user_id,
+                    review.lookup_id,
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "patient_identity_lookup_failed",
+                        "Patient identity lookup failed.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::conflict(
+                        "patient_identity_lookup_stale",
+                        "Patient identity lookup has expired. Run lookup again.",
+                    )
+                })?;
+                let fingerprint = patient_identity_lookup_fingerprint(&duplicate_filters);
+                if session.lookup_fingerprint != fingerprint {
+                    return Err(ApiError::conflict(
+                        "patient_identity_lookup_stale",
+                        "Patient identity lookup no longer matches this registration.",
+                    ));
+                }
+                let candidate_ids = candidates
+                    .iter()
+                    .map(|candidate| candidate.patient_id)
+                    .collect::<Vec<_>>();
+                if session.candidate_patient_ids != candidate_ids {
+                    return Err(ApiError::conflict(
+                        "patient_identity_lookup_stale",
+                        "Patient identity candidates changed. Run lookup again.",
+                    ));
+                }
+                Some(DuplicateOverrideAudit {
+                    lookup_id: review.lookup_id,
+                    reason_code: normalize_duplicate_reason_code(&review.reason_code)?,
+                    reason_note_present: review
+                        .reason_note
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .is_some(),
+                    candidate_count: candidate_ids.len(),
+                })
+            }
+        };
         let id = Uuid::new_v4();
         let patient_code = format!("P-{}", &id.simple().to_string()[..10].to_uppercase());
         let patient = hms_db::patients::create_patient(
@@ -382,11 +522,14 @@ impl PatientsService {
             NewPatient {
                 id,
                 facility_id: self.facility_id(),
+                created_by_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
                 patient_code,
                 first_name,
                 last_name,
                 date_of_birth: payload.date_of_birth,
                 sex: payload.sex,
+                duplicate_override,
             },
         )
         .await
@@ -397,6 +540,60 @@ impl PatientsService {
         self.state.invalidate_patient_list_cache();
         self.state.invalidate_patient_chronicle_cache();
         Ok(object(PatientDetail::from(&patient)))
+    }
+
+    async fn run_identity_lookup(
+        &self,
+        ctx: &hms_access::RequestContext,
+        filters: PatientIdentityLookupFilters,
+    ) -> anyhow::Result<PatientIdentityLookupResponse> {
+        let candidates = hms_db::patients::find_identity_candidates(
+            self.pool(),
+            self.facility_id(),
+            filters.clone(),
+        )
+        .await?;
+        self.record_identity_lookup_session(ctx, &filters, candidates)
+            .await
+    }
+
+    async fn record_identity_lookup_session(
+        &self,
+        ctx: &hms_access::RequestContext,
+        filters: &PatientIdentityLookupFilters,
+        candidates: Vec<PatientIdentityCandidate>,
+    ) -> anyhow::Result<PatientIdentityLookupResponse> {
+        let lookup_id = Uuid::new_v4();
+        let expires_at = Utc::now() + Duration::minutes(IDENTITY_LOOKUP_TTL_MINUTES);
+        let strong_duplicate_found = candidates.iter().any(|candidate| {
+            matches!(
+                candidate.match_strength,
+                PatientIdentityMatchStrength::Strong
+            )
+        });
+        let candidate_patient_ids = candidates
+            .iter()
+            .map(|candidate| candidate.patient_id)
+            .collect::<Vec<_>>();
+        let session = hms_db::patients::create_identity_lookup_session(
+            self.pool(),
+            NewPatientIdentityLookupSession {
+                id: lookup_id,
+                facility_id: self.facility_id(),
+                lookup_fingerprint: patient_identity_lookup_fingerprint(filters),
+                candidate_patient_ids,
+                strong_duplicate_found,
+                created_by_user_id: ctx.user_id,
+                expires_at,
+            },
+        )
+        .await?;
+        Ok(PatientIdentityLookupResponse {
+            lookup_id: session.id,
+            expires_at: session.expires_at,
+            candidates,
+            strong_duplicate_found: session.strong_duplicate_found,
+        })
     }
 
     pub async fn get_patient(
@@ -628,6 +825,7 @@ impl PatientsService {
             )
         })?;
         validate_update_payload(&payload)?;
+        validate_superseded_patient_update(&self.state, ctx, &existing, &payload).await?;
 
         let first_name = payload
             .first_name
@@ -648,6 +846,11 @@ impl PatientsService {
                 date_of_birth: payload.date_of_birth,
                 sex: payload.sex,
                 status: payload.status,
+                record_status: payload.record_status,
+                vital_status: payload.vital_status,
+                superseded_by_patient_id: payload.superseded_by_patient_id,
+                status_reason_code: payload.status_reason_code,
+                status_reason_note: payload.status_reason_note,
                 actor_user_id: ctx.user_id,
                 request_id: Some(ctx.request_id.clone()),
             },
@@ -823,6 +1026,135 @@ fn require_patient_validation_rule_access(
     })
 }
 
+fn patient_identity_lookup_filters(
+    payload: PatientIdentityLookupRequest,
+) -> Result<PatientIdentityLookupFilters, ApiError> {
+    let patient_code = normalize_identity_lookup_text(payload.patient_code, "patient_code")?;
+    let first_name = normalize_identity_lookup_text(payload.first_name, "first_name")?;
+    let last_name = normalize_identity_lookup_text(payload.last_name, "last_name")?;
+    let limit = payload
+        .limit
+        .map(i64::from)
+        .unwrap_or(DEFAULT_IDENTITY_LOOKUP_LIMIT)
+        .clamp(1, MAX_IDENTITY_LOOKUP_LIMIT);
+
+    let has_patient_code = patient_code.is_some();
+    let has_demographic_lookup =
+        payload.date_of_birth.is_some() && (first_name.is_some() || last_name.is_some());
+    if !has_patient_code && !has_demographic_lookup {
+        return Err(ApiError::bad_request(
+            "invalid_identity_lookup",
+            "Lookup requires a patient code or date of birth plus a first or last name.",
+        ));
+    }
+
+    Ok(PatientIdentityLookupFilters {
+        patient_code,
+        first_name,
+        last_name,
+        date_of_birth: payload.date_of_birth,
+        sex: payload.sex,
+        limit,
+    })
+}
+
+fn normalize_identity_lookup_text(
+    value: Option<String>,
+    field: &'static str,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.len() > MAX_IDENTITY_LOOKUP_TEXT_LEN {
+        return Err(ApiError::bad_request(
+            "invalid_identity_lookup",
+            match field {
+                "patient_code" => "Patient code is too long.",
+                "first_name" => "First name is too long.",
+                "last_name" => "Last name is too long.",
+                _ => "Lookup field is too long.",
+            },
+        ));
+    }
+    Ok(Some(value.to_owned()))
+}
+
+fn validate_duplicate_review(
+    review: &hms_domain::patients::DuplicateReviewSubmission,
+) -> Result<(), ApiError> {
+    match review.decision {
+        DuplicateReviewDecision::NewDistinctPatient => {}
+    }
+    normalize_duplicate_reason_code(&review.reason_code)?;
+    if let Some(reason_note) = review.reason_note.as_deref() {
+        if reason_note.trim().len() > MAX_DUPLICATE_REASON_LEN {
+            return Err(ApiError::bad_request(
+                "invalid_duplicate_review",
+                "Duplicate review reason note is too long.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_duplicate_reason_code(reason_code: &str) -> Result<String, ApiError> {
+    let reason_code = reason_code.trim();
+    if reason_code.is_empty() || reason_code.len() > 64 {
+        return Err(ApiError::bad_request(
+            "invalid_duplicate_review",
+            "Duplicate review reason code is required.",
+        ));
+    }
+    Ok(reason_code.to_owned())
+}
+
+fn patient_identity_lookup_fingerprint(filters: &PatientIdentityLookupFilters) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"hms.patient_identity_lookup.v1");
+    update_fingerprint_part(&mut hasher, filters.patient_code.as_deref());
+    update_fingerprint_part(&mut hasher, filters.first_name.as_deref());
+    update_fingerprint_part(&mut hasher, filters.last_name.as_deref());
+    update_fingerprint_part(
+        &mut hasher,
+        filters
+            .date_of_birth
+            .map(|value| value.to_string())
+            .as_deref(),
+    );
+    update_fingerprint_part(&mut hasher, filters.sex.map(sex_fingerprint_label));
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+fn update_fingerprint_part(hasher: &mut Sha256, value: Option<&str>) {
+    hasher.update([0]);
+    if let Some(value) = value {
+        hasher.update(value.trim().to_lowercase().as_bytes());
+    }
+}
+
+fn sex_fingerprint_label(sex: Sex) -> &'static str {
+    match sex {
+        Sex::Female => "female",
+        Sex::Male => "male",
+        Sex::Other => "other",
+        Sex::Unknown => "unknown",
+    }
+}
+
+fn patient_duplicate_review_required(response: PatientIdentityLookupResponse) -> ApiError {
+    ApiError {
+        status: StatusCode::CONFLICT,
+        code: "patient_duplicate_review_required",
+        message:
+            "Possible existing patient records must be reviewed before creating a new patient.",
+        details: serde_json::to_value(response).unwrap_or_else(|_| json!({})),
+    }
+}
+
 fn patient_page_request(
     query: &PatientListQuery,
 ) -> Result<cursor_list::CursorPage<PatientCursor>, ApiError> {
@@ -872,6 +1204,8 @@ fn patient_registry_filters(query: &PatientListQuery) -> Result<PatientRegistryF
             .map(ToOwned::to_owned),
         patient_id: query.patient_id,
         status: query.status.clone(),
+        record_status: query.record_status,
+        vital_status: query.vital_status,
         admission_start_at,
         admission_end_before,
         ward_id: query.ward_id,
@@ -921,6 +1255,8 @@ fn has_extended_patient_registry_filters(filters: &PatientRegistryFilters) -> bo
         || filters.ward_id.is_some()
         || filters.admission_status.is_some()
         || filters.attending_id.is_some()
+        || filters.record_status.is_some()
+        || filters.vital_status.is_some()
         || filters.date_of_birth_on_or_after.is_some()
         || filters.date_of_birth_on_or_before.is_some()
 }
@@ -1240,10 +1576,72 @@ fn validate_update_payload(payload: &UpdatePatientRequest) -> Result<(), ApiErro
         && payload.date_of_birth.is_none()
         && payload.sex.is_none()
         && payload.status.is_none()
+        && payload.record_status.is_none()
+        && payload.vital_status.is_none()
+        && payload.superseded_by_patient_id.is_none()
+        && payload.status_reason_code.is_none()
+        && payload.status_reason_note.is_none()
     {
         return Err(ApiError::bad_request(
             "invalid_patient_update",
             "At least one patient field must be supplied.",
+        ));
+    }
+
+    Ok(())
+}
+
+async fn validate_superseded_patient_update(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    existing: &PatientRecord,
+    payload: &UpdatePatientRequest,
+) -> Result<(), ApiError> {
+    let setting_superseded = matches!(payload.record_status, Some(PatientRecordStatus::Superseded));
+    let transitioning_to_superseded =
+        setting_superseded && existing.record_status != PatientRecordStatus::Superseded;
+
+    if transitioning_to_superseded && payload.superseded_by_patient_id.is_none() {
+        return Err(ApiError::bad_request(
+            "invalid_superseded_patient",
+            "Merged patient records require a canonical patient record.",
+        ));
+    }
+
+    if payload.superseded_by_patient_id.is_some() && !setting_superseded {
+        return Err(ApiError::bad_request(
+            "invalid_superseded_patient",
+            "Canonical patient records can only be set when marking a record as merged.",
+        ));
+    }
+
+    let Some(canonical_id) = payload.superseded_by_patient_id else {
+        return Ok(());
+    };
+    if canonical_id == existing.id {
+        return Err(ApiError::bad_request(
+            "invalid_superseded_patient",
+            "A patient record cannot be merged into itself.",
+        ));
+    }
+
+    let canonical = load_patient_for_access(
+        state,
+        ctx,
+        canonical_id,
+        "You do not have access to the canonical patient record.",
+    )
+    .await?;
+    if canonical.facility_id != existing.facility_id {
+        return Err(ApiError::forbidden(
+            "patient_access_denied",
+            "Canonical patient record must belong to this facility.",
+        ));
+    }
+    if canonical.record_status != PatientRecordStatus::Registered {
+        return Err(ApiError::conflict(
+            "invalid_canonical_patient",
+            "Canonical patient record must be a registered patient record.",
         ));
     }
 
@@ -1289,7 +1687,7 @@ fn break_glass_denied(reason: BreakGlassGrantDenialReason) -> ApiError {
         ),
         BreakGlassGrantDenialReason::PatientNotActive => ApiError::conflict(
             "break_glass_patient_not_active",
-            "Break-glass access is only available for active patients.",
+            "Break-glass access is only available for registered, non-deceased patient records.",
         ),
         BreakGlassGrantDenialReason::ActiveGrantAlreadyExists => ApiError::conflict(
             "break_glass_grant_exists",

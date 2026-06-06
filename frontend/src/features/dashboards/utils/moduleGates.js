@@ -50,7 +50,7 @@ const ROLE_DASHBOARD_FEATURES = {
 }
 
 const HREF_FEATURE_RULES = [
-  { test: (path) => path === '/patients/create', features: DASHBOARD_FEATURES.patientRegistration },
+  { test: (path) => path === '/patients/create' || path === '/patients/find-or-register', features: DASHBOARD_FEATURES.patientRegistration },
   { test: (path) => path.startsWith('/appointments'), features: DASHBOARD_FEATURES.appointments },
   { test: (path) => path === '/care-areas/outpatient', features: DASHBOARD_FEATURES.outpatientEncounters },
   { test: (path) => path === '/care-areas/inpatient', features: NURSING_WARD_HOME_FEATURES },

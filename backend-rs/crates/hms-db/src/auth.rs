@@ -1895,7 +1895,8 @@ pub async fn clinical_patient_access_evidence(
               AND patient_contexts.user_id = $2
               AND patient_contexts.patient_id = $3
               AND patients.facility_id = $1
-              AND patients.status = 'active'
+              AND patients.record_status = 'registered'
+              AND patients.vital_status <> 'deceased'
         ) OR EXISTS (
             SELECT 1
             FROM clinical_notes
@@ -1904,7 +1905,8 @@ pub async fn clinical_patient_access_evidence(
               AND clinical_notes.created_by_user_id = $2
               AND clinical_notes.patient_id = $3
               AND patients.facility_id = $1
-              AND patients.status = 'active'
+              AND patients.record_status = 'registered'
+              AND patients.vital_status <> 'deceased'
         )
         "#,
     )
@@ -2010,7 +2012,8 @@ pub async fn start_break_glass_grant(
             FROM patients
             WHERE id = $1
               AND facility_id = $2
-              AND status = 'active'
+              AND record_status = 'registered'
+              AND vital_status <> 'deceased'
         )
         "#,
     )
@@ -2594,6 +2597,11 @@ mod tests {
                 date_of_birth: None,
                 sex: Some(Sex::Female),
                 status: Some(PatientAdministrativeStatus::Inactive),
+                record_status: None,
+                vital_status: None,
+                superseded_by_patient_id: None,
+                status_reason_code: None,
+                status_reason_note: None,
                 actor_user_id: db.owner_user_id(),
                 request_id: Some("inactive-patient-test".to_owned()),
             },
@@ -2603,7 +2611,7 @@ mod tests {
         assert_eq!(
             start_break_glass_grant(db.pool(), start_command(&db, patient.id, now))
                 .await
-                .expect("inactive patient evaluates"),
+                .expect("restricted patient record evaluates"),
             BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::PatientNotActive)
         );
     }
@@ -2716,12 +2724,15 @@ mod tests {
                 crate::patients::NewPatient {
                     id: Uuid::new_v4(),
                     facility_id: db.facility_id(),
+                    created_by_user_id: db.owner_user_id(),
+                    request_id: None,
                     patient_code: format!("P-BG-CAP-{index}"),
                     first_name: format!("Grant{index}"),
                     last_name: "Patient".to_owned(),
                     date_of_birth: chrono::NaiveDate::from_ymd_opt(1990, 1, 1)
                         .expect("static date is valid"),
                     sex: Sex::Female,
+                    duplicate_override: None,
                 },
             )
             .await

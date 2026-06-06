@@ -8,6 +8,7 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 ## Routes
 
 - `/patients`
+- `/patients/find-or-register`
 - `/patients/create`
 - `/patients/my-patients`
 - `/patients/:id`
@@ -23,6 +24,7 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 | `api/` | patient feature API adapter exports. |
 | `hooks/` | patient and my-patients query hooks plus Rust V2 bridge tests. |
 | `pages/PatientChronicleListPage.jsx` | Patient Directory route for broad patient-record lookup. |
+| `pages/FindOrRegisterPatientPage.jsx` | Shared identity resolution and guarded registration flow used by Patient Directory and care-area intake. |
 | `pages/MyPatientsPage.jsx` | role-scoped patient list. |
 | `pages/PatientChroniclePage.jsx` | main Patient Chronicle route. |
 | `pages/PatientChroniclePrintPage.jsx` | print view for Chronicle. |
@@ -37,7 +39,9 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 ## Backend Contracts
 
 - `/api/v2/patients`
+- `/api/v2/patients/identity/lookup`
 - `/api/v2/patients/context`
+- `/api/v2/patients/:id/current-contexts`
 - `/api/v2/patients/:id/chronicle`
 - `/api/v2/patients/:id/break-glass`
 - ward-round endpoints under `/api/v2/patients/:patient_id/chronicle/ward-rounds`
@@ -49,11 +53,23 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 - Patient Directory is broad patient-record lookup. It should default to search
   and bounded recent-registration discovery, not a global active-patient work
   queue.
+- Find or Register Patient is the front door for new care intake. Users must
+  resolve identity before registering a new record or starting OPD/IPD/Emergency
+  care context.
+- Before starting care-area intake for an existing record, the page checks
+  current contexts and routes to an already-current OPD/IPD/Emergency workflow
+  when one exists.
+- Duplicate review is backend-enforced. The frontend may display candidates and
+  collect a reason, but creation must send the backend lookup id and duplicate
+  review decision; it must not rely on frontend-only duplicate checks.
 - Scoped patient workflow lists live in care-area, clinic waiting-room, Ward
   Board, triage, My Work, and Chronicle surfaces.
 - Patient administrative record status is independent from encounter, admission,
   discharge, triage, and visit status. Do not deactivate patient records because
   an encounter or admission was discharged.
+- Use `record_status` and `vital_status` labels in Patient Directory:
+  Registered record, Restricted, Entered in error, Merged record, and Vital
+  status. Do not reintroduce Active/Inactive/Discharged patient-record tabs.
 - Patient Directory location displays current admission ward/bed context; use
   `Not admitted` when no current admission location is present.
 - Patient Directory ward filters default to current admissions
@@ -63,6 +79,8 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 - Do not prefetch heavy Chronicle data unless performance budgets allow it.
 - Patient identity fields must not appear in query keys, logs, browser events,
   or fixture names.
+- Patient list and context-list React Query keys must sanitize free-text
+  `query`/`search` values into opaque per-session scopes.
 - Chronicle workflow handoff must use real context ids: `visit=<encounter_id>`
   for OPD/Emergency encounter context and `admission=<admission_case_id>` for
   inpatient context. Do not pass a raw visit id as the Chronicle visit scope.

@@ -37,6 +37,9 @@ export default function OutpatientCareAreaPage() {
     [clinics, selectedClinicId],
   );
   const waitingRoomHref = selectedClinic ? `/clinics/${selectedClinic.id}/waiting-room` : null;
+  const intakeHref = selectedClinic
+    ? `/patients/find-or-register?intent=outpatient&clinic_id=${selectedClinic.id}`
+    : '/patients/find-or-register?intent=outpatient';
   const {
     data: queue = [],
     isLoading: isQueueLoading,
@@ -123,6 +126,9 @@ export default function OutpatientCareAreaPage() {
                   <Link to={waitingRoomHref}>Waiting room</Link>
                 </Button>
               ) : null}
+              <Button asChild size="sm" className="font-mono text-xs">
+                <Link to={intakeHref}>Find or register</Link>
+              </Button>
             </div>
           )}
         >

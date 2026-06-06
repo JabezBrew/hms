@@ -4703,6 +4703,16 @@
             "format": "date",
             "type": "string"
           },
+          "duplicate_review": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DuplicateReviewSubmission"
+              }
+            ]
+          },
           "first_name": {
             "type": "string"
           },
@@ -5959,6 +5969,95 @@
         ],
         "type": "object"
       },
+      "DuplicateReviewDecision": {
+        "enum": [
+          "new_distinct_patient"
+        ],
+        "type": "string"
+      },
+      "DuplicateReviewSubmission": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/DuplicateReviewDecision"
+          },
+          "lookup_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "lookup_id",
+          "decision",
+          "reason_code"
+        ],
+        "type": "object"
+      },
+      "EmergencyIntakeRequest": {
+        "properties": {
+          "acuity": {
+            "$ref": "#/components/schemas/TriageAcuity"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "restricted_record_override": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SpecialRecordOverride"
+              }
+            ]
+          }
+        },
+        "required": [
+          "patient_id",
+          "acuity",
+          "idempotency_key"
+        ],
+        "type": "object"
+      },
+      "EmergencyIntakeResponse": {
+        "properties": {
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "triage": {
+            "$ref": "#/components/schemas/TriageListItem"
+          },
+          "visit": {
+            "$ref": "#/components/schemas/VisitListItem"
+          }
+        },
+        "required": [
+          "patient_id",
+          "visit",
+          "triage"
+        ],
+        "type": "object"
+      },
       "EncounterListGetQuery": {
         "properties": {
           "cursor": {
@@ -6596,6 +6695,67 @@
           "version",
           "started_at",
           "dependencies"
+        ],
+        "type": "object"
+      },
+      "InpatientIntakeRequest": {
+        "properties": {
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "restricted_record_override": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SpecialRecordOverride"
+              }
+            ]
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "ward_id",
+          "idempotency_key"
+        ],
+        "type": "object"
+      },
+      "InpatientIntakeResponse": {
+        "properties": {
+          "admission_case": {
+            "$ref": "#/components/schemas/AdmissionCaseListItem"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "admission_case"
         ],
         "type": "object"
       },
@@ -11680,15 +11840,29 @@
                 "patient_code": {
                   "type": "string"
                 },
+                "record_status": {
+                  "$ref": "#/components/schemas/PatientRecordStatus"
+                },
                 "sex": {
                   "$ref": "#/components/schemas/Sex"
                 },
                 "status": {
-                  "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                  "$ref": "#/components/schemas/PatientAdministrativeStatus",
+                  "description": "Compatibility output only."
+                },
+                "superseded_by_patient_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "updated_at": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "vital_status": {
+                  "$ref": "#/components/schemas/PatientVitalStatus"
                 }
               },
               "required": [
@@ -11698,6 +11872,8 @@
                 "sex",
                 "birth_year",
                 "status",
+                "record_status",
+                "vital_status",
                 "context_kind",
                 "updated_at"
               ],
@@ -11827,6 +12003,10 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "date_of_birth": {
+                  "format": "date",
+                  "type": "string"
+                },
                 "display_name": {
                   "type": "string"
                 },
@@ -11843,11 +12023,31 @@
                     "null"
                   ]
                 },
+                "record_status": {
+                  "$ref": "#/components/schemas/PatientRecordStatus"
+                },
+                "record_status_reason_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "sex": {
                   "$ref": "#/components/schemas/Sex"
                 },
                 "status": {
-                  "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                  "$ref": "#/components/schemas/PatientAdministrativeStatus",
+                  "description": "Compatibility output only."
+                },
+                "superseded_by_patient_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "vital_status": {
+                  "$ref": "#/components/schemas/PatientVitalStatus"
                 }
               },
               "required": [
@@ -11855,8 +12055,11 @@
                 "patient_code",
                 "display_name",
                 "sex",
+                "date_of_birth",
                 "birth_year",
                 "status",
+                "record_status",
+                "vital_status",
                 "created_at"
               ],
               "type": "object"
@@ -14543,11 +14746,65 @@
                   "format": "int64",
                   "type": "integer"
                 },
+                "critical_unverified_result_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "discharge_case_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "discharge_status": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DischargeStatus"
+                    }
+                  ]
+                },
                 "due_medication_count": {
                   "format": "int64",
                   "type": "integer"
                 },
+                "last_activity_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "last_vitals_recorded_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "next_due_medication_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "next_nursing_task_due_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "open_discharge_blocker_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "open_nursing_task_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "overdue_nursing_task_count": {
                   "format": "int64",
                   "type": "integer"
                 },
@@ -14560,6 +14817,14 @@
                 "patient_id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "pending_lab_order_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "unverified_result_count": {
+                  "format": "int64",
+                  "type": "integer"
                 },
                 "ward_id": {
                   "format": "uuid",
@@ -14579,9 +14844,15 @@
                 "admission_status",
                 "admitted_at",
                 "open_nursing_task_count",
+                "overdue_nursing_task_count",
                 "due_medication_count",
                 "active_alert_count",
-                "critical_alert_count"
+                "critical_alert_count",
+                "unverified_result_count",
+                "critical_unverified_result_count",
+                "pending_lab_order_count",
+                "open_discharge_blocker_count",
+                "last_activity_at"
               ],
               "type": "object"
             },
@@ -18408,6 +18679,36 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_EmergencyIntakeResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "triage": {
+                "$ref": "#/components/schemas/TriageListItem"
+              },
+              "visit": {
+                "$ref": "#/components/schemas/VisitListItem"
+              }
+            },
+            "required": [
+              "patient_id",
+              "visit",
+              "triage"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_EncounterListItem": {
         "properties": {
           "data": {
@@ -18825,6 +19126,32 @@
               "version",
               "started_at",
               "dependencies"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_InpatientIntakeResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "admission_case": {
+                "$ref": "#/components/schemas/AdmissionCaseListItem"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "patient_id",
+              "admission_case"
             ],
             "type": "object"
           },
@@ -20713,6 +21040,32 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_OutpatientIntakeResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "visit": {
+                "$ref": "#/components/schemas/VisitListItem"
+              }
+            },
+            "required": [
+              "patient_id",
+              "visit"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_PasswordResetCompleteResponse": {
         "properties": {
           "data": {
@@ -20961,6 +21314,49 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_PatientCurrentContexts": {
+        "properties": {
+          "data": {
+            "properties": {
+              "emergency": {
+                "items": {
+                  "$ref": "#/components/schemas/PatientCurrentEmergencyContext"
+                },
+                "type": "array"
+              },
+              "inpatient": {
+                "items": {
+                  "$ref": "#/components/schemas/PatientCurrentInpatientContext"
+                },
+                "type": "array"
+              },
+              "outpatient": {
+                "items": {
+                  "$ref": "#/components/schemas/PatientCurrentOutpatientContext"
+                },
+                "type": "array"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "patient_id",
+              "outpatient",
+              "inpatient",
+              "emergency"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_PatientDetail": {
         "properties": {
           "data": {
@@ -20989,15 +21385,35 @@
               "patient_code": {
                 "type": "string"
               },
+              "record_status": {
+                "$ref": "#/components/schemas/PatientRecordStatus"
+              },
+              "record_status_reason_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "sex": {
                 "$ref": "#/components/schemas/Sex"
               },
               "status": {
-                "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                "$ref": "#/components/schemas/PatientAdministrativeStatus",
+                "description": "Compatibility output only."
+              },
+              "superseded_by_patient_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "updated_at": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "vital_status": {
+                "$ref": "#/components/schemas/PatientVitalStatus"
               }
             },
             "required": [
@@ -21009,8 +21425,48 @@
               "date_of_birth",
               "sex",
               "status",
+              "record_status",
+              "vital_status",
               "created_at",
               "updated_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PatientIdentityLookupResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "candidates": {
+                "items": {
+                  "$ref": "#/components/schemas/PatientIdentityCandidate"
+                },
+                "type": "array"
+              },
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "lookup_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "strong_duplicate_found": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "lookup_id",
+              "expires_at",
+              "candidates",
+              "strong_duplicate_found"
             ],
             "type": "object"
           },
@@ -23214,11 +23670,65 @@
                 "format": "int64",
                 "type": "integer"
               },
+              "critical_unverified_result_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "discharge_case_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "discharge_status": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DischargeStatus"
+                  }
+                ]
+              },
               "due_medication_count": {
                 "format": "int64",
                 "type": "integer"
               },
+              "last_activity_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "last_vitals_recorded_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "next_due_medication_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "next_nursing_task_due_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "open_discharge_blocker_count": {
+                "format": "int64",
+                "type": "integer"
+              },
               "open_nursing_task_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "overdue_nursing_task_count": {
                 "format": "int64",
                 "type": "integer"
               },
@@ -23231,6 +23741,14 @@
               "patient_id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "pending_lab_order_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "unverified_result_count": {
+                "format": "int64",
+                "type": "integer"
               },
               "ward_id": {
                 "format": "uuid",
@@ -23250,9 +23768,15 @@
               "admission_status",
               "admitted_at",
               "open_nursing_task_count",
+              "overdue_nursing_task_count",
               "due_medication_count",
               "active_alert_count",
-              "critical_alert_count"
+              "critical_alert_count",
+              "unverified_result_count",
+              "critical_unverified_result_count",
+              "pending_lab_order_count",
+              "open_discharge_blocker_count",
+              "last_activity_at"
             ],
             "type": "object"
           },
@@ -25018,6 +25542,62 @@
         ],
         "type": "object"
       },
+      "OutpatientIntakeRequest": {
+        "properties": {
+          "appointment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "restricted_record_override": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SpecialRecordOverride"
+              }
+            ]
+          }
+        },
+        "required": [
+          "patient_id",
+          "idempotency_key"
+        ],
+        "type": "object"
+      },
+      "OutpatientIntakeResponse": {
+        "properties": {
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "visit": {
+            "$ref": "#/components/schemas/VisitListItem"
+          }
+        },
+        "required": [
+          "patient_id",
+          "visit"
+        ],
+        "type": "object"
+      },
       "PageInfo": {
         "properties": {
           "has_next": {
@@ -25733,15 +26313,29 @@
           "patient_code": {
             "type": "string"
           },
+          "record_status": {
+            "$ref": "#/components/schemas/PatientRecordStatus"
+          },
           "sex": {
             "$ref": "#/components/schemas/Sex"
           },
           "status": {
-            "$ref": "#/components/schemas/PatientAdministrativeStatus"
+            "$ref": "#/components/schemas/PatientAdministrativeStatus",
+            "description": "Compatibility output only."
+          },
+          "superseded_by_patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "vital_status": {
+            "$ref": "#/components/schemas/PatientVitalStatus"
           }
         },
         "required": [
@@ -25751,6 +26345,8 @@
           "sex",
           "birth_year",
           "status",
+          "record_status",
+          "vital_status",
           "context_kind",
           "updated_at"
         ],
@@ -25786,6 +26382,167 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "PatientCurrentContexts": {
+        "properties": {
+          "emergency": {
+            "items": {
+              "$ref": "#/components/schemas/PatientCurrentEmergencyContext"
+            },
+            "type": "array"
+          },
+          "inpatient": {
+            "items": {
+              "$ref": "#/components/schemas/PatientCurrentInpatientContext"
+            },
+            "type": "array"
+          },
+          "outpatient": {
+            "items": {
+              "$ref": "#/components/schemas/PatientCurrentOutpatientContext"
+            },
+            "type": "array"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "outpatient",
+          "inpatient",
+          "emergency"
+        ],
+        "type": "object"
+      },
+      "PatientCurrentEmergencyContext": {
+        "properties": {
+          "acuity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_in_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "triage_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PatientCurrentInpatientContext": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "admitted_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bed_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bed_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdmissionStatus"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "admission_case_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PatientCurrentOutpatientContext": {
+        "properties": {
+          "checked_in_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clinic_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_id",
+          "status"
+        ],
         "type": "object"
       },
       "PatientDataVisibility": {
@@ -25829,15 +26586,35 @@
           "patient_code": {
             "type": "string"
           },
+          "record_status": {
+            "$ref": "#/components/schemas/PatientRecordStatus"
+          },
+          "record_status_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sex": {
             "$ref": "#/components/schemas/Sex"
           },
           "status": {
-            "$ref": "#/components/schemas/PatientAdministrativeStatus"
+            "$ref": "#/components/schemas/PatientAdministrativeStatus",
+            "description": "Compatibility output only."
+          },
+          "superseded_by_patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "vital_status": {
+            "$ref": "#/components/schemas/PatientVitalStatus"
           }
         },
         "required": [
@@ -25849,10 +26626,150 @@
           "date_of_birth",
           "sex",
           "status",
+          "record_status",
+          "vital_status",
           "created_at",
           "updated_at"
         ],
         "type": "object"
+      },
+      "PatientIdentityCandidate": {
+        "properties": {
+          "date_of_birth": {
+            "format": "date",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "match_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "match_strength": {
+            "$ref": "#/components/schemas/PatientIdentityMatchStrength"
+          },
+          "patient_code": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "record_status": {
+            "$ref": "#/components/schemas/PatientRecordStatus"
+          },
+          "sex": {
+            "$ref": "#/components/schemas/Sex"
+          },
+          "superseded_by_patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vital_status": {
+            "$ref": "#/components/schemas/PatientVitalStatus"
+          }
+        },
+        "required": [
+          "patient_id",
+          "patient_code",
+          "display_name",
+          "date_of_birth",
+          "sex",
+          "record_status",
+          "vital_status",
+          "match_strength",
+          "match_reasons"
+        ],
+        "type": "object"
+      },
+      "PatientIdentityLookupRequest": {
+        "properties": {
+          "date_of_birth": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sex": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Sex"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PatientIdentityLookupResponse": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PatientIdentityCandidate"
+            },
+            "type": "array"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lookup_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "strong_duplicate_found": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lookup_id",
+          "expires_at",
+          "candidates",
+          "strong_duplicate_found"
+        ],
+        "type": "object"
+      },
+      "PatientIdentityMatchStrength": {
+        "enum": [
+          "strong",
+          "possible"
+        ],
+        "type": "string"
       },
       "PatientInsuranceListGetQuery": {
         "properties": {
@@ -26092,6 +27009,16 @@
               "null"
             ]
           },
+          "record_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientRecordStatus"
+              }
+            ]
+          },
           "search": {
             "type": [
               "string",
@@ -26104,7 +27031,18 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                "$ref": "#/components/schemas/PatientAdministrativeStatus",
+                "description": "Compatibility filter. Prefer record_status and vital_status."
+              }
+            ]
+          },
+          "vital_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientVitalStatus"
               }
             ]
           },
@@ -26128,6 +27066,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "date_of_birth": {
+            "format": "date",
+            "type": "string"
+          },
           "display_name": {
             "type": "string"
           },
@@ -26144,11 +27086,31 @@
               "null"
             ]
           },
+          "record_status": {
+            "$ref": "#/components/schemas/PatientRecordStatus"
+          },
+          "record_status_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sex": {
             "$ref": "#/components/schemas/Sex"
           },
           "status": {
-            "$ref": "#/components/schemas/PatientAdministrativeStatus"
+            "$ref": "#/components/schemas/PatientAdministrativeStatus",
+            "description": "Compatibility output only."
+          },
+          "superseded_by_patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vital_status": {
+            "$ref": "#/components/schemas/PatientVitalStatus"
           }
         },
         "required": [
@@ -26156,8 +27118,11 @@
           "patient_code",
           "display_name",
           "sex",
+          "date_of_birth",
           "birth_year",
           "status",
+          "record_status",
+          "vital_status",
           "created_at"
         ],
         "type": "object"
@@ -26244,6 +27209,16 @@
               "null"
             ]
           },
+          "record_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientRecordStatus"
+              }
+            ]
+          },
           "search": {
             "type": [
               "string",
@@ -26256,7 +27231,18 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                "$ref": "#/components/schemas/PatientAdministrativeStatus",
+                "description": "Compatibility filter. Prefer record_status and vital_status."
+              }
+            ]
+          },
+          "vital_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientVitalStatus"
               }
             ]
           },
@@ -26269,6 +27255,15 @@
           }
         },
         "type": "object"
+      },
+      "PatientRecordStatus": {
+        "enum": [
+          "registered",
+          "restricted",
+          "entered_in_error",
+          "superseded"
+        ],
+        "type": "string"
       },
       "PatientRegistrationValidationRule": {
         "properties": {
@@ -26313,6 +27308,14 @@
           "updated_at"
         ],
         "type": "object"
+      },
+      "PatientVitalStatus": {
+        "enum": [
+          "presumed_alive",
+          "deceased",
+          "unknown"
+        ],
+        "type": "string"
       },
       "PatientVitalsListItem": {
         "properties": {
@@ -28967,6 +29970,23 @@
         ],
         "type": "object"
       },
+      "SpecialRecordOverride": {
+        "properties": {
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "reason_code"
+        ],
+        "type": "object"
+      },
       "SpecimenListItem": {
         "properties": {
           "collected_at": {
@@ -30289,6 +31309,16 @@
               "null"
             ]
           },
+          "record_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientRecordStatus"
+              }
+            ]
+          },
           "sex": {
             "oneOf": [
               {
@@ -30305,7 +31335,37 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                "$ref": "#/components/schemas/PatientAdministrativeStatus",
+                "description": "Compatibility input. Prefer record_status and vital_status."
+              }
+            ]
+          },
+          "status_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status_reason_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "superseded_by_patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vital_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientVitalStatus"
               }
             ]
           }
@@ -31015,6 +32075,16 @@
               "null"
             ]
           },
+          "sort": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardBoardSort"
+              }
+            ]
+          },
           "ward_id": {
             "format": "uuid",
             "type": [
@@ -31059,11 +32129,65 @@
             "format": "int64",
             "type": "integer"
           },
+          "critical_unverified_result_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "discharge_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discharge_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DischargeStatus"
+              }
+            ]
+          },
           "due_medication_count": {
             "format": "int64",
             "type": "integer"
           },
+          "last_activity_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_vitals_recorded_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_due_medication_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_nursing_task_due_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open_discharge_blocker_count": {
+            "format": "int64",
+            "type": "integer"
+          },
           "open_nursing_task_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "overdue_nursing_task_count": {
             "format": "int64",
             "type": "integer"
           },
@@ -31076,6 +32200,14 @@
           "patient_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "pending_lab_order_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unverified_result_count": {
+            "format": "int64",
+            "type": "integer"
           },
           "ward_id": {
             "format": "uuid",
@@ -31095,19 +32227,27 @@
           "admission_status",
           "admitted_at",
           "open_nursing_task_count",
+          "overdue_nursing_task_count",
           "due_medication_count",
           "active_alert_count",
-          "critical_alert_count"
+          "critical_alert_count",
+          "unverified_result_count",
+          "critical_unverified_result_count",
+          "pending_lab_order_count",
+          "open_discharge_blocker_count",
+          "last_activity_at"
         ],
         "type": "object"
       },
       "WardBoardMonitoringFilter": {
         "enum": [
+          "needs_attention",
           "critical",
           "alerts",
           "tasks",
           "results",
           "discharge",
+          "due_work",
           "my_work"
         ],
         "type": "string"
@@ -31151,6 +32291,16 @@
               "null"
             ]
           },
+          "sort": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardBoardSort"
+              }
+            ]
+          },
           "ward_id": {
             "format": "uuid",
             "type": [
@@ -31160,6 +32310,13 @@
           }
         },
         "type": "object"
+      },
+      "WardBoardSort": {
+        "enum": [
+          "admitted",
+          "attention"
+        ],
+        "type": "string"
       },
       "WardLengthOfStayBucket": {
         "properties": {
@@ -39143,6 +40300,156 @@
         ]
       }
     },
+    "/api/v2/care-areas/emergency/intake": {
+      "post": {
+        "operationId": "postEmergencyIntake",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmergencyIntakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_EmergencyIntakeResponse"
+                }
+              }
+            },
+            "description": "Emergency intake context"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid intake request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient cannot be used for intake"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
+    "/api/v2/care-areas/inpatient/intake": {
+      "post": {
+        "operationId": "postInpatientIntake",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InpatientIntakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InpatientIntakeResponse"
+                }
+              }
+            },
+            "description": "Inpatient intake context"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid intake request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient cannot be used for intake"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
     "/api/v2/care-areas/my-work": {
       "get": {
         "operationId": "getCareAreaMyWork",
@@ -39176,6 +40483,81 @@
               }
             },
             "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
+    "/api/v2/care-areas/outpatient/intake": {
+      "post": {
+        "operationId": "postOutpatientIntake",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutpatientIntakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OutpatientIntakeResponse"
+                }
+              }
+            },
+            "description": "Outpatient intake context"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid intake request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient cannot be used for intake"
           }
         },
         "security": [
@@ -53102,6 +54484,7 @@
             }
           },
           {
+            "description": "Compatibility filter. Prefer record_status and vital_status.",
             "in": "query",
             "name": "status",
             "required": false,
@@ -53112,6 +54495,36 @@
                 },
                 {
                   "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "record_status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PatientRecordStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "vital_status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PatientVitalStatus"
                 }
               ]
             }
@@ -53450,6 +54863,71 @@
               }
             },
             "description": "Current user's context patient search"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v2/patients/identity/lookup": {
+      "post": {
+        "operationId": "postPatientIdentityLookup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientIdentityLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientIdentityLookupResponse"
+                }
+              }
+            },
+            "description": "Patient identity lookup candidates"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid identity lookup"
           },
           "401": {
             "content": {
@@ -54162,6 +55640,73 @@
         ],
         "tags": [
           "clinical"
+        ]
+      }
+    },
+    "/api/v2/patients/{id}/current-contexts": {
+      "get": {
+        "operationId": "getPatientCurrentContexts",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientCurrentContexts"
+                }
+              }
+            },
+            "description": "Current care contexts for a patient"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
         ]
       }
     },
@@ -60744,6 +62289,14 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/WardBoardMonitoringFilter"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WardBoardSort"
             }
           }
         ],

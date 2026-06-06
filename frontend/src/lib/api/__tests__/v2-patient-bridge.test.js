@@ -38,6 +38,8 @@ describe('Rust V2 patient bridge', () => {
               sex: 'female',
               birth_year: 1989,
               status: 'active',
+              record_status: 'registered',
+              vital_status: 'presumed_alive',
               created_at: '2026-05-01T08:00:00Z',
             },
           ],
@@ -65,7 +67,12 @@ describe('Rust V2 patient bridge', () => {
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',
-        body: JSON.stringify({ limit: 25, search: 'Ama', status: 'active' }),
+        body: JSON.stringify({
+          limit: 25,
+          search: 'Ama',
+          record_status: 'registered',
+          vital_status: 'presumed_alive',
+        }),
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
           'X-Facility-Code': 'HMS',
@@ -88,7 +95,12 @@ describe('Rust V2 patient bridge', () => {
           bed_code: null,
           current_ward: null,
           current_bed: null,
-          registry_status: 'active',
+          registry_status: 'registered',
+          legacy_status: 'active',
+          record_status: 'registered',
+          vital_status: 'presumed_alive',
+          superseded_by_patient_id: null,
+          record_status_reason_code: null,
         },
       ],
       page: 1,
@@ -201,7 +213,7 @@ describe('Rust V2 patient bridge', () => {
     );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients?limit=25&status=active&include_total=true',
+      'http://localhost:8080/api/v2/patients?limit=25&record_status=registered&vital_status=presumed_alive&include_total=true',
       expect.anything(),
     );
     expect(response.count).toBe(270);
@@ -236,7 +248,7 @@ describe('Rust V2 patient bridge', () => {
     );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients?limit=25&status=active&ordering=-patient_code',
+      'http://localhost:8080/api/v2/patients?limit=25&record_status=registered&vital_status=presumed_alive&ordering=-patient_code',
       expect.anything(),
     );
   });
@@ -286,7 +298,8 @@ describe('Rust V2 patient bridge', () => {
         body: JSON.stringify({
           limit: 25,
           search: 'Ama',
-          status: 'active',
+          record_status: 'registered',
+          vital_status: 'presumed_alive',
           admission_start: '2026-06-01',
           admission_end: '2026-06-03',
           ward_id: 'ward-1',
@@ -641,6 +654,108 @@ describe('Rust V2 patient bridge', () => {
     );
   });
 
+  it('looks up patient identity through Rust V2 without unsupported identity fields', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            lookup_id: 'lookup-1',
+            expires_at: '2026-06-06T12:15:00Z',
+            candidates: [
+              {
+                patient_id: 'patient-1',
+                patient_code: 'MRN-MAIN-2026-000001',
+                display_name: 'Ama Mensah',
+                date_of_birth: '1989-04-15',
+                sex: 'female',
+                record_status: 'registered',
+                vital_status: 'presumed_alive',
+                superseded_by_patient_id: null,
+                match_strength: 'strong',
+                match_reasons: ['patient_code'],
+              },
+            ],
+            strong_duplicate_found: true,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.lookupIdentity({
+      mrn: 'MRN-MAIN-2026-000001',
+      first_name: 'Ama',
+      last_name: 'Mensah',
+      date_of_birth: '1989-04-15',
+      gender: 'Female',
+      phone_number: '0240000000',
+      limit: 10,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/identity/lookup',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          patient_code: 'MRN-MAIN-2026-000001',
+          first_name: 'Ama',
+          last_name: 'Mensah',
+          date_of_birth: '1989-04-15',
+          sex: 'female',
+          limit: 10,
+        }),
+      }),
+    );
+    expect(response.candidates[0]).toEqual(
+      expect.objectContaining({
+        patient_id: 'patient-1',
+        match_strength: 'strong',
+      }),
+    );
+  });
+
+  it('loads current patient care contexts through Rust V2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            patient_id: 'patient-1',
+            outpatient: [{ visit_id: 'visit-1', clinic_id: 'clinic-1', status: 'waiting' }],
+            inpatient: [],
+            emergency: [{ visit_id: 'visit-2', triage_id: 'triage-1', status: 'waiting' }],
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.getCurrentContexts('patient-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/patient-1/current-contexts',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        patient_id: 'patient-1',
+        outpatient: [expect.objectContaining({ visit_id: 'visit-1' })],
+        emergency: [expect.objectContaining({ triage_id: 'triage-1' })],
+      }),
+    );
+  });
+
   it('preserves AbortError from Rust patient write calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);
@@ -658,7 +773,7 @@ describe('Rust V2 patient bridge', () => {
     ).rejects.toBe(abortError);
   });
 
-  it('maps registry_scope: discharged to active status and discharged admission_status', async () => {
+  it('maps legacy discharged registry scope to registered records plus discharged admission status', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -679,7 +794,7 @@ describe('Rust V2 patient bridge', () => {
     );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients?limit=25&status=active&admission_status=discharged',
+      'http://localhost:8080/api/v2/patients?limit=25&record_status=registered&admission_status=discharged',
       expect.anything(),
     );
   });

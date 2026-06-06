@@ -49,8 +49,8 @@ export default function EmergencyCareAreaPage() {
         {moduleGate.patientRegistrationEnabled && moduleGate.patientChronicleEnabled ? (
           <CareAreaCard
             title="Add Walk-In"
-            description="Register an emergency walk-in"
-            to="/patients/create?walkIn=true"
+            description="Find or register an emergency patient"
+            to="/patients/find-or-register?intent=emergency"
             icon={UserPlus}
             actionLabel="Start"
           />

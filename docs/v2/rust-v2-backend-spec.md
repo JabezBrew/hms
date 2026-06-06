@@ -1055,6 +1055,26 @@ patient_flags
 patient_search_documents
 ```
 
+Patient identity separates administrative record status from care activity:
+
+```text
+record_status: registered | restricted | entered_in_error | superseded
+vital_status: presumed_alive | deceased | unknown
+superseded_by_patient_id
+record_status_reason_code
+record_status_updated_by_user_id
+record_status_updated_at
+patient_identity_lookup_sessions
+care_area_intake_idempotency_keys
+```
+
+Legacy patient `status` is temporary compatibility output. Discharge, checkout,
+triage completion, encounter completion, and admission cancellation are
+care-status transitions; they must not deactivate or hide a patient record.
+Superseded records must point to a same-facility registered canonical patient
+record. Duplicate-review sessions are bound to the reviewing user and store only
+fingerprints plus candidate ids.
+
 Care delivery:
 
 ```text
@@ -1267,8 +1287,10 @@ Patients:
 ```text
 GET  /api/v2/patients
 POST /api/v2/patients
+POST /api/v2/patients/identity/lookup
 GET  /api/v2/patients/:id
 PATCH /api/v2/patients/:id
+GET  /api/v2/patients/:id/current-contexts
 GET  /api/v2/patients/:id/chronicle
 POST /api/v2/patients/:id/break-glass
 ```
@@ -1277,7 +1299,18 @@ Care-area work:
 
 ```text
 GET  /api/v2/care-areas/my-work
+POST /api/v2/care-areas/outpatient/intake
+POST /api/v2/care-areas/inpatient/intake
+POST /api/v2/care-areas/emergency/intake
 ```
+
+Care-area intake requests require an idempotency key. The server stores only a
+hash of the key and a request fingerprint, replays completed results for exact
+retries, rejects mismatched reuse, and treats in-progress reuse as retryable.
+Outpatient intake requires an explicit clinic context. Inpatient intake must
+reuse or redirect any current admission instead of creating another current
+admission. Emergency current context is waiting or assigned triage; completed
+triage is not considered current.
 
 Encounters and visits:
 
@@ -1656,6 +1689,10 @@ Index policy:
 ```text
 facility_id appears in composite indexes for scoped tables
 patient timelines indexed by (facility_id, patient_id, occurred_at desc)
+patient identity lookup indexed by facility, patient_code, exact DOB/name/sex,
+DOB/name possible-match branches, record_status, vital_status, and
+superseded_by_patient_id
+current admission and current emergency triage have partial uniqueness guards
 work queues indexed by (facility_id, status, priority, created_at)
 appointments indexed by (facility_id, clinic_id, starts_at)
 outpatient work indexed by clinic, practitioner, status, checked_in_at, and stable cursor ids

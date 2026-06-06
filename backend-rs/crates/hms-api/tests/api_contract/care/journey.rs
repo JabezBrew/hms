@@ -1,6 +1,438 @@
 use super::*;
 
 #[tokio::test]
+async fn care_area_intake_resolves_identity_without_changing_patient_record_status() {
+    let app = app().await;
+    let owner = Actor::login(&app, "owner@hms.local").await;
+
+    let patient_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/patients",
+            json!({
+                "first_name": "Intake",
+                "last_name": "Contractprobe",
+                "date_of_birth": "1992-04-12",
+                "sex": "female"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let patient_id = patient_body["data"]["id"]
+        .as_str()
+        .expect("patient id exists")
+        .to_owned();
+    assert_eq!(patient_body["data"]["record_status"], "registered");
+    assert_eq!(patient_body["data"]["vital_status"], "presumed_alive");
+
+    let clinics_body = assert_json_status(
+        api_get(app.clone(), &owner, "/api/v2/clinics?limit=1").await,
+        StatusCode::OK,
+    )
+    .await;
+    let clinic_id = clinics_body["data"][0]["id"]
+        .as_str()
+        .expect("clinic id exists")
+        .to_owned();
+
+    let outpatient_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/outpatient/intake",
+            json!({
+                "patient_id": patient_id,
+                "clinic_id": clinic_id,
+                "idempotency_key": "care-intake-contract-opd"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let visit_id = outpatient_body["data"]["visit"]["id"]
+        .as_str()
+        .expect("outpatient visit id exists")
+        .to_owned();
+    assert_eq!(outpatient_body["data"]["patient_id"], patient_id);
+    assert_eq!(outpatient_body["data"]["visit"]["clinic_id"], clinic_id);
+    assert_eq!(outpatient_body["data"]["visit"]["status"], "waiting");
+
+    let repeated_outpatient_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/outpatient/intake",
+            json!({
+                "patient_id": patient_id,
+                "clinic_id": clinic_id,
+                "idempotency_key": "care-intake-contract-opd"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(repeated_outpatient_body["data"]["visit"]["id"], visit_id);
+
+    let contexts_body = assert_json_status(
+        api_get(
+            app.clone(),
+            &owner,
+            format!("/api/v2/patients/{patient_id}/current-contexts"),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(contexts_body["data"]["patient_id"], patient_id);
+    assert!(contexts_body["data"]["outpatient"]
+        .as_array()
+        .expect("outpatient contexts are listed")
+        .iter()
+        .any(|item| item["visit_id"] == visit_id && item["clinic_id"] == clinic_id));
+
+    let checkout_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            format!("/api/v2/visits/{visit_id}/checkout"),
+            json!({}),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(checkout_body["data"]["status"], "checked_out");
+
+    let patient_after_checkout = assert_json_status(
+        api_get(
+            app.clone(),
+            &owner,
+            format!("/api/v2/patients/{patient_id}"),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        patient_after_checkout["data"]["record_status"],
+        "registered"
+    );
+    assert_eq!(
+        patient_after_checkout["data"]["vital_status"],
+        "presumed_alive"
+    );
+
+    let emergency_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/emergency/intake",
+            json!({
+                "patient_id": patient_id,
+                "clinic_id": clinic_id,
+                "acuity": "urgent",
+                "idempotency_key": "care-intake-contract-ed"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let triage_id = emergency_body["data"]["triage"]["id"]
+        .as_str()
+        .expect("triage id exists")
+        .to_owned();
+    assert_eq!(emergency_body["data"]["triage"]["status"], "waiting");
+    assert_eq!(emergency_body["data"]["triage"]["acuity"], "urgent");
+
+    let triage_assessment = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            format!("/api/v2/triage/{triage_id}/assessment"),
+            json!({
+                "acuity": "urgent",
+                "notes": "Synthetic contract note."
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(triage_assessment["data"]["status"], "completed");
+
+    let patient_after_emergency_completion = assert_json_status(
+        api_get(
+            app.clone(),
+            &owner,
+            format!("/api/v2/patients/{patient_id}"),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        patient_after_emergency_completion["data"]["record_status"],
+        "registered"
+    );
+    assert_eq!(
+        patient_after_emergency_completion["data"]["vital_status"],
+        "presumed_alive"
+    );
+
+    let second_emergency_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/emergency/intake",
+            json!({
+                "patient_id": patient_id,
+                "clinic_id": clinic_id,
+                "acuity": "urgent",
+                "idempotency_key": "care-intake-contract-ed-after-complete"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_ne!(second_emergency_body["data"]["triage"]["id"], triage_id);
+    assert_eq!(second_emergency_body["data"]["triage"]["status"], "waiting");
+
+    let wards_body = assert_json_status(
+        api_get(app.clone(), &owner, "/api/v2/wards?limit=1").await,
+        StatusCode::OK,
+    )
+    .await;
+    let ward_id = wards_body["data"][0]["id"]
+        .as_str()
+        .expect("ward id exists")
+        .to_owned();
+    let second_ward_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/wards",
+            json!({
+                "code": "INTAKE-XFER",
+                "name": "Intake Transfer Probe"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let second_ward_id = second_ward_body["data"]["id"]
+        .as_str()
+        .expect("second ward id exists")
+        .to_owned();
+    let inpatient_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/inpatient/intake",
+            json!({
+                "patient_id": patient_id,
+                "ward_id": ward_id,
+                "idempotency_key": "care-intake-contract-ipd"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let admission_case_id = inpatient_body["data"]["admission_case"]["id"]
+        .as_str()
+        .expect("admission case id exists")
+        .to_owned();
+    assert_eq!(inpatient_body["data"]["patient_id"], patient_id);
+    assert_eq!(inpatient_body["data"]["admission_case"]["ward_id"], ward_id);
+    assert_eq!(
+        inpatient_body["data"]["admission_case"]["status"],
+        "ready_for_activation"
+    );
+
+    let repeated_inpatient_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/inpatient/intake",
+            json!({
+                "patient_id": patient_id,
+                "ward_id": ward_id,
+                "idempotency_key": "care-intake-contract-ipd"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        repeated_inpatient_body["data"]["admission_case"]["id"],
+        admission_case_id
+    );
+
+    let cross_ward_inpatient_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/inpatient/intake",
+            json!({
+                "patient_id": patient_id,
+                "ward_id": second_ward_id,
+                "idempotency_key": "care-intake-contract-ipd-second-ward"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        cross_ward_inpatient_body["data"]["admission_case"]["id"],
+        admission_case_id
+    );
+    assert_eq!(
+        cross_ward_inpatient_body["data"]["admission_case"]["ward_id"],
+        ward_id
+    );
+}
+
+#[tokio::test]
+async fn care_area_intake_blocks_special_patient_records() {
+    let app = app().await;
+    let owner = Actor::login(&app, "owner@hms.local").await;
+
+    let deceased_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/patients",
+            json!({
+                "first_name": "Deceased",
+                "last_name": "Intakeprobe",
+                "date_of_birth": "1942-11-05",
+                "sex": "male"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let deceased_patient_id = deceased_body["data"]["id"]
+        .as_str()
+        .expect("deceased patient id exists")
+        .to_owned();
+    let patched_deceased = assert_json_status(
+        api_patch_json(
+            app.clone(),
+            &owner,
+            format!("/api/v2/patients/{deceased_patient_id}"),
+            json!({
+                "vital_status": "deceased",
+                "status_reason_code": "contract_test"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(patched_deceased["data"]["record_status"], "registered");
+    assert_eq!(patched_deceased["data"]["vital_status"], "deceased");
+
+    let deceased_intake = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/emergency/intake",
+            json!({
+                "patient_id": deceased_patient_id,
+                "acuity": "urgent",
+                "idempotency_key": "deceased-intake-contract"
+            }),
+        )
+        .await,
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(
+        deceased_intake["error"]["code"],
+        "patient_deceased_intake_blocked"
+    );
+
+    let restricted_body = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/patients",
+            json!({
+                "first_name": "Restricted",
+                "last_name": "Intakeprobe",
+                "date_of_birth": "1980-08-03",
+                "sex": "female"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let restricted_patient_id = restricted_body["data"]["id"]
+        .as_str()
+        .expect("restricted patient id exists")
+        .to_owned();
+    let patched_restricted = assert_json_status(
+        api_patch_json(
+            app.clone(),
+            &owner,
+            format!("/api/v2/patients/{restricted_patient_id}"),
+            json!({
+                "record_status": "restricted",
+                "status_reason_code": "contract_test"
+            }),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(patched_restricted["data"]["record_status"], "restricted");
+    assert_eq!(patched_restricted["data"]["vital_status"], "presumed_alive");
+
+    let clinics_body = assert_json_status(
+        api_get(app.clone(), &owner, "/api/v2/clinics?limit=1").await,
+        StatusCode::OK,
+    )
+    .await;
+    let clinic_id = clinics_body["data"][0]["id"]
+        .as_str()
+        .expect("clinic id exists")
+        .to_owned();
+
+    let restricted_intake = assert_json_status(
+        api_post_json(
+            app.clone(),
+            &owner,
+            "/api/v2/care-areas/outpatient/intake",
+            json!({
+                "patient_id": restricted_patient_id,
+                "clinic_id": clinic_id,
+                "idempotency_key": "restricted-intake-contract"
+            }),
+        )
+        .await,
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(
+        restricted_intake["error"]["code"],
+        "patient_restricted_intake_blocked"
+    );
+}
+
+#[tokio::test]
 async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;

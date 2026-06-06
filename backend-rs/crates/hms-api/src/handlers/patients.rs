@@ -4,7 +4,8 @@ use hms_domain::auth::{BreakGlassGrant, EndBreakGlassGrantsResponse, StartBreakG
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::patients::{
     CreatePatientRequest, PatientContextListGetQuery, PatientContextListItem,
-    PatientContextListQuery, PatientDetail, PatientListGetQuery, PatientListItem, PatientListQuery,
+    PatientContextListQuery, PatientCurrentContexts, PatientDetail, PatientIdentityLookupRequest,
+    PatientIdentityLookupResponse, PatientListGetQuery, PatientListItem, PatientListQuery,
     PatientRegistrationValidationRule, UpdatePatientRequest,
 };
 use uuid::Uuid;
@@ -144,6 +145,33 @@ pub async fn list_patient_validation_rules(
 
 #[utoipa::path(
     post,
+    path = "/api/v2/patients/identity/lookup",
+    operation_id = "postPatientIdentityLookup",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    request_body = PatientIdentityLookupRequest,
+    responses(
+        (status = 200, description = "Patient identity lookup candidates", body = ObjectResponse<PatientIdentityLookupResponse>),
+        (status = 400, description = "Invalid identity lookup", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn lookup_identity(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<PatientIdentityLookupRequest>,
+) -> Result<Json<ObjectResponse<PatientIdentityLookupResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .lookup_identity(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/v2/patients",
     operation_id = "postPatients",
     tag = "patients",
@@ -189,6 +217,33 @@ pub async fn get_patient(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PatientDetail>>, ApiError> {
     Ok(Json(state.patients_service().get_patient(&user, id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/patients/{id}/current-contexts",
+    operation_id = "getPatientCurrentContexts",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Patient id")),
+    responses(
+        (status = 200, description = "Current care contexts for a patient", body = ObjectResponse<PatientCurrentContexts>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Patient not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_current_contexts(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PatientCurrentContexts>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .get_current_contexts(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(

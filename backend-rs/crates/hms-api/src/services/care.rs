@@ -1,25 +1,31 @@
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_access::AccessSubject;
 use hms_db::care::{
-    AppointmentFilters, AppointmentUpdate, CareCursor, ClinicUpdate, EncounterFilters,
-    EncounterUpdate, NewBookedAppointment, NewCareTeamAssignment, NewClinic, NewEncounter,
-    NewTriage, NewVisit, TriageFilters, VisitFilters,
+    AppointmentFilters, AppointmentUpdate, CareAreaIntakeIdempotencyRecord, CareAreaIntakeKind,
+    CareCursor, ClinicUpdate, CompleteCareAreaIntakeIdempotencyKey, EncounterFilters,
+    EncounterUpdate, NewBookedAppointment, NewCareAreaIntakeIdempotencyKey, NewCareTeamAssignment,
+    NewClinic, NewEncounter, NewTriage, NewVisit, TriageFilters, VisitFilters,
 };
-use hms_db::patients::PatientContextFilters;
+use hms_db::patients::{PatientContextFilters, PatientRecordOverrideAudit};
+use hms_db::ward::NewAdmissionCase;
 use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem, AssignTriageRequest,
     CancelAppointmentRequest, CareAreaEmergencyMyWork, CareAreaInpatientMyWork,
     CareAreaMyWorkResponse, CareAreaOutpatientMyWork, CareAreaPatientContextMyWork,
     CareTeamAssignment, CheckInVisitRequest, ClinicListItem, CreateAppointmentRequest,
     CreateCareTeamAssignmentRequest, CreateClinicRequest, CreateEncounterRequest,
-    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery, EncounterStatus,
-    TriageAssessmentRequest, TriageListItem, TriageListQuery, TriageStatus,
+    CreateTriageRequest, CursorListQuery, EmergencyIntakeRequest, EmergencyIntakeResponse,
+    EncounterListItem, EncounterListQuery, EncounterStatus, InpatientIntakeRequest,
+    InpatientIntakeResponse, OutpatientIntakeRequest, OutpatientIntakeResponse,
+    SpecialRecordOverride, TriageAssessmentRequest, TriageListItem, TriageListQuery, TriageStatus,
     UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest, VisitListItem,
     VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
-use hms_domain::patients::PatientRecord;
+use hms_domain::patients::{PatientRecord, PatientRecordStatus, PatientVitalStatus};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::cursor_list;
@@ -33,10 +39,25 @@ const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
 const MAX_CLINIC_CODE_LEN: usize = 48;
 const MAX_CLINIC_NAME_LEN: usize = 160;
 const MY_WORK_PREVIEW_LIMIT: usize = 5;
+const MAX_RECORD_OVERRIDE_REASON_LEN: usize = 500;
+const MAX_CARE_INTAKE_IDEMPOTENCY_KEY_LEN: usize = 128;
 
 #[derive(Clone)]
 pub struct CareService {
     state: AppState,
+}
+
+#[derive(Clone, Debug)]
+struct CareIntakeIdempotencyReservation {
+    care_area: CareAreaIntakeKind,
+    key_hash: String,
+    request_fingerprint: String,
+}
+
+#[derive(Clone, Debug)]
+enum CareIntakeIdempotencyStart {
+    Reserved(CareIntakeIdempotencyReservation),
+    Replay(CareAreaIntakeIdempotencyRecord),
 }
 
 impl CareService {
@@ -240,6 +261,444 @@ impl CareService {
                 recent_patients,
                 has_more_recent_patients,
             },
+        }))
+    }
+
+    pub async fn outpatient_intake(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: OutpatientIntakeRequest,
+    ) -> Result<ObjectResponse<OutpatientIntakeResponse>, ApiError> {
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
+        if payload.clinic_id.is_none() {
+            return Err(ApiError::bad_request(
+                "outpatient_clinic_required",
+                "Outpatient intake requires an explicit clinic context.",
+            ));
+        }
+        let patient = load_patient_for_intake(
+            &self.state,
+            ctx,
+            payload.patient_id,
+            payload.restricted_record_override.as_ref(),
+            "outpatient",
+        )
+        .await?;
+        let idempotency = begin_care_intake_idempotency(
+            self.pool(),
+            ctx,
+            self.facility_id(),
+            CareAreaIntakeKind::Outpatient,
+            patient.id,
+            &payload.idempotency_key,
+            format!(
+                "outpatient|{}|{}|{}",
+                patient.id,
+                optional_uuid_fingerprint(payload.appointment_id),
+                optional_uuid_fingerprint(payload.clinic_id)
+            ),
+        )
+        .await?;
+        let reservation = match idempotency {
+            CareIntakeIdempotencyStart::Replay(record) => {
+                let visit_id = record.visit_id.ok_or_else(|| {
+                    ApiError::conflict(
+                        "care_intake_idempotency_failed",
+                        "Care intake idempotency result is incomplete.",
+                    )
+                })?;
+                let visit = hms_db::care::get_visit(self.pool(), self.facility_id(), visit_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict("visit_load_failed", "Visit could not be loaded.")
+                    })?
+                    .ok_or_else(|| {
+                        ApiError::not_found("visit_not_found", "Visit was not found.")
+                    })?;
+                return Ok(object(OutpatientIntakeResponse {
+                    patient_id: patient.id,
+                    visit,
+                }));
+            }
+            CareIntakeIdempotencyStart::Reserved(reservation) => reservation,
+        };
+        if payload.appointment_id.is_none() {
+            let contexts = hms_db::patients::get_patient_current_contexts(
+                self.pool(),
+                self.facility_id(),
+                patient.id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "patient_current_contexts_failed",
+                    "Patient current contexts could not be loaded.",
+                )
+            })?;
+            if let Some(existing) = contexts
+                .outpatient
+                .iter()
+                .find(|context| context.clinic_id == payload.clinic_id)
+            {
+                let visit =
+                    hms_db::care::get_visit(self.pool(), self.facility_id(), existing.visit_id)
+                        .await
+                        .map_err(|_| {
+                            ApiError::conflict("visit_load_failed", "Visit could not be loaded.")
+                        })?
+                        .ok_or_else(|| {
+                            ApiError::not_found("visit_not_found", "Visit was not found.")
+                        })?;
+                complete_care_intake_idempotency(
+                    self.pool(),
+                    self.facility_id(),
+                    ctx,
+                    reservation,
+                    Some(visit.id),
+                    None,
+                    None,
+                )
+                .await?;
+                return Ok(object(OutpatientIntakeResponse {
+                    patient_id: patient.id,
+                    visit,
+                }));
+            }
+        }
+
+        let visit = hms_db::care::check_in_visit(
+            self.pool(),
+            NewVisit {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: patient.id,
+                appointment_id: payload.appointment_id,
+                clinic_id: payload.clinic_id,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "outpatient_intake_failed",
+                "Outpatient intake could not be created.",
+            )
+        })?;
+
+        complete_care_intake_idempotency(
+            self.pool(),
+            self.facility_id(),
+            ctx,
+            reservation,
+            Some(visit.id),
+            None,
+            None,
+        )
+        .await?;
+        self.state.invalidate_patient_chronicle_cache();
+        Ok(object(OutpatientIntakeResponse {
+            patient_id: patient.id,
+            visit,
+        }))
+    }
+
+    pub async fn inpatient_intake(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: InpatientIntakeRequest,
+    ) -> Result<ObjectResponse<InpatientIntakeResponse>, ApiError> {
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AdmissionManage)?;
+        let patient = load_patient_for_intake(
+            &self.state,
+            ctx,
+            payload.patient_id,
+            payload.restricted_record_override.as_ref(),
+            "inpatient",
+        )
+        .await?;
+        let idempotency = begin_care_intake_idempotency(
+            self.pool(),
+            ctx,
+            self.facility_id(),
+            CareAreaIntakeKind::Inpatient,
+            patient.id,
+            &payload.idempotency_key,
+            format!(
+                "inpatient|{}|{}|{}|{}",
+                patient.id,
+                payload.ward_id,
+                optional_uuid_fingerprint(payload.encounter_id),
+                optional_uuid_fingerprint(payload.visit_id)
+            ),
+        )
+        .await?;
+        let reservation = match idempotency {
+            CareIntakeIdempotencyStart::Replay(record) => {
+                let admission_case_id = record.admission_case_id.ok_or_else(|| {
+                    ApiError::conflict(
+                        "care_intake_idempotency_failed",
+                        "Care intake idempotency result is incomplete.",
+                    )
+                })?;
+                let admission_case = hms_db::ward::get_admission_case(
+                    self.pool(),
+                    self.facility_id(),
+                    admission_case_id,
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "admission_case_load_failed",
+                        "Admission case could not be loaded.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("admission_case_not_found", "Admission case was not found.")
+                })?;
+                return Ok(object(InpatientIntakeResponse {
+                    patient_id: patient.id,
+                    admission_case,
+                }));
+            }
+            CareIntakeIdempotencyStart::Reserved(reservation) => reservation,
+        };
+        let contexts = hms_db::patients::get_patient_current_contexts(
+            self.pool(),
+            self.facility_id(),
+            patient.id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_current_contexts_failed",
+                "Patient current contexts could not be loaded.",
+            )
+        })?;
+        if let Some(existing) = contexts.inpatient.first() {
+            let admission_case = hms_db::ward::get_admission_case(
+                self.pool(),
+                self.facility_id(),
+                existing.admission_case_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "admission_case_load_failed",
+                    "Admission case could not be loaded.",
+                )
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("admission_case_not_found", "Admission case was not found.")
+            })?;
+            complete_care_intake_idempotency(
+                self.pool(),
+                self.facility_id(),
+                ctx,
+                reservation,
+                None,
+                Some(admission_case.id),
+                None,
+            )
+            .await?;
+            return Ok(object(InpatientIntakeResponse {
+                patient_id: patient.id,
+                admission_case,
+            }));
+        }
+
+        let admission_case = hms_db::ward::create_admission_case(
+            self.pool(),
+            NewAdmissionCase {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: patient.id,
+                ward_id: payload.ward_id,
+                encounter_id: payload.encounter_id,
+                visit_id: payload.visit_id,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "inpatient_intake_failed",
+                "Inpatient intake could not be created.",
+            )
+        })?;
+
+        complete_care_intake_idempotency(
+            self.pool(),
+            self.facility_id(),
+            ctx,
+            reservation,
+            None,
+            Some(admission_case.id),
+            None,
+        )
+        .await?;
+        self.state.invalidate_ward_board_cache();
+        self.state.invalidate_patient_list_cache();
+        self.state.invalidate_patient_chronicle_cache();
+        Ok(object(InpatientIntakeResponse {
+            patient_id: patient.id,
+            admission_case,
+        }))
+    }
+
+    pub async fn emergency_intake(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: EmergencyIntakeRequest,
+    ) -> Result<ObjectResponse<EmergencyIntakeResponse>, ApiError> {
+        require_action_permission(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
+        let patient = load_patient_for_intake(
+            &self.state,
+            ctx,
+            payload.patient_id,
+            payload.restricted_record_override.as_ref(),
+            "emergency",
+        )
+        .await?;
+        let idempotency = begin_care_intake_idempotency(
+            self.pool(),
+            ctx,
+            self.facility_id(),
+            CareAreaIntakeKind::Emergency,
+            patient.id,
+            &payload.idempotency_key,
+            format!(
+                "emergency|{}|{}|{:?}",
+                patient.id,
+                optional_uuid_fingerprint(payload.clinic_id),
+                payload.acuity
+            ),
+        )
+        .await?;
+        let reservation = match idempotency {
+            CareIntakeIdempotencyStart::Replay(record) => {
+                let visit_id = record.visit_id.ok_or_else(|| {
+                    ApiError::conflict(
+                        "care_intake_idempotency_failed",
+                        "Care intake idempotency result is incomplete.",
+                    )
+                })?;
+                let triage_id = record.triage_id.ok_or_else(|| {
+                    ApiError::conflict(
+                        "care_intake_idempotency_failed",
+                        "Care intake idempotency result is incomplete.",
+                    )
+                })?;
+                let visit = hms_db::care::get_visit(self.pool(), self.facility_id(), visit_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict("visit_load_failed", "Visit could not be loaded.")
+                    })?
+                    .ok_or_else(|| {
+                        ApiError::not_found("visit_not_found", "Visit was not found.")
+                    })?;
+                let triage = hms_db::care::get_triage(self.pool(), self.facility_id(), triage_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict("triage_load_failed", "Triage item could not be loaded.")
+                    })?
+                    .ok_or_else(|| {
+                        ApiError::not_found("triage_not_found", "Triage item was not found.")
+                    })?;
+                return Ok(object(EmergencyIntakeResponse {
+                    patient_id: patient.id,
+                    visit,
+                    triage,
+                }));
+            }
+            CareIntakeIdempotencyStart::Reserved(reservation) => reservation,
+        };
+        let contexts = hms_db::patients::get_patient_current_contexts(
+            self.pool(),
+            self.facility_id(),
+            patient.id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_current_contexts_failed",
+                "Patient current contexts could not be loaded.",
+            )
+        })?;
+        if let Some(existing) = contexts.emergency.first() {
+            let visit = hms_db::care::get_visit(self.pool(), self.facility_id(), existing.visit_id)
+                .await
+                .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
+                .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+            if let Some(triage_id) = existing.triage_id {
+                let triage = hms_db::care::get_triage(self.pool(), self.facility_id(), triage_id)
+                    .await
+                    .map_err(|_| {
+                        ApiError::conflict("triage_load_failed", "Triage item could not be loaded.")
+                    })?
+                    .ok_or_else(|| {
+                        ApiError::not_found("triage_not_found", "Triage item was not found.")
+                    })?;
+                complete_care_intake_idempotency(
+                    self.pool(),
+                    self.facility_id(),
+                    ctx,
+                    reservation,
+                    Some(visit.id),
+                    None,
+                    Some(triage.id),
+                )
+                .await?;
+                return Ok(object(EmergencyIntakeResponse {
+                    patient_id: patient.id,
+                    visit,
+                    triage,
+                }));
+            }
+        }
+
+        let visit_id = Uuid::new_v4();
+        let (visit, triage) = hms_db::care::create_emergency_visit_with_triage(
+            self.pool(),
+            NewVisit {
+                id: visit_id,
+                facility_id: self.facility_id(),
+                patient_id: patient.id,
+                appointment_id: None,
+                clinic_id: payload.clinic_id,
+                created_by_user_id: ctx.user_id,
+            },
+            NewTriage {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                visit_id,
+                patient_id: patient.id,
+                acuity: payload.acuity,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "emergency_intake_failed",
+                "Emergency intake could not be created.",
+            )
+        })?;
+
+        complete_care_intake_idempotency(
+            self.pool(),
+            self.facility_id(),
+            ctx,
+            reservation,
+            Some(visit.id),
+            None,
+            Some(triage.id),
+        )
+        .await?;
+        self.state.invalidate_patient_chronicle_cache();
+        Ok(object(EmergencyIntakeResponse {
+            patient_id: patient.id,
+            visit,
+            triage,
         }))
     }
 
@@ -1211,6 +1670,238 @@ async fn load_patient_for_access(
     })?;
 
     Ok(patient)
+}
+
+async fn begin_care_intake_idempotency(
+    pool: &hms_db::PgPool,
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+    care_area: CareAreaIntakeKind,
+    patient_id: Uuid,
+    idempotency_key: &str,
+    request_fingerprint_source: String,
+) -> Result<CareIntakeIdempotencyStart, ApiError> {
+    let idempotency_key = validate_required_text(
+        idempotency_key.to_owned(),
+        MAX_CARE_INTAKE_IDEMPOTENCY_KEY_LEN,
+        "idempotency_key",
+    )?;
+    let key_hash = care_intake_hash("key", &idempotency_key);
+    let request_fingerprint = care_intake_hash("request", &request_fingerprint_source);
+
+    let inserted = hms_db::care::create_care_area_intake_idempotency_reservation(
+        pool,
+        NewCareAreaIntakeIdempotencyKey {
+            id: Uuid::new_v4(),
+            facility_id,
+            created_by_user_id: ctx.user_id,
+            care_area,
+            idempotency_key_hash: key_hash.clone(),
+            request_fingerprint: request_fingerprint.clone(),
+            patient_id,
+            visit_id: None,
+            admission_case_id: None,
+            triage_id: None,
+        },
+    )
+    .await
+    .map_err(|_| {
+        ApiError::conflict(
+            "care_intake_idempotency_failed",
+            "Care intake idempotency could not be checked.",
+        )
+    })?;
+
+    if inserted.is_some() {
+        return Ok(CareIntakeIdempotencyStart::Reserved(
+            CareIntakeIdempotencyReservation {
+                care_area,
+                key_hash,
+                request_fingerprint,
+            },
+        ));
+    }
+
+    let existing = hms_db::care::get_care_area_intake_idempotency_record(
+        pool,
+        facility_id,
+        ctx.user_id,
+        care_area,
+        &key_hash,
+    )
+    .await
+    .map_err(|_| {
+        ApiError::conflict(
+            "care_intake_idempotency_failed",
+            "Care intake idempotency could not be checked.",
+        )
+    })?
+    .ok_or_else(|| {
+        ApiError::conflict(
+            "care_intake_idempotency_failed",
+            "Care intake idempotency could not be checked.",
+        )
+    })?;
+
+    if existing.patient_id != patient_id || existing.request_fingerprint != request_fingerprint {
+        return Err(ApiError::conflict(
+            "care_intake_idempotency_conflict",
+            "Idempotency key was already used for a different care intake request.",
+        ));
+    }
+    if existing.completed_at.is_none() {
+        return Err(ApiError::conflict(
+            "care_intake_in_progress",
+            "Care intake is still being processed. Retry with the same idempotency key.",
+        ));
+    }
+
+    Ok(CareIntakeIdempotencyStart::Replay(existing))
+}
+
+async fn complete_care_intake_idempotency(
+    pool: &hms_db::PgPool,
+    facility_id: Uuid,
+    ctx: &hms_access::RequestContext,
+    reservation: CareIntakeIdempotencyReservation,
+    visit_id: Option<Uuid>,
+    admission_case_id: Option<Uuid>,
+    triage_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    hms_db::care::complete_care_area_intake_idempotency_key(
+        pool,
+        CompleteCareAreaIntakeIdempotencyKey {
+            facility_id,
+            created_by_user_id: ctx.user_id,
+            care_area: reservation.care_area,
+            idempotency_key_hash: reservation.key_hash,
+            request_fingerprint: reservation.request_fingerprint,
+            visit_id,
+            admission_case_id,
+            triage_id,
+        },
+    )
+    .await
+    .map_err(|_| {
+        ApiError::conflict(
+            "care_intake_idempotency_failed",
+            "Care intake idempotency could not be recorded.",
+        )
+    })?
+    .ok_or_else(|| {
+        ApiError::conflict(
+            "care_intake_idempotency_failed",
+            "Care intake idempotency could not be recorded.",
+        )
+    })?;
+    Ok(())
+}
+
+fn care_intake_hash(label: &str, value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(label.as_bytes());
+    hasher.update([0]);
+    hasher.update(value.as_bytes());
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+fn optional_uuid_fingerprint(value: Option<Uuid>) -> String {
+    value
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "none".to_owned())
+}
+
+async fn load_patient_for_intake(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    patient_id: Uuid,
+    restricted_override: Option<&SpecialRecordOverride>,
+    care_area: &'static str,
+) -> Result<PatientRecord, ApiError> {
+    let patient = load_patient_for_access(state, ctx, patient_id).await?;
+    match patient.record_status {
+        PatientRecordStatus::Registered => {
+            if patient.vital_status == PatientVitalStatus::Deceased {
+                return Err(ApiError::conflict(
+                    "patient_deceased_intake_blocked",
+                    "Deceased patient records cannot be used for normal intake.",
+                ));
+            }
+            Ok(patient)
+        }
+        PatientRecordStatus::Restricted => {
+            let Some(override_reason) = restricted_override else {
+                return Err(ApiError::conflict(
+                    "patient_restricted_intake_blocked",
+                    "Restricted patient records require an override reason for intake.",
+                ));
+            };
+            if !ctx.has_facility_permission(state.facility_id(), PermissionCode::PatientUpdate) {
+                return Err(ApiError::forbidden(
+                    "permission_denied",
+                    "You do not have permission to override restricted patient records.",
+                ));
+            }
+            let reason_code = normalize_record_override_reason_code(&override_reason.reason_code)?;
+            let reason_note_present =
+                normalize_record_override_reason_note(override_reason.reason_note.as_deref())?
+                    .is_some();
+            hms_db::patients::audit_patient_record_override(
+                state.db_pool(),
+                PatientRecordOverrideAudit {
+                    facility_id: state.facility_id(),
+                    patient_id: patient.id,
+                    actor_user_id: ctx.user_id,
+                    request_id: Some(ctx.request_id.clone()),
+                    override_kind: format!("{care_area}_restricted_record_intake"),
+                    reason_code,
+                    reason_note_present,
+                },
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "patient_record_override_audit_failed",
+                    "Restricted patient record override could not be audited.",
+                )
+            })?;
+            Ok(patient)
+        }
+        PatientRecordStatus::EnteredInError => Err(ApiError::conflict(
+            "patient_entered_in_error_intake_blocked",
+            "Entered-in-error patient records cannot be used for intake.",
+        )),
+        PatientRecordStatus::Superseded => Err(ApiError::conflict(
+            "patient_superseded_intake_blocked",
+            "Merged patient records cannot be used for intake. Use the canonical patient record.",
+        )),
+    }
+}
+
+fn normalize_record_override_reason_code(reason_code: &str) -> Result<String, ApiError> {
+    let reason_code = reason_code.trim();
+    if reason_code.is_empty() || reason_code.len() > 64 {
+        return Err(ApiError::bad_request(
+            "invalid_record_override",
+            "Record override reason code is required.",
+        ));
+    }
+    Ok(reason_code.to_owned())
+}
+
+fn normalize_record_override_reason_note(
+    reason_note: Option<&str>,
+) -> Result<Option<String>, ApiError> {
+    let Some(reason_note) = reason_note.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if reason_note.len() > MAX_RECORD_OVERRIDE_REASON_LEN {
+        return Err(ApiError::bad_request(
+            "invalid_record_override",
+            "Record override reason note is too long.",
+        ));
+    }
+    Ok(Some(reason_note.to_owned()))
 }
 
 fn split_preview<T>(mut rows: Vec<T>, limit: usize) -> (Vec<T>, bool) {

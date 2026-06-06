@@ -109,9 +109,9 @@ export default function InpatientCareAreaPage() {
               title={ward.name || 'Ward'}
               description={ward.department?.name || ward.unit_name || ward.ward_type || 'Inpatient ward'}
               meta={ward.code || null}
-              to={`/wards/${ward.id}/board`}
+              to={`/patients/find-or-register?intent=inpatient&ward_id=${ward.id}`}
               icon={Bed}
-              actionLabel="Ward board"
+              actionLabel="Find or register"
             />
           ))}
         </CareAreaGrid>

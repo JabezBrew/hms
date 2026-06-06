@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 
 import {
   DEFAULT_RECORD_STATUS_FILTER,
+  DEFAULT_VITAL_STATUS_FILTER,
   RECENT_REGISTRATION_STATUS,
   SEARCH_TABLE_PAGE_SIZE,
 } from './registryConstants';
@@ -10,6 +11,7 @@ export const NO_CURRENT_ADMISSION_LOCATION_LABEL = 'Not admitted';
 
 export const createEmptyFilters = () => ({
   recordStatus: DEFAULT_RECORD_STATUS_FILTER,
+  vitalStatus: DEFAULT_VITAL_STATUS_FILTER,
   admissionStart: null,
   admissionEnd: null,
   wardId: '',
@@ -23,6 +25,7 @@ export const createEmptyFilters = () => ({
 export const countActiveFilters = (filters) => {
   let count = 0;
   if (filters.recordStatus && filters.recordStatus !== DEFAULT_RECORD_STATUS_FILTER) count += 1;
+  if (filters.vitalStatus && filters.vitalStatus !== DEFAULT_VITAL_STATUS_FILTER) count += 1;
   if (filters.admissionStart || filters.admissionEnd) count += 1;
   if (filters.wardId) count += 1;
   if (filters.admissionStatus && filters.admissionStatus !== 'all') count += 1;
@@ -40,9 +43,13 @@ export const buildSearchParams = (query, filters) => {
   }
 
   if (filters.recordStatus && filters.recordStatus !== DEFAULT_RECORD_STATUS_FILTER) {
-    params.status = filters.recordStatus;
+    params.record_status = filters.recordStatus;
   } else if (!search && !hasActiveFilters) {
-    params.status = RECENT_REGISTRATION_STATUS;
+    params.record_status = RECENT_REGISTRATION_STATUS;
+  }
+
+  if (filters.vitalStatus && filters.vitalStatus !== DEFAULT_VITAL_STATUS_FILTER) {
+    params.vital_status = filters.vitalStatus;
   }
 
   if (filters.admissionStart) {

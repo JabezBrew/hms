@@ -83,7 +83,7 @@ export default function TriagePage() {
 
   const handleAddWalkIn = () => {
     // Navigate to patient registration with walk-in flag
-    navigate('/patients/create?walkIn=true');
+    navigate('/patients/find-or-register?intent=emergency');
   };
 
   if (!facilityCode) {

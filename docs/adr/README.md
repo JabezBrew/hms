@@ -12,6 +12,7 @@ Scope: accepted architecture decisions for HMS.
 | `0002-rust-v2-active-backend.md` | Rust V2 under `backend-rs/` is the active backend; Django is legacy reference. |
 | `0003-gcp-staging-hetzner-rollback.md` | GCP is current staging/performance validation; Hetzner is environment rollback and `ops/compose-v2` is the reusable Compose kit. |
 | `0004-patient-chronicle-clinical-data-home.md` | Patient Chronicle is the home for patient clinical data. |
+| `0005-patient-identity-status-and-care-intake.md` | Patient identity status is separate from care activity, and care intake starts with backend duplicate prevention. |
 
 ## Invariants
 

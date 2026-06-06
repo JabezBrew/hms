@@ -48,6 +48,7 @@ function parseFilterDate(value) {
 function serializeFilters(filters) {
   return {
     recordStatus: filters.recordStatus || 'all',
+    vitalStatus: filters.vitalStatus || 'all',
     admissionStart: serializeFilterDate(filters.admissionStart),
     admissionEnd: serializeFilterDate(filters.admissionEnd),
     wardId: filters.wardId || '',
@@ -69,6 +70,7 @@ function hydrateFilters(value) {
   return {
     ...emptyFilters,
     recordStatus: typeof value.recordStatus === 'string' ? value.recordStatus : emptyFilters.recordStatus,
+    vitalStatus: typeof value.vitalStatus === 'string' ? value.vitalStatus : emptyFilters.vitalStatus,
     admissionStart: parseFilterDate(value.admissionStart),
     admissionEnd: parseFilterDate(value.admissionEnd),
     wardId: typeof value.wardId === 'string' ? value.wardId : '',
@@ -235,6 +237,7 @@ const PatientChronicleListPage = () => {
     const cleared = {
       ...appliedFilters,
       ...(key === 'recordStatus' ? { recordStatus: 'all' } : {}),
+      ...(key === 'vitalStatus' ? { vitalStatus: 'all' } : {}),
       ...(key === 'admissionRange' ? { admissionStart: null, admissionEnd: null } : {}),
       ...(key === 'ageRange' ? { ageMin: '', ageMax: '' } : {}),
       ...(key === 'wardId' ? { wardId: '', wardName: '' } : {}),

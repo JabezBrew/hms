@@ -883,6 +883,10 @@ mod tests {
             date_of_birth: chrono::NaiveDate::from_ymd_opt(1990, 2, 14).unwrap(),
             sex: hms_domain::patients::Sex::Female,
             status: hms_domain::patients::PatientAdministrativeStatus::Active,
+            record_status: hms_domain::patients::PatientRecordStatus::Registered,
+            vital_status: hms_domain::patients::PatientVitalStatus::PresumedAlive,
+            superseded_by_patient_id: None,
+            record_status_reason_code: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

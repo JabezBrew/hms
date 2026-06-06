@@ -81,4 +81,49 @@ export const careAreasApi = {
       throw new Error(handleV2ApiError(error, 'Failed to fetch care-area work'));
     }
   },
+
+  startOutpatientIntake: async (payload, options = {}) => {
+    if (!isRustV2ApiMode()) {
+      throw new Error('Outpatient intake is only available on Rust V2');
+    }
+    try {
+      const response = await v2Api.postOutpatientIntake(payload, { signal: options.signal });
+      return response?.data || response;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+      throw new Error(handleV2ApiError(error, 'Failed to start outpatient intake'));
+    }
+  },
+
+  startInpatientIntake: async (payload, options = {}) => {
+    if (!isRustV2ApiMode()) {
+      throw new Error('Inpatient intake is only available on Rust V2');
+    }
+    try {
+      const response = await v2Api.postInpatientIntake(payload, { signal: options.signal });
+      return response?.data || response;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+      throw new Error(handleV2ApiError(error, 'Failed to start inpatient intake'));
+    }
+  },
+
+  startEmergencyIntake: async (payload, options = {}) => {
+    if (!isRustV2ApiMode()) {
+      throw new Error('Emergency intake is only available on Rust V2');
+    }
+    try {
+      const response = await v2Api.postEmergencyIntake(payload, { signal: options.signal });
+      return response?.data || response;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+      throw new Error(handleV2ApiError(error, 'Failed to start emergency intake'));
+    }
+  },
 };

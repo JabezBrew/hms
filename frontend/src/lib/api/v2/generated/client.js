@@ -1727,6 +1727,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getPatientCurrentContexts": {
+    "operationId": "getPatientCurrentContexts",
+    "method": "GET",
+    "path": "/api/v2/patients/{id}/current-contexts",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getPatientPharmacyClinicalContext": {
     "operationId": "getPatientPharmacyClinicalContext",
     "method": "GET",
@@ -1774,6 +1784,8 @@ export const operations = {
       "search",
       "patient_id",
       "status",
+      "record_status",
+      "vital_status",
       "admission_start",
       "admission_end",
       "ward_id",
@@ -2230,7 +2242,8 @@ export const operations = {
       "ward_id",
       "patient_id",
       "search",
-      "monitoring_filter"
+      "monitoring_filter",
+      "sort"
     ],
     "hasBody": false
   },
@@ -3084,6 +3097,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postEmergencyIntake": {
+    "operationId": "postEmergencyIntake",
+    "method": "POST",
+    "path": "/api/v2/care-areas/emergency/intake",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postEncounterCancel": {
     "operationId": "postEncounterCancel",
     "method": "POST",
@@ -3180,6 +3201,14 @@ export const operations = {
     "operationId": "postHandoffs",
     "method": "POST",
     "path": "/api/v2/nursing/handoffs",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInpatientIntake": {
+    "operationId": "postInpatientIntake",
+    "method": "POST",
+    "path": "/api/v2/care-areas/inpatient/intake",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -3486,6 +3515,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postOutpatientIntake": {
+    "operationId": "postOutpatientIntake",
+    "method": "POST",
+    "path": "/api/v2/care-areas/outpatient/intake",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPatientAllergies": {
     "operationId": "postPatientAllergies",
     "method": "POST",
@@ -3572,6 +3609,14 @@ export const operations = {
     "operationId": "postPatientContextSearch",
     "method": "POST",
     "path": "/api/v2/patients/context/search",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientIdentityLookup": {
+    "operationId": "postPatientIdentityLookup",
+    "method": "POST",
+    "path": "/api/v2/patients/identity/lookup",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -4220,6 +4265,7 @@ export function createGeneratedClient(request) {
     getPatientChronicleWardRound: createOperation(request, operations.getPatientChronicleWardRound),
     getPatientClinicalNotes: createOperation(request, operations.getPatientClinicalNotes),
     getPatientContextList: createOperation(request, operations.getPatientContextList),
+    getPatientCurrentContexts: createOperation(request, operations.getPatientCurrentContexts),
     getPatientPharmacyClinicalContext: createOperation(request, operations.getPatientPharmacyClinicalContext),
     getPatientPrescriptions: createOperation(request, operations.getPatientPrescriptions),
     getPatientProblems: createOperation(request, operations.getPatientProblems),
@@ -4353,6 +4399,7 @@ export function createGeneratedClient(request) {
     postDischargeComplete: createOperation(request, operations.postDischargeComplete),
     postDischargeNursingRelease: createOperation(request, operations.postDischargeNursingRelease),
     postDischarges: createOperation(request, operations.postDischarges),
+    postEmergencyIntake: createOperation(request, operations.postEmergencyIntake),
     postEncounterCancel: createOperation(request, operations.postEncounterCancel),
     postEncounterCareTeam: createOperation(request, operations.postEncounterCareTeam),
     postEncounterComplete: createOperation(request, operations.postEncounterComplete),
@@ -4364,6 +4411,7 @@ export function createGeneratedClient(request) {
     postGoodsReceivedNotes: createOperation(request, operations.postGoodsReceivedNotes),
     postHandoffComplete: createOperation(request, operations.postHandoffComplete),
     postHandoffs: createOperation(request, operations.postHandoffs),
+    postInpatientIntake: createOperation(request, operations.postInpatientIntake),
     postInventoryCatalogEdit: createOperation(request, operations.postInventoryCatalogEdit),
     postInventoryStandingOrderGenerateRequisition: createOperation(request, operations.postInventoryStandingOrderGenerateRequisition),
     postInventoryStandingOrders: createOperation(request, operations.postInventoryStandingOrders),
@@ -4398,6 +4446,7 @@ export function createGeneratedClient(request) {
     postNursingTaskCancel: createOperation(request, operations.postNursingTaskCancel),
     postNursingTaskComplete: createOperation(request, operations.postNursingTaskComplete),
     postNursingTasks: createOperation(request, operations.postNursingTasks),
+    postOutpatientIntake: createOperation(request, operations.postOutpatientIntake),
     postPatientAllergies: createOperation(request, operations.postPatientAllergies),
     postPatientBreakGlass: createOperation(request, operations.postPatientBreakGlass),
     postPatientBreakGlassEnd: createOperation(request, operations.postPatientBreakGlassEnd),
@@ -4407,6 +4456,7 @@ export function createGeneratedClient(request) {
     postPatientChronicleWardRounds: createOperation(request, operations.postPatientChronicleWardRounds),
     postPatientClinicalNotes: createOperation(request, operations.postPatientClinicalNotes),
     postPatientContextSearch: createOperation(request, operations.postPatientContextSearch),
+    postPatientIdentityLookup: createOperation(request, operations.postPatientIdentityLookup),
     postPatientPrescriptions: createOperation(request, operations.postPatientPrescriptions),
     postPatientProblems: createOperation(request, operations.postPatientProblems),
     postPatients: createOperation(request, operations.postPatients),

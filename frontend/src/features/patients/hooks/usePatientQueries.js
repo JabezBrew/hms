@@ -13,6 +13,7 @@ export const patientKeys = {
   recent: () => [...patientKeys.all, 'recent'],
   validation: () => [...patientKeys.all, 'validation'],
   context: (params) => [...patientKeys.all, 'context', params],
+  currentContexts: (id) => [...patientKeys.detail(id), 'current-contexts'],
   chronicleStartup: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'startup', params],
   chronicleTimeline: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'timeline', params],
 };
@@ -64,7 +65,7 @@ function sanitizePatientSearchKeyParams(params = {}) {
  */
 export function usePatients(filters = {}) {
   return useQuery({
-    queryKey: patientKeys.list(filters),
+    queryKey: patientKeys.list(sanitizePatientSearchKeyParams(filters)),
     queryFn: ({ signal }) => patientsApi.getPatients(filters, { signal }),
   });
 }
@@ -96,6 +97,16 @@ export function usePatientDemographics(id, options = {}) {
     queryFn: ({ signal }) => patientsApi.getPatientDemographics(id, { signal }),
     enabled: !!id && enabled,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function usePatientCurrentContexts(id, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: patientKeys.currentContexts(id),
+    queryFn: ({ signal }) => patientsApi.getCurrentContexts(id, { signal }),
+    enabled: !!id && enabled,
+    staleTime: 15 * 1000,
   });
 }
 
@@ -329,7 +340,7 @@ export function useRecentPatients(limit = 10) {
  */
 export function useContextPatients(params = {}) {
   return useQuery({
-    queryKey: patientKeys.context(params),
+    queryKey: patientKeys.context(sanitizePatientSearchKeyParams(params)),
     queryFn: ({ signal }) => patientsApi.getContextPatients(params, { signal }),
     staleTime: 60 * 1000, // 1 minute
   });
@@ -348,6 +359,12 @@ export function useRegisterPatient() {
       // Invalidate the patients list query to refetch
       queryClient.invalidateQueries({ queryKey: patientKeys.lists() });
     },
+  });
+}
+
+export function usePatientIdentityLookup() {
+  return useMutation({
+    mutationFn: (data) => patientsApi.lookupIdentity(data),
   });
 }
 

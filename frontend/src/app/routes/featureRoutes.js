@@ -39,7 +39,11 @@ const WARD_TASK_BOARD_OPTIONAL_LANES = new Set([
 ])
 
 const patientRouteFeatures = (route) => {
-  if (route.path === '/patients/create' || route.path === '/patients/:id/edit') {
+  if (
+    route.path === '/patients/create'
+    || route.path === '/patients/find-or-register'
+    || route.path === '/patients/:id/edit'
+  ) {
     return ['patient_chronicle', 'patient_registration']
   }
   return ['patient_chronicle']

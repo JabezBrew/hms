@@ -19,6 +19,7 @@ import { normalizeApiResults } from '@/lib/utils';
 import {
   ADMISSION_STATUS_OPTIONS,
   RECORD_STATUS_OPTIONS,
+  VITAL_STATUS_OPTIONS,
 } from './registryConstants';
 
 export function PatientRegistryFiltersPanel({
@@ -88,6 +89,13 @@ export function PatientRegistryFiltersPanel({
           options={RECORD_STATUS_OPTIONS}
           placeholder="Any record status"
           onChange={(value) => updateDraftFilter({ recordStatus: value })}
+        />
+        <SelectFilter
+          label="Vital Status"
+          value={draftFilters.vitalStatus}
+          options={VITAL_STATUS_OPTIONS}
+          placeholder="Any vital status"
+          onChange={(value) => updateDraftFilter({ vitalStatus: value })}
         />
         <AdmissionDateFilter
           draftFilters={draftFilters}

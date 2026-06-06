@@ -114,7 +114,8 @@ describe('PatientChronicleListPage directory behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUsePatientSearch.mockImplementation((params) => {
-      const status = params?.status || 'all'
+      const recordStatus = params?.record_status || 'all'
+      const vitalStatus = params?.vital_status || 'all'
       const query = params?.query || ''
 
       const baseRows = [
@@ -140,25 +141,29 @@ describe('PatientChronicleListPage directory behavior', () => {
       }
 
       const totals = {
-        active: 2,
+        registered: 2,
+        restricted: 1,
+        entered_in_error: 1,
+        superseded: 1,
         deceased: 1,
-        inactive: 1,
         all: 4,
       }
+      const total = vitalStatus === 'deceased' ? totals.deceased : (totals[recordStatus] ?? 0)
 
       return {
-        data: createSearchResponse(totals[status] ?? 0, baseRows),
+        data: createSearchResponse(total, baseRows),
         isLoading: false,
         refetch: vi.fn(),
       }
     })
   })
 
-  it('defaults to recent active registrations without requesting exact totals', () => {
+  it('defaults to recent registered records without requesting exact totals', () => {
     renderPage()
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
-    expect(firstCallParams.status).toBe('active')
+    expect(firstCallParams.record_status).toBe('registered')
+    expect(firstCallParams.status).toBeUndefined()
     expect(firstCallParams.ordering).toBe('-created_at')
     expect(firstCallParams.registry_scope).toBeUndefined()
     expect(firstCallParams.include_total).toBeUndefined()
@@ -227,21 +232,47 @@ describe('PatientChronicleListPage directory behavior', () => {
       state: {
         patientRegistryState: {
           appliedFilters: {
-            recordStatus: 'deceased',
+            recordStatus: 'restricted',
           },
           draftFilters: {
-            recordStatus: 'deceased',
+            recordStatus: 'restricted',
           },
         },
       },
     })
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
-    expect(firstCallParams.status).toBe('deceased')
+    expect(firstCallParams.record_status).toBe('restricted')
+    expect(firstCallParams.status).toBeUndefined()
     expect(firstCallParams.registry_scope).toBeUndefined()
     expect(screen.getByText('Filtered patient records')).toBeInTheDocument()
-    expect(screen.getByText('Record: Deceased')).toBeInTheDocument()
+    expect(screen.getByText('Record: Restricted')).toBeInTheDocument()
     expect(screen.getByText('(1)')).toBeInTheDocument()
+  })
+
+  it('applies vital status separately from record status', () => {
+    renderPage({
+      pathname: '/patients',
+      state: {
+        patientRegistryState: {
+          appliedFilters: {
+            recordStatus: 'registered',
+            vitalStatus: 'deceased',
+          },
+          draftFilters: {
+            recordStatus: 'registered',
+            vitalStatus: 'deceased',
+          },
+        },
+      },
+    })
+
+    const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
+    expect(firstCallParams.record_status).toBe('registered')
+    expect(firstCallParams.vital_status).toBe('deceased')
+    expect(firstCallParams.status).toBeUndefined()
+    expect(screen.getByText('Record: Registered record')).toBeInTheDocument()
+    expect(screen.getByText('Vital: Deceased')).toBeInTheDocument()
   })
 
   it('shows current care location header and multi-clinic tooltip content', async () => {
@@ -351,7 +382,8 @@ describe('PatientChronicleListPage directory behavior', () => {
           searchOrdering: 'name',
           searchPage: 2,
           draftFilters: {
-            recordStatus: 'active',
+            recordStatus: 'registered',
+            vitalStatus: 'deceased',
             admissionStart: '2026-06-01',
             admissionEnd: '2026-06-03',
             wardId: 'ward-1',
@@ -361,7 +393,8 @@ describe('PatientChronicleListPage directory behavior', () => {
             ageMax: '50',
           },
           appliedFilters: {
-            recordStatus: 'active',
+            recordStatus: 'registered',
+            vitalStatus: 'deceased',
             admissionStart: '2026-06-01',
             admissionEnd: '2026-06-03',
             wardId: 'ward-1',
@@ -375,7 +408,9 @@ describe('PatientChronicleListPage directory behavior', () => {
     })
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
-    expect(firstCallParams.status).toBe('active')
+    expect(firstCallParams.record_status).toBe('registered')
+    expect(firstCallParams.vital_status).toBe('deceased')
+    expect(firstCallParams.status).toBeUndefined()
     expect(firstCallParams.registry_scope).toBeUndefined()
     expect(firstCallParams.query).toBe('akua')
     expect(firstCallParams.ordering).toBe('name')
@@ -388,7 +423,7 @@ describe('PatientChronicleListPage directory behavior', () => {
     expect(firstCallParams.age_min).toBe('10')
     expect(firstCallParams.age_max).toBe('50')
     expect(screen.getByText('Filters')).toBeInTheDocument()
-    expect(screen.getByText('6')).toBeInTheDocument()
+    expect(screen.getByText('7')).toBeInTheDocument()
   })
 })
 

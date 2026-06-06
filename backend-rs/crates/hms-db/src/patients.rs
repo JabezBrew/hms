@@ -1,11 +1,15 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::patients::{
-    PatientAdministrativeStatus, PatientContextKind, PatientContextListItem, PatientRecord,
-    PatientRegistrationValidationRule, Sex,
+    identity_for_legacy_status, PatientAdministrativeStatus, PatientContextKind,
+    PatientContextListItem, PatientCurrentContexts, PatientCurrentEmergencyContext,
+    PatientCurrentInpatientContext, PatientCurrentOutpatientContext, PatientIdentityCandidate,
+    PatientIdentityMatchStrength, PatientRecord, PatientRecordStatus,
+    PatientRegistrationValidationRule, PatientVitalStatus, Sex,
 };
 use hms_domain::ward::AdmissionStatus;
 use hms_observability::observe_db_query;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -35,6 +39,8 @@ pub struct PatientRegistryFilters {
     pub search: Option<String>,
     pub patient_id: Option<Uuid>,
     pub status: Option<PatientAdministrativeStatus>,
+    pub record_status: Option<PatientRecordStatus>,
+    pub vital_status: Option<PatientVitalStatus>,
     pub admission_start_at: Option<DateTime<Utc>>,
     pub admission_end_before: Option<DateTime<Utc>>,
     pub ward_id: Option<Uuid>,
@@ -137,11 +143,14 @@ pub struct PatientListRecord {
 pub struct NewPatient {
     pub id: Uuid,
     pub facility_id: Uuid,
+    pub created_by_user_id: Uuid,
+    pub request_id: Option<String>,
     pub patient_code: String,
     pub first_name: String,
     pub last_name: String,
     pub date_of_birth: NaiveDate,
     pub sex: Sex,
+    pub duplicate_override: Option<DuplicateOverrideAudit>,
 }
 
 #[derive(Clone, Debug)]
@@ -153,8 +162,64 @@ pub struct PatientUpdate {
     pub date_of_birth: Option<NaiveDate>,
     pub sex: Option<Sex>,
     pub status: Option<PatientAdministrativeStatus>,
+    pub record_status: Option<PatientRecordStatus>,
+    pub vital_status: Option<PatientVitalStatus>,
+    pub superseded_by_patient_id: Option<Uuid>,
+    pub status_reason_code: Option<String>,
+    pub status_reason_note: Option<String>,
     pub actor_user_id: Uuid,
     pub request_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DuplicateOverrideAudit {
+    pub lookup_id: Uuid,
+    pub reason_code: String,
+    pub reason_note_present: bool,
+    pub candidate_count: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct PatientIdentityLookupFilters {
+    pub patient_code: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub date_of_birth: Option<NaiveDate>,
+    pub sex: Option<Sex>,
+    pub limit: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewPatientIdentityLookupSession {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub lookup_fingerprint: String,
+    pub candidate_patient_ids: Vec<Uuid>,
+    pub strong_duplicate_found: bool,
+    pub created_by_user_id: Uuid,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PatientIdentityLookupSession {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub lookup_fingerprint: String,
+    pub candidate_patient_ids: Vec<Uuid>,
+    pub strong_duplicate_found: bool,
+    pub created_by_user_id: Uuid,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PatientRecordOverrideAudit {
+    pub facility_id: Uuid,
+    pub patient_id: Uuid,
+    pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
+    pub override_kind: String,
+    pub reason_code: String,
+    pub reason_note_present: bool,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -167,6 +232,10 @@ struct PatientRow {
     date_of_birth: NaiveDate,
     sex: String,
     status: String,
+    record_status: String,
+    vital_status: String,
+    superseded_by_patient_id: Option<Uuid>,
+    record_status_reason_code: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -181,6 +250,10 @@ struct PatientListRow {
     date_of_birth: NaiveDate,
     sex: String,
     status: String,
+    record_status: String,
+    vital_status: String,
+    superseded_by_patient_id: Option<Uuid>,
+    record_status_reason_code: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     patient_location: Option<String>,
@@ -195,8 +268,52 @@ struct PatientContextRow {
     date_of_birth: NaiveDate,
     sex: String,
     status: String,
+    record_status: String,
+    vital_status: String,
+    superseded_by_patient_id: Option<Uuid>,
     context_kind: String,
     updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PatientIdentityLookupSessionRow {
+    id: Uuid,
+    facility_id: Uuid,
+    lookup_fingerprint: String,
+    candidate_patient_ids: Vec<Uuid>,
+    strong_duplicate_found: bool,
+    created_by_user_id: Uuid,
+    expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct CurrentOutpatientContextRow {
+    visit_id: Uuid,
+    clinic_id: Option<Uuid>,
+    clinic_name: Option<String>,
+    status: String,
+    checked_in_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct CurrentInpatientContextRow {
+    admission_case_id: Uuid,
+    ward_id: Option<Uuid>,
+    ward_name: Option<String>,
+    bed_id: Option<Uuid>,
+    bed_label: Option<String>,
+    status: String,
+    admitted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct CurrentEmergencyContextRow {
+    visit_id: Uuid,
+    triage_id: Option<Uuid>,
+    location_id: Option<Uuid>,
+    status: String,
+    acuity: Option<String>,
+    checked_in_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -229,6 +346,10 @@ pub async fn list_patient_registry(
                    patients.date_of_birth,
                    patients.sex,
                    patients.status,
+                   patients.record_status,
+                   patients.vital_status,
+                   patients.superseded_by_patient_id,
+                   patients.record_status_reason_code,
                    patients.created_at
             FROM patients
             WHERE patients.facility_id =
@@ -253,6 +374,10 @@ pub async fn list_patient_registry(
                    patients.date_of_birth,
                    patients.sex,
                    patients.status,
+                   patients.record_status,
+                   patients.vital_status,
+                   patients.superseded_by_patient_id,
+                   patients.record_status_reason_code,
                    patients.created_at,
                    patients.updated_at
             FROM patients
@@ -284,6 +409,10 @@ pub async fn list_patient_registry(
                patient_page.date_of_birth,
                patient_page.sex,
                patient_page.status,
+               patient_page.record_status,
+               patient_page.vital_status,
+               patient_page.superseded_by_patient_id,
+               patient_page.record_status_reason_code,
                patient_page.created_at,
                patient_page.updated_at,
                CASE
@@ -351,6 +480,16 @@ fn push_patient_registry_filters(
     if let Some(status) = filters.status.as_ref() {
         query.push(" AND patients.status = ");
         query.push_bind(codec::encode(status.clone())?);
+    }
+
+    if let Some(record_status) = filters.record_status {
+        query.push(" AND patients.record_status = ");
+        query.push_bind(codec::encode(record_status)?);
+    }
+
+    if let Some(vital_status) = filters.vital_status {
+        query.push(" AND patients.vital_status = ");
+        query.push_bind(codec::encode(vital_status)?);
     }
 
     if let Some(date_of_birth) = filters.date_of_birth_on_or_after {
@@ -461,7 +600,7 @@ fn push_patient_sort_expression(
         }
         PatientListSortField::Status => {
             query.push(alias);
-            query.push(".status");
+            query.push(".record_status");
         }
     }
 }
@@ -478,6 +617,35 @@ fn sort_comparison_operator(direction: SortDirection) -> &'static str {
         SortDirection::Asc => ">",
         SortDirection::Desc => "<",
     }
+}
+
+fn normalize_identity_text(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn patient_identity_lock_id(
+    facility_id: Uuid,
+    first_name: &str,
+    last_name: &str,
+    date_of_birth: NaiveDate,
+    sex_code: &str,
+) -> i64 {
+    let mut hasher = Sha256::new();
+    hasher.update(facility_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(normalize_identity_text(first_name).as_bytes());
+    hasher.update([0]);
+    hasher.update(normalize_identity_text(last_name).as_bytes());
+    hasher.update([0]);
+    hasher.update(date_of_birth.to_string().as_bytes());
+    hasher.update([0]);
+    hasher.update(sex_code.as_bytes());
+    let digest = hasher.finalize();
+    i64::from_be_bytes(
+        digest[0..8]
+            .try_into()
+            .expect("sha256 digest has at least 8 bytes"),
+    )
 }
 
 pub async fn list_patients(
@@ -498,6 +666,10 @@ pub async fn list_patients(
                date_of_birth,
                sex,
                status,
+               record_status,
+               vital_status,
+               superseded_by_patient_id,
+               record_status_reason_code,
                created_at,
                updated_at
         FROM patients
@@ -577,6 +749,10 @@ pub async fn get_patient(
                date_of_birth,
                sex,
                status,
+               record_status,
+               vital_status,
+               superseded_by_patient_id,
+               record_status_reason_code,
                created_at,
                updated_at
         FROM patients
@@ -590,6 +766,352 @@ pub async fn get_patient(
     .await?;
 
     row.map(patient_from_row).transpose()
+}
+
+pub async fn find_identity_candidates(
+    pool: &PgPool,
+    facility_id: Uuid,
+    filters: PatientIdentityLookupFilters,
+) -> anyhow::Result<Vec<PatientIdentityCandidate>> {
+    let patient_code = filters
+        .patient_code
+        .as_deref()
+        .map(normalize_identity_text)
+        .filter(|value| !value.is_empty());
+    let first_name = filters
+        .first_name
+        .as_deref()
+        .map(normalize_identity_text)
+        .filter(|value| !value.is_empty());
+    let last_name = filters
+        .last_name
+        .as_deref()
+        .map(normalize_identity_text)
+        .filter(|value| !value.is_empty());
+    let exact_demographics = first_name.is_some()
+        && last_name.is_some()
+        && filters.date_of_birth.is_some()
+        && filters.sex.is_some();
+    let possible_demographics =
+        filters.date_of_birth.is_some() && (first_name.is_some() || last_name.is_some());
+
+    if patient_code.is_none() && !exact_demographics && !possible_demographics {
+        return Ok(Vec::new());
+    }
+
+    let mut query = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT id,
+               facility_id,
+               patient_code,
+               first_name,
+               last_name,
+               date_of_birth,
+               sex,
+               status,
+               record_status,
+               vital_status,
+               superseded_by_patient_id,
+               record_status_reason_code,
+               created_at,
+               updated_at
+        FROM patients
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(" AND (");
+    let mut added_condition = false;
+    if let Some(code) = patient_code.as_deref() {
+        query.push("lower(patient_code) = ");
+        query.push_bind(code);
+        added_condition = true;
+    }
+    if exact_demographics {
+        if added_condition {
+            query.push(" OR ");
+        }
+        query.push("(lower(first_name) = ");
+        query.push_bind(first_name.as_deref().unwrap_or_default());
+        query.push(" AND lower(last_name) = ");
+        query.push_bind(last_name.as_deref().unwrap_or_default());
+        query.push(" AND date_of_birth = ");
+        query.push_bind(filters.date_of_birth.expect("checked exact date"));
+        query.push(" AND sex = ");
+        query.push_bind(codec::encode(filters.sex.expect("checked exact sex"))?);
+        query.push(")");
+        added_condition = true;
+    }
+    if possible_demographics {
+        if added_condition {
+            query.push(" OR ");
+        }
+        query.push("(date_of_birth = ");
+        query.push_bind(filters.date_of_birth.expect("checked possible date"));
+        query.push(" AND (FALSE");
+        if let Some(name) = first_name.as_deref() {
+            query.push(" OR lower(first_name) = ");
+            query.push_bind(name);
+        }
+        if let Some(name) = last_name.as_deref() {
+            query.push(" OR lower(last_name) = ");
+            query.push_bind(name);
+        }
+        query.push("))");
+    }
+    query.push(
+        r#")
+        ORDER BY
+            CASE WHEN lower(patient_code) =
+        "#,
+    );
+    query.push_bind(patient_code.as_deref().unwrap_or(""));
+    query.push(
+        r#" THEN 0 ELSE 1 END,
+            CASE
+                WHEN lower(first_name) =
+        "#,
+    );
+    query.push_bind(first_name.as_deref().unwrap_or(""));
+    query.push(" AND lower(last_name) = ");
+    query.push_bind(last_name.as_deref().unwrap_or(""));
+    query.push(" AND date_of_birth = ");
+    query.push_bind(filters.date_of_birth.unwrap_or(NaiveDate::MIN));
+    query.push(" THEN 0 ELSE 1 END, created_at DESC, id DESC LIMIT ");
+    query.push_bind(filters.limit.clamp(1, 25));
+
+    let rows = observe_db_query(
+        "patient.identity.lookup_candidates",
+        query.build_query_as::<PatientRow>().fetch_all(pool),
+    )
+    .await?;
+
+    rows.into_iter()
+        .map(|row| identity_candidate_from_row(row, &filters))
+        .collect()
+}
+
+pub async fn create_identity_lookup_session(
+    pool: &PgPool,
+    session: NewPatientIdentityLookupSession,
+) -> anyhow::Result<PatientIdentityLookupSession> {
+    let row = observe_db_query(
+        "patient.identity.lookup_session.create",
+        sqlx::query_as::<_, PatientIdentityLookupSessionRow>(
+            r#"
+        INSERT INTO patient_identity_lookup_sessions (
+            id,
+            facility_id,
+            lookup_fingerprint,
+            candidate_patient_ids,
+            strong_duplicate_found,
+            created_by_user_id,
+            expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id,
+                  facility_id,
+                  lookup_fingerprint,
+                  candidate_patient_ids,
+                  strong_duplicate_found,
+                  created_by_user_id,
+                  expires_at
+        "#,
+        )
+        .bind(session.id)
+        .bind(session.facility_id)
+        .bind(session.lookup_fingerprint)
+        .bind(session.candidate_patient_ids)
+        .bind(session.strong_duplicate_found)
+        .bind(session.created_by_user_id)
+        .bind(session.expires_at)
+        .fetch_one(pool),
+    )
+    .await?;
+    Ok(identity_lookup_session_from_row(row))
+}
+
+pub async fn get_identity_lookup_session(
+    pool: &PgPool,
+    facility_id: Uuid,
+    created_by_user_id: Uuid,
+    lookup_id: Uuid,
+) -> anyhow::Result<Option<PatientIdentityLookupSession>> {
+    let row = observe_db_query(
+        "patient.identity.lookup_session.get",
+        sqlx::query_as::<_, PatientIdentityLookupSessionRow>(
+            r#"
+        SELECT id,
+               facility_id,
+               lookup_fingerprint,
+               candidate_patient_ids,
+               strong_duplicate_found,
+               created_by_user_id,
+               expires_at
+        FROM patient_identity_lookup_sessions
+        WHERE facility_id = $1
+          AND created_by_user_id = $2
+          AND id = $3
+          AND expires_at > now()
+        "#,
+        )
+        .bind(facility_id)
+        .bind(created_by_user_id)
+        .bind(lookup_id)
+        .fetch_optional(pool),
+    )
+    .await?;
+    Ok(row.map(identity_lookup_session_from_row))
+}
+
+pub async fn get_patient_current_contexts(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+) -> anyhow::Result<PatientCurrentContexts> {
+    let outpatient_rows = observe_db_query(
+        "patient.current_contexts.outpatient",
+        sqlx::query_as::<_, CurrentOutpatientContextRow>(
+            r#"
+        SELECT visits.id AS visit_id,
+               visits.clinic_id,
+               clinics.name AS clinic_name,
+               visits.status,
+               visits.checked_in_at
+        FROM visits
+        LEFT JOIN clinics
+          ON clinics.facility_id = visits.facility_id
+         AND clinics.id = visits.clinic_id
+        WHERE visits.facility_id = $1
+          AND visits.patient_id = $2
+          AND visits.status NOT IN ('checked_out', 'no_show', 'cancelled')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM triage_queue
+              WHERE triage_queue.facility_id = visits.facility_id
+                AND triage_queue.visit_id = visits.id
+          )
+        ORDER BY visits.checked_in_at DESC, visits.id DESC
+        LIMIT 10
+        "#,
+        )
+        .bind(facility_id)
+        .bind(patient_id)
+        .fetch_all(pool),
+    )
+    .await?;
+
+    let inpatient_rows = observe_db_query(
+        "patient.current_contexts.inpatient",
+        sqlx::query_as::<_, CurrentInpatientContextRow>(
+            r#"
+        SELECT admission_cases.id AS admission_case_id,
+               admission_cases.ward_id,
+               wards.name AS ward_name,
+               admission_cases.bed_id,
+               beds.bed_code AS bed_label,
+               admission_cases.status,
+               admission_cases.admitted_at
+        FROM admission_cases
+        LEFT JOIN wards
+          ON wards.facility_id = admission_cases.facility_id
+         AND wards.id = admission_cases.ward_id
+        LEFT JOIN beds
+          ON beds.facility_id = admission_cases.facility_id
+         AND beds.id = admission_cases.bed_id
+        WHERE admission_cases.facility_id = $1
+          AND admission_cases.patient_id = $2
+          AND admission_cases.status IN ('ready_for_activation', 'admitted', 'discharge_pending')
+        ORDER BY admission_cases.admitted_at DESC, admission_cases.id DESC
+        LIMIT 10
+        "#,
+        )
+        .bind(facility_id)
+        .bind(patient_id)
+        .fetch_all(pool),
+    )
+    .await?;
+
+    let emergency_rows = observe_db_query(
+        "patient.current_contexts.emergency",
+        sqlx::query_as::<_, CurrentEmergencyContextRow>(
+            r#"
+        SELECT visits.id AS visit_id,
+               triage_queue.id AS triage_id,
+               visits.clinic_id AS location_id,
+               triage_queue.status,
+               triage_queue.acuity,
+               visits.checked_in_at
+        FROM visits
+        INNER JOIN triage_queue
+          ON triage_queue.facility_id = visits.facility_id
+         AND triage_queue.visit_id = visits.id
+        WHERE visits.facility_id = $1
+          AND visits.patient_id = $2
+          AND visits.status NOT IN ('checked_out', 'no_show', 'cancelled')
+          AND triage_queue.status IN ('waiting', 'assigned')
+        ORDER BY visits.checked_in_at DESC, visits.id DESC
+        LIMIT 10
+        "#,
+        )
+        .bind(facility_id)
+        .bind(patient_id)
+        .fetch_all(pool),
+    )
+    .await?;
+
+    Ok(PatientCurrentContexts {
+        patient_id,
+        outpatient: outpatient_rows
+            .into_iter()
+            .map(outpatient_context_from_row)
+            .collect(),
+        inpatient: inpatient_rows
+            .into_iter()
+            .map(inpatient_context_from_row)
+            .collect::<anyhow::Result<Vec<_>>>()?,
+        emergency: emergency_rows
+            .into_iter()
+            .map(emergency_context_from_row)
+            .collect(),
+    })
+}
+
+pub async fn audit_patient_record_override(
+    pool: &PgPool,
+    audit: PatientRecordOverrideAudit,
+) -> anyhow::Result<()> {
+    observe_db_query(
+        "patient.audit_events.record_override",
+        sqlx::query(
+            r#"
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, 'patient.identity.record_override', 'patient', $5, $6)
+        "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(audit.facility_id)
+        .bind(audit.actor_user_id)
+        .bind(audit.request_id.as_deref())
+        .bind(audit.patient_id)
+        .bind(json!({
+            "override_kind": audit.override_kind,
+            "reason_code": audit.reason_code,
+            "reason_note_present": audit.reason_note_present,
+        }))
+        .execute(pool),
+    )
+    .await?;
+    Ok(())
 }
 
 pub async fn list_patient_registration_validation_rules(
@@ -642,6 +1164,23 @@ pub async fn update_patient(
     patient: PatientUpdate,
 ) -> anyhow::Result<Option<PatientRecord>> {
     let mut transaction = pool.begin().await?;
+    let legacy_identity = patient.status.map(identity_for_legacy_status);
+    let record_status = patient
+        .record_status
+        .or(legacy_identity.map(|value| value.0));
+    let vital_status = patient
+        .vital_status
+        .or(legacy_identity.map(|value| value.1));
+    let status_reason_code = patient
+        .status_reason_code
+        .clone()
+        .or_else(|| legacy_identity.and_then(|value| value.2.map(str::to_owned)));
+    let status_changed = patient.status.is_some()
+        || record_status.is_some()
+        || vital_status.is_some()
+        || patient.superseded_by_patient_id.is_some()
+        || status_reason_code.is_some()
+        || patient.status_reason_note.is_some();
     let mut changed_fields = Vec::new();
     if patient.first_name.is_some() {
         changed_fields.push("first_name");
@@ -658,6 +1197,18 @@ pub async fn update_patient(
     if patient.status.is_some() {
         changed_fields.push("status");
     }
+    if record_status.is_some() {
+        changed_fields.push("record_status");
+    }
+    if vital_status.is_some() {
+        changed_fields.push("vital_status");
+    }
+    if patient.superseded_by_patient_id.is_some() {
+        changed_fields.push("superseded_by_patient_id");
+    }
+    if status_reason_code.is_some() {
+        changed_fields.push("status_reason_code");
+    }
 
     let row = observe_db_query(
         "patient.registry.update",
@@ -668,7 +1219,28 @@ pub async fn update_patient(
             last_name = COALESCE($4, last_name),
             date_of_birth = COALESCE($5, date_of_birth),
             sex = COALESCE($6, sex),
-            status = COALESCE($7, status),
+            record_status = COALESCE($7, record_status),
+            vital_status = COALESCE($8, vital_status),
+            superseded_by_patient_id = CASE
+                WHEN COALESCE($7, record_status) = 'superseded'
+                    THEN COALESCE($9, superseded_by_patient_id)
+                ELSE NULL
+            END,
+            record_status_reason_code = COALESCE($10, record_status_reason_code),
+            record_status_reason_note = COALESCE($11, record_status_reason_note),
+            record_status_updated_by_user_id = CASE
+                WHEN $12 THEN $13
+                ELSE record_status_updated_by_user_id
+            END,
+            record_status_updated_at = CASE
+                WHEN $12 THEN now()
+                ELSE record_status_updated_at
+            END,
+            status = CASE
+                WHEN COALESCE($8, vital_status) = 'deceased' THEN 'deceased'
+                WHEN COALESCE($7, record_status) = 'registered' THEN 'active'
+                ELSE 'inactive'
+            END,
             updated_at = now()
         WHERE facility_id = $1 AND id = $2
         RETURNING id,
@@ -679,6 +1251,10 @@ pub async fn update_patient(
                   date_of_birth,
                   sex,
                   status,
+                  record_status,
+                  vital_status,
+                  superseded_by_patient_id,
+                  record_status_reason_code,
                   created_at,
                   updated_at
         "#,
@@ -689,7 +1265,13 @@ pub async fn update_patient(
         .bind(patient.last_name)
         .bind(patient.date_of_birth)
         .bind(patient.sex.map(codec::encode).transpose()?)
-        .bind(patient.status.map(codec::encode).transpose()?)
+        .bind(record_status.map(codec::encode).transpose()?)
+        .bind(vital_status.map(codec::encode).transpose()?)
+        .bind(patient.superseded_by_patient_id)
+        .bind(status_reason_code)
+        .bind(patient.status_reason_note)
+        .bind(status_changed)
+        .bind(patient.actor_user_id)
         .fetch_optional(&mut *transaction),
     )
     .await?;
@@ -742,6 +1324,45 @@ pub async fn update_patient(
 
 pub async fn create_patient(pool: &PgPool, patient: NewPatient) -> anyhow::Result<PatientRecord> {
     let mut transaction = pool.begin().await?;
+    let sex_code = codec::encode(patient.sex)?;
+    let identity_lock_id = patient_identity_lock_id(
+        patient.facility_id,
+        &patient.first_name,
+        &patient.last_name,
+        patient.date_of_birth,
+        &sex_code,
+    );
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(identity_lock_id)
+        .execute(&mut *transaction)
+        .await?;
+
+    if patient.duplicate_override.is_none() {
+        let duplicate_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM patients
+                WHERE facility_id = $1
+                  AND lower(first_name) = $2
+                  AND lower(last_name) = $3
+                  AND date_of_birth = $4
+                  AND sex = $5
+            )
+            "#,
+        )
+        .bind(patient.facility_id)
+        .bind(normalize_identity_text(&patient.first_name))
+        .bind(normalize_identity_text(&patient.last_name))
+        .bind(patient.date_of_birth)
+        .bind(&sex_code)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if duplicate_exists {
+            anyhow::bail!("duplicate patient identity requires review");
+        }
+    }
+
     let row = observe_db_query(
         "patient.registry.create",
         sqlx::query_as::<_, PatientRow>(
@@ -754,9 +1375,11 @@ pub async fn create_patient(pool: &PgPool, patient: NewPatient) -> anyhow::Resul
             last_name,
             date_of_birth,
             sex,
-            status
+            status,
+            record_status,
+            vital_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 'registered', 'presumed_alive')
         RETURNING id,
                   facility_id,
                   patient_code,
@@ -765,6 +1388,10 @@ pub async fn create_patient(pool: &PgPool, patient: NewPatient) -> anyhow::Resul
                   date_of_birth,
                   sex,
                   status,
+                  record_status,
+                  vital_status,
+                  superseded_by_patient_id,
+                  record_status_reason_code,
                   created_at,
                   updated_at
         "#,
@@ -775,10 +1402,44 @@ pub async fn create_patient(pool: &PgPool, patient: NewPatient) -> anyhow::Resul
         .bind(&patient.first_name)
         .bind(&patient.last_name)
         .bind(patient.date_of_birth)
-        .bind(codec::encode(patient.sex)?)
+        .bind(&sex_code)
         .fetch_one(&mut *transaction),
     )
     .await?;
+
+    if let Some(duplicate_override) = patient.duplicate_override.as_ref() {
+        observe_db_query(
+            "patient.audit_events.duplicate_override",
+            sqlx::query(
+                r#"
+            INSERT INTO audit_events (
+                id,
+                facility_id,
+                actor_user_id,
+                request_id,
+                event_type,
+                resource_type,
+                resource_id,
+                metadata
+            )
+            VALUES ($1, $2, $3, $4, 'patient.identity.duplicate_override', 'patient', $5, $6)
+            "#,
+            )
+            .bind(Uuid::new_v4())
+            .bind(patient.facility_id)
+            .bind(patient.created_by_user_id)
+            .bind(patient.request_id.as_deref())
+            .bind(row.id)
+            .bind(json!({
+                "lookup_id": duplicate_override.lookup_id,
+                "reason_code": duplicate_override.reason_code,
+                "reason_note_present": duplicate_override.reason_note_present,
+                "candidate_count": duplicate_override.candidate_count,
+            }))
+            .execute(&mut *transaction),
+        )
+        .await?;
+    }
 
     observe_db_query(
         "patient.chronicle_read_model.ensure",
@@ -816,6 +1477,9 @@ pub async fn list_context_patients(
                patients.date_of_birth,
                patients.sex,
                patients.status,
+               patients.record_status,
+               patients.vital_status,
+               patients.superseded_by_patient_id,
                patient_contexts.context_kind,
                patient_contexts.updated_at
         FROM patient_contexts
@@ -928,6 +1592,122 @@ async fn upsert_patient_context_tx(
     Ok(())
 }
 
+fn identity_lookup_session_from_row(
+    row: PatientIdentityLookupSessionRow,
+) -> PatientIdentityLookupSession {
+    PatientIdentityLookupSession {
+        id: row.id,
+        facility_id: row.facility_id,
+        lookup_fingerprint: row.lookup_fingerprint,
+        candidate_patient_ids: row.candidate_patient_ids,
+        strong_duplicate_found: row.strong_duplicate_found,
+        created_by_user_id: row.created_by_user_id,
+        expires_at: row.expires_at,
+    }
+}
+
+fn identity_candidate_from_row(
+    row: PatientRow,
+    filters: &PatientIdentityLookupFilters,
+) -> anyhow::Result<PatientIdentityCandidate> {
+    let patient = patient_from_row(row)?;
+    let patient_code = normalize_identity_text(&patient.patient_code);
+    let patient_first_name = normalize_identity_text(&patient.first_name);
+    let patient_last_name = normalize_identity_text(&patient.last_name);
+    let lookup_code = filters.patient_code.as_deref().map(normalize_identity_text);
+    let lookup_first_name = filters.first_name.as_deref().map(normalize_identity_text);
+    let lookup_last_name = filters.last_name.as_deref().map(normalize_identity_text);
+
+    let mut reasons = Vec::new();
+    let code_match = lookup_code
+        .as_deref()
+        .is_some_and(|code| !code.is_empty() && code == patient_code.as_str());
+    if code_match {
+        reasons.push("patient_code".to_owned());
+    }
+
+    let dob_match = filters.date_of_birth == Some(patient.date_of_birth);
+    let first_name_match = lookup_first_name
+        .as_deref()
+        .is_some_and(|name| !name.is_empty() && name == patient_first_name.as_str());
+    let last_name_match = lookup_last_name
+        .as_deref()
+        .is_some_and(|name| !name.is_empty() && name == patient_last_name.as_str());
+    let sex_match = filters.sex == Some(patient.sex);
+
+    if dob_match && first_name_match && last_name_match && sex_match {
+        reasons.push("exact_name_dob_sex".to_owned());
+    } else {
+        if dob_match {
+            reasons.push("date_of_birth".to_owned());
+        }
+        if first_name_match {
+            reasons.push("first_name".to_owned());
+        }
+        if last_name_match {
+            reasons.push("last_name".to_owned());
+        }
+    }
+
+    let match_strength =
+        if code_match || (dob_match && first_name_match && last_name_match && sex_match) {
+            PatientIdentityMatchStrength::Strong
+        } else {
+            PatientIdentityMatchStrength::Possible
+        };
+
+    let display_name = patient.display_name();
+    Ok(PatientIdentityCandidate {
+        patient_id: patient.id,
+        patient_code: patient.patient_code,
+        display_name,
+        date_of_birth: patient.date_of_birth,
+        sex: patient.sex,
+        record_status: patient.record_status,
+        vital_status: patient.vital_status,
+        superseded_by_patient_id: patient.superseded_by_patient_id,
+        match_strength,
+        match_reasons: reasons,
+    })
+}
+
+fn outpatient_context_from_row(
+    row: CurrentOutpatientContextRow,
+) -> PatientCurrentOutpatientContext {
+    PatientCurrentOutpatientContext {
+        visit_id: row.visit_id,
+        clinic_id: row.clinic_id,
+        clinic_name: row.clinic_name,
+        status: row.status,
+        checked_in_at: row.checked_in_at,
+    }
+}
+
+fn inpatient_context_from_row(
+    row: CurrentInpatientContextRow,
+) -> anyhow::Result<PatientCurrentInpatientContext> {
+    Ok(PatientCurrentInpatientContext {
+        admission_case_id: row.admission_case_id,
+        ward_id: row.ward_id,
+        ward_name: row.ward_name,
+        bed_id: row.bed_id,
+        bed_label: row.bed_label,
+        status: codec::decode(&row.status)?,
+        admitted_at: row.admitted_at,
+    })
+}
+
+fn emergency_context_from_row(row: CurrentEmergencyContextRow) -> PatientCurrentEmergencyContext {
+    PatientCurrentEmergencyContext {
+        visit_id: row.visit_id,
+        triage_id: row.triage_id,
+        location_id: row.location_id,
+        status: row.status,
+        acuity: row.acuity,
+        checked_in_at: row.checked_in_at,
+    }
+}
+
 fn patient_from_row(row: PatientRow) -> anyhow::Result<PatientRecord> {
     Ok(PatientRecord {
         id: row.id,
@@ -938,6 +1718,10 @@ fn patient_from_row(row: PatientRow) -> anyhow::Result<PatientRecord> {
         date_of_birth: row.date_of_birth,
         sex: codec::decode(&row.sex)?,
         status: codec::decode::<PatientAdministrativeStatus>(&row.status)?,
+        record_status: codec::decode::<PatientRecordStatus>(&row.record_status)?,
+        vital_status: codec::decode::<PatientVitalStatus>(&row.vital_status)?,
+        superseded_by_patient_id: row.superseded_by_patient_id,
+        record_status_reason_code: row.record_status_reason_code,
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
@@ -954,6 +1738,10 @@ fn patient_list_from_row(row: PatientListRow) -> anyhow::Result<PatientListRecor
             date_of_birth: row.date_of_birth,
             sex: codec::decode(&row.sex)?,
             status: codec::decode::<PatientAdministrativeStatus>(&row.status)?,
+            record_status: codec::decode::<PatientRecordStatus>(&row.record_status)?,
+            vital_status: codec::decode::<PatientVitalStatus>(&row.vital_status)?,
+            superseded_by_patient_id: row.superseded_by_patient_id,
+            record_status_reason_code: row.record_status_reason_code,
             created_at: row.created_at,
             updated_at: row.updated_at,
         },
@@ -975,6 +1763,9 @@ fn patient_context_from_row(row: PatientContextRow) -> anyhow::Result<PatientCon
             .parse()
             .unwrap_or_default(),
         status: codec::decode(&row.status)?,
+        record_status: codec::decode(&row.record_status)?,
+        vital_status: codec::decode(&row.vital_status)?,
+        superseded_by_patient_id: row.superseded_by_patient_id,
         context_kind: codec::decode(&row.context_kind)?,
         updated_at: row.updated_at,
     })

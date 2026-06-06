@@ -10,6 +10,9 @@ vi.mock('@/lib/api/v2/runtime', () => ({
 vi.mock('@/lib/api/v2/client', () => ({
   v2Api: {
     getCareAreaMyWork: vi.fn(),
+    postOutpatientIntake: vi.fn(),
+    postInpatientIntake: vi.fn(),
+    postEmergencyIntake: vi.fn(),
   },
 }));
 
@@ -56,5 +59,66 @@ describe('careAreasApi', () => {
     expect(result.inpatient.assigned_wards[0].ward_id).toBe('ward-1');
     expect(result.emergency.assigned_triage[0].id).toBe('triage-1');
     expect(result.patient_context.recent_patients[0].id).toBe('patient-3');
+  });
+
+  it('starts outpatient intake through the Rust V2 generated client', async () => {
+    const signal = new AbortController().signal;
+    const payload = {
+      patient_id: 'patient-1',
+      clinic_id: 'clinic-1',
+      idempotency_key: 'opd-key-1',
+    };
+    v2Api.postOutpatientIntake.mockResolvedValueOnce({
+      data: {
+        patient_id: 'patient-1',
+        visit: { id: 'visit-1', status: 'waiting' },
+      },
+    });
+
+    const result = await careAreasApi.startOutpatientIntake(payload, { signal });
+
+    expect(v2Api.postOutpatientIntake).toHaveBeenCalledWith(payload, { signal });
+    expect(result.visit.id).toBe('visit-1');
+  });
+
+  it('starts inpatient intake through the Rust V2 generated client', async () => {
+    const signal = new AbortController().signal;
+    const payload = {
+      patient_id: 'patient-1',
+      ward_id: 'ward-1',
+      idempotency_key: 'ipd-key-1',
+    };
+    v2Api.postInpatientIntake.mockResolvedValueOnce({
+      data: {
+        patient_id: 'patient-1',
+        admission_case: { id: 'case-1', status: 'ready_for_activation' },
+      },
+    });
+
+    const result = await careAreasApi.startInpatientIntake(payload, { signal });
+
+    expect(v2Api.postInpatientIntake).toHaveBeenCalledWith(payload, { signal });
+    expect(result.admission_case.id).toBe('case-1');
+  });
+
+  it('starts emergency intake through the Rust V2 generated client', async () => {
+    const signal = new AbortController().signal;
+    const payload = {
+      patient_id: 'patient-1',
+      acuity: 'urgent',
+      idempotency_key: 'ed-key-1',
+    };
+    v2Api.postEmergencyIntake.mockResolvedValueOnce({
+      data: {
+        patient_id: 'patient-1',
+        visit: { id: 'visit-1', status: 'waiting' },
+        triage: { id: 'triage-1', status: 'waiting' },
+      },
+    });
+
+    const result = await careAreasApi.startEmergencyIntake(payload, { signal });
+
+    expect(v2Api.postEmergencyIntake).toHaveBeenCalledWith(payload, { signal });
+    expect(result.triage.id).toBe('triage-1');
   });
 });

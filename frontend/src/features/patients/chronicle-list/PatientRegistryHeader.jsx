@@ -14,6 +14,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import {
   ADMISSION_STATUS_OPTIONS,
   RECORD_STATUS_OPTIONS,
+  VITAL_STATUS_OPTIONS,
 } from './registryConstants';
 
 const PatientRegistryFiltersPanel = lazy(() => import('./PatientRegistryFiltersPanel').then((module) => ({
@@ -177,6 +178,12 @@ function ActiveFilterChips({
         <FilterChip
           label={`Record: ${RECORD_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.recordStatus)?.label || appliedFilters.recordStatus}`}
           onRemove={() => onRemoveFilter('recordStatus')}
+        />
+      )}
+      {appliedFilters.vitalStatus && appliedFilters.vitalStatus !== 'all' && (
+        <FilterChip
+          label={`Vital: ${VITAL_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.vitalStatus)?.label || appliedFilters.vitalStatus}`}
+          onRemove={() => onRemoveFilter('vitalStatus')}
         />
       )}
       {appliedFilters.admissionStatus !== 'all' && (

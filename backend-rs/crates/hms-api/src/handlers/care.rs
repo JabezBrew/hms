@@ -4,10 +4,12 @@ use hms_domain::care::{
     AppointmentListGetQuery, AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem,
     CancelAppointmentRequest, CareAreaMyWorkResponse, CareTeamAssignment, CheckInVisitRequest,
     ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
-    CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListGetQuery,
-    EncounterListItem, EncounterListQuery, TriageAssessmentRequest, TriageListItem,
-    TriageListQuery, UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest,
-    VisitListItem, VisitListQuery,
+    CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EmergencyIntakeRequest,
+    EmergencyIntakeResponse, EncounterListGetQuery, EncounterListItem, EncounterListQuery,
+    InpatientIntakeRequest, InpatientIntakeResponse, OutpatientIntakeRequest,
+    OutpatientIntakeResponse, TriageAssessmentRequest, TriageListItem, TriageListQuery,
+    UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest, VisitListItem,
+    VisitListQuery,
 };
 use uuid::Uuid;
 
@@ -33,6 +35,90 @@ pub async fn my_work(
     RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<CareAreaMyWorkResponse>>, ApiError> {
     Ok(Json(state.care_service().my_work(&user).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/care-areas/outpatient/intake",
+    operation_id = "postOutpatientIntake",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    request_body = OutpatientIntakeRequest,
+    responses(
+        (status = 200, description = "Outpatient intake context", body = ObjectResponse<OutpatientIntakeResponse>),
+        (status = 400, description = "Invalid intake request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Patient cannot be used for intake", body = ApiErrorResponse)
+    )
+)]
+pub async fn outpatient_intake(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<OutpatientIntakeRequest>,
+) -> Result<Json<ObjectResponse<OutpatientIntakeResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .care_service()
+            .outpatient_intake(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/care-areas/inpatient/intake",
+    operation_id = "postInpatientIntake",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    request_body = InpatientIntakeRequest,
+    responses(
+        (status = 200, description = "Inpatient intake context", body = ObjectResponse<InpatientIntakeResponse>),
+        (status = 400, description = "Invalid intake request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Patient cannot be used for intake", body = ApiErrorResponse)
+    )
+)]
+pub async fn inpatient_intake(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<InpatientIntakeRequest>,
+) -> Result<Json<ObjectResponse<InpatientIntakeResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .care_service()
+            .inpatient_intake(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/care-areas/emergency/intake",
+    operation_id = "postEmergencyIntake",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    request_body = EmergencyIntakeRequest,
+    responses(
+        (status = 200, description = "Emergency intake context", body = ObjectResponse<EmergencyIntakeResponse>),
+        (status = 400, description = "Invalid intake request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Patient cannot be used for intake", body = ApiErrorResponse)
+    )
+)]
+pub async fn emergency_intake(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<EmergencyIntakeRequest>,
+) -> Result<Json<ObjectResponse<EmergencyIntakeResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .care_service()
+            .emergency_intake(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(

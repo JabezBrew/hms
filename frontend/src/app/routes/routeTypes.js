@@ -24,6 +24,7 @@ const TIER_CONTROLLED_ROUTE_REQUIREMENTS = [
   { path: '/care-areas/emergency', features: ['emergency_encounters'] },
   { prefix: '/patients', features: ['patient_chronicle'] },
   { path: '/patients/create', features: ['patient_registration'] },
+  { path: '/patients/find-or-register', features: ['patient_registration'] },
   { path: '/patients/:id/edit', features: ['patient_registration'] },
   { prefix: '/encounters', features: ['outpatient_encounters'] },
   { prefix: '/wards', features: ['wards'] },
