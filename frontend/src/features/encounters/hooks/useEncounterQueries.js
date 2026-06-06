@@ -102,11 +102,12 @@ export function invalidateEncounterMutationQueries(queryClient, { encounterId, p
  * @param {Object} filters - Query parameters for filtering
  * @returns {Object} Query result
  */
-export function useEncounters(filters = {}) {
+export function useEncounters(filters = {}, options = {}) {
   return useQuery({
     queryKey: encounterKeys.listFingerprint(fingerprintFilters(filters)),
     queryFn: ({ signal }) => encountersApi.getEncounters(filters, { signal }),
     staleTime: 60 * 1000, // 60 seconds - matches backend cache timeout
+    ...options,
   });
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
@@ -16,7 +16,10 @@ import { useWards } from '@/features/wards/hooks/useWardQueries';
 import { useSearchPractitioners } from '@/hooks/useStaffQueries';
 import { normalizeApiResults } from '@/lib/utils';
 
-import { ADMISSION_STATUS_OPTIONS } from './registryConstants';
+import {
+  ADMISSION_STATUS_OPTIONS,
+  RECORD_STATUS_OPTIONS,
+} from './registryConstants';
 
 export function PatientRegistryFiltersPanel({
   activeFilterCount,
@@ -24,7 +27,6 @@ export function PatientRegistryFiltersPanel({
   onApplyFilters,
   onClearFilters,
   onDraftFiltersChange,
-  onWardLabelsChange,
 }) {
   const { data: wardsData, isLoading: isWardsLoading } = useWards(
     { is_active: true },
@@ -43,13 +45,9 @@ export function PatientRegistryFiltersPanel({
       .sort((a, b) => a.label.localeCompare(b.label)),
     [wards]
   );
-  const wardLabels = useMemo(
-    () => new Map(wardOptions.map((option) => [option.value, option.label])),
-    [wardOptions]
-  );
   const practitionerOptions = useMemo(
     () => (practitionerResults || [])
-      .map((practitioner) => {
+      .flatMap((practitioner) => {
         const value = practitioner.user_id
           || practitioner.user_details?.id
           || practitioner.user?.id
@@ -58,29 +56,39 @@ export function PatientRegistryFiltersPanel({
           || practitioner.display_name
           || practitioner.email
           || 'Unknown clinician';
-        if (!value) return null;
-        return {
+        if (!value) return [];
+        return [{
           value,
           label: practitioner.specialization
             ? `${name} - ${practitioner.specialization}`
             : name,
-        };
-      })
-      .filter(Boolean),
+        }];
+      }),
     [practitionerResults]
   );
-
-  useEffect(() => {
-    onWardLabelsChange?.(wardLabels);
-  }, [onWardLabelsChange, wardLabels]);
 
   const updateDraftFilter = (updates) => {
     onDraftFiltersChange((prev) => ({ ...prev, ...updates }));
   };
 
+  const handleWardChange = (value) => {
+    const selectedWard = wardOptions.find((option) => option.value === value);
+    updateDraftFilter({
+      wardId: value === 'all' ? '' : value,
+      wardName: selectedWard?.label || '',
+    });
+  };
+
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <SelectFilter
+          label="Record Status"
+          value={draftFilters.recordStatus}
+          options={RECORD_STATUS_OPTIONS}
+          placeholder="Any record status"
+          onChange={(value) => updateDraftFilter({ recordStatus: value })}
+        />
         <AdmissionDateFilter
           draftFilters={draftFilters}
           onDraftFilterChange={updateDraftFilter}
@@ -96,7 +104,7 @@ export function PatientRegistryFiltersPanel({
           value={draftFilters.wardId || 'all'}
           isLoading={isWardsLoading}
           wardOptions={wardOptions}
-          onChange={(value) => updateDraftFilter({ wardId: value === 'all' ? '' : value })}
+          onChange={handleWardChange}
         />
         <AttendingClinicianFilter
           draftFilters={draftFilters}

@@ -1,15 +1,3 @@
-export const CLINICAL_PROVIDER_ROLES = [
-  'doctor',
-  'nurse',
-  'head_nurse',
-  'nurse_practitioner',
-  'inpatient_doctor',
-  'practitioner',
-  'physician',
-  'lab_technician',
-  'pharmacist',
-];
-
 export const ADMISSION_STATUS_OPTIONS = [
   { value: 'all', label: 'Any status' },
   { value: 'ready_for_activation', label: 'Ready for activation' },
@@ -19,22 +7,22 @@ export const ADMISSION_STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-export const DEFAULT_SEARCH_ORDERING = '-created_at';
-export const SEARCH_TABLE_PAGE_SIZE = 25;
-export const DEFAULT_REGISTRY_SCOPE = 'active';
-
-export const REGISTRY_SCOPE_TABS = [
-  { value: 'active', label: 'Active' },
-  { value: 'discharged', label: 'Discharged' },
+export const RECORD_STATUS_OPTIONS = [
+  { value: 'all', label: 'Any record status' },
+  { value: 'active', label: 'Active record' },
   { value: 'deceased', label: 'Deceased' },
-  { value: 'all', label: 'All Registered' },
+  { value: 'inactive', label: 'Inactive' },
 ];
 
-export const REGISTRY_SCOPE_LABELS = {
-  active: 'Active patients',
-  discharged: 'Discharged patients',
-  deceased: 'Deceased patients',
-  all: 'All registered patients',
+export const DEFAULT_SEARCH_ORDERING = '-created_at';
+export const SEARCH_TABLE_PAGE_SIZE = 25;
+export const DEFAULT_RECORD_STATUS_FILTER = 'all';
+export const RECENT_REGISTRATION_STATUS = 'active';
+
+export const DIRECTORY_SECTION_LABELS = {
+  recent: 'Recent registrations',
+  search: 'Search results',
+  filtered: 'Filtered patient records',
 };
 
 export const TABLE_COLUMNS = [
@@ -43,6 +31,6 @@ export const TABLE_COLUMNS = [
   { key: 'name', label: 'Name' },
   { key: 'date_of_birth', label: 'DOB / Age' },
   { key: 'gender', label: 'Sex' },
-  { key: 'patient_location', label: 'Patient Location', sortable: false },
-  { key: 'registry_status', label: 'Status' },
+  { key: 'patient_location', label: 'Current Care Location', sortable: false },
+  { key: 'registry_status', label: 'Record Status' },
 ];

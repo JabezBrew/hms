@@ -114,8 +114,34 @@ describe('dynamic sidebar', () => {
     })
 
     expect(screen.getByText('Shortcuts')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Dashboard/i })).toHaveAttribute('href', '/dashboards/inpatient')
+    expect(screen.getByRole('link', { name: /My Work/i })).toHaveAttribute('href', '/my-work')
     expect(screen.getByRole('link', { name: /Inbox/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Patient Directory/i })).toHaveAttribute('href', '/patients')
+    expect(screen.queryByRole('link', { name: /Dashboard/i })).not.toBeInTheDocument()
+  })
+
+  it('renders care-area navigation from enabled workflow modules', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.GLOBAL,
+      user: { role: ROLES.DOCTOR },
+      route: '/care-areas/outpatient',
+      enabledFeatures: {
+        outpatient_encounters: true,
+        emergency_encounters: true,
+        ward_task_board: true,
+        patient_chronicle: true,
+        wards: true,
+        inpatient_admissions: true,
+        nursing_workflows: true,
+      },
+    })
+
+    expect(screen.getByRole('link', { name: /My Work/i })).toHaveAttribute('href', '/my-work')
+    expect(screen.getByRole('button', { name: /Care Areas/i })).toHaveAttribute('data-active', 'true')
+    expect(screen.getByRole('link', { name: /Outpatient/i })).toHaveAttribute('href', '/care-areas/outpatient')
+    expect(screen.getByRole('link', { name: /Inpatient/i })).toHaveAttribute('href', '/care-areas/inpatient')
+    expect(screen.getByRole('link', { name: /Emergency/i })).toHaveAttribute('href', '/care-areas/emergency')
+    expect(screen.getByRole('link', { name: /Patient Directory/i })).toBeInTheDocument()
   })
 
   it('resolves patient workspace links without clinical-data sidebar entries', () => {

@@ -1,15 +1,19 @@
 import { format } from 'date-fns';
 
 import {
+  DEFAULT_RECORD_STATUS_FILTER,
+  RECENT_REGISTRATION_STATUS,
   SEARCH_TABLE_PAGE_SIZE,
 } from './registryConstants';
 
 export const NO_CURRENT_ADMISSION_LOCATION_LABEL = 'Not admitted';
 
 export const createEmptyFilters = () => ({
+  recordStatus: DEFAULT_RECORD_STATUS_FILTER,
   admissionStart: null,
   admissionEnd: null,
   wardId: '',
+  wardName: '',
   admissionStatus: 'all',
   attending: null,
   ageMin: '',
@@ -18,6 +22,7 @@ export const createEmptyFilters = () => ({
 
 export const countActiveFilters = (filters) => {
   let count = 0;
+  if (filters.recordStatus && filters.recordStatus !== DEFAULT_RECORD_STATUS_FILTER) count += 1;
   if (filters.admissionStart || filters.admissionEnd) count += 1;
   if (filters.wardId) count += 1;
   if (filters.admissionStatus && filters.admissionStatus !== 'all') count += 1;
@@ -26,12 +31,19 @@ export const countActiveFilters = (filters) => {
   return count;
 };
 
-export const buildSearchParams = (query, filters, registryScope) => {
+export const buildSearchParams = (query, filters) => {
   const params = {};
-  if (query && query.trim().length >= 2) {
+  const search = query && query.trim().length >= 2 ? query.trim() : '';
+  const hasActiveFilters = countActiveFilters(filters) > 0;
+  if (search) {
     params.query = query.trim();
   }
-  params.registry_scope = registryScope;
+
+  if (filters.recordStatus && filters.recordStatus !== DEFAULT_RECORD_STATUS_FILTER) {
+    params.status = filters.recordStatus;
+  } else if (!search && !hasActiveFilters) {
+    params.status = RECENT_REGISTRATION_STATUS;
+  }
 
   if (filters.admissionStart) {
     params.admission_start = format(filters.admissionStart, 'yyyy-MM-dd');

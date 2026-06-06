@@ -4,7 +4,46 @@ import isValid from 'date-fns/isValid';
 
 import { ENCOUNTER_PAGE_SIZE } from './encounterListConstants';
 
-export function buildEncounterQueryParams({ activeTab, currentPage, filters, rustV2Mode = false }) {
+const TYPE_FEATURE_KEYS = {
+  emergency: 'emergency',
+  inpatient: 'inpatient',
+  outpatient: 'outpatient',
+  triage: 'triage',
+};
+
+export function canUseEncounterType(type, featureGates = {}) {
+  switch (type) {
+    case TYPE_FEATURE_KEYS.emergency:
+    case TYPE_FEATURE_KEYS.triage:
+      return featureGates.emergency === true;
+    case TYPE_FEATURE_KEYS.inpatient:
+      return featureGates.inpatient === true;
+    case TYPE_FEATURE_KEYS.outpatient:
+      return featureGates.outpatient === true;
+    default:
+      return false;
+  }
+}
+
+export function filterEncounterTabsForFeatures(tabs, featureGates = {}) {
+  const typedTabs = tabs.filter((tab) => tab.value !== 'all');
+  const allTabIsSafe = typedTabs.length > 0
+    && typedTabs.every((tab) => canUseEncounterType(tab.value, featureGates));
+
+  return tabs.filter((tab) => (
+    tab.value === 'all'
+      ? allTabIsSafe
+      : canUseEncounterType(tab.value, featureGates)
+  ));
+}
+
+export function filterEncounterTypeOptionsForFeatures(options, featureGates = {}) {
+  return options.filter(([value]) => (
+    value === 'all' || canUseEncounterType(value, featureGates)
+  ));
+}
+
+export function buildEncounterQueryParams({ activeTab, currentPage, filters }) {
   const queryParams = {
     page: currentPage,
     page_size: ENCOUNTER_PAGE_SIZE,

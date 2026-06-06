@@ -36,10 +36,10 @@ const NURSING_HOME_OPTIONS = [
 
 const ROLE_DASHBOARD_FEATURES = {
   admin: [],
-  doctor: DASHBOARD_FEATURES.outpatientEncounters,
-  physician: DASHBOARD_FEATURES.outpatientEncounters,
-  practitioner: DASHBOARD_FEATURES.outpatientEncounters,
-  inpatient_doctor: DASHBOARD_FEATURES.inpatientAdmissions,
+  doctor: [],
+  physician: [],
+  practitioner: [],
+  inpatient_doctor: [],
   nurse: [],
   head_nurse: [],
   nurse_practitioner: [],
@@ -52,6 +52,9 @@ const ROLE_DASHBOARD_FEATURES = {
 const HREF_FEATURE_RULES = [
   { test: (path) => path === '/patients/create', features: DASHBOARD_FEATURES.patientRegistration },
   { test: (path) => path.startsWith('/appointments'), features: DASHBOARD_FEATURES.appointments },
+  { test: (path) => path === '/care-areas/outpatient', features: DASHBOARD_FEATURES.outpatientEncounters },
+  { test: (path) => path === '/care-areas/inpatient', features: NURSING_WARD_HOME_FEATURES },
+  { test: (path) => path === '/care-areas/emergency', features: DASHBOARD_FEATURES.emergencyEncounters },
   { test: (path) => path.startsWith('/referrals'), features: DASHBOARD_FEATURES.referrals },
   { test: (path) => path.startsWith('/triage'), features: DASHBOARD_FEATURES.emergencyEncounters },
   { test: (path) => path.startsWith('/billing'), features: DASHBOARD_FEATURES.billing },
@@ -100,6 +103,7 @@ export function getHrefFeatureRequirements(href) {
   const required = new Set()
   const { pathname, searchParams } = url
   const patientAction = searchParams.get('action')
+  const encounterTab = searchParams.get('tab')
 
   if (patientAction === 'ward_round') {
     DASHBOARD_FEATURES.patientChronicle.forEach((feature) => required.add(feature))
@@ -109,6 +113,13 @@ export function getHrefFeatureRequirements(href) {
   if (patientAction === 'discharge') {
     DASHBOARD_FEATURES.patientChronicle.forEach((feature) => required.add(feature))
     DASHBOARD_FEATURES.dischargeWorkflows.forEach((feature) => required.add(feature))
+  }
+
+  if (pathname.startsWith('/encounters')) {
+    DASHBOARD_FEATURES.outpatientEncounters.forEach((feature) => required.add(feature))
+    if (encounterTab === 'emergency' || encounterTab === 'triage') {
+      DASHBOARD_FEATURES.emergencyEncounters.forEach((feature) => required.add(feature))
+    }
   }
 
   HREF_FEATURE_RULES.forEach((rule) => {

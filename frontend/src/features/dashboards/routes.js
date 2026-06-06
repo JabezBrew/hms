@@ -8,8 +8,10 @@ const InpatientDoctorDashboard = lazy(() => import('./pages/InpatientDoctorDashb
 const ReceptionistDashboard = lazy(() => import('./pages/ReceptionistDashboard'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const RoleDashboard = lazy(() => import('./pages/RoleDashboard'))
+const MyWorkPage = lazy(() => import('./pages/MyWorkPage'))
 
 const DASHBOARDS_BREADCRUMB = { label: 'Dashboards', path: '/' }
+const MY_WORK_ROLES = [ROLES.ADMIN, ...ROLE_GROUPS.CLINICAL]
 
 export const dashboardRoutes = [
   {
@@ -19,6 +21,14 @@ export const dashboardRoutes = [
     layout: ROUTE_LAYOUTS.BARE,
     title: 'Dashboard | Hospital Management System',
     breadcrumbs: [DASHBOARDS_BREADCRUMB],
+  },
+  {
+    path: '/my-work',
+    component: MyWorkPage,
+    roles: MY_WORK_ROLES,
+    layout: ROUTE_LAYOUTS.APP,
+    title: 'My Work | Hospital Management System',
+    breadcrumbs: [{ label: 'My Work', path: '/my-work' }],
   },
   {
     path: '/dashboards/inpatient',

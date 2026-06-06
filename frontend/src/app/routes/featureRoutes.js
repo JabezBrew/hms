@@ -20,6 +20,7 @@ import { clinicalNotesRoutes } from '@/features/clinical-notes/routes'
 import { chartRoutes } from '@/features/charts/routes'
 import { opsRoutes } from '@/features/ops/routes'
 import { wardBoardRoutes } from '@/features/ward-board/routes'
+import { careAreaRoutes } from '@/features/care-areas/routes'
 import { validateRoutes } from './routeTypes'
 import { withFeature } from '@/shared/lib/features'
 
@@ -85,6 +86,7 @@ export const featureRoutes = [
   ...withFeature(laboratoryRoutes, 'laboratory'),
   ...withFeature(pharmacyRoutes, 'pharmacy'),
   ...dashboardRoutes,
+  ...careAreaRoutes,
   ...adminRoutes,
   ...settingsRoutes,
   ...withFeature(clinicRoutes, 'outpatient_encounters'),

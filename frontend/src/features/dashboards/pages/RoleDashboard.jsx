@@ -6,14 +6,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboardModuleGates } from '@/features/dashboards/hooks'
 import {
   dashboardFeaturesForRole,
-  nursingHomeForFeatures,
 } from '@/features/dashboards/utils/moduleGates'
 
 // Lazy load dashboard components
-const DoctorDashboard = lazy(() => import('./DoctorDashboard'))
 const ReceptionistDashboard = lazy(() => import('./ReceptionistDashboard'))
 const AdminDashboard = lazy(() => import('./AdminDashboard'))
-const InpatientDoctorDashboard = lazy(() => import('./InpatientDoctorDashboard'))
 const BillingDashboardPage = lazy(() => import('../../billing/pages/BillingDashboardPage'))
 const LabDashboardPage = lazy(() => import('../../laboratory/pages/LabDashboardPage'))
 const PharmacyDispensingPage = lazy(() => import('../../pharmacy/pages/PharmacyDispensingPage'))
@@ -43,15 +40,15 @@ const ROLE_DASHBOARD_MAP = {
   admin: { component: AdminDashboard, hasLayout: false },
   
   // Clinical providers
-  doctor: { component: DoctorDashboard, hasLayout: true },
-  physician: { component: DoctorDashboard, hasLayout: true },
-  practitioner: { component: DoctorDashboard, hasLayout: true },
-  inpatient_doctor: { component: InpatientDoctorDashboard, hasLayout: false },
+  doctor: { redirectTo: '/my-work' },
+  physician: { redirectTo: '/my-work' },
+  practitioner: { redirectTo: '/my-work' },
+  inpatient_doctor: { redirectTo: '/my-work' },
   
   // Nursing staff
-  nurse: { resolveRedirect: nursingHomeForFeatures },
-  head_nurse: { resolveRedirect: nursingHomeForFeatures },
-  nurse_practitioner: { resolveRedirect: nursingHomeForFeatures },
+  nurse: { redirectTo: '/my-work' },
+  head_nurse: { redirectTo: '/my-work' },
+  nurse_practitioner: { redirectTo: '/my-work' },
   
   // Front desk
   receptionist: { component: ReceptionistDashboard, hasLayout: false },

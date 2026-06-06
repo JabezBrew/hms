@@ -4,9 +4,37 @@ import { EncounterListHeader } from './EncounterListHeader';
 import { EncounterPagination } from './EncounterPagination';
 import { EncounterTabs } from './EncounterTabs';
 import { useEncounterListController } from './useEncounterListController';
+import { PageState } from '@/shared/components/page/PageState';
 
 export function EncounterList() {
   const controller = useEncounterListController();
+
+  if (controller.isFeatureResolving) {
+    return <PageState variant="loading" fullHeight={false} />;
+  }
+
+  if (!controller.hasFeatureMap) {
+    return (
+      <PageState
+        variant="error"
+        title="Encounters unavailable"
+        description={controller.featureError?.message || 'Module entitlements could not be loaded.'}
+        action={() => controller.featureRefetch()}
+        fullHeight={false}
+      />
+    );
+  }
+
+  if (controller.visibleTabs.length === 0) {
+    return (
+      <PageState
+        variant="empty"
+        title="No encounter views enabled"
+        description="No encounter views are enabled for this deployment."
+        fullHeight={false}
+      />
+    );
+  }
 
   if (controller.isError) {
     return (

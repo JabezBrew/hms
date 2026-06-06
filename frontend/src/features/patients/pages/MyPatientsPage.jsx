@@ -504,7 +504,7 @@ const EmptyState = ({ hasSearch, onClear }) => {
       </p>
       <Button onClick={() => navigate('/patients')}>
         <Plus className="size-4 mr-2" />
-        Browse Patient Registry
+        Browse Patient Directory
       </Button>
     </div>
   );

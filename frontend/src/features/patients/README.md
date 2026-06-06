@@ -2,8 +2,8 @@
 
 Status: active
 Owner: Frontend/Patient Workflow
-Last reviewed: 2026-06-01
-Scope: patient registry, patient forms, Patient Chronicle, print, ward round, break-glass UI.
+Last reviewed: 2026-06-06
+Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, break-glass UI.
 
 ## Routes
 
@@ -22,13 +22,13 @@ Scope: patient registry, patient forms, Patient Chronicle, print, ward round, br
 | --- | --- |
 | `api/` | patient feature API adapter exports. |
 | `hooks/` | patient and my-patients query hooks plus Rust V2 bridge tests. |
-| `pages/PatientChronicleListPage.jsx` | patient registry route. |
+| `pages/PatientChronicleListPage.jsx` | Patient Directory route for broad patient-record lookup. |
 | `pages/MyPatientsPage.jsx` | role-scoped patient list. |
 | `pages/PatientChroniclePage.jsx` | main Patient Chronicle route. |
 | `pages/PatientChroniclePrintPage.jsx` | print view for Chronicle. |
 | `pages/PatientCreatePage.jsx`, `pages/PatientEditPage.jsx`, `pages/PatientDemographicsPage.jsx`, `pages/PatientPage.jsx` | patient create/edit/demographic/detail shells. |
 | `chronicle/` | Patient Chronicle page internals, timeline data, workspace routing, break-glass, visit scope, ward-round mode. |
-| `chronicle-list/` | registry header, search results, registry constants, and helper functions. |
+| `chronicle-list/` | directory header, search results, constants, and helper functions. |
 | `components/` | Chronicle workspace host, Copilot panel/slide-over, and mobile workspace context dock. |
 | `prefetch.js` | patient route prefetch behavior. |
 | `utils/` | patient display-name and feature-local helpers. |
@@ -45,10 +45,13 @@ Scope: patient registry, patient forms, Patient Chronicle, print, ward round, br
 ## Invariants
 
 - Patient Chronicle is the product home for patient clinical data.
-- Registry and my-patients lists must stay lightweight and server-paginated.
-- Patient Registry location displays current admission ward/bed context; use
+- Patient Directory and my-patients lists must stay lightweight and server-paginated.
+- Patient Directory is broad patient-record lookup; scoped patient workflow
+  lists live in care-area, clinic waiting-room, ward board, triage, and
+  Chronicle surfaces.
+- Patient Directory location displays current admission ward/bed context; use
   `Not admitted` when no current admission location is present.
-- Patient Registry ward filters default to current admissions
+- Patient Directory ward filters default to current admissions
   (`admitted`/`discharge_pending`). Historical ward lookups require an explicit
   `admission_status` filter such as `discharged` or `cancelled`.
 - Break-glass requires backend permission, fresh auth, grant expiry, and audit.

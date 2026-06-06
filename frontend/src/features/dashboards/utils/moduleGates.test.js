@@ -10,8 +10,8 @@ import {
 
 describe('dashboard module gates', () => {
   it('maps role dashboards to backing modules', () => {
-    expect(dashboardFeaturesForRole('doctor')).toEqual(['outpatient_encounters'])
-    expect(dashboardFeaturesForRole('inpatient_doctor')).toEqual(['inpatient_admissions'])
+    expect(dashboardFeaturesForRole('doctor')).toEqual([])
+    expect(dashboardFeaturesForRole('inpatient_doctor')).toEqual([])
     expect(dashboardFeaturesForRole('nurse')).toEqual([])
     expect(dashboardFeaturesForRole('admin')).toEqual([])
   })
@@ -34,6 +34,15 @@ describe('dashboard module gates', () => {
 
   it('derives feature requirements from dashboard action links', () => {
     expect(getHrefFeatureRequirements('/referrals/inbox')).toEqual(['referrals'])
+    expect(getHrefFeatureRequirements('/care-areas/outpatient')).toEqual(['outpatient_encounters'])
+    expect(getHrefFeatureRequirements('/care-areas/emergency')).toEqual(['emergency_encounters'])
+    expect(getHrefFeatureRequirements('/care-areas/inpatient')).toEqual(
+      expect.arrayContaining(['ward_task_board', 'patient_chronicle', 'wards'])
+    )
+    expect(getHrefFeatureRequirements('/encounters?tab=emergency')).toEqual(
+      expect.arrayContaining(['outpatient_encounters', 'emergency_encounters'])
+    )
+    expect(getHrefFeatureRequirements('/encounters?tab=outpatient')).toEqual(['outpatient_encounters'])
     expect(getHrefFeatureRequirements('/patients/123?action=ward_round')).toEqual(
       expect.arrayContaining(['patient_chronicle', 'wards'])
     )
@@ -48,6 +57,7 @@ describe('dashboard module gates', () => {
     const items = [
       { label: 'Billing', href: '/billing' },
       { label: 'Referrals', href: '/referrals/inbox' },
+      { label: 'Emergency encounters', href: '/encounters?tab=emergency' },
       { label: 'Always', href: '/settings' },
     ]
 

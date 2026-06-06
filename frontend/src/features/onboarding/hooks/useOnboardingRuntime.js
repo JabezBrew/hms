@@ -36,27 +36,27 @@ const FLOW_COPY = {
 
 const STEP_COPY = {
   core_01_start: {
-    title: 'Open your dashboard',
-    description: 'Begin from the inpatient dashboard.',
-    action: { label: 'Open Dashboard', route: '/dashboards/inpatient' },
+    title: 'Open My Work',
+    description: 'Begin from your care-context landing page.',
+    action: { label: 'Open My Work', route: '/my-work' },
     ui: {
-      target: '[data-onboarding="nav-dashboard"]',
+      target: '[data-onboarding="nav-my-work"]',
       placement: 'right',
-      title: 'Open Inpatient Dashboard',
+      title: 'Open My Work',
       body: 'Click here to begin the onboarding flow.',
       arrow: true,
       scroll_into_view: true,
     },
   },
   core_02_open_registry: {
-    title: 'Open patient registry',
-    description: 'Go to the patient registry or your assigned patient list.',
+    title: 'Open patient directory',
+    description: 'Go to the patient directory or your assigned patient list.',
     action: { label: 'Open Patients', route: '/patients' },
     ui: {
       target: '[data-onboarding="nav-patients"]',
       placement: 'right',
-      title: 'Open Patient Registry',
-      body: 'Click Patient Registry in the sidebar.',
+      title: 'Open Patient Directory',
+      body: 'Click Patient Directory in the sidebar.',
       arrow: true,
       scroll_into_view: true,
     },

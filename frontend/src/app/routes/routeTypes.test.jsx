@@ -66,6 +66,17 @@ describe('featureRoutes', () => {
     expect(requiredFeaturesForRoute('/patients/create')).toEqual(
       expect.arrayContaining(['patient_chronicle', 'patient_registration'])
     )
+    expect(requiredFeaturesForRoute('/care-areas/outpatient')).toEqual(['outpatient_encounters'])
+    expect(requiredFeaturesForRoute('/care-areas/emergency')).toEqual(['emergency_encounters'])
+    expect(requiredFeaturesForRoute('/care-areas/inpatient')).toEqual(
+      expect.arrayContaining([
+        'ward_task_board',
+        'patient_chronicle',
+        'wards',
+        'inpatient_admissions',
+        'nursing_workflows',
+      ])
+    )
     expect(requiredFeaturesForRoute('/encounters/new')).toEqual(['outpatient_encounters'])
     expect(requiredFeaturesForRoute('/billing/nhis/mappings')).toEqual(
       expect.arrayContaining(['billing', 'insurance_claims'])
@@ -117,6 +128,27 @@ describe('featureRoutes', () => {
 
     expect(routesByPath.get('/patients')?.features).toEqual(
       expect.arrayContaining(['patient_chronicle'])
+    )
+    expect(routesByPath.get('/my-work')?.roles).toEqual(
+      expect.arrayContaining(['admin', 'doctor', 'nurse'])
+    )
+    expect(routesByPath.get('/care-areas/outpatient')?.features).toEqual(
+      expect.arrayContaining(['outpatient_encounters'])
+    )
+    expect(routesByPath.get('/care-areas/inpatient')?.features).toEqual(
+      expect.arrayContaining([
+        'ward_task_board',
+        'patient_chronicle',
+        'wards',
+        'inpatient_admissions',
+        'nursing_workflows',
+      ])
+    )
+    expect(routesByPath.get('/care-areas/emergency')?.features).toEqual(
+      expect.arrayContaining(['emergency_encounters'])
+    )
+    expect(routesByPath.get('/care-areas/emergency')?.roles).toEqual(
+      expect.arrayContaining(['inpatient_doctor'])
     )
     expect(routesByPath.get('/patients/create')?.features).toEqual(
       expect.arrayContaining(['patient_chronicle', 'patient_registration'])

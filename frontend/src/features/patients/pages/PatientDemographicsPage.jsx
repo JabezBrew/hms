@@ -212,7 +212,7 @@ function DemographicsHeader({
             className="self-start -ml-2"
           >
             <ChevronLeft className="size-4 mr-1" />
-            Patient Registry
+            Patient Directory
           </Button>
 
           <div className="flex gap-2">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useDashboardModuleGates } from '@/features/dashboards/hooks';
 import { useEncounters } from '@/features/encounters/hooks/useEncounterQueries';
 import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
@@ -9,12 +10,15 @@ import {
   ENCOUNTER_PAGE_SIZE,
   INITIAL_ENCOUNTER_FILTERS,
   ENCOUNTER_TABS,
+  ENCOUNTER_TYPE_OPTIONS,
   RUST_V2_ENCOUNTER_TABS,
   RUST_V2_ENCOUNTER_STATUS_OPTIONS,
   RUST_V2_ENCOUNTER_TYPE_OPTIONS,
 } from './encounterListConstants';
 import {
   buildEncounterQueryParams,
+  filterEncounterTabsForFeatures,
+  filterEncounterTypeOptionsForFeatures,
   hasActiveEncounterFilters,
 } from './encounterListUtils';
 
@@ -23,18 +27,41 @@ const ENCOUNTER_TAB_RESET_PARAMS = Object.freeze(['page']);
 export function useEncounterListController() {
   const navigate = useNavigate();
   const rustV2Mode = isRustV2ApiMode();
+  const moduleGate = useDashboardModuleGates();
   const [persistedEncounterState, setPersistedEncounterState] = useRouteTableState('encounters:listTable', {
     currentPage: 1,
     filters: INITIAL_ENCOUNTER_FILTERS,
   });
-  const visibleTabs = rustV2Mode ? RUST_V2_ENCOUNTER_TABS : ENCOUNTER_TABS;
+  const featureGates = useMemo(() => ({
+    emergency: moduleGate.emergencyEncountersEnabled,
+    inpatient: moduleGate.inpatientAdmissionsEnabled,
+    outpatient: moduleGate.outpatientEncountersEnabled,
+    triage: moduleGate.emergencyEncountersEnabled,
+  }), [
+    moduleGate.emergencyEncountersEnabled,
+    moduleGate.inpatientAdmissionsEnabled,
+    moduleGate.outpatientEncountersEnabled,
+  ]);
+  const baseTabs = rustV2Mode ? RUST_V2_ENCOUNTER_TABS : ENCOUNTER_TABS;
+  const baseTypeOptions = rustV2Mode ? RUST_V2_ENCOUNTER_TYPE_OPTIONS : ENCOUNTER_TYPE_OPTIONS;
+  const visibleTabs = useMemo(
+    () => moduleGate.hasFeatureMap
+      ? filterEncounterTabsForFeatures(baseTabs, featureGates)
+      : [],
+    [baseTabs, featureGates, moduleGate.hasFeatureMap]
+  );
   const visibleTabValues = useMemo(() => visibleTabs.map((tab) => tab.value), [visibleTabs]);
+  const defaultTab = visibleTabs[0]?.value || 'outpatient';
   const [activeTab, setActiveTab] = useUrlEnumParam({
     param: 'tab',
     values: visibleTabValues,
-    defaultValue: 'all',
+    defaultValue: defaultTab,
     resetParams: ENCOUNTER_TAB_RESET_PARAMS,
   });
+  const typeOptions = useMemo(
+    () => filterEncounterTypeOptionsForFeatures(baseTypeOptions, featureGates),
+    [baseTypeOptions, featureGates]
+  );
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(persistedEncounterState.currentPage || 1);
   const [filters, setFilters] = useState({
@@ -43,8 +70,8 @@ export function useEncounterListController() {
   });
 
   const queryParams = useMemo(
-    () => buildEncounterQueryParams({ activeTab, currentPage, filters, rustV2Mode }),
-    [activeTab, currentPage, filters, rustV2Mode]
+    () => buildEncounterQueryParams({ activeTab, currentPage, filters }),
+    [activeTab, currentPage, filters]
   );
 
   const {
@@ -53,7 +80,9 @@ export function useEncounterListController() {
     isError,
     error,
     refetch
-  } = useEncounters(queryParams);
+  } = useEncounters(queryParams, {
+    enabled: moduleGate.hasFeatureMap && visibleTabs.length > 0,
+  });
 
   const encounters = encountersData?.results || [];
   const totalCount = encountersData?.count || 0;
@@ -88,7 +117,7 @@ export function useEncounterListController() {
   };
 
   const resetFilters = () => {
-    setActiveTab('all');
+    setActiveTab(defaultTab);
     setFilters(INITIAL_ENCOUNTER_FILTERS);
     setCurrentPage(1);
     setPersistedEncounterState({
@@ -117,14 +146,18 @@ export function useEncounterListController() {
     hasNextPage,
     hasPrevPage,
     isError,
+    isFeatureResolving: moduleGate.isResolving,
     isLoading,
+    featureError: moduleGate.error,
+    featureRefetch: moduleGate.refetch,
+    hasFeatureMap: moduleGate.hasFeatureMap,
     navigate,
     refetch,
     showFilters,
     totalCount,
     totalPages,
     statusOptions: rustV2Mode ? RUST_V2_ENCOUNTER_STATUS_OPTIONS : undefined,
-    typeOptions: rustV2Mode ? RUST_V2_ENCOUNTER_TYPE_OPTIONS : undefined,
+    typeOptions,
     visibleTabs,
     goToPage,
     handleFilterChange,

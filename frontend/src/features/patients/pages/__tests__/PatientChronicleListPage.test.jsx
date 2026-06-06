@@ -110,11 +110,11 @@ function renderPage(initialEntry = '/patients') {
   )
 }
 
-describe('PatientChronicleListPage registry scope behavior', () => {
+describe('PatientChronicleListPage directory behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUsePatientSearch.mockImplementation((params) => {
-      const scope = params?.registry_scope || 'all'
+      const status = params?.status || 'all'
       const query = params?.query || ''
 
       const baseRows = [
@@ -141,27 +141,28 @@ describe('PatientChronicleListPage registry scope behavior', () => {
 
       const totals = {
         active: 2,
-        discharged: 1,
         deceased: 1,
+        inactive: 1,
         all: 4,
       }
 
       return {
-        data: createSearchResponse(totals[scope] ?? 0, baseRows),
+        data: createSearchResponse(totals[status] ?? 0, baseRows),
         isLoading: false,
         refetch: vi.fn(),
       }
     })
   })
 
-  it('defaults to active scope and sends registry_scope=active', () => {
+  it('defaults to recent active registrations without requesting exact totals', () => {
     renderPage()
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
-    expect(firstCallParams.registry_scope).toBe('active')
+    expect(firstCallParams.status).toBe('active')
     expect(firstCallParams.ordering).toBe('-created_at')
-    expect(firstCallParams.include_total).toBe('true')
-    expect(screen.getByText('Active patients')).toBeInTheDocument()
+    expect(firstCallParams.registry_scope).toBeUndefined()
+    expect(firstCallParams.include_total).toBeUndefined()
+    expect(screen.getByText('Recent registrations')).toBeInTheDocument()
     expect(screen.getByText('(2)')).toBeInTheDocument()
   })
 
@@ -203,7 +204,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     })
   })
 
-  it('forces registry_scope=all when search query has at least two characters', async () => {
+  it('searches across patient records without a default record-status constraint', async () => {
     const user = userEvent.setup()
     renderPage()
 
@@ -212,48 +213,43 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     await waitFor(() => {
       const lastCallParams = mockUsePatientSearch.mock.calls.at(-1)[0]
       expect(lastCallParams.query).toBe('jo')
-      expect(lastCallParams.registry_scope).toBe('all')
-      expect(lastCallParams.include_total).toBe('true')
+      expect(lastCallParams.status).toBeUndefined()
+      expect(lastCallParams.registry_scope).toBeUndefined()
+      expect(lastCallParams.include_total).toBeUndefined()
       expect(screen.getByText('Search results')).toBeInTheDocument()
       expect(screen.getByText('(4)')).toBeInTheDocument()
     })
   })
 
-  it('returns to selected tab scope after clearing search', async () => {
-    const user = userEvent.setup()
-    renderPage()
-
-    await user.click(screen.getByRole('button', { name: 'Discharged' }))
-    await waitFor(() => {
-      const afterTabParams = mockUsePatientSearch.mock.calls.at(-1)[0]
-      expect(afterTabParams.registry_scope).toBe('discharged')
-      expect(screen.getByText('Discharged patients')).toBeInTheDocument()
-      expect(screen.getByText('(1)')).toBeInTheDocument()
+  it('applies record status only as an explicit filter', () => {
+    renderPage({
+      pathname: '/patients',
+      state: {
+        patientRegistryState: {
+          appliedFilters: {
+            recordStatus: 'deceased',
+          },
+          draftFilters: {
+            recordStatus: 'deceased',
+          },
+        },
+      },
     })
 
-    await user.type(screen.getByLabelText('Search by name, MRN, or NHIS ID'), 'jo')
-    await waitFor(() => {
-      const duringSearchParams = mockUsePatientSearch.mock.calls.at(-1)[0]
-      expect(duringSearchParams.registry_scope).toBe('all')
-      expect(screen.getByText('Search results')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByLabelText('Clear search'))
-
-    await waitFor(() => {
-      const afterClearParams = mockUsePatientSearch.mock.calls.at(-1)[0]
-      expect(afterClearParams.registry_scope).toBe('discharged')
-      expect(screen.getByText('Discharged patients')).toBeInTheDocument()
-      expect(screen.getByText('(1)')).toBeInTheDocument()
-    })
+    const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
+    expect(firstCallParams.status).toBe('deceased')
+    expect(firstCallParams.registry_scope).toBeUndefined()
+    expect(screen.getByText('Filtered patient records')).toBeInTheDocument()
+    expect(screen.getByText('Record: Deceased')).toBeInTheDocument()
+    expect(screen.getByText('(1)')).toBeInTheDocument()
   })
 
-  it('shows Patient Location header and multi-clinic tooltip content', async () => {
+  it('shows current care location header and multi-clinic tooltip content', async () => {
     const user = userEvent.setup()
     renderPage()
 
-    expect(screen.getByText('Patient Location')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Sort by Patient Location' })).not.toBeInTheDocument()
+    expect(screen.getByText('Current Care Location')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sort by Current Care Location' })).not.toBeInTheDocument()
     const clinicCellTrigger = screen.getByRole('button', { name: 'Clinic A +2' })
     expect(clinicCellTrigger).toBeInTheDocument()
 
@@ -354,8 +350,8 @@ describe('PatientChronicleListPage registry scope behavior', () => {
           searchQuery: 'akua',
           searchOrdering: 'name',
           searchPage: 2,
-          registryScope: 'all',
           draftFilters: {
+            recordStatus: 'active',
             admissionStart: '2026-06-01',
             admissionEnd: '2026-06-03',
             wardId: 'ward-1',
@@ -365,6 +361,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
             ageMax: '50',
           },
           appliedFilters: {
+            recordStatus: 'active',
             admissionStart: '2026-06-01',
             admissionEnd: '2026-06-03',
             wardId: 'ward-1',
@@ -378,7 +375,8 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     })
 
     const firstCallParams = mockUsePatientSearch.mock.calls[0][0]
-    expect(firstCallParams.registry_scope).toBe('all')
+    expect(firstCallParams.status).toBe('active')
+    expect(firstCallParams.registry_scope).toBeUndefined()
     expect(firstCallParams.query).toBe('akua')
     expect(firstCallParams.ordering).toBe('name')
     expect(firstCallParams.page).toBe(2)
@@ -390,7 +388,7 @@ describe('PatientChronicleListPage registry scope behavior', () => {
     expect(firstCallParams.age_min).toBe('10')
     expect(firstCallParams.age_max).toBe('50')
     expect(screen.getByText('Filters')).toBeInTheDocument()
-    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.getByText('6')).toBeInTheDocument()
   })
 })
 

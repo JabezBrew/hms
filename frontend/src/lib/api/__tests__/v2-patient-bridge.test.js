@@ -658,6 +658,32 @@ describe('Rust V2 patient bridge', () => {
     ).rejects.toBe(abortError);
   });
 
+  it('maps registry_scope: discharged to active status and discharged admission_status', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await patientsApi.searchPatientsWithMeta(
+      { page_size: 25, registry_scope: 'discharged' },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients?limit=25&status=active&admission_status=discharged',
+      expect.anything(),
+    );
+  });
+
   it('does not fall back to legacy patient-only actions without a Rust V2 contract', async () => {
     await expect(patientsApi.deletePatient('patient-1')).rejects.toThrow(
       'Patient deletion is not supported by Rust V2',

@@ -34,6 +34,9 @@ import Lock from 'lucide-react/dist/esm/icons/lock.js'
 import SlidersHorizontal from 'lucide-react/dist/esm/icons/sliders-horizontal.js'
 import KeyRound from 'lucide-react/dist/esm/icons/key-round.js'
 import IdCard from 'lucide-react/dist/esm/icons/id-card.js'
+import Bed from 'lucide-react/dist/esm/icons/bed.js'
+import Siren from 'lucide-react/dist/esm/icons/siren.js'
+import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js'
 import {
   SidebarContent,
   SidebarGroup,
@@ -57,29 +60,35 @@ import { useSystemCapabilities } from '@/hooks/useSystemQueries'
 import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 import { userCanAccess } from '@/shared/lib/access'
 import { areFeaturesEnabled } from '@/shared/lib/features'
-import {
-  nursingHomeFeaturesForFeatures,
-  nursingHomeForFeatures,
-} from '@/features/dashboards/utils/moduleGates'
 import { useSidebarState } from '@/hooks/useSidebarState'
 import { SIDEBARS } from '@/app/routes/routeTypes'
 import { useLocation, useParams } from 'react-router-dom'
 
 const DASHBOARD_ROLES = [
   ROLES.ADMIN,
-  ROLES.DOCTOR,
-  ROLES.NURSE,
   ROLES.RECEPTIONIST,
-  ROLES.PRACTITIONER,
-  ROLES.PHYSICIAN,
-  ROLES.HEAD_NURSE,
-  ROLES.NURSE_PRACTITIONER,
-  ROLES.INPATIENT_DOCTOR,
   ROLES.PHARMACIST,
   ROLES.LAB_TECHNICIAN,
   ROLES.BILLING,
   ROLES.STORE_KEEPER,
   'front_desk',
+]
+
+const CLINICAL_WORK_ROLES = [
+  ROLES.ADMIN,
+  ...ROLE_GROUPS.CLINICAL,
+]
+
+const OUTPATIENT_CARE_AREA_ROLES = [
+  ROLES.ADMIN,
+  ROLES.RECEPTIONIST,
+  ...ROLE_GROUPS.CLINICAL,
+]
+
+const EMERGENCY_CARE_AREA_ROLES = [
+  ROLES.ADMIN,
+  ROLES.RECEPTIONIST,
+  ...ROLE_GROUPS.CLINICAL,
 ]
 
 const INBOX_ROLES = [
@@ -111,12 +120,9 @@ const CHART_TEMPLATE_ROLES = [
 ]
 const DUTY_ROSTER_ROLES = [ROLES.ADMIN, ROLES.HEAD_NURSE]
 
-function getDashboardUrl(role, enabledFeatures = DEFAULT_EMPTY_OBJECT) {
-  if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
-    return nursingHomeForFeatures(enabledFeatures)
-  }
-  if ([ROLES.DOCTOR, ROLES.INPATIENT_DOCTOR].includes(role)) {
-    return '/dashboards/inpatient'
+function getDashboardUrl(role) {
+  if (ROLE_GROUPS.CLINICAL.includes(role)) {
+    return '/my-work'
   }
   if ([ROLES.RECEPTIONIST, 'front_desk'].includes(role)) {
     return '/dashboards/reception'
@@ -139,12 +145,9 @@ function getDashboardUrl(role, enabledFeatures = DEFAULT_EMPTY_OBJECT) {
   return '/dashboard/provider'
 }
 
-function getDashboardFeatures(role, enabledFeatures = DEFAULT_EMPTY_OBJECT) {
-  if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
-    return nursingHomeFeaturesForFeatures(enabledFeatures)
-  }
-  if ([ROLES.DOCTOR, ROLES.INPATIENT_DOCTOR].includes(role)) {
-    return ['inpatient_admissions']
+function getDashboardFeatures(role) {
+  if (ROLE_GROUPS.CLINICAL.includes(role)) {
+    return []
   }
   if ([ROLES.PHARMACIST, ROLES.PHARMACY_TECH].includes(role)) {
     return ['pharmacy']
@@ -194,12 +197,22 @@ const section = (key, label, items) => ({ key, label, items })
 const dashboardItem = item({
   key: 'dashboard',
   label: 'Dashboard',
-  href: ({ user, enabledFeatures }) => getDashboardUrl(user?.role || user?.user_type || '', enabledFeatures),
+  href: ({ user }) => getDashboardUrl(user?.role || user?.user_type || ''),
   icon: LayoutDashboard,
   roles: DASHBOARD_ROLES,
-  features: ({ user, enabledFeatures }) => getDashboardFeatures(user?.role || user?.user_type || '', enabledFeatures),
+  features: ({ user }) => getDashboardFeatures(user?.role || user?.user_type || ''),
   exact: true,
   props: { 'data-onboarding': 'nav-dashboard' },
+})
+
+const myWorkItem = item({
+  key: 'my-work',
+  label: 'My Work',
+  href: '/my-work',
+  icon: ClipboardList,
+  roles: CLINICAL_WORK_ROLES,
+  exact: true,
+  props: { 'data-onboarding': 'nav-my-work' },
 })
 
 const inboxItem = item({
@@ -214,7 +227,7 @@ const inboxItem = item({
 
 const patientRegistryItem = item({
   key: 'patients',
-  label: 'Patient Registry',
+  label: 'Patient Directory',
   href: '/patients',
   icon: BookOpen,
   roles: ROLE_GROUPS.PATIENT_REGISTRY,
@@ -223,12 +236,49 @@ const patientRegistryItem = item({
   props: { 'data-onboarding': 'nav-patients' },
 })
 
-const shortcutItems = [dashboardItem, inboxItem, patientRegistryItem]
+const careAreasItem = item({
+  key: 'care-areas',
+  label: 'Care Areas',
+  icon: Activity,
+  children: [
+    item({
+      key: 'care-area-outpatient',
+      label: 'Outpatient',
+      href: '/care-areas/outpatient',
+      icon: Stethoscope,
+      roles: OUTPATIENT_CARE_AREA_ROLES,
+      features: ['outpatient_encounters'],
+      exact: true,
+    }),
+    item({
+      key: 'care-area-inpatient',
+      label: 'Inpatient',
+      href: '/care-areas/inpatient',
+      icon: Bed,
+      roles: CLINICAL_WORK_ROLES,
+      features: ['ward_task_board', 'patient_chronicle', 'wards', 'inpatient_admissions', 'nursing_workflows'],
+      exact: true,
+    }),
+    item({
+      key: 'care-area-emergency',
+      label: 'Emergency',
+      href: '/care-areas/emergency',
+      icon: Siren,
+      roles: EMERGENCY_CARE_AREA_ROLES,
+      features: ['emergency_encounters'],
+      exact: true,
+    }),
+  ],
+})
+
+const shortcutItems = [myWorkItem, dashboardItem, inboxItem, patientRegistryItem]
 
 const globalSections = [
   section('menu', 'Menu', [
+    myWorkItem,
     dashboardItem,
     inboxItem,
+    careAreasItem,
     patientRegistryItem,
     item({
       key: 'appointments',

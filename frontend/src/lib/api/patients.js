@@ -158,9 +158,15 @@ function getV2PatientListQuery(params = {}) {
   if (search) {
     query.search = search;
   }
-  const status = normalizePatientStatus(params.status || params.registry_scope);
+  const rawStatus = params.status || params.registry_scope;
+  const status = normalizePatientStatus(rawStatus);
   if (status) {
     query.status = status;
+  }
+  if (rawStatus && String(rawStatus).trim().toLowerCase() === 'discharged') {
+    if (!hasQueryValue(params.admission_status)) {
+      query.admission_status = 'discharged';
+    }
   }
   if (params.include_total === true || params.include_total === 'true') {
     query.include_total = true;
@@ -278,11 +284,8 @@ function normalizePatientStatus(value) {
   if (['active', 'inactive', 'deceased'].includes(normalized)) {
     return normalized;
   }
-  if (normalized === 'admitted' || normalized === 'registered') {
+  if (normalized === 'admitted' || normalized === 'registered' || normalized === 'discharged') {
     return 'active';
-  }
-  if (normalized === 'discharged') {
-    return 'inactive';
   }
   return undefined;
 }

@@ -9,6 +9,22 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
+function getPatientId(patient) {
+  if (patient?.local_data?.id) {
+    return patient.local_data.id;
+  }
+  if (patient?.fhir_data?.id) {
+    return patient.fhir_data.id;
+  }
+  if (patient?.fhir_resource?.id) {
+    return patient.fhir_resource.id;
+  }
+  if (patient?.id) {
+    return patient.id;
+  }
+  return null;
+}
+
 /**
  * PatientCreatePage - Chronicle-style patient registration page
  *
@@ -19,20 +35,6 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
  */
 const PatientCreatePage = () => {
   const navigate = useNavigate();
-
-  // Function to get patient ID from different possible structures
-  const getPatientId = (patient) => {
-    if (patient?.local_data?.id) {
-      return patient.local_data.id;
-    } else if (patient?.fhir_data?.id) {
-      return patient.fhir_data.id;
-    } else if (patient?.fhir_resource?.id) {
-      return patient.fhir_resource.id;
-    } else if (patient?.id) {
-      return patient.id;
-    }
-    return null;
-  };
 
   const handleSuccess = (newPatient) => {
     toast.success('Patient registered successfully');
@@ -67,7 +69,7 @@ const PatientCreatePage = () => {
             className="mb-4 -ml-2 font-mono text-xs"
           >
             <ChevronLeft className="size-4 mr-1" />
-            Back to Patient Registry
+            Back to Patient Directory
           </Button>
 
           <div className="flex items-start gap-4">

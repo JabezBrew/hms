@@ -1,14 +1,10 @@
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
-import Users from 'lucide-react/dist/esm/icons/users.js';
 import Filter from 'lucide-react/dist/esm/icons/filter.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import Star from 'lucide-react/dist/esm/icons/star.js';
 import { lazy, Suspense } from 'react';
-import { NavLink } from 'react-router-dom';
 import { format } from 'date-fns';
 
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,14 +13,14 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 
 import {
   ADMISSION_STATUS_OPTIONS,
-  REGISTRY_SCOPE_TABS,
+  RECORD_STATUS_OPTIONS,
 } from './registryConstants';
 
 const PatientRegistryFiltersPanel = lazy(() => import('./PatientRegistryFiltersPanel').then((module) => ({
   default: module.PatientRegistryFiltersPanel,
 })));
 
-export function PatientRegistryHeader({ state, labels, handlers }) {
+export function PatientRegistryHeader({ state, handlers }) {
   const headerActions = ['admin', 'receptionist'].includes(state.userRole) ? (
     <Button onClick={handlers.onAddPatient} size="sm" className="font-mono text-xs">
       <Plus className="size-4 mr-2" />
@@ -34,18 +30,12 @@ export function PatientRegistryHeader({ state, labels, handlers }) {
 
   return (
     <PageHeader
-      title="Patient Registry"
-      description="Search and browse all patients in a sortable registry table"
+      title="Patient Directory"
+      description="Search patient records and review recent registrations"
       size="md"
       actions={headerActions}
       contentClassName="sm:items-start"
     >
-      <PatientRegistryRouteTabs isClinicalProvider={state.isClinicalProvider} />
-      <RegistryScopeTabs
-        registryScope={state.registryScope}
-        onRegistryScopeChange={handlers.onRegistryScopeChange}
-      />
-
       <div className="flex flex-col gap-3 mt-4">
         <PatientRegistrySearchControls
           searchQuery={state.searchQuery}
@@ -62,7 +52,6 @@ export function PatientRegistryHeader({ state, labels, handlers }) {
               draftFilters={state.draftFilters}
               activeFilterCount={state.activeFilterCount}
               onDraftFiltersChange={handlers.onDraftFiltersChange}
-              onWardLabelsChange={handlers.onWardLabelsChange}
               onClearFilters={handlers.onClearFilters}
               onApplyFilters={handlers.onApplyFilters}
             />
@@ -72,7 +61,6 @@ export function PatientRegistryHeader({ state, labels, handlers }) {
         {state.hasActiveFilters && (
           <ActiveFilterChips
             appliedFilters={state.appliedFilters}
-            labels={labels}
             displayState={{
               hasSearchQuery: state.hasSearchQuery,
               hasActiveFilters: state.hasActiveFilters,
@@ -96,7 +84,7 @@ function PatientRegistryFiltersFallback() {
   return (
     <div
       className="rounded-xl border border-border bg-muted/30 p-4"
-      aria-label="Loading patient registry filters"
+      aria-label="Loading patient directory filters"
     >
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
         {Array.from({ length: 5 }, (_, index) => (
@@ -106,61 +94,6 @@ function PatientRegistryFiltersFallback() {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function PatientRegistryRouteTabs({ isClinicalProvider }) {
-  if (!isClinicalProvider) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center gap-1 mt-4 bg-muted rounded-lg p-1 w-fit">
-      <PatientRegistryRouteTab to="/patients" label="All Patients" icon={Users} end />
-      <PatientRegistryRouteTab to="/patients/my-patients" label="My Patients" icon={Star} />
-    </div>
-  );
-}
-
-function PatientRegistryRouteTab({ to, label, icon: Icon, end = false }) {
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) => cn(
-        'px-4 py-2 rounded-md text-sm font-mono transition-colors flex items-center gap-2',
-        isActive
-          ? 'bg-background text-foreground shadow-sm'
-          : 'text-muted-foreground hover:text-foreground'
-      )}
-    >
-      <Icon className="size-4" />
-      {label}
-    </NavLink>
-  );
-}
-
-function RegistryScopeTabs({ registryScope, onRegistryScopeChange }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 mt-4">
-      {REGISTRY_SCOPE_TABS.map((scopeTab) => (
-        <Button
-          key={scopeTab.value}
-          type="button"
-          variant={registryScope === scopeTab.value ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => onRegistryScopeChange(scopeTab.value)}
-          className={cn(
-            'font-mono text-xs',
-            registryScope === scopeTab.value
-              ? 'bg-foreground text-background hover:bg-foreground/90'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          {scopeTab.label}
-        </Button>
-      ))}
     </div>
   );
 }
@@ -218,7 +151,6 @@ function PatientRegistrySearchControls({
 
 function ActiveFilterChips({
   appliedFilters,
-  labels,
   displayState,
   onRemoveFilter,
   onClearAll,
@@ -237,13 +169,19 @@ function ActiveFilterChips({
       )}
       {appliedFilters.wardId && (
         <FilterChip
-          label={`Ward: ${labels.wardLabels.get(appliedFilters.wardId) || 'Selected'}`}
+          label={`Ward: ${appliedFilters.wardName || 'Selected'}`}
           onRemove={() => onRemoveFilter('wardId')}
+        />
+      )}
+      {appliedFilters.recordStatus && appliedFilters.recordStatus !== 'all' && (
+        <FilterChip
+          label={`Record: ${RECORD_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.recordStatus)?.label || appliedFilters.recordStatus}`}
+          onRemove={() => onRemoveFilter('recordStatus')}
         />
       )}
       {appliedFilters.admissionStatus !== 'all' && (
         <FilterChip
-          label={`Status: ${ADMISSION_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.admissionStatus)?.label || appliedFilters.admissionStatus}`}
+          label={`Admission: ${ADMISSION_STATUS_OPTIONS.find((opt) => opt.value === appliedFilters.admissionStatus)?.label || appliedFilters.admissionStatus}`}
           onRemove={() => onRemoveFilter('admissionStatus')}
         />
       )}
