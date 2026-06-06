@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { useEffect } from 'react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { SidebarProvider } from '@/components/ui/sidebar'
+import { SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLES } from '@/shared/constants/roles'
 import { resolveSidebarSections, SidebarRenderer } from '../sidebar'
@@ -14,6 +16,11 @@ vi.mock('@/features/ops/host', () => ({
 
 beforeEach(() => {
   opsHostMock.allowed = true
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: 1024,
+  })
   window.matchMedia = vi.fn().mockImplementation((query) => ({
     matches: false,
     media: query,
@@ -35,6 +42,7 @@ function renderSidebar({
   params = {},
   enabledFeatures,
   inboxCount = 0,
+  mobileProbe = false,
 } = {}) {
   const sections = resolveSidebarSections({
     sidebar,
@@ -49,9 +57,20 @@ function renderSidebar({
     <MemoryRouter initialEntries={[route]}>
       <SidebarProvider>
         <SidebarRenderer sections={sections} badges={{ inbox: inboxCount }} />
+        {mobileProbe ? <MobileSidebarProbe /> : null}
       </SidebarProvider>
     </MemoryRouter>,
   )
+}
+
+function MobileSidebarProbe() {
+  const { openMobile, setOpenMobile } = useSidebar()
+
+  useEffect(() => {
+    setOpenMobile(true)
+  }, [setOpenMobile])
+
+  return <div data-testid="mobile-sidebar-state">{openMobile ? 'open' : 'closed'}</div>
 }
 
 describe('dynamic sidebar', () => {
@@ -262,5 +281,46 @@ describe('dynamic sidebar', () => {
     })
 
     expect(screen.getByRole('link', { name: /Dashboard/i })).toBeInTheDocument()
+  })
+
+  it('closes the mobile sidebar after a top-level navigation link is selected', async () => {
+    window.innerWidth = 390
+    const user = userEvent.setup()
+
+    renderSidebar({
+      sidebar: SIDEBARS.GLOBAL,
+      user: { role: ROLES.ADMIN },
+      enabledFeatures: { patient_chronicle: true },
+      mobileProbe: true,
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mobile-sidebar-state')).toHaveTextContent('open')
+    })
+
+    await user.click(screen.getByRole('link', { name: /Patient Directory/i }))
+
+    expect(screen.getByTestId('mobile-sidebar-state')).toHaveTextContent('closed')
+  })
+
+  it('closes the mobile sidebar after a nested navigation link is selected', async () => {
+    window.innerWidth = 390
+    const user = userEvent.setup()
+
+    renderSidebar({
+      sidebar: SIDEBARS.GLOBAL,
+      user: { role: ROLES.LAB_TECHNICIAN },
+      route: '/laboratory/orders',
+      enabledFeatures: { laboratory: true },
+      mobileProbe: true,
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mobile-sidebar-state')).toHaveTextContent('open')
+    })
+
+    await user.click(screen.getByRole('link', { name: /Orders/i }))
+
+    expect(screen.getByTestId('mobile-sidebar-state')).toHaveTextContent('closed')
   })
 })

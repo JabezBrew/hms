@@ -482,15 +482,23 @@ function SidebarMenuButton({
   tooltip,
   className,
   href,
+  onClick,
   ...props
 }) {
   const Comp = asChild ? Slot : "button"
-  const { isMobile, state } = useSidebar()
-  const isLink = Boolean(href) && !asChild
+  const { isMobile, state, setOpenMobile } = useSidebar()
+  const hasHref = Boolean(href)
+  const isLink = hasHref && !asChild
   const Component = isLink ? Link : Comp
   const componentProps = isLink ? { to: href } : {}
-  const childProps = asChild && href ? { href } : {}
+  const childProps = asChild && hasHref ? { href } : {}
   const buttonProps = !isLink && !asChild ? { type: "button" } : {}
+  const handleClick = (event) => {
+    onClick?.(event)
+    if (isMobile && hasHref && !event.defaultPrevented) {
+      setOpenMobile(false)
+    }
+  }
 
   const button = (
     <Component
@@ -502,6 +510,7 @@ function SidebarMenuButton({
       {...buttonProps}
       {...childProps}
       {...props}
+      onClick={handleClick}
       {...componentProps} />
   )
 
@@ -641,14 +650,23 @@ function SidebarMenuSubButton({
   isActive = false,
   className,
   href,
+  onClick,
   ...props
 }) {
   const Comp = asChild ? Slot : "button"
-  const isLink = Boolean(href) && !asChild
+  const { isMobile, setOpenMobile } = useSidebar()
+  const hasHref = Boolean(href)
+  const isLink = hasHref && !asChild
   const Component = isLink ? Link : Comp
   const componentProps = isLink ? { to: href } : {}
-  const childProps = asChild && href ? { href } : {}
+  const childProps = asChild && hasHref ? { href } : {}
   const buttonProps = !isLink && !asChild ? { type: "button" } : {}
+  const handleClick = (event) => {
+    onClick?.(event)
+    if (isMobile && hasHref && !event.defaultPrevented) {
+      setOpenMobile(false)
+    }
+  }
 
   return (
     <Component
@@ -667,6 +685,7 @@ function SidebarMenuSubButton({
       {...buttonProps}
       {...childProps}
       {...props}
+      onClick={handleClick}
       {...componentProps} />
   );
 }

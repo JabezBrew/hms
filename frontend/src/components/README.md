@@ -42,6 +42,8 @@ Scope: shared components, legacy product components, Chronicle components, and U
 - Large lists should use virtualization primitives from `ui/`.
 - Heavy charts should be lazy/deferred when not needed for first useful view.
 - Prefer shared primitives over duplicating controls inside features.
+- Mobile layout/sidebar navigation links should close the mobile sheet after
+  leaf navigation; parent group toggles should remain open for submenu access.
 - Table pagination must match the endpoint contract: cursor-backed lists may
   show exact totals when supplied, but should only expose previous/next controls
   unless random page access is supported.
