@@ -9,7 +9,7 @@ Scope: GitHub workflow configuration.
 
 | Workflow | Trigger | Role |
 | --- | --- | --- |
-| `ci.yml` | pushes and pull requests to `main`/`develop`, manual dispatch, nightly `03:00 UTC` cron | path-aware Rust V2/backend/frontend validation. |
+| `ci.yml` | pushes and pull requests to `main`/`develop`, manual dispatch | path-aware Rust V2/backend/frontend validation. |
 | `backend-codeql.yml` | security workflow triggers | backend CodeQL security analysis. |
 | `frontend-codeql.yml` | security workflow triggers | frontend CodeQL security analysis. |
 | `backend-dependency-review.yml` | dependency-review triggers | backend dependency review. |
@@ -19,7 +19,7 @@ Scope: GitHub workflow configuration.
 
 | Job | Checks |
 | --- | --- |
-| `changes` | classifies changed paths and chooses backend, frontend, and Docker gates; manual/nightly/workflow changes fail open to full CI. |
+| `changes` | classifies changed paths and chooses backend, frontend, and Docker gates; manual dispatches and workflow changes fail open to full CI. |
 | `rust-backend-tests` | starts Postgres 16 and Redis 7, runs `cargo fmt --all --check`, then `cargo test --workspace` in `backend-rs/`. |
 | `frontend-tests` | runs `npm ci`, lint, Rust V2 API client generation check, unit tests with coverage, build, bundle budget, and coverage/artifact upload. |
 | `docker-builds` | builds `backend-rs/Dockerfile` and `frontend/Dockerfile` with Rust V2 API build args. |
@@ -27,7 +27,7 @@ Scope: GitHub workflow configuration.
 
 ## `ci.yml` Path Policy
 
-- Manual dispatches, nightly schedules, and workflow-file changes run full CI.
+- Manual dispatches and workflow-file changes run full CI.
 - Rust backend checks run for `backend-rs/**`, contract/OpenAPI paths, and
   workflow changes.
 - Frontend checks run for `frontend/**`, contract/OpenAPI paths, and workflow
