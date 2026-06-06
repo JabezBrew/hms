@@ -3,7 +3,7 @@ use hms_db::care::{
     AppointmentFilters, AppointmentUpdate, BlockedTimeScope, ClinicSessionMode,
     ClinicSessionOwnerType, ClinicUpdate, EncounterFilters, EncounterUpdate, NewAppointmentSeries,
     NewAppointmentType, NewBlockedTime, NewBookedAppointment, NewClinic, NewClinicSession,
-    NewEncounter, NewTriage, NewVisit, TriageFilters,
+    NewEncounter, NewTriage, NewVisit, TriageFilters, VisitFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::care::{
@@ -1061,6 +1061,7 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
         TriageFilters {
             acuity: Some(TriageAcuity::Emergency),
             status: Some(TriageStatus::Completed),
+            assigned_to_user_id: None,
         },
     )
     .await
@@ -1078,6 +1079,7 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
         TriageFilters {
             acuity: Some(TriageAcuity::Emergency),
             status: Some(TriageStatus::Completed),
+            assigned_to_user_id: None,
         },
     )
     .await
@@ -1099,17 +1101,35 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
     .expect("overflow visit is checked in");
 
     let general_visits =
-        hms_db::care::list_visits(&pool, facility_id, Some(general_clinic_id), None, 10)
-            .await
-            .expect("general clinic visits load");
+        hms_db::care::list_visits(
+            &pool,
+            facility_id,
+            VisitFilters {
+                clinic_id: Some(general_clinic_id),
+                ..Default::default()
+            },
+            None,
+            10,
+        )
+        .await
+        .expect("general clinic visits load");
     assert_eq!(general_visits.len(), 1);
     assert_eq!(general_visits[0].id, general_visit.id);
     assert_eq!(general_visits[0].clinic_id, Some(general_clinic_id));
 
     let overflow_visits =
-        hms_db::care::list_visits(&pool, facility_id, Some(overflow_clinic_id), None, 10)
-            .await
-            .expect("overflow clinic visits load");
+        hms_db::care::list_visits(
+            &pool,
+            facility_id,
+            VisitFilters {
+                clinic_id: Some(overflow_clinic_id),
+                ..Default::default()
+            },
+            None,
+            10,
+        )
+        .await
+        .expect("overflow clinic visits load");
     assert_eq!(overflow_visits.len(), 1);
     assert_eq!(overflow_visits[0].id, overflow_visit.id);
     assert_eq!(overflow_visits[0].clinic_id, Some(overflow_clinic_id));
