@@ -42,9 +42,13 @@ const patientRouteFeatures = (route) => {
   if (
     route.path === '/patients/create'
     || route.path === '/patients/find-or-register'
+    || route.path === '/patients/:id/profile'
     || route.path === '/patients/:id/edit'
   ) {
-    return ['patient_chronicle', 'patient_registration']
+    return ['patient_registration']
+  }
+  if (route.path === '/patients' || route.path === '/patients/:id') {
+    return ['patient_registration']
   }
   return ['patient_chronicle']
 }

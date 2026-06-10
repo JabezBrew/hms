@@ -37,6 +37,11 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
   lookup fingerprint, candidate ids, timestamps, and reviewer facts. Raw names,
   DOBs, MRNs, phones, or free-text identity input must not be logged, cached, or
   used as metric/query-key labels.
+- Lookup results may be rehydrated with
+  `GET /api/v2/patients/identity/lookups/:lookup_id`. The lookup id is opaque
+  and scoped to the same facility, user, and unexpired lookup session. This
+  endpoint must return only bounded candidate projections and must not expose
+  the original raw identity search fields.
 - Patient creation through `POST /api/v2/patients` is guarded by backend
   duplicate detection. Possible matches require `duplicate_review.lookup_id`,
   `decision=new_distinct_patient`, and a reason. The write path must rerun
@@ -61,6 +66,16 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
   `status`, or `active_only` filters for OPD, `/api/v2/triage` with server-side
   `status`, `acuity`, or `assigned_to_user_id` filters for Emergency, and
   `/api/v2/wards/my-board-context` plus `/api/v2/wards/board` for Inpatient.
+- Staff creation uses `POST /api/v2/admin/staff` with identity, employment,
+  and optional practitioner facts only. The request must not accept
+  administrator-entered Employee IDs or passwords, and the action requires
+  fresh high-risk admin reauthentication. Rust V2 allocates the facility-scoped
+  Employee ID server-side and creates a short-lived setup/reset token plus a
+  PHI-safe account-setup event. The raw setup token is delivered only through
+  the configured account-setup delivery channel while it is in memory; it must
+  not be persisted in domain events, audit logs, or response bodies. Forced
+  reset tokens must remain unusable until the finalization transaction commits
+  session revocation, audit, and token activation.
 - Ward-board list rows are lightweight sourced projections: census, alert
   counts, nursing-task counts/due timestamps, due MAR counts/timestamps, last
   vitals timestamp, unverified-result and pending-order counts, and discharge
@@ -79,6 +94,13 @@ returning or mutating data.
 
 Access behavior belongs in `hms-access` and request context guards. It should be
 covered through tests that call the same Interface production code uses.
+
+Patient administrative profile access and Patient Chronicle access are separate
+surfaces. Registration/front-desk/billing users may need demographics,
+insurance, MRN/NHIS/contact, registration status, and current-context facts, but
+they must not receive clinical notes, diagnoses, medications, lab results,
+nursing documentation, or clinical timeline access merely because they can
+confirm patient identity.
 
 Ward-board access is scoped. Ordinary clinical users need `ward.view`, patient
 demographics visibility, the Wards feature, and an active ward staff assignment

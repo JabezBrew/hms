@@ -324,12 +324,22 @@ pub struct UpsertPractitionerProfileRequest {
 pub struct CreateStaffRequest {
     pub email: String,
     pub display_name: String,
-    pub temporary_password: String,
-    pub employee_id: String,
     pub department: String,
     pub position: String,
     pub hire_date: NaiveDate,
     pub practitioner_profile: Option<UpsertPractitionerProfileRequest>,
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub employee_id: Option<String>,
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub temporary_password: Option<String>,
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub temp_password: Option<String>,
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub password: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

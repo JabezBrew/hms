@@ -304,6 +304,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::patients::get_patient_chronicle_print,
         crate::handlers::patients::list_patient_chronicle_timeline,
         crate::handlers::patients::get_patient,
+        crate::handlers::patients::get_identity_lookup,
         crate::handlers::patients::lookup_identity,
         crate::handlers::patients::start_break_glass_grant,
         crate::handlers::patients::update_patient,

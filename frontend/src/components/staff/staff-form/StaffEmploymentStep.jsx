@@ -40,22 +40,6 @@ export function StaffEmploymentStep({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <FormField
           control={form.control}
-          name="employee_id"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Employee ID <span className="text-rose-500">*</span>
-              </FormLabel>
-              <FormControl>
-                <Input placeholder="Employee ID" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
           name="department"
           render={({ field }) => (
             <FormItem>

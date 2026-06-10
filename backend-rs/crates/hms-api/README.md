@@ -65,6 +65,18 @@ Service interfaces are the main API-layer seam. New complex workflows belong
 under `src/services/<domain>/` when they coordinate access, domain policy,
 repository calls, events, and response shape.
 
+## Staff Onboarding Delivery
+
+Staff creation and forced password reset generate short-lived setup/reset
+tokens server-side and require fresh high-risk admin reauthentication. In
+tests, tokens are captured by an in-memory test sink. Outside tests, account
+setup delivery must use a trusted webhook configured with
+`HMS_ACCOUNT_SETUP_DELIVERY_MODE=webhook`,
+`HMS_ACCOUNT_SETUP_DELIVERY_WEBHOOK_URL`, and `HMS_PUBLIC_APP_URL`. Forced
+reset tokens are inactive until the reset finalization transaction commits
+session revocation, audit, and token activation. Plaintext setup tokens must not
+be stored in domain events, audit events, logs, or API responses.
+
 ## Contract Tests
 
 Important contract tests include:

@@ -555,6 +555,25 @@ export const patientsApi = {
     }
   },
 
+  getIdentityLookup: async (lookupId, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPatientIdentityLookup(
+          { lookup_id: lookupId },
+          { signal: options.signal },
+        );
+        return response?.data || response;
+      }
+      return { lookup_id: lookupId, candidates: [], strong_duplicate_found: false };
+    } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to restore patient identity lookup'));
+      }
+      throw new Error(handleApiError(error, 'Failed to restore patient identity lookup'));
+    }
+  },
+
   getCurrentContexts: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {

@@ -24,21 +24,13 @@ import {
   isPractitionerUserType,
   staffFieldToStep,
   staffFormSchema,
-  staffStepDefs,
+  staffStepDefsForRole,
   stepFieldsByKey,
 } from './staffForm.utils';
 
 const PRACTITIONER_FIELDS = ['license_number', 'specialization', 'qualification'];
 
-const getStepKeys = () => staffStepDefs.map((step) => step.key);
-
-const getFieldsForStep = (stepKey, isPractitioner) => {
-  const fields = stepFieldsByKey[stepKey] || [];
-  if (stepKey === 'credentials' && !isPractitioner) {
-    return fields.filter((field) => field === 'temporary_password');
-  }
-  return fields;
-};
+const getFieldsForStep = (stepKey) => stepFieldsByKey[stepKey] || [];
 
 const StaffForm = ({ onSuccess }) => {
   const registerStaffMutation = useRegisterStaff();
@@ -46,8 +38,7 @@ const StaffForm = ({ onSuccess }) => {
   const [showValidation, setShowValidation] = useState(false);
   const currentDate = useCurrentDate();
 
-  const stepKeys = useMemo(getStepKeys, []);
-  const [activeStep, setActiveStep] = useState(stepKeys[0]);
+  const [activeStep, setActiveStep] = useState('identity');
 
   const form = useForm({
     resolver: zodResolver(staffFormSchema),
@@ -80,7 +71,9 @@ const StaffForm = ({ onSuccess }) => {
   const userType = form.watch('user_type');
   const dateOfBirth = form.watch('date_of_birth');
   const isPractitioner = isPractitionerUserType(userType);
-  const currentStepIndex = stepKeys.indexOf(activeStep);
+  const stepDefs = useMemo(() => staffStepDefsForRole(userType), [userType]);
+  const stepKeys = useMemo(() => stepDefs.map((step) => step.key), [stepDefs]);
+  const currentStepIndex = Math.max(stepKeys.indexOf(activeStep), 0);
   const isFirstStep = currentStepIndex <= 0;
   const isLastStep = currentStepIndex === stepKeys.length - 1;
   const isSubmitting = isLoading || registerStaffMutation.isPending;
@@ -93,10 +86,10 @@ const StaffForm = ({ onSuccess }) => {
   }, [form]);
 
   const validateStep = useCallback(async (stepKey) => {
-    const fieldsToValidate = getFieldsForStep(stepKey, isPractitioner);
+    const fieldsToValidate = getFieldsForStep(stepKey);
     if (!fieldsToValidate.length) return true;
     return form.trigger(fieldsToValidate);
-  }, [form, isPractitioner]);
+  }, [form]);
 
   const goToFirstErrorStep = useCallback(() => {
     const errors = form.formState.errors || {};
@@ -146,14 +139,14 @@ const StaffForm = ({ onSuccess }) => {
 
   const validateRegistration = useCallback(async () => {
     const fieldsToValidate = stepKeys.flatMap((stepKey) => (
-      getFieldsForStep(stepKey, isPractitioner)
+      getFieldsForStep(stepKey)
     ));
     const ok = await form.trigger(fieldsToValidate);
     if (!ok) {
       goToFirstErrorStep();
     }
     return ok;
-  }, [form, goToFirstErrorStep, isPractitioner, stepKeys]);
+  }, [form, goToFirstErrorStep, stepKeys]);
 
   const submitRegistration = useCallback(async (values) => {
     setIsLoading(true);
@@ -224,6 +217,7 @@ const StaffForm = ({ onSuccess }) => {
           <StaffStepNavigation
             activeStep={activeStep}
             currentStepIndex={currentStepIndex}
+            stepDefs={stepDefs}
             stepErrorCounts={stepErrorCounts}
           />
 

@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{Duration, NaiveDate, Utc};
 use hms_db::admin::{NewAuditEvent, NewOrganizationUnit, NewPractitionerProfile, NewStaffAccount};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::admin::OrgUnitType;
@@ -338,8 +338,9 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
             facility_id,
             email: "akosua.clinician@hms.local".to_owned(),
             display_name: "Akosua Clinician".to_owned(),
-            password_hash: "hashed-temporary-password".to_owned(),
-            employee_id: "EMP-HMS-2026-0001".to_owned(),
+            initial_password_hash: "hashed-undisclosed-password".to_owned(),
+            setup_token_hash: "hashed-setup-token".to_owned(),
+            setup_token_expires_at: Utc::now() + Duration::minutes(30),
             department: "Clinical".to_owned(),
             position: "Medical Officer".to_owned(),
             hire_date: NaiveDate::from_ymd_opt(2026, 5, 10).expect("valid hire date"),
@@ -357,6 +358,8 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     .expect("staff account is created");
 
     assert_eq!(staff.email, "akosua.clinician@hms.local");
+    assert!(staff.employee_id.starts_with("EMP-HMS-"));
+    assert_eq!(staff.employee_id.rsplit('-').next().unwrap_or("").len(), 7);
     assert!(staff.is_active);
     assert!(staff.password_change_required);
     assert_eq!(
@@ -367,6 +370,22 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
             .license_number,
         "MDC/RN/0001"
     );
+    let setup_token_count = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL",
+    )
+    .bind(staff.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("setup token count query succeeds");
+    assert_eq!(setup_token_count, 1);
+    let setup_event_count = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM domain_events WHERE event_type = 'admin.staff_account_setup_requested' AND aggregate_id = $1",
+    )
+    .bind(staff.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("setup event count query succeeds");
+    assert_eq!(setup_event_count, 1);
 
     let updated_staff = hms_db::admin::update_staff_account(
         &pool,
@@ -440,18 +459,68 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     .expect("cross-facility list succeeds")
     .is_empty());
 
-    let forced_reset = hms_db::admin::force_staff_password_reset(
+    let reset_token_hash = "hashed-reset-setup-token".to_owned();
+    let prepared_reset = hms_db::admin::prepare_staff_password_reset_delivery(
+        &pool,
+        facility_id,
+        staff.id,
+        reset_token_hash.clone(),
+        Utc::now() + Duration::minutes(30),
+    )
+    .await
+    .expect("prepare password reset succeeds")
+    .expect("staff account exists");
+    assert_eq!(
+        prepared_reset.password_change_required,
+        staff.password_change_required
+    );
+    assert_eq!(prepared_reset.session_version, staff.session_version);
+    let prepared_token_used_at = sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+        "SELECT used_at FROM password_reset_tokens WHERE token_hash = $1",
+    )
+    .bind(&reset_token_hash)
+    .fetch_one(&pool)
+    .await
+    .expect("prepared reset token state query succeeds");
+    assert!(prepared_token_used_at.is_some());
+    let premature_complete = hms_db::auth::complete_password_reset(
+        &pool,
+        &reset_token_hash,
+        staff.user_id,
+        "premature-password-hash",
+    )
+    .await
+    .expect("premature reset completion check succeeds");
+    assert!(!premature_complete);
+    let forced_reset = hms_db::admin::finalize_staff_password_reset(
         &pool,
         facility_id,
         staff.id,
         owner_id,
         Some("staff-reset-test".to_owned()),
+        &reset_token_hash,
     )
     .await
-    .expect("force password reset succeeds")
+    .expect("finalize password reset succeeds")
     .expect("staff account exists");
     assert!(forced_reset.password_change_required);
     assert!(forced_reset.session_version > staff.session_version);
+    let reset_token_count = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL",
+    )
+    .bind(staff.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("reset setup token count query succeeds");
+    assert_eq!(reset_token_count, 1);
+    let finalized_token_used_at = sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+        "SELECT used_at FROM password_reset_tokens WHERE token_hash = $1",
+    )
+    .bind(&reset_token_hash)
+    .fetch_one(&pool)
+    .await
+    .expect("finalized reset token state query succeeds");
+    assert!(finalized_token_used_at.is_none());
 
     let updated_profile = hms_db::admin::upsert_practitioner_profile(
         &pool,

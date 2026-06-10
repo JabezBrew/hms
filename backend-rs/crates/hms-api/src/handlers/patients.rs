@@ -171,6 +171,33 @@ pub async fn lookup_identity(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/patients/identity/lookups/{lookup_id}",
+    operation_id = "getPatientIdentityLookup",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    params(("lookup_id" = Uuid, Path, description = "Opaque patient identity lookup session id")),
+    responses(
+        (status = 200, description = "Patient identity lookup candidates", body = ObjectResponse<PatientIdentityLookupResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Lookup session expired or not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_identity_lookup(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(lookup_id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PatientIdentityLookupResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .get_identity_lookup(&user, lookup_id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/patients",
     operation_id = "postPatients",

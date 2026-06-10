@@ -719,6 +719,55 @@ describe('Rust V2 patient bridge', () => {
     );
   });
 
+  it('restores patient identity lookup sessions through Rust V2 by lookup id', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            lookup_id: 'lookup-1',
+            expires_at: '2026-06-06T12:15:00Z',
+            candidates: [
+              {
+                patient_id: 'patient-1',
+                patient_code: 'MRN-MAIN-2026-000001',
+                display_name: 'Ama Mensah',
+                date_of_birth: '1989-04-15',
+                sex: 'female',
+                record_status: 'registered',
+                vital_status: 'presumed_alive',
+                superseded_by_patient_id: null,
+                match_strength: 'possible',
+                match_reasons: ['previous_lookup_candidate'],
+              },
+            ],
+            strong_duplicate_found: true,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.getIdentityLookup('lookup-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/identity/lookups/lookup-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(response.candidates[0]).toEqual(
+      expect.objectContaining({
+        patient_id: 'patient-1',
+        match_reasons: ['previous_lookup_candidate'],
+      }),
+    );
+  });
+
   it('loads current patient care contexts through Rust V2', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

@@ -37,6 +37,18 @@ OPD, IPD, and Emergency intake then create or reuse scoped care contexts for a
 resolved `patient_id`. Care intake requests require idempotency keys; only key
 hashes and request fingerprints are persisted.
 
+Lookup review may be restored by opaque lookup id for the same user, facility,
+and unexpired session. The restored response returns only bounded candidate
+projections; it must not expose or persist raw identity search input such as
+names, DOBs, MRNs, phone numbers, or free-text notes.
+
+Administrative patient profile access and Patient Chronicle access are distinct
+surfaces. Front desk, registration, and billing workflows use an administrative
+profile for identity, demographics, insurance, current care-context warnings,
+and intake handoff. Clinical notes, diagnoses, medication data, lab results,
+nursing/doctor documentation, and the clinical timeline remain in Patient
+Chronicle and require Chronicle access.
+
 Superseded records must link to a same-facility registered canonical record.
 Normal intake cannot use superseded, deceased, or entered-in-error records.
 Restricted-record intake requires an authorized override and audited reason.
@@ -50,7 +62,8 @@ Restricted-record intake requires an authorized override and audited reason.
   normal intake unless an explicit future correction/override path allows it.
 - IPD intake reuses an existing current admission instead of creating a second
   current admission. Emergency current context is waiting or assigned triage;
-  completed triage is not current.
+  completed triage is not current. Assigned triage can be completed through
+  assessment, which releases the patient for a future emergency triage context.
 - Legacy `patients.status` remains only as temporary compatibility output until
   all callers use `record_status` and `vital_status`.
 - Query keys, URLs, logs, metrics, and audit metadata must not contain raw names,

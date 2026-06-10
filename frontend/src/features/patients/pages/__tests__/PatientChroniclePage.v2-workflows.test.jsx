@@ -270,7 +270,7 @@ vi.mock('@/hooks/use-mobile', () => ({
   useIsMobile: () => false,
 }))
 
-function renderPage(initialEntry = '/patients/patient-1') {
+function renderPage(initialEntry = '/patients/patient-1/chronicle') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -281,6 +281,7 @@ function renderPage(initialEntry = '/patients/patient-1') {
         <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route path="/patients/:id" element={<PatientChroniclePage />} />
+            <Route path="/patients/:id/chronicle" element={<PatientChroniclePage />} />
             <Route path="/patients/:id/ward-round" element={<PatientChroniclePage defaultAction="ward_round" />} />
           </Routes>
         </MemoryRouter>
@@ -461,7 +462,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       },
     }
 
-    renderPage('/patients/patient-1?action=add_prescription')
+    renderPage('/patients/patient-1/chronicle?action=add_prescription')
 
     await waitFor(() => {
       expect(screen.getByTestId('active-workspace')).toHaveTextContent('prescription')
@@ -479,7 +480,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   it('renders Ward Round as Chronicle mode from URL actions without opening the legacy slide-over', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
 
-    renderPage('/patients/patient-1?action=ward_round')
+    renderPage('/patients/patient-1/chronicle?action=ward_round')
 
     await waitFor(() => {
       expect(screen.getByTestId('ward-round-mode')).toHaveTextContent('Ward Round Mode')
@@ -490,7 +491,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   it('renders canonical Ward Round mode inside the Chronicle frame without the timeline', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
 
-    renderPage('/patients/patient-1?mode=ward-round')
+    renderPage('/patients/patient-1/chronicle?mode=ward-round')
 
     expect(await screen.findByText('Clinical summary')).toBeInTheDocument()
     expect(await screen.findByTestId('ward-round-mode')).toBeInTheDocument()
@@ -612,7 +613,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       },
     }
 
-    renderPage('/patients/patient-1?visit=all')
+    renderPage('/patients/patient-1/chronicle?visit=all')
 
     expect(timelineHookState.calls.at(-1)).toEqual(
       expect.objectContaining({
@@ -656,7 +657,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       ],
     }
 
-    renderPage('/patients/patient-1?visit=encounter-2')
+    renderPage('/patients/patient-1/chronicle?visit=encounter-2')
 
     expect(timelineHookState.calls.at(-1)).toEqual(
       expect.objectContaining({
@@ -728,7 +729,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
       },
     ]
 
-    renderPage('/patients/patient-1?visit=all')
+    renderPage('/patients/patient-1/chronicle?visit=all')
 
     await screen.findByText('Inpatient Admission')
     const pageText = document.body.textContent
@@ -749,7 +750,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   it('uses Ward Round Chronicle mode outside Rust V2 mode instead of the legacy workflow slide-over', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' }
 
-    renderPage('/patients/patient-1?action=ward_round')
+    renderPage('/patients/patient-1/chronicle?action=ward_round')
 
     expect(screen.getByTestId('ask-chronicle-action')).toHaveTextContent('true')
     expect(screen.getByTestId('ward-round-action')).toHaveTextContent('true')

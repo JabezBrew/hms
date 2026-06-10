@@ -63,6 +63,18 @@ function renderSidebar({
   )
 }
 
+function sidebarHasHref(sections, href) {
+  const stack = sections.flatMap((section) => section.items)
+  while (stack.length > 0) {
+    const item = stack.shift()
+    if (item?.href === href) return true
+    if (Array.isArray(item?.children)) {
+      stack.push(...item.children)
+    }
+  }
+  return false
+}
+
 function MobileSidebarProbe() {
   const { openMobile, setOpenMobile } = useSidebar()
 
@@ -226,24 +238,24 @@ describe('dynamic sidebar', () => {
   })
 
   it('shows the ops dashboard only to users with the system ops capability', () => {
-    renderSidebar({
+    const regularAdminSections = resolveSidebarSections({
       sidebar: SIDEBARS.ADMIN,
       user: { role: ROLES.ADMIN },
-      route: '/admin/organization',
+      location: { pathname: '/admin/organization' },
     })
 
-    expect(screen.queryByRole('link', { name: /Ops Dashboard/i })).not.toBeInTheDocument()
+    expect(sidebarHasHref(regularAdminSections, '/system/ops')).toBe(false)
 
-    renderSidebar({
+    const opsAdminSections = resolveSidebarSections({
       sidebar: SIDEBARS.ADMIN,
       user: {
         role: ROLES.ADMIN,
         adminAccess: { capabilities: ['system.ops.view'] },
       },
-      route: '/system/ops',
+      location: { pathname: '/system/ops' },
     })
 
-    expect(screen.getByRole('link', { name: /Ops Dashboard/i })).toHaveAttribute('href', '/system/ops')
+    expect(sidebarHasHref(opsAdminSections, '/system/ops')).toBe(true)
   })
 
   it('hides the ops dashboard on non-ops hosts even with the system ops capability', () => {

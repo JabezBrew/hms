@@ -1,9 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use hms_db::admin::{
     AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewCommittee, NewDelegation,
     NewOrganizationUnit, NewPermissionAssignment, NewPosition, NewPositionTemplate,
     NewPractitionerProfile, NewStaffAccount,
 };
+use hms_db::provision::{generate_secret_token, hash_refresh_token};
 use hms_domain::admin::{
     AdminLimitQuery, AdminListQuery, AuditEventListItem, AuditEventListQuery,
     AuthorityAppointmentListItem, CommitteeListItem, CreateAuthorityAppointmentRequest,
@@ -21,7 +22,7 @@ use uuid::Uuid;
 use crate::cursor_list;
 use crate::error::ApiError;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
-use crate::state::AppState;
+use crate::state::{AccountSetupDeliveryPurpose, AppState, StaffAccountSetupDelivery};
 
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
@@ -46,6 +47,43 @@ impl AdminService {
 
     fn pool(&self) -> &hms_db::PgPool {
         self.state.db_pool()
+    }
+
+    fn ensure_staff_setup_delivery(&self) -> Result<(), ApiError> {
+        self.state
+            .ensure_account_setup_delivery_available()
+            .map_err(|_| {
+                ApiError::conflict(
+                    "staff_account_setup_delivery_unavailable",
+                    "Staff account setup delivery is not configured.",
+                )
+            })
+    }
+
+    async fn deliver_staff_setup_token(
+        &self,
+        purpose: AccountSetupDeliveryPurpose,
+        staff: &StaffListItem,
+        token: String,
+        expires_at: DateTime<Utc>,
+    ) -> Result<(), ApiError> {
+        self.state
+            .deliver_staff_account_setup(StaffAccountSetupDelivery {
+                purpose,
+                staff_id: staff.id,
+                user_id: staff.user_id,
+                email: staff.email.clone(),
+                display_name: staff.display_name.clone(),
+                token,
+                expires_at,
+            })
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "staff_account_setup_delivery_failed",
+                    "Staff account setup delivery could not be sent.",
+                )
+            })
     }
 
     pub async fn list_org_units(
@@ -649,23 +687,29 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         payload: CreateStaffRequest,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_staff_access(ctx, self.facility_id())?;
+        require_high_risk_admin_access(ctx, self.facility_id(), PermissionCode::AdminStaffManage)?;
         validate_staff_payload(&payload)?;
-        let password_hash = self
+        self.ensure_staff_setup_delivery()?;
+        let initial_secret = generate_secret_token();
+        let initial_password_hash = self
             .state
-            .hash_password_bounded(&payload.temporary_password)
+            .hash_password_bounded(&initial_secret)
             .await
             .map_err(|_| {
                 ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
             })?;
+        let setup_token = generate_secret_token();
+        let setup_token_hash = hash_refresh_token(&setup_token);
+        let setup_token_expires_at = Utc::now() + Duration::minutes(30);
         let staff = hms_db::admin::create_staff_account(
             self.pool(),
             NewStaffAccount {
                 facility_id: self.facility_id(),
                 email: payload.email,
                 display_name: payload.display_name,
-                password_hash,
-                employee_id: payload.employee_id,
+                initial_password_hash,
+                setup_token_hash,
+                setup_token_expires_at,
                 department: payload.department,
                 position: payload.position,
                 hire_date: payload.hire_date,
@@ -678,6 +722,26 @@ impl AdminService {
         .map_err(|_| {
             ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
         })?;
+        if let Err(error) = self
+            .deliver_staff_setup_token(
+                AccountSetupDeliveryPurpose::StaffAccountSetup,
+                &staff,
+                setup_token,
+                setup_token_expires_at,
+            )
+            .await
+        {
+            let _ = hms_db::admin::remove_failed_staff_account_setup(
+                self.pool(),
+                self.facility_id(),
+                staff.id,
+                staff.user_id,
+                ctx.user_id,
+                Some(ctx.request_id.clone()),
+            )
+            .await;
+            return Err(error);
+        }
         Ok(object(staff))
     }
 
@@ -730,12 +794,16 @@ impl AdminService {
         id: Uuid,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
         require_high_risk_admin_access(ctx, self.facility_id(), PermissionCode::AdminStaffManage)?;
-        let staff = hms_db::admin::force_staff_password_reset(
+        self.ensure_staff_setup_delivery()?;
+        let setup_token = generate_secret_token();
+        let setup_token_hash = hash_refresh_token(&setup_token);
+        let setup_token_expires_at = Utc::now() + Duration::minutes(30);
+        let staff = hms_db::admin::prepare_staff_password_reset_delivery(
             self.pool(),
             self.facility_id(),
             id,
-            ctx.user_id,
-            Some(ctx.request_id.clone()),
+            setup_token_hash.clone(),
+            setup_token_expires_at,
         )
         .await
         .map_err(|_| {
@@ -745,6 +813,45 @@ impl AdminService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
+        if let Err(error) = self
+            .deliver_staff_setup_token(
+                AccountSetupDeliveryPurpose::StaffPasswordReset,
+                &staff,
+                setup_token,
+                setup_token_expires_at,
+            )
+            .await
+        {
+            let _ = hms_db::admin::cancel_staff_password_reset_delivery(
+                self.pool(),
+                self.facility_id(),
+                staff.user_id,
+                &setup_token_hash,
+            )
+            .await;
+            return Err(error);
+        }
+        let staff = hms_db::admin::finalize_staff_password_reset(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+            &setup_token_hash,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "staff_reset_failed",
+                "Staff password reset could not be forced.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "staff_reset_failed",
+                "Staff password reset could not be forced.",
+            )
+        })?;
         self.state
             .invalidate_auth_cache_for_user(self.facility_id(), staff.user_id);
         Ok(object(staff))
@@ -1130,10 +1237,18 @@ async fn ensure_supported_permissions(
 fn validate_staff_payload(payload: &CreateStaffRequest) -> Result<(), ApiError> {
     validate_email(&payload.email)?;
     validate_text(&payload.display_name, MAX_NAME_LEN, "display_name")?;
-    validate_code(&payload.employee_id)?;
+    if payload.employee_id.is_some()
+        || payload.temporary_password.is_some()
+        || payload.temp_password.is_some()
+        || payload.password.is_some()
+    {
+        return Err(ApiError::bad_request(
+            "staff_onboarding_server_managed",
+            "Employee IDs and account setup credentials are generated by HMS.",
+        ));
+    }
     validate_text(&payload.department, MAX_NAME_LEN, "department")?;
     validate_text(&payload.position, MAX_NAME_LEN, "position")?;
-    validate_password_policy(&payload.temporary_password)?;
     if let Some(profile) = payload.practitioner_profile.as_ref() {
         validate_practitioner_profile(profile)?;
     }
@@ -1198,23 +1313,6 @@ fn validate_email(value: &str) -> Result<(), ApiError> {
         return Err(ApiError::bad_request(
             "invalid_email",
             "Email address is invalid.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_password_policy(value: &str) -> Result<(), ApiError> {
-    let meets_policy = value.len() >= 12
-        && value.chars().any(char::is_uppercase)
-        && value.chars().any(char::is_lowercase)
-        && value.chars().any(|character| character.is_ascii_digit())
-        && value
-            .chars()
-            .any(|character| !character.is_ascii_alphanumeric());
-    if !meets_policy {
-        return Err(ApiError::bad_request(
-            "weak_password",
-            "Temporary password does not meet policy.",
         ));
     }
     Ok(())

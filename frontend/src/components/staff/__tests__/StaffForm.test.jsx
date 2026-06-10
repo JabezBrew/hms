@@ -8,11 +8,9 @@ const baseFormValues = {
   phone_number: '+1234567890',
   date_of_birth: new Date('1990-01-10'),
   user_type: 'billing',
-  employee_id: 'EMP-001',
   department: 'Finance',
   position: 'Billing Clerk',
   hire_date: new Date('2020-06-15'),
-  temporary_password: 'Temporary123!',
   license_number: '',
   specialization: '',
   qualification: '',
@@ -62,6 +60,10 @@ describe('buildRegistrationPayload', () => {
     const payload = buildRegistrationPayload({
       ...baseFormValues,
       user_type: 'billing',
+      employee_id: 'EMP-SHOULD-NOT-SEND',
+      temporary_password: 'Temporary123!',
+      temp_password: 'AliasTemporary123!',
+      password: 'AliasPassword123!',
       license_number: 'LIC-001',
       specialization: 'General',
       qualification: 'BSc',
@@ -70,6 +72,10 @@ describe('buildRegistrationPayload', () => {
     expect(payload).not.toHaveProperty('license_number');
     expect(payload).not.toHaveProperty('specialization');
     expect(payload).not.toHaveProperty('qualification');
+    expect(payload).not.toHaveProperty('employee_id');
+    expect(payload).not.toHaveProperty('temporary_password');
+    expect(payload).not.toHaveProperty('temp_password');
+    expect(payload).not.toHaveProperty('password');
     expect(payload.date_of_birth).toBe('1990-01-10');
     expect(payload.hire_date).toBe('2020-06-15');
   });

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use hms_domain::admin::{
     AuditEventListItem, AuthorityAppointmentListItem, AuthorityAppointmentStatus,
     CommitteeListItem, CommitteeStatus, DelegationListItem, DelegationStatus,
@@ -12,12 +12,17 @@ use hms_domain::admin::{
 use hms_domain::auth::{ActiveAuthority, AuthorityScope, AuthoritySource};
 use hms_domain::capabilities::{feature_flags_for_profile, ALL_FEATURES};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
+use hms_events::DomainEventKind;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{FromRow, QueryBuilder};
 use uuid::Uuid;
 
 use crate::{codec, PgPool};
+
+const EMPLOYEE_IDENTIFIER_TYPE: &str = "employee";
+const EMPLOYEE_ID_SEQUENCE_WIDTH: usize = 7;
+const EMPLOYEE_ID_MAX_SEQUENCE: i64 = 9_999_999;
 
 pub struct AdminCursor {
     pub occurred_at: DateTime<Utc>,
@@ -156,8 +161,9 @@ pub struct NewStaffAccount {
     pub facility_id: Uuid,
     pub email: String,
     pub display_name: String,
-    pub password_hash: String,
-    pub employee_id: String,
+    pub initial_password_hash: String,
+    pub setup_token_hash: String,
+    pub setup_token_expires_at: DateTime<Utc>,
     pub department: String,
     pub position: String,
     pub hire_date: NaiveDate,
@@ -1381,6 +1387,7 @@ pub async fn create_staff_account(
     let staff_id = Uuid::new_v4();
     let user_id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
+    let employee_id = reserve_employee_id_tx(&mut tx, staff.facility_id).await?;
     sqlx::query(
         r#"
         INSERT INTO users (
@@ -1398,7 +1405,7 @@ pub async fn create_staff_account(
     .bind(staff.facility_id)
     .bind(staff.email.trim().to_lowercase())
     .bind(staff.display_name.trim())
-    .bind(staff.password_hash)
+    .bind(staff.initial_password_hash)
     .execute(&mut *tx)
     .await?;
 
@@ -1430,7 +1437,7 @@ pub async fn create_staff_account(
     .bind(staff_id)
     .bind(staff.facility_id)
     .bind(user_id)
-    .bind(staff.employee_id.trim())
+    .bind(&employee_id)
     .bind(staff.department.trim())
     .bind(staff.position.trim())
     .bind(staff.hire_date)
@@ -1449,6 +1456,41 @@ pub async fn create_staff_account(
         .await?;
     }
 
+    sqlx::query(
+        r#"
+        INSERT INTO password_reset_tokens (token_hash, user_id, facility_id, expires_at)
+        VALUES ($1, $2, $3, $4)
+        "#,
+    )
+    .bind(&staff.setup_token_hash)
+    .bind(user_id)
+    .bind(staff.facility_id)
+    .bind(staff.setup_token_expires_at)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO domain_events (
+            id,
+            event_type,
+            aggregate_type,
+            aggregate_id,
+            facility_id,
+            payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(DomainEventKind::StaffAccountSetupRequested.as_str())
+    .bind("user")
+    .bind(user_id)
+    .bind(staff.facility_id)
+    .bind(json!({ "purpose": "staff_account_setup" }))
+    .execute(&mut *tx)
+    .await?;
+
     insert_audit_event_tx(
         &mut tx,
         NewAuditEvent {
@@ -1466,6 +1508,119 @@ pub async fn create_staff_account(
     get_staff_account(pool, staff.facility_id, staff_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("staff account was not found after write"))
+}
+
+pub async fn remove_failed_staff_account_setup(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    user_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+) -> anyhow::Result<bool> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "DELETE FROM domain_events
+         WHERE event_type = $1
+           AND aggregate_id = $2
+           AND facility_id = $3
+           AND payload ->> 'purpose' = 'staff_account_setup'",
+    )
+    .bind(DomainEventKind::StaffAccountSetupRequested.as_str())
+    .bind(user_id)
+    .bind(facility_id)
+    .execute(&mut *tx)
+    .await?;
+    let deleted = sqlx::query(
+        "DELETE FROM users
+         WHERE id = $1
+           AND facility_id = $2
+           AND password_change_required = TRUE
+           AND EXISTS (
+               SELECT 1 FROM staff_profiles
+               WHERE staff_profiles.id = $3
+                 AND staff_profiles.user_id = users.id
+                 AND staff_profiles.facility_id = users.facility_id
+           )",
+    )
+    .bind(user_id)
+    .bind(facility_id)
+    .bind(staff_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if deleted > 0 {
+        insert_audit_event_tx(
+            &mut tx,
+            NewAuditEvent {
+                facility_id,
+                actor_user_id: Some(actor_user_id),
+                request_id,
+                event_type: "admin.staff.create_delivery_compensated".to_owned(),
+                resource_type: "staff".to_owned(),
+                resource_id: Some(staff_id),
+                metadata: json!({ "staff_user_id": user_id }),
+            },
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(deleted > 0)
+}
+
+async fn reserve_employee_id_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    facility_id: Uuid,
+) -> anyhow::Result<String> {
+    let facility_code = sqlx::query_scalar::<_, String>(
+        "SELECT code FROM facilities WHERE id = $1 AND is_active = TRUE",
+    )
+    .bind(facility_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let facility_code = normalize_identifier_facility_code(&facility_code)?;
+    let year = Utc::now().year();
+    let sequence_number = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO identifier_sequences (facility_id, identifier_type, year, next_number)
+        VALUES ($1, $2, $3, 2)
+        ON CONFLICT (facility_id, identifier_type, year)
+        DO UPDATE SET
+            next_number = identifier_sequences.next_number + 1,
+            updated_at = now()
+        RETURNING next_number - 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(EMPLOYEE_IDENTIFIER_TYPE)
+    .bind(year)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    if !(1..=EMPLOYEE_ID_MAX_SEQUENCE).contains(&sequence_number) {
+        anyhow::bail!(
+            "employee identifier capacity reached for facility={} year={}",
+            facility_id,
+            year
+        );
+    }
+
+    Ok(format!(
+        "EMP-{facility_code}-{year}-{sequence_number:0width$}",
+        width = EMPLOYEE_ID_SEQUENCE_WIDTH
+    ))
+}
+
+fn normalize_identifier_facility_code(value: &str) -> anyhow::Result<String> {
+    let normalized = value.trim().to_ascii_uppercase();
+    if normalized.is_empty()
+        || !normalized
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        anyhow::bail!("facility code is required for staff identifier generation");
+    }
+    Ok(normalized)
 }
 
 pub async fn update_staff_account(
@@ -1562,18 +1717,87 @@ pub async fn upsert_practitioner_profile(
     get_staff_account(pool, facility_id, staff_id).await
 }
 
-pub async fn force_staff_password_reset(
+pub async fn prepare_staff_password_reset_delivery(
     pool: &PgPool,
     facility_id: Uuid,
     staff_id: Uuid,
-    actor_user_id: Uuid,
-    request_id: Option<String>,
+    setup_token_hash: String,
+    setup_token_expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Option<StaffListItem>> {
     let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
         return Ok(None);
     };
 
     let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        INSERT INTO password_reset_tokens (token_hash, user_id, facility_id, expires_at, used_at)
+        VALUES ($1, $2, $3, $4, now())
+        "#,
+    )
+    .bind(&setup_token_hash)
+    .bind(staff.user_id)
+    .bind(facility_id)
+    .bind(setup_token_expires_at)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    get_staff_account(pool, facility_id, staff_id).await
+}
+
+pub async fn cancel_staff_password_reset_delivery(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    setup_token_hash: &str,
+) -> anyhow::Result<bool> {
+    let updated = sqlx::query(
+        "UPDATE password_reset_tokens
+         SET used_at = COALESCE(used_at, now())
+         WHERE token_hash = $1
+           AND user_id = $2
+           AND facility_id = $3",
+    )
+    .bind(setup_token_hash)
+    .bind(user_id)
+    .bind(facility_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(updated > 0)
+}
+
+pub async fn finalize_staff_password_reset(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+    setup_token_hash: &str,
+) -> anyhow::Result<Option<StaffListItem>> {
+    let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
+        return Ok(None);
+    };
+
+    let mut tx = pool.begin().await?;
+    let prepared_setup_token = sqlx::query_scalar::<_, String>(
+        "SELECT token_hash
+         FROM password_reset_tokens
+         WHERE token_hash = $1
+           AND user_id = $2
+           AND facility_id = $3
+           AND used_at IS NOT NULL
+           AND expires_at > now()
+         FOR UPDATE",
+    )
+    .bind(setup_token_hash)
+    .bind(staff.user_id)
+    .bind(facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if prepared_setup_token.is_none() {
+        return Ok(None);
+    }
     sqlx::query(
         "UPDATE users
          SET password_change_required = TRUE,
@@ -1593,6 +1817,58 @@ pub async fn force_staff_password_reset(
     )
     .bind(staff.user_id)
     .bind(facility_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE password_reset_tokens
+         SET used_at = COALESCE(used_at, now())
+         WHERE user_id = $1
+           AND facility_id = $2
+           AND token_hash <> $3
+           AND used_at IS NULL",
+    )
+    .bind(staff.user_id)
+    .bind(facility_id)
+    .bind(setup_token_hash)
+    .execute(&mut *tx)
+    .await?;
+    let activated = sqlx::query(
+        "UPDATE password_reset_tokens
+         SET used_at = NULL
+         WHERE token_hash = $1
+           AND user_id = $2
+           AND facility_id = $3
+           AND used_at IS NOT NULL
+           AND expires_at > now()",
+    )
+    .bind(setup_token_hash)
+    .bind(staff.user_id)
+    .bind(facility_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if activated != 1 {
+        return Ok(None);
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO domain_events (
+            id,
+            event_type,
+            aggregate_type,
+            aggregate_id,
+            facility_id,
+            payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(DomainEventKind::StaffAccountSetupRequested.as_str())
+    .bind("user")
+    .bind(staff.user_id)
+    .bind(facility_id)
+    .bind(json!({ "purpose": "staff_password_reset" }))
     .execute(&mut *tx)
     .await?;
     insert_audit_event_tx(

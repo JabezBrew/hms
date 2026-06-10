@@ -12,7 +12,8 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 - `/patients/create`
 - `/patients/my-patients`
 - `/patients/:id`
-- `/patients/:id/demographics`
+- `/patients/:id/profile`
+- `/patients/:id/chronicle`
 - `/patients/:id/chronicle/print`
 - `/patients/:id/ward-round`
 - `/patients/:id/edit`
@@ -40,6 +41,7 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 
 - `/api/v2/patients`
 - `/api/v2/patients/identity/lookup`
+- `/api/v2/patients/identity/lookups/:lookup_id`
 - `/api/v2/patients/context`
 - `/api/v2/patients/:id/current-contexts`
 - `/api/v2/patients/:id/chronicle`
@@ -49,6 +51,10 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 ## Invariants
 
 - Patient Chronicle is the product home for patient clinical data.
+- Administrative patient profile access is separate from Chronicle access.
+  Registration, front-desk, and billing users may confirm identity,
+  demographics, insurance, and current care context without opening clinical
+  notes, diagnoses, labs, medications, or the clinical timeline.
 - Patient Directory and my-patients lists must stay lightweight and server-paginated.
 - Patient Directory is broad patient-record lookup. It should default to search
   and bounded recent-registration discovery, not a global active-patient work
@@ -62,6 +68,9 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 - Duplicate review is backend-enforced. The frontend may display candidates and
   collect a reason, but creation must send the backend lookup id and duplicate
   review decision; it must not rely on frontend-only duplicate checks.
+- Lookup results may be restored by opaque `lookup_id` only. Do not put names,
+  DOBs, MRNs, phone numbers, or other raw identity fields in URLs, query keys,
+  logs, or browser storage.
 - Scoped patient workflow lists live in care-area, clinic waiting-room, Ward
   Board, triage, My Work, and Chronicle surfaces.
 - Patient administrative record status is independent from encounter, admission,

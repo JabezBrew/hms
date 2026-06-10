@@ -29,9 +29,9 @@ const PatientEditPage = () => {
     fetchPatient();
   }, [id]);
 
-  const handleSuccess = (updatedPatient) => {
+  const handleSuccess = () => {
     toast.success('Patient updated successfully');
-    navigate(`/patients/${id}`);
+    navigate(`/patients/${id}/profile`);
   };
 
   if (loading) {
@@ -93,9 +93,9 @@ const PatientEditPage = () => {
         <button 
           type="button"
           className="text-sm text-muted-foreground hover:text-foreground flex items-center"
-          onClick={() => navigate(`/patients/${id}`)}
+          onClick={() => navigate(`/patients/${id}/profile`)}
         >
-          ← Back to Patient Details
+          ← Back to Patient Profile
         </button>
       </div>
       <div className="max-w-4xl mx-auto">

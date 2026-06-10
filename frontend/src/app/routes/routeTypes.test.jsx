@@ -63,9 +63,9 @@ describe('featureRoutes', () => {
   })
 
   it('reports required feature metadata for controlled route prefixes', () => {
-    expect(requiredFeaturesForRoute('/patients/create')).toEqual(
-      expect.arrayContaining(['patient_chronicle', 'patient_registration'])
-    )
+    expect(requiredFeaturesForRoute('/patients/create')).toEqual(['patient_registration'])
+    expect(requiredFeaturesForRoute('/patients/:id/profile')).toEqual(['patient_registration'])
+    expect(requiredFeaturesForRoute('/patients/:id/chronicle')).toEqual(['patient_chronicle'])
     expect(requiredFeaturesForRoute('/care-areas/outpatient')).toEqual(['outpatient_encounters'])
     expect(requiredFeaturesForRoute('/care-areas/emergency')).toEqual(['emergency_encounters'])
     expect(requiredFeaturesForRoute('/care-areas/inpatient')).toEqual(
@@ -81,9 +81,7 @@ describe('featureRoutes', () => {
     expect(requiredFeaturesForRoute('/billing/nhis/mappings')).toEqual(
       expect.arrayContaining(['billing', 'insurance_claims'])
     )
-    expect(requiredFeaturesForRoute('/patients/:id/ward-round')).toEqual(
-      expect.arrayContaining(['patient_chronicle', 'wards'])
-    )
+    expect(requiredFeaturesForRoute('/patients/:id/ward-round')).toEqual(['wards'])
     expect(requiredFeaturesForRoute('/ward-board')).toEqual(
       expect.arrayContaining([
         'ward_task_board',
@@ -105,7 +103,7 @@ describe('featureRoutes', () => {
   })
 
   it.each([
-    ['/patients/new-route', 'patient_chronicle'],
+    ['/patients/:id/profile', 'patient_registration'],
     ['/encounters/new-route', 'outpatient_encounters'],
     ['/inventory/new-route', 'inventory'],
     ['/laboratory/new-route', 'laboratory'],
@@ -127,7 +125,7 @@ describe('featureRoutes', () => {
     const routesByPath = new Map(featureRoutes.map((route) => [route.path, route]))
 
     expect(routesByPath.get('/patients')?.features).toEqual(
-      expect.arrayContaining(['patient_chronicle'])
+      expect.arrayContaining(['patient_registration'])
     )
     expect(routesByPath.get('/my-work')?.roles).toEqual(
       expect.arrayContaining(['admin', 'doctor', 'nurse'])
@@ -151,7 +149,15 @@ describe('featureRoutes', () => {
       expect.arrayContaining(['inpatient_doctor'])
     )
     expect(routesByPath.get('/patients/create')?.features).toEqual(
-      expect.arrayContaining(['patient_chronicle', 'patient_registration'])
+      expect.arrayContaining(['patient_registration'])
+    )
+    expect(routesByPath.get('/patients/create')?.features).not.toContain('patient_chronicle')
+    expect(routesByPath.get('/patients/:id/profile')?.features).toEqual(
+      expect.arrayContaining(['patient_registration'])
+    )
+    expect(routesByPath.get('/patients/:id/profile')?.features).not.toContain('patient_chronicle')
+    expect(routesByPath.get('/patients/:id/chronicle')?.features).toEqual(
+      expect.arrayContaining(['patient_chronicle'])
     )
     expect(routesByPath.get('/patients/:id/chronicle/print')?.roles).toEqual(
       expect.arrayContaining(['admin', 'doctor', 'nurse'])
@@ -231,7 +237,7 @@ describe('featureRoutes', () => {
         path: '/patients',
         component: () => null,
         roles: null,
-        features: ['patient_chronicle'],
+        features: ['patient_registration'],
         layout: ROUTE_LAYOUTS.APP,
         sidebar: SIDEBARS.PATIENTS,
       },

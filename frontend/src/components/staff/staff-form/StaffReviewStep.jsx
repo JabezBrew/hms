@@ -45,9 +45,6 @@ export function StaffReviewStep({ form, departmentNameById, isPractitioner }) {
         <div className="p-4 rounded-lg border border-border bg-card/40">
           <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Employment</p>
           <p className="text-sm">
-            <span className="font-medium">Employee ID:</span> {form.getValues('employee_id') || 'Not set'}
-          </p>
-          <p className="text-sm">
             <span className="font-medium">Department:</span>{' '}
             {departmentNameById.get(form.getValues('department')) || form.getValues('department') || 'Not set'}
           </p>
@@ -60,28 +57,20 @@ export function StaffReviewStep({ form, departmentNameById, isPractitioner }) {
           </p>
         </div>
 
-        <div className="p-4 rounded-lg border border-border bg-card/40">
-          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Credentials</p>
-          <p className="text-sm">
-            <span className="font-medium">Temporary Password:</span>{' '}
-            {form.getValues('temporary_password') ? 'Set' : 'Not set'}
-          </p>
-          {isPractitioner ? (
-            <>
-              <p className="text-sm">
-                <span className="font-medium">License:</span> {form.getValues('license_number') || 'Not set'}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Specialization:</span> {form.getValues('specialization') || 'Not set'}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Qualification:</span> {form.getValues('qualification') || 'Not set'}
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">No practitioner credentials required for this role</p>
-          )}
-        </div>
+        {isPractitioner ? (
+          <div className="p-4 rounded-lg border border-border bg-card/40">
+            <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Credentials</p>
+            <p className="text-sm">
+              <span className="font-medium">License:</span> {form.getValues('license_number') || 'Not set'}
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">Specialization:</span> {form.getValues('specialization') || 'Not set'}
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">Qualification:</span> {form.getValues('qualification') || 'Not set'}
+            </p>
+          </div>
+        ) : null}
 
         <div className="p-4 rounded-lg border border-border bg-card/40">
           <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Contact</p>

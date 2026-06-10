@@ -5141,9 +5141,6 @@
           "email": {
             "type": "string"
           },
-          "employee_id": {
-            "type": "string"
-          },
           "hire_date": {
             "format": "date",
             "type": "string"
@@ -5160,16 +5157,11 @@
                 "$ref": "#/components/schemas/UpsertPractitionerProfileRequest"
               }
             ]
-          },
-          "temporary_password": {
-            "type": "string"
           }
         },
         "required": [
           "email",
           "display_name",
-          "temporary_password",
-          "employee_id",
           "department",
           "position",
           "hire_date"
@@ -35674,6 +35666,16 @@
               }
             },
             "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -54948,6 +54950,73 @@
               }
             },
             "description": "Patient access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v2/patients/identity/lookups/{lookup_id}": {
+      "get": {
+        "operationId": "getPatientIdentityLookup",
+        "parameters": [
+          {
+            "description": "Opaque patient identity lookup session id",
+            "in": "path",
+            "name": "lookup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PatientIdentityLookupResponse"
+                }
+              }
+            },
+            "description": "Patient identity lookup candidates"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Lookup session expired or not found"
           }
         },
         "security": [

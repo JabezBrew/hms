@@ -964,6 +964,50 @@ pub async fn get_identity_lookup_session(
     Ok(row.map(identity_lookup_session_from_row))
 }
 
+pub async fn get_identity_lookup_candidates_by_ids(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_ids: &[Uuid],
+) -> anyhow::Result<Vec<PatientIdentityCandidate>> {
+    if patient_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = observe_db_query(
+        "patient.identity.lookup_session.candidates",
+        sqlx::query_as::<_, PatientRow>(
+            r#"
+        SELECT p.id,
+               p.facility_id,
+               p.patient_code,
+               p.first_name,
+               p.last_name,
+               p.date_of_birth,
+               p.sex,
+               p.status,
+               p.record_status,
+               p.vital_status,
+               p.superseded_by_patient_id,
+               p.record_status_reason_code,
+               p.created_at,
+               p.updated_at
+        FROM unnest($2::uuid[]) WITH ORDINALITY AS selected(patient_id, ordinality)
+        JOIN patients p ON p.id = selected.patient_id
+        WHERE p.facility_id = $1
+        ORDER BY selected.ordinality
+        "#,
+        )
+        .bind(facility_id)
+        .bind(patient_ids)
+        .fetch_all(pool),
+    )
+    .await?;
+
+    rows.into_iter()
+        .map(identity_candidate_from_lookup_session_row)
+        .collect()
+}
+
 pub async fn get_patient_current_contexts(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1668,6 +1712,25 @@ fn identity_candidate_from_row(
         superseded_by_patient_id: patient.superseded_by_patient_id,
         match_strength,
         match_reasons: reasons,
+    })
+}
+
+fn identity_candidate_from_lookup_session_row(
+    row: PatientRow,
+) -> anyhow::Result<PatientIdentityCandidate> {
+    let patient = patient_from_row(row)?;
+    let display_name = patient.display_name();
+    Ok(PatientIdentityCandidate {
+        patient_id: patient.id,
+        patient_code: patient.patient_code,
+        display_name,
+        date_of_birth: patient.date_of_birth,
+        sex: patient.sex,
+        record_status: patient.record_status,
+        vital_status: patient.vital_status,
+        superseded_by_patient_id: patient.superseded_by_patient_id,
+        match_strength: PatientIdentityMatchStrength::Possible,
+        match_reasons: vec!["previous_lookup_candidate".to_owned()],
     })
 }
 

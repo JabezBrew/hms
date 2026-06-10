@@ -16,6 +16,10 @@ const mocks = vi.hoisted(() => ({
   outpatientMutateAsync: vi.fn(),
   inpatientMutateAsync: vi.fn(),
   emergencyMutateAsync: vi.fn(),
+  lookupSessionData: null,
+  lookupSessionFetching: false,
+  lookupSessionError: false,
+  userRole: 'receptionist',
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -54,10 +58,19 @@ vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
     mutateAsync: mocks.lookupMutateAsync,
     isPending: false,
   }),
+  usePatientIdentityLookupSession: () => ({
+    data: mocks.lookupSessionData,
+    isFetching: mocks.lookupSessionFetching,
+    isError: mocks.lookupSessionError,
+  }),
   useRegisterPatient: () => ({
     mutateAsync: mocks.registerMutateAsync,
     isPending: false,
   }),
+}));
+
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({ user: { role: mocks.userRole } }),
 }));
 
 vi.mock('@/features/patients/api', () => ({
@@ -101,6 +114,10 @@ describe('FindOrRegisterPatientPage', () => {
     mocks.outpatientMutateAsync.mockResolvedValue({ visit: { id: 'visit-1' } });
     mocks.inpatientMutateAsync.mockResolvedValue({ admission_case: { id: 'case-1' } });
     mocks.emergencyMutateAsync.mockResolvedValue({ triage: { id: 'triage-1' } });
+    mocks.lookupSessionData = null;
+    mocks.lookupSessionFetching = false;
+    mocks.lookupSessionError = false;
+    mocks.userRole = 'receptionist';
   });
 
   it('uses an existing outpatient candidate in the selected clinic context', async () => {
@@ -123,10 +140,10 @@ describe('FindOrRegisterPatientPage', () => {
 
     renderPage('/patients/find-or-register?intent=outpatient&clinic_id=clinic-1');
     await fillIdentityForm(user);
-    await user.click(screen.getByRole('button', { name: /Find Patient/i }));
+    await user.click(screen.getByRole('button', { name: /Check for Existing Patient/i }));
 
     expect(await screen.findByText('Ama Mensah')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Use Record/i }));
+    await user.click(screen.getByRole('button', { name: /Use Existing Record/i }));
 
     await waitFor(() => {
       expect(mocks.outpatientMutateAsync).toHaveBeenCalledWith(
@@ -161,9 +178,9 @@ describe('FindOrRegisterPatientPage', () => {
 
     renderPage('/patients/find-or-register?intent=emergency');
     await fillIdentityForm(user);
-    await user.click(screen.getByRole('button', { name: /Find Patient/i }));
+    await user.click(screen.getByRole('button', { name: /Check for Existing Patient/i }));
     await screen.findByText('Duplicate review required.');
-    await user.click(screen.getByRole('button', { name: /^Register$/i }));
+    await user.click(screen.getByRole('button', { name: /Register New Distinct Patient/i }));
 
     expect(mocks.toastError).toHaveBeenCalledWith('Select a duplicate review reason');
     expect(mocks.registerMutateAsync).not.toHaveBeenCalled();
@@ -174,9 +191,9 @@ describe('FindOrRegisterPatientPage', () => {
 
     renderPage('/patients/find-or-register?intent=emergency');
     await fillIdentityForm(user);
-    await user.click(screen.getByRole('button', { name: /Find Patient/i }));
-    expect(await screen.findByText('No matching records.')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^Register$/i }));
+    await user.click(screen.getByRole('button', { name: /Check for Existing Patient/i }));
+    expect(await screen.findByText(/No matching records/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Continue New Registration/i }));
 
     await waitFor(() => {
       expect(mocks.registerMutateAsync).toHaveBeenCalledWith(
@@ -223,14 +240,72 @@ describe('FindOrRegisterPatientPage', () => {
 
     renderPage('/patients/find-or-register?intent=inpatient&ward_id=ward-2');
     await fillIdentityForm(user);
-    await user.click(screen.getByRole('button', { name: /Find Patient/i }));
+    await user.click(screen.getByRole('button', { name: /Check for Existing Patient/i }));
     expect(await screen.findByText('Ama Mensah')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Use Record/i }));
+    await user.click(screen.getByRole('button', { name: /Use Existing Record/i }));
 
     await waitFor(() => {
       expect(mocks.toastInfo).toHaveBeenCalledWith('Patient already has a current inpatient admission');
     });
     expect(mocks.inpatientMutateAsync).not.toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith('/ward-board');
+  });
+
+  it('restores lookup candidates by opaque lookup id when returning to the page', async () => {
+    mocks.lookupSessionData = {
+      lookup_id: 'lookup-1',
+      candidates: [
+        {
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          display_name: 'Ama Mensah',
+          date_of_birth: '1989-04-15',
+          sex: 'female',
+          record_status: 'registered',
+          vital_status: 'presumed_alive',
+        },
+      ],
+      strong_duplicate_found: true,
+    };
+
+    renderPage('/patients/find-or-register?lookup_id=lookup-1');
+
+    expect(await screen.findByText('Ama Mensah')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Review Profile/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/MRN \/ Hospital Number/i)).toHaveValue('');
+    expect(screen.getByLabelText(/First name/i)).toHaveValue('');
+    expect(screen.getByLabelText(/Last name/i)).toHaveValue('');
+    expect(screen.getByLabelText(/Date of birth/i)).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: /Sex/i })).toHaveTextContent('Unknown');
+    expect(screen.getByText(/Re-enter identity details before registering a new record/i)).toBeInTheDocument();
+  });
+
+  it('routes existing record review to the administrative profile when no care-area intent is present', async () => {
+    const user = userEvent.setup();
+    mocks.lookupMutateAsync.mockResolvedValueOnce({
+      lookup_id: 'lookup-1',
+      candidates: [
+        {
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          display_name: 'Ama Mensah',
+          date_of_birth: '1989-04-15',
+          sex: 'female',
+          record_status: 'registered',
+          vital_status: 'presumed_alive',
+        },
+      ],
+      strong_duplicate_found: true,
+    });
+
+    renderPage('/patients/find-or-register');
+    await fillIdentityForm(user);
+    await user.click(screen.getByRole('button', { name: /Check for Existing Patient/i }));
+    expect(await screen.findByText('Ama Mensah')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Review Profile/i }));
+
+    expect(mocks.navigate).toHaveBeenCalledWith('/patients/patient-1/profile', {
+      state: { returnTo: expect.stringContaining('/patients/find-or-register') },
+    });
   });
 });

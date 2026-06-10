@@ -61,12 +61,14 @@ export function useChroniclePatientRecord({ id, rustV2Mode }) {
   const isLoading = rustV2Mode ? isStartupLoading : isPatientLoading;
   const error = rustV2Mode ? startupError : patientError;
   const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
-  const patientPath = id ? `/patients/${id}` : '/patients';
+  const patientPath = id ? `/patients/${id}/chronicle` : '/patients';
   const pageMeta = usePageMeta({
-    title: patientName ? `${patientName} | Hospital Management System` : 'Patient | Hospital Management System',
+    title: patientName
+      ? `${patientName} Chronicle | Hospital Management System`
+      : 'Patient Chronicle | Hospital Management System',
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
-      { label: patientName || 'Patient', path: patientPath },
+      { label: patientName || 'Patient Chronicle', path: patientPath },
     ],
   });
 

@@ -22,6 +22,7 @@ use hms_domain::patients::{PatientAdministrativeStatus, PatientListItem};
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::WardBoardItem;
 use hms_events::DomainEventKind;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex as TokioMutex, Semaphore};
@@ -30,7 +31,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
-use crate::config::{Config, OpsAuthMode, OpsPrometheusConfig};
+use crate::config::{AccountSetupDeliveryMode, Config, OpsAuthMode, OpsPrometheusConfig};
 use crate::ops_auth::{CloudflareAccessError, CloudflareAccessIdentity, CloudflareAccessVerifier};
 use crate::passwords::hash_password;
 use crate::response::{ListResponse, ObjectResponse};
@@ -63,6 +64,7 @@ struct AppStateInner {
     password_work_limiter: Arc<Semaphore>,
     dashboard_refresh_gate: DashboardRefreshGate,
     cloudflare_access: Option<CloudflareAccessVerifier>,
+    account_setup_deliveries: Mutex<Vec<AccountSetupDeliveryRecord>>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -702,6 +704,55 @@ pub struct PasswordResetRequestOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccountSetupDeliveryPurpose {
+    StaffAccountSetup,
+    StaffPasswordReset,
+}
+
+impl AccountSetupDeliveryPurpose {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::StaffAccountSetup => "staff_account_setup",
+            Self::StaffPasswordReset => "staff_password_reset",
+        }
+    }
+}
+
+pub struct StaffAccountSetupDelivery {
+    pub purpose: AccountSetupDeliveryPurpose,
+    pub staff_id: Uuid,
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+pub struct AccountSetupDeliveryRecord {
+    pub purpose: AccountSetupDeliveryPurpose,
+    pub staff_id: Uuid,
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub setup_url: String,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+struct AccountSetupWebhookPayload<'a> {
+    purpose: &'static str,
+    facility_code: &'a str,
+    staff_id: Uuid,
+    user_id: Uuid,
+    email: &'a str,
+    display_name: &'a str,
+    setup_url: &'a str,
+    expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChangePasswordOutcome {
     Changed,
     UserNotFound,
@@ -790,6 +841,7 @@ impl AppState {
                 password_work_limiter: Arc::new(Semaphore::new(password_work_max_concurrency)),
                 dashboard_refresh_gate: DashboardRefreshGate::default(),
                 cloudflare_access,
+                account_setup_deliveries: Mutex::new(Vec::new()),
             }),
         })
     }
@@ -903,6 +955,104 @@ impl AppState {
 
     pub fn invalidate_auth_cache_for_facility(&self, facility_id: Uuid) {
         self.inner.auth_cache.remove_facility(facility_id);
+    }
+
+    pub fn ensure_account_setup_delivery_available(&self) -> Result<()> {
+        match self.inner.config.account_setup_delivery.mode {
+            AccountSetupDeliveryMode::Disabled => {
+                anyhow::bail!("staff account setup delivery is not configured")
+            }
+            AccountSetupDeliveryMode::Webhook | AccountSetupDeliveryMode::TestSink => Ok(()),
+        }
+    }
+
+    pub async fn deliver_staff_account_setup(
+        &self,
+        delivery: StaffAccountSetupDelivery,
+    ) -> Result<()> {
+        self.ensure_account_setup_delivery_available()?;
+        let setup_url = self.account_setup_url(&delivery.token)?;
+        match self.inner.config.account_setup_delivery.mode {
+            AccountSetupDeliveryMode::Disabled => {
+                anyhow::bail!("staff account setup delivery is not configured")
+            }
+            AccountSetupDeliveryMode::TestSink => {
+                let mut deliveries =
+                    self.inner.account_setup_deliveries.lock().map_err(|_| {
+                        anyhow::anyhow!("account setup delivery sink is unavailable")
+                    })?;
+                deliveries.push(AccountSetupDeliveryRecord {
+                    purpose: delivery.purpose,
+                    staff_id: delivery.staff_id,
+                    user_id: delivery.user_id,
+                    email: delivery.email,
+                    display_name: delivery.display_name,
+                    setup_url,
+                    token: delivery.token,
+                    expires_at: delivery.expires_at,
+                });
+                Ok(())
+            }
+            AccountSetupDeliveryMode::Webhook => {
+                let webhook_url = self
+                    .inner
+                    .config
+                    .account_setup_delivery
+                    .webhook_url
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("account setup webhook is not configured"))?;
+                let payload = AccountSetupWebhookPayload {
+                    purpose: delivery.purpose.as_str(),
+                    facility_code: &self.inner.config.facility_code,
+                    staff_id: delivery.staff_id,
+                    user_id: delivery.user_id,
+                    email: &delivery.email,
+                    display_name: &delivery.display_name,
+                    setup_url: &setup_url,
+                    expires_at: delivery.expires_at,
+                };
+                let client = reqwest::Client::builder()
+                    .timeout(self.inner.config.account_setup_delivery.timeout)
+                    .build()?;
+                let response = client.post(webhook_url).json(&payload).send().await?;
+                if !response.status().is_success() {
+                    anyhow::bail!("account setup delivery webhook returned a non-success status");
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub fn latest_test_account_setup_delivery(
+        &self,
+        user_id: Uuid,
+        purpose: AccountSetupDeliveryPurpose,
+    ) -> Option<AccountSetupDeliveryRecord> {
+        if self.inner.config.account_setup_delivery.mode != AccountSetupDeliveryMode::TestSink {
+            return None;
+        }
+        self.inner
+            .account_setup_deliveries
+            .lock()
+            .ok()?
+            .iter()
+            .rev()
+            .find(|delivery| delivery.user_id == user_id && delivery.purpose == purpose)
+            .cloned()
+    }
+
+    fn account_setup_url(&self, token: &str) -> Result<String> {
+        let base = self
+            .inner
+            .config
+            .account_setup_delivery
+            .public_app_url
+            .as_deref()
+            .unwrap_or("http://localhost");
+        let mut url = reqwest::Url::parse(base)?;
+        url.set_path("/reset-password/confirm");
+        url.query_pairs_mut().clear().append_pair("token", token);
+        Ok(url.to_string())
     }
 
     pub async fn omni_search(

@@ -1,51 +1,40 @@
-import { lazy, Suspense } from 'react';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { PageLoader } from '@/shared/components/page/PageState';
 
-const PatientChroniclePage = lazy(() => import('./PatientChroniclePage'));
-const PatientDemographicsPage = lazy(() => import('./PatientDemographicsPage'));
+const CLINICAL_PATIENT_ROLES = new Set([
+  'admin',
+  'doctor',
+  'nurse',
+  'head_nurse',
+  'nurse_practitioner',
+  'inpatient_doctor',
+  'practitioner',
+  'physician',
+]);
 
 /**
- * PatientPage - Role-based patient detail router
+ * PatientPage - Role-aware compatibility redirect.
  *
- * Serves different patient views based on user role:
- * - Administrative staff (receptionist, billing) -> Demographics view
- * - Clinical staff (doctor, nurse, etc.) -> Full chronicle view
- * - Admin -> Full chronicle view (full access)
- *
- * This approach:
- * - Uses a single URL for all roles (/patients/:id)
- * - Prevents URL-based access bypass
- * - Backend still enforces API-level permissions
+ * Explicit surfaces are:
+ * - /patients/:id/profile for administrative patient identity/profile work
+ * - /patients/:id/chronicle for clinical Chronicle access
  *
  * @param {string} defaultAction - Optional action to trigger on mount (e.g., 'ward_round')
  */
 const PatientPage = ({ defaultAction }) => {
+  const { id } = useParams();
+  const location = useLocation();
   const { user } = useAuth();
+  const target = CLINICAL_PATIENT_ROLES.has(user?.role)
+    ? `/patients/${id}/chronicle${location.search}`
+    : `/patients/${id}/profile${location.search}`;
 
-  // Map default actions for specialized routes
-  const actions = {
-    ward_round: 'ward_round',
-  };
-
-  const resolvedAction = actions[defaultAction] || defaultAction;
-
-  // Administrative roles see demographics-only view
-  const administrativeRoles = ['receptionist', 'billing'];
-
-  if (administrativeRoles.includes(user?.role)) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <PatientDemographicsPage />
-      </Suspense>
-    );
-  }
-
-  // Clinical roles and admin see full chronicle
   return (
-    <Suspense fallback={<PageLoader />}>
-      <PatientChroniclePage defaultAction={resolvedAction} />
-    </Suspense>
+    <Navigate
+      replace
+      to={target}
+      state={{ ...(location.state || {}), defaultAction }}
+    />
   );
 };
 

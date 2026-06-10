@@ -13,6 +13,7 @@ export const patientKeys = {
   recent: () => [...patientKeys.all, 'recent'],
   validation: () => [...patientKeys.all, 'validation'],
   context: (params) => [...patientKeys.all, 'context', params],
+  identityLookup: (lookupId) => [...patientKeys.all, 'identity-lookup', lookupId],
   currentContexts: (id) => [...patientKeys.detail(id), 'current-contexts'],
   chronicleStartup: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'startup', params],
   chronicleTimeline: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'timeline', params],
@@ -365,6 +366,16 @@ export function useRegisterPatient() {
 export function usePatientIdentityLookup() {
   return useMutation({
     mutationFn: (data) => patientsApi.lookupIdentity(data),
+  });
+}
+
+export function usePatientIdentityLookupSession(lookupId, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: patientKeys.identityLookup(lookupId),
+    queryFn: ({ signal }) => patientsApi.getIdentityLookup(lookupId, { signal }),
+    enabled: !!lookupId && enabled,
+    staleTime: 30 * 1000,
   });
 }
 

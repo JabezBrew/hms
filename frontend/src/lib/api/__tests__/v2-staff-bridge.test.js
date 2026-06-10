@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { apiClient } from '../../api-client';
 import { staffApi } from '../staff';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '../v2/client';
+
+vi.mock('../../api-client', () => ({
+  apiClient: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+  },
+  handleApiError: (error, fallback) => error?.message || fallback,
+}));
 
 describe('Rust V2 staff bridge', () => {
   const originalFetch = globalThis.fetch;
@@ -14,6 +24,7 @@ describe('Rust V2 staff bridge', () => {
     };
     globalThis.fetch = vi.fn();
     __resetV2ApiClientForTests();
+    vi.clearAllMocks();
     configureV2ApiClient({
       getAccessToken: () => 'access-token-123',
       getFacilityCode: () => 'HMS',
@@ -332,7 +343,7 @@ describe('Rust V2 staff bridge', () => {
     });
   });
 
-  it('creates staff through the Rust V2 staff contract when the V2-required fields are present', async () => {
+  it('creates staff through the Rust V2 staff contract without admin-supplied credentials or employee IDs', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -365,11 +376,13 @@ describe('Rust V2 staff bridge', () => {
       email: 'akosua@example.test',
       first_name: 'Akosua',
       last_name: 'Addo',
-      temporary_password: 'ChangeMe123!',
-      employee_id: 'EMP-003',
       department: 'Laboratory',
       position: 'Lab Technician',
       hire_date: '2026-05-01',
+      employee_id: 'EMP-SHOULD-NOT-SEND',
+      temporary_password: 'Temporary123!',
+      temp_password: 'AliasTemporary123!',
+      password: 'AliasPassword123!',
     }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -379,8 +392,6 @@ describe('Rust V2 staff bridge', () => {
         body: JSON.stringify({
           email: 'akosua@example.test',
           display_name: 'Akosua Addo',
-          temporary_password: 'ChangeMe123!',
-          employee_id: 'EMP-003',
           department: 'Laboratory',
           position: 'Lab Technician',
           hire_date: '2026-05-01',
@@ -391,6 +402,39 @@ describe('Rust V2 staff bridge', () => {
     expect(response).toMatchObject({
       id: 'staff-3',
       name: 'Akosua Addo',
+    });
+  });
+
+  it('strips server-managed staff onboarding fields from the legacy fallback payload', async () => {
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' };
+    apiClient.post.mockResolvedValueOnce({ id: 'legacy-staff-1' });
+
+    await staffApi.createStaff({
+      email: 'legacy@example.test',
+      first_name: 'Legacy',
+      last_name: 'Caller',
+      employee_id: 'EMP-SHOULD-NOT-SEND',
+      temporary_password: 'Temporary123!',
+      temp_password: 'AliasTemporary123!',
+      password: 'AliasPassword123!',
+      department: 'Finance',
+      position: 'Clerk',
+      hire_date: '2026-05-01',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith('/users/staff/', expect.objectContaining({
+      email: 'legacy@example.test',
+      first_name: 'Legacy',
+      last_name: 'Caller',
+      department: 'Finance',
+      position: 'Clerk',
+      hire_date: '2026-05-01',
+    }));
+    expect(apiClient.post.mock.calls[0][1]).not.toMatchObject({
+      employee_id: expect.anything(),
+      temporary_password: expect.anything(),
+      temp_password: expect.anything(),
+      password: expect.anything(),
     });
   });
 

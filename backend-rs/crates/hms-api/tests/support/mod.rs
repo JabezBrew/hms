@@ -13,6 +13,7 @@ use hms_api::app::build_app;
 pub use hms_api::config::Config;
 use hms_api::extractors::RequestContext;
 use hms_api::middleware::request_id;
+pub use hms_api::state::AccountSetupDeliveryPurpose;
 use hms_api::state::AppState;
 pub use hms_domain::auth::PatientDataVisibility;
 pub use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
@@ -105,6 +106,12 @@ impl Service<Request<Body>> for TestApp {
 impl TestApp {
     pub(crate) fn state(&self) -> AppState {
         self.state.clone()
+    }
+
+    pub(crate) async fn db_pool(&self) -> hms_db::PgPool {
+        hms_db::connect(self._database.database_url())
+            .await
+            .expect("test database pool connects")
     }
 }
 

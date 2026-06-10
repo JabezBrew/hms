@@ -120,6 +120,32 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         .expect("candidates array")
         .iter()
         .any(|candidate| candidate["patient_id"].as_str() == Some(registry_only_patient_id)));
+    let lookup_id = lookup_body["data"]["lookup_id"]
+        .as_str()
+        .expect("lookup id is returned");
+    let rehydrated_lookup = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/patients/identity/lookups/{lookup_id}"))
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("identity lookup rehydrates");
+    assert_eq!(rehydrated_lookup.status(), StatusCode::OK);
+    let rehydrated_lookup_body = json_body(rehydrated_lookup).await;
+    assert_eq!(
+        rehydrated_lookup_body["data"]["lookup_id"].as_str(),
+        Some(lookup_id)
+    );
+    assert!(rehydrated_lookup_body["data"]["candidates"]
+        .as_array()
+        .expect("rehydrated candidates array")
+        .iter()
+        .any(|candidate| candidate["patient_id"].as_str() == Some(registry_only_patient_id)));
 
     let duplicate_create = app
         .clone()
@@ -321,11 +347,117 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
 }
 
 #[tokio::test]
+async fn patient_identity_lookup_restore_is_user_and_expiry_scoped() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    let create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/patients")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "first_name": "Lookup",
+                        "last_name": "Scope",
+                        "date_of_birth": "1993-08-12",
+                        "sex": "female"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient create succeeds");
+    assert_eq!(create.status(), StatusCode::OK);
+
+    let lookup = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/patients/identity/lookup")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "first_name": "Lookup",
+                        "last_name": "Scope",
+                        "date_of_birth": "1993-08-12",
+                        "sex": "female"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("identity lookup succeeds");
+    assert_eq!(lookup.status(), StatusCode::OK);
+    let lookup_body = json_body(lookup).await;
+    let lookup_id = lookup_body["data"]["lookup_id"]
+        .as_str()
+        .expect("lookup id is returned");
+
+    grant_test_permission(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        PermissionCode::PatientDemographicsView,
+    )
+    .await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+        PatientDataVisibility::Demographics,
+    )
+    .await;
+    let (other_user_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let other_user_rehydrate = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/patients/identity/lookups/{lookup_id}"))
+                .header(AUTHORIZATION, format!("Bearer {other_user_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("cross-user identity lookup restore succeeds");
+    assert_eq!(other_user_rehydrate.status(), StatusCode::NOT_FOUND);
+
+    let lookup_uuid = Uuid::parse_str(lookup_id).expect("lookup id parses");
+    let pool = app.db_pool().await;
+    sqlx::query(
+        "UPDATE patient_identity_lookup_sessions SET expires_at = now() - INTERVAL '1 minute' WHERE id = $1",
+    )
+    .bind(lookup_uuid)
+    .execute(&pool)
+    .await
+    .expect("lookup session expiry update succeeds");
+    let expired_rehydrate = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/patients/identity/lookups/{lookup_id}"))
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("expired identity lookup restore succeeds");
+    assert_eq!(expired_rehydrate.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn patient_registry_honors_safe_server_side_ordering() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
 
-    for first_name in ["Alpha", "Zulu"] {
+    for (first_name, date_of_birth) in [("Alpha", "1995-03-10"), ("Zulu", "1995-03-11")] {
         let response = app
             .clone()
             .oneshot(
@@ -338,7 +470,7 @@ async fn patient_registry_honors_safe_server_side_ordering() {
                         json!({
                             "first_name": first_name,
                             "last_name": "Sortorderprobe",
-                            "date_of_birth": "1995-03-10",
+                            "date_of_birth": date_of_birth,
                             "sex": "female"
                         })
                         .to_string(),

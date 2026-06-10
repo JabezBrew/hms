@@ -133,6 +133,17 @@ function compactObject(value) {
   );
 }
 
+function stripServerManagedStaffCreateFields(data = {}) {
+  const {
+    employee_id: _employeeId,
+    temporary_password: _temporaryPassword,
+    temp_password: _tempPassword,
+    password: _password,
+    ...safeData
+  } = data;
+  return safeData;
+}
+
 function normalizeV2StaffCreatePayload(data = {}) {
   const displayName = data.display_name
     || [data.first_name, data.last_name].filter(Boolean).join(' ').trim()
@@ -153,8 +164,6 @@ function normalizeV2StaffCreatePayload(data = {}) {
   return compactObject({
     email: data.email,
     display_name: displayName,
-    temporary_password: data.temporary_password || data.temp_password || data.password,
-    employee_id: data.employee_id,
     department: data.department,
     position: data.position,
     hire_date: data.hire_date,
@@ -347,7 +356,7 @@ export const staffApi = {
     }
 
     try {
-      return await apiClient.post('/users/staff/', data);
+      return await apiClient.post('/users/staff/', stripServerManagedStaffCreateFields(data));
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create staff member'));
     }

@@ -31,6 +31,16 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 const REGISTRY_HISTORY_STATE_KEY = 'patientRegistryState';
+const CLINICAL_DIRECTORY_ROLES = new Set([
+  'admin',
+  'doctor',
+  'nurse',
+  'head_nurse',
+  'nurse_practitioner',
+  'inpatient_doctor',
+  'practitioner',
+  'physician',
+]);
 
 function serializeFilterDate(value) {
   if (!value) return null;
@@ -124,6 +134,7 @@ const PatientChronicleListPage = () => {
   } = location;
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const canOpenChronicle = CLINICAL_DIRECTORY_ROLES.has(user?.role);
   const [initialRegistryState] = useState(() => hydrateRegistryState(routeState));
   const [searchQuery, setSearchQuery] = useState(initialRegistryState.searchQuery);
   const [searchOrdering, setSearchOrdering] = useState(initialRegistryState.searchOrdering);
@@ -252,8 +263,10 @@ const PatientChronicleListPage = () => {
   const handleOpenPatient = (patient) => {
     const patientId = getPatientId(patient);
     if (patientId) {
-      prefetchPatientChronicleData(queryClient, patientId, { mode: 'navigation' });
-      navigate(`/patients/${patientId}`, {
+      if (canOpenChronicle) {
+        prefetchPatientChronicleData(queryClient, patientId, { mode: 'navigation' });
+      }
+      navigate(`/patients/${patientId}/${canOpenChronicle ? 'chronicle' : 'profile'}`, {
         state: {
           returnTo: createReturnToLocation({
             ...location,
@@ -266,7 +279,7 @@ const PatientChronicleListPage = () => {
 
   const handlePointerDownPatient = (patient) => {
     const patientId = getPatientId(patient);
-    if (patientId) {
+    if (patientId && canOpenChronicle) {
       prefetchPatientChronicleData(queryClient, patientId, { mode: 'navigation' });
     }
   };

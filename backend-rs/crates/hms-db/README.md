@@ -46,6 +46,10 @@ interfaces for workflow projections; handlers should not run SQL directly.
 
 - Hot lists are bounded and deterministic.
 - Facility scope belongs in repository predicates.
+- Facility-scoped identifiers such as staff Employee IDs are allocated inside
+  repository transactions, not in frontend code or handlers.
+- Forced staff reset tokens are inserted inactive and activated only inside the
+  finalization transaction that revokes sessions and writes audit evidence.
 - Avoid N+1 query patterns.
 - Avoid `DATE(column)` filters; use `[start, end)` ranges.
 - Keep transaction scopes short.

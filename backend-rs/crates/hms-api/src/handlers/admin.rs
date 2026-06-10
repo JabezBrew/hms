@@ -322,7 +322,7 @@ pub async fn update_staff(
     ))
 }
 
-#[utoipa::path(post, path = "/api/v2/admin/staff/{id}/force-password-reset", operation_id = "postAdminStaffForcePasswordReset", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+#[utoipa::path(post, path = "/api/v2/admin/staff/{id}/force-password-reset", operation_id = "postAdminStaffForcePasswordReset", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
 pub async fn force_staff_password_reset(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,

@@ -11,7 +11,7 @@
  * - Navigation links
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { LoginForm } from '../login-form'
@@ -513,7 +513,10 @@ describe('LoginForm', () => {
     })
 
     it('prevents double submission', async () => {
-      mockLogin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 200)))
+      let resolveLogin
+      mockLogin.mockImplementation(() => new Promise((resolve) => {
+        resolveLogin = resolve
+      }))
 
       const user = userEvent.setup()
 
@@ -531,6 +534,9 @@ describe('LoginForm', () => {
 
       // Should only be called once (button is disabled after first click)
       expect(mockLogin).toHaveBeenCalledTimes(1)
+      await act(async () => {
+        resolveLogin?.({})
+      })
     })
   })
 })

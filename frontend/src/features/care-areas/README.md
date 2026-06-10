@@ -60,6 +60,9 @@ Scope: entry hubs for scoped patient access by care context.
   local filters.
 - Outpatient, Inpatient, and Emergency tables must use server-side filters and
   bounded pages. Do not sort/filter partial pages in the browser.
+- Care-area entry cards must keep their action controls inside the card at all
+  supported widths; long clinic, ward, or queue names truncate before pushing
+  actions outside the card.
 - Preserve the distinction between patient record status and encounter,
   admission, or triage status; the hubs route users to the relevant context
   instead of redefining those statuses.

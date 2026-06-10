@@ -1737,6 +1737,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getPatientIdentityLookup": {
+    "operationId": "getPatientIdentityLookup",
+    "method": "GET",
+    "path": "/api/v2/patients/identity/lookups/{lookup_id}",
+    "pathParamNames": [
+      "lookup_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getPatientPharmacyClinicalContext": {
     "operationId": "getPatientPharmacyClinicalContext",
     "method": "GET",
@@ -4266,6 +4276,7 @@ export function createGeneratedClient(request) {
     getPatientClinicalNotes: createOperation(request, operations.getPatientClinicalNotes),
     getPatientContextList: createOperation(request, operations.getPatientContextList),
     getPatientCurrentContexts: createOperation(request, operations.getPatientCurrentContexts),
+    getPatientIdentityLookup: createOperation(request, operations.getPatientIdentityLookup),
     getPatientPharmacyClinicalContext: createOperation(request, operations.getPatientPharmacyClinicalContext),
     getPatientPrescriptions: createOperation(request, operations.getPatientPrescriptions),
     getPatientProblems: createOperation(request, operations.getPatientProblems),

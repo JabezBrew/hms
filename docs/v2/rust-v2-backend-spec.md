@@ -1275,6 +1275,9 @@ POST /api/v2/admin/users/:id/force-password-reset
 GET  /api/v2/admin/audit-events
 GET  /api/v2/admin/features
 PATCH /api/v2/admin/features/:key
+GET  /api/v2/admin/staff
+POST /api/v2/admin/staff
+POST /api/v2/admin/staff/:id/force-password-reset
 GET  /api/v2/admin/org-units
 POST /api/v2/admin/org-units
 GET  /api/v2/admin/positions
@@ -1310,7 +1313,8 @@ retries, rejects mismatched reuse, and treats in-progress reuse as retryable.
 Outpatient intake requires an explicit clinic context. Inpatient intake must
 reuse or redirect any current admission instead of creating another current
 admission. Emergency current context is waiting or assigned triage; completed
-triage is not considered current.
+triage is not considered current. Assigned triage can be completed through
+assessment, which releases the patient for a future emergency triage context.
 
 Encounters and visits:
 
@@ -1449,6 +1453,23 @@ increment user session_version
 write audit event
 require strong password policy
 deny password reuse using password_history
+```
+
+Staff creation/onboarding:
+
+```text
+POST /api/v2/admin/staff does not accept employee_id or password fields
+require fresh high-risk admin reauthentication
+generate employee_id server-side from facility/year sequence
+hash a server-generated undisclosed initial credential
+set password_change_required = true
+create one short-lived setup/reset token
+emit a PHI-safe account setup event
+deliver the raw setup link only through the configured delivery channel
+compensate and audit failed setup-link delivery before returning an error
+keep forced-reset tokens inactive until finalization commits session revocation and audit
+never persist plaintext setup/reset tokens in domain_events, audit events, logs, or API responses
+production requires HMS_ACCOUNT_SETUP_DELIVERY_MODE=webhook, HMS_ACCOUNT_SETUP_DELIVERY_WEBHOOK_URL, and HMS_PUBLIC_APP_URL
 ```
 
 Default expiry policy:
@@ -1692,6 +1713,9 @@ patient timelines indexed by (facility_id, patient_id, occurred_at desc)
 patient identity lookup indexed by facility, patient_code, exact DOB/name/sex,
 DOB/name possible-match branches, record_status, vital_status, and
 superseded_by_patient_id
+identity lookup sessions store only lookup fingerprints, candidate ids,
+reviewer facts, and expiry; rehydrate APIs accept opaque lookup ids and return
+bounded candidate projections without raw search input
 current admission and current emergency triage have partial uniqueness guards
 work queues indexed by (facility_id, status, priority, created_at)
 appointments indexed by (facility_id, clinic_id, starts_at)

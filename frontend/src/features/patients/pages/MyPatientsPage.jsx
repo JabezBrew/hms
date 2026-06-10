@@ -120,14 +120,14 @@ const MyPatientsPage = () => {
   const handleStartRound = useCallback((patient) => {
     const patientId = patient?.id || patient?.patient_profile;
     if (patientId) {
-      navigate(`/patients/${patientId}?wardRound=true`);
+      navigate(`/patients/${patientId}/chronicle?wardRound=true`);
     }
   }, [navigate]);
 
   const handleStartConsultation = useCallback((patient) => {
     const patientId = patient?.id || patient?.patient_profile;
     if (patientId) {
-      navigate(`/patients/${patientId}?consultation=true`);
+      navigate(`/patients/${patientId}/chronicle?consultation=true`);
     }
   }, [navigate]);
 

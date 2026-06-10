@@ -29,6 +29,10 @@ pub fn routes() -> Router<AppState> {
             post(patients::lookup_identity),
         )
         .route(
+            "/api/v2/patients/identity/lookups/:lookup_id",
+            get(patients::get_identity_lookup),
+        )
+        .route(
             "/api/v2/patients/:id/current-contexts",
             get(patients::get_current_contexts),
         )

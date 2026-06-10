@@ -60,10 +60,10 @@ export function CareAreaCard({
 }) {
   return (
     <Card className="rounded-lg">
-      <CardHeader className="gap-3">
-        <div className="flex items-start gap-3">
+      <CardHeader className="gap-3 has-data-[slot=card-action]:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="flex min-w-0 items-start gap-3">
           {Icon ? (
-            <div className="mt-0.5 rounded-md border border-border bg-muted p-2 text-muted-foreground">
+            <div className="mt-0.5 shrink-0 rounded-md border border-border bg-muted p-2 text-muted-foreground">
               <Icon className="size-4" aria-hidden="true" />
             </div>
           ) : null}

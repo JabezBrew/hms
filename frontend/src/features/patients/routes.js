@@ -6,9 +6,13 @@ const PatientChronicleListPage = lazy(() => import('./pages/PatientChronicleList
 const FindOrRegisterPatientPage = lazy(() => import('./pages/FindOrRegisterPatientPage'))
 const MyPatientsPage = lazy(() => import('./pages/MyPatientsPage'))
 const PatientPage = lazy(() => import('./pages/PatientPage'))
+const PatientDemographicsPage = lazy(() => import('./pages/PatientDemographicsPage'))
+const PatientChroniclePage = lazy(() => import('./pages/PatientChroniclePage'))
 const PatientEditPage = lazy(() => import('./pages/PatientEditPage'))
 const PatientChroniclePrintPage = lazy(() => import('./pages/PatientChroniclePrintPage'))
 
+const PATIENT_PROFILE_ROLES = [ROLES.ADMIN, ...ROLE_GROUPS.CLINICAL, ROLES.RECEPTIONIST, ROLES.BILLING, ROLES.PATIENT]
+const PATIENT_CHRONICLE_ROLES = [ROLES.ADMIN, ...ROLE_GROUPS.CLINICAL]
 const PATIENT_CHRONICLE_PRINT_ROLES = [ROLES.ADMIN, ...ROLE_GROUPS.CLINICAL]
 
 export const patientRoutes = [
@@ -70,6 +74,31 @@ export const patientRoutes = [
     ],
   },
   {
+    path: '/patients/:id/profile',
+    component: PatientDemographicsPage,
+    roles: PATIENT_PROFILE_ROLES,
+    layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENT_WORKSPACE,
+    title: 'Patient Profile | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Patients', path: '/patients' },
+      { label: 'Patient Profile', path: '/patients/:id/profile' },
+    ],
+  },
+  {
+    path: '/patients/:id/chronicle',
+    component: PatientChroniclePage,
+    roles: PATIENT_CHRONICLE_ROLES,
+    features: ['patient_chronicle'],
+    layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENT_WORKSPACE,
+    title: 'Patient Chronicle | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Patients', path: '/patients' },
+      { label: 'Patient Chronicle', path: '/patients/:id/chronicle' },
+    ],
+  },
+  {
     path: '/patients/:id/chronicle/print',
     component: PatientChroniclePrintPage,
     roles: PATIENT_CHRONICLE_PRINT_ROLES,
@@ -83,7 +112,7 @@ export const patientRoutes = [
   },
   {
     path: '/patients/:id/ward-round',
-    component: PatientPage,
+    component: PatientChroniclePage,
     roles: ROLE_GROUPS.CLINICAL,
     features: ['wards'],
     layout: ROUTE_LAYOUTS.APP,

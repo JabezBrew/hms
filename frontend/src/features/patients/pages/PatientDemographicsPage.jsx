@@ -138,12 +138,14 @@ function getDemographicsUpdatePayload(data) {
 }
 
 function useDemographicsPageMeta({ fullName, id }) {
-  const patientPath = id ? `/patients/${id}` : '/patients';
+  const patientPath = id ? `/patients/${id}/profile` : '/patients';
   return usePageMeta({
-    title: fullName ? `${fullName} | Hospital Management System` : 'Patient | Hospital Management System',
+    title: fullName
+      ? `${fullName} Profile | Hospital Management System`
+      : 'Patient Profile | Hospital Management System',
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
-      { label: fullName || 'Patient', path: patientPath },
+      { label: fullName || 'Patient Profile', path: patientPath },
     ],
   });
 }

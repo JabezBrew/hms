@@ -28,6 +28,7 @@ pub enum DomainEventKind {
     AuthRefreshReuseDetected,
     PasswordResetRequested,
     PasswordResetCompleted,
+    StaffAccountSetupRequested,
     PatientRegistered,
     PatientChronicleUpdated,
 }
@@ -161,6 +162,7 @@ impl DomainEventKind {
             Self::AuthRefreshReuseDetected => "auth.refresh_reuse_detected",
             Self::PasswordResetRequested => "auth.password_reset_requested",
             Self::PasswordResetCompleted => "auth.password_reset_completed",
+            Self::StaffAccountSetupRequested => "admin.staff_account_setup_requested",
             Self::PatientRegistered => "patients.registered",
             Self::PatientChronicleUpdated => "patients.chronicle_updated",
         }

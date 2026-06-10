@@ -55,6 +55,32 @@ impl Default for OpsPrometheusConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccountSetupDeliveryMode {
+    Disabled,
+    Webhook,
+    TestSink,
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountSetupDeliveryConfig {
+    pub mode: AccountSetupDeliveryMode,
+    pub webhook_url: Option<String>,
+    pub public_app_url: Option<String>,
+    pub timeout: Duration,
+}
+
+impl Default for AccountSetupDeliveryConfig {
+    fn default() -> Self {
+        Self {
+            mode: AccountSetupDeliveryMode::Disabled,
+            webhook_url: None,
+            public_app_url: None,
+            timeout: Duration::from_millis(1500),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub environment: String,
@@ -79,6 +105,7 @@ pub struct Config {
     pub ops_auth_mode: OpsAuthMode,
     pub cloudflare_access: CloudflareAccessConfig,
     pub ops_prometheus: OpsPrometheusConfig,
+    pub account_setup_delivery: AccountSetupDeliveryConfig,
 }
 
 impl Config {
@@ -119,7 +146,9 @@ impl Config {
             Err(_) => Duration::from_secs(8 * 60 * 60),
         };
         if session_idle_timeout >= session_absolute_timeout {
-            bail!("HMS_SESSION_IDLE_TIMEOUT_SECONDS must be less than HMS_SESSION_ABSOLUTE_TIMEOUT_SECONDS");
+            bail!(
+                "HMS_SESSION_IDLE_TIMEOUT_SECONDS must be less than HMS_SESSION_ABSOLUTE_TIMEOUT_SECONDS"
+            );
         }
         let password_work_max_concurrency = match env::var("HMS_PASSWORD_WORK_MAX_CONCURRENCY") {
             Ok(value) => parse_usize(&value, "HMS_PASSWORD_WORK_MAX_CONCURRENCY")?,
@@ -187,6 +216,7 @@ impl Config {
                 Err(_) => OpsPrometheusConfig::default().timeout,
             },
         };
+        let account_setup_delivery = account_setup_delivery_config(&environment)?;
 
         Ok(Self {
             environment,
@@ -211,6 +241,7 @@ impl Config {
             ops_auth_mode,
             cloudflare_access,
             ops_prometheus,
+            account_setup_delivery,
         })
     }
 
@@ -238,6 +269,11 @@ impl Config {
             ops_auth_mode: OpsAuthMode::HmsPermission,
             cloudflare_access: CloudflareAccessConfig::default(),
             ops_prometheus: OpsPrometheusConfig::default(),
+            account_setup_delivery: AccountSetupDeliveryConfig {
+                mode: AccountSetupDeliveryMode::TestSink,
+                public_app_url: Some("http://localhost".to_owned()),
+                ..AccountSetupDeliveryConfig::default()
+            },
         }
     }
 }
@@ -341,6 +377,84 @@ fn validate_ops_auth(
         bail!("HMS_CLOUDFLARE_ACCESS_ALLOWED_EMAILS is required for Cloudflare ops auth");
     }
 
+    Ok(())
+}
+
+fn account_setup_delivery_config(environment: &str) -> anyhow::Result<AccountSetupDeliveryConfig> {
+    let webhook_url = env_optional("HMS_ACCOUNT_SETUP_DELIVERY_WEBHOOK_URL");
+    let public_app_url = env_optional("HMS_PUBLIC_APP_URL");
+    let timeout = match env::var("HMS_ACCOUNT_SETUP_DELIVERY_TIMEOUT_MS") {
+        Ok(value) => {
+            Duration::from_millis(parse_u64(&value, "HMS_ACCOUNT_SETUP_DELIVERY_TIMEOUT_MS")?)
+        }
+        Err(_) => AccountSetupDeliveryConfig::default().timeout,
+    };
+    let explicit_mode = env_optional("HMS_ACCOUNT_SETUP_DELIVERY_MODE")
+        .map(|value| parse_account_setup_delivery_mode(&value))
+        .transpose()?;
+    let mode = explicit_mode.unwrap_or_else(|| {
+        if environment == "test" {
+            AccountSetupDeliveryMode::TestSink
+        } else if webhook_url.is_some() {
+            AccountSetupDeliveryMode::Webhook
+        } else {
+            AccountSetupDeliveryMode::Disabled
+        }
+    });
+
+    match mode {
+        AccountSetupDeliveryMode::Disabled => {
+            if environment == "production" {
+                bail!("HMS_ACCOUNT_SETUP_DELIVERY_MODE must be webhook in production");
+            }
+        }
+        AccountSetupDeliveryMode::TestSink => {
+            if environment != "test" {
+                bail!("HMS_ACCOUNT_SETUP_DELIVERY_MODE=test_sink is only allowed in tests");
+            }
+        }
+        AccountSetupDeliveryMode::Webhook => {
+            let webhook_url = webhook_url.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "HMS_ACCOUNT_SETUP_DELIVERY_WEBHOOK_URL is required when staff setup delivery uses webhook mode"
+                )
+            })?;
+            let public_app_url = public_app_url.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "HMS_PUBLIC_APP_URL is required when staff setup delivery uses webhook mode"
+                )
+            })?;
+            validate_delivery_url(
+                webhook_url,
+                "HMS_ACCOUNT_SETUP_DELIVERY_WEBHOOK_URL",
+                environment,
+            )?;
+            validate_delivery_url(public_app_url, "HMS_PUBLIC_APP_URL", environment)?;
+        }
+    }
+
+    Ok(AccountSetupDeliveryConfig {
+        mode,
+        webhook_url,
+        public_app_url,
+        timeout,
+    })
+}
+
+fn parse_account_setup_delivery_mode(value: &str) -> anyhow::Result<AccountSetupDeliveryMode> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "disabled" => Ok(AccountSetupDeliveryMode::Disabled),
+        "webhook" => Ok(AccountSetupDeliveryMode::Webhook),
+        "test_sink" => Ok(AccountSetupDeliveryMode::TestSink),
+        _ => bail!("HMS_ACCOUNT_SETUP_DELIVERY_MODE must be disabled, webhook, or test_sink"),
+    }
+}
+
+fn validate_delivery_url(value: &str, name: &str, environment: &str) -> anyhow::Result<()> {
+    let url = reqwest::Url::parse(value).with_context(|| format!("{name} must be a URL"))?;
+    if environment != "development" && environment != "test" && url.scheme() != "https" {
+        bail!("{name} must use https outside development and tests");
+    }
     Ok(())
 }
 

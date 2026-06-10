@@ -2122,7 +2122,7 @@ pub async fn assess_triage(
                 updated_at = now()
             WHERE facility_id = $4
               AND id = $5
-              AND status IN ($6, $7)
+              AND status IN ($6, $7, $8)
             RETURNING id,
                       visit_id,
                       patient_id,
@@ -2166,6 +2166,7 @@ pub async fn assess_triage(
     .bind(facility_id)
     .bind(triage_id)
     .bind(codec::encode(TriageStatus::Waiting)?)
+    .bind(codec::encode(TriageStatus::Assigned)?)
     .bind(codec::encode(TriageStatus::Completed)?)
     .fetch_optional(pool)
     .await?;

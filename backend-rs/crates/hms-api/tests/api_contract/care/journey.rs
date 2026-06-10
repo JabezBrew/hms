@@ -1091,6 +1091,32 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .iter()
         .any(|item| item["id"] == triage_id));
 
+    let assigned_triage_assessment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/triage/{triage_id}/assessment"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "acuity": "urgent",
+                        "notes": "Assigned triage completed before the next emergency intake."
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("assigned triage assessment succeeds");
+    assert_eq!(assigned_triage_assessment.status(), StatusCode::OK);
+    let assigned_triage_assessment_body = json_body(assigned_triage_assessment).await;
+    assert_eq!(
+        assigned_triage_assessment_body["data"]["status"],
+        "completed"
+    );
+
     let assessment_visit = app
         .clone()
         .oneshot(
@@ -1353,11 +1379,11 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .expect("my work outpatient appointments are listed")
         .iter()
         .any(|item| item["id"] == practitioner_appointment_id));
-    assert!(my_work_body["data"]["emergency"]["assigned_triage"]
+    assert!(!my_work_body["data"]["emergency"]["assigned_triage"]
         .as_array()
         .expect("my work assigned triage is listed")
         .iter()
-        .any(|item| item["id"] == triage_id && item["encounter_id"] == encounter_id));
+        .any(|item| item["id"] == triage_id));
     assert!(!my_work_body["data"]["emergency"]["assigned_triage"]
         .as_array()
         .expect("my work assigned triage is listed")

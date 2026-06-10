@@ -7,6 +7,7 @@ import {
   usePatientCurrentContexts,
   usePatientHistory,
   usePatientIdentityLookup,
+  usePatientIdentityLookupSession,
 } from '../usePatientQueries';
 import { patientsApi } from '@/features/patients/api';
 
@@ -15,6 +16,7 @@ vi.mock('@/features/patients/api', () => ({
     getCurrentContexts: vi.fn(),
     getPatientHistory: vi.fn(),
     getPatientChronicleStartup: vi.fn(),
+    getIdentityLookup: vi.fn(),
     lookupIdentity: vi.fn(),
   },
 }));
@@ -51,6 +53,11 @@ describe('usePatientQueries Rust V2 behavior', () => {
     });
     patientsApi.getPatientHistory.mockResolvedValue([]);
     patientsApi.getPatientChronicleStartup.mockResolvedValue({ patient: { id: 'patient-1' } });
+    patientsApi.getIdentityLookup.mockResolvedValue({
+      lookup_id: 'lookup-1',
+      candidates: [],
+      strong_duplicate_found: false,
+    });
     patientsApi.lookupIdentity.mockResolvedValue({
       lookup_id: 'lookup-1',
       candidates: [],
@@ -116,5 +123,22 @@ describe('usePatientQueries Rust V2 behavior', () => {
     expect(serializedQueryKeys).not.toContain('Mensah');
     expect(serializedQueryKeys).not.toContain('1989-04-15');
     expect(serializedQueryKeys).not.toContain('0240000000');
+  });
+
+  it('restores identity lookup sessions by opaque lookup id only', async () => {
+    const { queryClient, wrapper } = createWrapperWithClient();
+    renderHook(() => usePatientIdentityLookupSession('lookup-1'), { wrapper });
+
+    await waitFor(() => {
+      expect(patientsApi.getIdentityLookup).toHaveBeenCalledWith('lookup-1', {
+        signal: expect.any(AbortSignal),
+      });
+    });
+    const serializedQueryKeys = JSON.stringify(
+      queryClient.getQueryCache().getAll().map((query) => query.queryKey),
+    );
+    expect(serializedQueryKeys).toContain('lookup-1');
+    expect(serializedQueryKeys).not.toContain('Ama');
+    expect(serializedQueryKeys).not.toContain('1989-04-15');
   });
 });

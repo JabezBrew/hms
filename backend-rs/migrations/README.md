@@ -21,6 +21,7 @@ backend.
 | `202605220404` to `202605300002` | dashboard projection refresh, ops permission, scheduling indexes/templates, appointment status, hot-path performance indexes |
 | `202606010001` to `202606030012` | auth session deadlines, patient-registry/search indexes, table-filter support, billing read models, audit/search indexes, auth login failure counters |
 | `202606040001` to `202606060004` | care-context provenance, ward-board/discharge hot-path indexes, medication fulfillment, ward staffing, and patient identity status hardening |
+| `202606080001` | staff onboarding identifier sequence allocation |
 
 ## Invariants
 

@@ -8,6 +8,7 @@ import { http, HttpResponse } from 'msw'
 
 import { server } from '../../../../../tests/mocks/server'
 import { safeStorage } from '@/lib/safe-storage'
+import { useOmniSearch } from '../OmniSearchContext'
 import { OmniSearchProvider } from '../OmniSearchProvider'
 
 vi.mock('@/lib/auth', () => ({
@@ -47,6 +48,15 @@ function NavButtons() {
         Go Patient
       </button>
     </div>
+  )
+}
+
+function OpenOmniSearchButton() {
+  const { openDialog } = useOmniSearch()
+  return (
+    <button type="button" onClick={openDialog}>
+      Open search
+    </button>
   )
 }
 
@@ -104,11 +114,12 @@ describe('Omni Search', () => {
 
     renderWithProviders(
       <OmniSearchProvider>
+        <OpenOmniSearchButton />
         <LocationDisplay />
       </OmniSearchProvider>
     )
 
-    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    await user.click(screen.getByRole('button', { name: /Open search/i }))
     const input = await screen.findByPlaceholderText('Type a command or search...')
     expect(input).toBeInTheDocument()
 
@@ -126,7 +137,7 @@ describe('Omni Search', () => {
     })
 
     // Re-open; the draft query should still be available in this app session.
-    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    await user.click(screen.getByRole('button', { name: /Open search/i }))
     const input2 = await screen.findByPlaceholderText('Type a command or search...')
     expect(input2).toHaveValue('hello')
 
@@ -141,7 +152,7 @@ describe('Omni Search', () => {
       expect(screen.getByTestId('location')).toHaveTextContent('/settings')
     })
 
-    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    await user.click(screen.getByRole('button', { name: /Open search/i }))
     const input3 = await screen.findByPlaceholderText('Type a command or search...')
     expect(input3).toHaveValue('')
   })
@@ -706,8 +717,23 @@ describe('Omni Search', () => {
     })
   })
 
-  it('navigates search results with route paths instead of search document IDs', async () => {
-    const user = userEvent.setup()
+  it.each([
+    ['Route Patient', '/patients/patient-target'],
+    ['Route Ward', '/wards/ward-target'],
+    ['Route Encounter', '/encounters/encounter-target/workspace'],
+    ['Route Appointment', '/appointments/appointment-target'],
+    ['Route Admission', '/admissions/admission-target'],
+    ['Route Staff', '/staff/staff-target'],
+    ['Route Visit', '/clinics/clinic-target/waiting-room?visit=visit-target'],
+    ['Route Clinic', '/appointments?tab=sessions&clinic=clinic-target'],
+    ['Route Lab', '/laboratory/orders?order=order-target'],
+    ['Route Invoice', '/billing/invoices/invoice-target'],
+    ['Route Payment', '/billing/invoices/invoice-target?payment=payment-target'],
+    ['Route Claim', '/billing/claims?claim=claim-target'],
+    ['Route Inventory', '/inventory/items/inventory-target'],
+    ['Route Location', '/inventory/items?location=location-target'],
+    ['Route Referral', '/referrals/inbox?referral=referral-target'],
+  ])('navigates %s with route paths instead of search document IDs', async (label, expectedLocation) => {
     useAuth.mockReturnValue({
       user: { id: 'u1', role: 'admin' },
       facilityCode: 'TEST',
@@ -829,47 +855,47 @@ describe('Omni Search', () => {
               : [],
             billing: q
               ? [
-	                  {
-	                    id: 'search-doc-billing',
-	                    href: '/billing/invoices/search-doc-billing',
-	                    route_path: '/billing/invoices/invoice-target',
-	                    title: 'Route Invoice',
-	                    subtitle: 'Invoice target account',
-	                  },
-	                  {
-	                    id: 'search-doc-payment',
-	                    href: '/billing/payments?payment=search-doc-payment',
-	                    route_path: '/billing/invoices/invoice-target?payment=payment-target',
-	                    title: 'Route Payment',
-	                    subtitle: 'Payment receipt',
-	                  },
-	                  {
-	                    id: 'search-doc-claim',
-	                    href: '/billing/claims/search-doc-claim',
-	                    route_path: '/billing/claims?claim=claim-target',
-	                    title: 'Route Claim',
-	                    subtitle: 'Insurance claim',
-	                  },
-	                ]
-	              : [],
-	            inventory: q
-	              ? [
-	                  {
+                  {
+                    id: 'search-doc-billing',
+                    href: '/billing/invoices/search-doc-billing',
+                    route_path: '/billing/invoices/invoice-target',
+                    title: 'Route Invoice',
+                    subtitle: 'Invoice target account',
+                  },
+                  {
+                    id: 'search-doc-payment',
+                    href: '/billing/payments?payment=search-doc-payment',
+                    route_path: '/billing/invoices/invoice-target?payment=payment-target',
+                    title: 'Route Payment',
+                    subtitle: 'Payment receipt',
+                  },
+                  {
+                    id: 'search-doc-claim',
+                    href: '/billing/claims/search-doc-claim',
+                    route_path: '/billing/claims?claim=claim-target',
+                    title: 'Route Claim',
+                    subtitle: 'Insurance claim',
+                  },
+                ]
+              : [],
+            inventory: q
+              ? [
+                  {
                     id: 'search-doc-inventory',
                     href: '/inventory/items/search-doc-inventory',
                     route_path: '/inventory/items/inventory-target',
-	                    title: 'Route Inventory',
-	                    subtitle: 'Inventory item',
-	                  },
-	                  {
-	                    id: 'search-doc-location',
-	                    href: '/inventory/locations/search-doc-location',
-	                    route_path: '/inventory/items?location=location-target',
-	                    title: 'Route Location',
-	                    subtitle: 'Storage location',
-	                  },
-	                ]
-	              : [],
+                    title: 'Route Inventory',
+                    subtitle: 'Inventory item',
+                  },
+                  {
+                    id: 'search-doc-location',
+                    href: '/inventory/locations/search-doc-location',
+                    route_path: '/inventory/items?location=location-target',
+                    title: 'Route Location',
+                    subtitle: 'Storage location',
+                  },
+                ]
+              : [],
             referrals: q
               ? [
                   {
@@ -892,32 +918,14 @@ describe('Omni Search', () => {
       </OmniSearchProvider>
     )
 
-    const selectSearchResult = async (label, expectedLocation) => {
-      fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-      const input = await screen.findByPlaceholderText('Type a command or search...')
-      await user.type(input, 'route')
-      await user.click(await screen.findByText(label))
-      await waitFor(() => {
-        expect(screen.getByTestId('location')).toHaveTextContent(expectedLocation)
-      })
-    }
-
-    await selectSearchResult('Route Patient', '/patients/patient-target')
-    await selectSearchResult('Route Ward', '/wards/ward-target')
-    await selectSearchResult('Route Encounter', '/encounters/encounter-target/workspace')
-    await selectSearchResult('Route Appointment', '/appointments/appointment-target')
-    await selectSearchResult('Route Admission', '/admissions/admission-target')
-    await selectSearchResult('Route Staff', '/staff/staff-target')
-    await selectSearchResult('Route Visit', '/clinics/clinic-target/waiting-room?visit=visit-target')
-    await selectSearchResult('Route Clinic', '/appointments?tab=sessions&clinic=clinic-target')
-	    await selectSearchResult('Route Lab', '/laboratory/orders?order=order-target')
-	    await selectSearchResult('Route Invoice', '/billing/invoices/invoice-target')
-	    await selectSearchResult('Route Payment', '/billing/invoices/invoice-target?payment=payment-target')
-	    await selectSearchResult('Route Claim', '/billing/claims?claim=claim-target')
-	    await selectSearchResult('Route Inventory', '/inventory/items/inventory-target')
-	    await selectSearchResult('Route Location', '/inventory/items?location=location-target')
-	    await selectSearchResult('Route Referral', '/referrals/inbox?referral=referral-target')
-	  })
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('Type a command or search...')
+    fireEvent.change(input, { target: { value: 'route' } })
+    fireEvent.click(await screen.findByText(label))
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(expectedLocation)
+    })
+  })
 
   it('ignores unsafe external route paths from search results', async () => {
     const user = userEvent.setup()

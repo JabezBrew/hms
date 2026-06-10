@@ -56,7 +56,7 @@ export function useChronicleWorkspaceRouting({
     nextSearchParams.delete('action');
     nextSearchParams.delete('wardRound');
     navigate({
-      pathname: `/patients/${id}`,
+      pathname: `/patients/${id}/chronicle`,
       search: `?${nextSearchParams.toString()}`,
     });
   }, [id, navigate, search]);

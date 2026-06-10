@@ -388,6 +388,52 @@ impl PatientsService {
         Ok(object(response))
     }
 
+    pub async fn get_identity_lookup(
+        &self,
+        ctx: &hms_access::RequestContext,
+        lookup_id: Uuid,
+    ) -> Result<ObjectResponse<PatientIdentityLookupResponse>, ApiError> {
+        require_patient_registry_access(ctx, self.facility_id())?;
+        let session = hms_db::patients::get_identity_lookup_session(
+            self.pool(),
+            self.facility_id(),
+            ctx.user_id,
+            lookup_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_identity_lookup_failed",
+                "Patient identity lookup failed.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "patient_identity_lookup_not_found",
+                "Patient identity lookup was not found or has expired.",
+            )
+        })?;
+        let candidates = hms_db::patients::get_identity_lookup_candidates_by_ids(
+            self.pool(),
+            self.facility_id(),
+            &session.candidate_patient_ids,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_identity_lookup_failed",
+                "Patient identity lookup failed.",
+            )
+        })?;
+
+        Ok(object(PatientIdentityLookupResponse {
+            lookup_id: session.id,
+            expires_at: session.expires_at,
+            candidates,
+            strong_duplicate_found: session.strong_duplicate_found,
+        }))
+    }
+
     pub async fn get_current_contexts(
         &self,
         ctx: &hms_access::RequestContext,
