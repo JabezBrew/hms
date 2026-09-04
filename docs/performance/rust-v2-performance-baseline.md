@@ -1,5 +1,10 @@
 # HMS Rust V2 Performance Baseline
 
+> Historical lab report. Hostnames and environment values are from the lab
+> run described here — treat them as examples and substitute your own
+> environment. Raw k6 exports and Prometheus snapshots are never committed;
+> only aggregate values are summarized, with no patient data.
+
 Status: Agent 0 baseline report for the first Rust V2 performance wave.
 
 Current-tree note, 2026-05-25: the historical gaps below for route-level

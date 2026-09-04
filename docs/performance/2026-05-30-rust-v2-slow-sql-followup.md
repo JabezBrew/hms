@@ -1,5 +1,9 @@
 # Rust V2 slow SQL follow-up - 2026-05-30
 
+> Historical lab report. Hostnames, IPs, and commit SHAs are the values from
+> that day's lab run — treat them as examples and substitute your own
+> environment. No patient data is included.
+
 ## Current pause point
 
 Paused after deploying commit `5b3d11bd6ada` in the GCP performance lab and
@@ -131,8 +135,8 @@ Command run from the GCP load VM:
 ```bash
 cd /opt/hms
 set -a && . ./.hms-gcp-load.env && set +a
-HMS_LOAD_BASE_URL=https://34.35.148.55.sslip.io \
-HMS_LOAD_METRICS_URL=http://10.10.0.2:8080/api/v2/metrics \
+HMS_LOAD_BASE_URL=https://<public-edge-host> \
+HMS_LOAD_METRICS_URL=http://<app-vm-private-ip>:8080/api/v2/metrics \
 HMS_LOAD_PROFILE=stress \
 HMS_LOAD_STAGE_DURATION_SCALE=0.1 \
 HMS_LOAD_THINK_TIME_SCALE=0.2 \

@@ -1,100 +1,82 @@
 # Hospital Management System (HMS)
 
-HMS is a workflow-oriented hospital management system with an active Rust V2
-backend and the maintained React/Vite frontend.
+[![CI](https://github.com/JabezBrew/hms/actions/workflows/ci.yml/badge.svg)](https://github.com/JabezBrew/hms/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/backend-Rust%20%2F%20axum-orange.svg)](backend-rs/)
+[![Frontend](https://img.shields.io/badge/frontend-React%20%2F%20Vite-blue.svg)](frontend/)
 
-The active backend is `backend-rs/`. The old Django/DRF/Celery backend remains
-in `backend/` as legacy reference code only. Do not add new backend behavior to
-`backend/` unless the task explicitly says it is legacy Django maintenance.
+HMS is an open-source, workflow-oriented hospital management system for
+registration, triage, consultation, admission, ward care, discharge,
+laboratory, pharmacy, inventory, billing, and administration.
 
-## Engineering Documentation
+It ships a **Rust (axum) API** (`backend-rs/`, `/api/v2`) and a
+**React/Vite frontend** (`frontend/`), with PostgreSQL, Redis, background
+workers, and single-VM Docker Compose operations.
 
-Start with `CONTEXT.md` for product language, active architecture, and
-non-negotiable invariants. The concrete codebase map starts at `docs/README.md`
-and links to the backend crates, frontend modules, ops, tests, monitoring, and
-legacy reference areas.
+> **Status:** active development. The Rust V2 backend and React frontend are
+> the maintained path. The Django backend in `backend/` is legacy reference
+> only (parity research / historical comparison).
 
-When older docs conflict with Rust V2 code, tests, generated OpenAPI, or active
-runbooks, prefer the newer source of truth.
+## Highlights
 
-## Architecture
+- **Clinical workflows first** — registration → triage → consultation →
+  admission → ward care → discharge, plus lab, pharmacy, inventory, billing.
+- **Patient Chronicle** — the single product home for patient clinical data.
+- **Secure by default** — facility scoping, patient-access guards, least-
+  privilege DTOs, bounded cursor pagination, PHI-safe logging/keys.
+- **Performant hot paths** — O(1) queries per list page, lightweight list
+  projections, `p99 < 200 ms` budget on clinical lists (see
+  `docs/performance/performance-budget.md`).
+- **Contract-driven** — OpenAPI generated from Rust source
+  (`backend-rs/openapi/hms-v2.openapi.json`), generated TS client, contract
+  tests on both sides.
+- **Operable** — single-VM Compose kit (`ops/compose-v2/`), migrator/worker
+  binaries, health/readiness endpoints, Prometheus metrics.
 
-- **Backend (active): Rust V2**
-  - Source: `backend-rs/`
-  - API base: `/api/v2`
-  - Stack: Rust, axum, tokio, sqlx, PostgreSQL, Redis, utoipa/OpenAPI.
-  - Runtime binaries: `hms-api`, `hms-worker`, `hms-migrator`, `hms-openapi`.
-  - Architecture: `routes/*` mount URLs, `handlers/*` translate HTTP,
-    `services/*` own workflow Interfaces, `hms-access` authorizes, and
-    `hms-db` persists.
-  - Source of truth: `docs/v2/rust-v2-backend-spec.md`.
+## Screenshots
 
-- **Frontend (active): React/Vite**
-  - Source: `frontend/`
-  - The current product UI remains JavaScript/Vite.
-  - Rust integration uses generated JavaScript helpers from the Rust OpenAPI
-    document and runs in `rust-v2` API mode.
-  - Source of truth: `docs/v2/v2-cutover-scope.md`.
+> Screenshots use synthetic demo data only — never real patient data.
 
-- **Legacy backend reference**
-  - Source: `backend/`
-  - Historical Django implementation used for reference/parity only.
-  - Legacy deployment/config files are retained only where they are explicitly
-    labeled legacy.
+| Patient Chronicle | Ward Board | Billing |
+| --- | --- | --- |
+| *Add screenshot* | *Add screenshot* | *Add screenshot* |
 
-## Getting Started
+To contribute screenshots, seed the demo dataset (see
+`docs/v2/rust-v2-demo-seed.md`), capture with demo patients, and open a PR.
+
+## Quickstart (local dev)
 
 ### Prerequisites
 
 - Rust stable toolchain
 - Node.js 20+
-- Docker Desktop or another Docker daemon for local PostgreSQL/Redis
-- PostgreSQL client tools so Rust tests can create isolated Docker Postgres
-  databases with `createdb`/`dropdb`
+- Docker (for local PostgreSQL + Redis)
+- PostgreSQL client tools (`createdb` / `dropdb`) for Rust DB tests
 
-### Local Dependencies
-
-Start PostgreSQL and Redis from the root dependency Compose file:
+### 1. Start dependencies
 
 ```bash
 docker compose up -d postgres redis
 ```
 
-### Rust Backend
-
-Run checks and tests from `backend-rs/`:
+### 2. Run the Rust API
 
 ```bash
 cd backend-rs
-cargo fmt --all --check
-cargo test --workspace
-```
-
-Rust tests are expected to use the Docker Compose `postgres` service on
-`127.0.0.1:5432`. Keep the Docker database password in your private shell
-environment when Postgres client tools require it; do not commit or print DB
-passwords. The `hms-db` test support creates and drops isolated
-`hms_v2_test_*` databases inside that Docker Postgres instance.
-
-Run the API locally:
-
-```bash
-cd backend-rs
+cargo test --workspace        # runs fmt-gated unit + contract + db tests
 HMS_DATABASE_URL="$HMS_LOCAL_DATABASE_URL" \
 HMS_API_LISTEN_ADDR=127.0.0.1:8080 \
 cargo run -p hms-api
 ```
 
-Regenerate the OpenAPI document after backend contract changes:
+Regenerate the OpenAPI document after HTTP contract changes:
 
 ```bash
 cd backend-rs
 cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json
 ```
 
-### Frontend
-
-Install dependencies and run the maintained UI:
+### 3. Run the frontend
 
 ```bash
 cd frontend
@@ -103,98 +85,112 @@ cp .env.example .env
 npm run dev
 ```
 
-The frontend `.env.example` defaults to Rust V2 mode:
-
-```text
-VITE_HMS_API_MODE=rust-v2
-VITE_V2_API_BASE_URL=/api/v2
-VITE_V2_API_PROXY_TARGET=http://localhost:8080
-```
+Defaults are Rust V2 mode (`VITE_HMS_API_MODE=rust-v2`,
+`VITE_V2_API_BASE_URL=/api/v2`, proxy to `http://localhost:8080`).
 
 Validate frontend integration:
 
 ```bash
 cd frontend
+npm run lint
+npm run test:run
 npm run api:v2:generate:check
 npm run build
 ```
 
+## Architecture
+
+```text
+Browser (React/Vite)
+  -> Caddy / reverse proxy
+    -> hms-api (axum) : routes/* -> handlers/* -> services/* -> hms-access -> hms-db
+    -> hms-worker      : background jobs (never on hot request paths)
+    -> hms-migrator    : SQL migrations + provisioning + demo seeding
+  -> PostgreSQL + Redis
+```
+
+| Area | Path | Notes |
+| --- | --- | --- |
+| Rust API | `backend-rs/crates/hms-api/` | Routes mount URLs; handlers are thin; services own workflow. |
+| Access control | `backend-rs/crates/hms-access/` | Facility / profile / permission / patient-visibility / reauth. |
+| Persistence | `backend-rs/crates/hms-db/` + `backend-rs/migrations/` | SQL lives here, not in handlers. |
+| Domain language | `backend-rs/crates/hms-domain/` | Typed DTOs, capabilities, product vocabulary. |
+| Auth | `backend-rs/crates/hms-auth/` | JWT / sessions / password reset / passkeys. |
+| Events / jobs | `backend-rs/crates/hms-events/` + `hms-worker` | Async contract payloads. |
+| Observability | `backend-rs/crates/hms-observability/` | PHI-safe logging, tracing, metrics. |
+| Frontend | `frontend/src/features/<domain>/` | Feature modules; thin `src/pages/` wrappers only. |
+| API contract | `backend-rs/openapi/hms-v2.openapi.json` | Generated; do not hand-edit. |
+| Deploy kit | `ops/compose-v2/` | Reusable single-VM Compose deployment. |
+| Legacy | `backend/` | Django reference only. |
+
+Source of truth order: code + tests → OpenAPI / migrations / generated
+client → `docs/v2/rust-v2-backend-spec.md` → `docs/` maps → runbooks.
+When older docs conflict with Rust V2 code or generated contracts, the newer
+source wins. Start with [`CONTEXT.md`](CONTEXT.md) and
+[`docs/README.md`](docs/README.md).
+
 ## Deployment
 
-The current staging and performance-validation path is GCP:
+For a single-VM production-style deploy:
 
 ```bash
-./deploy staging
+git clone https://github.com/JabezBrew/hms.git /opt/hms
+cd /opt/hms
+cp ops/compose-v2/env.example ops/compose-v2/.env
+chmod 600 ops/compose-v2/.env
+# fill every CHANGE_ME value, then:
+ops/compose-v2/deploy.sh
 ```
 
-That command packages the committed checkout, uploads it to the GCP staging VM,
-deploys from `/opt/hms`, and verifies the GCP edge. If you are already on the
-VM in `/opt/hms`, use `./deploy --in-place`. See `ops/gcp-staging/README.md`
-for the full runbook.
-
-GCP staging runs the same Rust V2 stack: `backend-rs/`, `hms-migrator`,
-`hms-api`, `hms-worker`, the React frontend in Rust V2 mode, Cloud SQL
-PostgreSQL, Redis, and Caddy. The standard readiness check is:
+Health check:
 
 ```text
-https://<client-domain>/api/v2/health/ready
+https://<your-domain>/api/v2/health/ready
 ```
 
-Hetzner remains the rollback and reusable Compose path while GCP proves out:
+See [`ops/compose-v2/README.md`](ops/compose-v2/README.md) for profiles
+(`clinic`, `hospital`, `district_hospital`, …), backups, and rollback.
+`ops/gcp-staging/` documents one example staging topology with placeholder
+values — replace them with your own project/network before use.
 
-```text
-ops/compose-v2/README.md
-ops/compose-v2/compose.yml
-```
+## Documentation map
 
-The older `ops/hetzner-client-vps/` kit is legacy Django deployment material.
-Do not use it for new Rust V2 deploys.
+- Product + architecture invariants: [`CONTEXT.md`](CONTEXT.md)
+- Codebase map: [`docs/README.md`](docs/README.md)
+- Backend spec: [`docs/v2/rust-v2-backend-spec.md`](docs/v2/rust-v2-backend-spec.md)
+- Cutover scope: [`docs/v2/v2-cutover-scope.md`](docs/v2/v2-cutover-scope.md)
+- API/access/realtime/persistence contracts: [`docs/contracts/README.md`](docs/contracts/README.md)
+- Performance budgets: [`docs/performance/performance-budget.md`](docs/performance/performance-budget.md)
+- Runbooks: [`docs/runbooks/README.md`](docs/runbooks/README.md)
+- Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Security policy: [`SECURITY.md`](SECURITY.md)
 
-## Project Structure
+## Security & PHI
 
-```text
-backend-rs/
-  crates/
-    hms-api/             # Rust HTTP API server
-    hms-worker/          # Rust background worker
-    hms-migrator/        # SQL migrations and provisioning
-    hms-domain/          # Domain types and policies
-    hms-db/              # sqlx repositories and transactions
-    hms-auth/            # Auth/session/password reset logic
-    hms-access/          # Permissions and patient-access guards
-    hms-events/          # Domain event and job contracts
-    hms-observability/   # Logging, metrics, tracing helpers
-  migrations/            # Rust V2 SQL migrations
-  openapi/               # Generated Rust V2 OpenAPI document
+HMS handles protected health information. Contributors must:
 
-frontend/
-  src/                   # Maintained React/Vite UI
-  scripts/               # Generated V2 API client tooling
-  public/runtime-config.js
+- Never commit PHI, credentials, tokens, private `.env` files, request/response
+  bodies, MRNs, names, accessions, or production dumps.
+- Never log PHI, free-text clinical data, or raw patient URLs; keep metric
+  labels, cache keys, and query keys to opaque/sanitized scope values.
+- Enforce patient-access checks on every endpoint that accepts a patient id.
+- Keep FHIR/export/email/PDF work off hot request paths and out of open DB
+  transactions.
 
-backend/
-  apps/                  # Legacy Django apps for reference only
-  hms_backend/           # Legacy Django settings
-  manage.py              # Legacy Django management entry point
-```
+See [`SECURITY.md`](SECURITY.md) for reporting vulnerabilities. **Do not open
+public issues for suspected vulnerabilities.**
 
-## Development Rules
+## Contributing
 
-- Default backend work belongs in `backend-rs/`.
-- Default backend tests are `cargo fmt --all --check` and
-  `cargo test --workspace` from `backend-rs/`.
-- Add/modify frontend Rust integration through `frontend/src/lib/api/v2/*` and
-  feature API adapters in `frontend/`.
-- Keep patient clinical data workflows inside the Patient Chronicle UI.
-- Keep PHI out of logs, metrics labels, query keys, and browser storage.
-- Include facility/user/profile/permission-version scope in cache and query keys
-  whenever authorization changes visibility.
-- Use bounded cursor lists for hot clinical endpoints.
-- Preserve AbortSignal support in frontend list/search calls.
+Contributions are welcome — bug reports, docs, tests, clinical-workflow UX,
+performance work, and deployment improvements.
 
-## Legacy Django
+1. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+2. Open an issue first for anything beyond a trivial fix.
+3. Keep changes surgical; add or update tests for behavior changes.
+4. Run the relevant checks (`cargo fmt --check`, `cargo test`, `npm run lint`,
+   `npm run test:run`, `npm run build`) before opening a PR.
 
-Use `backend/` only when the task explicitly says to inspect, compare, or
-maintain legacy Django behavior. Legacy commands such as `python manage.py`,
-`pytest`, DRF serializers, Django migrations, Celery tasks, and Django
-deployment files do not define the active backend architecture.
+## License
+
+MIT — see [LICENSE](LICENSE).

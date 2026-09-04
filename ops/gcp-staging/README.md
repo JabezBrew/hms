@@ -1,7 +1,13 @@
 # HMS GCP staging runbook
 
+> **Open-source note:** this runbook documents one example staging topology.
+> Hostnames, IPs, project names, billing figures, backup IDs, and snapshot
+> names below are **example/placeholder values**. Replace them with your own
+> project inventory before use. Never commit private `.env` contents,
+> credentials, patient data, or production dumps.
+
 This runbook is the source of truth for current HMS Rust V2 staging on Google
-Cloud. Hetzner remains rollback, but `staging.thehms.systems` should not be
+Cloud. Hetzner remains rollback, but the staging domain should not be
 reasoned about from the reusable single-VM Compose file alone.
 
 ## Current decision
@@ -11,59 +17,57 @@ PostgreSQL on Cloud SQL and public traffic through the GCP global external
 HTTPS Load Balancer. Keep Hetzner reversible until DNS, backups, smoke tests,
 and performance evidence prove the GCP path is healthy for a rollback window.
 
-As of June 1, 2026, the billing console showed:
+Track billing in the cloud console (budget, remaining credits, expiry, monthly
+usage, top cost drivers) and review before credits run low — do not paste
+live billing figures into this file.
 
-- Free trial original credit: `$300.00`.
-- Remaining credit: `$285.10`.
-- Credit expiry: August 29, 2026.
-- May 2026 report: `$12.50` usage, fully offset by credits.
-- Main May cost drivers: Compute Engine `$12.34`, Networking `$0.16`.
+## Example GCP lab inventory
 
-## Current GCP lab inventory
+> Placeholder inventory — replace every value with your own before deploying.
 
 Project:
 
-- `hms-perf-lab`
+- `<gcp-project-id>` (example)
 
 App VM:
 
-- Name: `hms-gcp-app-1`
-- Zone: `africa-south1-a`
-- Private IP: `10.10.0.2`
-- Public IP: `34.35.148.55`
-- Machine type: `n2-standard-4`
-- Disk: `100G`
-- Current public URL: `https://staging.thehms.systems`
-- Current compose project: `hms-gcp-perf`
+- Name: `<app-vm-name>`
+- Zone: `<region-zone>` (example: `africa-south1-a`)
+- Private IP: `<app-vm-private-ip>` (RFC 1918 example range, e.g. `10.x.x.x`)
+- Public IP: `<app-vm-public-ip>` (do not publish live IPs; use DNS)
+- Machine type: `<machine-type>` (example: `n2-standard-4` for a perf lab)
+- Disk: `<disk-size>` (example: `100G`)
+- Current public URL: `https://<staging-domain>`
+- Current compose project: `<compose-project>`
 - Current deployment profile: `hospital`
-- Current facility code: `MAIN`
-- Current image tag observed: `gcp-perf-288e273b61ac`
+- Current facility code: `<facility-code>`
+- Current image tag observed: `<image-tag>`
 
 Public edge:
 
-- DNS: `staging.thehms.systems`
+- DNS: `<staging-domain>`
 - Cloudflare state: DNS-only to the GCP load balancer.
-- GCP global address: `hms-staging-lb-ip` / `35.190.19.91`
-- HTTPS forwarding rule: `hms-staging-https-fr`
-- Target proxy: `hms-staging-https-proxy`
-- URL map: `hms-staging-url-map`
-- App backend: `hms-staging-app-backend`, forwarding HTTP to Caddy on named
+- GCP global address: `<lb-name>` / `<lb-ip-placeholder>`
+- HTTPS forwarding rule: `<https-fr-name>`
+- Target proxy: `<https-proxy-name>`
+- URL map: `<url-map-name>`
+- App backend: `<app-backend-name>`, forwarding HTTP to Caddy on named
   port `http:80`.
-- App backend health check: `hms-staging-http-ready-hc`, HTTP
-  `/api/v2/health/ready` with host `staging.thehms.systems`.
+- App backend health check: `<health-check-name>`, HTTP
+  `/api/v2/health/ready` with host `<staging-domain>`.
 - App VM web firewall: allow only GCP GFE/health-check ranges
   `35.191.0.0/16` and `130.211.0.0/22` to TCP port `80`; public clients should
   reach the VM only through the HTTPS load balancer.
-- Static backend: `hms-staging-static-backend` with CDN enabled for
+- Static backend: `<static-backend-name>` with CDN enabled for
   `/assets/*` only.
-- Managed certificate: `hms-staging-managed-cert-v2`
+- Managed certificate: `<managed-cert-name>`
 
 Database:
 
-- Cloud SQL instance: `hms-staging-pg-1`
+- Cloud SQL instance: `<cloudsql-instance>`
 - PostgreSQL major version: `16`
-- Region: `africa-south1`
-- Private IP: `10.216.13.2`
+- Region: `<region>` (example: `africa-south1`)
+- Private IP: `<cloudsql-private-ip>` (RFC 1918 example range)
 - Availability: regional HA
 - Automated backups: enabled
 - Point-in-time recovery: enabled
@@ -71,12 +75,12 @@ Database:
 
 Load VM:
 
-- Name: `hms-gcp-load-1`
-- Zone: `africa-south1-a`
-- Private IP: `10.10.0.3`
-- Public IP: `34.35.189.72`
-- Machine type: `e2-standard-2`
-- Disk: `50G`
+- Name: `<load-vm-name>`
+- Zone: `<region-zone>`
+- Private IP: `<load-vm-private-ip>` (RFC 1918 example range)
+- Public IP: `<load-vm-public-ip>` (do not publish live IPs; use DNS)
+- Machine type: `<machine-type>` (example: `e2-standard-2`)
+- Disk: `<disk-size>` (example: `50G`)
 
 The app VM is intentionally oversized for a perf lab. The load VM should be
 stopped when not running tests.
@@ -107,10 +111,10 @@ on the VM, do not treat them as proof that staging uses Docker Postgres. Verify
 the live runtime by checking the redacted database host inside `hms-api` and
 `hms-worker`.
 
-Expected redacted runtime proof:
+Expected redacted runtime proof (example addresses — yours will differ):
 
 ```text
-HMS_DATABASE_URL host=10.216.13.2 port=5432
+HMS_DATABASE_URL host=<cloudsql-private-ip> port=5432
 ```
 
 Use the root deploy front door for normal GCP staging deploys from this laptop:
@@ -119,7 +123,7 @@ Use the root deploy front door for normal GCP staging deploys from this laptop:
 ./deploy staging
 ```
 
-That command archives the committed checkout, uploads it to `hms-gcp-app-1`,
+That command archives the committed checkout, uploads it to the app VM,
 preserves the private env file on the VM, deploys from `/opt/hms`, and runs the
 GCP edge verifier from the operator machine. The archive is streamed over SSH
 instead of `gcloud compute scp`, and the wrapper verifies the remote byte count
@@ -197,7 +201,7 @@ Postgres mode, requires `hms-api`, `hms-worker`, and `hms-migrator` to use the
 external `HMS_DATABASE_URL`, requires migrator egress on the `edge` network, and
 runs `hms-migrator check-db` before migrations. It also refuses stale shell
 `HMS_DATABASE_URL` values that differ from the private env file and checks the
-database host against `GCP_CLOUDSQL_HOST` (`10.216.13.2` by default).
+database host against `GCP_CLOUDSQL_HOST` (your Cloud SQL private IP).
 
 The lower-level Compose deploy also validates that every SQL migration version
 prefix under `backend-rs/migrations/` is unique before it builds images or runs
@@ -225,13 +229,16 @@ Hetzner VPS until GCP staging has been stable through a rollback window.
 
 ## Verified backups and restore anchors
 
+> Keep live backup IDs, snapshot names, and dump paths out of the repo.
+> Record them in your private ops log; the shapes below are placeholders.
+
 Current Cloud SQL protection:
 
 - Automated backups: enabled.
 - Point-in-time recovery: enabled.
 - Deletion protection: enabled.
 - On-demand Cloud SQL backup observed after the restore drill:
-  `1780302451794`.
+  `<backup-id>`.
 - Restore drill to a temporary Cloud SQL instance completed successfully; the
   temporary restore instance was deleted after validation.
 
@@ -241,22 +248,22 @@ staging uses Docker Postgres.
 
 Hetzner source backup:
 
-- `/opt/hms/ops/compose-v2/backups/staging-20260601T054922Z.dump`
+- `<backups-dir>/staging-<timestamp>.dump`
 
 GCP pre-restore backup:
 
-- `/opt/hms/ops/compose-v2/backups/gcp-perf-20260601T054922Z.dump`
+- `<backups-dir>/gcp-perf-<timestamp>.dump`
 
 GCP post-auth-repair backup:
 
-- `/opt/hms/ops/compose-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump`
+- `<backups-dir>/gcp-staging-postrepair-<timestamp>.dump`
 
 GCP disk snapshot:
 
-- `hms-gcp-app-1-postrepair-20260601-0653`
-- Source disk: `hms-gcp-app-1`
-- Location: `africa-south1`
-- Size observed after completion: `8.98 GB`
+- `<snapshot-name>`
+- Source disk: `<app-vm-disk>`
+- Location: `<region>`
+- Size observed after completion: `<size>`
 - Status observed: available
 
 Rollback restore command for a DB dump on a prepared single-VM Rust V2 host:
@@ -265,7 +272,7 @@ Rollback restore command for a DB dump on a prepared single-VM Rust V2 host:
 cd /opt/hms
 RESTORE_CONFIRM=restore-staging \
   ops/compose-v2/restore-postgres.sh \
-  ops/compose-v2/backups/gcp-staging-postrepair-20260601T065316Z.dump
+  <backups-dir>/<backup-file>.dump
 ```
 
 The disk snapshot is the VM-level rollback anchor. The DB dumps are the
@@ -323,19 +330,20 @@ public-path tail latency is network/edge distance, not local app execution.
 
 ## Current cost guardrails
 
-The billing budget `hms-perf budgets` is scoped to project `hms-perf-lab`.
+> Example values — set your own budget and thresholds in the cloud console.
 
-- Budget amount: `$250`
-- Alert thresholds: `20%`, `60%`, `100%`
-- Dollar equivalents: `$50`, `$150`, `$250`
+The billing budget is scoped to the staging project.
+
+- Budget amount: `<budget-amount>` (example: `$250`)
+- Alert thresholds: `<t1>`, `<t2>`, `100%` (example: `20%`, `60%`, `100%`)
 - Email alerts to billing admins and users: enabled
 
 Operational cost rule:
 
-- Keep `hms-gcp-app-1` running for staging.
-- Keep `hms-gcp-load-1` stopped unless actively running tests.
-- Review free credits before the remaining credit drops below `$50` or before
-  August 15, 2026, whichever comes first.
+- Keep the app VM running for staging.
+- Keep the load VM stopped unless actively running tests.
+- Review remaining credits before they drop below your review threshold or
+  well before expiry, whichever comes first.
 
 ## Target operating model
 
@@ -351,7 +359,7 @@ Use three modes rather than one always-on expensive shape:
      Hetzner-style rollback shape.
 
 2. Load-test mode
-   - Keep `hms-gcp-load-1` stopped by default.
+   - Keep the load VM stopped by default.
    - Start it only for regression runs and frontend runtime probes.
    - Stop it again immediately after evidence is captured.
 
@@ -364,16 +372,16 @@ Use three modes rather than one always-on expensive shape:
 
 Before canceling Hetzner staging:
 
-- Create GCP budget alerts at `$50`, `$150`, and `$250`.
-- Add a manual review threshold when remaining credits fall below `$50`.
+- Create budget alerts (example: 20% / 60% / 100% of your budget).
+- Add a manual review threshold when remaining credits fall below your floor.
 - Label resources with at least:
   - `app=hms`
   - `env=staging`
   - `purpose=staging` or `purpose=load-test`
 - Stop the load VM outside test windows.
 - Keep disks and snapshots named clearly so orphaned resources are obvious.
-- Review credits before August 15, 2026, so there is time to move back to
-  Hetzner before credits expire on August 29, 2026.
+- Review credits well before expiry, so there is time to move back to
+  Hetzner before credits run out.
 
 ## Security and PHI rules
 
@@ -396,9 +404,9 @@ Before canceling Hetzner staging:
    - Do not cancel the VPS yet.
 
 2. Prepare GCP staging
-   - Decide whether to reuse `hms-gcp-app-1` or create a new staging VM.
+   - Decide whether to reuse the existing app VM or create a new staging VM.
    - Prefer reusing only if the perf lab can tolerate staging naming and DNS.
-   - For a cleaner setup, create a new VM named `hms-gcp-staging-1`.
+   - For a cleaner setup, create a new VM (example: `hms-gcp-staging-1`).
    - Use `./deploy staging` as the normal deployment entry point.
    - Use `ops/compose-v2/compose.yml` only together with
      `ops/gcp-staging/compose.cloudsql.yml` for current GCP staging.
@@ -423,8 +431,8 @@ Before canceling Hetzner staging:
 
 5. Cut DNS
    - Point `staging.thehms.systems` at the GCP load-balancer IP.
-   - Confirm `hms-staging-app-backend` uses protocol `HTTP`, port name `http`,
-     and health check `hms-staging-http-ready-hc`; Caddy behind the LB should
+   - Confirm the app backend uses protocol `HTTP`, port name `http`,
+     and the HTTP readiness health check; Caddy behind the LB should
      serve HTTP on port 80, not redirect GCP backend traffic to HTTPS.
    - Keep Cloudflare DNS-only unless the proxied-vs-DNS-only timing/security
      comparison is being run intentionally.
@@ -446,13 +454,13 @@ Before canceling Hetzner staging:
 
 ## Remaining safe actions
 
-1. Stop `hms-gcp-load-1` when no test run is active.
+1. Stop the load VM when no test run is active.
 2. Keep Docker `db` and `pgbouncer` stopped on GCP staging unless explicitly
    validating the Hetzner-style rollback shape.
 3. Compare Cloudflare proxied versus DNS-only timing before changing the final
    edge path.
 4. After the GCP path is stable, consider resizing the app VM down from
-   `n2-standard-4`; run smoke and perf checks before keeping a smaller size.
+   the larger perf-lab size; run smoke and perf checks before keeping a smaller size.
 5. Keep Hetzner live until the GCP public path, Cloud SQL backup/restore path,
    and rollback assumptions are proven through the agreed window.
 
@@ -462,11 +470,11 @@ If the browser shows `no healthy upstream` or `remote connection failure` from
 Google:
 
 ```bash
-gcloud compute backend-services get-health hms-staging-app-backend \
-  --global --project hms-perf-lab
+gcloud compute backend-services get-health <app-backend-name> \
+  --global --project <gcp-project-id>
 ```
 
-Expected healthy output is the `hms-gcp-app-1` instance on port `80`. If GCP
+Expected healthy output is the app VM instance on port `80`. If GCP
 marks the backend unhealthy and direct VM HTTP redirects to HTTPS, redeploy with
 the GCP override so Caddy mounts `ops/gcp-staging/Caddyfile`. If GCP marks the
 backend healthy but public requests still fail, verify the backend service did

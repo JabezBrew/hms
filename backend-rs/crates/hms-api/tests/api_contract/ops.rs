@@ -172,8 +172,8 @@ async fn ops_endpoints_accept_cloudflare_access_operator_without_hms_user() {
     config.cloudflare_access.team_domain = Some(CF_TEST_ISSUER.to_owned());
     config.cloudflare_access.audience = Some(CF_TEST_AUD.to_owned());
     config.cloudflare_access.allowed_emails = vec![
-        "jabezbrew3@gmail.com".to_owned(),
-        "jabezbrew79@gmail.com".to_owned(),
+        "ops-operator-1@example.com".to_owned(),
+        "ops-operator-2@example.com".to_owned(),
     ];
     config.cloudflare_access.test_secret = Some(CF_TEST_SECRET.to_owned());
     let app = app_with_config(config, database).await;
@@ -182,7 +182,7 @@ async fn ops_endpoints_accept_cloudflare_access_operator_without_hms_user() {
     let hms_response = api_get(app.clone(), &owner, "/api/v2/ops/overview").await;
     assert_eq!(hms_response.status(), StatusCode::UNAUTHORIZED);
 
-    let allowed_token = cloudflare_access_test_token("jabezbrew3@gmail.com");
+    let allowed_token = cloudflare_access_test_token("ops-operator-1@example.com");
     for endpoint in IMPLEMENTED_OPS_ENDPOINTS {
         let response = cloudflare_access_get(app.clone(), endpoint, &allowed_token).await;
         assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
@@ -202,7 +202,7 @@ async fn ops_endpoints_accept_cloudflare_access_operator_without_hms_user() {
         assert_ops_body_is_safe(&body, endpoint, Uuid::nil());
     }
 
-    let second_allowed_token = cloudflare_access_test_token("jabezbrew79@gmail.com");
+    let second_allowed_token = cloudflare_access_test_token("ops-operator-2@example.com");
     let second_allowed_response =
         cloudflare_access_get(app.clone(), "/api/v2/ops/overview", &second_allowed_token).await;
     assert_eq!(second_allowed_response.status(), StatusCode::OK);
@@ -310,7 +310,7 @@ fn assert_ops_body_is_safe(body: &str, endpoint: &str, patient_id: Uuid) {
         "https://browser.example".to_owned(),
         "?mrn=".to_owned(),
         "owner@hms.local".to_owned(),
-        "jabezbrew3@gmail.com".to_owned(),
+        "ops-operator-1@example.com".to_owned(),
         "someone-else@example.com".to_owned(),
         "ChangeMe123".to_owned(),
         "ERROR request_id=".to_owned(),

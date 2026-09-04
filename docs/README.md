@@ -5,6 +5,11 @@ Owner: Engineering
 Last reviewed: 2026-06-01
 Scope: concrete map of the HMS repository.
 
+New here? Start with the root [`README.md`](../README.md) and
+[`CONTEXT.md`](../CONTEXT.md), then follow the map below. Contributors should
+also read [`CONTRIBUTING.md`](../CONTRIBUTING.md) and
+[`SECURITY.md`](../SECURITY.md).
+
 ## Active Code
 
 - Root app overview: [`../README.md`](../README.md)

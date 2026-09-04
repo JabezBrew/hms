@@ -1,7 +1,0 @@
-interface:
-  display_name: "HMS React Quality"
-  short_description: "HMS-safe React quality workflow"
-  default_prompt: "Use $hms-react-quality to implement, refactor, or review HMS frontend React code with React Doctor and performance best practices."
-
-policy:
-  allow_implicit_invocation: true

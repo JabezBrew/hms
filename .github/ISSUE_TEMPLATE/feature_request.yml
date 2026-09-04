@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest a clinical workflow, capability, or improvement
+title: "[feat]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        HMS is workflow-oriented: frame requests around the clinical or
+        operational work to be done (registration, triage, ward care, lab,
+        billing, …), not generic CRUD.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What clinical / operational work is hard today?
+      placeholder: As a [nurse / doctor / billing officer / admin], I need ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety & access notes
+      description: >
+        Which roles should see this? Does it touch patient data, high-risk
+        actions, or realtime updates? Any reauth, audit, or scoping needs?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - backend-rs (Rust API)
+        - frontend (React/Vite)
+        - docs / contracts
+        - ops / deploy
+        - performance
+        - legacy Django (reference only)

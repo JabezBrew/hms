@@ -1,7 +1,14 @@
 {
-  "name": "frontend",
+  "name": "hms-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "HMS clinical and operational frontend (React/Vite) for the Rust V2 /api/v2 backend.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JabezBrew/hms.git",
+    "directory": "frontend"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

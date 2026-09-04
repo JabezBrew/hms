@@ -33340,8 +33340,8 @@
   "info": {
     "description": "",
     "license": {
-      "identifier": "UNLICENSED",
-      "name": "UNLICENSED"
+      "identifier": "MIT",
+      "name": "MIT"
     },
     "title": "hms-api",
     "version": "0.1.0"

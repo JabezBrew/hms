@@ -14,7 +14,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-license = "UNLICENSED"
+license = "MIT"
 publish = false
 rust-version = "1.88"
 

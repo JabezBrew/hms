@@ -34,7 +34,7 @@ On the VPS:
 ```bash
 sudo mkdir -p /opt/hms
 sudo chown deploy:deploy /opt/hms
-git clone git@github.com:JabezBrew/hms.git /opt/hms
+git clone https://github.com/JabezBrew/hms.git /opt/hms
 cd /opt/hms
 cp ops/compose-v2/env.example ops/compose-v2/.env
 chmod 600 ops/compose-v2/.env

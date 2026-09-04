@@ -1,0 +1,60 @@
+name: Bug report
+description: Report something broken in HMS
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thanks for reporting. **Never include PHI, credentials, tokens, MRNs,
+        names, accessions, or request/response bodies.** Use synthetic demo
+        data only (see `docs/v2/rust-v2-demo-seed.md`).
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      description: Where did you see the bug?
+      placeholder: e.g. backend-rs (ward API), frontend (Patient Chronicle), ops/compose-v2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: e.g. main @ abc1234, or release tag
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Seed demo data with ...
+        2. Log in as role ...
+        3. Open ...
+        4. Expected ... but got ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs / evidence
+      description: Paste redacted logs only. No PHI, tokens, or patient identifiers.
+      render: shell
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Clinical / operational impact
+      options:
+        - Low — cosmetic or minor inconvenience
+        - Medium — workflow degraded, workaround exists
+        - High — workflow blocked, no safe workaround
+        - Critical — data loss, wrong-patient risk, or auth bypass
+    validations:
+      required: true
