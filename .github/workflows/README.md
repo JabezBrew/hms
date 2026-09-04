@@ -1,9 +1,9 @@
-# .github
+# GitHub workflows
 
 Status: active
 Owner: Engineering
 Last reviewed: 2026-06-03
-Scope: GitHub workflow configuration, issue/PR templates.
+Scope: CI, CodeQL, and dependency-review workflows under `.github/workflows/`.
 
 ## Workflows
 

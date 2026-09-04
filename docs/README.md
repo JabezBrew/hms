@@ -31,7 +31,7 @@ also read [`CONTRIBUTING.md`](../CONTRIBUTING.md) and
 - Operations/deploy map: [`../ops/README.md`](../ops/README.md)
 - Monitoring map: [`../monitoring/README.md`](../monitoring/README.md)
 - Test/load map: [`../tests/README.md`](../tests/README.md)
-- CI workflows: [`../.github/README.md`](../.github/README.md)
+- CI workflows: [`../.github/workflows/README.md`](../.github/workflows/README.md)
 - Docker legacy reference: [`../docker/README.md`](../docker/README.md)
 - Kubernetes legacy reference: [`../k8s/README.md`](../k8s/README.md)
 - Top-level scripts: [`../scripts/README.md`](../scripts/README.md)
