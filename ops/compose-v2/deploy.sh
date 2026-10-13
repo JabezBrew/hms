@@ -13,10 +13,10 @@ else
 fi
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
-PUBLIC_HEALTH_TIMEOUT="${PUBLIC_HEALTH_TIMEOUT:-30}"
-PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-auto}"
+PUBLIC_HEALTH_TIMEOUT="${PUBLIC_HEALTH_TIMEOUT:-}"
+PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-}"
 DATABASE_MODE="${DATABASE_MODE:-compose-postgres}"
-EXTERNAL_DB_BACKUP_CONFIRMED="${EXTERNAL_DB_BACKUP_CONFIRMED:-false}"
+EXTERNAL_DB_BACKUP_CONFIRMED="${EXTERNAL_DB_BACKUP_CONFIRMED:-}"
 EXTERNAL_DB_BACKUP_TARGET_HOST="${EXTERNAL_DB_BACKUP_TARGET_HOST:-}"
 ALLOW_UNSAFE_SKIP_EXTERNAL_DB_BACKUP="${ALLOW_UNSAFE_SKIP_EXTERNAL_DB_BACKUP:-false}"
 EXTERNAL_DB_STOP_LOCAL_SERVICES="${EXTERNAL_DB_STOP_LOCAL_SERVICES:-true}"
@@ -363,7 +363,6 @@ wait_for_public_http() {
   url="$1"
   timeout="$2"
   mode="$3"
-  elapsed=0
   last_status=1
 
   case "$mode" in
@@ -380,8 +379,31 @@ wait_for_public_http() {
     return 0
   fi
 
-  while [ "$elapsed" -le "$timeout" ]; do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+  for timing_value in "$timeout" "$HEALTH_INTERVAL"; do
+    case "$timing_value" in
+      ""|*[!0-9]*)
+        printf 'PUBLIC_HEALTH_TIMEOUT and HEALTH_INTERVAL must be positive whole seconds.\n' >&2
+        exit 1
+        ;;
+    esac
+    if [ "$timing_value" -le 0 ]; then
+      printf 'PUBLIC_HEALTH_TIMEOUT and HEALTH_INTERVAL must be positive whole seconds.\n' >&2
+      exit 1
+    fi
+  done
+
+  deadline=$(( $(date +%s) + timeout ))
+  while :; do
+    remaining=$((deadline - $(date +%s)))
+    if [ "$remaining" -le 0 ]; then
+      break
+    fi
+    connect_timeout="$remaining"
+    if [ "$connect_timeout" -gt 5 ]; then
+      connect_timeout=5
+    fi
+
+    if curl -fsS --connect-timeout "$connect_timeout" --max-time "$remaining" "$url" >/dev/null 2>&1; then
       printf 'Public edge health check passed: %s\n' "$url"
       return 0
     else
@@ -393,8 +415,15 @@ wait_for_public_http() {
       return 0
     fi
 
-    sleep "$HEALTH_INTERVAL"
-    elapsed=$((elapsed + HEALTH_INTERVAL))
+    remaining=$((deadline - $(date +%s)))
+    if [ "$remaining" -le 0 ]; then
+      break
+    fi
+    sleep_time="$HEALTH_INTERVAL"
+    if [ "$sleep_time" -gt "$remaining" ]; then
+      sleep_time="$remaining"
+    fi
+    sleep "$sleep_time"
   done
 
   if [ "$mode" = "required" ]; then
@@ -417,6 +446,14 @@ require_file "$ENV_FILE"
 for compose_file in $COMPOSE_FILES; do
   require_file "$compose_file"
 done
+
+PUBLIC_HEALTH_TIMEOUT="${PUBLIC_HEALTH_TIMEOUT:-$(env_value PUBLIC_HEALTH_TIMEOUT)}"
+PUBLIC_HEALTH_TIMEOUT="${PUBLIC_HEALTH_TIMEOUT:-30}"
+PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-$(env_value PUBLIC_HEALTHCHECK_MODE)}"
+PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-auto}"
+EXTERNAL_DB_BACKUP_CONFIRMED="${EXTERNAL_DB_BACKUP_CONFIRMED:-$(env_value EXTERNAL_DB_BACKUP_CONFIRMED)}"
+EXTERNAL_DB_BACKUP_CONFIRMED="${EXTERNAL_DB_BACKUP_CONFIRMED:-false}"
+EXTERNAL_DB_BACKUP_TARGET_HOST="${EXTERNAL_DB_BACKUP_TARGET_HOST:-$(env_value EXTERNAL_DB_BACKUP_TARGET_HOST)}"
 
 case "$DATABASE_MODE" in
   compose-postgres|external-postgres)
@@ -530,7 +567,9 @@ if [ "$hms_env" = "production" ]; then
 fi
 
 step 'Building application images'
-compose build hms-api hms-worker hms-migrator frontend
+# All three Rust services share one image containing API, worker, and migrator
+# binaries. Build it once so parallel exporters do not race on the same tag.
+compose build hms-api frontend
 
 if [ "$DB_CONNECTIVITY_CHECK" = "true" ]; then
   step 'Checking database connectivity from migrator'
@@ -549,6 +588,7 @@ fi
 step 'Starting application services'
 compose up -d --no-deps hms-api hms-worker frontend
 wait_for_service hms-api "$HEALTH_TIMEOUT"
+wait_for_service hms-worker "$HEALTH_TIMEOUT"
 wait_for_service frontend "$HEALTH_TIMEOUT"
 
 step 'Refreshing edge proxy'

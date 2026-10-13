@@ -11,7 +11,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY migrations ./migrations
 
-RUN cargo build --release --workspace --bins
+ARG CARGO_BUILD_JOBS=2
+RUN cargo build --locked --release --workspace --bins --jobs "${CARGO_BUILD_JOBS}"
 
 FROM debian:bookworm-slim AS runtime
 

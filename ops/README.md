@@ -2,22 +2,25 @@
 
 Status: active
 Owner: Operations
-Last reviewed: 2026-06-01
+Last reviewed: 2026-10-13
 Scope: deployment, rollback, and operations tooling under `ops/`.
 
 ## Current Role
 
-GCP is the current staging and performance-validation path. `compose-v2/` is
-the reusable Rust V2 single-VM Compose kit for rollback and client VPS shapes.
-Hetzner remains an environment rollback option, not the name of the active kit.
-The older Hetzner client VPS kit is legacy Django deployment material.
+No current live deployment is verified. `free-testing/` is the prepared $0
+hosting path for one tester using synthetic data. GCP documents the earlier
+staging and performance-validation path. `compose-v2/` is the reusable Rust V2
+single-VM Compose kit used by both the free-testing profile and client VPS
+shapes. Hetzner remains an environment rollback option; the older Hetzner
+client VPS kit is legacy Django deployment material.
 
 ## Map
 
 | Path | Role |
 | --- | --- |
-| `../deploy` / `deploy.sh` | operator-friendly front door for staging deploys and edge verification. |
-| `gcp-staging/README.md` | current GCP staging/perf-lab state, smoke evidence, rollback anchors, cost guardrails. |
+| `free-testing/README.md` | Oracle Always Free or existing-computer synthetic solo-testing runbook; Cloudflare Tunnel/Access domain setup. |
+| `../deploy` / `deploy.sh` | GCP staging deploy and edge-verification front door. |
+| `gcp-staging/README.md` | earlier GCP staging/perf-lab topology, dated smoke evidence, rollback anchors, cost guardrails. |
 | `compose-v2/` | reusable Rust V2 single-VM Docker Compose deployment kit and rollback reference. |
 | `hetzner-v2/` | deprecated compatibility shims that forward to `compose-v2/`. |
 | `hetzner-client-vps/` | legacy Django deployment kit; do not use for new Rust V2 deploys. |
@@ -26,7 +29,12 @@ The older Hetzner client VPS kit is legacy Django deployment material.
 
 ## Rust V2 Compose Kit
 
-For the current GCP staging path, use the root front door:
+For free solo testing, follow [`free-testing/README.md`](free-testing/README.md)
+and use `ops/free-testing/deploy.sh`. It merges the base kit with a loopback
+HTTP origin and a Cloudflare Tunnel connector. This route does not use the GCP
+front door or Cloud SQL override.
+
+For the retained GCP staging path, use the root front door:
 
 ```bash
 ./deploy staging

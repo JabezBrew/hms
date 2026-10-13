@@ -1,0 +1,78 @@
+# Synthetic solo testing only. Merge after ops/compose-v2/compose.yml.
+# Cloudflare provides browser TLS and Access; the origin has no public ports.
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:${HMS_TEST_HTTP_PORT:-8088}:80"
+    volumes: !override
+      - ../free-testing/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_config:/config
+
+  hms-api:
+    build:
+      args:
+        CARGO_BUILD_JOBS: "2"
+    environment:
+      HMS_ENV: staging
+      HMS_ACCOUNT_SETUP_DELIVERY_MODE: disabled
+      HMS_PUBLIC_APP_URL: https://${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
+      HMS_WEBAUTHN_RP_ID: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
+      HMS_WEBAUTHN_RP_ORIGIN: https://${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
+
+  hms-worker:
+    environment:
+      HMS_ENV: staging
+
+  hms-migrator:
+    environment:
+      HMS_ENV: staging
+      HMS_SEED_DEMO_DATA: "true"
+      HMS_DEMO_SEED_PROFILE: smoke
+
+  # Disable SQL text and bind-parameter logging. Aggregate pg_stat_statements
+  # remains available inside the private database network.
+  db:
+    command: !override
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=60
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - log_statement=none
+      - -c
+      - log_min_duration_statement=-1
+      - -c
+      - log_min_error_statement=panic
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
+
+  prometheus:
+    profiles: [monitoring-disabled]
+
+  grafana:
+    profiles: [monitoring-disabled]
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    profiles: [tunnel]
+    command: [tunnel, --no-autoupdate, --metrics, "0.0.0.0:2000", run]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      caddy:
+        condition: service_healthy
+    networks: [edge]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
