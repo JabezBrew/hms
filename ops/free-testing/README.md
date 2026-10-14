@@ -1,9 +1,9 @@
 # HMS free solo-testing deployment
 
-Status: prepared; no live deployment verified
+Status: Oracle origin and public HTTPS/API verified; browser workflow review pending
 Owner: Operations
-Last reviewed: 2026-10-13
-Scope: synthetic data, one tester, $0 hosting target.
+Last reviewed: 2026-10-14
+Scope: synthetic data, public HMS login with existing accounts, $0 hosting target.
 
 Use one Oracle Cloud Always Free Ubuntu ARM64 VM for the complete Rust V2
 Compose stack, with Cloudflare Tunnel on `staging.thehms.systems`. The default
@@ -139,8 +139,8 @@ it does not authenticate to the public application. The tunnel uses outbound
 connectivity; use Cloudflare's
 [connectivity prechecks](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/troubleshoot-tunnels/connectivity-prechecks/)
 if a host firewall prevents it connecting. Preserve the rest of the domain's
-DNS records. No VM, Cloudflare account, tunnel or Access configuration has been
-created by this preparation.
+DNS records. Follow the verification evidence below to distinguish local
+preparation from the subsequent live deployment.
 
 ## 4. Verify before calling it live
 
@@ -190,9 +190,20 @@ and Patient Chronicle returned successful responses. Anonymous patient access
 returned 401; metrics and ops routes returned 404. Caddy configuration validation,
 frontend generated-client/build/bundle checks and Rust formatting also passed.
 
-The ops suite passed: 79 tests in the working checkout and the clean-checkout-only
+The initial ops suite passed: 79 tests in the working checkout and the clean-checkout-only
 GCP dry-run test in an isolated clean checkout. The deployment security review
-found no material issue. Oracle VM behavior, tunnel connection, authenticated public/browser smoke,
-passkeys, WebSockets and remote latency remain pending. No remote host or domain
-configuration was changed.
+found no material issue.
+
+On 2026-10-14, the Oracle Casablanca ARM64 origin and the remotely managed
+Cloudflare Tunnel were deployed. `staging.thehms.systems` now uses the tunnel
+instead of its former GCP A record; a private copy of the prior DNS record and
+VM configuration was retained for rollback. There is no Cloudflare Access gate.
+The public-mode ops tests passed (14 tests). Public HTTPS checks returned 200
+for the home/login pages, frontend JavaScript, readiness, administrator login,
+authenticated identity, bounded registry and dashboard. Anonymous identity and
+patient-list requests returned 401; metrics and ops returned 404. The tunnel
+reported healthy with four connections. Administrator credentials remain private.
+The application image is from `8a820c09b`; public-mode deployment scripts are
+from `57d91d300`. Public self-registration remains unimplemented. Interactive
+browser workflows, passkeys, WebSockets and remote latency remain unverified.
 This runbook is a testing deployment path, not production or clinical approval.
