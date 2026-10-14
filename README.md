@@ -1,6 +1,5 @@
 # Hospital Management System (HMS)
 
-[![CI](https://github.com/JabezBrew/hms/actions/workflows/ci.yml/badge.svg)](https://github.com/JabezBrew/hms/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/backend-Rust%20%2F%20axum-orange.svg)](backend-rs/)
 [![Frontend](https://img.shields.io/badge/frontend-React%20%2F%20Vite-blue.svg)](frontend/)
