@@ -148,7 +148,7 @@ export default function BillingDischargesPage() {
                       <div className="rounded-lg border p-3">
                         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                           <Clock3 className="size-3.5" />
-                          Medical Ready
+                          {item.v2_status ? 'Discharge requested' : 'Medical Ready'}
                         </div>
                         <p className="mt-2 text-sm font-medium">{formatDateTime(item.medical_ready_at)}</p>
                       </div>

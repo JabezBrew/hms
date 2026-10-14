@@ -767,7 +767,7 @@ export default function NhisServiceMappingsPage() {
         payerId={payerId}
       />
 
-      <main className="p-4 sm:p-6 space-y-3">
+      <section className="p-4 sm:p-6 space-y-3">
         <NhisMappingsReadOnlyNotice mappingMutationsAvailable={mappingMutationsAvailable} />
 
         <NhisBulkImportPanel
@@ -816,7 +816,7 @@ export default function NhisServiceMappingsPage() {
           onPageChange={setPage}
           itemLabel="mappings"
         />
-      </main>
+      </section>
 
       <NhisMappingDialog
         createMutation={createMutation}

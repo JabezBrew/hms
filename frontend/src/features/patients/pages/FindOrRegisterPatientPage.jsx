@@ -645,7 +645,7 @@ export default function FindOrRegisterPatientPage() {
         )}
       />
 
-      <main className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <section className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <PatientLookupForm
           form={workflow.lookupForm.form}
           lookupDisabled={workflow.lookupForm.lookupDisabled}
@@ -676,7 +676,7 @@ export default function FindOrRegisterPatientPage() {
             setOverrideReasonNote={workflow.newPatientRegistration.setOverrideReasonNote}
           />
         </section>
-      </main>
+      </section>
     </PageShell>
   );
 }

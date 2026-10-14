@@ -31,8 +31,19 @@ export function useChronicleBreakGlassAccess({ patient, patientId, facilityCode,
 
   const discardPatientData = useCallback(async () => {
     const keys = [patientKeys.detail(patientId), timelineKeys.list(patientId), encounterKeys.forPatient(patientId)];
-    await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
-    keys.forEach((queryKey) => queryClient.removeQueries({ queryKey }));
+    // The scoped usePatient query is administrative identity only. Preserve it
+    // for patient confirmation; it cannot supply Chronicle clinical content.
+    const filters = keys.map((queryKey) => ({ queryKey, predicate: (query) => !(query.queryKey[0] === 'patients' && query.queryKey[1] === 'detail' && query.queryKey[3] === 'scope' && query.queryKey.length === 5) }));
+    await Promise.all(filters.map((filter) => queryClient.cancelQueries(filter)));
+    filters.forEach((filter) => {
+      // Clear active observers without recreating their query and implicitly
+      // fetching again. Preserve the server error: setQueryData would replace
+      // an authoritative403 with a successful local cache-write status.
+      queryClient.getQueryCache().findAll(filter).forEach((query) => {
+        if (query.isActive()) query.setState({ data: undefined, dataUpdatedAt: 0 });
+      });
+      queryClient.removeQueries({ ...filter, type: 'inactive' });
+    });
   }, [patientId, queryClient]);
 
   const checkRecordAccess = useCallback(async () => {
@@ -148,9 +159,9 @@ export function useChronicleBreakGlassAccess({ patient, patientId, facilityCode,
   });
   const submitBreakGlass = useCallback(() => {
     const reason = state.reason.trim();
-    if (!canRequestBreakGlass || reason.length < 6 || reason.length > 500 || (rustV2Mode && !state.confirmed)) return;
+    if (!canRequestBreakGlass || breakGlassMutation.isPending || endMutation.isPending || state.checking || reason.length < 6 || reason.length > 500 || (rustV2Mode && !state.confirmed)) return;
     breakGlassMutation.mutate({ payload: rustV2Mode ? { category: state.category, reason_text: reason } : { reason, scope: 'clinical' }, requestScope: scope, requestPatientId: patientId });
-  }, [breakGlassMutation, canRequestBreakGlass, patientId, rustV2Mode, scope, state.category, state.confirmed, state.reason]);
+  }, [breakGlassMutation, canRequestBreakGlass, endMutation.isPending, patientId, rustV2Mode, scope, state.category, state.checking, state.confirmed, state.reason]);
 
   return {
     accessDenied, breakGlassExpiresAt: state.expiresAt, breakGlassReason: state.reason, breakGlassCategory: state.category, breakGlassConfirmed: state.confirmed,

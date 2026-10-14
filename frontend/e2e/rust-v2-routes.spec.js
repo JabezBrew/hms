@@ -351,6 +351,7 @@ test('Rust V2 static work surfaces load without route crashes or server errors',
       await page.goto(route);
       await expect(page.locator('[data-perf-ready="app-shell"]')).toBeVisible();
       await expect(page.getByRole('heading').first()).toBeVisible();
+      await expect(page.getByRole('main')).toHaveCount(1);
       await expect(page).not.toHaveURL(/\/feature-unavailable(?:[?#]|$)/);
       await expect(page.getByText(/Something went wrong/i)).toHaveCount(0);
     });
@@ -1155,7 +1156,7 @@ test('Rust V2 pharmacy dispensing surface calls generated dispenses without surf
     item_id: stockItem.id,
     location_id: pharmacyLocation.id,
     batch_number: `PWD-${suffix}`,
-    expires_on: '2027-02-28',
+    expires_on: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     quantity_received: 6,
   });
 
@@ -2290,21 +2291,23 @@ test('Rust V2 admission and discharge clearances complete the inpatient movement
   });
   const summary = (await createSummaryResponse.json()).data;
   expect(summary.status).toBe('draft');
-  const summaryEntry = page.locator('article').filter({ hasText: 'Discharge Summary' }).first();
-  await expect(summaryEntry).toBeVisible();
-  await summaryEntry.getByRole('button', { name: 'Edit', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Edit Note', exact: true })).toBeVisible();
-  const editPanel = page.locator('div.fixed.inset-y-0.right-0').filter({ has: page.getByRole('heading', { name: 'Edit Note', exact: true }) }).last();
-  const reviewedText = `Reviewed discharge summary: ${summaryText}`;
-  await editPanel.getByRole('textbox').first().fill(reviewedText);
+  await page.goto(dischargePath);
+  await expect(clearancePanel).toBeVisible();
+  await expect(clearancePanel.getByRole('button', { name: 'Finalize discharge', exact: true })).toBeDisabled();
+  await clearancePanel.getByRole('button', { name: 'Review discharge summary', exact: true }).click();
+  await clearancePanel.getByRole('button', { name: /^Review summary version 1 \(draft\)$/ }).click();
+  await expect(clearancePanel.getByLabel('Discharge summary content', { exact: true })).toContainText(summaryText);
+  const saveReviewedVersion = clearancePanel.getByRole('button', { name: 'Save reviewed version', exact: true });
+  await expect(saveReviewedVersion).toBeDisabled();
+  await clearancePanel.getByRole('checkbox', { name: 'I have reviewed this summary for this inpatient stay.', exact: true }).check();
   const reviewedSummaryResponsePromise = page.waitForResponse((response) => (
     new URL(response.url()).pathname === `/api/v2/clinical/notes/${summary.id}/versions`
       && response.request().method() === 'POST'
   ));
-  await editPanel.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  await saveReviewedVersion.click();
   const reviewedSummaryResponse = await reviewedSummaryResponsePromise;
   expect(reviewedSummaryResponse.ok()).toBe(true);
-  expect(reviewedSummaryResponse.request().postDataJSON().body).toContain(reviewedText);
+  expect(reviewedSummaryResponse.request().postDataJSON().body).toContain(summaryText);
   expect((await reviewedSummaryResponse.json()).data.version).toBe(2);
 
   await page.goto(dischargePath);
@@ -2847,7 +2850,7 @@ test('Rust V2 inventory stock procurement and controlled workflows use generated
     item_id: stockItem.id,
     location_id: receivingLocation.id,
     batch_number: batchNumber,
-    expires_on: '2027-01-31',
+    expires_on: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     quantity_received: 17,
   });
   expect(stockBatchPayload?.data).toMatchObject({

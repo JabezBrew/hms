@@ -25,8 +25,12 @@ list. `/ward-board` remains the assigned-ward resolver.
 - `POST /api/v2/discharges/:id/complete` requires `admission.manage` and no body.
 - Summary clearance is backend-derived from a reviewed clinical note in the
   linked encounter: `doctor_note`, title `Discharge Summary`. Creating a draft
-  alone does not clear it; the existing Chronicle note amendment flow records
-  the supported reviewed version. The shortcut retains encounter scope.
+  alone does not clear it. The Chronicle preparation shortcut retains encounter
+  scope; `DischargeSummaryReview` lists 25 notes at a time for that encounter,
+  filters actual summary metadata, and loads full note detail only on selection.
+  A clinician reads the content and explicitly acknowledges it before saving a
+  reviewed version through the existing clinical note version API. This records
+  a version and is not presented as a digital signature.
 
 ## Invariants
 
@@ -43,6 +47,11 @@ list. `/ward-board` remains the assigned-ward resolver.
   this panel does not expose override controls.
 - A requested discharge is awaiting clearance until actual blockers permit
   completion. Missing balance data is unavailable and never assumed to be zero.
+- Summary review checks patient, encounter, type, title, body and version before
+  writing. It re-reads the note and rejects a changed version/body. The existing
+  version API does not provide an atomic expected-version condition; note history
+  and the server's authorization remain authoritative. Review never auto-saves
+  or retries, and failed refresh leaves cached content read-only.
 
 ## Verification
 

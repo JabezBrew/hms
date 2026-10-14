@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { patientsApi } from '@/features/patients/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { immutableMetadataQueryOptions } from '@/lib/react-query';
-import { createKeyFactory } from '@/shared/lib/queryKeys';
+import { createKeyFactory, createScopedQueryKey } from '@/shared/lib/queryKeys';
 
 // Query keys
 const baseKeys = createKeyFactory('patients');
@@ -77,12 +77,13 @@ export function usePatients(filters = {}) {
  * @returns {Object} Query result
  */
 export function usePatient(id, options = {}) {
-  const { enabled = true } = options;
+  const { enabled = true, scope, ...queryOptions } = options;
   return useQuery({
-    queryKey: patientKeys.detail(id),
+    staleTime: 5 * 60 * 1000,
+    ...queryOptions,
+    queryKey: createScopedQueryKey(patientKeys.detail(id), scope),
     queryFn: ({ signal }) => patientsApi.getPatient(id, { signal }),
     enabled: !!id && enabled, // Only run the query if we have an ID
-    staleTime: 5 * 60 * 1000, // 5 minutes - patient demographics don't change frequently
   });
 }
 

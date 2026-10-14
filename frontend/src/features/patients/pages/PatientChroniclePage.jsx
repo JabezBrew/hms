@@ -146,7 +146,7 @@ function usePatientChroniclePageModel(defaultAction) {
     refetchStartup,
     rustV2ActiveAdmissionId,
     startupError,
-  } = useChroniclePatientRecord({ id, rustV2Mode });
+  } = useChroniclePatientRecord({ id, rustV2Mode, user, facilityCode });
   const {
     clearQueryParams,
     openChronicleWorkspace,

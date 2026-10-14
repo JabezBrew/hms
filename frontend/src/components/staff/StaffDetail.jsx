@@ -189,7 +189,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
         onReactivate={handleReactivate}
       />
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         <Form {...form}>
           <StaffEmploymentSection form={form} isEditing={isEditing} view={view} />
           <StaffContactSection form={form} isEditing={isEditing} view={view} />
@@ -218,7 +218,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
             />
           </>
         ) : null}
-      </main>
+      </section>
     </PageShell>
   );
 };

@@ -137,7 +137,7 @@ const SettingsHubPage = () => {
         />
 
         {/* Settings Categories Grid */}
-        <main className="p-4 sm:p-6 lg:p-8">
+        <section className="p-4 sm:p-6 lg:p-8">
           <div className="max-w-4xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {visibleCategories.map((category, index) => (
@@ -150,7 +150,7 @@ const SettingsHubPage = () => {
               ))}
             </div>
           </div>
-        </main>
+        </section>
       </PageShell>
   );
 };

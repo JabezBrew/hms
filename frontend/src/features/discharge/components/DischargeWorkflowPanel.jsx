@@ -13,6 +13,7 @@ import {
 import {
   useDischargeCase, useFinalizeDischargeCase, useRecordNursingRelease,
 } from '@/features/discharge/hooks/useDischargeCaseQueries'
+import { DischargeSummaryReview } from './DischargeSummaryReview'
 
 const CLEARED = new Set(['completed', 'overridden'])
 
@@ -126,7 +127,10 @@ export function DischargeWorkflowPanel({ caseId, patientId, admissionId }) {
             <div className="space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
               <p>Review and save changes to the discharge summary in Patient Chronicle. Draft notes do not clear this requirement.</p>
               {item.encounter_id && summaryBlocker.workflow_path && permissions.has('clinical_documentation.manage') ? (
-                <Button asChild type="button" variant="outline" size="sm"><Link to={summaryBlocker.workflow_path}>Prepare discharge summary</Link></Button>
+                <div className="space-y-3">
+                  <Button asChild type="button" variant="outline" size="sm"><Link to={summaryBlocker.workflow_path}>Prepare discharge summary</Link></Button>
+                  <DischargeSummaryReview key={`${patientId}:${caseId}:${item.encounter_id}`} patientId={patientId} encounterId={item.encounter_id} disabled={!canWrite} />
+                </div>
               ) : <p className="text-muted-foreground">{!item.encounter_id ? 'A linked care encounter is required for the discharge summary. Ask the admission team to review the care context.' : 'A clinician with documentation access must complete the summary.'}</p>}
             </div>
           ) : null}

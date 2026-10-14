@@ -454,7 +454,7 @@ function LabCatalogView({
           statusFilter={statusFilter}
         />
 
-        <main className="p-4 sm:p-6">
+        <section className="p-4 sm:p-6">
           {targetItemId ? (
             <TargetCatalogItemPanel
               isLoading={targetItemLoading}
@@ -511,7 +511,7 @@ function LabCatalogView({
               />
             </div>
           ) : null}
-        </main>
+        </section>
       </Tabs>
 
       {catalogMutationsAvailable ? (

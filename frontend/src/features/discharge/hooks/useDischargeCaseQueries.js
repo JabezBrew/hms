@@ -24,7 +24,7 @@ function invalidateDischargeQueries(queryClient, caseId, patientId) {
   }
 }
 
-async function refreshDischargeWorkflow(queryClient, patientId) {
+export async function refreshDischargeWorkflow(queryClient, patientId) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: dischargeKeys.all }),
     queryClient.invalidateQueries({ queryKey: ['ward-board'] }),

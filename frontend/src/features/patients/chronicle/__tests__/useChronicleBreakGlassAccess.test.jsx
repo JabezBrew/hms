@@ -83,10 +83,14 @@ describe('native emergency access', () => {
     render(<Workspace />, { wrapper });
     await fillDialog();
     client.setQueryData([...patientKeys.detail('synthetic-patient'), 'cached-note'], { private: 'PRIVATE_SYNTHETIC_RECORD' });
+    const identityKey = [...patientKeys.detail('synthetic-patient'), 'scope', 'synthetic-auth-scope'];
+    client.setQueryData(identityKey, { id: 'synthetic-patient', name: 'Identity Synthetic' });
     fireEvent.click(screen.getByRole('button', { name: 'Grant Access' }));
     await screen.findByText(/record access could not be verified/i);
     expect(screen.queryByText('PRIVATE_SYNTHETIC_RECORD')).not.toBeInTheDocument();
     expect(client.getQueryData([...patientKeys.detail('synthetic-patient'), 'cached-note'])).toBeUndefined();
+    expect(client.getQueryData(identityKey)).toEqual({ id: 'synthetic-patient', name: 'Identity Synthetic' });
+    expect(client.getQueryCache().find({ queryKey: patientKeys.chronicleStartup('synthetic-patient') }).state.error.status).toBe(503);
     expect(api.requestBreakGlass).toHaveBeenCalledTimes(1);
   });
   it('allows ending an existing grant after reload without claiming it is active', async () => {
@@ -97,6 +101,7 @@ describe('native emergency access', () => {
     await screen.findByText('Team-based access required');
     await waitFor(() => expect(api.endBreakGlass).toHaveBeenCalledTimes(1));
     expect(screen.queryByText('PRIVATE_SYNTHETIC_RECORD')).not.toBeInTheDocument();
+    await waitFor(() => expect(client.getQueryCache().find({ queryKey: patientKeys.chronicleStartup('synthetic-patient') }).state.error.status).toBe(403));
   });
   it('locks the local record when an end response is lost and never retries automatically', async () => {
     api.getPatientChronicleStartup.mockResolvedValue(data);

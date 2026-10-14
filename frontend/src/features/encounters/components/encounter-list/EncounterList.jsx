@@ -58,7 +58,7 @@ export function EncounterList() {
         totalPages={controller.totalPages}
       />
 
-      <main className="p-6 space-y-6">
+      <section className="p-6 space-y-6">
         {controller.canFilter && controller.showFilters && (
           <EncounterFiltersPanel
             activeTab={controller.activeTab}
@@ -92,7 +92,7 @@ export function EncounterList() {
           totalCount={controller.totalCount}
           totalPages={controller.totalPages}
         />
-      </main>
+      </section>
     </div>
   );
 }

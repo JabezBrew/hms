@@ -1,6 +1,7 @@
 import { apiClient } from '@/lib/api-client'
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 import { v2Api } from '@/lib/api/v2/client'
+import { clinicalNotesApi } from '@/features/clinical-notes/api'
 
 const DEFAULT_DISCHARGE_LIMIT = 25
 
@@ -187,6 +188,29 @@ function unsupportedInRustV2(message) {
 }
 
 export const dischargeApi = {
+  getSummaryNotes: async ({ patientId, encounterId, cursor }, options = {}) => {
+    const response = await v2Api.getPatientClinicalNotes({ patient_id: patientId }, {
+      query: { encounter_id: encounterId, limit: 25, ...(cursor ? { cursor } : {}) }, signal: options.signal,
+    })
+    return {
+      results: (response?.data || []).filter((note) => note.patient_id === patientId
+        && note.encounter_id === encounterId && note.note_type === 'doctor_note'
+        && note.title?.trim().toLowerCase() === 'discharge summary'),
+      nextCursor: response?.page?.has_next ? response.page.next_cursor : null,
+    }
+  },
+  getSummaryNote: (id, options) => clinicalNotesApi.getNoteEntry(id, options),
+  saveReviewedSummary: async ({ note, patientId, encounterId }) => {
+    const current = await clinicalNotesApi.getNoteEntry(note.id)
+    if (current.id !== note.id || current.patient_id !== patientId || current.encounter_id !== encounterId
+      || current.note_type !== 'doctor_note' || current.title?.trim().toLowerCase() !== 'discharge summary') {
+      throw new Error('This summary does not match the patient and care encounter.')
+    }
+    if (current.version !== note.version || current.body !== note.body) {
+      throw new Error('The summary changed while you reviewed it. Reload and review the latest version.')
+    }
+    return clinicalNotesApi.updateNoteEntry(current.id, current.body)
+  },
   getCases: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return getV2DischargeCases(params, options)

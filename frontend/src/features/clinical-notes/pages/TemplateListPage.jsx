@@ -88,7 +88,7 @@ function TemplateListView({
         )}
       />
 
-      <main className="p-4 sm:p-6 space-y-4">
+      <section className="p-4 sm:p-6 space-y-4">
         <TemplateListToolbar
           onClearSearch={onClearSearch}
           onRefresh={onRefresh}
@@ -128,7 +128,7 @@ function TemplateListView({
             ))}
           </div>
         )}
-      </main>
+      </section>
     </PageShell>
   );
 }
@@ -239,12 +239,12 @@ function TemplateEditorView({ isEditingTemplate, onBack, onTemplateSuccess, page
         )}
       />
 
-      <main className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
+      <section className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
         <TemplateBuilder
           initialTemplate={selectedTemplate}
           onSuccess={onTemplateSuccess}
         />
-      </main>
+      </section>
     </PageShell>
   );
 }
@@ -281,10 +281,10 @@ function TemplateDetailView({ onBack, onEdit, pageMeta, selectedTemplate }) {
         </Button>
       </PageHeader>
 
-      <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+      <section className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
         <TemplateDetailHeader selectedTemplate={selectedTemplate} />
         <TemplateStructure sections={sections} />
-      </main>
+      </section>
     </PageShell>
   );
 }

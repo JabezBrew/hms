@@ -98,6 +98,10 @@ than demo patients, fabricated statistics or unsupported all-clear messages.
 Doctor/provider compatibility landings reuse the actual My Work workflow.
 Scheduling calendars have one named navigation pair, labeled month/year
 selectors, explicit date bounds and future-year choices.
+Forty-five nested main wrappers across 39 authenticated content files now use
+sections; standalone print and authentication views retain their own landmarks.
+Appointment details begin their actual fetch immediately, without the previous
+artificial 500 ms loading delay.
 
 ## Performance evidence
 

@@ -7,6 +7,7 @@ import PatientChroniclePage from '../PatientChroniclePage'
 import { SidebarProvider } from '@/components/ui/sidebar'
 
 const patientHookState = vi.hoisted(() => ({
+  calls: [],
   data: {
     id: 'patient-1',
     name: 'Ama Mensah',
@@ -91,12 +92,10 @@ vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
     chronicleStartup: (id) => ['patients', 'detail', id, 'chronicle', 'startup'],
     chronicleTimeline: (id, params = {}) => ['patients', 'detail', id, 'chronicle', 'timeline', params],
   },
-  usePatient: (_id, _options) => ({
-    data: patientHookState.data,
-    isLoading: false,
-    error: null,
-    refetch: vi.fn(),
-  }),
+  usePatient: (id, options) => {
+    patientHookState.calls.push({ id, options })
+    return { data: patientHookState.data, isLoading: false, error: null, refetch: vi.fn() }
+  },
   usePatientChronicleStartup: (patientId, params, options) => {
     chronicleStartupState.calls.push({ patientId, params, options })
     return {
@@ -296,6 +295,7 @@ function renderPage(initialEntry = '/patients/patient-1/chronicle') {
 
 describe('PatientChroniclePage Rust V2 workflow guards', () => {
   beforeEach(() => {
+    patientHookState.calls = []
     vi.clearAllMocks()
     chronicleHookState.calls = []
     chronicleStartupState.calls = []
@@ -749,6 +749,30 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
     expect(screen.queryByRole('button', { name: /request break-glass access/i })).not.toBeInTheDocument()
     expect(screen.getByText(/emergency access requires dedicated permission/i)).toBeInTheDocument()
+  })
+
+  it('uses scoped administrative identity to identify a denied record without revealing clinical content', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    chronicleStartupState.data = null
+    chronicleStartupState.error = { status: 403, message: 'Forbidden' }
+    patientHookState.data = { id: 'patient-1', name: 'Identity Synthetic', medical_record_number: 'SYNTHETIC-MRN' }
+    renderPage()
+    expect(screen.getByText('Team-based access required')).toBeInTheDocument()
+    expect(screen.getByText('Identity Synthetic')).toBeInTheDocument()
+    expect(screen.getByText('MRN SYNTHETIC-MRN')).toBeInTheDocument()
+    expect(patientHookState.calls.at(-1)).toEqual({ id: 'patient-1', options: expect.objectContaining({ enabled: true, scope: expect.any(String), retry: false }) })
+    expect(screen.queryByRole('searchbox', { name: /history/i })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('ask-chronicle-action')).not.toBeInTheDocument()
+  })
+
+  it('rejects an administrative identity belonging to a different patient', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    chronicleStartupState.data = null
+    chronicleStartupState.error = { status: 403, message: 'Forbidden' }
+    patientHookState.data = { id: 'other-synthetic-patient', name: 'Wrong Identity Synthetic' }
+    renderPage()
+    expect(screen.getByText('Team-based access required')).toBeInTheDocument()
+    expect(screen.queryByText('Wrong Identity Synthetic')).not.toBeInTheDocument()
   })
 
   it('uses Ward Round Chronicle mode outside Rust V2 mode instead of the legacy workflow slide-over', async () => {

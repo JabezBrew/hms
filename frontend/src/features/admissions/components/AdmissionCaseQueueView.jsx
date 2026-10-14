@@ -119,7 +119,7 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
         </div>
       </PageHeader>
 
-      <main className="p-6">
+      <section className="p-6">
         {visibleCases.length === 0 ? (
           <PageState
             variant="empty"
@@ -185,7 +185,7 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
             })}
           </div>
         )}
-      </main>
+      </section>
     </PageShell>
   )
 }

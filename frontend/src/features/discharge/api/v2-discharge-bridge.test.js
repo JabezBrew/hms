@@ -419,4 +419,37 @@ describe('Rust V2 discharge bridge', () => {
       }) }),
     );
   });
+
+  it('fetches bounded encounter notes and filters summaries using real patient/context metadata', async () => {
+    const base = { id: 'note-1', patient_id: 'patient-1', encounter_id: 'encounter-1', title: 'Discharge Summary', note_type: 'doctor_note' };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [
+      base, { ...base, id: 'note-2', encounter_id: 'other-encounter' },
+      { ...base, id: 'note-3', note_type: 'nursing_note' },
+      { ...base, id: 'note-4', title: 'Other note' },
+    ], page: { has_next: true, next_cursor: 'next-page' } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const result = await dischargeApi.getSummaryNotes({ patientId: 'patient-1', encounterId: 'encounter-1' });
+    expect(result).toEqual({ results: [base], nextCursor: 'next-page' });
+    const target = new URL(globalThis.fetch.mock.calls[0][0]);
+    expect(target.pathname).toBe('/api/v2/patients/patient-1/clinical/notes');
+    expect(Object.fromEntries(target.searchParams)).toEqual({ encounter_id: 'encounter-1', limit: '25' });
+  });
+
+  it.each(['version', 'body', 'patient_id', 'encounter_id'])('rejects a changed summary %s before creating a reviewed version', async (field) => {
+    const original = { id: 'note-1', patient_id: 'patient-1', encounter_id: 'encounter-1', note_type: 'doctor_note', title: 'Discharge Summary', version: 1, body: 'Reviewed content' };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      ...original, [field]: field === 'version' ? 2 : 'changed',
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(dischargeApi.saveReviewedSummary({ note: original, patientId: 'patient-1', encounterId: 'encounter-1' })).rejects.toThrow();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch.mock.calls[0][1].method).toBe('GET');
+  });
+
+  it('saves only the full body explicitly reviewed by the clinician through the existing version endpoint', async () => {
+    const original = { id: 'note-1', patient_id: 'patient-1', encounter_id: 'encounter-1', note_type: 'doctor_note', title: 'Discharge Summary', version: 1, body: '{"plan":"Reviewed content"}' };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: original }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { note_id: 'note-1', version: 2, body: original.body } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await dischargeApi.saveReviewedSummary({ note: original, patientId: 'patient-1', encounterId: 'encounter-1' });
+    expect(globalThis.fetch.mock.calls[1][0]).toBe('http://localhost:8080/api/v2/clinical/notes/note-1/versions');
+    expect(globalThis.fetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST', body: JSON.stringify({ body: original.body }) }));
+  });
 });

@@ -74,7 +74,7 @@ const PreferencesSettingsPage = () => {
         </PageHeader>
 
         {/* Main Content */}
-        <main className="p-4 sm:p-6 lg:p-8">
+        <section className="p-4 sm:p-6 lg:p-8">
           <div className="max-w-2xl mx-auto space-y-6">
             {/* Theme Section */}
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 animate-chronicle-enter">
@@ -191,7 +191,7 @@ const PreferencesSettingsPage = () => {
               </div>
             </section>
           </div>
-        </main>
+        </section>
       </PageShell>
   );
 };
