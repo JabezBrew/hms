@@ -72,7 +72,9 @@ export function useChronicleBreakGlassAccess({ patient, patientId, facilityCode,
   }, [discardPatientData, rustV2Mode, scope]);
 
   useEffect(() => {
-    if (!rustV2Mode || !canRequestBreakGlass) return;
+    // Existing grants can remain valid after invocation permission is removed.
+    // A reloaded record must still revalidate access through their expiry.
+    if (!rustV2Mode) return;
     const recheck = async () => {
       if (document.hidden) return;
       let result;
@@ -88,7 +90,7 @@ export function useChronicleBreakGlassAccess({ patient, patientId, facilityCode,
     window.addEventListener('focus', onVisible);
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); window.removeEventListener('focus', onVisible); document.removeEventListener('visibilitychange', onVisible); };
-  }, [canRequestBreakGlass, discardPatientData, patch, refetchContext, rustV2Mode, scope]);
+  }, [discardPatientData, patch, refetchContext, rustV2Mode, scope]);
 
   useEffect(() => {
     if (!rustV2Mode || state.deadline === null) return;

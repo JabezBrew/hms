@@ -103,6 +103,29 @@ describe('native emergency access', () => {
     expect(screen.queryByText('PRIVATE_SYNTHETIC_RECORD')).not.toBeInTheDocument();
     await waitFor(() => expect(client.getQueryCache().find({ queryKey: patientKeys.chronicleStartup('synthetic-patient') }).state.error.status).toBe(403));
   });
+  it.each(['30-second timer', 'foreground focus'])('revalidates a reloaded grant with revoked invocation permission on %s and evicts the expired record', async (trigger) => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    // The server accepts the still-valid existing grant on reload. There is
+    // no local grant deadline and this user may not invoke another grant.
+    api.getPatientChronicleStartup.mockResolvedValueOnce(data).mockRejectedValue(denied);
+    render(<Workspace actor={{ ...user, accessContext: { ...user.accessContext, permissions: [], permission_version: 2 } }} />, { wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByText('PRIVATE_SYNTHETIC_RECORD')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request Break-Glass Access' })).not.toBeInTheDocument();
+    const cachedNote = [...patientKeys.detail('synthetic-patient'), 'cached-note'];
+    client.setQueryData(cachedNote, { body: 'PRIVATE_SYNTHETIC_RECORD' });
+    await act(async () => {
+      if (trigger === 'foreground focus') fireEvent.focus(window);
+      await vi.advanceTimersByTimeAsync(trigger === '30-second timer' ? 30_000 : 1);
+    });
+    expect(screen.getByText('Team-based access required')).toBeInTheDocument();
+    expect(screen.queryByText('PRIVATE_SYNTHETIC_RECORD')).not.toBeInTheDocument();
+    expect(client.getQueryData(cachedNote)).toBeUndefined();
+    expect(client.getQueryData(patientKeys.chronicleStartup('synthetic-patient'))).toBeUndefined();
+    expect(api.requestBreakGlass).not.toHaveBeenCalled();
+    expect(api.getPatientChronicleStartup).toHaveBeenCalledTimes(2);
+  });
   it('locks the local record when an end response is lost and never retries automatically', async () => {
     api.getPatientChronicleStartup.mockResolvedValue(data);
     api.endBreakGlass.mockRejectedValue(new Error('Lost response'));
