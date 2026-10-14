@@ -5,11 +5,13 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 KIT_DIR="$ROOT_DIR/ops/free-testing"
 ENV_FILE="${ENV_FILE:-$KIT_DIR/.env}"
 LOCAL_ONLY=false
+PUBLIC=false
 case "${1:-}" in
   --local-only) LOCAL_ONLY=true ;;
+  --public) PUBLIC=true ;;
   -h|--help)
-    printf '%s\n' 'Usage: ops/free-testing/deploy.sh [--local-only]' \
-      'Deploy the synthetic stack on this Docker host; the default also starts the private Cloudflare tunnel.'
+    printf '%s\n' 'Usage: ops/free-testing/deploy.sh [--local-only|--public]' \
+      'Default: Cloudflare Access protected tunnel. --public: require HMS login only.'
     exit 0 ;;
   '') ;;
   *) printf 'Unknown option. Use --help.\n' >&2; exit 2 ;;
@@ -18,6 +20,7 @@ if [ "$#" -gt 1 ]; then printf 'Use --help for supported arguments.\n' >&2; exit
 
 set -- python3 "$KIT_DIR/prepare-env.py" --check "$ENV_FILE"
 if [ "$LOCAL_ONLY" = false ]; then set -- "$@" --require-tunnel; fi
+if [ "$PUBLIC" = true ]; then set -- "$@" --public; fi
 "$@"
 
 env_value() { awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$ENV_FILE"; }
@@ -28,9 +31,9 @@ CLIENT_DOMAIN="$client_domain"
 HMS_TEST_HTTP_PORT="$local_port"
 export COMPOSE_PROJECT_NAME CLIENT_DOMAIN HMS_TEST_HTTP_PORT
 
-# Do not connect a seeded test stack until the hostname challenges anonymous
-# requests. Access must cover the entire app, with no path exclusions.
-if [ "$LOCAL_ONLY" = false ]; then
+# The default requires Access over the entire hostname. Explicit public mode
+# checks HMS authentication at the origin and edge instead.
+if [ "$LOCAL_ONLY" = false ] && [ "$PUBLIC" = false ]; then
   access_host="$(env_value HMS_TEST_ACCESS_TEAM_DOMAIN)"
   for path in / /api/v2/health/ready; do
     access_response="$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null \
@@ -49,6 +52,23 @@ DATABASE_MODE=compose-postgres PUBLIC_HEALTHCHECK_MODE=skip \
   "$ROOT_DIR/ops/compose-v2/deploy.sh" --skip-pull
 curl -fsS --connect-timeout 5 --max-time 10 \
   "http://127.0.0.1:$local_port/api/v2/health/ready" >/dev/null
+
+check_public_auth() {
+  base_url="$1"
+  for path in /api/v2/auth/me /api/v2/patients; do
+    status="$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null \
+      -w '%{http_code}' "$base_url$path")"
+    if [ "$status" != 401 ]; then
+      printf 'Public deployment requires anonymous protected API requests to return 401.\n' >&2
+      return 1
+    fi
+  done
+}
+
+# Verify HMS authentication before connecting a publicly reachable tunnel.
+if [ "$PUBLIC" = true ]; then
+  check_public_auth "http://127.0.0.1:$local_port"
+fi
 
 if [ "$LOCAL_ONLY" = false ]; then
   docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/ops/compose-v2/compose.yml" \
@@ -69,7 +89,19 @@ if [ "$LOCAL_ONLY" = false ]; then
     printf 'Origin is ready but the tunnel has not connected. Check the tunnel dashboard; HTTPS verification remains pending.\n' >&2
     exit 1
   fi
-  printf '%s\n' 'Origin ready; tunnel connected. Verify HTTPS login and test workflows through Cloudflare Access before calling the deployment live.'
+  if [ "$PUBLIC" = true ]; then
+    if ! curl -fsS --connect-timeout 5 --max-time 10 \
+      "https://$client_domain/api/v2/health/ready" >/dev/null || \
+      ! check_public_auth "https://$client_domain"; then
+      docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/ops/compose-v2/compose.yml" \
+        -f "$KIT_DIR/compose.yml" --profile tunnel stop cloudflared
+      printf 'Public verification failed; tunnel stopped. Local HMS services remain running.\n' >&2
+      exit 1
+    fi
+    printf '%s\n' 'Public HTTPS ready; protected APIs require HMS login. Verify browser login and test workflows.'
+  else
+    printf '%s\n' 'Origin ready; tunnel connected. Verify HTTPS login and test workflows through Cloudflare Access before calling the deployment live.'
+  fi
 else
   printf '%s\n' 'Synthetic origin ready on loopback. Public HTTPS and login verification remain pending.'
 fi

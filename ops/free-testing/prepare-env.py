@@ -25,7 +25,7 @@ def read_env(path: Path) -> dict[str, str]:
     return values
 
 
-def validate(path: Path, require_tunnel: bool) -> None:
+def validate(path: Path, require_tunnel: bool, public: bool = False) -> None:
     file_mode = path.stat().st_mode
     if path.is_symlink() or not stat.S_ISREG(file_mode) or stat.S_IMODE(file_mode) & 0o077:
         raise ValueError("Private env must be a regular file with mode 600")
@@ -51,7 +51,7 @@ def validate(path: Path, require_tunnel: bool) -> None:
         team = values.get("HMS_TEST_ACCESS_TEAM_DOMAIN", "")
         if not token or any(char.isspace() for char in token):
             raise ValueError("Set CLOUDFLARE_TUNNEL_TOKEN privately before deploying the tunnel")
-        if not DOMAIN.fullmatch(team) or not team.endswith(".cloudflareaccess.com"):
+        if not public and (not DOMAIN.fullmatch(team) or not team.endswith(".cloudflareaccess.com")):
             raise ValueError("Set HMS_TEST_ACCESS_TEAM_DOMAIN to your team.cloudflareaccess.com hostname")
 
 
@@ -62,10 +62,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=KIT / ".env")
     parser.add_argument("--check", type=Path)
     parser.add_argument("--require-tunnel", action="store_true")
+    parser.add_argument("--public", action="store_true",
+                        help="Use HMS login without a Cloudflare Access gate")
     args = parser.parse_args()
     try:
         if args.check:
-            validate(args.check, args.require_tunnel)
+            validate(args.check, args.require_tunnel, args.public)
             print("Private synthetic deployment settings validated.")
             return 0
         if not args.domain or not DOMAIN.fullmatch(args.domain):

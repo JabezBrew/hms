@@ -58,7 +58,7 @@ def test_unsafe_or_non_synthetic_env_is_rejected(tmp_path, setting):
         ENV_MODULE.validate(path, False)
 
 
-def test_public_deploy_requires_tunnel_credentials_and_access_team(tmp_path):
+def test_default_deploy_requires_access_team_but_public_mode_does_not(tmp_path):
     path = tmp_path / '.env'
     assert generate(path).returncode == 0
     with pytest.raises(ValueError, match='CLOUDFLARE_TUNNEL_TOKEN'):
@@ -67,6 +67,64 @@ def test_public_deploy_requires_tunnel_credentials_and_access_team(tmp_path):
     path.write_text(content)
     with pytest.raises(ValueError, match='HMS_TEST_ACCESS_TEAM_DOMAIN'):
         ENV_MODULE.validate(path, True)
+    ENV_MODULE.validate(path, True, public=True)
+
+
+@pytest.mark.parametrize('origin_status,edge_status,success,tunnel_started', [
+    ('401', '401', True, True),
+    ('200', '401', False, False),
+    ('401', '200', False, True),
+])
+def test_explicit_public_mode_enforces_origin_and_edge_auth(
+        tmp_path, origin_status, edge_status, success, tunnel_started):
+    kit = tmp_path / 'ops/free-testing'
+    base = tmp_path / 'ops/compose-v2'
+    kit.mkdir(parents=True)
+    base.mkdir()
+    for name in ('deploy.sh', 'prepare-env.py'):
+        shutil.copy(KIT / name, kit / name)
+    delegate = base / 'deploy.sh'
+    delegate.write_text('#!/bin/sh\nexit 0\n')
+    delegate.chmod(0o755)
+    path = kit / '.env'
+    assert generate(path).returncode == 0
+    path.write_text(path.read_text().replace(
+        'CLOUDFLARE_TUNNEL_TOKEN=', 'CLOUDFLARE_TUNNEL_TOKEN=fixture-token'))
+    tools = tmp_path / 'bin'
+    tools.mkdir()
+    marker = tmp_path / 'tunnel-started'
+    stopped = tmp_path / 'tunnel-stopped'
+    scripts = {
+        'curl': f'''#!/bin/sh
+case "$*" in
+  *health/ready*) exit 0 ;;
+  *http://127.0.0.1:*) printf '{origin_status}' ;;
+  *https://*) printf '{edge_status}' ;;
+  *) exit 1 ;;
+esac
+''',
+        'docker': f'''#!/bin/sh
+case "$*" in
+  *'up -d cloudflared'*) touch '{marker}' ;;
+  *'stop cloudflared'*) touch '{stopped}' ;;
+esac
+exit 0
+''',
+    }
+    for name, content in scripts.items():
+        script = tools / name
+        script.write_text(content)
+        script.chmod(0o755)
+    env = os.environ.copy()
+    env['ENV_FILE'] = str(path)
+    env['PATH'] = str(tools) + os.pathsep + env['PATH']
+    result = subprocess.run(['sh', str(kit / 'deploy.sh'), '--public'],
+                            capture_output=True, text=True, env=env)
+    assert (result.returncode == 0) is success, result.stderr
+    assert marker.exists() is tunnel_started
+    assert stopped.exists() is (tunnel_started and not success)
+    if not success:
+        assert 'anonymous protected API requests to return 401' in result.stderr
 
 
 @pytest.mark.skipif(shutil.which('docker') is None, reason='Docker CLI not installed')

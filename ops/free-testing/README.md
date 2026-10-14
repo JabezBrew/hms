@@ -6,7 +6,8 @@ Last reviewed: 2026-10-13
 Scope: synthetic data, one tester, $0 hosting target.
 
 Use one Oracle Cloud Always Free Ubuntu ARM64 VM for the complete Rust V2
-Compose stack, with Cloudflare Tunnel and Access on `staging.thehms.systems`.
+Compose stack, with Cloudflare Tunnel on `staging.thehms.systems`. The default
+requires Cloudflare Access; explicit `--public` mode uses HMS login alone.
 Postgres, PgBouncer and Redis run on the VM; this path does not need Cloud SQL
 or a paid load balancer. The existing domain's renewal remains a separate cost.
 
@@ -83,6 +84,23 @@ readiness at `127.0.0.1:8088`. The loopback listener is HTTP for local checks;
 the eventual browser URL is HTTPS through Cloudflare.
 
 ## 3. Protect the domain, then connect the tunnel
+
+### Public login page (explicit opt-in)
+
+For an openly reachable login page, omit the Access application and leave
+`HMS_TEST_ACCESS_TEAM_DOMAIN` blank. Create the Tunnel and configure its token
+and `staging.thehms.systems` route to `http://caddy:80` as below, but leave
+**Protect with Access** disabled. Publish DNS only after the local stack passes
+readiness and anonymous `/api/v2/auth/me` and `/api/v2/patients` requests return
+401. Run `ops/free-testing/deploy.sh --public` to check these authentication
+requirements locally before starting the connector and again over HTTPS.
+Public reachability does not enable registration or account-setup email;
+users still need individual HMS accounts. Keep bootstrap credentials private.
+Do not expose database, metrics, ops or application container ports.
+To remove public access, stop only `cloudflared` using the merged Compose
+configuration and tunnel profile. Existing local services and volumes remain.
+
+### Access-protected deployment (default)
 
 In the Cloudflare account that owns `thehms.systems`:
 

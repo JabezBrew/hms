@@ -1,5 +1,5 @@
 # Synthetic solo testing only. Merge after ops/compose-v2/compose.yml.
-# Cloudflare provides browser TLS and Access; the origin has no public ports.
+# Cloudflare provides browser TLS and optional Access; the origin has no public ports.
 services:
   caddy:
     ports: !override
