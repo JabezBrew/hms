@@ -77,6 +77,33 @@ reset tokens are inactive until the reset finalization transaction commits
 session revocation, audit, and token activation. Plaintext setup tokens must not
 be stored in domain events, audit events, logs, or API responses.
 
+Self-service password reset uses that trusted delivery adapter with purpose
+`password_reset` and omits `staff_id`. Webhook delivery runs after token hashing
+and persistence, outside request-path transactions; delivery failures produce
+only a constant log message. An unconfigured delivery adapter acknowledges reset
+requests without issuing unusable tokens. Public acknowledgement is identical
+for unknown accounts and throttled requests.
+
+Authentication attempts use bounded process-local budgets: 10 login attempts per
+normalized account/facility per minute; password reset allows 3 requests per
+known account and 60 deliveries overall per 15 minutes. Unknown identities do
+not consume that delivery budget. Login admits at most four concurrent attempts
+(or fewer when the password executor is smaller), and rejects excess attempts
+with the generic authentication response. Admission capacity returns immediately
+when an attempt finishes; saturation does not impose a timed facility lockout.
+Identity keys are salted fingerprints, and at most 4096 windows are retained.
+Budgets are independent of account existence. Additional API replicas each have
+their own budget, so deployments with multiple replicas must enforce a shared
+edge limit as well. Unknown-account login checks use the same bounded Argon2
+executor as real account checks. These controls bound application work; they do
+not replace network-level traffic protection.
+
+Direct clinical note/problem/allergy/prescription/chart endpoints use the same
+patient relationship or audited break-glass check as Patient Chronicle. A
+demographics grant and generic clinical permission do not establish a patient
+relationship. Laboratory/pharmacy safety projections retain their separate
+fulfillment permissions and limited response shapes.
+
 ## Contract Tests
 
 Important contract tests include:

@@ -1,6 +1,5 @@
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
-import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
 import { useNavigate } from 'react-router-dom';
 import { useReducer, useRef } from "react";
 
@@ -71,18 +70,15 @@ export function LoginForm() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[420px] flex-col justify-center gap-8 px-5 sm:w-[380px] sm:px-0">
+    <div className="mx-auto flex w-full min-w-0 flex-col justify-center gap-7">
       {/* Header */}
-      <div className="flex flex-col items-center gap-4 text-center">
-        <div className="flex size-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
-          <LogIn className="size-7" aria-hidden="true" />
-        </div>
-        <div className="space-y-1">
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
+      <div className="flex flex-col gap-2">
+        <div className="space-y-2">
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Welcome Back
           </h1>
           <p className="text-sm text-muted-foreground">
-            Sign in to access your account
+            Sign in to your clinical workspace.
           </p>
         </div>
       </div>
@@ -137,7 +133,7 @@ export function LoginForm() {
               </Label>
               <a
                 href="/reset-password"
-                className="text-xs font-medium text-amber-600 hover:text-amber-700 transition-colors"
+                className="rounded-sm text-xs font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
               >
                 Forgot password?
               </a>
@@ -151,14 +147,16 @@ export function LoginForm() {
                 disabled={isLoading}
                 value={password}
                 onChange={(e) => dispatch({ type: "patch", patch: { password: e.target.value } })}
-                className="h-11 pr-10"
+                className="h-11 pr-12"
                 required
               />
               <button
                 type="button"
                 onClick={() => dispatch({ type: "patch", patch: { showPassword: !showPassword } })}
                 aria-label={showPassword ? "Hide password" : "Show password"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                aria-pressed={showPassword}
+                disabled={isLoading}
+                className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
                 {showPassword ? (
                   <EyeOff className="size-4" aria-hidden="true" />
@@ -173,7 +171,7 @@ export function LoginForm() {
         <Button
           type="submit"
           disabled={isLoading}
-          className="w-full h-11 bg-amber-600 hover:bg-amber-700 text-white font-medium"
+          className="h-11 w-full font-semibold"
         >
           {isLoading ? "Signing in..." : "Sign In"}
         </Button>

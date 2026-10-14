@@ -1,10 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { paceIdentityLogin } from './login-pacing.js';
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL || 'owner@hms.local';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD;
-const patientDetailRoutePattern = /\/patients\/[0-9a-f-]{36}(?:\/chronicle)?$/;
+const staffSetupDeliveryEnabled = process.env.E2E_STAFF_SETUP_DELIVERY_ENABLED === 'true';
+const patientDetailRoutePattern = /\/patients\/[0-9a-f-]{36}(?:\/(?:profile|chronicle))?$/;
 const appointmentDetailRoutePattern = /\/appointments\/[0-9a-f-]{36}$/;
 const encounterDetailRoutePattern = /\/encounters\/[0-9a-f-]{36}$/;
+// Use the browser's real login token in test memory. Test setup must not rotate
+// the app's refresh cookie independently of its in-memory authentication state.
+const accessTokens = new WeakMap();
 
 const rustV2Routes = [
   '/',
@@ -18,10 +23,10 @@ const rustV2Routes = [
   '/billing/payments',
   '/billing/catalog',
   '/clinical-notes/templates',
-  '/nursing/dashboard',
-  '/nursing/tasks',
-  '/nursing/shift-handoff',
-  '/nursing/ward-stock-requests',
+  '/care-areas/outpatient',
+  '/care-areas/inpatient',
+  '/care-areas/emergency',
+  '/ward-board?view=my-work',
   '/laboratory/catalog',
   '/laboratory/dashboard',
   '/laboratory/orders',
@@ -49,7 +54,8 @@ const rustV2Routes = [
   '/inbox',
   '/dashboards/admin',
   '/dashboards/reception',
-  '/dashboards/nurse',
+  '/dashboard/provider',
+  '/dashboard/doctor',
   '/dashboards/inpatient',
   '/referrals/inbox',
   '/referrals/sent',
@@ -60,61 +66,65 @@ if (!adminPassword) {
 }
 
 async function signInAsAdmin(page) {
+  page.on('response', async (response) => {
+    const path = new URL(response.url()).pathname;
+    if (response.ok() && response.request().method() === 'POST'
+        && ['/api/v2/auth/login', '/api/v2/auth/refresh'].includes(path)) {
+      const payload = await response.json().catch(() => null);
+      if (payload?.data?.access_token) accessTokens.set(page, payload.data.access_token);
+    }
+  });
   await page.goto('/login');
 
   await expect(page.getByRole('heading', { name: 'Welcome Back' })).toBeVisible();
 
   await page.getByLabel('Email Address').fill(adminEmail);
   await page.locator('#password').fill(adminPassword);
+  await paceIdentityLogin(adminEmail);
+  const loginResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === '/api/v2/auth/login'
+      && response.request().method() === 'POST'
+  ));
   await page.getByRole('button', { name: 'Sign In' }).click();
+  const loginResponse = await loginResponsePromise;
+  expect(loginResponse.ok()).toBe(true);
+  const loginPayload = await loginResponse.json();
+  expect(loginPayload?.data?.access_token).toBeTruthy();
+  accessTokens.set(page, loginPayload.data.access_token);
 
   await page.waitForURL((url) => !url.pathname.endsWith('/login'));
 }
 
-async function selectOutpatientDepartment(page) {
-  await page.getByRole('combobox').filter({ hasText: /Select department/i }).click();
-  await expect(page.getByRole('option', { name: 'Outpatient Department' })).toBeVisible();
-  await page.getByRole('option', { name: 'Outpatient Department' }).click();
-}
-
-async function fillMinimumPatientIdentity(page, email, identity = {}) {
-  await page.getByPlaceholder('First name').fill(identity.firstName || 'Playwright');
-  await page.getByPlaceholder('Last name').fill(identity.lastName || 'Smoke');
-  await page.getByText('Pick a date').click();
-  await expect(page.locator('[role=grid] button').filter({ hasText: /^15$/ })).toBeVisible();
-  await page.locator('[role=grid] button').filter({ hasText: /^15$/ }).click();
-  await page.keyboard.press('Escape');
-  await page.getByRole('combobox').filter({ hasText: /Select sex/i }).click();
+async function fillMinimumPatientIdentity(page, identity = {}) {
+  await page.getByLabel('First name', { exact: true }).fill(identity.firstName || 'Playwright');
+  await page.getByLabel('Last name', { exact: true }).fill(identity.lastName || 'Smoke');
+  await page.getByLabel('Date of birth', { exact: true }).fill('1990-01-15');
+  await page.getByRole('combobox', { name: 'Sex', exact: true }).click();
   await page.getByRole('option', { name: 'Female' }).click();
-  await page.getByPlaceholder('Email address').fill(email);
 }
 
 async function submitMinimumPatientRegistration(page, identity = {}) {
-  await page.goto('/patients/create');
-  await selectOutpatientDepartment(page);
-  await page.getByRole('button', { name: 'Next' }).click();
-  await fillMinimumPatientIdentity(page, `playwright.${Date.now()}@example.test`, identity);
+  await page.goto('/patients/find-or-register');
+  await fillMinimumPatientIdentity(page, identity);
+  const lookupResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === '/api/v2/patients/identity/lookup'
+      && response.request().method() === 'POST'
+  ));
+  await page.getByRole('button', { name: 'Check for Existing Patient' }).click();
+  const lookupResponse = await lookupResponsePromise;
+  expect(lookupResponse.ok()).toBe(true);
+  await expect(page.getByRole('heading', { name: 'New Patient Registration' })).toBeVisible();
+  if (await page.getByRole('combobox', { name: 'Reason', exact: true }).isVisible()) {
+    await page.getByRole('combobox', { name: 'Reason', exact: true }).click();
+    await page.getByRole('option', { name: 'Different person confirmed', exact: true }).click();
+    await page.getByLabel('Note', { exact: true }).fill('Synthetic end-to-end fixture; intentionally distinct test identity.');
+  }
 
   const createPatientResponse = page.waitForResponse((response) => (
-    response.url().includes('/api/v2/patients') &&
+    new URL(response.url()).pathname === '/api/v2/patients' &&
     response.request().method() === 'POST'
   ));
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    if (patientDetailRoutePattern.test(new URL(page.url()).pathname)) {
-      break;
-    }
-    const registerButton = page.getByRole('button', { name: 'Register Patient' });
-    if (await registerButton.isVisible({ timeout: 500 }).catch(() => false)) {
-      await registerButton.click({ force: true });
-      break;
-    }
-    const nextButton = page.getByRole('button', { name: 'Next' });
-    if (!(await nextButton.isVisible({ timeout: 500 }).catch(() => false))) {
-      break;
-    }
-    await nextButton.click();
-  }
+  await page.getByRole('button', { name: /^(Continue New Registration|Register New Distinct Patient)$/ }).click();
 
   const response = await createPatientResponse;
   expect(response.status()).toBeLessThan(300);
@@ -126,9 +136,38 @@ async function createSmokePatient(page, identity = {}) {
   return new URL(page.url()).pathname.match(/\/patients\/([0-9a-f-]{36})/)?.[1];
 }
 
+async function startClinicalFixture(page, patientId) {
+  const encounter = await postV2FromBrowser(page, '/api/v2/encounters', {
+    patient_id: patientId,
+    encounter_type: 'outpatient',
+  });
+  expect(encounter?.data?.id).toBeTruthy();
+  return encounter.data;
+}
+
 async function createSmokeAppointment(page, identity = {}) {
   const patientId = await createSmokePatient(page, identity);
   expect(patientId).toBeTruthy();
+
+  const clinics = v2DataList(await getV2FromBrowser(page, '/api/v2/clinics?limit=100'));
+  const clinic = clinics.find((item) => /general clinic/i.test(item.name));
+  expect(clinic?.id).toBeTruthy();
+  const sessionDate = new Date();
+  sessionDate.setUTCDate(sessionDate.getUTCDate() + 1);
+  const sessionDay = sessionDate.toISOString().slice(0, 10);
+  await postV2FromBrowser(page, '/api/v2/scheduling/sessions', {
+    clinic_id: clinic.id,
+    owner_type: 'clinic',
+    owner_id: clinic.id,
+    name: `Synthetic browser availability ${Date.now()}`,
+    mode: 'fixed_slot',
+    starts_at: `${sessionDay}T09:00:00Z`,
+    ends_at: `${sessionDay}T11:00:00Z`,
+    slot_minutes: 15,
+    capacity: 10,
+    allow_overbooking: false,
+    overbook_limit: 0,
+  });
 
   await page.goto(`/appointments/create?patientId=${patientId}`);
   await expect(page.getByRole('heading', { name: 'Schedule Appointment' })).toBeVisible();
@@ -136,11 +175,27 @@ async function createSmokeAppointment(page, identity = {}) {
   await page.getByRole('combobox').filter({ hasText: /Select clinic/i }).click();
   await page.getByRole('option', { name: /General Clinic/i }).click();
 
+  const availabilityResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v2/scheduling/availability'
+      && url.searchParams.get('clinic_id') === clinic.id
+      && Boolean(url.searchParams.get('service_id'))
+      && response.request().method() === 'GET';
+  });
   await page.getByRole('combobox').filter({ hasText: /Select type/i }).click();
   await page.getByRole('option', { name: /General/i }).click();
+  const availabilityResponse = await availabilityResponsePromise;
+  expect(availabilityResponse.ok()).toBe(true);
+  await availabilityResponse.finished();
 
+  // Seeded demonstration schedules have fixed dates. Create real future
+  // availability so this test remains valid at any time of day or year.
+  if (sessionDate.getUTCMonth() !== new Date().getUTCMonth()) {
+    await page.getByRole('button', { name: 'Next month', exact: true }).click();
+  }
+  await page.getByRole('gridcell', { name: String(sessionDate.getUTCDate()), exact: true }).first().click();
   await expect(page.getByText(/No slots for this date/i)).toHaveCount(0);
-  await page.getByRole('button', { name: /\d{1,2}:\d{2} [AP]M - \d{1,2}:\d{2} [AP]M/ }).first().click();
+  await page.getByRole('button', { name: /\d{1,2}:\d{2} [AP]M - \d{1,2}:\d{2} [AP]M/, disabled: false }).first().click();
 
   const createAppointmentResponse = page.waitForResponse((response) => (
     response.url().includes('/api/v2/appointments') &&
@@ -167,15 +222,33 @@ function uniquePatientName(label) {
 }
 
 async function postV2FromBrowser(page, path, body) {
-  const result = await postV2FromBrowserRaw(page, path, body);
+  let result = await postV2FromBrowserRaw(page, path, body);
+  // Positive synthetic fixtures still cross the production duplicate-review
+  // contract. Raw helpers remain available for tests asserting rejection.
+  if (path === '/api/v2/patients'
+      && result.status === 409
+      && result.payload?.error?.code === 'patient_duplicate_review_required') {
+    const lookupId = result.payload.error.details?.lookup_id;
+    expect(lookupId).toBeTruthy();
+    result = await postV2FromBrowserRaw(page, path, {
+      ...body,
+      duplicate_review: {
+        lookup_id: lookupId,
+        decision: 'new_distinct_patient',
+        reason_code: 'different_person_confirmed',
+        reason_note: 'Synthetic end-to-end fixture; intentionally distinct test identity.',
+      },
+    });
+  }
   if (!result.ok) {
-    throw new Error(`POST ${path} failed with ${result.status}: ${JSON.stringify(result.payload)}`);
+    const routeTemplate = path.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, ':id');
+    throw new Error(`POST ${routeTemplate} failed with ${result.status} (${result.payload?.error?.code || 'unknown_error'})`);
   }
   return result.payload;
 }
 
 async function postV2FromBrowserRaw(page, path, body) {
-  return page.evaluate(async ({ requestPath, requestBody }) => {
+  return page.evaluate(async ({ requestPath, requestBody, accessToken }) => {
     const readCookie = (name) => {
       return document.cookie
         .split(';')
@@ -187,23 +260,9 @@ async function postV2FromBrowserRaw(page, path, body) {
     };
 
     const csrfToken = readCookie('hms_v2_csrf');
-    const refreshResponse = await fetch('/api/v2/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      headers: csrfToken ? { 'X-HMS-CSRF': csrfToken } : {},
-    });
-
-    if (!refreshResponse.ok) {
-      throw new Error(`token refresh failed with ${refreshResponse.status}`);
-    }
-
-    const refreshPayload = await refreshResponse.json();
-    const accessToken = refreshPayload?.data?.access_token;
     if (!accessToken) {
-      throw new Error('token refresh did not return an access token');
+      throw new Error('A successful browser login is required for fixture setup');
     }
-
-    const nextCsrfToken = readCookie('hms_v2_csrf') || csrfToken;
     const response = await fetch(requestPath, {
       method: 'POST',
       credentials: 'include',
@@ -211,43 +270,20 @@ async function postV2FromBrowserRaw(page, path, body) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
         'X-Facility-Code': 'HMS',
-        ...(nextCsrfToken ? { 'X-HMS-CSRF': nextCsrfToken } : {}),
+        ...(csrfToken ? { 'X-HMS-CSRF': csrfToken } : {}),
       },
       body: JSON.stringify(requestBody),
     });
 
     const payload = await response.json().catch(() => null);
     return { ok: response.ok, status: response.status, payload };
-  }, { requestPath: path, requestBody: body });
+  }, { requestPath: path, requestBody: body, accessToken: accessTokens.get(page) });
 }
 
 async function getV2FromBrowser(page, path) {
-  return page.evaluate(async ({ requestPath }) => {
-    const readCookie = (name) => {
-      return document.cookie
-        .split(';')
-        .map((cookie) => cookie.trim())
-        .find((cookie) => cookie.startsWith(`${name}=`))
-        ?.split('=')
-        .slice(1)
-        .join('=') || '';
-    };
-
-    const csrfToken = readCookie('hms_v2_csrf');
-    const refreshResponse = await fetch('/api/v2/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      headers: csrfToken ? { 'X-HMS-CSRF': csrfToken } : {},
-    });
-
-    if (!refreshResponse.ok) {
-      throw new Error(`token refresh failed with ${refreshResponse.status}`);
-    }
-
-    const refreshPayload = await refreshResponse.json();
-    const accessToken = refreshPayload?.data?.access_token;
+  return page.evaluate(async ({ requestPath, accessToken }) => {
     if (!accessToken) {
-      throw new Error('token refresh did not return an access token');
+      throw new Error('A successful browser login is required for fixture setup');
     }
 
     const response = await fetch(requestPath, {
@@ -261,10 +297,11 @@ async function getV2FromBrowser(page, path) {
 
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(`GET ${requestPath} failed with ${response.status}: ${JSON.stringify(payload)}`);
+      const routeTemplate = requestPath.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, ':id');
+      throw new Error(`GET ${routeTemplate} failed with ${response.status} (${payload?.error?.code || 'unknown_error'})`);
     }
     return payload;
-  }, { requestPath: path });
+  }, { requestPath: path, accessToken: accessTokens.get(page) });
 }
 
 function v2DataList(payload) {
@@ -289,6 +326,8 @@ async function pickVisibleCalendarDay(page, fieldLabel, day) {
 }
 
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
+  // This exercises the complete route catalog, rather than one short workflow.
+  test.setTimeout(120_000);
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -308,9 +347,13 @@ test('Rust V2 static work surfaces load without route crashes or server errors',
   await signInAsAdmin(page);
 
   for (const route of rustV2Routes) {
-    await page.goto(route);
-    await expect(page.locator('body')).toBeVisible();
-    await expect(page.getByText(/Something went wrong/i)).toHaveCount(0);
+    await test.step(route, async () => {
+      await page.goto(route);
+      await expect(page.locator('[data-perf-ready="app-shell"]')).toBeVisible();
+      await expect(page.getByRole('heading').first()).toBeVisible();
+      await expect(page).not.toHaveURL(/\/feature-unavailable(?:[?#]|$)/);
+      await expect(page.getByText(/Something went wrong/i)).toHaveCount(0);
+    });
   }
 
   expect(failures).toEqual([]);
@@ -455,6 +498,7 @@ test('Rust V2 inbox lists marks read and exposes PHI-safe realtime subscriptions
 });
 
 test('Rust V2 role dashboards render generated snapshot and operational lists', async ({ page }) => {
+  test.setTimeout(90_000);
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -527,7 +571,14 @@ test('Rust V2 role dashboards render generated snapshot and operational lists', 
   await page.goto('/dashboards/admin');
   await expect(page.getByRole('heading', { name: 'Admin Dashboard' })).toBeVisible();
   await expect(page.getByText('Current operational posture')).toBeVisible();
-  await expect(page.getByText('Bed Occupancy')).toBeVisible();
+  // The worker materializes the dashboard projection asynchronously. Await
+  // actual measured metrics rather than treating an empty cache miss as zero.
+  await expect.poll(async () => {
+    const snapshot = await getV2FromBrowser(page, '/api/v2/dashboards/snapshot');
+    return v2DataList({ data: snapshot?.data?.metrics }).map((metric) => metric.key);
+  }, { timeout: 20_000, intervals: [250, 500, 1000] }).toEqual(expect.arrayContaining([
+    'active_patients', 'waiting_visits', 'open_invoices',
+  ]));
 
   const adminSnapshotResponsePromise = page.waitForResponse((response) => (
     response.url().endsWith('/api/v2/dashboards/snapshot')
@@ -544,6 +595,10 @@ test('Rust V2 role dashboards render generated snapshot and operational lists', 
     'waiting_visits',
     'open_invoices',
   ]));
+  await expect(page.getByText('Active Patients', { exact: true })).toBeVisible();
+  await expect(page.getByText('Waiting Visits', { exact: true })).toBeVisible();
+  await expect(page.getByText('Open Invoices', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Alert summary unavailable/)).toBeVisible();
 
   const capacityResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -594,26 +649,13 @@ test('Rust V2 role dashboards render generated snapshot and operational lists', 
   await expect(page.getByRole('heading', { name: 'Reception Dashboard' })).toBeVisible();
   await expect(page.getByText(patientName).first()).toBeVisible();
 
-  const nurseWardBoardResponsePromise = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return url.pathname.endsWith('/api/v2/wards/board')
-      && url.searchParams.get('ward_id') === wardId
-      && url.searchParams.get('limit') === '20'
-      && response.request().method() === 'GET';
-  });
-  await page.goto('/dashboards/nurse');
-  await expect(page.getByRole('heading', { name: 'Nurse Dashboard' })).toBeVisible();
-  await selectByVisibleText(
-    page,
-    page.getByRole('combobox').filter({ hasText: /All Wards/i }).first(),
-    wardName,
-  );
-  const nurseWardBoardResponse = await nurseWardBoardResponsePromise;
-  expect(nurseWardBoardResponse.status()).toBeLessThan(300);
-  const nurseWardBoardPayload = await nurseWardBoardResponse.json();
-  expect(v2DataList(nurseWardBoardPayload).some((patient) => patient.patient_id === patientId)).toBe(true);
-  await expect(page.getByText(patientName).first()).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Pending Tasks' }).first()).toBeVisible();
+  const providerWorkResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === '/api/v2/care-areas/my-work'
+      && response.request().method() === 'GET'
+  ));
+  await page.goto('/dashboard/provider');
+  expect((await providerWorkResponsePromise).ok()).toBe(true);
+  await expect(page.getByRole('heading', { name: 'My Work', exact: true })).toBeVisible();
 
   const inpatientWardBoardResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -647,8 +689,8 @@ test('Rust V2 role dashboards render generated snapshot and operational lists', 
   expect(inpatientDischargesResponse.status()).toBeLessThan(300);
   expect(inpatientTasksResponse.status()).toBeLessThan(300);
   await expect(page.getByRole('heading', { name: 'Inpatient Dashboard' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'New Admissions' }).first()).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'My Patients' }).first()).toBeVisible();
+  await expect(page.getByText('Ward preview', { exact: true })).toBeVisible();
+  await expect(page.getByText('Discharge records', { exact: true })).toBeVisible();
 
   expect(failures).toEqual([]);
 });
@@ -679,9 +721,10 @@ test('Rust V2 referrals create inbox sent SLA and waitlist workflows use generat
   const patientId = patientPayload?.data?.id;
   expect(patientId).toBeTruthy();
 
-  await page.goto(`/patients/${patientId}`);
-  await expect(page.getByRole('heading', { name: 'Unable to load patient record' })).toBeVisible();
-  await expect(page.getByText('You do not have access to this patient Chronicle.')).toBeVisible();
+  await page.goto(`/patients/${patientId}/chronicle`);
+  await expect(page.getByRole('heading', { name: 'Team-based access required' })).toBeVisible();
+  await expect(page.getByText(/This patient record is protected by team-based access controls/)).toBeVisible();
+  await expect(page.getByPlaceholder('Search notes, prescriptions...')).toHaveCount(0);
 
   const createReferralPayload = await postV2FromBrowser(page, '/api/v2/referrals', {
     patient_id: patientId,
@@ -817,7 +860,8 @@ test('Rust V2 consent grant stays inside patient context and uses generated cons
   const patientId = patientPayload?.data?.id;
   expect(patientId).toBeTruthy();
 
-  await page.goto(`/patients/${patientId}`);
+  await startClinicalFixture(page, patientId);
+  await page.goto(`/patients/${patientId}/chronicle`);
   await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
   await page.getByRole('button', { name: 'More actions' }).click();
   await page.getByRole('menuitem', { name: 'Share Record' }).click();
@@ -853,7 +897,7 @@ test('Rust V2 consent grant stays inside patient context and uses generated cons
   expect(failures).toEqual([]);
 });
 
-test('Rust V2 patient registration exposes seeded departments without requiring roster clinic schedules', async ({ page }) => {
+test('Rust V2 registration starts with identity lookup and keeps creation disabled until lookup', async ({ page }) => {
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -870,14 +914,15 @@ test('Rust V2 patient registration exposes seeded departments without requiring 
   await signInAsAdmin(page);
   await page.goto('/patients/create');
 
-  await expect(page.getByRole('heading', { name: /Register New Patient/i })).toBeVisible();
-  await selectOutpatientDepartment(page);
-  await expect(page.getByText(/Registration will continue under the selected department/i)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Find or Register Patient', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check for Existing Patient' })).toBeDisabled();
+  await expect(page.getByLabel('MRN / Hospital Number', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Continue New Registration|Register New Distinct Patient/ })).toHaveCount(0);
 
   expect(failures).toEqual([]);
 });
 
-test('Rust V2 patient registration submits the existing multi-step form', async ({ page }) => {
+test('Rust V2 patient registration completes identity lookup and opens the administrative profile', async ({ page }) => {
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -949,7 +994,7 @@ test('Rust V2 patient edit preloads and updates demographics from the existing f
   expect(failures).toEqual([]);
 });
 
-test('Rust V2 patient registry searches real patients and opens detail through generated endpoints', async ({ page }) => {
+test('Rust V2 patient registry searches real patients and opens an owned clinical record', async ({ page }) => {
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -976,15 +1021,16 @@ test('Rust V2 patient registry searches real patients and opens detail through g
   });
   const patientId = createdPatientPayload?.data?.id;
   expect(patientId).toBeTruthy();
+  await startClinicalFixture(page, patientId);
 
   await page.goto('/patients');
-  await expect(page.getByRole('heading', { name: 'Patient Registry' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Patient Directory' })).toBeVisible();
 
   const searchResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname.endsWith('/api/v2/patients')
-      && url.searchParams.get('search') === lastName
-      && response.request().method() === 'GET';
+    return url.pathname.endsWith('/api/v2/patients/search')
+      && response.request().method() === 'POST'
+      && response.request().postDataJSON()?.search === lastName;
   });
   await page.getByPlaceholder('Search by name, MRN, or NHIS ID...').fill(lastName);
   const searchResponse = await searchResponsePromise;
@@ -992,7 +1038,7 @@ test('Rust V2 patient registry searches real patients and opens detail through g
 
   const resultRow = page.getByRole('row', { name: new RegExp(`${firstName} ${lastName}`, 'i') }).first();
   await expect(resultRow).toBeVisible();
-  await expect(resultRow).toContainText('Active');
+  await expect(resultRow).toContainText('Registered');
 
   const detailResponsePromise = page.waitForResponse((response) => (
     response.url().endsWith(`/api/v2/patients/${patientId}`)
@@ -1001,7 +1047,7 @@ test('Rust V2 patient registry searches real patients and opens detail through g
   await resultRow.click();
   const detailResponse = await detailResponsePromise;
   expect(detailResponse.status()).toBeLessThan(300);
-  await expect(page).toHaveURL(new RegExp(`/patients/${patientId}(?:/chronicle)?$`));
+  await expect(page).toHaveURL(new RegExp(`/patients/${patientId}/chronicle$`));
   await expect(page.getByRole('heading', { name: `${firstName} ${lastName}` })).toBeVisible();
 
   expect(failures).toEqual([]);
@@ -1022,6 +1068,13 @@ test('Rust V2 my patients page renders context patients from the generated endpo
   });
 
   await signInAsAdmin(page);
+  const fixturePatient = await postV2FromBrowser(page, '/api/v2/patients', {
+    first_name: 'Context',
+    last_name: uniquePatientName('Care').replace('Playwright ', ''),
+    date_of_birth: '1987-03-12',
+    sex: 'female',
+  });
+  await startClinicalFixture(page, fixturePatient.data.id);
 
   const contextResponsePromise = page.waitForResponse((response) => (
     new URL(response.url()).pathname.endsWith('/api/v2/patients/context')
@@ -1034,7 +1087,7 @@ test('Rust V2 my patients page renders context patients from the generated endpo
   const contextPayload = await contextResponse.json();
   const contextPatients = v2DataList(contextPayload);
   expect(contextPatients.length).toBeGreaterThan(0);
-  const contextPatient = contextPatients[0];
+  const contextPatient = contextPatients.find((patient) => patient.id === fixturePatient.data.id);
   expect(contextPatient?.id).toBeTruthy();
   expect(contextPatient?.display_name).toBeTruthy();
 
@@ -1055,7 +1108,7 @@ test('Rust V2 my patients page renders context patients from the generated endpo
   await patientRow.click();
   const detailResponse = await detailResponsePromise;
   expect(detailResponse.status()).toBeLessThan(300);
-  await expect(page).toHaveURL(new RegExp(`/patients/${contextPatient.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/patients/${contextPatient.id}/chronicle$`));
 
   expect(failures).toEqual([]);
 });
@@ -1118,8 +1171,9 @@ test('Rust V2 pharmacy dispensing surface calls generated dispenses without surf
 
   const queueResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname.endsWith('/api/v2/pharmacy/dispenses')
+    return url.pathname.endsWith('/api/v2/pharmacy/dispensing-queue')
       && url.searchParams.get('limit') === '50'
+      && url.searchParams.get('status') === 'pending'
       && response.request().method() === 'GET';
   });
 
@@ -1127,12 +1181,12 @@ test('Rust V2 pharmacy dispensing surface calls generated dispenses without surf
   const queueResponse = await queueResponsePromise;
   expect(queueResponse.status()).toBeLessThan(300);
   const queuePayload = await queueResponse.json();
-  expect(v2DataList(queuePayload).some((row) => row.id === dispenseId)).toBe(true);
+  expect(v2DataList(queuePayload).some((row) => row.patient_id === patientId)).toBe(false);
 
   const pharmacyMain = page.locator('main');
   await expect(page.getByRole('heading', { name: 'Pharmacy Dispensing' })).toBeVisible();
   await expect(
-    pharmacyMain.getByText(/Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet/i),
+    pharmacyMain.getByText(/Rust V2 dispensing is available per medication row once the prescription is linked to an inventory item/i),
   ).toBeVisible();
   await expect(pharmacyMain.getByRole('heading', { name: 'Queue Empty' })).toBeVisible();
   await expect(pharmacyMain.getByText(stockItem.name, { exact: true })).toHaveCount(0);
@@ -1144,6 +1198,7 @@ test('Rust V2 pharmacy dispensing surface calls generated dispenses without surf
 });
 
 test('Rust V2 billing invoice creation detail and manual payment use generated endpoints', async ({ page }) => {
+  test.setTimeout(60_000);
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -1294,6 +1349,54 @@ test('Rust V2 billing invoice creation detail and manual payment use generated e
   await expect(page.getByText(receiptNumber).first()).toBeVisible();
   await expect(page.getByText(/Bank/i).first()).toBeVisible();
 
+  const cashInvoice = await postV2FromBrowser(page, '/api/v2/billing/invoices', {
+    patient_id: patientId,
+    service_price_id: servicePriceId,
+    quantity: 1,
+  });
+  expect(cashInvoice.data.balance_minor).toBeGreaterThan(0);
+  await page.goto(`/billing/invoices/${cashInvoice.data.id}`);
+  const currentSessionResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v2/billing/cash-sessions'
+      && url.searchParams.get('status') === 'open'
+      && response.request().method() === 'GET';
+  });
+  await page.getByRole('button', { name: 'Record Payment', exact: true }).click();
+  const currentSessionResponse = await currentSessionResponsePromise;
+  expect(currentSessionResponse.ok()).toBe(true);
+  let cashSessionId = v2DataList(await currentSessionResponse.json())[0]?.id;
+  const cashPanel = page.locator('div.fixed.inset-y-0.right-0').filter({ hasText: cashInvoice.data.invoice_number });
+  await expect(cashPanel).toHaveClass(/translate-x-0/);
+  if (!cashSessionId) {
+    const openSessionResponsePromise = page.waitForResponse((response) => (
+      new URL(response.url()).pathname === '/api/v2/billing/cash-sessions'
+        && response.request().method() === 'POST'
+    ));
+    await cashPanel.getByLabel('Opening Float (GHS)').fill('0');
+    await cashPanel.getByRole('button', { name: 'Open Session', exact: true }).click();
+    const openSessionResponse = await openSessionResponsePromise;
+    expect(openSessionResponse.ok()).toBe(true);
+    cashSessionId = (await openSessionResponse.json()).data.id;
+  }
+  expect(cashSessionId).toBeTruthy();
+  await expect(cashPanel.getByRole('button', { name: 'Open Session', exact: true })).toHaveCount(0);
+  const cashPaymentResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === '/api/v2/billing/payments'
+      && response.request().method() === 'POST'
+  ));
+  await cashPanel.getByRole('button', { name: /Record Payment \(Manual\)/i }).click();
+  const cashPaymentResponse = await cashPaymentResponsePromise;
+  expect(cashPaymentResponse.ok()).toBe(true);
+  expect(cashPaymentResponse.request().postDataJSON()).toEqual({
+    invoice_id: cashInvoice.data.id,
+    amount_minor: cashInvoice.data.balance_minor,
+    method: 'cash',
+    cash_session_id: cashSessionId,
+  });
+  await expect(cashPanel).toHaveClass(/translate-x-full/);
+  await expect(page.getByText(/^Paid$/i).first()).toBeVisible();
+
   expect(failures).toEqual([]);
 });
 
@@ -1370,10 +1473,8 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
   const staffLastName = `Staff${suffix}`;
   const staffDisplayName = `${staffFirstName} ${staffLastName}`;
   const staffEmail = `playwright.staff.${suffix.toLowerCase()}@example.test`;
-  const employeeId = `PWSTAFF${suffix.slice(-8)}`;
   const initialPosition = 'Front Desk Officer';
   const updatedPosition = 'Senior Front Desk Officer';
-  const temporaryPassword = 'TempStaff123!';
 
   const departmentOptionsResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -1397,7 +1498,7 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
   );
   await page.getByRole('button', { name: 'Next' }).click();
 
-  await page.getByPlaceholder('Employee ID').fill(employeeId);
+  await expect(page.getByPlaceholder('Employee ID')).toHaveCount(0);
   await selectByVisibleText(
     page,
     page.getByRole('combobox').filter({ hasText: /Select department|No departments configured|Loading departments/i }).first(),
@@ -1407,68 +1508,71 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
   await pickVisibleCalendarDay(page, 'Hire Date', '11');
   await page.getByRole('button', { name: 'Next' }).click();
 
-  await page.getByPlaceholder('Temporary password').fill(temporaryPassword);
-  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByPlaceholder('Temporary password')).toHaveCount(0);
   const contactNextButton = page.getByRole('button', { name: 'Next' });
   await expect(contactNextButton).toBeVisible();
-  await contactNextButton.dispatchEvent('click');
-  await expect(page.getByText('Temporary Password:')).toBeVisible();
-  await expect(page.getByText('Set').first()).toBeVisible();
+  await contactNextButton.click();
+  await expect(page.getByText('Temporary Password:')).toHaveCount(0);
 
   const createStaffResponsePromise = page.waitForResponse((response) => (
     response.url().endsWith('/api/v2/admin/staff')
       && response.request().method() === 'POST'
   ));
-  const staffDetailResponsePromise = page.waitForResponse((response) => (
-    /\/api\/v2\/admin\/staff\/[0-9a-f-]+$/.test(new URL(response.url()).pathname)
-      && response.request().method() === 'GET'
-  ));
-
   const createStaffButton = page.getByRole('button', { name: 'Create Staff Member' });
   await expect(createStaffButton).toBeVisible();
-  await createStaffButton.dispatchEvent('click');
+  await createStaffButton.click();
 
   const createStaffResponse = await createStaffResponsePromise;
-  expect(createStaffResponse.status()).toBeLessThan(300);
   const createStaffBody = createStaffResponse.request().postDataJSON();
   expect(createStaffBody).toMatchObject({
     email: staffEmail,
     display_name: staffDisplayName,
-    temporary_password: temporaryPassword,
-    employee_id: employeeId,
     department: staffDepartment.name,
     position: initialPosition,
   });
+  expect(createStaffBody).not.toHaveProperty('temporary_password');
+  expect(createStaffBody).not.toHaveProperty('password');
+  expect(createStaffBody).not.toHaveProperty('employee_id');
   expect(createStaffBody).not.toHaveProperty('date_of_birth');
   expect(createStaffBody.hire_date).toMatch(/^\d{4}-\d{2}-11$/);
 
   const createdStaffPayload = await createStaffResponse.json();
-  const staffId = createdStaffPayload?.data?.id;
-  expect(staffId).toBeTruthy();
-  const staffDetailResponse = await staffDetailResponsePromise;
-  expect(staffDetailResponse.status()).toBeLessThan(300);
-  expect(staffDetailResponse.url()).toContain(staffId);
-  await expect(page).toHaveURL(new RegExp(`/staff/${staffId}$`));
-  await expect(page.getByRole('heading', { name: staffDisplayName })).toBeVisible();
-  await expect(page.getByText(employeeId).first()).toBeVisible();
-  await expect(page.getByText(staffDepartment.name).first()).toBeVisible();
-  await expect(page.getByText(initialPosition).first()).toBeVisible();
-  await expect(page.getByText(staffEmail).first()).toBeVisible();
+  let staffId;
+  if (!staffSetupDeliveryEnabled) {
+    expect(createStaffResponse.status()).toBe(409);
+    expect(createdStaffPayload?.error?.code).toBe('staff_account_setup_delivery_unavailable');
+    await expect(page).toHaveURL(/\/staff\/create$/);
+    const staffAfterAttempt = await getV2FromBrowser(page, `/api/v2/admin/staff?search=${encodeURIComponent(staffEmail)}`);
+    expect(v2DataList(staffAfterAttempt).some((staff) => staff.email === staffEmail)).toBe(false);
+  } else {
+    expect(createStaffResponse.status()).toBeLessThan(300);
+    staffId = createdStaffPayload?.data?.id;
+    expect(staffId).toBeTruthy();
+    const employeeId = createdStaffPayload?.data?.employee_id;
+    expect(employeeId).toBeTruthy();
+    expect(createdStaffPayload?.data).not.toHaveProperty('setup_token');
+    await expect(page).toHaveURL(new RegExp(`/staff/${staffId}$`));
+    await expect(page.getByRole('heading', { name: staffDisplayName })).toBeVisible();
+    await expect(page.getByText(employeeId).first()).toBeVisible();
+    await expect(page.getByText(staffDepartment.name).first()).toBeVisible();
+    await expect(page.getByText(initialPosition).first()).toBeVisible();
+    await expect(page.getByText(staffEmail).first()).toBeVisible();
 
-  await page.getByRole('button', { name: /Edit Profile/i }).click();
-  await page.getByLabel('Position').fill(updatedPosition);
-  const updateStaffResponsePromise = page.waitForResponse((response) => (
-    response.url().endsWith(`/api/v2/admin/staff/${staffId}`)
-      && response.request().method() === 'PATCH'
-  ));
-  await page.getByRole('button', { name: /^Save$/ }).click();
-  const updateStaffResponse = await updateStaffResponsePromise;
-  expect(updateStaffResponse.status()).toBeLessThan(300);
-  expect(updateStaffResponse.request().postDataJSON()).toMatchObject({
-    department: staffDepartment.name,
-    position: updatedPosition,
-  });
-  await expect(page.getByText(updatedPosition).first()).toBeVisible();
+    await page.getByRole('button', { name: /Edit Profile/i }).click();
+    await page.getByLabel('Position').fill(updatedPosition);
+    const updateStaffResponsePromise = page.waitForResponse((response) => (
+      response.url().endsWith(`/api/v2/admin/staff/${staffId}`)
+        && response.request().method() === 'PATCH'
+    ));
+    await page.getByRole('button', { name: /^Save$/ }).click();
+    const updateStaffResponse = await updateStaffResponsePromise;
+    expect(updateStaffResponse.status()).toBeLessThan(300);
+    expect(updateStaffResponse.request().postDataJSON()).toMatchObject({
+      department: staffDepartment.name,
+      position: updatedPosition,
+    });
+    await expect(page.getByText(updatedPosition).first()).toBeVisible();
+  }
 
   const auditListResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -1490,10 +1594,13 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
   const auditSearchResponse = await auditSearchResponsePromise;
   expect(auditSearchResponse.status()).toBeLessThan(300);
   const auditSearchPayload = await auditSearchResponse.json();
-  expect(v2DataList(auditSearchPayload).some((event) => (
-    event.resource_id === staffId && /^admin\.staff\./i.test(event.event_type || '')
-  ))).toBe(true);
-  await expect(page.getByText(/Admin Staff/i).first()).toBeVisible();
+  expect(Array.isArray(auditSearchPayload?.data)).toBe(true);
+  if (staffSetupDeliveryEnabled) {
+    expect(v2DataList(auditSearchPayload).some((event) => (
+      event.resource_id === staffId && /^admin\.staff\./i.test(event.event_type || '')
+    ))).toBe(true);
+    await expect(page.getByText(/Admin Staff/i).first()).toBeVisible();
+  }
 
   expect(failures).toEqual([]);
 });
@@ -1704,7 +1811,7 @@ test('Rust V2 clinic waiting room calls a checked-in visit through the existing 
   await expect(page.getByRole('heading', { name: /Waiting Room/i })).toBeVisible();
 
   const waitingCard = page
-    .locator('article')
+    .locator('.group.relative')
     .filter({ hasText: patientName })
     .filter({ hasText: 'Call Patient' })
     .first();
@@ -1731,7 +1838,7 @@ test('Rust V2 clinic waiting room calls a checked-in visit through the existing 
   expect(failures).toEqual([]);
 });
 
-test('Rust V2 triage assesses a checked-in visit through the existing triage UI', async ({ page }) => {
+test('Rust V2 triage assigns staff and completes an emergency assessment through the UI', async ({ page }) => {
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -1747,22 +1854,34 @@ test('Rust V2 triage assesses a checked-in visit through the existing triage UI'
 
   await signInAsAdmin(page);
   const patientName = uniquePatientName('Triage');
-  const appointmentId = await createSmokeAppointment(page, {
-    firstName: 'Playwright',
-    lastName: patientName.replace('Playwright ', ''),
+  const patientIdentity = {
+    first_name: 'Playwright',
+    last_name: patientName.replace('Playwright ', ''),
+    date_of_birth: '1990-01-15',
+    sex: 'female',
+  };
+  const creation = await postV2FromBrowserRaw(page, '/api/v2/patients', patientIdentity);
+  let patientPayload = creation.payload;
+  if (creation.status === 409 && creation.payload?.error?.code === 'patient_duplicate_review_required') {
+    const lookupId = creation.payload.error.details?.lookup_id;
+    expect(lookupId).toBeTruthy();
+    patientPayload = await postV2FromBrowser(page, '/api/v2/patients', {
+      ...patientIdentity,
+      duplicate_review: {
+        lookup_id: lookupId,
+        decision: 'new_distinct_patient',
+        reason_code: 'different_person_confirmed',
+        reason_note: 'Synthetic end-to-end fixture; intentionally distinct test identity.',
+      },
+    });
+  } else {
+    expect(creation.ok).toBe(true);
+  }
+  const patientId = patientPayload?.data?.id;
+  expect(patientId).toBeTruthy();
+  const visitPayload = await postV2FromBrowser(page, '/api/v2/visits/check-in', {
+    patient_id: patientId,
   });
-  expect(appointmentId).toBeTruthy();
-
-  const checkInResponse = page.waitForResponse((response) => (
-    response.url().includes('/api/v2/visits/check-in') &&
-    response.request().method() === 'POST'
-  ));
-
-  await page.getByRole('button', { name: 'Check In' }).click();
-
-  const visitResponse = await checkInResponse;
-  expect(visitResponse.status()).toBeLessThan(300);
-  const visitPayload = await visitResponse.json();
   const visitId = visitPayload?.data?.id;
   expect(visitId).toBeTruthy();
 
@@ -1778,11 +1897,26 @@ test('Rust V2 triage assesses a checked-in visit through the existing triage UI'
   const waitingCard = page
     .locator('article')
     .filter({ hasText: patientName })
-    .filter({ hasText: 'Triage' })
     .first();
   await expect(waitingCard).toBeVisible();
 
-  await waitingCard.getByRole('button', { name: 'Triage' }).click();
+  await waitingCard.getByRole('button', { name: 'Assign staff', exact: true }).click();
+  const assignmentDialog = page.getByRole('dialog', { name: 'Assign Triage Staff' });
+  await assignmentDialog.getByRole('combobox', { name: 'Staff member *' }).click();
+  await page.getByRole('option').filter({ hasNotText: 'No staff available' }).first().click();
+  const assignmentResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/triage/${triageId}/assign`)
+      && response.request().method() === 'POST'
+  ));
+  await assignmentDialog.getByRole('button', { name: 'Assign Staff', exact: true }).click();
+  const assignmentResponse = await assignmentResponsePromise;
+  expect(assignmentResponse.status()).toBeLessThan(300);
+  expect(assignmentResponse.request().postDataJSON().assigned_to_user_id).toMatch(/^[0-9a-f-]{36}$/);
+
+  await page.getByRole('tab', { name: 'Assigned', exact: true }).click();
+  const assignedCard = page.locator('.group.relative').filter({ hasText: patientName }).first();
+  await expect(assignedCard).toBeVisible();
+  await assignedCard.getByRole('button', { name: 'Assess', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Triage Assessment' })).toBeVisible();
   const assessmentDialog = page.getByRole('dialog', { name: 'Triage Assessment' });
   await assessmentDialog.getByText('Emergency').click();
@@ -1798,13 +1932,13 @@ test('Rust V2 triage assesses a checked-in visit through the existing triage UI'
   const response = await assessmentResponse;
   expect(response.status()).toBeLessThan(300);
   const triagedCard = page
-    .locator('article')
+    .locator('.group.relative')
     .filter({ hasText: patientName })
-    .filter({ hasText: 'Browser smoke assessment notes.' })
     .first();
-  await expect(page.getByText(/Triaged - Pending Assignment/i)).toBeVisible();
+  await page.getByRole('tab', { name: 'Completed', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /Assessment completed/ })).toBeVisible();
   await expect(triagedCard).toBeVisible();
-  await expect(triagedCard.getByRole('button', { name: 'Assign to Clinic' })).toBeVisible();
+  await expect(triagedCard.getByRole('button', { name: /Assess|Assign staff|Reassign staff|Cancel/, exact: true })).toHaveCount(0);
 
   expect(failures).toEqual([]);
 });
@@ -1976,7 +2110,7 @@ test('Rust V2 wards list, detail, section setup, and reports use the existing UI
 
   await page.goto('/wards/reports');
   await expect(page.getByRole('heading', { name: /Ward Occupancy Reports/i })).toBeVisible();
-  await expect(page.getByText('Report Filters')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Report controls' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export Report' })).toBeVisible();
 
   expect(failures).toEqual([]);
@@ -2022,9 +2156,9 @@ test('Rust V2 Ward board patient scope loads through the existing UI', async ({ 
 
   const boardResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname.endsWith('/api/v2/wards/board')
-      && url.searchParams.get('patient_id') === patientId
-      && response.request().method() === 'GET';
+    return url.pathname.endsWith('/api/v2/wards/board/search')
+      && response.request().method() === 'POST'
+      && response.request().postDataJSON()?.patient_id === patientId;
   });
 
   await page.goto(`/ward-board?patient=${patientId}`);
@@ -2037,7 +2171,8 @@ test('Rust V2 Ward board patient scope loads through the existing UI', async ({ 
   expect(failures).toEqual([]);
 });
 
-test('Rust V2 admission and discharge queues complete the inpatient movement flow', async ({ page }) => {
+test('Rust V2 admission and discharge clearances complete the inpatient movement flow through the UI', async ({ page }) => {
+  test.setTimeout(120_000);
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -2060,6 +2195,18 @@ test('Rust V2 admission and discharge queues complete the inpatient movement flo
   });
   expect(patientId).toBeTruthy();
 
+  const encounter = await postV2FromBrowser(page, '/api/v2/encounters', {
+    patient_id: patientId,
+    encounter_type: 'inpatient',
+  });
+  expect(encounter.data.id).toBeTruthy();
+  const summaryTemplateTitle = `AAA Synthetic discharge summary ${Date.now()}`;
+  await postV2FromBrowser(page, '/api/v2/clinical/note-templates', {
+    title: summaryTemplateTitle,
+    note_type: 'doctor_note',
+    body_template: JSON.stringify([{ name: 'Summary', type: 'text', required: true, placeholder: 'Enter synthetic discharge summary' }]),
+  });
+
   const suffix = Date.now().toString(36).toUpperCase();
   const wardPayload = await postV2FromBrowser(page, '/api/v2/wards', {
     code: `PWA-${suffix}`,
@@ -2077,16 +2224,13 @@ test('Rust V2 admission and discharge queues complete the inpatient movement flo
   const admissionCasePayload = await postV2FromBrowser(page, '/api/v2/admissions/cases', {
     patient_id: patientId,
     ward_id: wardId,
+    encounter_id: encounter.data.id,
   });
   const admissionCaseId = admissionCasePayload?.data?.id;
   expect(admissionCaseId).toBeTruthy();
 
   await page.goto('/admissions/requests');
   await expect(page.getByRole('heading', { name: 'Admission Requests' })).toBeVisible();
-  await expect(page.getByText(patientName).first()).toBeVisible();
-
-  await page.goto('/nursing/admissions');
-  await expect(page.getByRole('heading', { name: 'Nursing Admission Queue' })).toBeVisible();
   await expect(page.getByText(patientName).first()).toBeVisible();
 
   await page.goto(`/admissions/cases/${admissionCaseId}`);
@@ -2120,59 +2264,86 @@ test('Rust V2 admission and discharge queues complete the inpatient movement flo
   const dischargeId = requestDischargePayload?.data?.id;
   expect(dischargeId).toBeTruthy();
 
-  await expect(page).toHaveURL(new RegExp(`/nursing/discharges\\?case=${dischargeId}$`));
-  await expect(page.getByRole('heading', { name: 'Nursing Discharges' })).toBeVisible();
-  await expect(page.getByText(patientName).first()).toBeVisible();
-
-  const dischargeSummaryPayload = await postV2FromBrowser(
-    page,
-    `/api/v2/patients/${patientId}/clinical/notes`,
-    {
-      note_type: 'discharge_summary',
-      title: `Discharge summary ${suffix}`,
-      body: 'Patient clinically stable for discharge.',
-    },
-  );
-  expect(dischargeSummaryPayload?.data?.note_type).toBe('discharge_summary');
-  expect(dischargeSummaryPayload?.data?.id).toBeTruthy();
-
-  const postedSummaryPayload = await postV2FromBrowser(
-    page,
-    `/api/v2/clinical/notes/${dischargeSummaryPayload.data.id}/versions`,
-    {
-      body: 'Posted discharge summary: patient clinically stable for discharge.',
-    },
-  );
-  expect(postedSummaryPayload?.data?.version).toBe(2);
-
-  const nursingReleasePayload = await postV2FromBrowser(
-    page,
-    `/api/v2/discharges/${dischargeId}/nursing-release`,
-    {
-      education: 'Medication, wound care, and red flags reviewed with patient.',
-      instructions: 'Return immediately if symptoms worsen.',
-    },
-  );
-  expect(nursingReleasePayload?.data?.id).toBe(dischargeId);
-
-  await page.goto(`/nursing/discharges?case=${dischargeId}`);
-  await expect(page.getByRole('heading', { name: 'Nursing Discharges' })).toBeVisible();
-
-  const completeDischargeResponsePromise = page.waitForResponse((response) => (
-    response.url().endsWith(`/api/v2/discharges/${dischargeId}/complete`) &&
-    response.request().method() === 'POST'
+  await page.waitForURL((url) => (
+    url.searchParams.get('view') === 'discharge'
+      && url.searchParams.get('patient') === patientId
+      && url.searchParams.get('case') === dischargeId
   ));
+  const dischargePath = `/wards/${wardId}/board?view=discharge&patient=${patientId}&case=${dischargeId}`;
+  const clearancePanel = page.getByRole('region', { name: 'Discharge workflow', exact: true });
+  await expect(clearancePanel).toBeVisible();
+  await expect(clearancePanel.getByRole('button', { name: 'Finalize discharge', exact: true })).toBeDisabled();
+  await clearancePanel.getByRole('link', { name: 'Prepare discharge summary', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/patients/${patientId}/chronicle\\?`));
+  await page.getByRole('button', { name: new RegExp(escapeRegExp(summaryTemplateTitle)) }).click();
+  const summaryText = 'Patient clinically stable. Medication plan and follow-up reviewed before discharge.';
+  await page.getByPlaceholder('Enter synthetic discharge summary').fill(summaryText);
+  const createSummaryResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/api/v2/patients/${patientId}/clinical/notes`
+      && response.request().method() === 'POST'
+  ));
+  await page.getByRole('button', { name: 'Complete Note', exact: true }).click();
+  const createSummaryResponse = await createSummaryResponsePromise;
+  expect(createSummaryResponse.ok()).toBe(true);
+  expect(createSummaryResponse.request().postDataJSON()).toMatchObject({
+    note_type: 'doctor_note', title: 'Discharge Summary', encounter_id: encounter.data.id,
+  });
+  const summary = (await createSummaryResponse.json()).data;
+  expect(summary.status).toBe('draft');
+  const summaryEntry = page.locator('article').filter({ hasText: 'Discharge Summary' }).first();
+  await expect(summaryEntry).toBeVisible();
+  await summaryEntry.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Edit Note', exact: true })).toBeVisible();
+  const editPanel = page.locator('div.fixed.inset-y-0.right-0').filter({ has: page.getByRole('heading', { name: 'Edit Note', exact: true }) }).last();
+  const reviewedText = `Reviewed discharge summary: ${summaryText}`;
+  await editPanel.getByRole('textbox').first().fill(reviewedText);
+  const reviewedSummaryResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/api/v2/clinical/notes/${summary.id}/versions`
+      && response.request().method() === 'POST'
+  ));
+  await editPanel.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  const reviewedSummaryResponse = await reviewedSummaryResponsePromise;
+  expect(reviewedSummaryResponse.ok()).toBe(true);
+  expect(reviewedSummaryResponse.request().postDataJSON().body).toContain(reviewedText);
+  expect((await reviewedSummaryResponse.json()).data.version).toBe(2);
 
-  await page.getByRole('button', { name: 'Finalize Discharge' }).click();
-
-  const completeDischargeResponse = await completeDischargeResponsePromise;
-  const completeDischargePayload = await completeDischargeResponse.json().catch(() => null);
-  expect(completeDischargeResponse.status(), JSON.stringify(completeDischargePayload)).toBeLessThan(300);
+  await page.goto(dischargePath);
+  await expect(clearancePanel).toBeVisible();
+  await expect(clearancePanel.getByRole('button', { name: 'Finalize discharge', exact: true })).toBeDisabled();
+  await clearancePanel.getByLabel('Patient education', { exact: true }).fill('Medication instructions and red flags reviewed with the synthetic patient.');
+  await clearancePanel.getByLabel('Discharge instructions', { exact: true }).fill('Return immediately if symptoms worsen and attend the scheduled follow-up.');
+  const releaseResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/api/v2/discharges/${dischargeId}/nursing-release`
+      && response.request().method() === 'POST'
+  ));
+  await clearancePanel.getByRole('button', { name: 'Record nursing release', exact: true }).click();
+  const releaseResponse = await releaseResponsePromise;
+  expect(releaseResponse.ok()).toBe(true);
+  expect(releaseResponse.request().postDataJSON()).toMatchObject({
+    education: 'Medication instructions and red flags reviewed with the synthetic patient.',
+    instructions: 'Return immediately if symptoms worsen and attend the scheduled follow-up.',
+  });
+  await expect(clearancePanel.getByRole('button', { name: 'Finalize discharge', exact: true })).toBeEnabled();
+  await clearancePanel.getByRole('button', { name: 'Finalize discharge', exact: true }).click();
+  const confirmation = page.getByRole('alertdialog', { name: 'Finalize this discharge?' });
+  await expect(confirmation).toContainText('releases the occupied bed for cleaning');
+  const finalizeResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/api/v2/discharges/${dischargeId}/complete`
+      && response.request().method() === 'POST'
+  ));
+  await confirmation.getByRole('button', { name: 'Confirm discharge', exact: true }).click();
+  const finalizeResponse = await finalizeResponsePromise;
+  expect(finalizeResponse.ok()).toBe(true);
+  expect((await finalizeResponse.json()).data.status).toBe('completed');
+  const closedAdmission = await getV2FromBrowser(page, `/api/v2/admissions/cases/${admissionCaseId}`);
+  expect(closedAdmission.data.status).toBe('discharged');
+  const beds = v2DataList(await getV2FromBrowser(page, `/api/v2/wards/${wardId}/beds`));
+  expect(beds.find((bed) => bed.id === bedPayload.data.id)?.status).toBe('cleaning');
 
   expect(failures).toEqual([]);
 });
 
-test('Rust V2 nursing dashboard tasks and handoff use generated nursing contracts', async ({ page }) => {
+test('Rust V2 Ward Board completes nursing tasks and the handoff API records completion', async ({ page }) => {
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -2222,60 +2393,45 @@ test('Rust V2 nursing dashboard tasks and handoff use generated nursing contract
   const taskPayload = await postV2FromBrowser(page, '/api/v2/nursing/tasks', {
     admission_case_id: admissionCaseId,
     task_type: 'observation',
-    due_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    due_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     assigned_to_user_id: null,
   });
   const taskId = taskPayload?.data?.id;
   expect(taskId).toBeTruthy();
 
-  await page.goto('/nursing/dashboard');
-  await expect(page.getByRole('heading', { name: 'Patient Monitoring Dashboard' })).toBeVisible();
-  await expect(page.getByText(patientName).first()).toBeVisible();
-
-  await page.goto('/nursing/tasks');
-  await expect(page.getByRole('heading', { name: 'Nursing Tasks' })).toBeVisible();
-  await expect(page.getByText(patientName).first()).toBeVisible();
+  await page.goto(`/wards/${wardId}/board?view=my-work&patient=${patientId}`);
+  await expect(page.getByRole('heading', { name: 'Ward Board', exact: true })).toBeVisible();
+  const patientRow = page.getByRole('row', { name: `Open ward-board details for ${patientName}` });
+  await expect(patientRow).toBeVisible();
+  await patientRow.click();
+  const patientPanel = page.getByRole('dialog', { name: patientName, exact: true });
+  await expect(patientPanel).toBeVisible();
+  const taskRow = patientPanel.getByRole('row').filter({ hasText: /observation/i });
+  await expect(taskRow).toContainText('pending');
 
   const completeTaskResponsePromise = page.waitForResponse((response) => (
-    response.url().endsWith(`/api/v2/nursing/tasks/${taskId}/complete`) &&
-    response.request().method() === 'POST'
+    new URL(response.url()).pathname === `/api/v2/nursing/tasks/${taskId}/complete`
+      && response.request().method() === 'POST'
   ));
-
-  const taskRow = page.getByRole('row').filter({ hasText: patientName });
-  await expect(taskRow).toContainText('Pending');
-  await taskRow.locator('.lucide-ellipsis').locator('xpath=ancestor::button[1]').click();
-  await page.getByRole('menuitem', { name: 'Complete Task' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: /Complete Task/ }).click();
-
+  await taskRow.getByRole('button', { name: 'Complete', exact: true }).click();
   const completeTaskResponse = await completeTaskResponsePromise;
-  expect(completeTaskResponse.status()).toBeLessThan(300);
+  expect(completeTaskResponse.ok()).toBe(true);
+  expect((await completeTaskResponse.json()).data.status).toBe('completed');
 
-  await page.goto('/nursing/shift-handoff');
-  await expect(page.getByRole('heading', { name: 'Shift Handoff' })).toBeVisible();
-  await expect(page.getByText(patientName).first()).toBeVisible();
-  await page.getByText(patientName).first().click();
-
-  await expect(page.getByText(/Ward-specific nurse assignments are not available for this deployment yet/i)).toBeVisible();
-  await page.getByPlaceholder("Describe the patient's current condition...").fill('Stable for nursing handoff.');
-
-  const nurseSelect = page.getByRole('combobox').filter({ hasText: /Select nurse/i });
-  await expect(nurseSelect).toBeEnabled();
-  await nurseSelect.click();
-  await page.getByRole('option').first().click();
-
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByPlaceholder('List pending tasks...').fill('Routine observations next shift.');
-  await page.getByRole('button', { name: /Continue/ }).click();
-
-  const handoffResponsePromise = page.waitForResponse((response) => (
-    response.url().endsWith('/api/v2/nursing/handoffs') &&
-    response.request().method() === 'POST'
-  ));
-
-  await page.getByRole('button', { name: /Complete Handoff/ }).click();
-
-  const handoffResponse = await handoffResponsePromise;
-  expect(handoffResponse.status()).toBeLessThan(300);
+  // Structured handoff authoring has no active standalone UI. Preserve its
+  // server boundary checks without navigating the removed legacy page.
+  const staff = v2DataList(await getV2FromBrowser(page, '/api/v2/admin/staff?limit=100'));
+  const receivingNurse = staff.find((member) => member.is_active && /nurse/i.test(member.position));
+  expect(receivingNurse?.user_id).toBeTruthy();
+  const handoff = await postV2FromBrowser(page, '/api/v2/nursing/handoffs', {
+    ward_id: wardId,
+    to_user_id: receivingNurse.user_id,
+    shift_label: `Synthetic browser handoff ${suffix}`,
+  });
+  expect(handoff.data.status).toBe('draft');
+  const completedHandoff = await postV2FromBrowser(page, `/api/v2/nursing/handoffs/${handoff.data.id}/complete`, {});
+  expect(completedHandoff.data.status).toBe('completed');
+  expect(completedHandoff.data.to_user_id).toBe(receivingNurse.user_id);
 
   expect(failures).toEqual([]);
 });
@@ -2322,7 +2478,7 @@ test('Rust V2 clinical note templates and encounter notes use generated clinical
   expect(createTemplateResponse.status()).toBeLessThan(300);
   const createTemplatePayload = await createTemplateResponse.json();
   expect(createTemplatePayload?.data?.title).toBe(templateTitle);
-  expect(createTemplatePayload?.data?.note_type).toBe('soap');
+  expect(createTemplatePayload?.data?.note_type).toBe('doctor_note');
 
   await page.goto('/clinical-notes/templates');
   await expect(page.getByRole('heading', { name: 'Note Templates' })).toBeVisible();
@@ -2367,7 +2523,7 @@ test('Rust V2 clinical note templates and encounter notes use generated clinical
   const createNoteResponse = await createNoteResponsePromise;
   expect(createNoteResponse.status()).toBeLessThan(300);
   const noteRequestBody = createNoteResponse.request().postDataJSON();
-  expect(noteRequestBody.note_type).toBe('soap');
+  expect(noteRequestBody.note_type).toBe('doctor_note');
   expect(noteRequestBody.title).toBe(templateTitle);
   expect(JSON.parse(noteRequestBody.body)).toEqual(expect.objectContaining({
     Subjective: 'Cough for two days.',
@@ -2391,7 +2547,7 @@ test('Rust V2 clinical note templates and encounter notes use generated clinical
   expect(failures).toEqual([]);
 });
 
-test('Rust V2 patient Chronicle fails closed without patient-specific access', async ({ page }) => {
+test('Rust V2 patient Chronicle grants and ends audited emergency access through the UI', async ({ page }) => {
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -2417,26 +2573,61 @@ test('Rust V2 patient Chronicle fails closed without patient-specific access', a
   const patientId = patientPayload?.data?.id;
   expect(patientId).toBeTruthy();
 
-  await page.goto(`/patients/${patientId}`);
-  await expect(page.getByRole('heading', { name: 'Unable to load patient record' })).toBeVisible();
-  await expect(page.getByText('You do not have access to this patient Chronicle.')).toBeVisible();
+  await page.goto(`/patients/${patientId}/chronicle`);
+  await expect(page.getByRole('heading', { name: 'Team-based access required' })).toBeVisible();
+  await expect(page.getByText(/This patient record is protected by team-based access controls/)).toBeVisible();
+  await expect(page.getByPlaceholder('Search notes, prescriptions...')).toHaveCount(0);
 
-  const breakGlassAttempt = await postV2FromBrowserRaw(page, `/api/v2/patients/${patientId}/break-glass`, {
-    category: 'urgent_clinical_continuity',
+  let grantRequests = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === `/api/v2/patients/${patientId}/break-glass`) {
+      grantRequests += 1;
+    }
   });
-  expect(breakGlassAttempt.status, JSON.stringify(breakGlassAttempt.payload)).toBeLessThan(300);
-  expect(breakGlassAttempt.payload?.data?.patient_id).toBe(patientId);
-
-  await page.goto(`/patients/${patientId}`);
+  await page.getByRole('button', { name: 'Request Break-Glass Access', exact: true }).click();
+  const accessDialog = page.getByRole('dialog', { name: 'Temporary clinical access required' });
+  await expect(accessDialog.getByRole('button', { name: 'Grant Access', exact: true })).toBeDisabled();
+  await accessDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(accessDialog).toBeHidden();
+  expect(grantRequests).toBe(0);
+  await page.getByRole('button', { name: 'Request Break-Glass Access', exact: true }).click();
+  const reason = 'Synthetic urgent clinical continuity review for browser verification.';
+  await accessDialog.getByLabel('Reason for access', { exact: true }).fill(reason);
+  await accessDialog.getByRole('checkbox', { name: 'I confirm this access is required for urgent clinical care and will be audited.' }).check();
+  const grantResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/api/v2/patients/${patientId}/break-glass`
+      && response.request().method() === 'POST'
+  ));
+  await accessDialog.getByRole('button', { name: 'Grant Access', exact: true }).click();
+  const grantResponse = await grantResponsePromise;
+  expect(grantResponse.ok()).toBe(true);
+  expect(grantRequests).toBe(1);
+  expect(grantResponse.request().postDataJSON()).toEqual({ category: 'urgent_clinical_continuity', reason_text: reason });
+  const grant = (await grantResponse.json()).data;
+  expect(grant.patient_id).toBe(patientId);
+  expect(Date.parse(grant.expires_at)).toBeGreaterThan(Date.now());
   await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
 
-  const endGrantPayload = await postV2FromBrowser(page, `/api/v2/patients/${patientId}/break-glass/end`, {});
-  expect(endGrantPayload?.data?.ended_count).toBeGreaterThanOrEqual(1);
+  // Access remains server-authoritative across a full browser restore.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
+
+  const endResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/api/v2/patients/${patientId}/break-glass/end`
+      && response.request().method() === 'POST'
+  ));
+  await page.getByRole('button', { name: 'End emergency access', exact: true }).click();
+  const endResponse = await endResponsePromise;
+  expect(endResponse.ok()).toBe(true);
+  expect((await endResponse.json()).data.ended_count).toBeGreaterThanOrEqual(1);
+  await expect(page.getByRole('heading', { name: 'Team-based access required' })).toBeVisible();
+  await expect(page.getByPlaceholder('Search notes, prescriptions...')).toHaveCount(0);
 
   expect(failures).toEqual([]);
 });
 
 test('Rust V2 laboratory catalog order result workflow uses real specimen ids', async ({ page }) => {
+  test.setTimeout(90_000);
   const failures = [];
 
   page.on('pageerror', (error) => {
@@ -2468,12 +2659,16 @@ test('Rust V2 laboratory catalog order result workflow uses real specimen ids', 
   });
   expect(patientId).toBeTruthy();
 
-  await page.goto(`/patients/${patientId}`);
+  await startClinicalFixture(page, patientId);
+  await page.goto(`/patients/${patientId}/chronicle`);
   await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
   await page.getByRole('button', { name: 'Order Labs' }).first().click();
   await expect(page.getByRole('heading', { name: 'Order Labs' })).toBeVisible();
   await page.getByLabel('Search tests and panels').fill(labTest.name);
-  await page.getByRole('checkbox', { name: new RegExp(labTest.name, 'i') }).first().click();
+  const labCheckbox = page.getByRole('checkbox', { name: new RegExp(labTest.name, 'i') }).first();
+  await labCheckbox.focus();
+  await labCheckbox.press('Space');
+  await expect(labCheckbox).toBeChecked();
   await page.getByRole('button', { name: 'Next' }).click();
   await page.getByLabel(/Clinical Indication/i).fill('Playwright Rust V2 laboratory smoke order');
   await page.getByRole('button', { name: 'Next' }).click();

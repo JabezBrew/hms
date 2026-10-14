@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
+import os from 'node:os'
 import {
   findLatestDiagnostics,
   loadDiagnostics,
@@ -8,7 +9,7 @@ import {
   summarizeDiagnostics,
 } from './react-doctor-summary.mjs'
 
-const REACT_DOCTOR_CACHE = '/private/tmp/react-doctor-npm-cache'
+const REACT_DOCTOR_CACHE = path.join(os.tmpdir(), 'hms-react-doctor-npm-cache')
 
 function parseArgs(argv) {
   const options = {
@@ -150,8 +151,11 @@ function main() {
   let doctorOutput = ''
 
   if (!diagnosticsPath) {
-    const doctorArgs = ['--yes', 'react-doctor@latest', '--verbose']
-    if (options.diff) doctorArgs.push('--diff')
+    const doctorArgs = [
+      '--no-install', 'react-doctor', '--yes', '--verbose',
+      '--no-supply-chain', '--no-telemetry',
+    ]
+    if (options.diff) doctorArgs.push('--scope', 'changed', '--include-untracked')
     const doctor = runCommand(
       `React Doctor${options.diff ? ' diff' : ' full scan'}`,
       'npx',

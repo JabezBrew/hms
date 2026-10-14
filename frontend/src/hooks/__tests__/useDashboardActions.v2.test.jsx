@@ -189,4 +189,11 @@ describe('Rust V2 dashboard actions bridge', () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+  it.each(['held', 'missed', 'refused'])('rejects %s without recording a given dose', async (status) => {
+    const { result } = renderHook(() => useDashboardActions(), { wrapper: createWrapper() });
+    await act(async () => {
+      await expect(result.current.administerMedication.mutateAsync({ medicationId: 'med-admin-1', administrationData: { status } })).rejects.toThrow('given doses only');
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });

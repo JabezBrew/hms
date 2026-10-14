@@ -666,7 +666,7 @@ impl PatientsService {
     ) -> Result<ObjectResponse<PatientChronicleStartup>, ApiError> {
         let page = chronicle_timeline_page_request(&query)?;
         let cacheable_startup = chronicle_startup_cacheable(&query);
-        let (patient, decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
+        let (patient, decision) = load_patient_for_clinical_access(&self.state, ctx, id).await?;
         if cacheable_startup {
             if let Some(response) = self
                 .state
@@ -732,7 +732,7 @@ impl PatientsService {
         id: Uuid,
         query: ChronicleTimelineQuery,
     ) -> Result<ListResponse<PatientChronicleTimelineEntry>, ApiError> {
-        let (patient, _decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
+        let (patient, _decision) = load_patient_for_clinical_access(&self.state, ctx, id).await?;
         let page = chronicle_timeline_page_request(&query)?;
         let fetch_limit = page.fetch_limit();
         let filters = chronicle_timeline_filters(&query)?;
@@ -766,7 +766,7 @@ impl PatientsService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<PatientChronicleSummary>, ApiError> {
-        let (patient, _decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
+        let (patient, _decision) = load_patient_for_clinical_access(&self.state, ctx, id).await?;
 
         let summary = hms_db::clinical::patient_chronicle_summary_for_patient(
             self.pool(),
@@ -940,7 +940,7 @@ async fn load_patient_for_access(
     Ok(patient)
 }
 
-async fn load_patient_for_chronicle_access(
+pub(crate) async fn load_patient_for_clinical_access(
     state: &AppState,
     ctx: &hms_access::RequestContext,
     patient_id: Uuid,

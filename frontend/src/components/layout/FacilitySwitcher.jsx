@@ -101,12 +101,12 @@ function FacilitySwitcherMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="font-mono text-xs">
-          <Building2 className="size-3.5 mr-2" />
-          {facilityCode || DEFAULT_FACILITY_CODE || "Facility"}
+        <Button variant="outline" size="sm" className="size-10 px-0 font-mono text-xs sm:w-auto sm:px-3" aria-label={`Facility: ${facilityCode || DEFAULT_FACILITY_CODE || 'choose facility'}`}>
+          <Building2 className="size-4" aria-hidden="true" />
+          <span className="hidden max-w-28 truncate sm:inline">{facilityCode || DEFAULT_FACILITY_CODE || "Facility"}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-1.5rem)]">
         <DropdownMenuLabel className="text-xs text-muted-foreground">
           Facility Context
         </DropdownMenuLabel>
@@ -132,10 +132,11 @@ function FacilitySwitcherMenu() {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Manual Code</Label>
+            <Label htmlFor="switch-facility-code" className="text-xs text-muted-foreground">Manual Code</Label>
             <div className="relative">
               <Building2 className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
               <Input
+                id="switch-facility-code"
                 value={draft || ""}
                 onChange={(event) => setDraft(event.target.value.toUpperCase())}
                 placeholder="FACILITY-CODE"

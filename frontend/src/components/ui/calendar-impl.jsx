@@ -1,14 +1,15 @@
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import { DayPicker, useNavigation } from "react-day-picker"
+import { DayPicker, useDayPicker, useNavigation } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button-variants"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Custom caption component with month and year dropdowns
-function CustomCaption({ displayMonth, month, onMonthChange }) {
+function CustomCaption({ displayMonth, month }) {
   const { goToMonth, nextMonth, previousMonth } = useNavigation();
+  const { fromDate, toDate } = useDayPicker();
 
   // Use month prop if provided, otherwise fall back to displayMonth
   const displayDate = month || displayMonth;
@@ -17,10 +18,10 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
   const currentYear = displayDate.getFullYear();
   const currentMonth = displayDate.getMonth();
 
-  // Generate years (100 years back from current year)
+  // Respect explicit picker bounds, while supporting future scheduling dates.
   const today = new Date();
-  const endYear = today.getFullYear();
-  const startYear = endYear - 100;
+  const endYear = toDate?.getFullYear() ?? Math.max(today.getFullYear() + 10, currentYear);
+  const startYear = fromDate?.getFullYear() ?? Math.min(today.getFullYear() - 100, currentYear);
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
 
   // Month names
@@ -47,6 +48,7 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
     <div className="flex justify-center items-center gap-1">
       <button
         type="button"
+        aria-label="Previous month"
         onClick={() => previousMonth && goToMonth(previousMonth)}
         disabled={!previousMonth}
         className={cn(
@@ -59,7 +61,7 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
 
       <div className="flex gap-1 items-center">
         <Select value={currentMonth.toString()} onValueChange={handleMonthChange}>
-          <SelectTrigger className="h-7 w-[110px]">
+          <SelectTrigger aria-label="Month" className="h-7 w-[110px]">
             <SelectValue>{months[currentMonth]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -72,7 +74,7 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
         </Select>
 
         <Select value={currentYear.toString()} onValueChange={handleYearChange}>
-          <SelectTrigger className="h-7 w-[80px]">
+          <SelectTrigger aria-label="Year" className="h-7 w-[80px]">
             <SelectValue>{currentYear}</SelectValue>
           </SelectTrigger>
           <SelectContent className="max-h-[200px]">
@@ -87,6 +89,7 @@ function CustomCaption({ displayMonth, month, onMonthChange }) {
 
       <button
         type="button"
+        aria-label="Next month"
         onClick={() => nextMonth && goToMonth(nextMonth)}
         disabled={!nextMonth}
         className={cn(

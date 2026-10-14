@@ -393,8 +393,11 @@ export function normalizeV2MedicationAdministrationPayload(data = {}) {
 }
 
 export function normalizeV2MedicationAdministerPayload(data = {}) {
+  if (data.status !== undefined && data.status !== 'administered') {
+    throw new Error('This action records given doses only. Document missed, refused or held doses in a nursing note.');
+  }
   return {
-    witness_user_id: data.witness_user_id || data.witness || null,
+    witness_user_id: data.witness_user_id || data.witnessUserId || data.witness || null,
   };
 }
 

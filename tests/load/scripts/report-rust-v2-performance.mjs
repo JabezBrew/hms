@@ -75,7 +75,7 @@ function buildReport(input) {
   const pool = summarizePool(input.baseline, input.metricsAfter, failures, warnings, incompletes);
   const guards = summarizeQueryGuards(input.baseline, input.metricsBefore, input.metricsAfter, failures, warnings, incompletes);
   const payload = summarizePayloadMetrics(input.baseline, input.metricsBefore, input.metricsAfter, server, failures, incompletes);
-  const poolWait = summarizePoolWaitMetrics(input.baseline, input.metricsBefore, input.metricsAfter, server, failures);
+  const poolWait = summarizePoolWaitMetrics(input.baseline, input.metricsBefore, input.metricsAfter, server, failures, incompletes);
   const slowSql = summarizeSlowSqlMetrics(input.baseline, input.metricsBefore, input.metricsAfter, server, failures, incompletes);
   const status = reportStatus({
     failures,
@@ -209,6 +209,7 @@ function summarizeLatency(baseline, summary, failures, warnings, incompletes) {
 
   return (baseline.surfaces || []).map((surface) => {
     const metric = summary.metrics?.[surface.k6_metric];
+    const p95 = metric ? numeric(metric['p(95)']) : null;
     const p99 = metric ? numeric(metric['p(99)']) : null;
     const budget = numeric(surface.p99_ms_budget);
     const baselineP99 = numeric(surface.observed_p99_ms);
@@ -241,6 +242,7 @@ function summarizeLatency(baseline, summary, failures, warnings, incompletes) {
       id: surface.id,
       label: surface.label,
       metric: surface.k6_metric,
+      p95_ms: p95,
       p99_ms: p99,
       budget_ms: budget,
       observed_baseline_p99_ms: baselineP99,
@@ -273,9 +275,22 @@ function summarizeServerMetrics(baseline, before, after, failures, warnings, inc
     const routes = surface.routes || [surface.route];
     const method = surface.method;
     const statusCode = surface.status || '200';
-    const requestCount = sumCounterDelta(before, after, 'hms_api_http_requests_total', routes, method, statusCode, warnings);
-    const dbQueries = sumCounterDelta(before, after, 'hms_api_http_db_query_count_sum', routes, method, statusCode, warnings);
-    const perRequest = requestCount > 0 ? dbQueries / requestCount : null;
+    const routeRequests = routes.map((route) => ({
+      route,
+      count: counterDelta(before, after, 'hms_api_http_requests_total', { method, route, status: statusCode }, warnings),
+    }));
+    const requestCount = routeRequests.reduce((total, item) => total + item.count, 0);
+    const missingDbQueryRoutes = routeRequests
+      .filter((item) => item.count > 0 && metricValue(after, 'hms_api_http_db_query_count_sum', {
+        method,
+        route: item.route,
+        status: statusCode,
+      }) === null)
+      .map((item) => item.route);
+    const dbQueries = missingDbQueryRoutes.length > 0
+      ? null
+      : sumCounterDelta(before, after, 'hms_api_http_db_query_count_sum', routes, method, statusCode, warnings);
+    const perRequest = requestCount > 0 && dbQueries !== null ? dbQueries / requestCount : null;
     const budget = numeric(surface.db_queries_per_request_max);
     let status = 'pass';
     let note = '';
@@ -283,6 +298,10 @@ function summarizeServerMetrics(baseline, before, after, failures, warnings, inc
     if (requestCount === 0) {
       status = 'incomplete';
       note = 'no matching server route requests found';
+      incompletes.push(`${surface.label}: ${note}`);
+    } else if (missingDbQueryRoutes.length > 0) {
+      status = 'incomplete';
+      note = `missing DB-query counters for matching route requests: ${missingDbQueryRoutes.join(', ')}`;
       incompletes.push(`${surface.label}: ${note}`);
     } else if (budget !== null && perRequest !== null && perRequest > budget) {
       status = 'fail';
@@ -441,7 +460,7 @@ function summarizePayloadMetrics(baseline, before, after, server, failures, inco
   return { available: true, rows };
 }
 
-function summarizePoolWaitMetrics(baseline, before, after, server, failures) {
+function summarizePoolWaitMetrics(baseline, before, after, server, failures, incompletes) {
   const rows = [];
   if (!after) return { available: false, rows };
 
@@ -459,14 +478,36 @@ function summarizePoolWaitMetrics(baseline, before, after, server, failures) {
       routes,
       { status_bucket: statusBucketForSurface(surface) }
     );
-    const p95 = histogram.count > 0 ? histogramQuantile(0.95, histogram.buckets) * 1000 : 0;
-    const p99 = histogram.count > 0 ? histogramQuantile(0.99, histogram.buckets) * 1000 : 0;
+    const serverSurface = server.surfaces?.find((row) => row.id === surface.id);
+    const requestCount = serverRequestCount(server, surface.id);
+    const missingPoolWaitRoutes = routes.filter((route) => (
+      counterDelta(before, after, 'hms_api_http_db_query_count_sum', {
+        method: surface.method,
+        route,
+        status: surface.status || '200',
+      }, []) > 0
+      && histogramDelta(before, after, 'hms_db_pool_wait_seconds', 'route_pattern', [route], {
+        status_bucket: statusBucketForSurface(surface),
+      }).count === 0
+    ));
+    const zeroDbQueries = requestCount > 0 && serverSurface?.db_queries === 0;
+    const emptyValue = zeroDbQueries ? 0 : null;
+    const completeHistogram = histogram.count > 0 && missingPoolWaitRoutes.length === 0;
+    const p95 = completeHistogram ? histogramQuantile(0.95, histogram.buckets) * 1000 : emptyValue;
+    const p99 = completeHistogram ? histogramQuantile(0.99, histogram.buckets) * 1000 : emptyValue;
     let status = 'pass';
+    let note = '';
 
-    if (p95Budget !== null && p95 > p95Budget) {
+    if (missingPoolWaitRoutes.length > 0 || (histogram.count === 0 && !zeroDbQueries)) {
+      status = 'incomplete';
+      note = missingPoolWaitRoutes.length > 0
+        ? `no DB pool wait histogram samples found for matching route DB queries: ${missingPoolWaitRoutes.join(', ')}`
+        : 'DB pool wait could not be evaluated without matching route DB-query evidence';
+      incompletes.push(`${surface.label}: ${note}`);
+    } else if (p95Budget !== null && p95 !== null && p95 > p95Budget) {
       status = 'fail';
       failures.push(`${surface.label} DB pool wait p95 ${formatMs(p95)} exceeded budget ${formatMs(p95Budget)}`);
-    } else if (p99Budget !== null && p99 > p99Budget) {
+    } else if (p99Budget !== null && p99 !== null && p99 > p99Budget) {
       status = 'fail';
       failures.push(`${surface.label} DB pool wait p99 ${formatMs(p99)} exceeded budget ${formatMs(p99Budget)}`);
     }
@@ -476,12 +517,13 @@ function summarizePoolWaitMetrics(baseline, before, after, server, failures) {
       label: surface.label,
       routes,
       samples: histogram.count,
-      route_requests: serverRequestCount(server, surface.id),
+      route_requests: requestCount,
       p95_ms: p95,
       p99_ms: p99,
       budget_p95_ms: p95Budget,
       budget_p99_ms: p99Budget,
       status,
+      note,
     });
   }
 
@@ -786,12 +828,13 @@ function printReport(report) {
   lines.push(`- http_req_failed: ${formatPercent(report.k6.failures.http_req_failed.rate)}, budget <= ${formatPercent(report.k6.failures.http_req_failed.budget_max)} [${report.k6.failures.http_req_failed.status}]`);
   lines.push(`- hms_errors: ${formatPercent(report.k6.failures.hms_errors.rate)}, budget <= ${formatPercent(report.k6.failures.hms_errors.budget_max)} [${report.k6.failures.hms_errors.status}]`);
   lines.push('');
-  lines.push('Hot-route p99 budgets and baseline drift');
+  lines.push('Hot-route p95/p99 latency, p99 budgets and baseline drift');
   lines.push(table(
-    ['Surface', 'Metric', 'p99', 'Baseline', 'Drift', 'Budget', 'Status'],
+    ['Surface', 'Metric', 'p95', 'p99', 'Baseline', 'Drift', 'Budget', 'Status'],
     report.k6.latency.map((row) => [
       row.label,
       row.metric,
+      row.p95_ms === null ? 'n/a' : formatMs(row.p95_ms),
       row.p99_ms === null ? 'n/a' : formatMs(row.p99_ms),
       row.observed_baseline_p99_ms === null ? 'n/a' : formatMs(row.observed_baseline_p99_ms),
       row.regression_ratio === null ? 'n/a' : `${formatNumber(row.regression_ratio)}x`,
@@ -874,8 +917,8 @@ function printReport(report) {
       report.pool_wait.rows.map((row) => [
         row.label,
         formatNumber(row.samples),
-        formatMs(row.p95_ms),
-        formatMs(row.p99_ms),
+        row.p95_ms === null ? 'n/a' : formatMs(row.p95_ms),
+        row.p99_ms === null ? 'n/a' : formatMs(row.p99_ms),
         row.budget_p95_ms === null ? 'n/a' : formatMs(row.budget_p95_ms),
         row.budget_p99_ms === null ? 'n/a' : formatMs(row.budget_p99_ms),
         row.status,

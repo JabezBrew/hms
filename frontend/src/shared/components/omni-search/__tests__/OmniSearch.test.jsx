@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
@@ -16,6 +16,12 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 import { useAuth } from '@/lib/auth'
+
+// The dialog is an optional lazy chunk; allow its initial module load under
+// full-suite CPU contention before making interaction assertions.
+function findSearchInput() {
+  return screen.findByPlaceholderText('Type a command or search...', {}, { timeout: 10_000 })
+}
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -70,6 +76,12 @@ function renderWithProviders(ui, { route = '/' } = {}) {
 }
 
 describe('Omni Search', () => {
+  // These tests cover interaction and authorization scope. Resolve the optional
+  // chunk before starting an interaction timeout; browser probes measure loading.
+  beforeAll(async () => {
+    await import('../OmniSearchDialog')
+  }, 30_000)
+
   beforeEach(() => {
     server.use(
       http.get('/api/settings/deployment-capabilities/', () =>
@@ -120,7 +132,7 @@ describe('Omni Search', () => {
     )
 
     await user.click(screen.getByRole('button', { name: /Open search/i }))
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
     expect(input).toBeInTheDocument()
 
     // Opening should fetch recents.
@@ -138,7 +150,7 @@ describe('Omni Search', () => {
 
     // Re-open; the draft query should still be available in this app session.
     await user.click(screen.getByRole('button', { name: /Open search/i }))
-    const input2 = await screen.findByPlaceholderText('Type a command or search...')
+    const input2 = await findSearchInput()
     expect(input2).toHaveValue('hello')
 
     await user.clear(input2)
@@ -153,7 +165,7 @@ describe('Omni Search', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /Open search/i }))
-    const input3 = await screen.findByPlaceholderText('Type a command or search...')
+    const input3 = await findSearchInput()
     expect(input3).toHaveValue('')
   })
 
@@ -198,7 +210,7 @@ describe('Omni Search', () => {
     const { rerender } = render(renderTree)
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
     await user.type(input, 'ama')
     expect(input).toHaveValue('ama')
 
@@ -214,7 +226,7 @@ describe('Omni Search', () => {
     rerender(renderTree)
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input2 = await screen.findByPlaceholderText('Type a command or search...')
+    const input2 = await findSearchInput()
     expect(input2).toHaveValue('')
   })
 
@@ -252,7 +264,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
     await user.type(input, 'ama')
 
     vi.useFakeTimers()
@@ -300,7 +312,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
 
     await user.type(input, '> settings')
     await waitFor(() => {
@@ -351,7 +363,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
 
     await waitFor(() => {
       expect(urls.length).toBe(1)
@@ -454,7 +466,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
 
     await waitFor(() => {
       expect(urls.length).toBe(1)
@@ -568,7 +580,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
     await user.type(input, '# john')
 
     await waitFor(() => {
@@ -595,7 +607,7 @@ describe('Omni Search', () => {
     })
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const inputAfterCancel = await screen.findByPlaceholderText('Type a command or search...')
+    const inputAfterCancel = await findSearchInput()
     expect(inputAfterCancel).toHaveValue('# john')
     await waitFor(() => {
       expect(screen.getByText('2 patients named John Mensah')).toBeInTheDocument()
@@ -664,7 +676,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    await screen.findByPlaceholderText('Type a command or search...')
+    await findSearchInput()
 
     await waitFor(() => {
       expect(screen.getAllByText('John Mensah')).toHaveLength(1)
@@ -919,9 +931,9 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
     fireEvent.change(input, { target: { value: 'route' } })
-    fireEvent.click(await screen.findByText(label))
+    fireEvent.click(await screen.findByText(label, {}, { timeout: 10_000 }))
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent(expectedLocation)
     })
@@ -991,7 +1003,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
     await user.type(input, 'unsafe')
 
     expect(await screen.findByText('Safe Fallback Patient')).toBeInTheDocument()
@@ -1057,7 +1069,7 @@ describe('Omni Search', () => {
     )
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
-    const input = await screen.findByPlaceholderText('Type a command or search...')
+    const input = await findSearchInput()
     await user.type(input, 'john')
 
     await waitFor(() => {

@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useWardBoardPatient } from '@/features/ward-board/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { DischargeWorkflowPanel } from '@/features/discharge/components/DischargeWorkflowPanel';
 import { TaskActionControls } from './TaskActionControls';
 import {
   TASK_STATUS_STYLES,
@@ -271,6 +273,15 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
               <h3 className="mb-2 font-heading text-sm font-semibold text-foreground">Board Signals</h3>
               <BoardSignals patient={detail} />
             </div>
+
+            {isRustV2ApiMode() && detail?.discharge_case_id ? (
+              <DischargeWorkflowPanel
+                key={`${patientId}:${detail.discharge_case_id}:${detail.admission_case_id || detail.admission_id || ''}`}
+                caseId={detail.discharge_case_id}
+                patientId={patientId}
+                admissionId={detail.admission_case_id || detail.admission_id || detail.current_admission_id}
+              />
+            ) : null}
           </div>
         </div>
       ) : null}

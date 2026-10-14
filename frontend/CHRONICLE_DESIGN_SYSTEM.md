@@ -1,6 +1,6 @@
 # Chronicle Design System
 
-A magazine-style, narrative-focused design system for healthcare interfaces.
+A clinician-focused design system with clear workflow controls, readable clinical data, and editorial patient context. Shared controls remain shadcn/ui and Radix primitives.
 
 ## Philosophy
 
@@ -14,8 +14,8 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 
 | Role | Font | Usage |
 |------|------|-------|
-| Display | `Fraunces` | Patient names, page titles |
-| Heading | `DM Sans` | Section headers, labels |
+| Display | `Cormorant Garamond` | Patient names, page titles |
+| UI and body | `DM Sans` | Controls, navigation, section headers, labels, and supporting text |
 | Data | `IBM Plex Mono` | MRNs, vitals, timestamps, clinical data |
 
 ```css
@@ -28,36 +28,41 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 
 ## Color Palette
 
+All fonts are self-hosted. DM Sans uses one 37 KB variable Latin subset with `font-display: swap`; its SIL Open Font License is in `public/assets/dm-sans-OFL.txt`. The legacy `--font-fraunces` variable remains a compatibility alias for the display font. Do not use the display serif for form inputs or operational navigation.
+
 ### Base
 
-#### Light (Warm Cream)
-- Background: `oklch(0.98 0.005 60)` - warm cream
-- Foreground: `oklch(0.15 0.01 50)` - warm charcoal text
+#### Light (Warm Porcelain)
+- Background: `oklch(0.975 0.004 75)` - warm porcelain
+- Foreground: `oklch(0.245 0.014 65)` - ink text
 - Card: `oklch(1 0 0)` - elevated surface
-- Border: `oklch(0.90 0.005 60)` - subtle dividers
+- Border: `oklch(0.89 0.009 75)` - subtle dividers
 
-#### Dark (Warm Stone)
-- Background: `oklch(0.14 0.01 50)` - warm charcoal
-- Foreground: `oklch(0.97 0.005 60)` - warm white
-- Card: `oklch(0.18 0.01 50)` - elevated surface
-- Border: `oklch(0.25 0.01 50)` - subtle dividers
+#### Dark (Warm Ink)
+- Background: `oklch(0.17 0.008 65)` - warm ink
+- Foreground: `oklch(0.95 0.005 75)` - warm white
+- Card: `oklch(0.215 0.009 65)` - elevated surface
+- Border: `oklch(0.34 0.012 65)` - subtle dividers
 
 ### Accents
 | Color | OKLCH | Usage |
 |-------|-------|-------|
-| Amber | `oklch(0.75 0.18 55)` | Primary actions, attention, timeline nodes |
-| Emerald | `oklch(0.70 0.17 155)` | Positive/stable status |
-| Rose | `oklch(0.65 0.22 15)` | Critical alerts, allergies |
-| Sky | `oklch(0.70 0.15 230)` | Informational, medications |
+| Bronze | `oklch(0.47 0.085 65)` | Primary actions; warm white action text |
+| Amber | `oklch(0.49 0.115 65)` | Attention and warning labels |
+| Emerald | `oklch(0.46 0.09 160)` | Positive/stable status |
+| Rose | `oklch(0.51 0.17 15)` | Critical alerts, allergies |
+| Sky | `oklch(0.47 0.105 235)` | Informational, medications |
 
 ---
+
+Status text uses semantic `chronicle-*` tokens, with brighter values in dark mode. Keep the meaning of rose, amber, emerald, and sky consistent. Field borders use `--input`, separate from quieter surface dividers. Avoid hardcoded light-mode colors in shared controls.
 
 ## Components
 
 ### PageShell
 Base page container for Chronicle layouts.
-- Applies `min-h-screen bg-background` and consistent padding.
-- Use as the outer wrapper for page content.
+- Fits the available viewport using `--page-min-height` inside the app shell and keeps long content scrollable.
+- Use as the outer wrapper for page content. The app layout owns the single `<main>` landmark; use `<section>` for page interiors.
 
 ```jsx
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -82,7 +87,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 ```
 
 ### PageState
-Standardized loading, error, and empty states.
+Standardized loading, error, and empty states. Loading and empty updates use a status region; errors use an alert and preserve a keyboard-accessible retry action.
 
 ```jsx
 import { PageState } from '@/shared/components/page/PageState';

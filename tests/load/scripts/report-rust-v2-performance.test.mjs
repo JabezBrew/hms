@@ -19,6 +19,135 @@ test('report passes when k6 and server metrics stay within baseline', () => {
   assert.equal(readReport(fixture).status, 'pass');
 });
 
+test('report preserves available p95 latency in JSON and printed output', () => {
+  const fixture = createFixture({ p95: 31.25 });
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(report.k6.latency[0].p95_ms, 31.25);
+  assert.equal(report.k6.latency[0].p99_ms, 45);
+  assert.match(result.stdout, /Surface\s+Metric\s+p95\s+p99/);
+  assert.match(result.stdout, /Auth\/me\s+hms_auth_me\s+31\.25ms\s+45ms/);
+});
+
+test('historical summaries without p95 retain the existing p99 verdict', () => {
+  const fixture = createFixture();
+  updateJson(fixture.summaryPath, (summary) => {
+    delete summary.metrics.hms_auth_me['p(95)'];
+  });
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(report.status, 'pass');
+  assert.equal(report.k6.latency[0].p95_ms, null);
+  assert.match(result.stdout, /Auth\/me\s+hms_auth_me\s+n\/a\s+45ms/);
+});
+
+test('matching HTTP requests without a DB-query counter are incomplete, not zero queries', () => {
+  const fixture = createFixture();
+  removeMetricFamily(fixture.metricsAfterPath, 'hms_api_http_db_query_count_sum');
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  assert.equal(report.status, 'incomplete');
+  assert.equal(report.server.surfaces[0].requests, 100);
+  assert.equal(report.server.surfaces[0].db_queries, null);
+  assert.equal(report.server.surfaces[0].db_queries_per_request, null);
+  assert.match(report.incomplete.join('\n'), /missing DB-query counters for matching route requests/);
+});
+
+test('grouped routes cannot hide an active route missing its DB-query counter', () => {
+  const fixture = createFixture();
+  updateJson(fixture.baselinePath, (baseline) => {
+    baseline.surfaces[0].routes = ['/api/v2/auth/me', '/api/v2/patients'];
+  });
+  fs.appendFileSync(fixture.metricsAfterPath, 'hms_api_http_requests_total{method="GET",route="/api/v2/patients",status="200"} 25\n');
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  assert.equal(report.server.surfaces[0].requests, 125);
+  assert.equal(report.server.surfaces[0].db_queries, null);
+  assert.match(report.server.surfaces[0].note, /missing DB-query counters.*\/api\/v2\/patients/);
+});
+
+test('inactive grouped routes do not require DB-query counters', () => {
+  const fixture = createFixture();
+  updateJson(fixture.baselinePath, (baseline) => {
+    baseline.surfaces[0].routes = ['/api/v2/auth/me', '/api/v2/patients'];
+  });
+  const result = runReport(fixture);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(readReport(fixture).status, 'pass');
+});
+
+test('observed DB queries without pool wait samples are incomplete, not zero wait', () => {
+  const fixture = createFixture({ authDbQueries: 100, dbQueriesPerRequestMax: 1 });
+  removeMetricFamily(fixture.metricsBeforePath, 'hms_db_pool_wait_seconds');
+  removeMetricFamily(fixture.metricsAfterPath, 'hms_db_pool_wait_seconds');
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  assert.equal(report.status, 'incomplete');
+  assert.equal(report.server.surfaces[0].status, 'pass');
+  assert.equal(report.pool_wait.rows[0].p95_ms, null);
+  assert.equal(report.pool_wait.rows[0].p99_ms, null);
+  assert.equal(report.pool_wait.rows[0].status, 'incomplete');
+  assert.match(report.incomplete.join('\n'), /no DB pool wait histogram samples.*matching route DB queries/);
+  assert.doesNotMatch(result.stdout, /n\/ams/);
+});
+
+test('zero pool wait histogram samples cannot validate observed DB work', () => {
+  const fixture = createFixture({ authDbQueries: 100, dbQueriesPerRequestMax: 1, poolWaitSamples: 0 });
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  assert.equal(report.pool_wait.rows[0].samples, 0);
+  assert.equal(report.pool_wait.rows[0].p99_ms, null);
+  assert.equal(report.pool_wait.rows[0].status, 'incomplete');
+});
+
+test('grouped pool wait histograms cannot conceal a route with DB work but no wait samples', () => {
+  const fixture = createFixture({ dbQueriesPerRequestMax: 1 });
+  updateJson(fixture.baselinePath, (baseline) => {
+    baseline.surfaces[0].routes = ['/api/v2/auth/me', '/api/v2/patients'];
+  });
+  fs.appendFileSync(fixture.metricsAfterPath, 'hms_api_http_requests_total{method="GET",route="/api/v2/patients",status="200"} 25\n');
+  fs.appendFileSync(fixture.metricsAfterPath, 'hms_api_http_db_query_count_sum{method="GET",route="/api/v2/patients",status="200"} 25\n');
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  assert.equal(report.server.surfaces[0].status, 'pass');
+  assert.equal(report.server.surfaces[0].db_queries, 25);
+  assert.equal(report.pool_wait.rows[0].samples, 100);
+  assert.equal(report.pool_wait.rows[0].p95_ms, null);
+  assert.equal(report.pool_wait.rows[0].p99_ms, null);
+  assert.equal(report.pool_wait.rows[0].status, 'incomplete');
+  assert.match(report.pool_wait.rows[0].note, /no DB pool wait histogram samples.*\/api\/v2\/patients/);
+});
+
+test('warm zero-query auth remains valid without pool wait samples', () => {
+  const fixture = createFixture();
+  removeMetricFamily(fixture.metricsBeforePath, 'hms_db_pool_wait_seconds');
+  removeMetricFamily(fixture.metricsAfterPath, 'hms_db_pool_wait_seconds');
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(report.status, 'pass');
+  assert.equal(report.server.surfaces[0].db_queries, 0);
+  assert.equal(report.pool_wait.rows[0].samples, 0);
+  assert.equal(report.pool_wait.rows[0].p95_ms, 0);
+  assert.equal(report.pool_wait.rows[0].p99_ms, 0);
+});
+
 test('report warns when p99 drifts above the baseline tolerance but below the fail tolerance', () => {
   const fixture = createFixture({ p99: 55 });
   const result = runReport(fixture);
@@ -114,6 +243,7 @@ process.exit(99);
     env: {
       ...process.env,
       PATH: `${fakeBin}:${process.env.PATH}`,
+      HMS_LOAD_METRICS_URL: '',
       HMS_LOAD_OUT_DIR: outDir,
       HMS_LOAD_ALLOW_MISSING_METRICS: 'true',
     },
@@ -125,10 +255,14 @@ process.exit(99);
 });
 
 function createFixture({
+  p95 = 35,
   p99 = 45,
+  authDbQueries = 0,
+  dbQueriesPerRequestMax = 0,
   authVersionQueries = 0,
   payloadUpperBoundBytes = 4096,
   poolWaitUpperBoundSeconds = 0.001,
+  poolWaitSamples = 100,
   slowQueries = 0,
 } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hms-perf-report-'));
@@ -170,7 +304,7 @@ function createFixture({
           db_pool_wait_p99_ms_budget: 25,
           slow_queries_per_request_max: 0,
           observed_p99_ms: 45,
-          db_queries_per_request_max: 0,
+          db_queries_per_request_max: dbQueriesPerRequestMax,
         },
       ],
       db_query_guards: [
@@ -191,7 +325,7 @@ function createFixture({
         checks: { passes: 100, fails: 0, value: 1 },
         http_req_failed: { passes: 0, fails: 100, value: 0 },
         hms_errors: { passes: 0, fails: 100, value: 0 },
-        hms_auth_me: { 'p(99)': p99 },
+        hms_auth_me: { 'p(95)': p95, 'p(99)': p99 },
       },
     })}\n`
   );
@@ -208,10 +342,11 @@ function createFixture({
     metricsAfterPath,
     prometheusText({
       authRequests: 100,
-      authDbQueries: 0,
+      authDbQueries,
       authVersionQueries,
       payloadUpperBoundBytes,
       poolWaitUpperBoundSeconds,
+      poolWaitSamples,
       slowQueries,
     })
   );
@@ -239,19 +374,35 @@ function readReport(fixture) {
   return JSON.parse(fs.readFileSync(fixture.reportPath, 'utf8'));
 }
 
+function updateJson(filePath, update) {
+  const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  update(value);
+  fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`);
+}
+
+function removeMetricFamily(filePath, metricName) {
+  const lines = fs.readFileSync(filePath, 'utf8').split('\n').filter((line) => (
+    !line.startsWith(`${metricName}{`)
+    && !line.startsWith(`${metricName} `)
+    && !line.startsWith(`${metricName}_`)
+  ));
+  fs.writeFileSync(filePath, lines.join('\n'));
+}
+
 function prometheusText({
   authRequests,
   authDbQueries,
   authVersionQueries,
   payloadUpperBoundBytes = 4096,
   poolWaitUpperBoundSeconds = 0.001,
+  poolWaitSamples = authRequests,
   slowQueries = 0,
 }) {
   return `hms_api_http_requests_total{method="GET",route="/api/v2/auth/me",status="200"} ${authRequests}
 hms_api_http_db_query_count_sum{method="GET",route="/api/v2/auth/me",status="200"} ${authDbQueries}
 hms_db_query_duration_seconds_count{query="auth.user_auth_versions_for_facility"} ${authVersionQueries}
 ${histogramText('hms_api_response_payload_bytes', payloadUpperBoundBytes, authRequests)}
-${histogramText('hms_db_pool_wait_seconds', poolWaitUpperBoundSeconds, authRequests)}
+${histogramText('hms_db_pool_wait_seconds', poolWaitUpperBoundSeconds, poolWaitSamples)}
 hms_db_slow_query_total{route_pattern="/api/v2/auth/me",status_bucket="2xx",facility_safe="HMS"} ${slowQueries}
 hms_api_postgres_pool_size 10
 hms_api_postgres_pool_idle 10

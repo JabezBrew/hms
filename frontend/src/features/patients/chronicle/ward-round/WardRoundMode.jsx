@@ -2,6 +2,7 @@ import FileCheck2 from 'lucide-react/dist/esm/icons/file-check-2.js'
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js'
 import { useId } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -13,6 +14,10 @@ import {
 } from './WardRoundActions'
 import WardRoundReviewRail from './WardRoundReviewRail'
 import { useWardRoundMode } from './useWardRoundMode'
+import { wardRoundApi } from './api'
+import { useAuth } from '@/lib/auth'
+import { createScopedQueryKey, getAuthQueryScope, keyWith } from '@/shared/lib/queryKeys'
+import { PageState } from '@/shared/components/page/PageState'
 
 function getAdmissionId(admission) {
   return admission?.admission_id || admission?.id || admission?.admission_case_id || null
@@ -49,7 +54,35 @@ function FieldBlock({ label, value, onChange, placeholder, rows = 3 }) {
   )
 }
 
-export default function WardRoundMode({
+export default function WardRoundMode(props) {
+  const auth = useAuth()
+  const admissionId = getAdmissionId(props.admission)
+  const scope = getAuthQueryScope(auth)
+  const query = useQuery({
+    queryKey: createScopedQueryKey(keyWith('ward-round-draft', props.patientId, admissionId), scope),
+    queryFn: async ({ signal }) => {
+      const current = await wardRoundApi.current(props.patientId, { signal })
+      if (current && current.admission_case_id !== admissionId) throw new Error('The current admission has changed. Reopen Ward Round from Chronicle.')
+      return current?.status === 'draft' ? current : null
+    },
+    enabled: Boolean(admissionId && props.patientId),
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  })
+  if (admissionId && (query.isPending || query.isFetching)) {
+    return <PageState variant="loading" title="Loading ward round draft" fullHeight={false} />
+  }
+  if (admissionId && query.isError) {
+    return <PageState variant="error" title="Ward round draft could not be loaded" description={query.error.message} action={() => query.refetch()} fullHeight={false} />
+  }
+  return <WardRoundEditor key={`${scope}:${props.patientId}:${admissionId}`} {...props} initialDraft={query.data} />
+}
+
+function WardRoundEditor({
   patientId,
   patient,
   admission,
@@ -59,6 +92,7 @@ export default function WardRoundMode({
   labResults,
   medications,
   onCommitted,
+  initialDraft,
 }) {
   const activeAdmissionId = getAdmissionId(admission)
   const mode = useWardRoundMode({
@@ -66,6 +100,7 @@ export default function WardRoundMode({
     admission,
     encounter,
     onCommitted,
+    initialDraft,
   })
 
   if (!activeAdmissionId) {
@@ -103,17 +138,17 @@ export default function WardRoundMode({
             type="button"
             variant="outline"
             className="font-mono text-xs"
-            disabled={mode.isSavingDraft || mode.isSigning}
-            onClick={() => mode.saveDraft()}
+            disabled={mode.isSavingDraft || mode.isSigning || mode.isReadOnly}
+            onClick={() => { void mode.saveDraft().catch(() => {}) }}
           >
             {mode.isSavingDraft && <LoadingSpinner className="mr-2 size-3.5" />}
             Save draft
           </Button>
           <Button
             type="button"
-            className="bg-[oklch(0.28_0.04_75)] font-mono text-xs text-white hover:bg-[oklch(0.24_0.04_75)]"
-            disabled={mode.isSigning}
-            onClick={() => mode.signRound()}
+            className="font-mono text-xs"
+            disabled={mode.isSigning || mode.isSavingDraft || mode.isReadOnly}
+            onClick={() => { void mode.signRound().catch(() => {}) }}
           >
             {mode.isSigning ? (
               <LoadingSpinner className="mr-2 size-3.5" />
@@ -132,6 +167,7 @@ export default function WardRoundMode({
       )}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <fieldset disabled={mode.isReadOnly || mode.isSavingDraft || mode.isSigning} className="min-w-0">
         <div className="space-y-5">
           <section className="rounded-lg border border-border/70 bg-card/80 p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -153,6 +189,9 @@ export default function WardRoundMode({
                 onChange={(value) => mode.setNote((current) => ({ ...current, overnight_events: value }))}
                 placeholder="Events since last review"
               />
+              {initialDraft?.note_sections?.examination && (
+                <FieldBlock label="Examination" value={mode.note.examination} onChange={(value) => mode.setNote((current) => ({ ...current, examination: value }))} placeholder="Examination findings" />
+              )}
               <FieldBlock
                 label="Assessment"
                 value={mode.note.assessment}
@@ -203,6 +242,7 @@ export default function WardRoundMode({
             </div>
           </section>
         </div>
+        </fieldset>
 
         <WardRoundReviewRail
           latestVitals={latestVitals}

@@ -223,7 +223,7 @@ export function MFAChallenge() {
   }
 
   return (
-    <div className="mx-auto flex w-full flex-col gap-8 sm:w-[420px]">
+    <div className="mx-auto flex w-full max-w-full flex-col gap-8 sm:w-[420px]">
       <MFAChallengeHeader enrollmentRequired={mfaEnrollmentRequired} />
 
       {shouldShowTotp && (

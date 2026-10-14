@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { dashboardsApi } from '@/features/dashboards/api';
 import { useAuth } from '@/lib/auth';
 import { useDoctorDashboardLiveUpdates } from '@/features/dashboards/hooks/useDoctorDashboardLiveUpdates';
-import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { createKeyFactory, keyWith, createScopedQueryKey, getAuthQueryScope } from '@/shared/lib/queryKeys';
 import { hasQueryPrefix, invalidateQueriesMatching } from '@/shared/lib/queryInvalidation';
 
 // Query keys
@@ -51,14 +51,16 @@ function normalizeAdminV2Filters(filters = {}) {
  * @returns {Object} Query result
  */
 export function useInpatientDashboard(options = {}) {
-  const { facilityCode } = useAuth();
+  const auth = useAuth();
+  const { facilityCode } = auth;
+  const { sections, ...queryOptions } = options;
   return useQuery({
-    queryKey: dashboardKeys.inpatient(),
-    queryFn: ({ signal }) => dashboardsApi.getInpatientDashboard({ signal }),
+    queryFn: ({ signal }) => dashboardsApi.getInpatientDashboard({ signal, ...(sections ? { sections } : {}) }),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
     refetchIntervalInBackground: false,
     staleTime: 10000,
-    ...options,
+    ...queryOptions,
+    queryKey: createScopedQueryKey([...dashboardKeys.inpatient(), { sections: sections || null }], getAuthQueryScope(auth)),
     enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
@@ -69,14 +71,16 @@ export function useInpatientDashboard(options = {}) {
  * @returns {Object} Query result
  */
 export function useReceptionistDashboard(options = {}) {
-  const { facilityCode } = useAuth();
+  const auth = useAuth();
+  const { facilityCode } = auth;
+  const { sections, ...queryOptions } = options;
   return useQuery({
-    queryKey: dashboardKeys.receptionist(),
-    queryFn: ({ signal }) => dashboardsApi.getReceptionistDashboard({ signal }),
+    queryFn: ({ signal }) => dashboardsApi.getReceptionistDashboard({ signal, ...(sections ? { sections } : {}) }),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
     refetchIntervalInBackground: false,
     staleTime: 10000,
-    ...options,
+    ...queryOptions,
+    queryKey: createScopedQueryKey([...dashboardKeys.receptionist(), { sections: sections || null }], getAuthQueryScope(auth)),
     enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }

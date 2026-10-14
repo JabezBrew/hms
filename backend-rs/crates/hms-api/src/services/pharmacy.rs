@@ -115,7 +115,27 @@ impl PharmacyService {
         .await
         .map_err(|error| {
             let message = error.to_string();
-            if message.contains("controlled_item_requires_controlled_workflow") {
+            if message == "prescription_not_active" {
+                ApiError::conflict(
+                    "prescription_not_active",
+                    "This prescription is on hold, stopped, or completed. Review the prescription before dispensing.",
+                )
+            } else if message == "admission_not_active" {
+                ApiError::conflict(
+                    "admission_not_active",
+                    "Medication can only be dispensed for an active admission.",
+                )
+            } else if message == "medication_course_prescription_changed" {
+                ApiError::conflict(
+                    "medication_course_prescription_changed",
+                    "The prescription has changed since this fulfillment was created. Review the medication course before dispensing.",
+                )
+            } else if message == "medication_course_not_active" {
+                ApiError::conflict(
+                    "medication_course_not_active",
+                    "This medication course is no longer active. Review the course before dispensing.",
+                )
+            } else if message.contains("controlled_item_requires_controlled_workflow") {
                 ApiError::conflict(
                     "controlled_item_requires_controlled_workflow",
                     "Controlled medications require the controlled-substance workflow.",

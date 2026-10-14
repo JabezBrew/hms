@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { scheduleRouteChunkWarmup } from './routeChunkWarmup'
 
 const ROUTE_CHUNK_LOADERS = [
   () => import('@/features/patients/pages/PatientChronicleListPage'),
@@ -19,40 +20,10 @@ function publishWarmupDone(done) {
   }
 }
 
-function scheduleIdle(callback) {
-  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-    const id = window.requestIdleCallback(callback, { timeout: 1200 })
-    return () => window.cancelIdleCallback(id)
-  }
-
-  const id = window.setTimeout(callback, 800)
-  return () => window.clearTimeout(id)
-}
-
-async function warmRouteChunks(isCancelled) {
-  if (isCancelled()) {
-    return
-  }
-
-  await Promise.all(ROUTE_CHUNK_LOADERS.map((loadRouteChunk) => loadRouteChunk().catch(() => null)))
-
-  if (!isCancelled()) {
-    publishWarmupDone(true)
-  }
-}
-
 export default function RouteChunkWarmup() {
   useEffect(() => {
-    let cancelled = false
     publishWarmupDone(false)
-    const cancelIdle = scheduleIdle(() => {
-      void warmRouteChunks(() => cancelled)
-    })
-
-    return () => {
-      cancelled = true
-      cancelIdle()
-    }
+    return scheduleRouteChunkWarmup(ROUTE_CHUNK_LOADERS, () => publishWarmupDone(true))
   }, [])
 
   return null

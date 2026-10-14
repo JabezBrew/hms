@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { publishBuildInfo } from './lib/build-info.js'
 import { isOpsDashboardHost } from './features/ops/host.js'
+import { hasConstrainedConnection } from './app/routeChunkWarmup.js'
 
 const RUM_TRUE_VALUES = new Set(['1', 'true', 'yes', 'on'])
 
@@ -36,8 +37,10 @@ function runAfterStartup(callback, delay = 12000) {
 function preloadLikelyPostLoginShell() {
   const pathname = window.location?.pathname || '/'
   const isPublicAuthRoute = pathname === '/login' || pathname.startsWith('/reset-password')
-  if (isPublicAuthRoute) {
-    void import('./app/AuthenticatedApp.jsx')
+  if (isPublicAuthRoute && document.visibilityState !== 'hidden' && !hasConstrainedConnection()) {
+    // Optional shell warmup must not fail the public form when an asset request
+    // is interrupted. React.lazy can still load the shell when sign-in succeeds.
+    void import('./app/AuthenticatedApp.jsx').catch(() => {})
   }
 }
 

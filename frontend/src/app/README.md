@@ -16,6 +16,7 @@ Scope: application shells, boot flow, route rendering, startup guards, and route
 | `AppStartupServices.jsx` | startup services and app readiness behavior. |
 | `RuntimeErrorGuard.jsx`, `AppFailureState.jsx` | runtime failure handling. |
 | `RouteChunkWarmup.jsx`, `preloadCriticalRoute.js` | route chunk preload/warmup. |
+| `routeChunkWarmup.js` | cancellable idle queue for optional route prefetches. |
 | `routes/featureRoutes.js` | imports and composes feature route modules. |
 | `routes/renderRoutes.jsx` | renders validated route metadata. |
 | `routes/routeTypes.js` | route metadata schema and validation. |
@@ -28,9 +29,16 @@ Scope: application shells, boot flow, route rendering, startup guards, and route
 - App shell readiness should not wait for heavy route bodies when a shell can be
   safely shown first.
 - Runtime errors should fail to controlled states without leaking PHI.
+- Critical chunk preloads are cached by a bounded static route group, never a
+  patient pathname. Optional warmup loads one chunk per idle turn, pauses hidden
+  tabs, and skips Save-Data/2G connections. Navigation still loads required
+  modules on demand.
 
 ## Tests
 
 - `routes/renderRoutes.test.jsx`
 - `routes/routeTypes.test.jsx`
 - `__tests__/RuntimeErrorGuard.test.jsx`
+- `__tests__/preloadCriticalRoute.test.js`
+- `__tests__/routeChunkWarmup.test.js`
+- `__tests__/mainPreload.test.jsx`

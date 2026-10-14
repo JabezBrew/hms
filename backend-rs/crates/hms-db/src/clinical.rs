@@ -911,6 +911,32 @@ pub async fn delete_problem_artifact_link(
     Ok(None)
 }
 
+pub async fn has_pharmacy_work_for_patient(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+) -> anyhow::Result<bool> {
+    Ok(hms_observability::observe_db_query(
+        "clinical.pharmacy_patient_work.exists",
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM prescriptions
+                WHERE facility_id = $1 AND patient_id = $2 AND status = 'active'
+            ) OR EXISTS (
+                SELECT 1 FROM pharmacy_fulfillments
+                WHERE facility_id = $1 AND patient_id = $2
+                  AND status IN ('pending', 'partially_dispensed')
+            )
+            "#,
+        )
+        .bind(facility_id)
+        .bind(patient_id)
+        .fetch_one(pool),
+    )
+    .await?)
+}
+
 pub async fn pharmacy_clinical_context(
     pool: &PgPool,
     facility_id: Uuid,

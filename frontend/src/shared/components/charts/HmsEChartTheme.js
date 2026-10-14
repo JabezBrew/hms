@@ -11,18 +11,13 @@ const DEFAULT_THEME = {
   palette: ['#d97706', '#0f766e', '#be123c', '#0369a1', '#7c3aed', '#15803d'],
 };
 
-function cssVar(name, fallback) {
-  if (typeof window === 'undefined') return fallback;
-
-  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
-}
-
 export function useChronicleChartTheme() {
   const [theme, setTheme] = useState(DEFAULT_THEME);
 
   useEffect(() => {
     const readTheme = () => {
+      const styles = window.getComputedStyle(document.documentElement);
+      const cssVar = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
       setTheme({
         axis: cssVar('--muted-foreground', DEFAULT_THEME.axis),
         background: 'transparent',
@@ -43,9 +38,16 @@ export function useChronicleChartTheme() {
     };
 
     readTheme();
+    // HMS changes the root class when staff switch themes. OS theme events do
+    // not fire for that action, so mounted charts must observe the class too.
+    const observer = new MutationObserver(readTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     media?.addEventListener?.('change', readTheme);
-    return () => media?.removeEventListener?.('change', readTheme);
+    return () => {
+      observer.disconnect();
+      media?.removeEventListener?.('change', readTheme);
+    };
   }, []);
 
   return theme;

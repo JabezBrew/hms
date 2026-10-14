@@ -6,13 +6,7 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries'
 import { nursingKeys } from '@/hooks/useNursingQueries'
 import { prescriptionKeys } from '@/hooks/usePrescriptionMutations'
 import { wardRoundApi } from './api'
-
-const initialNote = {
-  overnight_events: '',
-  assessment: '',
-  plan: '',
-  summary: '',
-}
+import { wardRoundDraftState } from './draftState'
 
 function normalizeAdmissionId(admission) {
   return admission?.admission_id || admission?.id || admission?.admission_case_id || null
@@ -44,54 +38,57 @@ export function useWardRoundMode({
   admission,
   encounter,
   onCommitted,
+  initialDraft,
 } = {}) {
   const queryClient = useQueryClient()
-  const [note, setNote] = useState(initialNote)
-  const [medications, setMedications] = useState([])
-  const [labOrders, setLabOrders] = useState([])
-  const [nursingTasks, setNursingTasks] = useState([])
-  const [dischargeRequest, setDischargeRequest] = useState({
-    status: 'not_ready',
-    request_discharge: false,
-    note: '',
-  })
+  const [initialState] = useState(() => wardRoundDraftState(initialDraft))
+  const [note, setNote] = useState(initialState.note)
+  const [medications, setMedications] = useState(initialState.medications)
+  const [labOrders, setLabOrders] = useState(initialState.labOrders)
+  const [nursingTasks, setNursingTasks] = useState(initialState.nursingTasks)
+  const [dischargeRequest, setDischargeRequest] = useState(initialState.dischargeRequest)
+  const [draftIdentity, setDraftIdentity] = useState(initialState.identity)
+  const [isCommitted, setIsCommitted] = useState(false)
 
   const admissionId = normalizeAdmissionId(admission)
 
   const payload = useMemo(() => ({
     patient_id: patientId,
     admission_case_id: admissionId,
+    ...(draftIdentity ? { ward_round_id: draftIdentity.id, expected_version: draftIdentity.version } : {}),
     encounter_id: encounter?.id || null,
     note: {
       overnight_events: compactText(note.overnight_events),
+      examination: compactText(note.examination),
       assessment: compactText(note.assessment),
       plan: compactText(note.plan),
       summary: compactText(note.summary),
     },
     actions: {
-      medications: medications.reduce((completeMedications, medication) => {
-        if (medicationIsComplete(medication)) {
-          completeMedications.push({
+      medications: medications.map((medication) => ({
             prescription_id: medication.prescription_id || null,
             medication_name: compactText(medication.medication_name),
             dose: compactText(medication.dose),
             frequency: compactText(medication.frequency),
             decision: medication.decision || null,
             status: medication.status || medication.decision || 'continue',
-          })
-        }
-        return completeMedications
-      }, []),
+          })),
       lab_orders: labOrders.map((order) => ({
         catalog_item_id: order.id,
         catalog_item_type: order.kind || 'test',
         test_name: order.name,
+        priority: order.priority,
       })),
       nursing_tasks: nursingTasks.reduce((completeTasks, task) => {
         const title = compactText(task.title)
         const instruction = compactText(task.instruction)
         if (title || instruction) {
-          completeTasks.push({ title, instruction })
+          completeTasks.push({
+            title, instruction,
+            due_at: task.due_at,
+            task_type: task.task_type,
+            assigned_to_user_id: task.assigned_to_user_id,
+          })
         }
         return completeTasks
       }, []),
@@ -99,9 +96,10 @@ export function useWardRoundMode({
         status: dischargeRequest.status,
         request_discharge: dischargeRequest.request_discharge,
         note: compactText(dischargeRequest.note),
+        original_blockers: dischargeRequest.original_blockers,
       },
     },
-  }), [admissionId, dischargeRequest, encounter?.id, labOrders, medications, note, nursingTasks, patientId])
+  }), [admissionId, dischargeRequest, draftIdentity, encounter?.id, labOrders, medications, note, nursingTasks, patientId])
 
   const validation = useMemo(() => {
     if (!admissionId) {
@@ -136,10 +134,14 @@ export function useWardRoundMode({
   // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const saveDraftMutation = useMutation({
     mutationFn: () => wardRoundApi.saveDraft(patientId, payload),
-    onSuccess: () => {
+    retry: false,
+    onSuccess: (result) => {
+      const saved = result?.data || result
+      if (saved?.id && Number.isSafeInteger(saved.version)) setDraftIdentity({ id: saved.id, version: saved.version })
       toast.success('Ward round draft saved')
     },
     onError: (error) => {
+      if (error?.confirmedDraftIdentity) setDraftIdentity(error.confirmedDraftIdentity)
       toast.error('Draft not saved', { description: error?.message || 'Please try again.' })
     },
   })
@@ -147,6 +149,7 @@ export function useWardRoundMode({
   // Invalidation is centralized in invalidateWardRoundDependents so chronicle startup, patient, lab, prescription, and nursing caches refresh together.
   // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const commitMutation = useMutation({
+    retry: false,
     mutationFn: () => {
       if (validation) {
         throw new Error(validation)
@@ -154,11 +157,13 @@ export function useWardRoundMode({
       return wardRoundApi.commit(patientId, payload)
     },
     onSuccess: async () => {
+      setIsCommitted(true)
       await invalidateWardRoundDependents()
       toast.success('Ward round signed')
       onCommitted?.()
     },
     onError: (error) => {
+      if (error?.confirmedDraftIdentity) setDraftIdentity(error.confirmedDraftIdentity)
       toast.error('Ward round not signed', { description: error?.message || 'Please review the note.' })
     },
   })
@@ -181,5 +186,6 @@ export function useWardRoundMode({
     signRound: commitMutation.mutateAsync,
     isSavingDraft: saveDraftMutation.isPending,
     isSigning: commitMutation.isPending,
+    isReadOnly: isCommitted || initialDraft?.permissions?.read_only || initialDraft?.permissions?.can_edit_draft === false,
   }
 }

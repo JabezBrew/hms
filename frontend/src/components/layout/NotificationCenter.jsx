@@ -172,16 +172,16 @@ const NotificationCenter = () => {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="size-5" />
+        <Button variant="ghost" size="icon" className="relative size-10" aria-label={totalCount > 0 ? `Notifications, ${totalCount} items` : 'Notifications'}>
+          <Bell className="size-5" aria-hidden="true" />
           {totalCount > 0 && (
-            <span className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-[10px] font-mono bg-primary text-primary-foreground rounded-full">
+            <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 h-5 min-w-5 flex items-center justify-center p-0 text-[10px] font-mono bg-primary text-primary-foreground rounded-full">
               {totalCount > 99 ? '99+' : totalCount}
             </span>
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0 bg-card border-border" align="end">
+      <PopoverContent className="w-80 max-w-[calc(100vw-1.5rem)] p-0 bg-card border-border" align="end">
         {/* Chronicle-style Header */}
         <div className="px-4 py-3 border-b border-border">
           <div className="flex items-center justify-between">

@@ -13,6 +13,7 @@ Scope: HMS performance budgets, measurement records, and frontend/backend latenc
 | `rust-v2-performance-baseline.md` | Rust V2 baseline evidence and known results. |
 | `2026-05-25-performance-coverage.md` | performance coverage report. |
 | `2026-05-30-rust-v2-slow-sql-followup.md` | slow SQL follow-up evidence. |
+| `2026-10-14-frontend-performance-audit.md` | initial dependency transfer and route-prefetch audit evidence. |
 | `ops-dashboard.md` | ops dashboard performance signal map. |
 | `realtime-delta-optimistic-ui-policy.md` | realtime delta and optimistic UI policy. |
 

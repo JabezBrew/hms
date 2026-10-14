@@ -27,7 +27,11 @@ function extractV2Snapshot(response) {
 
 function metricValue(snapshot, key) {
   const metric = (snapshot.metrics || []).find((candidate) => candidate.key === key);
-  return Number(metric?.value || 0);
+  if (metric?.value === undefined || metric?.value === null || metric.value === '') {
+    return null;
+  }
+  const value = Number(metric.value);
+  return Number.isFinite(value) ? value : null;
 }
 
 function projectionMeta(response, snapshot = {}) {
@@ -55,47 +59,22 @@ function adaptV2SnapshotToAdminSummary(response) {
   const openInvoices = metricValue(snapshot, 'open_invoices');
 
   return {
+    source: 'rust-v2',
     kpis: {
       active_patients: {
         count: activePatients,
       },
-      occupancy: {
-        total_beds: 0,
-        occupied_beds: 0,
-        percent: 0,
-      },
-      admissions_today: {
-        count: 0,
-        trend_pct: 0,
-      },
-      discharges_today: {
-        planned: 0,
-        completed: 0,
-        completion_rate: 0,
-      },
-      appointment_throughput: {
-        scheduled: waitingVisits,
-        completed: 0,
-        completion_rate: 0,
-      },
-      staffing_coverage: {
-        required_shifts: 0,
-        filled_shifts: 0,
-        critical_uncovered: 0,
-      },
-      compliance_risk: {
-        total: 0,
-        break_glass_pending_review: 0,
-        audit_anomalies_24h: 0,
+      waiting_visits: {
+        count: waitingVisits,
       },
       billing: {
         open_invoices: openInvoices,
       },
     },
     section_summaries: {
-      capacity: makeSectionSummary('normal'),
-      workforce: makeSectionSummary('normal'),
-      compliance: makeSectionSummary('normal'),
+      capacity: makeSectionSummary('details'),
+      workforce: makeSectionSummary('unavailable'),
+      compliance: makeSectionSummary('unavailable'),
     },
     alerts_top: [],
     action_queue_top: [],
@@ -162,29 +141,61 @@ function adaptV2AppointmentsToClinicSchedule(response, params = {}) {
 }
 
 function emptyV2WorkforceDetails() {
-  return {
-    summary: {
-      required_shifts: 0,
-      filled_shifts: 0,
-      next_2h_risks: 0,
-    },
-    uncovered_shifts: [],
-  };
+  return { available: false };
 }
 
 function emptyV2ComplianceDetails() {
-  return {
-    summary: {
-      documentation_completeness_pct: 0,
-      break_glass_pending_review: 0,
-    },
-    break_glass_recent: [],
-    audit_anomalies_breakdown: [],
-  };
+  return { available: false };
 }
 
 function unwrapV2List(response) {
   return Array.isArray(response?.data) ? response.data : [];
+}
+
+function optionalCount(value) {
+  return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))
+    ? Number(value)
+    : null;
+}
+
+function dashboardSection(result, requestedLimit = null) {
+  if (result.status === 'fulfilled' && result.value === null) {
+    return {
+      response: null,
+      meta: {
+        status: 'unavailable',
+        has_next: null,
+        limit: null,
+        error: 'This preview is not enabled for this workspace.',
+      },
+    };
+  }
+  if (result.status === 'rejected') {
+    rethrowAbortError(result.reason);
+    return {
+      response: null,
+      meta: {
+        status: 'unavailable',
+        has_next: null,
+        limit: null,
+        error: [403, 404].includes(result.reason?.status)
+          ? 'This preview is unavailable with your current access or enabled modules.'
+          : 'This preview could not be loaded. Refresh to try again.',
+      },
+    };
+  }
+  return {
+    response: result.value,
+    meta: {
+      status: 'available',
+      has_next: typeof result.value?.page?.has_next === 'boolean' ? result.value.page.has_next : null,
+      limit: optionalCount(result.value?.page?.limit) ?? requestedLimit,
+    },
+  };
+}
+
+function dashboardRequest(sections, key, read) {
+  return sections?.[key] === false ? Promise.resolve(null) : read();
 }
 
 function lengthOfStayDays(dateValue) {
@@ -196,6 +207,7 @@ function lengthOfStayDays(dateValue) {
 }
 
 function adaptV2WardBoardPatient(item = {}) {
+  const criticalAlerts = optionalCount(item.critical_alert_count);
   return {
     id: item.admission_id,
     admission_id: item.admission_id,
@@ -209,9 +221,22 @@ function adaptV2WardBoardPatient(item = {}) {
     bed_number: item.bed_code || 'Unassigned',
     admission_date: item.admitted_at,
     length_of_stay: lengthOfStayDays(item.admitted_at),
-    alerts_count: 0,
-    tasks_count: Number(item.open_nursing_task_count || 0),
-    has_critical_alerts: false,
+    alerts_count: optionalCount(item.active_alert_count),
+    tasks_count: optionalCount(item.open_nursing_task_count),
+    has_critical_alerts: criticalAlerts === null ? null : criticalAlerts > 0,
+    active_alert_count: optionalCount(item.active_alert_count),
+    critical_alert_count: criticalAlerts,
+    unverified_result_count: optionalCount(item.unverified_result_count),
+    critical_unverified_result_count: optionalCount(item.critical_unverified_result_count),
+    open_nursing_task_count: optionalCount(item.open_nursing_task_count),
+    overdue_nursing_task_count: optionalCount(item.overdue_nursing_task_count),
+    due_medication_count: optionalCount(item.due_medication_count),
+    pending_lab_order_count: optionalCount(item.pending_lab_order_count),
+    next_nursing_task_due_at: item.next_nursing_task_due_at || null,
+    next_due_medication_at: item.next_due_medication_at || null,
+    last_vitals_recorded_at: item.last_vitals_recorded_at || null,
+    discharge_status: item.discharge_status || null,
+    open_discharge_blocker_count: optionalCount(item.open_discharge_blocker_count),
     latest_vitals: null,
     last_round_date: null,
     estimated_discharge: null,
@@ -226,9 +251,12 @@ function adaptV2Discharge(item = {}, wardBoardByAdmission = new Map()) {
     patient_id: item.patient_id,
     patient_name: item.patient_display_name || wardPatient.patient_name || 'Unknown Patient',
     mrn: item.patient_code || wardPatient.mrn || '',
+    ward_id: item.ward_id || wardPatient.ward_id || null,
     ward_name: wardPatient.ward_name || '',
     bed_number: wardPatient.bed_number || 'Unassigned',
     estimated_discharge: item.discharged_at || item.requested_at,
+    requested_at: item.requested_at || null,
+    discharged_at: item.discharged_at || null,
     length_of_stay: wardPatient.length_of_stay || 0,
     status: item.status,
   };
@@ -257,23 +285,29 @@ export const dashboardsApi = {
     try {
       if (isRustV2ApiMode()) {
         const signal = params.signal;
-        const [wardBoardResponse, dischargesResponse, tasksResponse] = await Promise.all([
-          v2Api.getWardBoard({ query: { limit: 20 }, signal }),
-          v2Api.getDischarges({ query: { limit: 20 }, signal }),
-          v2Api.getNursingTasks({ query: { limit: 20 }, signal }),
+        const results = await Promise.allSettled([
+          dashboardRequest(params.sections, 'ward_board', () => v2Api.getWardBoard({ query: { limit: 20 }, signal })),
+          dashboardRequest(params.sections, 'discharges', () => v2Api.getDischarges({ query: { limit: 20 }, signal })),
+          dashboardRequest(params.sections, 'nursing_tasks', () => v2Api.getNursingTasks({ query: { limit: 20 }, signal })),
         ]);
-        const wardPatients = unwrapV2List(wardBoardResponse).map(adaptV2WardBoardPatient);
+        const [wardBoard, discharges, tasks] = results.map((result) => dashboardSection(result, 20));
+        const wardPatients = unwrapV2List(wardBoard.response).map(adaptV2WardBoardPatient);
         const wardBoardByAdmission = new Map(wardPatients.map((patient) => [patient.admission_id, patient]));
+        const resultsToReview = wardBoard.meta.status === 'available'
+          && wardPatients.every((patient) => patient.unverified_result_count !== null)
+          ? wardPatients.reduce((count, patient) => count + patient.unverified_result_count, 0)
+          : null;
         return {
           new_admissions: wardPatients,
           my_patients: wardPatients,
-          planned_discharges: unwrapV2List(dischargesResponse).map((discharge) => (
+          planned_discharges: unwrapV2List(discharges.response).map((discharge) => (
             adaptV2Discharge(discharge, wardBoardByAdmission)
           )),
           pending: {
-            results_to_review: 0,
-            orders_to_sign: unwrapV2List(tasksResponse).length,
+            results_to_review: resultsToReview,
+            nursing_tasks: tasks.meta.status === 'available' ? unwrapV2List(tasks.response).length : null,
           },
+          meta: { sections: { ward_board: wardBoard.meta, discharges: discharges.meta, nursing_tasks: tasks.meta } },
         };
       }
       return await apiClient.get('/dashboards/inpatient/');
@@ -295,11 +329,17 @@ export const dashboardsApi = {
       if (isRustV2ApiMode()) {
         const date = params.date || new Date().toISOString().slice(0, 10);
         const signal = params.signal;
-        const [appointmentsResponse, patientsResponse, billingResponse] = await Promise.all([
-          v2Api.getAppointments({ query: { date, limit: 50 }, signal }),
-          v2Api.getPatients({ query: { limit: 10, status: 'active' }, signal }),
-          v2Api.getBillingDashboardSummary({ signal }),
+        const results = await Promise.allSettled([
+          dashboardRequest(params.sections, 'appointments', () => v2Api.getAppointments({ query: { date, limit: 50 }, signal })),
+          dashboardRequest(params.sections, 'patients', () => v2Api.getPatients({ query: { limit: 10, status: 'active' }, signal })),
+          dashboardRequest(params.sections, 'invoices', () => v2Api.getBillingDashboardSummary({ signal })),
         ]);
+        const appointmentsSection = dashboardSection(results[0], 50);
+        const patientsSection = dashboardSection(results[1], 10);
+        const invoicesSection = dashboardSection(results[2]);
+        const appointmentsResponse = appointmentsSection.response;
+        const patientsResponse = patientsSection.response;
+        const billingResponse = invoicesSection.response;
         const appointments = unwrapV2List(appointmentsResponse).map(adaptV2AppointmentForDashboard);
         const checkedInCount = appointments.filter((appointment) => (
           appointment.status === 'checked_in' || appointment.status === 'checked-in'
@@ -309,10 +349,11 @@ export const dashboardsApi = {
           recent_registrations: unwrapV2List(patientsResponse).map(adaptV2RecentPatient),
           todays_appointments: appointments,
           stats: {
-            todays_appointments_count: appointments.length,
-            checked_in_count: checkedInCount,
-            pending_payments_count: Number(billingResponse?.data?.open_invoices || 0),
+            todays_appointments_count: appointmentsSection.meta.status === 'available' ? appointments.length : null,
+            checked_in_count: appointmentsSection.meta.status === 'available' ? checkedInCount : null,
+            pending_payments_count: optionalCount(billingResponse?.data?.open_invoices),
           },
+          meta: { date, sections: { appointments: appointmentsSection.meta, patients: patientsSection.meta, invoices: invoicesSection.meta } },
         };
       }
       return await apiClient.get('/dashboards/reception/');

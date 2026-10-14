@@ -25,6 +25,7 @@ import { useChronicleWorkspaceActions } from "@/features/patients/chronicle/useC
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 import { useDebounce } from "@/hooks/use-debounce";
+import { Button } from '@/components/ui/button';
 
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
@@ -111,7 +112,7 @@ function usePatientChroniclePageModel(defaultAction) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
-  const { user, loading: authLoading } = useAuth();
+  const { user, facilityCode, logout, loading: authLoading } = useAuth();
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState('all');
@@ -376,9 +377,20 @@ function usePatientChroniclePageModel(defaultAction) {
     setBreakGlassOpen,
     setBreakGlassReason,
     submitBreakGlass,
+    breakGlassCategory,
+    breakGlassConfirmed,
+    breakGlassError,
+    reauthRequired,
+    isEndingBreakGlass,
+    isCheckingBreakGlass,
+    setBreakGlassCategory,
+    setBreakGlassConfirmed,
+    endBreakGlass,
+    checkRecordAccess,
   } = useChronicleBreakGlassAccess({
     patient,
     patientId: id,
+    facilityCode,
     isLoading,
     refetchContext,
     refetchEncounters,
@@ -404,7 +416,19 @@ function usePatientChroniclePageModel(defaultAction) {
       onBreakGlassOpenChange: setBreakGlassOpen,
       onBreakGlassReasonChange: setBreakGlassReason,
       onBreakGlassSubmit: submitBreakGlass,
+      breakGlassCategory,
+      breakGlassConfirmed,
+      breakGlassError,
+      reauthRequired,
+      isEndingBreakGlass,
+      isCheckingBreakGlass,
+      onBreakGlassCategoryChange: setBreakGlassCategory,
+      onBreakGlassConfirmedChange: setBreakGlassConfirmed,
+      onEndBreakGlass: endBreakGlass,
+      onCheckRecordAccess: checkRecordAccess,
+      onSignInAgain: async () => { await logout?.(); navigate('/login'); },
     },
+    emergencyAccessProps: rustV2Mode && canRequestBreakGlass ? { expiresAt: breakGlassExpiresAt, onEnd: endBreakGlass, isEnding: isEndingBreakGlass } : null,
     contentProps: {
       activeEncounter,
       activeFilter,
@@ -482,6 +506,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     isGateError,
     isGateLoading,
     pageMeta,
+    emergencyAccessProps,
   } = usePatientChroniclePageModel(defaultAction);
 
   if (accessDenied) {
@@ -496,7 +521,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return <ChronicleErrorState {...errorProps} />;
   }
 
-  return <PatientChroniclePageContent {...contentProps} />;
+  return <>
+    {emergencyAccessProps && <section aria-label="Emergency access controls" className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 px-6 py-3 text-sm">
+      <p>{emergencyAccessProps.expiresAt ? `Emergency access expires at ${new Date(emergencyAccessProps.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` : 'End any emergency access you have opened for this patient when it is no longer needed.'}</p>
+      <Button variant="outline" size="sm" onClick={emergencyAccessProps.onEnd} disabled={emergencyAccessProps.isEnding}>{emergencyAccessProps.isEnding ? 'Ending access…' : 'End emergency access'}</Button>
+    </section>}
+    <PatientChroniclePageContent {...contentProps} />
+  </>;
 };
 
 export default PatientChroniclePage;

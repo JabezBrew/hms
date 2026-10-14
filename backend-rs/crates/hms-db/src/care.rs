@@ -2110,6 +2110,7 @@ pub async fn assess_triage(
     facility_id: Uuid,
     triage_id: Uuid,
     assessment: TriageAssessmentRequest,
+    actor_user_id: Uuid,
 ) -> anyhow::Result<Option<TriageListItem>> {
     let acuity = assessment.acuity.map(codec::encode).transpose()?;
     let row = sqlx::query_as::<_, TriageRow>(
@@ -2118,11 +2119,14 @@ pub async fn assess_triage(
             UPDATE triage_queue
             SET acuity = COALESCE($1, acuity),
                 triage_notes = COALESCE($2, triage_notes),
+                assigned_to_user_id = $9,
+                assigned_at = CASE WHEN assigned_to_user_id IS DISTINCT FROM $9 THEN now() ELSE COALESCE(assigned_at, now()) END,
                 status = $3,
                 updated_at = now()
             WHERE facility_id = $4
               AND id = $5
               AND status IN ($6, $7, $8)
+              AND EXISTS (SELECT 1 FROM users WHERE id = $9 AND facility_id = $4 AND is_active = TRUE)
             RETURNING id,
                       visit_id,
                       patient_id,
@@ -2168,6 +2172,7 @@ pub async fn assess_triage(
     .bind(codec::encode(TriageStatus::Waiting)?)
     .bind(codec::encode(TriageStatus::Assigned)?)
     .bind(codec::encode(TriageStatus::Completed)?)
+    .bind(actor_user_id)
     .fetch_optional(pool)
     .await?;
 
@@ -2191,6 +2196,7 @@ pub async fn assign_triage(
             WHERE facility_id = $3
               AND id = $4
               AND status IN ($5, $6)
+              AND EXISTS (SELECT 1 FROM users WHERE id = $2 AND facility_id = $3 AND is_active = TRUE)
             RETURNING id,
                       visit_id,
                       patient_id,
@@ -2441,7 +2447,7 @@ pub async fn list_encounters(
         query.push(
             r#" AND EXISTS (
                 SELECT 1
-                FROM care_team_assignments
+                FROM encounter_care_team_assignments AS care_team_assignments
                 INNER JOIN users ON users.id = care_team_assignments.user_id
                 WHERE care_team_assignments.encounter_id = encounters.id
                   AND care_team_assignments.is_active = TRUE

@@ -834,6 +834,7 @@ export const useCreateAndAdminister = () => {
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
         try {
+          const administerPayload = normalizeV2MedicationAdministerPayload(data);
           const created = await v2Api.postMedicationAdministrations(
             normalizeV2MedicationAdministrationPayload(data),
             { signal: data?.signal },
@@ -841,7 +842,7 @@ export const useCreateAndAdminister = () => {
           const createdAdministration = adaptV2MedicationAdministration(created?.data);
           const administered = await v2Api.postMedicationAdministrationAdminister(
             { id: createdAdministration.id },
-            normalizeV2MedicationAdministerPayload(data),
+            administerPayload,
             { signal: data?.signal },
           );
           return adaptV2MedicationAdministration(administered?.data);

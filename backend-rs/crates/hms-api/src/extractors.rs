@@ -168,7 +168,12 @@ async fn resolve_request_context(
             .get("x-hms-offsite")
             .and_then(|value| value.to_str().ok()),
     );
-    let reauth = ReauthState::from_authentication_time(access_token_issued_at(&claims)?);
+    // Refresh rotates access tokens, but it does not verify credentials again.
+    // Preserve the server-side authentication time across those rotations.
+    let authenticated_at = context_facts
+        .session_started_at
+        .min(access_token_issued_at(&claims)?);
+    let reauth = ReauthState::from_authentication_time(authenticated_at);
     let context = hms_access::RequestContext::new(
         request_id.clone(),
         claims.session_id,

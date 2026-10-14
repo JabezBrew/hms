@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 
 import { safeStorage } from '@/lib/safe-storage'
 import { useAuth } from '@/lib/auth'
+import { getAuthQueryScope } from '@/shared/lib/queryKeys'
 
 import { OmniSearchContext } from './OmniSearchContext'
 import {
@@ -40,6 +41,7 @@ function normalizeRecentPages(value) {
 
 export function OmniSearchProvider({ children }) {
   const { user, facilityCode } = useAuth()
+  const authScope = getAuthQueryScope({ user, facilityCode })
   const role = user?.role || ''
   const userId = user?.id || null
 
@@ -96,7 +98,7 @@ export function OmniSearchProvider({ children }) {
 
   React.useEffect(() => {
     clearDraftQuery()
-  }, [clearDraftQuery, facilityCode, role, userId])
+  }, [authScope, clearDraftQuery, facilityCode, role, userId])
 
   React.useEffect(() => {
     if (!draftQuery.value || !draftQuery.ts) return undefined

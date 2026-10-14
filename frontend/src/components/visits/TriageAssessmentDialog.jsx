@@ -1,6 +1,7 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -19,6 +21,10 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useTriageActions } from '@/hooks/useVisitQueries';
 import { useCreateChartEntries } from '@/hooks/useChartQueries';
 import { toast } from 'sonner';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const optionalNumericField = z.string().trim().optional().refine(
   (value) => value === undefined || value === '' || Number.isFinite(Number(value)),
@@ -126,25 +132,22 @@ export function TriageAssessmentDialog({ open, onClose, entry, onSuccess }) {
   if (!entry) return null;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) onClose();
-      }}
-    >
       <TriageAssessmentForm
         key={`${entry.id}:${open ? 'open' : 'closed'}`}
+        open={open}
         entry={entry}
         onClose={onClose}
         onSuccess={onSuccess}
       />
-    </Dialog>
   );
 }
 
-function TriageAssessmentForm({ entry, onClose, onSuccess }) {
+function TriageAssessmentForm({ open, entry, onClose, onSuccess }) {
   const { triagePatient } = useTriageActions();
   const createChartEntries = useCreateChartEntries();
+  const [assessmentSaved, setAssessmentSaved] = useState(false);
+  const [pendingVitals, setPendingVitals] = useState(null);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const {
     register,
@@ -152,7 +155,7 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
     watch,
     setValue,
     reset,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(triageSchema),
     defaultValues: {
@@ -164,7 +167,7 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
       diastolic: '',
       oxygen_saturation: '',
       weight: '',
-      notes: '',
+      notes: entry.triage_notes || '',
     },
   });
 
@@ -172,12 +175,12 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
 
   const onSubmit = async (data) => {
     const patientId = getEntryPatientId(entry);
-    const vitalEntries = patientId
+    const vitalEntries = pendingVitals || (patientId
       ? buildVitalChartEntries(data, patientId, {
           encounterId: getEntryEncounterId(entry),
           visitId: getEntryVisitId(entry),
         })
-      : [];
+      : []);
 
     if (!patientId && [
       data.temperature,
@@ -193,21 +196,32 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
     }
 
     try {
-      await triagePatient.mutateAsync({
-        id: entry.id,
-        priority: data.priority,
-        notes: data.notes || '',
-      });
-
-      if (vitalEntries.length > 0) {
-        try {
-          await createChartEntries.mutateAsync(vitalEntries);
-          toast.success('Vitals recorded in Chronicle');
-        } catch {
-          toast.error('Triage saved, but vitals could not be recorded in Chronicle');
-        }
+      if (!assessmentSaved) {
+        await triagePatient.mutateAsync({
+          id: entry.id,
+          priority: data.priority,
+          notes: data.notes || '',
+        });
+        setAssessmentSaved(true);
       }
 
+      if (vitalEntries.length > 0) {
+        setPendingVitals(vitalEntries);
+        // The chart hook issues one request per entry. Track each outcome so a
+        // partial failure retries only measurements that were not acknowledged.
+        const outcomes = await Promise.allSettled(vitalEntries.map(
+          (vital) => createChartEntries.mutateAsync([vital]),
+        ));
+        const unsaved = vitalEntries.filter((_, index) => outcomes[index].status === 'rejected');
+        if (unsaved.length) {
+          setPendingVitals(unsaved);
+          toast.error('Triage saved, but vitals could not be recorded in Chronicle');
+          return;
+        }
+        toast.success('Vitals recorded in Chronicle');
+      }
+
+      setPendingVitals(null);
       reset();
       onSuccess?.();
     } catch {
@@ -216,19 +230,34 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
   };
 
   const handleClose = () => {
+    if (isSubmitting || triagePatient.isPending || createChartEntries.isPending) return;
+    if (pendingVitals?.length) {
+      setConfirmClose(true);
+      return;
+    }
     reset();
     onClose();
   };
 
   return (
-    <DialogContent className="sm:max-w-2xl">
+    <>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) handleClose(); }}>
+    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle className="font-display text-xl">
           Triage Assessment
         </DialogTitle>
+        <DialogDescription>Record the assessment and save measurements to Patient Chronicle.</DialogDescription>
       </DialogHeader>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        {pendingVitals?.length > 0 && !isSubmitting && (
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+            <p className="font-medium">Assessment saved. Vitals still need to be saved.</p>
+            <p className="mt-1 text-muted-foreground">Your measurements are retained here. Retry saving them to Chronicle.</p>
+          </div>
+        )}
+        <fieldset disabled={assessmentSaved || isSubmitting} className="space-y-6">
         {/* Patient Info */}
         <div className="rounded-lg border border-border bg-card p-4">
           <h4 className="font-heading font-semibold mb-1">
@@ -257,10 +286,10 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
               />
               <Label
                 htmlFor="emergency"
-                className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-data-[state=checked]:border-rose-500 peer-data-[state=checked]:bg-rose-500/10"
+                className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-data-[state=checked]:border-rose-500 peer-data-[state=checked]:bg-rose-500/10"
               >
-                <AlertTriangle className="size-6 text-rose-400 mb-2" />
-                <span className="text-sm font-medium text-rose-400">
+                <AlertTriangle className="size-6 text-rose-700 dark:text-rose-300 mb-2" />
+                <span className="text-sm font-medium text-rose-700 dark:text-rose-300">
                   Emergency
                 </span>
               </Label>
@@ -273,10 +302,10 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
               />
               <Label
                 htmlFor="urgent"
-                className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-data-[state=checked]:border-amber-500 peer-data-[state=checked]:bg-amber-500/10"
+                className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-data-[state=checked]:border-amber-500 peer-data-[state=checked]:bg-amber-500/10"
               >
-                <AlertCircle className="size-6 text-amber-400 mb-2" />
-                <span className="text-sm font-medium text-amber-400">
+                <AlertCircle className="size-6 text-amber-700 dark:text-amber-300 mb-2" />
+                <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
                   Urgent
                 </span>
               </Label>
@@ -289,17 +318,17 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
               />
               <Label
                 htmlFor="routine"
-                className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-data-[state=checked]:border-sky-500 peer-data-[state=checked]:bg-sky-500/10"
+                className="flex flex-col items-center justify-center rounded-lg border-2 border-border bg-card p-4 cursor-pointer hover:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-data-[state=checked]:border-sky-500 peer-data-[state=checked]:bg-sky-500/10"
               >
-                <Clock className="size-6 text-sky-400 mb-2" />
-                <span className="text-sm font-medium text-sky-400">
+                <Clock className="size-6 text-sky-700 dark:text-sky-300 mb-2" />
+                <span className="text-sm font-medium text-sky-700 dark:text-sky-300">
                   Routine
                 </span>
               </Label>
             </div>
           </RadioGroup>
           {errors.priority && (
-            <p className="text-sm text-rose-400">{errors.priority.message}</p>
+            <p className="text-sm text-rose-700 dark:text-rose-300">{errors.priority.message}</p>
           )}
         </div>
 
@@ -309,39 +338,39 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
             <div className="space-y-1.5">
               <Label htmlFor="temperature" className="text-xs text-muted-foreground">Temperature (C)</Label>
               <Input id="temperature" type="number" step="0.1" inputMode="decimal" {...register('temperature')} />
-              {errors.temperature && <p className="text-xs text-rose-400">{errors.temperature.message}</p>}
+              {errors.temperature && <p className="text-xs text-rose-700 dark:text-rose-300">{errors.temperature.message}</p>}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="pulse" className="text-xs text-muted-foreground">Pulse (bpm)</Label>
               <Input id="pulse" type="number" inputMode="numeric" {...register('pulse')} />
-              {errors.pulse && <p className="text-xs text-rose-400">{errors.pulse.message}</p>}
+              {errors.pulse && <p className="text-xs text-rose-700 dark:text-rose-300">{errors.pulse.message}</p>}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="respiratory_rate" className="text-xs text-muted-foreground">Respiratory Rate (/min)</Label>
               <Input id="respiratory_rate" type="number" inputMode="numeric" {...register('respiratory_rate')} />
-              {errors.respiratory_rate && <p className="text-xs text-rose-400">{errors.respiratory_rate.message}</p>}
+              {errors.respiratory_rate && <p className="text-xs text-rose-700 dark:text-rose-300">{errors.respiratory_rate.message}</p>}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="oxygen_saturation" className="text-xs text-muted-foreground">Oxygen Saturation (%)</Label>
               <Input id="oxygen_saturation" type="number" inputMode="numeric" {...register('oxygen_saturation')} />
-              {errors.oxygen_saturation && <p className="text-xs text-rose-400">{errors.oxygen_saturation.message}</p>}
+              {errors.oxygen_saturation && <p className="text-xs text-rose-700 dark:text-rose-300">{errors.oxygen_saturation.message}</p>}
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="systolic" className="text-xs text-muted-foreground">Systolic</Label>
                 <Input id="systolic" type="number" inputMode="numeric" {...register('systolic')} />
-                {errors.systolic && <p className="text-xs text-rose-400">{errors.systolic.message}</p>}
+                {errors.systolic && <p className="text-xs text-rose-700 dark:text-rose-300">{errors.systolic.message}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="diastolic" className="text-xs text-muted-foreground">Diastolic</Label>
                 <Input id="diastolic" type="number" inputMode="numeric" {...register('diastolic')} />
-                {errors.diastolic && <p className="text-xs text-rose-400">{errors.diastolic.message}</p>}
+                {errors.diastolic && <p className="text-xs text-rose-700 dark:text-rose-300">{errors.diastolic.message}</p>}
               </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="weight" className="text-xs text-muted-foreground">Weight (kg)</Label>
               <Input id="weight" type="number" step="0.1" inputMode="decimal" {...register('weight')} />
-              {errors.weight && <p className="text-xs text-rose-400">{errors.weight.message}</p>}
+              {errors.weight && <p className="text-xs text-rose-700 dark:text-rose-300">{errors.weight.message}</p>}
             </div>
           </div>
         </div>
@@ -356,16 +385,31 @@ function TriageAssessmentForm({ entry, onClose, onSuccess }) {
             rows={4}
           />
         </div>
+        </fieldset>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={handleClose}>
-            Cancel
+          <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
+            {assessmentSaved ? 'Close assessment' : 'Cancel'}
           </Button>
-          <Button type="submit" disabled={triagePatient.isPending || createChartEntries.isPending}>
-            {triagePatient.isPending || createChartEntries.isPending ? 'Saving...' : 'Save Assessment'}
+          <Button type="submit" disabled={isSubmitting || triagePatient.isPending || createChartEntries.isPending}>
+            {isSubmitting || triagePatient.isPending || createChartEntries.isPending ? 'Saving...' : pendingVitals?.length ? 'Retry Saving Vitals' : 'Save Assessment'}
           </Button>
         </DialogFooter>
       </form>
     </DialogContent>
+    </Dialog>
+    <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Close with unsaved vitals?</AlertDialogTitle>
+          <AlertDialogDescription>The assessment is saved, but the measurements have not been recorded in Chronicle. Closing will discard those unsaved measurements.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep measurements</AlertDialogCancel>
+          <AlertDialogAction onClick={() => { reset(); onClose(); }}>Discard unsaved vitals</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

@@ -48,6 +48,10 @@ ignored. The override still refuses dirty deploy control scripts. The
 lower-level scripts remain available for incident debugging and reusable client
 VPS shapes.
 
+Clean linked Git worktrees are supported. Archive validation checks the shared
+Git metadata directory so local `info/attributes` overrides cannot bypass the
+committed-source safety guard from a worktree.
+
 `compose-v2/` contains:
 
 - `compose.yml`

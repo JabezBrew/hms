@@ -5,7 +5,7 @@
 # retaining legacy API build args for explicit older deploy flows.
 
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -52,9 +52,13 @@ ENV API_BASE_URL=${VITE_API_BASE_URL} \
 
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf.template
+COPY nginx-security-headers.conf /etc/nginx/hms-security-headers.conf
 
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
+# Vite preserves public-file modes; restrictive checkout umasks must not make
+# these public assets unreadable to the unprivileged Nginx workers.
+RUN chmod -R a+rX /usr/share/nginx/html
 
 # Create startup script that substitutes runtime config and starts nginx
 RUN echo '#!/bin/sh' > /start.sh && \

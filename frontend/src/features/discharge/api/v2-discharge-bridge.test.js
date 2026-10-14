@@ -106,18 +106,18 @@ describe('Rust V2 discharge bridge', () => {
         patient_name: 'Ama Mensah',
         medical_record_number: 'MRN-001',
         ward_name: 'Medical Ward',
-        status: 'ready_for_finalization',
+        status: 'awaiting_clearance',
         medical_ready_at: '2026-05-12T09:00:00Z',
         blockers: [
           expect.objectContaining({
             task_type: 'discharge_summary',
             status: 'completed',
-            workflow_path: '/patients/patient-1?action=add_note&note_type=discharge_summary',
+            workflow_path: '/patients/patient-1/chronicle?action=add_note&note_type=doctor_note&title=Discharge+Summary&admission=admission-1',
           }),
           expect.objectContaining({
             task_type: 'nursing_release',
             status: 'pending',
-            workflow_path: '/ward-board?view=discharge&patient=patient-1&case=discharge-1',
+            workflow_path: '/wards/ward-1/board?view=discharge&patient=patient-1&case=discharge-1',
           }),
           expect.objectContaining({
             task_type: 'billing_clearance',
@@ -211,7 +211,7 @@ describe('Rust V2 discharge bridge', () => {
       id: 'discharge-2',
       admission: 'admission-2',
       patient_name: 'Kojo Mensah',
-      status: 'ready_for_finalization',
+      status: 'awaiting_clearance',
     }));
   });
 
@@ -249,7 +249,7 @@ describe('Rust V2 discharge bridge', () => {
       id: 'discharge-1',
       admission: 'admission-1',
       patient_name: 'Ama Mensah',
-      status: 'ready_for_finalization',
+      status: 'awaiting_clearance',
     }));
   });
 
@@ -374,5 +374,49 @@ describe('Rust V2 discharge bridge', () => {
       'Rust V2 does not expose discharge task operations yet',
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, []])('never infers readiness or a zero balance from missing clearance data', async (blockers) => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'discharge-1', admission_case_id: 'admission-1', patient_id: 'patient-1', status: 'requested', blockers,
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const item = await dischargeApi.getCase('discharge-1');
+    expect(item.status).toBe('awaiting_clearance');
+    expect(item.blockers_available).toBe(false);
+    expect(item.invoice_summary).toBeNull();
+  });
+
+  it('derives ready state only from server clearances and preserves the summary encounter scope', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'discharge-1', admission_case_id: 'admission-1', patient_id: 'patient-1', encounter_id: 'encounter-1',
+      status: 'requested', blockers: [
+        { blocker_type: 'discharge_summary', status: 'completed', blocking: true },
+        { blocker_type: 'nursing_release', status: 'completed', blocking: true },
+        { blocker_type: 'billing_clearance', status: 'overridden', blocking: true },
+      ],
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const item = await dischargeApi.getCase('discharge-1');
+    expect(item.status).toBe('ready_for_finalization');
+    const summary = item.blockers.find((blocker) => blocker.task_type === 'discharge_summary');
+    const target = new URL(summary.workflow_path, 'http://localhost');
+    expect(Object.fromEntries(target.searchParams)).toEqual({
+      action: 'add_note', note_type: 'doctor_note', title: 'Discharge Summary', visit: 'encounter-1', admission: 'admission-1',
+    });
+  });
+
+  it('records nursing release with the exact Rust request shape and AbortSignal', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'discharge-1', patient_id: 'patient-1', status: 'requested',
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await dischargeApi.recordNursingRelease('discharge-1', {
+      education: 'Education documented', instructions: 'Instructions documented', ignored: 'not sent',
+    }, { signal });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/discharges/discharge-1/nursing-release',
+      expect.objectContaining({ method: 'POST', signal, body: JSON.stringify({
+        education: 'Education documented', instructions: 'Instructions documented',
+      }) }),
+    );
   });
 });

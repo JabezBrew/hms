@@ -42,6 +42,7 @@ export function useChroniclePatientRecord({ id, rustV2Mode }) {
   const {
     data: chronicleStartup,
     isLoading: isStartupLoading,
+    isFetchedAfterMount: isStartupFetchedAfterMount,
     error: startupError,
     refetch: refetchStartup,
   } = usePatientChronicleStartup(id, {}, {
@@ -58,7 +59,7 @@ export function useChroniclePatientRecord({ id, rustV2Mode }) {
   });
 
   const patient = rustV2Mode ? chronicleStartup?.patient : legacyPatient;
-  const isLoading = rustV2Mode ? isStartupLoading : isPatientLoading;
+  const isLoading = rustV2Mode ? isStartupLoading || isStartupFetchedAfterMount === false : isPatientLoading;
   const error = rustV2Mode ? startupError : patientError;
   const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
   const patientPath = id ? `/patients/${id}/chronicle` : '/patients';

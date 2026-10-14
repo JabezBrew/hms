@@ -1,216 +1,121 @@
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
-import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { ActionCard } from '@/components/dashboard';
-import { useTriageQueue } from '@/hooks/useVisitQueries';
 import { Skeleton } from '@/components/ui/skeleton';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { triagePatientPath } from '@/features/triage/utils/triagePatientPath';
 
-const DEFAULT_EMPTY_OBJECT = {};
-
-/**
- * Priority to color mapping
- */
 const PRIORITY_CONFIG = {
-  emergency: {
-    color: 'rose',
-    bgClass: 'bg-rose-500/10',
-    textClass: 'text-rose-400',
-    indicator: 'bg-rose-500',
-  },
-  urgent: {
-    color: 'amber',
-    bgClass: 'bg-amber-500/10',
-    textClass: 'text-amber-400',
-    indicator: 'bg-amber-500',
-  },
-  routine: {
-    color: 'sky',
-    bgClass: 'bg-muted/50',
-    textClass: 'text-muted-foreground',
-    indicator: 'bg-muted-foreground',
-  },
+  emergency: { color: 'rose', indicator: 'bg-rose-500' },
+  urgent: { color: 'amber', indicator: 'bg-amber-500' },
+  routine: { color: 'sky', indicator: 'bg-muted-foreground' },
 };
 
-/**
- * TriageQueueList - Displays triage queue entries grouped by status
- *
- * @param {Object} props
- * @param {Object} props.filters - Query filters (status, priority)
- * @param {Function} props.onTriage - Callback when triage action clicked
- * @param {Function} props.onAssign - Callback when assign action clicked
- * @param {Function} props.onCancel - Callback when cancel action clicked
- * @param {Function} props.onPatientClick - Callback when patient name clicked
- */
-export function TriageQueueList({
-  filters = DEFAULT_EMPTY_OBJECT,
-  onTriage,
-  onAssign,
-  onCancel,
-  onPatientClick,
-}) {
+function arrivalLabel(value) {
+  const date = new Date(value);
+  return value && !Number.isNaN(date.getTime())
+    ? formatDistanceToNow(date, { addSuffix: true })
+    : 'Not recorded';
+}
+
+// The page owns the server query, filters and cursor pagination. This component
+// renders every status in that page without running a second queue query.
+export function TriageQueueList({ data, isLoading, onTriage, onAssign, onCancel, onPatientClick }) {
   const navigate = useNavigate();
-  const { data, isLoading, error } = useTriageQueue(filters);
+  const isRustV2 = isRustV2ApiMode();
+  const entries = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+  const groups = [
+    { status: 'waiting', title: 'Waiting for assessment' },
+    { status: 'assigned', title: 'Assigned for assessment' },
+    { status: 'triaged', title: isRustV2 ? 'Assessment completed' : 'Triaged — pending clinic assignment' },
+    { status: 'completed', title: 'Assessment completed' },
+    { status: 'cancelled', title: 'Cancelled' },
+  ];
 
-  // Group entries by status
-  const { waiting, triaged } = useMemo(() => {
-    if (!data?.results) return { waiting: [], triaged: [] };
-
-    const entries = data.results || data;
-    return {
-      waiting: entries.filter((e) => e.status === 'waiting'),
-      triaged: entries.filter((e) => e.status === 'triaged'),
-    };
-  }, [data]);
-
-  const handlePatientClick = (entry) => {
-    if (onPatientClick) {
-      onPatientClick(entry);
-    } else {
-      navigate(`/patients/${entry.patient}`);
-    }
-  };
-
-  const getPriorityConfig = (priority) => {
-    return PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.routine;
-  };
-
-  const getActions = (entry) => {
+  function actionsFor(entry) {
     const actions = [];
-
-    if (entry.status === 'waiting') {
-      actions.push({
-        label: 'Triage',
-        variant: 'default',
-        onClick: () => onTriage?.(entry),
-      });
+    if (entry.status === 'waiting' || (isRustV2 && entry.status === 'assigned')) {
+      if (onTriage) actions.push({ label: 'Assess', variant: 'default', onClick: () => onTriage(entry) });
     }
-
-    if (entry.status === 'triaged') {
-      actions.push({
-        label: 'Assign to Clinic',
-        variant: 'default',
-        onClick: () => onAssign?.(entry),
-      });
-    }
-
-    if (entry.status !== 'assigned' && entry.status !== 'cancelled') {
-      actions.push({
-        label: 'Cancel',
+    if (isRustV2 && ['waiting', 'assigned'].includes(entry.status)) {
+      if (onAssign) actions.push({
+        label: entry.status === 'assigned' ? 'Reassign staff' : 'Assign staff',
         variant: 'outline',
-        onClick: () => onCancel?.(entry),
+        onClick: () => onAssign(entry),
       });
+    } else if (!isRustV2 && entry.status === 'triaged' && onAssign) {
+      actions.push({ label: 'Assign to Clinic', variant: 'default', onClick: () => onAssign(entry) });
     }
-
+    const canCancel = isRustV2 ? entry.status === 'waiting' : !['assigned', 'cancelled'].includes(entry.status);
+    if (canCancel && onCancel) actions.push({ label: 'Cancel', variant: 'outline', onClick: () => onCancel(entry) });
     return actions;
-  };
+  }
 
-  const renderEntry = (entry) => {
-    const priorityConfig = getPriorityConfig(entry.priority);
-
+  function renderEntry(entry) {
+    const priority = entry.priority || entry.acuity || 'routine';
+    const config = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.routine;
     return (
       <ActionCard
         key={entry.id}
-        title={
+        title={(
           <div className="flex items-center gap-2">
-            <span
-              className={`size-2 rounded-full ${priorityConfig.indicator}`}
-            />
+            <span className={`size-2 shrink-0 rounded-full ${config.indicator}`} aria-hidden="true" />
             <button
               type="button"
-              className="cursor-pointer bg-transparent p-0 text-left hover:underline"
-              onClick={() => handlePatientClick(entry)}
+              className="min-w-0 truncate bg-transparent p-0 text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onPatientClick ? onPatientClick(entry) : navigate(triagePatientPath(entry))}
             >
-              {entry.patient_name}
+              {entry.patient_name || entry.patient_display_name || 'Patient'}
             </button>
           </div>
-        }
-        subtitle={entry.chief_complaint || 'No chief complaint provided'}
-        status={entry.priority === 'emergency' ? 'critical' : entry.priority === 'urgent' ? 'warning' : 'info'}
+        )}
+        subtitle={entry.chief_complaint || undefined}
+        status={priority === 'emergency' ? 'critical' : priority === 'urgent' ? 'warning' : 'info'}
         badges={[
-          {
-            text: entry.priority.charAt(0).toUpperCase() + entry.priority.slice(1),
-            color: priorityConfig.color,
-          },
-          entry.assigned_clinic && {
-            text: entry.assigned_clinic.name || 'Assigned',
-            color: 'emerald',
-          },
+          { text: priority.charAt(0).toUpperCase() + priority.slice(1), color: config.color },
+          entry.assigned_to_name && { text: `Assigned: ${entry.assigned_to_name}`, color: 'emerald' },
+          entry.assigned_clinic && { text: entry.assigned_clinic.name || 'Assigned', color: 'emerald' },
         ].filter(Boolean)}
         metadata={[
-          {
-            label: 'Arrived',
-            value: formatDistanceToNow(new Date(entry.created_at), { addSuffix: true }),
-            icon: Clock,
-          },
+          { label: 'Arrived', value: arrivalLabel(entry.created_at), icon: Clock },
           entry.triage_notes && {
             label: 'Notes',
             value: entry.triage_notes.substring(0, 50) + (entry.triage_notes.length > 50 ? '...' : ''),
             icon: AlertCircle,
           },
         ].filter(Boolean)}
-        actions={getActions(entry)}
+        actions={actionsFor(entry)}
       />
     );
-  };
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(3)].map((_, i) => (
-          <Skeleton key={i} className="h-28" />
-        ))}
-      </div>
-    );
   }
 
-  if (error) {
-    return (
-      <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
-        <p className="text-sm text-rose-400">Failed to load triage queue: {error.message}</p>
-      </div>
-    );
-  }
+  if (isLoading) return (
+    <div className="space-y-4" aria-label="Loading triage queue">
+      {Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-28" />)}
+    </div>
+  );
 
-  const total = waiting.length + triaged.length;
-
-  if (total === 0) {
-    return (
-      <div className="text-center py-12 rounded-xl border border-border bg-card/50">
-        <User className="size-12 text-muted-foreground mx-auto mb-3" />
-        <p className="text-muted-foreground">No patients in triage queue</p>
-      </div>
-    );
-  }
+  if (!entries.length) return (
+    <div className="rounded-xl border border-border bg-card/50 py-12 text-center">
+      <User className="mx-auto mb-3 size-12 text-muted-foreground" aria-hidden="true" />
+      <p className="text-muted-foreground">No triage entries match these filters</p>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      {/* Waiting for Triage */}
-      {waiting.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="font-heading text-sm font-semibold text-rose-400 uppercase tracking-wide">
-            Waiting for Triage ({waiting.length})
-          </h3>
-          <div className="space-y-3">
-            {waiting.map(renderEntry)}
-          </div>
-        </div>
-      )}
-
-      {/* Triaged - Pending Assignment */}
-      {triaged.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="font-heading text-sm font-semibold text-amber-400 uppercase tracking-wide">
-            Triaged - Pending Assignment ({triaged.length})
-          </h3>
-          <div className="space-y-3">
-            {triaged.map(renderEntry)}
-          </div>
-        </div>
-      )}
+      {groups.map(({ status, title }) => {
+        const groupEntries = entries.filter((entry) => entry.status === status);
+        return groupEntries.length ? (
+          <section key={status} className="space-y-3" aria-label={title}>
+            <h3 className="font-heading text-sm font-semibold text-foreground">{title} ({groupEntries.length})</h3>
+            <div className="space-y-3">{groupEntries.map(renderEntry)}</div>
+          </section>
+        ) : null;
+      })}
     </div>
   );
 }
-

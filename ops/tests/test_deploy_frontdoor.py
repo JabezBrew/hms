@@ -4,6 +4,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROOT_DEPLOY = REPO_ROOT / 'deploy'
@@ -16,6 +18,54 @@ def write_dirty_marker() -> Path:
     marker = REPO_ROOT / f'.deploy-ignore-dirty-test-{os.getpid()}'
     marker.write_text('dirty\n', encoding='utf-8')
     return marker
+
+
+@pytest.fixture
+def linked_checkout(tmp_path):
+    repository = tmp_path / 'repository'
+    checkout = tmp_path / 'linked'
+    subprocess.run(
+        ['git', 'clone', '--quiet', '--shared', str(REPO_ROOT), str(repository)],
+        check=True, capture_output=True, text=True,
+    )
+    subprocess.run(
+        ['git', '-C', str(repository), 'worktree', 'add', '--detach', str(checkout), 'HEAD'],
+        check=True, capture_output=True, text=True,
+    )
+    try:
+        yield repository, checkout
+    finally:
+        subprocess.run(
+            ['git', '-C', str(repository), 'worktree', 'remove', '--force', str(checkout)],
+            check=True, capture_output=True, text=True,
+        )
+
+
+def test_remote_dry_run_accepts_a_clean_linked_worktree(linked_checkout):
+    _, checkout = linked_checkout
+    assert (checkout / '.git').is_file()
+
+    result = subprocess.run(
+        ['/bin/sh', str(checkout / 'deploy'), 'staging', '--dry-run'],
+        check=False, capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'Would archive committed SHA:' in result.stdout
+
+
+def test_linked_worktree_cannot_bypass_shared_archive_attribute_guard(linked_checkout):
+    repository, checkout = linked_checkout
+    attributes = repository / '.git' / 'info' / 'attributes'
+    attributes.write_text('ops/deploy.sh export-ignore\n', encoding='utf-8')
+
+    result = subprocess.run(
+        ['/bin/sh', str(checkout / 'deploy'), 'staging', '--dry-run'],
+        check=False, capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert 'local .git/info/attributes can change git archive output' in result.stderr
 
 
 def test_deploy_frontdoor_shell_syntax_is_valid():

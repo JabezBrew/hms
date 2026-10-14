@@ -28,6 +28,17 @@ Rust V2 mode through generated `/api/v2` helpers.
   mode.
 - List/search helpers preserve `AbortSignal` and `AbortError`.
 - Do not fetch all pages to filter client-side.
+- Dashboard adapters must distinguish absent measurements from measured zero.
+  Rust admin snapshots provide active patients, waiting visits, and open invoices;
+  unsupported legacy KPIs must not be synthesized from those values. Workforce
+  and compliance detail adapters explicitly return `available: false` until a
+  supported source exists.
+- Inpatient and reception previews preserve section availability and page bounds
+  in `meta.sections`. Disabled sections are not requested; a failed optional read
+  does not erase successful sections. Aborts still cancel the overall read.
+  Ward alert/result/task/medication counters come from the board response; missing
+  counters stay `null`. Nursing tasks are not unsigned orders, and page lengths
+  are not facility totals or evidence of a personal assignment.
 - Keep PHI out of query keys and browser events, while still including
   authorization-sensitive scope.
 

@@ -52,16 +52,13 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         output: {
-          // Keep React + Radix in one chunk to prevent cross-chunk circular init issues
-          // while still splitting large optional dependencies for startup performance.
+          // Keep the React runtime together, while allowing optional Radix widgets
+          // to load with their routes instead of inflating the public login bundle.
           manualChunks(id) {
             if (!id.includes("node_modules")) return undefined
             if (
               id.includes("react-dom") ||
-              id.includes("react/") ||
-              id.includes("@radix-ui") ||
-              id.includes("@floating-ui") ||
-              id.includes("react-remove-scroll")
+              id.includes("react/")
             ) return "vendor-core"
             if (id.includes("react-router")) return "vendor-router"
             if (id.includes("@tanstack/react-query") || id.includes("@tanstack/query-core")) return "vendor-query"

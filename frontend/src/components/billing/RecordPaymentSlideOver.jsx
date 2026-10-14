@@ -577,7 +577,11 @@ function RecordPaymentSlideOverContent({
   const [generateReceipt, setGenerateReceipt] = useState(true);
   const [openingFloat, setOpeningFloat] = useState('0.00');
   const [errors, setErrors] = useState({});
-  const paymentIntentsAvailable = !isRustV2ApiMode();
+  const isRustV2 = isRustV2ApiMode();
+  const requiresCashSession = isRustV2
+    ? formData.payment_method === 'cash'
+    : cashControlEnabled;
+  const paymentIntentsAvailable = !isRustV2;
   const paymentIntentPending = paymentIntentsAvailable && createPaymentIntentMutation.isPending;
   const hasPendingIntent = paymentIntentsAvailable && !!intent && intent.status === 'pending';
 
@@ -609,8 +613,8 @@ function RecordPaymentSlideOverContent({
     e.preventDefault();
 
     if (!validate()) return;
-    if (cashControlEnabled && !currentSession) {
-      toast.error('Open a cash session to record payments');
+    if (requiresCashSession && !currentSession) {
+      toast.error(isRustV2 ? 'Open a cash session to record cash payments' : 'Open a cash session to record payments');
       return;
     }
 
@@ -620,6 +624,9 @@ function RecordPaymentSlideOverContent({
         data: {
           amount: parseFloat(formData.amount),
           payment_method: formData.payment_method,
+          ...(isRustV2 && formData.payment_method === 'cash'
+            ? { cash_session_id: currentSession.id }
+            : {}),
           reference_number: formData.reference_number || null,
           notes: formData.notes || null,
           generate_receipt: generateReceipt,
@@ -639,7 +646,7 @@ function RecordPaymentSlideOverContent({
       toast.error('Enter a mobile number for Mobile Money collection');
       return;
     }
-    if (cashControlEnabled && !currentSession) {
+    if (requiresCashSession && !currentSession) {
       toast.error('Open a cash session before initiating collection');
       return;
     }
@@ -676,7 +683,7 @@ function RecordPaymentSlideOverContent({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {cashControlEnabled && !currentSession && (
+        {requiresCashSession && !currentSession && (
           <CashSessionRequiredPanel
             isOpening={openCashSessionMutation.isPending}
             openingFloat={openingFloat}

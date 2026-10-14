@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect } from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { SidebarProvider, useSidebar } from '@/components/ui/sidebar'
@@ -85,7 +85,21 @@ function MobileSidebarProbe() {
   return <div data-testid="mobile-sidebar-state">{openMobile ? 'open' : 'closed'}</div>
 }
 
+function SidebarShortcutProbe() {
+  const { open } = useSidebar()
+  return <><input aria-label="Clinical note" /><div contentEditable suppressContentEditableWarning role="textbox" aria-label="Rich clinical note" /><p data-testid="sidebar-state">{open ? 'open' : 'closed'}</p></>
+}
+
 describe('dynamic sidebar', () => {
+  it('preserves text editing shortcuts while allowing Ctrl+B from the workspace', () => {
+    render(<SidebarProvider><SidebarShortcutProbe /></SidebarProvider>)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Clinical note', exact: true }), { key: 'b', ctrlKey: true })
+    expect(screen.getByTestId('sidebar-state')).toHaveTextContent('open')
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Rich clinical note' }), { key: 'b', metaKey: true })
+    expect(screen.getByTestId('sidebar-state')).toHaveTextContent('open')
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true })
+    expect(screen.getByTestId('sidebar-state')).toHaveTextContent('closed')
+  })
   it('filters contextual items by role', () => {
     renderSidebar({
       sidebar: SIDEBARS.LABORATORY,
@@ -119,7 +133,9 @@ describe('dynamic sidebar', () => {
       enabledFeatures: { billing: true },
     })
 
-    expect(screen.getByRole('link', { name: /Invoices/i })).toHaveAttribute('data-active', 'true')
+    const invoices = screen.getByRole('link', { name: /Invoices/i })
+    expect(invoices).toHaveAttribute('data-active', 'true')
+    expect(invoices).toHaveAttribute('aria-current', 'page')
   })
 
   it('opens and marks a global parent group when a child route is active', () => {
@@ -130,8 +146,12 @@ describe('dynamic sidebar', () => {
       enabledFeatures: { laboratory: true },
     })
 
-    expect(screen.getByRole('button', { name: /Laboratory/i })).toHaveAttribute('data-active', 'true')
-    expect(screen.getByRole('link', { name: /Orders/i })).toHaveAttribute('data-active', 'true')
+    const laboratory = screen.getByRole('button', { name: /Laboratory/i })
+    const orders = screen.getByRole('link', { name: /Orders/i })
+    expect(laboratory).toHaveAttribute('data-active', 'true')
+    expect(orders).toHaveAttribute('data-active', 'true')
+    expect(orders).toHaveAttribute('aria-current', 'page')
+    expect(laboratory).not.toHaveAttribute('aria-current')
   })
 
   it('renders role-aware shortcuts for contextual sidebars', () => {

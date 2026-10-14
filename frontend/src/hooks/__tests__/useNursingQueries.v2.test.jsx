@@ -2201,4 +2201,19 @@ describe('Rust V2 nursing dashboard hooks', () => {
       }),
     );
   });
+  it.each(['held', 'missed', 'refused'])('rejects %s without sending an administration request', async (status) => {
+    const { result } = renderHook(() => useAdministerMedication(), { wrapper: createWrapper() });
+    await act(async () => {
+      await expect(result.current.mutateAsync({ medicationId: 'med-admin-1', data: { status } })).rejects.toThrow('given doses only');
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['held', 'missed', 'refused'])('rejects create-and-administer %s before scheduling any dose', async (status) => {
+    const { result } = renderHook(() => useCreateAndAdminister(), { wrapper: createWrapper() });
+    await act(async () => {
+      await expect(result.current.mutateAsync({ admission_case_id: 'admission-1', medication_name: 'Test medication', scheduled_at: '2026-10-14T08:00:00Z', status })).rejects.toThrow('given doses only');
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });

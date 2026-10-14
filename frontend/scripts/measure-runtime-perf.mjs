@@ -1,21 +1,29 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
 
 const BASE_URL = (process.env.HMS_FRONTEND_BASE_URL || 'http://127.0.0.1:4174').replace(/\/$/, '')
 const API_BASE_URL = (process.env.HMS_FRONTEND_PERF_API_BASE_URL || BASE_URL).replace(/\/$/, '')
 const EMAIL = process.env.HMS_FRONTEND_PERF_EMAIL || 'owner@hms.local'
-const PASSWORD = process.env.HMS_FRONTEND_PERF_PASSWORD || 'ChangeMe123!'
+const PASSWORD = process.env.HMS_FRONTEND_PERF_PASSWORD
 const FACILITY_CODE = process.env.HMS_FRONTEND_PERF_FACILITY || 'HMS'
 const CONFIGURED_PATIENT_ID = process.env.HMS_FRONTEND_PERF_PATIENT_ID || ''
 const CPU_THROTTLE_RATE = Number(process.env.HMS_FRONTEND_PERF_CPU_THROTTLE || 4)
-const OUTPUT_PATH = process.env.HMS_FRONTEND_PERF_OUT || '/private/tmp/hms-frontend-runtime-perf.json'
+const OUTPUT_PATH = process.env.HMS_FRONTEND_PERF_OUT || path.join(os.tmpdir(), 'hms-frontend-runtime-perf.json')
+const BROWSER_EXECUTABLE = process.env.HMS_FRONTEND_PERF_BROWSER_EXECUTABLE
 const RUNTIME_CONFIG_MODE = process.env.HMS_FRONTEND_RUNTIME_CONFIG || 'local-rust-v2'
 const DASHBOARD_PATH = process.env.HMS_FRONTEND_PERF_DASHBOARD_PATH || '/dashboards/admin'
+const WARD_BOARD_PATH = process.env.HMS_FRONTEND_PERF_WARD_BOARD_PATH || '/ward-board?scope=all'
 const READY_TIMEOUT_MS = Number(process.env.HMS_FRONTEND_PERF_READY_TIMEOUT_MS || 15000)
 const POST_READY_SETTLE_MS = Number(process.env.HMS_FRONTEND_PERF_POST_READY_SETTLE_MS || 100)
+const WARMUP_TIMEOUT_MS = Number(process.env.HMS_FRONTEND_PERF_WARMUP_TIMEOUT_MS || 15000)
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
+// Only controlled messages may be printed: Playwright errors can include raw
+// patient URLs or the arguments passed to form-fill operations.
+class RuntimeProbeError extends Error {}
 
 const APP_SHELL_TARGET = {
   label: 'app_shell',
@@ -41,14 +49,14 @@ function buildRoutes(patientId) {
     },
     {
       label: 'patient_chronicle',
-      path: `/patients/${encodedPatientId}`,
-      reportPath: '/patients/:id',
+      path: `/patients/${encodedPatientId}/chronicle`,
+      reportPath: '/patients/:id/chronicle',
       readySelector: '[data-perf-ready="patient-chronicle"]',
     },
     {
       label: 'ward_board',
-      path: '/ward-board',
-      reportPath: '/ward-board',
+      path: WARD_BOARD_PATH,
+      reportPath: sanitizePathname(new URL(WARD_BOARD_PATH, BASE_URL).pathname),
       readySelector: '[data-perf-ready="ward-board"]',
     },
     {
@@ -132,9 +140,18 @@ function summarizeResources(entries) {
   )
   const styles = entries.filter((entry) => entry.initiatorType === 'css' || entry.name?.endsWith?.('.css'))
   const transfers = entries.map((entry) => Number(entry.transferSize || 0))
+  const apiStatusBuckets = api.reduce((buckets, entry) => {
+    const status = Number(entry.responseStatus || 0)
+    const bucket = status >= 200 && status < 600 ? `${Math.floor(status / 100)}xx` : 'unknown'
+    buckets[bucket] = (buckets[bucket] || 0) + 1
+    return buckets
+  }, {})
 
   return {
     api_count: api.length,
+    api_error_count: (apiStatusBuckets['4xx'] || 0) + (apiStatusBuckets['5xx'] || 0),
+    api_status_buckets: apiStatusBuckets,
+    api_status_complete: !apiStatusBuckets.unknown,
     api_p95_ms: round(percentile(api.map((entry) => entry.duration), 95)),
     api_p99_ms: round(percentile(api.map((entry) => entry.duration), 99)),
     script_count: scripts.length,
@@ -178,6 +195,7 @@ async function collectMeasurement(page) {
       name: entry.name,
       initiatorType: entry.initiatorType,
       duration: entry.duration,
+      responseStatus: entry.responseStatus,
       transferSize: entry.transferSize,
       encodedBodySize: entry.encodedBodySize,
     }))
@@ -201,12 +219,15 @@ async function waitForReady(page, target) {
     .locator(target.readySelector)
     .first()
     .waitFor({ state: 'visible', timeout: READY_TIMEOUT_MS })
+    .catch(() => {
+      throw new RuntimeProbeError(`The ${target.label} ready marker did not appear within ${READY_TIMEOUT_MS} ms.`)
+    })
 }
 
 async function waitForRouteChunkWarmup(page) {
   const startedAt = performance.now()
   const completed = await page
-    .waitForFunction(() => window.__hmsRouteChunkWarmupDone === true, { timeout: 5000 })
+    .waitForFunction(() => window.__hmsRouteChunkWarmupDone === true, undefined, { timeout: WARMUP_TIMEOUT_MS })
     .then(() => true)
     .catch(() => false)
 
@@ -266,12 +287,12 @@ async function createProbeAccessToken() {
     }),
   })
   if (!response.ok) {
-    throw new Error('Unable to authenticate the frontend perf probe API session.')
+    throw new RuntimeProbeError('Unable to authenticate the frontend perf probe API session.')
   }
   const payload = await response.json()
   const accessToken = payload?.data?.access_token
   if (!accessToken) {
-    throw new Error('Frontend perf probe API session did not return an access token.')
+    throw new RuntimeProbeError('Frontend perf probe API session did not return an access token.')
   }
   return accessToken
 }
@@ -310,7 +331,7 @@ async function discoverChroniclePatientId() {
     }
   }
 
-  throw new Error('No chronicle-accessible patient was available for the frontend perf probe.')
+  throw new RuntimeProbeError('No chronicle-accessible patient was available for the frontend perf probe.')
 }
 
 async function loginToApp(page) {
@@ -322,6 +343,7 @@ async function loginToApp(page) {
   await page.getByLabel(/^password$/i).fill(PASSWORD)
   await page.getByRole('button', { name: /sign in/i }).click()
   await page.waitForURL((url) => url.pathname !== '/login', { timeout: READY_TIMEOUT_MS })
+    .catch(() => { throw new RuntimeProbeError('The login flow did not reach an authenticated route.') })
   await waitForReady(page, APP_SHELL_TARGET)
   const readyAt = performance.now()
   await waitAfterReady(page)
@@ -388,7 +410,13 @@ async function measureWarmTransition(page, target) {
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: true })
+  if (!PASSWORD) {
+    throw new RuntimeProbeError('HMS_FRONTEND_PERF_PASSWORD is required; the runtime probe does not assume a password.')
+  }
+  const browser = await chromium.launch({
+    headless: true,
+    ...(BROWSER_EXECUTABLE ? { executablePath: BROWSER_EXECUTABLE } : {}),
+  })
   const context = await browser.newContext({
     viewport: { width: 1366, height: 768 },
     reducedMotion: 'reduce',
@@ -440,6 +468,7 @@ async function main() {
       warm_transitions: warmTransitions,
     }
 
+    fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true })
     fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(report, null, 2)}\n`)
     console.log(JSON.stringify(report, null, 2))
   } finally {
@@ -448,6 +477,11 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`[frontend-perf] ${error.message}`)
+  const safeMessage = error instanceof RuntimeProbeError
+    ? error.message
+    : error?.name === 'TimeoutError'
+      ? 'Browser/API measurement timed out.'
+      : 'Browser/API measurement failed. Check the configured frontend, API, and Chromium runtime.'
+  console.error(`[frontend-perf] ${safeMessage}`)
   process.exit(1)
 })

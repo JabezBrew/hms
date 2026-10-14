@@ -1,3 +1,5 @@
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import RustInpatientDashboard from './RustInpatientDashboard';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
@@ -48,6 +50,10 @@ function dischargeWardBoardPath(discharge) {
 }
 
 export default function InpatientDoctorDashboard() {
+  return isRustV2ApiMode() ? <RustInpatientDashboard /> : <LegacyInpatientDoctorDashboard />;
+}
+
+function LegacyInpatientDoctorDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
   const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });

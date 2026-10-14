@@ -119,6 +119,8 @@ export function usePatientChronicleStartup(id, params = {}, options = {}) {
     enabled: !!id && enabled,
     staleTime,
     refetchOnWindowFocus: false,
+    refetchOnMount: 'always',
+    retry: false,
   });
 }
 

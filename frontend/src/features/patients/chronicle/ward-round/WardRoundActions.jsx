@@ -119,6 +119,7 @@ export function MedicationActionBlock({ medications, activeMedications, onChange
                   <SelectItem value="continue">Continue</SelectItem>
                   <SelectItem value="hold">Hold</SelectItem>
                   <SelectItem value="stop">Stop</SelectItem>
+                  <SelectItem value="complete">Complete</SelectItem>
                 </SelectContent>
               </Select>
             </div>

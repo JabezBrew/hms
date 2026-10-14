@@ -605,7 +605,24 @@ impl ClinicalService {
         patient_id: Uuid,
     ) -> Result<ObjectResponse<PharmacyClinicalContext>, ApiError> {
         require_action_permission(ctx, self.facility_id(), PermissionCode::PharmacyDispense)?;
-        let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
+        let _patient = load_patient_for_safety_context(&self.state, ctx, patient_id).await?;
+        if !hms_db::clinical::has_pharmacy_work_for_patient(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "pharmacy_context_failed",
+                "Pharmacy clinical context could not be loaded.",
+            )
+        })? {
+            return Err(ApiError::forbidden(
+                "patient_access_denied",
+                "You do not have dispensing work for this patient.",
+            ));
+        }
         let context = hms_db::clinical::pharmacy_clinical_context(
             self.pool(),
             self.facility_id(),
@@ -646,7 +663,8 @@ impl ClinicalService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
-        let _patient = load_patient_for_access(&self.state, ctx, context.patient_id).await?;
+        let _patient =
+            load_patient_for_safety_context(&self.state, ctx, context.patient_id).await?;
 
         Ok(object(context))
     }
@@ -1136,6 +1154,18 @@ async fn load_note_for_access(
 }
 
 async fn load_patient_for_access(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    patient_id: Uuid,
+) -> Result<PatientRecord, ApiError> {
+    let (patient, _) =
+        super::patients::load_patient_for_clinical_access(state, ctx, patient_id).await?;
+    Ok(patient)
+}
+
+// Pharmacy/laboratory safety projections have their own fulfillment permission
+// checks above. They do not expose the complete clinical record.
+async fn load_patient_for_safety_context(
     state: &AppState,
     ctx: &hms_access::RequestContext,
     patient_id: Uuid,

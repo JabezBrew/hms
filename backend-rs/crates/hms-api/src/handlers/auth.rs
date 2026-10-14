@@ -804,7 +804,10 @@ pub async fn generate_recovery_codes(
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;
     if account.facility_id != user.facility_id
-        || !hms_auth::verify_password_hash(&account.password_hash, &payload.current_password)
+        || !state
+            .verify_password_bounded(&account.password_hash, &payload.current_password)
+            .await
+            .map_err(|_| ApiError::unauthorized())?
     {
         return Err(ApiError::forbidden(
             "fresh_reauth_required",

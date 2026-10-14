@@ -830,6 +830,33 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
     assert_eq!(patient_encounters[0].id, encounter.id);
     assert_ne!(patient_encounters[0].id, other_encounter.id);
 
+    hms_db::care::create_care_team_assignment(
+        &pool,
+        hms_db::care::NewCareTeamAssignment {
+            id: uuid::Uuid::new_v4(),
+            encounter_id: encounter.id,
+            user_id: owner_id,
+            role: hms_domain::care::CareTeamRole::PrimaryClinician,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("care team assignment creates");
+    let filtered = hms_db::care::list_encounters(
+        &pool,
+        facility_id,
+        EncounterFilters {
+            practitioner_search: Some("owner@hms.local".to_owned()),
+            ..EncounterFilters::default()
+        },
+        None,
+        25,
+    )
+    .await
+    .expect("practitioner search uses the canonical care-team table");
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].id, encounter.id);
+
     let updated = hms_db::care::update_encounter(
         &pool,
         EncounterUpdate {
@@ -1030,6 +1057,7 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
             acuity: Some(TriageAcuity::Emergency),
             notes: Some("Chest pain and diaphoresis.".to_owned()),
         },
+        owner_id,
     )
     .await
     .expect("triage assessment query succeeds")
@@ -1048,6 +1076,7 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
             acuity: Some(TriageAcuity::Urgent),
             notes: Some("Cross facility".to_owned()),
         },
+        owner_id,
     )
     .await
     .expect("cross-facility triage assessment query succeeds")

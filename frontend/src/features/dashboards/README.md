@@ -33,3 +33,24 @@ Scope: app root, My Work landing, shared provider dashboards, snapshot views, no
 - Dashboard snapshots must not block on FHIR or external I/O.
 - Dashboard route shells should become useful before heavy widget bodies finish.
 - Query keys must include role/profile/facility visibility scope.
+- The Rust admin summary displays only metrics returned by the permission-filtered
+  snapshot. A missing initial projection is pending, not zero activity. Unsupported
+  alert, intervention, workforce, and compliance summaries must say unavailable;
+  the capacity panel continues to use its dedicated bounded endpoint. Snapshot
+  metrics have no historical-window filter, so this mode does not offer one.
+
+## Compatibility landing routes
+
+In Rust V2, `/dashboard/doctor` and `/dashboard/provider` render the existing
+My Work workspace and its real `/care-areas/my-work` response. These URLs retain
+their route permissions and do not redirect through the root dashboard. Legacy
+mode retains its existing dashboard implementations.
+
+Rust inpatient and reception routes show bounded workflow previews. Labels and
+counts describe the records shown, with explicit continuation links. Inpatient
+attention comes from supplied board alert/result/task/MAR counts; no clinical
+stability is inferred from discharge timing. Reception patient previews are
+Patient Directory records, not registration metrics. Sections load independently
+and unavailable or withheld data is not displayed as measured zero. Disabled
+modules are not queried. Reception check-in passes the actual patient, clinic
+and appointment context into the existing visit workflow.

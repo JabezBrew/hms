@@ -134,11 +134,39 @@ impl MarService {
             payload.witness_user_id,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
+        .map_err(|error| match error.to_string().as_str() {
+            "medication_witness_unavailable" => ApiError::conflict(
+                "medication_witness_unavailable",
+                "Choose an active witness from this facility.",
+            ),
+            "medication_not_dispensed" => ApiError::conflict(
+                "medication_not_dispensed",
+                "Pharmacy must dispense this dose before it can be administered.",
+            ),
+            "prescription_not_active" => ApiError::conflict(
+                "prescription_not_active",
+                "This prescription is on hold, stopped, or completed. Review the prescription before administering a dose.",
+            ),
+            "admission_not_active" => ApiError::conflict(
+                "admission_not_active",
+                "Medication can only be administered during an active admission.",
+            ),
+            "medication_course_prescription_changed" => ApiError::conflict(
+                "medication_course_prescription_changed",
+                "The prescription has changed since these doses were scheduled. Review the medication course before administering a dose.",
+            ),
+            "medication_course_not_active" => ApiError::conflict(
+                "medication_course_not_active",
+                "This medication course is no longer active. Review the course before administering a dose.",
+            ),
+            "medication_not_scheduled" => ApiError::conflict(
+                "medication_not_scheduled",
+                "This dose is held or no longer scheduled. Review the dose before administering it.",
+            ),
+            _ => ApiError::conflict(
                 "med_admin_update_failed",
                 "Medication administration could not be updated.",
-            )
+            ),
         })?
         .ok_or_else(|| {
             ApiError::not_found(

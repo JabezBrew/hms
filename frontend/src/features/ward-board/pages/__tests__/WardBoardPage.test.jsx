@@ -28,6 +28,10 @@ vi.mock('@/shared/hooks/usePageMeta', () => ({
   usePageMeta: () => null,
 }));
 
+vi.mock('@/features/discharge/components/DischargeWorkflowPanel', () => ({
+  DischargeWorkflowPanel: ({ caseId, patientId }) => <div>Discharge controls {caseId} {patientId}</div>,
+}));
+
 vi.mock('@/hooks/use-debounce', () => ({
   useDebounce: (value) => value,
 }));
@@ -316,6 +320,26 @@ describe('WardBoardPage', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText('Patient Work')).toBeInTheDocument();
     expect(screen.getAllByText('Review medication chart')).not.toHaveLength(0);
+  });
+
+  it('opens the matching patient discharge drawer from the canonical workflow link', async () => {
+    mockIsRustV2ApiMode.mockReturnValue(true);
+    const data = boardResponse();
+    data.results[0].discharge_case_id = 'discharge-1';
+    mockUseWardBoard.mockReturnValue({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
+    renderPage('/wards/ward-a/board?view=discharge&patient=patient-1&case=discharge-1', '/wards/:wardId/board');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Discharge controls discharge-1 patient-1')).toBeInTheDocument();
+  });
+
+  it('does not open discharge controls when a deep link case mismatches the patient row', async () => {
+    mockIsRustV2ApiMode.mockReturnValue(true);
+    const data = boardResponse();
+    data.results[0].discharge_case_id = 'different-case';
+    mockUseWardBoard.mockReturnValue({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
+    renderPage('/wards/ward-a/board?view=discharge&patient=patient-1&case=discharge-1', '/wards/:wardId/board');
+    await screen.findAllByLabelText(/Open ward-board details for Ama Mensah/);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('uses assigned-ward switching instead of an all-ward selector on ward boards', async () => {

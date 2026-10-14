@@ -99,9 +99,12 @@ fn authority_grants_facility_permission(
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> bool {
+    let now = Utc::now();
     authority.facility_id == facility_id
         && authority.permission_code == Some(permission)
         && authority.scope.covers_facility()
+        && authority.starts_at <= now
+        && authority.ends_at.is_none_or(|ends_at| now < ends_at)
 }
 
 impl Deref for RequestContext {
@@ -231,7 +234,8 @@ impl ReauthState {
     }
 
     pub fn is_fresh_at(&self, now: DateTime<Utc>) -> bool {
-        self.verified_at.is_some() && now <= self.required_after
+        self.verified_at
+            .is_some_and(|verified_at| verified_at <= now && now <= self.required_after)
     }
 }
 
@@ -1131,6 +1135,21 @@ mod tests {
     }
 
     #[test]
+    fn high_risk_reauth_rejects_future_and_expired_authentication_times() {
+        let mut ctx = make_ctx();
+        let now = Utc::now();
+        for verified_at in [now + Duration::seconds(1), now - Duration::minutes(16)] {
+            ctx.reauth = ReauthState::from_authentication_time(verified_at);
+            assert_eq!(
+                require_high_risk_reauth(&ctx, now),
+                Err(AccessError::ReauthRequired)
+            );
+        }
+        ctx.reauth = ReauthState::from_authentication_time(now - Duration::minutes(14));
+        assert_eq!(require_high_risk_reauth(&ctx, now), Ok(()));
+    }
+
+    #[test]
     fn authorizes_admin_access_from_active_authority_scope() {
         let mut ctx = make_ctx();
         ctx.permissions
@@ -1222,6 +1241,31 @@ mod tests {
     }
 
     #[test]
+    fn cached_authority_does_not_grant_access_outside_its_active_interval() {
+        let mut ctx = make_ctx();
+        ctx.permissions
+            .retain(|permission| *permission != PermissionCode::AdminAuthorityManage);
+        let now = Utc::now();
+        for (starts_at, ends_at) in [
+            (now + Duration::minutes(1), None),
+            (now - Duration::minutes(1), Some(now)),
+        ] {
+            let mut authority = active_authority(
+                ctx.facility_id,
+                PermissionCode::AdminAuthorityManage,
+                AuthorityScope::facility(),
+            );
+            authority.starts_at = starts_at;
+            authority.ends_at = ends_at;
+            ctx.active_authorities = vec![authority];
+            assert_eq!(
+                require_admin_authority_access(&ctx, ctx.facility_id),
+                Err(AccessError::AdminAuthorityAccessDenied)
+            );
+        }
+    }
+
+    #[test]
     fn does_not_promote_org_unit_authority_to_facility_permission() {
         let mut ctx = make_ctx();
         ctx.permissions
@@ -1276,6 +1320,7 @@ mod tests {
 
         let mut ctx = make_ctx();
         ctx.offsite = OffsiteState::OffsiteReadOnly;
+        let now = Utc::now();
         assert_eq!(
             require_high_risk_facility_permission(
                 &ctx,
