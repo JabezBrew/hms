@@ -81,6 +81,7 @@ function BalanceSummary({ intake, output, balance, label }) {
 
 function FluidEntryRow({
   record,
+  utc = false,
   allowDelete = true,
   deletionAvailable,
   deletePending,
@@ -117,7 +118,7 @@ function FluidEntryRow({
             )}
           </div>
           <div className="font-mono text-[10px] text-muted-foreground">
-            {format(new Date(record.recorded_at), 'h:mm a')}
+            {utc ? `${new Date(record.recorded_at).toISOString().slice(11, 16)} UTC` : format(new Date(record.recorded_at), 'h:mm a')}
             {record.notes && <span className="ml-2">• {record.notes}</span>}
           </div>
         </div>
@@ -353,6 +354,7 @@ function AmountField({ value, onAmountChange }) {
 
 function FluidEntryForm({
   formData,
+  rustV2Mode,
   categoryOptions,
   subcategoryOptions,
   onTypeChange,
@@ -363,16 +365,16 @@ function FluidEntryForm({
   return (
     <div className="mt-6 space-y-5">
       <EntryTypeToggle value={formData.type} onTypeChange={onTypeChange} />
-      <CategoryFields
+      {!rustV2Mode && <CategoryFields
         formData={formData}
         categoryOptions={categoryOptions}
         subcategoryOptions={subcategoryOptions}
         onCategoryChange={onCategoryChange}
         onSubcategoryChange={onSubcategoryChange}
-      />
+      />}
       <AmountField value={formData.amount} onAmountChange={(value) => onFieldChange('amount', value)} />
 
-      {formData.type === 'output' && (
+      {!rustV2Mode && formData.type === 'output' && (
         <div className="space-y-2">
           <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             Colour
@@ -387,7 +389,7 @@ function FluidEntryForm({
         </div>
       )}
 
-      <div className="space-y-2">
+      {!rustV2Mode && <div className="space-y-2">
         <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           Notes
         </Label>
@@ -398,7 +400,8 @@ function FluidEntryForm({
           className="font-mono text-sm resize-none"
           rows={2}
         />
-      </div>
+      </div>}
+      {rustV2Mode && <p className="text-sm text-muted-foreground">Records fluid volume and the current time.</p>}
     </div>
   );
 }
@@ -406,6 +409,7 @@ function FluidEntryForm({
 function RecentFluidEntries({
   records,
   loading,
+  rustV2Mode,
   deletionAvailable,
   deletePending,
   onDelete,
@@ -419,7 +423,7 @@ function RecentFluidEntries({
       <div className="my-6 border-t border-border" />
       <div>
         <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-3">
-          Today's Entries
+          Latest entries (up to 10{rustV2Mode ? ', UTC' : ''})
         </h3>
         {loading ? (
           <div className="flex items-center justify-center py-4">
@@ -431,6 +435,7 @@ function RecentFluidEntries({
               <FluidEntryRow
                 key={record.id}
                 record={record}
+                utc={rustV2Mode}
                 allowDelete
                 deletionAvailable={deletionAvailable}
                 deletePending={deletePending}
@@ -446,7 +451,9 @@ function RecentFluidEntries({
 
 function FluidEntryFooter({
   formData,
+  rustV2Mode,
   isPending,
+  writeUnconfirmed,
   onCancel,
   onSubmit,
 }) {
@@ -464,7 +471,7 @@ function FluidEntryFooter({
         <Button
           size="sm"
           onClick={onSubmit}
-          disabled={isPending || !formData.category || !formData.amount}
+          disabled={isPending || writeUnconfirmed || (!rustV2Mode && !formData.category) || !formData.amount}
           className={cn(
             'font-mono text-xs',
             formData.type === 'intake'
@@ -496,10 +503,13 @@ export function FluidEntryTab({
   summary,
   records,
   loading,
+  error,
+  onRetry,
   rustV2Mode,
   deletionAvailable,
   deletePending,
   createPending,
+  writeUnconfirmed,
   onTypeChange,
   onCategoryChange,
   onSubcategoryChange,
@@ -511,15 +521,17 @@ export function FluidEntryTab({
   return (
     <>
       <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
-        <BalanceSummary
+        {error ? <FluidReadError onRetry={onRetry} /> : loading ? <LoadingSpinner className="size-5 text-muted-foreground" /> : <BalanceSummary
           intake={summary.intake}
           output={summary.output}
           balance={summary.balance}
-          label="Today's Balance"
-        />
+          label={rustV2Mode ? "Today's Balance (UTC)" : "Today's Balance"}
+        />}
+        {writeUnconfirmed && <p role="alert" className="mt-4 text-sm text-destructive">The fluid entry may have been saved. Review the refreshed entries before recording it again. Close this panel before starting another entry.</p>}
         <RustV2DeletionNotice visible={rustV2Mode} />
         <FluidEntryForm
           formData={formData}
+          rustV2Mode={rustV2Mode}
           categoryOptions={categoryOptions}
           subcategoryOptions={subcategoryOptions}
           onTypeChange={onTypeChange}
@@ -527,22 +539,32 @@ export function FluidEntryTab({
           onSubcategoryChange={onSubcategoryChange}
           onFieldChange={onFieldChange}
         />
-        <RecentFluidEntries
+        {!error && <RecentFluidEntries
           records={records}
           loading={loading}
+          rustV2Mode={rustV2Mode}
           deletionAvailable={deletionAvailable}
           deletePending={deletePending}
           onDelete={onDelete}
-        />
+        />}
       </div>
       <FluidEntryFooter
         formData={formData}
+        rustV2Mode={rustV2Mode}
         isPending={createPending}
+        writeUnconfirmed={writeUnconfirmed}
         onCancel={onCancel}
         onSubmit={onSubmit}
       />
     </>
   );
+}
+
+function FluidReadError({ onRetry }) {
+  return <div role="alert" className="space-y-3 rounded-lg border border-border p-4">
+    <p className="text-sm text-destructive">Fluid balance could not be fully loaded. Totals and records are unavailable.</p>
+    <Button type="button" variant="outline" onClick={onRetry}>Retry</Button>
+  </div>;
 }
 
 function FluidHistoryDateNav({
@@ -622,24 +644,28 @@ function FluidHistoryContent({
   summary,
   records,
   loading,
+  error,
+  onRetry,
   rustV2Mode,
   deletionAvailable,
   deletePending,
   onDelete,
 }) {
+  if (error) return <div className="flex-1 p-6"><FluidReadError onRetry={onRetry} /></div>;
   return (
     <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
-      <BalanceSummary
+      {!loading && <BalanceSummary
         intake={summary.intake}
         output={summary.output}
         balance={summary.balance}
-        label={isHistoryToday ? "Today's Balance" : `${format(historyDate, 'MMM d')} Balance`}
-      />
+        label={`${isHistoryToday ? "Today's Balance" : `${format(historyDate, 'MMM d')} Balance`}${rustV2Mode ? ' (UTC)' : ''}`}
+      />}
       <RustV2DeletionNotice visible={rustV2Mode} />
 
       <div className="mt-6">
         <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-3">
           {isHistoryToday ? "Today's Entries" : `Entries for ${format(historyDate, 'MMMM d, yyyy')}`}
+          {rustV2Mode ? ' (UTC)' : ''}
         </h3>
 
         {loading ? (
@@ -658,6 +684,7 @@ function FluidHistoryContent({
                 <FluidEntryRow
                   key={record.id}
                   record={record}
+                  utc={rustV2Mode}
                   allowDelete={isHistoryToday}
                   deletionAvailable={deletionAvailable}
                   deletePending={deletePending}
@@ -700,6 +727,8 @@ export function FluidHistoryTab({
   summary,
   records,
   loading,
+  error,
+  onRetry,
   rustV2Mode,
   deletionAvailable,
   deletePending,
@@ -730,12 +759,14 @@ export function FluidHistoryTab({
         summary={summary}
         records={records}
         loading={loading}
+        error={error}
+        onRetry={onRetry}
         rustV2Mode={rustV2Mode}
         deletionAvailable={deletionAvailable}
         deletePending={deletePending}
         onDelete={onDelete}
       />
-      <FluidHistoryFooter count={records.length} onClose={onClose} />
+      <FluidHistoryFooter count={error || loading ? '—' : records.length} onClose={onClose} />
     </>
   );
 }

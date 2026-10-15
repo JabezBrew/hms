@@ -36,6 +36,24 @@ handlers.
 - Payment integrations or external claim submission must not run inside open DB
   transactions.
 
+## NHIS Mapping And Batch Boundaries
+
+- Mapping creation requires an active same-facility service and, when supplied,
+  an active same-facility payer. A service-row lock serializes globally increasing
+  version numbers across payer scopes. Existing effective versions are retained.
+- Claims snapshot a generic mapping (`payer_id IS NULL`) effective on the
+  invoice's UTC issue date. The
+  current invoice/claim contract has no explicit payer provenance; payer-specific
+  mappings must not be selected by guessing from patient insurance records.
+  Later mapping versions do not rewrite an existing claim snapshot.
+- Batches accept 1–100 distinct, unbatched draft/ready claims of one facility and
+  currency. Ordered claim locks serialize overlapping selections; terminal or
+  submitted statuses, mixed currencies, and overflowing totals reject atomically.
+  Membership is inserted in one bounded statement. Audit metadata contains only
+  workflow facts, with request correlation and no service code or patient text.
+- These guards do not implement external claim submission, remittance allocation,
+  or AR settlement. Those remain separate workflow contracts.
+
 ## Verification
 
 Run from `backend-rs/`:

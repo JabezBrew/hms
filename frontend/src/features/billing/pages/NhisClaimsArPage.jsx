@@ -12,6 +12,10 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { billingApi } from '@/features/billing/api';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useAuth } from '@/lib/auth';
+import { userHasCapability } from '@/shared/lib/access';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { NhisBatchCreateDialog } from '../components/NhisBatchCreateDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -62,8 +66,12 @@ const GHS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-GH', {
 
 const NHIS_TABS = ['batches', 'exports', 'remittances', 'ar'];
 
-function formatCurrency(amount) {
+function formatCurrency(amount, currency = 'GHS') {
   const n = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (currency !== 'GHS') {
+    try { return new Intl.NumberFormat('en-GH', { style: 'currency', currency }).format(Number.isFinite(n) ? n : 0); }
+    catch { return `${Number.isFinite(n) ? n.toFixed(2) : '—'} ${currency}`; }
+  }
   return GHS_CURRENCY_FORMATTER.format(Number.isFinite(n) ? n : 0);
 }
 
@@ -128,6 +136,7 @@ function RemittanceStatusBadge({ status }) {
 }
 
 function createBatchColumns({
+  rustV2Mode,
   lintBatchMutation,
   exportBatchMutation,
   setTab,
@@ -136,12 +145,12 @@ function createBatchColumns({
   return [
     {
       key: 'period',
-      header: 'Period',
+      header: rustV2Mode ? 'Batch' : 'Period',
       width: '260px',
       render: (row) => (
         <div>
           <p className="font-mono text-sm text-foreground">
-            {formatDate(row.period_start)} to {formatDate(row.period_end)}
+            {rustV2Mode ? row.batch_number || '—' : `${formatDate(row.period_start)} to ${formatDate(row.period_end)}`}
           </p>
           <p className="font-mono text-xs text-muted-foreground">
             Created {formatDate(row.created_at)}
@@ -175,7 +184,7 @@ function createBatchColumns({
       cellClassName: 'text-right',
       render: (row) => (
         <span className="font-mono text-sm text-foreground">
-          {formatCurrency(row.total_claimed_amount)}
+          {formatCurrency(row.total_claimed_amount, row.currency)}
         </span>
       ),
     },
@@ -188,6 +197,7 @@ function createBatchColumns({
       render: (row) => (
         <BatchActions
           row={row}
+          lintAvailable={!rustV2Mode}
           lintBatchMutation={lintBatchMutation}
           exportBatchMutation={exportBatchMutation}
           setTab={setTab}
@@ -198,7 +208,7 @@ function createBatchColumns({
   ];
 }
 
-function BatchActions({ row, lintBatchMutation, exportBatchMutation, setTab, setForceExportDialog }) {
+function BatchActions({ row, lintAvailable, lintBatchMutation, exportBatchMutation, setTab, setForceExportDialog }) {
   const lintBatch = async () => {
     try {
       const res = await lintBatchMutation.mutateAsync(row.id);
@@ -234,7 +244,7 @@ function BatchActions({ row, lintBatchMutation, exportBatchMutation, setTab, set
 
   return (
     <div className="flex justify-end gap-2">
-      <Button
+      {lintAvailable && <Button
         variant="outline"
         size="sm"
         className="font-mono text-xs"
@@ -242,7 +252,7 @@ function BatchActions({ row, lintBatchMutation, exportBatchMutation, setTab, set
         onClick={lintBatch}
       >
         Lint
-      </Button>
+      </Button>}
       <Button
         size="sm"
         className="font-mono text-xs"
@@ -457,6 +467,7 @@ function RemittanceMatchStatusBadge({ status }) {
 }
 
 export default function NhisClaimsArPage() {
+  const { user } = useAuth();
   const [tab, setTab] = useUrlEnumParam({
     param: 'tab',
     values: NHIS_TABS,
@@ -466,6 +477,8 @@ export default function NhisClaimsArPage() {
   const periodBatchCreationAvailable = !rustV2Mode;
   const exportDownloadsAvailable = !rustV2Mode;
   const remittanceFileImportAvailable = !rustV2Mode;
+  const selectedBatchCreationAvailable = rustV2Mode && userHasCapability(user, 'nhis.claim.manage');
+  const [isBatchDialogOpen, setBatchDialogOpen] = useState(false);
 
   // Batches
   const [batchPage, setBatchPage] = useState(1);
@@ -534,12 +547,13 @@ export default function NhisClaimsArPage() {
 
   const batchColumns = useMemo(
     () => createBatchColumns({
+      rustV2Mode,
       lintBatchMutation,
       exportBatchMutation,
       setTab,
       setForceExportDialog,
     }),
-    [exportBatchMutation, lintBatchMutation, setTab]
+    [exportBatchMutation, lintBatchMutation, setTab, rustV2Mode]
   );
 
   const exportColumns = useMemo(
@@ -557,7 +571,8 @@ export default function NhisClaimsArPage() {
   const dso = dsoQuery.data || {};
   const queue = queueQuery.data || {};
 
-  if (isLoading) {
+  const hasLoadedPage = batchesQuery.data && exportsQuery.data && remittancesQuery.data;
+  if (isLoading && !hasLoadedPage && !isBatchDialogOpen) {
     return (
       <PageState variant="loading">
         <Skeleton className="h-12 w-64" />
@@ -571,7 +586,7 @@ export default function NhisClaimsArPage() {
     );
   }
 
-  if (error) {
+  if (error && !hasLoadedPage && !isBatchDialogOpen) {
     return (
       <PageState
         variant="error"
@@ -605,6 +620,10 @@ export default function NhisClaimsArPage() {
       />
 
       <div className="p-4 sm:p-6">
+        {error && <Alert variant="destructive" className="mb-4">
+          <AlertTitle>NHIS records could not be refreshed</AlertTitle>
+          <AlertDescription className="flex flex-col items-start gap-2"><p>The last loaded records are shown. Refresh successfully before creating another batch.</p><Button type="button" variant="outline" size="sm" onClick={handleRefresh}>Retry NHIS refresh</Button></AlertDescription>
+        </Alert>}
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full sm:w-auto">
             <TabsTrigger value="batches" className="font-mono text-xs">Batches</TabsTrigger>
@@ -614,6 +633,9 @@ export default function NhisClaimsArPage() {
           </TabsList>
 
           <BatchesTab
+            selectedBatchCreationAvailable={selectedBatchCreationAvailable}
+            batchCreationDisabled={Boolean(error)}
+            onCreateSelectedBatch={() => setBatchDialogOpen(true)}
             periodBatchCreationAvailable={periodBatchCreationAvailable}
             periodStart={periodStart}
             periodEnd={periodEnd}
@@ -668,6 +690,8 @@ export default function NhisClaimsArPage() {
         </Tabs>
       </div>
 
+      {isBatchDialogOpen && selectedBatchCreationAvailable && <NhisBatchCreateDialog onClose={() => setBatchDialogOpen(false)} />}
+
       <ForceExportDialog
         forceExportDialog={forceExportDialog}
         setForceExportDialog={setForceExportDialog}
@@ -688,6 +712,9 @@ export default function NhisClaimsArPage() {
 }
 
 function BatchesTab({
+  selectedBatchCreationAvailable,
+  batchCreationDisabled,
+  onCreateSelectedBatch,
   periodBatchCreationAvailable,
   periodStart,
   periodEnd,
@@ -716,12 +743,10 @@ function BatchesTab({
           setBatchNotes={setBatchNotes}
           createBatchMutation={createBatchMutation}
         />
-      ) : (
-        <UnavailableNotice
-          label="Rust V2 batch creation"
-          description="Period-based NHIS batch creation is not available in Rust V2 mode yet. Existing batches can still be reviewed, linted, and exported through supported Rust V2 contracts."
-        />
-      )}
+      ) : <section className="flex flex-col items-start gap-3 rounded-lg border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div><h2 className="font-display text-lg">Create a batch from selected claims</h2><p className="text-sm text-muted-foreground">{selectedBatchCreationAvailable ? 'Review and select draft or ready claims from a single page before saving a draft batch.' : 'Creating batches requires NHIS claims management permission. Existing batches remain available for review.'}</p></div>
+        {selectedBatchCreationAvailable && <Button type="button" onClick={onCreateSelectedBatch} disabled={batchCreationDisabled}>Select claims for batch</Button>}
+      </section>}
 
       <PaginatedTableSection
         title="Batches"

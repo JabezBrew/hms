@@ -9,8 +9,8 @@ use hms_db::patients::{
 };
 use hms_domain::auth::{
     BreakGlassGrant, BreakGlassGrantDenialReason, BreakGlassGrantOutcome,
-    ClinicalPatientAccessDecision, ClinicalPatientAccessSource, EndBreakGlassGrantsResponse,
-    StartBreakGlassGrantRequest,
+    ClinicalPatientAccessDecision, ClinicalPatientAccessSource, CurrentBreakGlassStatus,
+    EndBreakGlassGrantsResponse, StartBreakGlassGrantRequest,
 };
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
@@ -61,6 +61,7 @@ pub struct ChronicleTimelineQuery {
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct PatientChronicleStartup {
+    pub access_source: ClinicalPatientAccessSource,
     pub patient: PatientDetail,
     pub identity: PatientChronicleIdentitySummary,
     pub generated_at: DateTime<Utc>,
@@ -668,10 +669,11 @@ impl PatientsService {
         let cacheable_startup = chronicle_startup_cacheable(&query);
         let (patient, decision) = load_patient_for_chronicle_access(&self.state, ctx, id).await?;
         if cacheable_startup {
-            if let Some(response) = self
+            if let Some(mut response) = self
                 .state
                 .cached_patient_chronicle_startup(ctx, id, page.limit)
             {
+                response.data.access_source = decision.source;
                 return Ok(response);
             }
         }
@@ -680,10 +682,11 @@ impl PatientsService {
                 .state
                 .patient_chronicle_startup_cache_lock(ctx, id, page.limit);
             let guard = lock.lock_owned().await;
-            if let Some(response) = self
+            if let Some(mut response) = self
                 .state
                 .cached_patient_chronicle_startup(ctx, id, page.limit)
             {
+                response.data.access_source = decision.source;
                 return Ok(response);
             }
             Some(guard)
@@ -782,6 +785,43 @@ impl PatientsService {
         })?;
 
         Ok(object(summary))
+    }
+
+    pub async fn current_break_glass_status(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+    ) -> Result<ObjectResponse<CurrentBreakGlassStatus>, ApiError> {
+        hms_access::require_feature(ctx, FeatureKey::Patients).map_err(|_| {
+            ApiError::forbidden("feature_disabled", "Patient workflows are not enabled.")
+        })?;
+        hms_access::require_patient_workflow_access(
+            ctx,
+            self.facility_id(),
+            PermissionCode::PatientBreakGlassInvoke,
+        )
+        .map_err(|_| {
+            ApiError::forbidden(
+                "permission_denied",
+                "Dedicated emergency access and patient identity permissions are required.",
+            )
+        })?;
+        let status = hms_db::auth::current_break_glass_status_for_patient(
+            self.pool(),
+            self.facility_id(),
+            ctx.user_id,
+            patient_id,
+            Utc::now(),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "break_glass_status_failed",
+                "Emergency access status could not be checked.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
+        Ok(object(status))
     }
 
     pub async fn start_break_glass_grant(
@@ -1466,6 +1506,7 @@ fn patient_chronicle_startup_from_read(
     );
 
     PatientChronicleStartup {
+        access_source: decision.source,
         patient: patient_detail,
         identity,
         generated_at,

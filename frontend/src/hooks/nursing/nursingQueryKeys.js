@@ -53,12 +53,17 @@ export const nursingKeys = {
   fluidBalance: (patientId, admissionId, entryType, date, startDate, endDate) =>
     keyWith('fluid-balance', patientId, admissionId, entryType, date, startDate, endDate),
   fluidBalanceAll: () => keyWith('fluid-balance'),
+  fluidBalanceWindow: (patient, scope, query) => keyWith('fluid-balance', 'patient', patient, scope, query),
   fluidBalanceTrends: (patientId, admissionId, startDate, endDate) =>
     keyWith('fluid-balance-trends', patientId, admissionId, startDate, endDate),
+  fluidBalanceTrendsAll: () => keyWith('fluid-balance-trends'),
+  fluidBalanceTrendWindow: (patient, scope, query) => keyWith('fluid-balance-trends', 'patient', patient, scope, query),
   fluidBalanceSummary: (patientId, date) => keyWith('fluid-balance-summary', patientId, date),
   fluidBalanceSummaryAll: () => keyWith('fluid-balance-summary'),
+  fluidBalanceSummaryWindow: (patient, scope, query) => keyWith('fluid-balance-summary', 'patient', patient, scope, query),
   fluidBalanceToday: (patientId) => keyWith('fluid-balance-today', patientId),
   fluidBalanceTodayAll: () => keyWith('fluid-balance-today'),
   fluidBalanceSettings: () => keyWith('fluid-balance-settings'),
-  fluidBalanceAlerts: (patientId, date) => keyWith('fluid-balance-alerts', patientId, date),
+  fluidBalanceAlerts: (patientId, date, scope) => keyWith('fluid-balance-alerts', patientId, date, scope),
+  fluidBalanceAlertsAll: () => keyWith('fluid-balance-alerts'),
 };

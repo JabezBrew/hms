@@ -56,3 +56,21 @@ Logs: `/tmp/hms-phase2-workspace-acceptance.log`,
 `/tmp/hms-phase2-final-quality.log`. The staged source hashes matched the tested
 workspace sources before commit. GitHub Actions remains disabled; this evidence
 does not yet establish deployment of this increment.
+
+## Verified synthetic staging release
+
+The first increment was committed and pushed as
+`f90a8cebbfbe028f496a0d97fd39b9944e21c98b` and deployed to the existing free
+synthetic host at `https://staging.thehms.systems`. Public readiness returned
+200 and anonymous identity access returned 401. Thirty release checks passed,
+including exact API/worker runtime commit, native ARM64 images, healthy
+containers, all four phase migrations, minimal bounded medication catalog,
+stock-linked prescription persistence and preserved stopped-medication history.
+The synthetic verification prescription was stopped after checking it.
+
+A 100-request origin read smoke at concurrency five had p50 4.32 ms and p99
+8.89 ms. This is release-health evidence, not a production capacity or public
+edge latency result. Private source/config/database backups and rollback image
+tags are preserved in `/home/ubuntu/hms-phase-two-rollback`; the prior source is
+retained at `/home/ubuntu/hms-source-before-f90a8cebb`. Archive checksum and
+source/build identity were verified. GitHub Actions remains disabled.

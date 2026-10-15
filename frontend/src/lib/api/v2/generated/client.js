@@ -912,7 +912,41 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id",
+      "admission_case_id",
+      "recorded_from",
+      "recorded_before",
+      "descending"
+    ],
+    "hasBody": false
+  },
+  "getFluidBalanceSummary": {
+    "operationId": "getFluidBalanceSummary",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-balance/summary",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "recorded_from",
+      "recorded_before"
+    ],
+    "hasBody": false
+  },
+  "getFluidBalanceTrends": {
+    "operationId": "getFluidBalanceTrends",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-balance/trends",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "patient_id",
+      "admission_case_id",
+      "recorded_from",
+      "recorded_before",
+      "descending"
     ],
     "hasBody": false
   },
@@ -1630,6 +1664,16 @@ export const operations = {
       "cursor",
       "limit"
     ],
+    "hasBody": false
+  },
+  "getPatientBreakGlass": {
+    "operationId": "getPatientBreakGlass",
+    "method": "GET",
+    "path": "/api/v2/patients/{id}/break-glass",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getPatientById": {
@@ -4229,6 +4273,8 @@ export function createGeneratedClient(request) {
     getEncounterCareTeam: createOperation(request, operations.getEncounterCareTeam),
     getEncounters: createOperation(request, operations.getEncounters),
     getFluidBalanceEntries: createOperation(request, operations.getFluidBalanceEntries),
+    getFluidBalanceSummary: createOperation(request, operations.getFluidBalanceSummary),
+    getFluidBalanceTrends: createOperation(request, operations.getFluidBalanceTrends),
     getGoodsReceivedNoteById: createOperation(request, operations.getGoodsReceivedNoteById),
     getGoodsReceivedNotes: createOperation(request, operations.getGoodsReceivedNotes),
     getHandoffs: createOperation(request, operations.getHandoffs),
@@ -4285,6 +4331,7 @@ export function createGeneratedClient(request) {
     getOpsServiceErrors: createOperation(request, operations.getOpsServiceErrors),
     getOpsSlowQueryFingerprints: createOperation(request, operations.getOpsSlowQueryFingerprints),
     getPatientAllergies: createOperation(request, operations.getPatientAllergies),
+    getPatientBreakGlass: createOperation(request, operations.getPatientBreakGlass),
     getPatientById: createOperation(request, operations.getPatientById),
     getPatientChartEntries: createOperation(request, operations.getPatientChartEntries),
     getPatientChronicle: createOperation(request, operations.getPatientChronicle),

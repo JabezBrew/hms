@@ -169,6 +169,17 @@ pub struct StartBreakGlassGrantRequest {
     pub reason_text: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+pub struct BreakGlassGrantSummary {
+    pub id: Uuid,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+pub struct CurrentBreakGlassStatus {
+    pub grant: Option<BreakGlassGrantSummary>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct EndBreakGlassGrantsResponse {
     pub ended_count: u64,

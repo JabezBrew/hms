@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
+import { ChronicleEmergencyAccess } from './ChronicleEmergencyAccess';
 
 const ClinicalSummarySidebar = lazy(() => import('@/components/chronicle/ClinicalSummarySidebar'));
 const ChronicleTimelinePanel = lazy(() => import('@/features/patients/chronicle/ChronicleTimelinePanel'));
@@ -207,6 +208,7 @@ export function PatientChroniclePageContent({
   chronicleContext,
   chronicleTimelineState,
   dischargeState,
+  emergencyAccess,
   encounters,
   fetchNextPage,
   filteredEntries,
@@ -296,6 +298,7 @@ export function PatientChroniclePageContent({
     <>
       {pageMeta}
       <div className="min-h-screen max-w-full overflow-x-clip bg-background">
+        {emergencyAccess && <div className="px-4 pt-4 sm:px-6"><ChronicleEmergencyAccess {...emergencyAccess} /></div>}
         <div data-perf-ready="patient-chronicle">
           <PatientIdentityHero
             patient={patientForChronicle}

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -6,6 +6,8 @@ import { encounterKeys } from "@/features/encounters/hooks/useEncounterQueries";
 import { patientsApi } from "@/features/patients/api";
 import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
 import { timelineKeys } from "@/hooks/useTimelineQueries";
+import { userHasCapability } from '@/shared/lib/access';
+import { useRustBreakGlassAccess } from './useRustBreakGlassAccess';
 
 const BREAK_GLASS_ROLES = new Set(['admin', 'doctor', 'nurse']);
 
@@ -20,16 +22,26 @@ export function useChronicleBreakGlassAccess({
   rustV2Mode,
   startupError,
   user,
+  reauthenticate,
+  accessSource,
 }) {
   const queryClient = useQueryClient();
   const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
   const [breakGlassExpiresAt, setBreakGlassExpiresAt] = useState(null);
+  useEffect(() => {
+    setBreakGlassOpen(false);
+    setBreakGlassReason('');
+    setBreakGlassExpiresAt(null);
+  }, [patientId]);
 
   const userRole = user?.role || user?.user_type;
-  const canRequestBreakGlass = !rustV2Mode && BREAK_GLASS_ROLES.has(userRole);
+  const rustAccess = useRustBreakGlassAccess({ enabled: rustV2Mode, patientId, user, reauthenticate, refetchContext, accessSource });
+  const canRequestBreakGlass = rustV2Mode
+    ? userHasCapability(user, 'patient.break_glass.invoke')
+    : BREAK_GLASS_ROLES.has(userRole);
   const accessDenied = rustV2Mode
-    ? !isLoading && startupError?.status === 403
+    ? rustAccess.blocked || (!isLoading && startupError?.status === 403)
     : patient && !isLoading && patient?.access?.clinical === false;
 
   const breakGlassMutation = useMutation({
@@ -63,10 +75,14 @@ export function useChronicleBreakGlassAccess({
     },
   });
 
-  const submitBreakGlass = useCallback(() => {
+  const submitBreakGlass = useCallback(async (payload) => {
     if (rustV2Mode) {
-      toast.error('Break-glass access is not available in Rust V2 mode.');
-      return;
+      const granted = await rustAccess.submit(payload);
+      if (granted) {
+        setBreakGlassReason('');
+        setBreakGlassOpen(false);
+      }
+      return granted;
     }
 
     const reason = breakGlassReason.trim();
@@ -77,15 +93,21 @@ export function useChronicleBreakGlassAccess({
       reason,
       scope: 'clinical',
     });
-  }, [breakGlassMutation, breakGlassReason, rustV2Mode]);
+  }, [breakGlassMutation, breakGlassReason, rustAccess, rustV2Mode]);
 
   return {
     accessDenied,
-    breakGlassExpiresAt,
+    breakGlassExpiresAt: rustV2Mode ? rustAccess.grant?.expires_at : breakGlassExpiresAt,
     breakGlassReason,
     canRequestBreakGlass,
     isBreakGlassOpen,
-    isSubmittingBreakGlass: breakGlassMutation.isPending,
+    isSubmittingBreakGlass: rustV2Mode ? rustAccess.busy || rustAccess.statusLoading : breakGlassMutation.isPending,
+    breakGlassError: rustV2Mode ? rustAccess.error : null,
+    breakGlassRefreshError: rustV2Mode && rustAccess.refreshError,
+    breakGlassUnconfirmed: rustV2Mode && rustAccess.unconfirmed,
+    breakGlassStatusError: rustV2Mode && rustAccess.statusError,
+    endBreakGlass: rustAccess.end,
+    refreshBreakGlassAccess: rustAccess.refreshAccess,
     setBreakGlassOpen,
     setBreakGlassReason,
     submitBreakGlass,

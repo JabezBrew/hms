@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ItemDetailPage from '../ItemDetailPage';
 
+const fixture = vi.hoisted(() => ({ unitPrice: 2.5 }));
+
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { adminAccess: { capabilities: [] } } }) }));
 
 vi.mock('@/features/inventory/hooks', () => ({
@@ -17,7 +19,7 @@ vi.mock('@/features/inventory/hooks', () => ({
       total_stock: 120,
       reorder_level: 20,
       max_stock_level: 500,
-      unit_price: 2.5,
+      unit_price: fixture.unitPrice,
       is_controlled: false,
       is_active: true,
     },
@@ -55,6 +57,15 @@ function renderPage() {
 describe('ItemDetailPage Rust V2 guards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fixture.unitPrice = 2.5;
+  });
+
+  it('does not invent a zero price or stock value when no price is returned', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    fixture.unitPrice = undefined;
+    renderPage();
+    expect(screen.getAllByText('Unavailable')).toHaveLength(4);
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
   });
 
   afterEach(() => {

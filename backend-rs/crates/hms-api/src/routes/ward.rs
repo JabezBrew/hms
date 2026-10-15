@@ -159,6 +159,14 @@ pub fn routes() -> Router<AppState> {
             get(ward::list_fluid_balance_entries).post(ward::create_fluid_balance_entry),
         )
         .route(
+            "/api/v2/nursing/fluid-balance/summary",
+            get(ward::fluid_balance_summary),
+        )
+        .route(
+            "/api/v2/nursing/fluid-balance/trends",
+            get(ward::fluid_balance_trends),
+        )
+        .route(
             "/api/v2/nursing/ward-stock-requests",
             get(ward::list_ward_stock_requests).post(ward::create_ward_stock_request),
         )

@@ -67,6 +67,12 @@ lives in `hms-db::ward`.
   Patient/admission filters must be authorized and applied before pagination;
   mismatched patient/admission pairs are rejected. Unspecified ordering remains
   ascending; history may explicitly request descending order.
+- Fluid lists use patient/admission scope and `[recorded_from, recorded_before)`
+  bounds before schedule/id pagination. Summary and daily-trend reads require a
+  patient or admission, authorize that scope, and reject mismatched pairs.
+  Summary totals aggregate all scoped rows independently of list limits; daily
+  aggregates are complete per UTC day and cursor-paginated. Date expressions
+  belong in aggregation only, never in the indexed timestamp range predicates.
 - External side effects belong in worker jobs or later async paths, not inside
   open DB transactions.
 

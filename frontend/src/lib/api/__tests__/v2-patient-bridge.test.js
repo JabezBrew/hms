@@ -853,9 +853,34 @@ describe('Rust V2 patient bridge', () => {
       'Patient deletion is not supported by Rust V2',
     );
     await expect(patientsApi.getPatientHistory('patient-1')).resolves.toEqual([]);
-    await expect(patientsApi.requestBreakGlass('patient-1', { reason: 'care continuity' })).rejects.toThrow(
-      'Break-glass access is not supported by Rust V2',
-    );
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses typed grant, current status, and end contracts without legacy scope or password fields', async () => {
+    const grant = { id: 'grant-1', expires_at: '2026-10-15T23:00:00Z' };
+    for (const data of [grant, { grant }, { ended_count: 1 }]) {
+      globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    }
+    const signal = new AbortController().signal;
+    await expect(patientsApi.requestBreakGlass('patient-1', {
+      category: 'urgent_clinical_continuity', reason_text: 'Urgent continuity', scope: 'clinical', password: 'never forwarded',
+    }, { signal })).resolves.toEqual(grant);
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(1, 'http://localhost:8080/api/v2/patients/patient-1/break-glass', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ category: 'urgent_clinical_continuity', reason_text: 'Urgent continuity' }), signal,
+    }));
+    await expect(patientsApi.getBreakGlassStatus('patient-1', { signal })).resolves.toEqual({ grant });
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(2, 'http://localhost:8080/api/v2/patients/patient-1/break-glass', expect.objectContaining({ method: 'GET', signal }));
+    await expect(patientsApi.endBreakGlass('patient-1', { signal })).resolves.toEqual({ ended_count: 1 });
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(3, 'http://localhost:8080/api/v2/patients/patient-1/break-glass/end', expect.objectContaining({ method: 'POST', signal }));
+  });
+
+  it.each(['requestBreakGlass', 'getBreakGlassStatus', 'endBreakGlass'])('preserves cancellation in %s', async (method) => {
+    const abort = new DOMException('Aborted', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abort);
+    const signal = new AbortController().signal;
+    const args = method === 'requestBreakGlass'
+      ? ['patient-1', { category: 'other_emergency' }, { signal }]
+      : ['patient-1', { signal }];
+    await expect(patientsApi[method](...args)).rejects.toBe(abort);
   });
 });

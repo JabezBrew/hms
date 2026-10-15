@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import NhisServiceMappingsPage from '../NhisServiceMappingsPage';
 
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { adminAccess: { capabilities: [] } } }) }));
+
 vi.mock('@/features/billing/hooks', () => ({
   useInsuranceProviders: () => ({
     data: {
@@ -94,7 +96,7 @@ describe('NhisServiceMappingsPage Rust V2 guards', () => {
     expect(screen.queryByRole('button', { name: /apply import/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(
-      screen.getByText(/nhis mapping editing and import are not available in rust v2/i),
+      screen.getByText(/creating mappings requires nhis claims management permission/i),
     ).toBeInTheDocument();
     expect(screen.getByText('General Consultation')).toBeInTheDocument();
   });

@@ -110,6 +110,7 @@ function TrendReviewSlideOverContent({
   const {
     data: fluidTrendData = [],
     isLoading: fluidLoading,
+    error: fluidError,
   } = useFluidBalanceTrends(patientId, fluidFilters, {
     enabled: !!patientId && (allHistory || !!admissionId),
   });
@@ -180,6 +181,7 @@ function TrendReviewSlideOverContent({
       allHistory={allHistory}
       encounterId={encounterId}
       fluidLoading={fluidLoading}
+      fluidError={fluidError}
       fluidSummary={fluidSummary}
       formattedFluidTrendData={formattedFluidTrendData}
       formattedVitals={formattedVitals}

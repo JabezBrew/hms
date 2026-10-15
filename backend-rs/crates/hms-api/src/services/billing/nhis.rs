@@ -1,7 +1,7 @@
 use chrono::Utc;
 use hms_db::billing::{
     ClaimListFilters, NewClaim, NewNhisArAdjustment, NewNhisBatch, NewNhisServiceMapping,
-    NewRemittanceImport, NhisServiceMappingFilters, RemittanceLineFilters,
+    NewRemittanceImport, NhisServiceMappingFilters, NhisWriteConflict, RemittanceLineFilters,
 };
 use hms_domain::billing::{
     BillingListQuery, ClaimListItem, ClaimListQuery, CreateClaimRequest, CreateNhisBatchRequest,
@@ -22,6 +22,28 @@ use crate::state::AppState;
 #[derive(Clone)]
 pub struct NhisService {
     state: AppState,
+}
+
+fn nhis_write_error(
+    error: anyhow::Error,
+    fallback_code: &'static str,
+    fallback_message: &'static str,
+) -> ApiError {
+    if let Some(conflict) = error.downcast_ref::<NhisWriteConflict>() {
+        let code = match conflict {
+            NhisWriteConflict::ServiceUnavailable => "nhis_service_unavailable",
+            NhisWriteConflict::PayerUnavailable => "nhis_payer_unavailable",
+            NhisWriteConflict::InvalidClaimSet => "nhis_batch_claim_set_invalid",
+            NhisWriteConflict::ClaimsUnavailable => "nhis_batch_claims_unavailable",
+            NhisWriteConflict::ClaimsIneligible => "nhis_batch_claims_ineligible",
+            NhisWriteConflict::ClaimsAlreadyBatched => "nhis_batch_claims_already_batched",
+            NhisWriteConflict::MixedCurrencies => "nhis_batch_currency_mismatch",
+            NhisWriteConflict::AmountOutOfRange => "nhis_amount_out_of_range",
+            NhisWriteConflict::MappingVersionExhausted => "nhis_mapping_version_exhausted",
+        };
+        return ApiError::conflict(code, conflict.message());
+    }
+    ApiError::conflict(fallback_code, fallback_message)
 }
 
 impl NhisService {
@@ -132,11 +154,13 @@ impl NhisService {
                 effective_from: payload.effective_from,
                 effective_until: payload.effective_until,
                 actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
+        .map_err(|error| {
+            nhis_write_error(
+                error,
                 "nhis_mapping_create_failed",
                 "NHIS service mapping could not be saved.",
             )
@@ -231,11 +255,16 @@ impl NhisService {
                 batch_number: format!("NHB-{}", &id.simple().to_string()[..10].to_uppercase()),
                 claim_ids: payload.claim_ids,
                 actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict("nhis_batch_create_failed", "NHIS batch could not be saved.")
+        .map_err(|error| {
+            nhis_write_error(
+                error,
+                "nhis_batch_create_failed",
+                "NHIS batch could not be saved.",
+            )
         })?;
         Ok(object(batch))
     }

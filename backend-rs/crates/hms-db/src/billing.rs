@@ -18,6 +18,43 @@ use uuid::Uuid;
 use crate::codec;
 use crate::PgPool;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NhisWriteConflict {
+    ServiceUnavailable,
+    PayerUnavailable,
+    InvalidClaimSet,
+    ClaimsUnavailable,
+    ClaimsIneligible,
+    ClaimsAlreadyBatched,
+    MixedCurrencies,
+    AmountOutOfRange,
+    MappingVersionExhausted,
+}
+
+impl NhisWriteConflict {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::ServiceUnavailable => "An active service in this facility is required.",
+            Self::PayerUnavailable => "An active payer in this facility is required.",
+            Self::InvalidClaimSet => "Select between 1 and 100 distinct claims.",
+            Self::ClaimsUnavailable => "One or more claims are unavailable in this facility.",
+            Self::ClaimsIneligible => "Only draft or ready claims can be added to a batch.",
+            Self::ClaimsAlreadyBatched => "One or more claims already belong to a batch.",
+            Self::MixedCurrencies => "All claims in a batch must use the same currency.",
+            Self::AmountOutOfRange => "The selected claim total is outside the supported range.",
+            Self::MappingVersionExhausted => "The service mapping version limit has been reached.",
+        }
+    }
+}
+
+impl std::fmt::Display for NhisWriteConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl std::error::Error for NhisWriteConflict {}
+
 #[derive(Clone, Debug)]
 pub struct BillingCursor {
     pub occurred_at: DateTime<Utc>,
@@ -182,6 +219,7 @@ pub struct NewNhisBatch {
     pub batch_number: String,
     pub claim_ids: Vec<Uuid>,
     pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -226,6 +264,7 @@ pub struct NewNhisServiceMapping {
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
     pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -455,17 +494,24 @@ struct PriceContextRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct InvoiceContextRow {
-    patient_id: Uuid,
     gross_amount_minor: i64,
     paid_amount_minor: i64,
     currency: String,
 }
 
 #[derive(Clone, Debug, FromRow)]
+struct ClaimInvoiceContextRow {
+    patient_id: Uuid,
+    gross_amount_minor: i64,
+    currency: String,
+    issued_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
 struct ClaimAmountRow {
-    id: Uuid,
     amount_minor: i64,
     currency: String,
+    status: String,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -1057,7 +1103,7 @@ pub async fn create_payment(pool: &PgPool, payment: NewPayment) -> anyhow::Resul
     let mut transaction = pool.begin().await?;
     let invoice = sqlx::query_as::<_, InvoiceContextRow>(
         r#"
-        SELECT patient_id, gross_amount_minor, paid_amount_minor, currency
+        SELECT gross_amount_minor, paid_amount_minor, currency
         FROM invoices
         WHERE facility_id = $1 AND id = $2
         FOR UPDATE
@@ -1238,9 +1284,9 @@ pub async fn get_claim(
 
 pub async fn create_claim(pool: &PgPool, claim: NewClaim) -> anyhow::Result<ClaimListItem> {
     let mut transaction = pool.begin().await?;
-    let invoice = sqlx::query_as::<_, InvoiceContextRow>(
+    let invoice = sqlx::query_as::<_, ClaimInvoiceContextRow>(
         r#"
-        SELECT patient_id, gross_amount_minor, paid_amount_minor, currency
+        SELECT patient_id, gross_amount_minor, currency, issued_at
         FROM invoices
         WHERE facility_id = $1 AND id = $2
         FOR UPDATE
@@ -1251,8 +1297,13 @@ pub async fn create_claim(pool: &PgPool, claim: NewClaim) -> anyhow::Result<Clai
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or_else(|| anyhow::anyhow!("invoice was not found"))?;
-    let mapping =
-        claim_mapping_context(&mut transaction, claim.facility_id, claim.invoice_id).await?;
+    let mapping = claim_mapping_context(
+        &mut transaction,
+        claim.facility_id,
+        claim.invoice_id,
+        invoice.issued_at.date_naive(),
+    )
+    .await?;
 
     sqlx::query(
         r#"
@@ -1346,33 +1397,65 @@ pub async fn create_nhis_batch(
     batch: NewNhisBatch,
 ) -> anyhow::Result<NhisBatchListItem> {
     if batch.claim_ids.is_empty() || batch.claim_ids.len() > 100 {
-        anyhow::bail!("claim set is invalid");
+        return Err(NhisWriteConflict::InvalidClaimSet.into());
+    }
+    let mut claim_ids = batch.claim_ids.clone();
+    claim_ids.sort_unstable();
+    claim_ids.dedup();
+    if claim_ids.len() != batch.claim_ids.len() {
+        return Err(NhisWriteConflict::InvalidClaimSet.into());
     }
 
     let mut transaction = pool.begin().await?;
     let claim_rows = sqlx::query_as::<_, ClaimAmountRow>(
         r#"
-        SELECT id, amount_minor, currency
+        SELECT amount_minor, currency, status
         FROM nhis_claims
         WHERE facility_id = $1 AND id = ANY($2)
+        ORDER BY id
         FOR UPDATE
         "#,
     )
     .bind(batch.facility_id)
-    .bind(&batch.claim_ids)
+    .bind(&claim_ids)
     .fetch_all(&mut *transaction)
     .await?;
-    if claim_rows.len() != batch.claim_ids.len() {
-        anyhow::bail!("one or more claims were not found");
+    if claim_rows.len() != claim_ids.len() {
+        return Err(NhisWriteConflict::ClaimsUnavailable.into());
+    }
+    if claim_rows
+        .iter()
+        .any(|row| !matches!(row.status.as_str(), "draft" | "ready"))
+    {
+        return Err(NhisWriteConflict::ClaimsIneligible.into());
+    }
+    // Check membership after acquiring the claim locks. A concurrent batch that
+    // waited on the same claims must observe the first committed membership.
+    let already_batched = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM nhis_batch_claims WHERE facility_id = $1 AND claim_id = ANY($2))",
+    )
+    .bind(batch.facility_id)
+    .bind(&claim_ids)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if already_batched {
+        return Err(NhisWriteConflict::ClaimsAlreadyBatched.into());
     }
     let currency = claim_rows
         .first()
         .map(|row| row.currency.clone())
-        .unwrap_or_else(|| "GHS".to_owned());
+        .ok_or(NhisWriteConflict::ClaimsUnavailable)?;
     if claim_rows.iter().any(|row| row.currency != currency) {
-        anyhow::bail!("mixed-currency claim batches are not supported");
+        return Err(NhisWriteConflict::MixedCurrencies.into());
     }
-    let total_amount_minor = claim_rows.iter().map(|row| row.amount_minor).sum::<i64>();
+    let total_amount_minor = claim_rows.iter().try_fold(0_i64, |total, row| {
+        if row.amount_minor < 0 {
+            return Err(NhisWriteConflict::AmountOutOfRange);
+        }
+        total
+            .checked_add(row.amount_minor)
+            .ok_or(NhisWriteConflict::AmountOutOfRange)
+    })?;
     let claim_count = i64::try_from(claim_rows.len())?;
 
     sqlx::query(
@@ -1395,19 +1478,14 @@ pub async fn create_nhis_batch(
     .execute(&mut *transaction)
     .await?;
 
-    for claim in &claim_rows {
-        sqlx::query(
-            r#"
-            INSERT INTO nhis_batch_claims (batch_id, claim_id, facility_id)
-            VALUES ($1, $2, $3)
-            "#,
-        )
-        .bind(batch.id)
-        .bind(claim.id)
-        .bind(batch.facility_id)
-        .execute(&mut *transaction)
-        .await?;
-    }
+    sqlx::query(
+        "INSERT INTO nhis_batch_claims (batch_id, claim_id, facility_id) SELECT $1, unnest($2::uuid[]), $3",
+    )
+    .bind(batch.id)
+    .bind(&claim_ids)
+    .bind(batch.facility_id)
+    .execute(&mut *transaction)
+    .await?;
 
     sqlx::query(
         r#"
@@ -1419,7 +1497,21 @@ pub async fn create_nhis_batch(
     )
     .bind(codec::encode(ClaimStatus::Ready)?)
     .bind(batch.facility_id)
-    .bind(&batch.claim_ids)
+    .bind(&claim_ids)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        r#"INSERT INTO audit_events
+            (id, facility_id, actor_user_id, request_id, event_type, resource_type, resource_id, metadata)
+        VALUES ($1, $2, $3, $4, 'billing.nhis_batch.created', 'nhis_batch', $5, $6)"#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(batch.facility_id)
+    .bind(batch.actor_user_id)
+    .bind(batch.request_id)
+    .bind(batch.id)
+    .bind(serde_json::json!({ "claim_count": claim_count }))
     .execute(&mut *transaction)
     .await?;
 
@@ -1853,58 +1945,55 @@ pub async fn create_nhis_service_mapping(
     pool: &PgPool,
     mapping: NewNhisServiceMapping,
 ) -> anyhow::Result<NhisServiceMappingListItem> {
-    let service_exists = sqlx::query_scalar::<_, bool>(
+    let mut transaction = pool.begin().await?;
+    // All writers for a service share this lock, including different payer
+    // scopes; the schema's version uniqueness is per service, not per payer.
+    let service_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM service_catalog
-            WHERE facility_id = $1
-              AND id = $2
-        )
+        SELECT id FROM service_catalog
+        WHERE facility_id = $1 AND id = $2 AND active = TRUE
+        FOR UPDATE
         "#,
     )
     .bind(mapping.facility_id)
     .bind(mapping.service_id)
-    .fetch_one(pool)
+    .fetch_optional(&mut *transaction)
     .await?;
-    if !service_exists {
-        anyhow::bail!("NHIS service mapping references a service outside the facility");
+    if service_id.is_none() {
+        return Err(NhisWriteConflict::ServiceUnavailable.into());
     }
 
     if let Some(payer_id) = mapping.payer_id {
-        let payer_exists = sqlx::query_scalar::<_, bool>(
+        let payer_id = sqlx::query_scalar::<_, Uuid>(
             r#"
-            SELECT EXISTS (
-                SELECT 1
-                FROM insurance_providers
-                WHERE facility_id = $1
-                  AND id = $2
-            )
+            SELECT id FROM insurance_providers
+            WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+            FOR SHARE
             "#,
         )
         .bind(mapping.facility_id)
         .bind(payer_id)
-        .fetch_one(pool)
+        .fetch_optional(&mut *transaction)
         .await?;
-        if !payer_exists {
-            anyhow::bail!("NHIS service mapping references a payer outside the facility");
+        if payer_id.is_none() {
+            return Err(NhisWriteConflict::PayerUnavailable.into());
         }
     }
 
     let version_number = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT COALESCE(MAX(version_number), 0) + 1
+        SELECT COALESCE(MAX(version_number), 0)
         FROM nhis_service_mappings
         WHERE facility_id = $1
           AND service_id = $2
-          AND payer_id IS NOT DISTINCT FROM $3
         "#,
     )
     .bind(mapping.facility_id)
     .bind(mapping.service_id)
-    .bind(mapping.payer_id)
-    .fetch_one(pool)
-    .await?;
+    .fetch_one(&mut *transaction)
+    .await?
+    .checked_add(1)
+    .ok_or(NhisWriteConflict::MappingVersionExhausted)?;
     sqlx::query(
         r#"
         INSERT INTO nhis_service_mappings (
@@ -1923,8 +2012,22 @@ pub async fn create_nhis_service_mapping(
     .bind(mapping.effective_from)
     .bind(mapping.effective_until)
     .bind(mapping.actor_user_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
+    sqlx::query(
+        r#"INSERT INTO audit_events
+            (id, facility_id, actor_user_id, request_id, event_type, resource_type, resource_id, metadata)
+        VALUES ($1, $2, $3, $4, 'billing.nhis_service_mapping.created', 'nhis_service_mapping', $5, $6)"#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(mapping.facility_id)
+    .bind(mapping.actor_user_id)
+    .bind(mapping.request_id)
+    .bind(mapping.id)
+    .bind(serde_json::json!({ "version_number": version_number, "payer_specific": mapping.payer_id.is_some() }))
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
     fetch_nhis_service_mapping_by_id(pool, mapping.facility_id, mapping.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created NHIS mapping was not found"))
@@ -2762,6 +2865,7 @@ async fn claim_mapping_context(
     transaction: &mut sqlx::Transaction<'_, Postgres>,
     facility_id: Uuid,
     invoice_id: Uuid,
+    invoice_date: NaiveDate,
 ) -> anyhow::Result<ClaimMappingContextRow> {
     let mapping = sqlx::query_as::<_, ClaimMappingContextRow>(
         r#"
@@ -2774,10 +2878,11 @@ async fn claim_mapping_context(
           ON nhis_service_mappings.facility_id = invoice_lines.facility_id
          AND nhis_service_mappings.service_id = service_prices.service_id
          AND nhis_service_mappings.active = TRUE
-         AND nhis_service_mappings.effective_from <= CURRENT_DATE
+         AND nhis_service_mappings.payer_id IS NULL
+         AND nhis_service_mappings.effective_from <= $3
          AND (
              nhis_service_mappings.effective_until IS NULL
-             OR nhis_service_mappings.effective_until > CURRENT_DATE
+             OR nhis_service_mappings.effective_until > $3
          )
         WHERE invoice_lines.facility_id = $1
           AND invoice_lines.invoice_id = $2
@@ -2789,6 +2894,7 @@ async fn claim_mapping_context(
     )
     .bind(facility_id)
     .bind(invoice_id)
+    .bind(invoice_date)
     .fetch_optional(&mut **transaction)
     .await?;
     Ok(mapping.unwrap_or(ClaimMappingContextRow {

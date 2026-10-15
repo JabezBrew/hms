@@ -16,6 +16,7 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `2026-10-15-phase-one-verification.md` | scoped security, worker reliability, clinical UI changes, acceptance evidence, and remaining gaps. |
 | `2026-10-15-parity-ledger.md` | expanded Python-to-Rust and UI parity phases, concrete gaps, acceptance rules, and implementation state. |
 | `2026-10-15-phase-two-verification.md` | first parity increment and exact staged-source local acceptance. |
+| `2026-10-15-phase-two-b-verification.md` | scoped fluid/emergency access, NHIS UI, reset lifecycle and exact-source acceptance. |
 | `archive/` | historical V2 material kept out of the active path. |
 
 ## Invariants

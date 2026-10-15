@@ -8,17 +8,18 @@ use hms_domain::ward::{
     CreateNursingAlertRequest, CreateNursingTaskRequest, CreatePatientVitalsRequest,
     CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
     CreateWardStaffAssignmentRequest, CreateWardStockRequestRequest, DischargeBlockerActionRequest,
-    DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
-    MedicationAdministrationListQuery, MonitoringEventListItem, MyWardBoardContextResponse,
-    NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery, PatientVitalsListItem,
-    PatientVitalsListQuery, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
-    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
-    UpdateWardRequest, UpdateWardSectionRequest, UpdateWardStaffAssignmentRequest,
-    WardAnalyticsQuery, WardAnalyticsResponse, WardBedMapResponse, WardBoardGetQuery,
-    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
-    WardStaffAssignmentByPractitionerQuery, WardStaffAssignmentListItem,
-    WardStaffAssignmentListQuery, WardStaffListItem, WardStaffListQuery, WardStaffRoleItem,
-    WardStaffRoleListQuery, WardStockRequestListItem,
+    DischargeCaseListItem, FluidBalanceListItem, FluidBalanceListQuery, FluidBalanceSummary,
+    FluidBalanceSummaryQuery, FluidBalanceTrendPoint, HandoffListItem,
+    MedicationAdministrationListItem, MedicationAdministrationListQuery, MonitoringEventListItem,
+    MyWardBoardContextResponse, NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery,
+    PatientVitalsListItem, PatientVitalsListQuery, RecordNursingReleaseRequest,
+    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
+    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
+    UpdateWardStaffAssignmentRequest, WardAnalyticsQuery, WardAnalyticsResponse,
+    WardBedMapResponse, WardBoardGetQuery, WardBoardItem, WardBoardQuery, WardListItem,
+    WardListQuery, WardSectionListItem, WardStaffAssignmentByPractitionerQuery,
+    WardStaffAssignmentListItem, WardStaffAssignmentListQuery, WardStaffListItem,
+    WardStaffListQuery, WardStaffRoleItem, WardStaffRoleListQuery, WardStockRequestListItem,
 };
 use uuid::Uuid;
 
@@ -1777,7 +1778,7 @@ pub async fn create_monitoring_event(
     operation_id = "getFluidBalanceEntries",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(FluidBalanceListQuery),
     responses(
         (status = 200, description = "Fluid balance entries", body = ListResponse<FluidBalanceListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1787,13 +1788,61 @@ pub async fn create_monitoring_event(
 pub async fn list_fluid_balance_entries(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<FluidBalanceListQuery>,
 ) -> Result<Json<ListResponse<FluidBalanceListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
             .list_fluid_balance_entries(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get, path = "/api/v2/nursing/fluid-balance/summary", operation_id = "getFluidBalanceSummary", tag = "nursing",
+    security(("bearerAuth" = [])), params(FluidBalanceSummaryQuery),
+    responses(
+        (status = 200, description = "Complete scoped fluid balance totals", body = ObjectResponse<FluidBalanceSummary>),
+        (status = 400, description = "Invalid fluid scope or range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn fluid_balance_summary(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<FluidBalanceSummaryQuery>,
+) -> Result<Json<ObjectResponse<FluidBalanceSummary>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .get_fluid_balance_summary(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get, path = "/api/v2/nursing/fluid-balance/trends", operation_id = "getFluidBalanceTrends", tag = "nursing",
+    security(("bearerAuth" = [])), params(FluidBalanceListQuery),
+    responses(
+        (status = 200, description = "Scoped daily fluid balance aggregates", body = ListResponse<FluidBalanceTrendPoint>),
+        (status = 400, description = "Invalid fluid scope or range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn fluid_balance_trends(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<FluidBalanceListQuery>,
+) -> Result<Json<ListResponse<FluidBalanceTrendPoint>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .get_fluid_balance_trends(&user, query)
             .await?,
     ))
 }

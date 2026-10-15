@@ -1780,6 +1780,14 @@ pub async fn finalize_staff_password_reset(
     };
 
     let mut tx = pool.begin().await?;
+    // Match interactive password changes/reset completion: account first,
+    // then token rows, so concurrent reset paths cannot invert their locks.
+    let active_user = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id = $1 AND facility_id = $2 AND is_active = TRUE FOR NO KEY UPDATE",
+    ).bind(staff.user_id).bind(facility_id).fetch_optional(&mut *tx).await?;
+    if active_user.is_none() {
+        return Ok(None);
+    }
     let prepared_setup_token = sqlx::query_scalar::<_, String>(
         "SELECT token_hash
          FROM password_reset_tokens

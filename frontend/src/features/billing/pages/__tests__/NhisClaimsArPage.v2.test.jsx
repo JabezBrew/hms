@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import NhisClaimsArPage from '../NhisClaimsArPage';
 
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { adminAccess: { capabilities: [] } } }) }));
+
 const refetch = vi.fn();
 
 vi.mock('@/features/billing/api', () => ({
@@ -134,7 +136,7 @@ describe('NhisClaimsArPage Rust V2 guards', () => {
 
     expect(screen.queryByRole('button', { name: /create batch/i })).not.toBeInTheDocument();
     expect(
-      screen.getByText(/period-based nhis batch creation is not available in rust v2/i),
+      screen.getByText(/creating batches requires nhis claims management permission/i),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
 

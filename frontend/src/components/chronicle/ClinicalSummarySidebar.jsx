@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { useTodayFluidBalance } from "@/features/nursing/hooks";
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { InvoiceChronicleCard } from "@/components/billing";
 import { PatientCareTeamCompact } from "@/components/chronicle/PatientCareTeamCard";
 
@@ -547,7 +548,9 @@ const LabResultsSection = ({ results = EMPTY_ARRAY, maxVisible = 4 }) => {
  * FluidBalanceSection - Today's fluid balance for admitted patients
  */
 const FluidBalanceSection = ({ patientId, onViewTrends }) => {
-  const { data: fluidData, isLoading } = useTodayFluidBalance(patientId);
+  const { data: fluidData, isLoading, error } = useTodayFluidBalance(patientId);
+
+  if (error) return <section role="alert"><p className="text-sm text-destructive">Today’s fluid balance is unavailable.</p></section>;
 
   if (isLoading) {
     return (
@@ -586,7 +589,7 @@ const FluidBalanceSection = ({ patientId, onViewTrends }) => {
       <header className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-            Fluid Balance (Today)
+            Fluid Balance (Today{isRustV2ApiMode() ? ', UTC' : ''})
           </h3>
           {onViewTrends ? (
             <Button

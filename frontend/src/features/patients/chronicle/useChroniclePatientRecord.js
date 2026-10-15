@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { usePatientInsurance } from "@/features/billing/hooks";
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
@@ -39,14 +39,32 @@ function shapePatientForChronicle({ patient, rustV2ActiveAdmission, rustV2Active
 }
 
 export function useChroniclePatientRecord({ id, rustV2Mode }) {
+  const [authorizedMount, setAuthorizedMount] = useState({ id, verified: false });
   const {
-    data: chronicleStartup,
+    data: cachedStartup,
     isLoading: isStartupLoading,
+    isFetchedAfterMount,
     error: startupError,
     refetch: refetchStartup,
   } = usePatientChronicleStartup(id, {}, {
     enabled: rustV2Mode,
+    refetchOnMount: 'always',
   });
+
+  // A cached clinical view cannot prove that a previous emergency grant still
+  // authorizes this mount. Wait for the server and preserve any fresh denial.
+  // Keep the mounted proof through later query resets: TanStack resets its
+  // update counters, which can make isFetchedAfterMount false again.
+  useEffect(() => {
+    setAuthorizedMount((current) => {
+      if (current.id === id && current.verified) return current;
+      const verified = Boolean(isFetchedAfterMount && !startupError && cachedStartup);
+      return current.id === id && current.verified === verified ? current : { id, verified };
+    });
+  }, [id, isFetchedAfterMount, startupError, cachedStartup]);
+  const verifiedMount = authorizedMount.id === id && authorizedMount.verified;
+  const awaitingStartupAuthorization = rustV2Mode && !verifiedMount && isFetchedAfterMount === false && !startupError;
+  const chronicleStartup = awaitingStartupAuthorization || startupError ? undefined : cachedStartup;
 
   const {
     data: legacyPatient,
@@ -58,7 +76,7 @@ export function useChroniclePatientRecord({ id, rustV2Mode }) {
   });
 
   const patient = rustV2Mode ? chronicleStartup?.patient : legacyPatient;
-  const isLoading = rustV2Mode ? isStartupLoading : isPatientLoading;
+  const isLoading = rustV2Mode ? isStartupLoading || awaitingStartupAuthorization : isPatientLoading;
   const error = rustV2Mode ? startupError : patientError;
   const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
   const patientPath = id ? `/patients/${id}/chronicle` : '/patients';
@@ -73,7 +91,7 @@ export function useChroniclePatientRecord({ id, rustV2Mode }) {
   });
 
   const hasClinicalAccess = rustV2Mode
-    ? startupError?.status !== 403
+    ? Boolean(chronicleStartup) && !startupError
     : patient?.access?.clinical === true;
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
   const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;

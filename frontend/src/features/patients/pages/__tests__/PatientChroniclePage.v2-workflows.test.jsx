@@ -87,6 +87,7 @@ const summarySidebarState = vi.hoisted(() => ({
 
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
   patientKeys: {
+    detail: (id) => ['patients', 'detail', id],
     chronicleTimeline: (id, params = {}) => ['patients', 'detail', id, 'chronicle', 'timeline', params],
   },
   usePatient: (_id, _options) => ({
@@ -736,7 +737,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(pageText.indexOf('Inpatient Admission')).toBeLessThan(pageText.indexOf('Outpatient Visit'))
   })
 
-  it('does not expose unsupported break-glass access in Rust V2 mode', () => {
+  it('requires the dedicated permission before exposing Rust emergency access', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
     chronicleStartupState.data = null
     chronicleStartupState.error = { status: 403, message: 'Forbidden' }
@@ -744,7 +745,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     renderPage()
 
     expect(screen.queryByRole('button', { name: /request break-glass access/i })).not.toBeInTheDocument()
-    expect(screen.getByText(/break-glass access is not available in rust v2/i)).toBeInTheDocument()
+    expect(screen.getByText(/Emergency access requires the dedicated break-glass permission/i)).toBeInTheDocument()
   })
 
   it('uses Ward Round Chronicle mode outside Rust V2 mode instead of the legacy workflow slide-over', async () => {

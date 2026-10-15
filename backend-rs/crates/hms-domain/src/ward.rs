@@ -846,6 +846,44 @@ pub struct FluidBalanceListItem {
     pub net_ml: i32,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct FluidBalanceListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub recorded_from: Option<DateTime<Utc>>,
+    pub recorded_before: Option<DateTime<Utc>>,
+    pub descending: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct FluidBalanceSummaryQuery {
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub recorded_from: Option<DateTime<Utc>>,
+    pub recorded_before: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct FluidBalanceSummary {
+    pub entry_count: i64,
+    pub total_intake_ml: i64,
+    pub total_output_ml: i64,
+    pub net_ml: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct FluidBalanceTrendPoint {
+    pub date: NaiveDate,
+    pub entry_count: i64,
+    pub total_intake_ml: i64,
+    pub total_output_ml: i64,
+    pub net_ml: i64,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateFluidBalanceEntryRequest {
     pub admission_case_id: Uuid,

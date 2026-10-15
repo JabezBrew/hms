@@ -46,6 +46,7 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 - `/api/v2/patients/:id/current-contexts`
 - `/api/v2/patients/:id/chronicle`
 - `/api/v2/patients/:id/break-glass`
+- `/api/v2/patients/:id/break-glass/end`
 - ward-round endpoints under `/api/v2/patients/:patient_id/chronicle/ward-rounds`
 
 ## Invariants
@@ -85,6 +86,12 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
   (`admitted`/`discharge_pending`). Historical ward lookups require an explicit
   `admission_status` filter such as `discharged` or `cancelled`.
 - Break-glass requires backend permission, fresh auth, grant expiry, and audit.
+- Rust emergency access uses the dedicated permission and a fresh password
+  sign-in bound to the current user, facility and deployment profile before
+  posting a typed emergency category. The current-actor grant status read
+  restores server expiry after reload; no grant or reason is stored in browser
+  storage. An uncertain create cannot repeat until an idempotent end resolves
+  it. Ending or expiry blocks clinical content while fresh authorization loads.
 - Do not prefetch heavy Chronicle data unless performance budgets allow it.
 - Patient identity fields must not appear in query keys, logs, browser events,
   or fixture names.

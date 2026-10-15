@@ -147,6 +147,7 @@ export function TablePagination({
         {/* First page */}
         {showFirstLast && (
           <Button
+            type="button"
             variant="outline"
             size="icon"
             className="size-8"
@@ -159,6 +160,7 @@ export function TablePagination({
         )}
         {/* Previous page */}
         <Button
+          type="button"
           variant="outline"
           size="icon"
           className="size-8"
@@ -177,6 +179,7 @@ export function TablePagination({
         )}
         {/* Next page */}
         <Button
+          type="button"
           variant="outline"
           size="icon"
           className="size-8"
@@ -189,6 +192,7 @@ export function TablePagination({
         {/* Last page */}
         {showFirstLast && (
           <Button
+            type="button"
             variant="outline"
             size="icon"
             className="size-8"

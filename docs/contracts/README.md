@@ -76,6 +76,18 @@ Scope: durable Interfaces that code, tests, deploys, and frontend integrations r
   not be persisted in domain events, audit logs, or response bodies. Forced
   reset tokens must remain unusable until the finalization transaction commits
   session revocation, audit, and token activation.
+- Public password-reset requests use the configured trusted account-setup
+  delivery adapter with purpose `password_reset`. Disabled delivery accepts
+  generically without issuing unreachable tokens. Webhook delivery is off the
+  request path, has four admitted in-flight sends, a separate persistent
+  ten-per-fifteen-minute account budget, a configured timeout and no redirects.
+  Tokens exist only in the transient delivery link; persistence receives hashes
+  and events contain no recipient/link/token. This in-process dispatch is not a
+  durable delivery queue: provider failure or process termination requires a new
+  request. Actual delivery requires operator configuration and sandbox evidence.
+  Completing a reset or signed-in password change locks the account, fences
+  stale password verification, invalidates all outstanding reset links and
+  revokes sessions atomically. Password history preserves the previous hash.
 - Ward-board list rows are lightweight sourced projections: census, alert
   counts, nursing-task counts/due timestamps, due MAR counts/timestamps, last
   vitals timestamp, unverified-result and pending-order counts, and discharge

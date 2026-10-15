@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ItemsPage from '../ItemsPage';
 
+const fixture = vi.hoisted(() => ({ unitPrice: 2.5 }));
+
 vi.mock('@/features/inventory/hooks', () => ({
   useInventoryItems: () => ({
     data: {
@@ -16,7 +18,7 @@ vi.mock('@/features/inventory/hooks', () => ({
           category_name: 'Medicines',
           total_stock: 120,
           reorder_level: 20,
-          unit_price: 2.5,
+          unit_price: fixture.unitPrice,
           unit_of_measure: 'tablet',
           is_controlled: false,
           nearest_expiry: null,
@@ -72,6 +74,7 @@ function renderPage() {
 describe('ItemsPage Rust V2 guards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fixture.unitPrice = 2.5;
   });
 
   afterEach(() => {
@@ -87,8 +90,23 @@ describe('ItemsPage Rust V2 guards', () => {
     expect(screen.queryByRole('button', { name: /add item/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(
-      await screen.findByText(/inventory item creation and editing is not available in rust v2/i),
+      await screen.findByText(/open an item to correct its catalog details/i),
     ).toBeInTheDocument();
+  });
+
+  it.each([undefined, null])('shows an unavailable price when no price is returned (%s)', async (unitPrice) => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    fixture.unitPrice = unitPrice;
+    renderPage();
+    expect(await screen.findByText('Unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+  });
+
+  it('preserves an explicitly returned zero price', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' };
+    fixture.unitPrice = 0;
+    renderPage();
+    expect(await screen.findByText('$0.00')).toBeInTheDocument();
   });
 
   it('keeps inventory item mutation controls available outside Rust V2 mode', async () => {

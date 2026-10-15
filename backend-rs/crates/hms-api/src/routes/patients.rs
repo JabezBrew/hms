@@ -74,7 +74,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/api/v2/patients/:id/break-glass",
-            axum::routing::post(patients::start_break_glass_grant),
+            get(patients::current_break_glass_status).post(patients::start_break_glass_grant),
         )
         .route(
             "/api/v2/patients/:id/break-glass/end",

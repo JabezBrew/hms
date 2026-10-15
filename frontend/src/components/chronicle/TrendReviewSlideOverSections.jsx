@@ -291,11 +291,13 @@ function FluidTrendCard({ formattedFluidTrendData }) {
 
 function FluidBalanceTab({
   fluidLoading,
+  fluidError,
   fluidSummary,
   formattedFluidTrendData,
   latestFluidPoint,
   scopeLabel,
 }) {
+  if (fluidError) return <div role="alert" className="text-sm text-destructive">Fluid balance trends could not be fully loaded. Try reopening this view.</div>;
   if (fluidLoading) {
     return <LoadingState label="Loading fluid-balance trends..." />;
   }
@@ -323,6 +325,7 @@ export function TrendReviewSlideOverPanel({
   allHistory,
   encounterId,
   fluidLoading,
+  fluidError,
   fluidSummary,
   formattedFluidTrendData,
   formattedVitals,
@@ -381,6 +384,7 @@ export function TrendReviewSlideOverPanel({
               <TabsContent value="fluids" className="space-y-6">
                 <FluidBalanceTab
                   fluidLoading={fluidLoading}
+                  fluidError={fluidError}
                   fluidSummary={fluidSummary}
                   formattedFluidTrendData={formattedFluidTrendData}
                   latestFluidPoint={latestFluidPoint}

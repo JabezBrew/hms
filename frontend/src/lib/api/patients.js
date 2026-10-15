@@ -761,14 +761,28 @@ export const patientsApi = {
   /**
    * Request break-glass access for a patient
    * @param {string} id - Patient ID
-   * @param {Object} data - Break-glass payload (reason, scope)
+   * @param {Object} data - Typed emergency category and optional reason in Rust V2
    * @returns {Promise<Object>} Break-glass response
    */
-  requestBreakGlass: async (id, data) => {
+  requestBreakGlass: async (id, data, options = {}) => {
     if (isRustV2ApiMode()) {
-      throw new Error('Break-glass access is not supported by Rust V2');
+      return (await v2Api.postPatientBreakGlass({ id }, { category: data.category, reason_text: data.reason_text || undefined }, { signal: options.signal }))?.data;
     }
     return apiClient.post(`/patients/${id}/break-glass/`, data);
+  },
+
+  endBreakGlass: async (id, options = {}) => {
+    if (!isRustV2ApiMode()) throw new Error('Ending emergency access requires the current patient service.');
+    return (await v2Api.postPatientBreakGlassEnd({ id }, { signal: options.signal }))?.data;
+  },
+
+  getBreakGlassStatus: async (id, options = {}) => {
+    const response = await v2Api.getPatientBreakGlass({ id }, { signal: options.signal });
+    const data = response?.data;
+    if (!data || !Object.hasOwn(data, 'grant') || (data.grant !== null && (!data.grant?.id || !Number.isFinite(Date.parse(data.grant?.expires_at))))) {
+      throw new Error('Emergency access status could not be confirmed.');
+    }
+    return { grant: data.grant ? { id: data.grant.id, expires_at: data.grant.expires_at } : null };
   },
 
   /**

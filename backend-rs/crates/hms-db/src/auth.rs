@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use chrono::{DateTime, Duration, Utc};
 use hms_domain::auth::{
     ActiveAuthority, AuthSecurityState, AuthUser, BreakGlassCategory, BreakGlassGrant,
-    BreakGlassGrantDenialReason, BreakGlassGrantOutcome, ClinicalPatientAccessEvidence,
-    ClinicalPatientAccessReason, PatientDataVisibility, UpdateAuthProfileRequest,
-    BREAK_GLASS_GRANT_TTL_HOURS, BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER,
-    BREAK_GLASS_PERMISSION_CODE,
+    BreakGlassGrantDenialReason, BreakGlassGrantOutcome, BreakGlassGrantSummary,
+    ClinicalPatientAccessEvidence, ClinicalPatientAccessReason, CurrentBreakGlassStatus,
+    PatientDataVisibility, UpdateAuthProfileRequest, BREAK_GLASS_GRANT_TTL_HOURS,
+    BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER, BREAK_GLASS_PERMISSION_CODE,
 };
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use serde_json::Value;
@@ -1572,6 +1572,7 @@ pub async fn change_user_password(
     pool: &PgPool,
     facility_id: Uuid,
     user_id: Uuid,
+    expected_current_hash: &str,
     new_password_hash: &str,
 ) -> anyhow::Result<Option<UserAccount>> {
     let mut transaction = pool.begin().await?;
@@ -1593,6 +1594,9 @@ pub async fn change_user_password(
     let Some(current_hash) = current_hash else {
         return Ok(None);
     };
+    if current_hash != expected_current_hash {
+        return Ok(None);
+    }
 
     sqlx::query(
         r#"
@@ -1625,6 +1629,13 @@ pub async fn change_user_password(
     .await?;
 
     sqlx::query(
+        "UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL",
+    )
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
         r#"
         UPDATE refresh_sessions
         SET revoked_at = COALESCE(revoked_at, now()),
@@ -1644,20 +1655,37 @@ pub async fn complete_password_reset(
     pool: &PgPool,
     token_hash: &str,
     user_id: Uuid,
+    expected_current_hash: &str,
     new_password_hash: &str,
 ) -> anyhow::Result<bool> {
     let mut transaction = pool.begin().await?;
+    // Lock the account before individual token rows. Distinct emailed links
+    // must race as one password change, without token/user lock inversion.
+    let current_hash = sqlx::query_scalar::<_, String>(
+        "SELECT password_hash FROM users WHERE id = $1 AND is_active = TRUE FOR NO KEY UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let Some(current_hash) = current_hash else {
+        return Ok(false);
+    };
+    if current_hash != expected_current_hash {
+        return Ok(false);
+    }
     let token_user_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT user_id
         FROM password_reset_tokens
         WHERE token_hash = $1
+          AND user_id = $2
           AND used_at IS NULL
           AND expires_at > now()
         FOR UPDATE
         "#,
     )
     .bind(token_hash)
+    .bind(user_id)
     .fetch_optional(&mut *transaction)
     .await?;
 
@@ -1684,10 +1712,10 @@ pub async fn complete_password_reset(
         r#"
         UPDATE password_reset_tokens
         SET used_at = now()
-        WHERE token_hash = $1
+        WHERE user_id = $1 AND used_at IS NULL
         "#,
     )
-    .bind(token_hash)
+    .bind(user_id)
     .execute(&mut *transaction)
     .await?;
 
@@ -1699,7 +1727,7 @@ pub async fn complete_password_reset(
     )
     .bind(Uuid::new_v4())
     .bind(user_id)
-    .bind(new_password_hash)
+    .bind(current_hash)
     .execute(&mut *transaction)
     .await?;
 
@@ -2063,13 +2091,71 @@ pub async fn active_break_glass_grant_for_patient(
     row.map(break_glass_grant_from_row).transpose()
 }
 
+/// Current actor's minimal grant projection. The patient existence check stays
+/// facility-scoped and does not load identity or clinical fields.
+pub async fn current_break_glass_status_for_patient(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    patient_id: Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Option<CurrentBreakGlassStatus>> {
+    let row = sqlx::query_as::<_, (Option<Uuid>, Option<DateTime<Utc>>)>(
+        r#"
+        SELECT active_grant.id, active_grant.expires_at
+        FROM patients patient
+        LEFT JOIN LATERAL (
+            SELECT grants.id, grants.expires_at
+            FROM patient_break_glass_grants grants
+            WHERE grants.facility_id = patient.facility_id
+              AND grants.patient_id = patient.id
+              AND grants.user_id = $2
+              AND grants.ended_at IS NULL
+              AND grants.started_at <= $4
+              AND grants.expires_at > $4
+            ORDER BY grants.started_at DESC, grants.id DESC
+            LIMIT 1
+        ) active_grant ON TRUE
+        WHERE patient.facility_id = $1 AND patient.id = $3
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(patient_id)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(id, expires_at)| CurrentBreakGlassStatus {
+        grant: id
+            .zip(expires_at)
+            .map(|(id, expires_at)| BreakGlassGrantSummary { id, expires_at }),
+    }))
+}
+
 pub async fn start_break_glass_grant(
     pool: &PgPool,
     command: StartBreakGlassGrant,
 ) -> anyhow::Result<BreakGlassGrantOutcome> {
+    let mut transaction = pool.begin().await?;
+    // Same actor's start/end operations share this lock order. NO KEY UPDATE
+    // permits audit/FK KEY SHARE locks while serializing quota decisions.
+    let actor = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id = $1 AND facility_id = $2 FOR NO KEY UPDATE",
+    )
+    .bind(command.user_id)
+    .bind(command.facility_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    if actor.is_none() {
+        anyhow::bail!("break-glass actor was not found in this facility");
+    }
     if !reauth_is_fresh(command.reauth_verified_at, command.now) {
-        return deny_break_glass_grant(pool, &command, BreakGlassGrantDenialReason::ReauthRequired)
-            .await;
+        return deny_break_glass_grant(
+            transaction,
+            &command,
+            BreakGlassGrantDenialReason::ReauthRequired,
+        )
+        .await;
     }
 
     let has_permission = sqlx::query_scalar::<_, bool>(
@@ -2088,66 +2174,70 @@ pub async fn start_break_glass_grant(
     .bind(command.user_id)
     .bind(command.facility_id)
     .bind(BREAK_GLASS_PERMISSION_CODE)
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await?;
     if !has_permission {
         return deny_break_glass_grant(
-            pool,
+            transaction,
             &command,
             BreakGlassGrantDenialReason::MissingDedicatedPermission,
         )
         .await;
     }
 
-    let patient_is_active = sqlx::query_scalar::<_, bool>(
+    let active_patient = sqlx::query_scalar::<_, Uuid>(
         r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM patients
-            WHERE id = $1
-              AND facility_id = $2
-              AND record_status = 'registered'
-              AND vital_status <> 'deceased'
-        )
+        SELECT id
+        FROM patients
+        WHERE id = $1
+          AND facility_id = $2
+          AND record_status = 'registered'
+          AND vital_status <> 'deceased'
+        FOR SHARE
         "#,
     )
     .bind(command.patient_id)
     .bind(command.facility_id)
-    .fetch_one(pool)
+    .fetch_optional(&mut *transaction)
     .await?;
-    if !patient_is_active {
+    if active_patient.is_none() {
         return deny_break_glass_grant(
-            pool,
+            transaction,
             &command,
             BreakGlassGrantDenialReason::PatientNotActive,
         )
         .await;
     }
 
-    if active_break_glass_grant_for_patient(
-        pool,
-        command.facility_id,
-        command.user_id,
-        command.patient_id,
-        command.now,
+    // Count every unexpired open grant, including one started by a competing
+    // request with a later pre-lock timestamp. Otherwise an older waiter could
+    // mistake that committed grant for a future grant and bypass the limits.
+    let (active_count, same_patient) = sqlx::query_as::<_, (i64, bool)>(
+        r#"
+        SELECT count(*), COALESCE(bool_or(patient_id = $3), FALSE)
+        FROM patient_break_glass_grants
+        WHERE facility_id = $1 AND user_id = $2 AND ended_at IS NULL
+          AND expires_at > $4
+        "#,
     )
-    .await?
-    .is_some()
-    {
+    .bind(command.facility_id)
+    .bind(command.user_id)
+    .bind(command.patient_id)
+    .bind(command.now)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if same_patient {
         return deny_break_glass_grant(
-            pool,
+            transaction,
             &command,
             BreakGlassGrantDenialReason::ActiveGrantAlreadyExists,
         )
         .await;
     }
 
-    let active_count =
-        active_break_glass_grant_count(pool, command.facility_id, command.user_id, command.now)
-            .await?;
     if active_count >= BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER {
         return deny_break_glass_grant(
-            pool,
+            transaction,
             &command,
             BreakGlassGrantDenialReason::TooManyActiveGrants,
         )
@@ -2161,7 +2251,6 @@ pub async fn start_break_glass_grant(
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
     let expires_at = command.now + Duration::hours(BREAK_GLASS_GRANT_TTL_HOURS);
-    let mut transaction = pool.begin().await?;
     let category = codec::encode(command.category)?;
     let row = sqlx::query_as::<_, BreakGlassGrantRow>(
         r#"
@@ -2222,16 +2311,20 @@ pub async fn end_break_glass_grants(
     command: EndBreakGlassGrants,
 ) -> anyhow::Result<u64> {
     let mut transaction = pool.begin().await?;
+    sqlx::query("SELECT id FROM users WHERE id = $1 AND facility_id = $2 FOR NO KEY UPDATE")
+        .bind(command.user_id)
+        .bind(command.facility_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
     let result = sqlx::query(
         r#"
         UPDATE patient_break_glass_grants
-        SET ended_at = $5,
+        SET ended_at = GREATEST($5, started_at),
             ended_by_user_id = $4
         WHERE facility_id = $1
           AND user_id = $2
           AND patient_id = $3
           AND ended_at IS NULL
-          AND started_at <= $5
           AND expires_at > $5
         "#,
     )
@@ -2349,32 +2442,8 @@ pub async fn audit_break_glass_chronicle_view_once(
     Ok(grant_is_active)
 }
 
-async fn active_break_glass_grant_count(
-    pool: &PgPool,
-    facility_id: Uuid,
-    user_id: Uuid,
-    now: DateTime<Utc>,
-) -> anyhow::Result<i64> {
-    Ok(sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT count(*)
-        FROM patient_break_glass_grants
-        WHERE facility_id = $1
-          AND user_id = $2
-          AND ended_at IS NULL
-          AND started_at <= $3
-          AND expires_at > $3
-        "#,
-    )
-    .bind(facility_id)
-    .bind(user_id)
-    .bind(now)
-    .fetch_one(pool)
-    .await?)
-}
-
 async fn deny_break_glass_grant(
-    pool: &PgPool,
+    mut transaction: sqlx::Transaction<'_, sqlx::Postgres>,
     command: &StartBreakGlassGrant,
     reason: BreakGlassGrantDenialReason,
 ) -> anyhow::Result<BreakGlassGrantOutcome> {
@@ -2404,8 +2473,9 @@ async fn deny_break_glass_grant(
         "category": category,
         "denial_reason": reason
     }))
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
+    transaction.commit().await?;
     Ok(BreakGlassGrantOutcome::Denied(reason))
 }
 
@@ -2850,5 +2920,180 @@ mod tests {
                 .expect("cap evaluates"),
             BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::TooManyActiveGrants)
         );
+    }
+
+    #[tokio::test]
+    async fn break_glass_concurrent_distinct_patients_cannot_exceed_actor_cap() {
+        let db = crate::test_support::TestDb::hospital()
+            .await
+            .expect("test db starts");
+        grant_break_glass_permission(&db).await;
+        let now = Utc::now();
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(6));
+        let mut tasks = Vec::new();
+        for index in 0..6 {
+            let patient = db
+                .scenario(format!("break_glass_concurrent_cap_{index}"))
+                .registered_patient()
+                .await
+                .expect("patient creates");
+            let command = start_command(&db, patient.id, now);
+            let pool = db.pool().clone();
+            let barrier = barrier.clone();
+            tasks.push(tokio::spawn(async move {
+                barrier.wait().await;
+                start_break_glass_grant(&pool, command)
+                    .await
+                    .expect("concurrent start evaluates")
+            }));
+        }
+        let mut granted = 0;
+        let mut denied = 0;
+        for task in tasks {
+            match task.await.expect("start task joins") {
+                BreakGlassGrantOutcome::Granted(_) => granted += 1,
+                BreakGlassGrantOutcome::Denied(
+                    BreakGlassGrantDenialReason::TooManyActiveGrants,
+                ) => denied += 1,
+                other => panic!("unexpected concurrency outcome {other:?}"),
+            }
+        }
+        assert_eq!((granted, denied), (3, 3));
+        let persisted: i64 = sqlx::query_scalar("SELECT count(*) FROM patient_break_glass_grants WHERE facility_id = $1 AND user_id = $2 AND ended_at IS NULL")
+            .bind(db.facility_id()).bind(db.owner_user_id()).fetch_one(db.pool()).await.unwrap();
+        assert_eq!(persisted, 3);
+        let audit: (i64, i64) = sqlx::query_as("SELECT count(*) FILTER (WHERE event_type = 'patient.break_glass.started'), count(*) FILTER (WHERE event_type = 'patient.break_glass.denied') FROM audit_events WHERE facility_id = $1 AND actor_user_id = $2")
+            .bind(db.facility_id()).bind(db.owner_user_id()).fetch_one(db.pool()).await.unwrap();
+        assert_eq!(audit, (3, 3));
+    }
+
+    #[tokio::test]
+    async fn break_glass_concurrent_same_patient_creates_once_without_extending_expiry() {
+        let db = crate::test_support::TestDb::hospital()
+            .await
+            .expect("test db starts");
+        grant_break_glass_permission(&db).await;
+        let patient = db
+            .scenario("break_glass_concurrent_same")
+            .registered_patient()
+            .await
+            .unwrap();
+        let now = Utc::now();
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(8));
+        let mut tasks = Vec::new();
+        for index in 0..8 {
+            let command = start_command(&db, patient.id, now + Duration::milliseconds(index));
+            let pool = db.pool().clone();
+            let barrier = barrier.clone();
+            tasks.push(tokio::spawn(async move {
+                barrier.wait().await;
+                start_break_glass_grant(&pool, command)
+                    .await
+                    .expect("concurrent start evaluates")
+            }));
+        }
+        let mut winner = None;
+        let mut denied = 0;
+        for task in tasks {
+            match task.await.expect("start task joins") {
+                BreakGlassGrantOutcome::Granted(grant) => {
+                    assert!(winner.replace(grant).is_none(), "only one grant may win");
+                }
+                BreakGlassGrantOutcome::Denied(
+                    BreakGlassGrantDenialReason::ActiveGrantAlreadyExists,
+                ) => denied += 1,
+                other => panic!("unexpected concurrency outcome {other:?}"),
+            }
+        }
+        let winner = winner.expect("one request granted");
+        assert_eq!(denied, 7);
+        let persisted: (i64, DateTime<Utc>, DateTime<Utc>) = sqlx::query_as("SELECT count(*) OVER(), started_at, expires_at FROM patient_break_glass_grants WHERE facility_id = $1 AND user_id = $2 AND patient_id = $3")
+            .bind(db.facility_id()).bind(db.owner_user_id()).bind(patient.id).fetch_one(db.pool()).await.unwrap();
+        assert_eq!(persisted, (1, winner.started_at, winner.expires_at));
+        assert_eq!(winner.expires_at - winner.started_at, Duration::hours(2));
+        let audit: (i64, i64) = sqlx::query_as("SELECT count(*) FILTER (WHERE event_type = 'patient.break_glass.started'), count(*) FILTER (WHERE event_type = 'patient.break_glass.denied') FROM audit_events WHERE facility_id = $1 AND actor_user_id = $2 AND resource_id = $3")
+            .bind(db.facility_id()).bind(db.owner_user_id()).bind(patient.id).fetch_one(db.pool()).await.unwrap();
+        assert_eq!(audit, (1, 7));
+    }
+
+    #[tokio::test]
+    async fn break_glass_audit_failure_rolls_back_grant_insert() {
+        let db = crate::test_support::TestDb::hospital()
+            .await
+            .expect("test db starts");
+        grant_break_glass_permission(&db).await;
+        let patient = db
+            .scenario("break_glass_audit_rollback")
+            .registered_patient()
+            .await
+            .unwrap();
+        sqlx::query("CREATE FUNCTION reject_break_glass_start_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type = 'patient.break_glass.started' THEN RAISE EXCEPTION 'synthetic audit failure'; END IF; RETURN NEW; END $$")
+            .execute(db.pool()).await.unwrap();
+        sqlx::query("CREATE TRIGGER reject_break_glass_start_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_break_glass_start_audit()")
+            .execute(db.pool()).await.unwrap();
+        assert!(
+            start_break_glass_grant(db.pool(), start_command(&db, patient.id, Utc::now()))
+                .await
+                .is_err()
+        );
+        let grants: i64 = sqlx::query_scalar("SELECT count(*) FROM patient_break_glass_grants WHERE facility_id = $1 AND user_id = $2 AND patient_id = $3")
+            .bind(db.facility_id()).bind(db.owner_user_id()).bind(patient.id).fetch_one(db.pool()).await.unwrap();
+        let audits: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE facility_id = $1 AND actor_user_id = $2 AND resource_id = $3 AND event_type LIKE 'patient.break_glass.%'")
+            .bind(db.facility_id()).bind(db.owner_user_id()).bind(patient.id).fetch_one(db.pool()).await.unwrap();
+        assert_eq!((grants, audits), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn break_glass_end_with_older_request_timestamp_still_ends_serialized_grant() {
+        let db = crate::test_support::TestDb::hospital()
+            .await
+            .expect("test db starts");
+        grant_break_glass_permission(&db).await;
+        let patient = db
+            .scenario("break_glass_end_waiter")
+            .registered_patient()
+            .await
+            .unwrap();
+        let earlier = Utc::now();
+        let later = earlier + Duration::milliseconds(1);
+        let granted = start_break_glass_grant(db.pool(), start_command(&db, patient.id, later))
+            .await
+            .unwrap();
+        let BreakGlassGrantOutcome::Granted(grant) = granted else {
+            panic!("grant expected");
+        };
+        let ended = end_break_glass_grants(
+            db.pool(),
+            EndBreakGlassGrants {
+                facility_id: db.facility_id(),
+                user_id: db.owner_user_id(),
+                patient_id: patient.id,
+                ended_by_user_id: db.owner_user_id(),
+                request_id: None,
+                now: earlier,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(ended, 1);
+        let saved: (DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(
+            "SELECT ended_at, expires_at FROM patient_break_glass_grants WHERE id = $1",
+        )
+        .bind(grant.id)
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(saved.0, grant.started_at);
+        assert_eq!(saved.1, grant.expires_at);
+        assert!(active_break_glass_grant_for_patient(
+            db.pool(),
+            db.facility_id(),
+            db.owner_user_id(),
+            patient.id,
+            later
+        )
+        .await
+        .unwrap()
+        .is_none());
     }
 }

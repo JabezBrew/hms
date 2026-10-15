@@ -483,10 +483,16 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     .await
     .expect("prepared reset token state query succeeds");
     assert!(prepared_token_used_at.is_some());
+    let current_hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
+        .bind(staff.user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let premature_complete = hms_db::auth::complete_password_reset(
         &pool,
         &reset_token_hash,
         staff.user_id,
+        &current_hash,
         "premature-password-hash",
     )
     .await

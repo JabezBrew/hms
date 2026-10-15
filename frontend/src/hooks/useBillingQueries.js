@@ -536,10 +536,11 @@ export function useCreateCashMovement() {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useServices(params = {}) {
+export function useServices(params = {}, options = {}) {
   return useQuery({
     queryKey: billingKeys.serviceList(params),
     queryFn: ({ signal }) => billingApi.getServices(params, { signal }),
+    enabled: options.enabled !== false,
     staleTime: 5 * 60 * 1000, // 5 minutes - services don't change frequently
   });
 }
@@ -618,8 +619,14 @@ export function useCreatePayerServiceCode() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => billingApi.createPayerServiceCode(data),
+    retry: false,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: billingKeys.payerServiceCodes() });
+    },
+    onError: (error) => {
+      if (error.code === 'nhis_mapping_unconfirmed') {
+        void queryClient.invalidateQueries({ queryKey: billingKeys.payerServiceCodes() });
+      }
     },
   });
 }
@@ -970,10 +977,17 @@ export function useCreateNhisClaimBatch() {
 
   return useMutation({
     mutationFn: (data) => billingApi.createNhisClaimBatch(data),
+    retry: false,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: billingKeys.nhisBatches() });
       queryClient.invalidateQueries({ queryKey: billingKeys.claims() });
       queryClient.invalidateQueries({ queryKey: billingKeys.dashboard() });
+    },
+    onError: (error) => {
+      if (error.code === 'nhis_batch_unconfirmed') {
+        void queryClient.invalidateQueries({ queryKey: billingKeys.nhisBatches() });
+        void queryClient.invalidateQueries({ queryKey: billingKeys.claims() });
+      }
     },
   });
 }

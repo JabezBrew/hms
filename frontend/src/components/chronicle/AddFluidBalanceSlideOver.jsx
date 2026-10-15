@@ -1,13 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 import format from "date-fns/format";
 import addDays from "date-fns/addDays";
 import subDays from "date-fns/subDays";
-import isToday from "date-fns/isToday";
 import startOfDay from "date-fns/startOfDay";
 import { toast } from "sonner";
 import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
+import { useFluidBalanceDay } from '@/features/nursing/hooks/useFluidBalanceDay';
 import {
   useFluidBalance,
   useFluidBalanceSummary,
@@ -139,32 +139,38 @@ function AddFluidBalanceSlideOverContent({
   onFluidRecorded,
   allowEntry,
 }) {
+  const rustV2Mode = isRustV2ApiMode();
+  const todayDateString = useFluidBalanceDay({ utc: rustV2Mode, enabled: open });
   // Active tab state
   const [activeTabValue, setActiveTab] = useState(allowEntry ? 'entry' : 'history'); // 'entry' | 'history'
   const activeTab = allowEntry ? activeTabValue : 'history';
 
   // History date navigation state
-  const [historyDate, setHistoryDate] = useState(() => new Date());
+  const [historyDate, setHistoryDate] = useState(() => new Date(`${todayDateString}T12:00:00`));
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const rustV2Mode = isRustV2ApiMode();
   const fluidBalanceDeletionAvailable = !rustV2Mode;
 
   // Form state (includes colour for outputs)
   const [formData, setFormData] = useState(INITIAL_FORM_DATA);
-  const maxHistoryDate = useMemo(() => startOfDay(new Date()), []);
+  const [writeUnconfirmed, setWriteUnconfirmed] = useState(false);
+  const submitInFlight = useRef(false);
+  const maxHistoryDate = useMemo(() => startOfDay(new Date(`${todayDateString}T12:00:00`)), [todayDateString]);
 
   // Format history date for API (YYYY-MM-DD)
   const historyDateString = format(historyDate, 'yyyy-MM-dd');
-  const todayDateString = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
 
   // API hooks - only fetch when slide-over is open
   // Today's data for entry tab
-  const { data: todaySummary } = useTodayFluidBalance(patientId, { enabled: open });
-  const { data: todayRecords = [], isLoading: todayLoading } = useFluidBalance(patientId, { date: todayDateString }, { enabled: open });
+  const todaySummaryQuery = useTodayFluidBalance(patientId, { enabled: open, date: todayDateString });
+  const { data: todaySummary } = todaySummaryQuery;
+  const todayQuery = useFluidBalance(patientId, { date: todayDateString, descending: true }, { enabled: open });
+  const { data: todayRecords = [], isLoading: todayLoading } = todayQuery;
 
   // Historical data for history tab
-  const { data: historyRecords = [], isLoading: historyLoading } = useFluidBalance(patientId, { date: historyDateString }, { enabled: open });
-  const { data: historySummary } = useFluidBalanceSummary(patientId, historyDateString, { enabled: open });
+  const historyQuery = useFluidBalance(patientId, { date: historyDateString }, { enabled: open });
+  const { data: historyRecords = [], isLoading: historyLoading } = historyQuery;
+  const historySummaryQuery = useFluidBalanceSummary(patientId, historyDateString, { enabled: open });
+  const { data: historySummary } = historySummaryQuery;
 
   const createMutation = useCreateFluidBalance();
   const deleteMutation = useDeleteFluidBalance();
@@ -177,8 +183,8 @@ function AddFluidBalanceSlideOverContent({
       setHistoryDate(tomorrow);
     }
   };
-  const goToToday = () => setHistoryDate(new Date());
-  const isHistoryToday = isToday(historyDate);
+  const goToToday = () => setHistoryDate(new Date(`${todayDateString}T12:00:00`));
+  const isHistoryToday = historyDateString === todayDateString;
 
   // Get patient display name
   const patientName = patient?.local_data?.user_details
@@ -198,17 +204,19 @@ function AddFluidBalanceSlideOverContent({
 
   // Handle form submit
   const handleSubmit = async () => {
-    const amount = parseInt(formData.amount);
-    if (isNaN(amount) || amount <= 0) {
-      toast.error('Please enter a valid amount greater than 0');
+    if (submitInFlight.current || writeUnconfirmed) return;
+    const amount = Number(formData.amount);
+    if (!Number.isInteger(amount) || amount <= 0 || amount > 2147483647) {
+      toast.error('Please enter a whole amount in millilitres greater than 0');
       return;
     }
 
-    if (!formData.category) {
+    if (!rustV2Mode && !formData.category) {
       toast.error('Please select a category');
       return;
     }
 
+    submitInFlight.current = true;
     try {
       await createMutation.mutateAsync({
         patient: patientId,
@@ -233,10 +241,19 @@ function AddFluidBalanceSlideOverContent({
         notes: ''
       });
 
-      onFluidRecorded?.();
-    } catch (err) {
-      console.error('Failed to record fluid balance:', err);
-      toast.error('Failed to record fluid balance');
+      // A consumer refresh failure cannot turn a confirmed save into a retry.
+      try { await onFluidRecorded?.(); } catch { /* Entries remain saved. */ }
+    } catch (error) {
+      if (error?.name === 'FluidBalanceWriteUnconfirmedError') {
+        setWriteUnconfirmed(true);
+        void todayQuery.refetch();
+        void todaySummaryQuery.refetch();
+        toast.error('The fluid entry may have been saved. Review the refreshed entries before recording it again.');
+      } else {
+        toast.error('Failed to record fluid balance');
+      }
+    } finally {
+      submitInFlight.current = false;
     }
   };
 
@@ -250,8 +267,7 @@ function AddFluidBalanceSlideOverContent({
     try {
       await deleteMutation.mutateAsync(entryId);
       toast.success('Entry deleted');
-    } catch (err) {
-      console.error('Failed to delete entry:', err);
+    } catch {
       toast.error('Failed to delete entry');
     }
   };
@@ -335,11 +351,14 @@ function AddFluidBalanceSlideOverContent({
           subcategoryOptions={subcategoryOptions}
           summary={todayBalanceSummary}
           records={todayRecordsList}
-          loading={todayLoading}
+          loading={todayLoading || todaySummaryQuery.isLoading}
+          error={todayQuery.error || todaySummaryQuery.error}
+          onRetry={() => { void todayQuery.refetch(); void todaySummaryQuery.refetch(); }}
           rustV2Mode={rustV2Mode}
           deletionAvailable={fluidBalanceDeletionAvailable}
           deletePending={deleteMutation.isPending}
           createPending={createMutation.isPending}
+          writeUnconfirmed={writeUnconfirmed}
           onTypeChange={handleTypeChange}
           onCategoryChange={handleCategoryChange}
           onSubcategoryChange={handleSubcategoryChange}
@@ -356,7 +375,9 @@ function AddFluidBalanceSlideOverContent({
           maxHistoryDate={maxHistoryDate}
           summary={historyBalanceSummary}
           records={historyRecordsList}
-          loading={historyLoading}
+          loading={historyLoading || historySummaryQuery.isLoading}
+          error={historyQuery.error || historySummaryQuery.error}
+          onRetry={() => { void historyQuery.refetch(); void historySummaryQuery.refetch(); }}
           rustV2Mode={rustV2Mode}
           deletionAvailable={fluidBalanceDeletionAvailable}
           deletePending={deleteMutation.isPending}

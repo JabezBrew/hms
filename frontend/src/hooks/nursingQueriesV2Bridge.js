@@ -326,14 +326,17 @@ export function normalizeV2FluidBalancePayload(data = {}) {
   if (!admissionCaseId) {
     throw new Error('Admission case is required to record Rust V2 fluid balance');
   }
-  const volume = Number.parseInt(data.volume_ml ?? data.amount_ml ?? data.amount ?? 0, 10) || 0;
+  const volume = Number(data.volume_ml ?? data.amount_ml ?? data.amount ?? 0);
   const intake = data.intake_ml ?? (data.entry_type === 'intake' ? volume : 0);
   const output = data.output_ml ?? (data.entry_type === 'output' ? volume : 0);
+  if (![Number(intake), Number(output)].every((value) => Number.isInteger(value) && value >= 0 && value <= 2147483647)) {
+    throw new Error('Fluid volumes must be whole, non-negative millilitres.');
+  }
   return {
     admission_case_id: admissionCaseId,
     recorded_at: new Date(data.recorded_at || Date.now()).toISOString(),
-    intake_ml: Number.parseInt(intake, 10) || 0,
-    output_ml: Number.parseInt(output, 10) || 0,
+    intake_ml: Number(intake),
+    output_ml: Number(output),
   };
 }
 
@@ -897,21 +900,93 @@ export function deriveFluidBalanceAlerts(summary, settings = DEFAULT_FLUID_BALAN
   return alerts;
 }
 
+export function fluidBalanceQuery(patientId, filters = {}) {
+  if (filters.entry_type && !['all', 'intake', 'output'].includes(filters.entry_type)) {
+    throw new Error('Choose intake or output for the fluid balance entry type.');
+  }
+  const limit = Number.parseInt(filters.limit || filters.page_size, 10);
+  return {
+    patient_id: patientId || filters.patient_id || filters.patient || undefined,
+    admission_case_id: filters.admission_case_id || filters.admission_id || filters.admission || undefined,
+    recorded_from: marTimestamp(filters.recorded_from) || marDateBoundary(filters.date || filters.start_date),
+    recorded_before: marTimestamp(filters.recorded_before) || marDateBoundary(filters.date || filters.end_date, true),
+    cursor: filters.cursor || undefined,
+    limit: Number.isFinite(limit) ? Math.min(100, Math.max(1, limit)) : MAX_FLUID_BALANCE_PAGE_SIZE,
+    descending: filters.descending ?? (filters.ordering ? filters.ordering.startsWith('-') : undefined),
+  };
+}
+
+export function fluidBalanceCacheScope(patientId, filters = {}) {
+  try {
+    return { ...fluidBalanceQuery(patientId, filters), entry_type: filters.entry_type || 'all' };
+  } catch {
+    return { invalid: true };
+  }
+}
+
+function requireFluidScope(query) {
+  if (!query.patient_id && !query.admission_case_id) throw new Error('Patient or admission is required for fluid balance.');
+}
+
+async function loadFluidPages(operation, patientId, filters, signal) {
+  const query = fluidBalanceQuery(patientId, filters);
+  requireFluidScope(query);
+  const rows = [];
+  const cursors = new Set();
+  for (let page = 0; page < 100; page += 1) {
+    const response = await operation({ query, signal });
+    if (!Array.isArray(response?.data) || typeof response?.page?.has_next !== 'boolean'
+      || (response.page.has_next && !response.page.next_cursor)) {
+      throw new Error('Fluid balance pagination could not be confirmed. Reload this view.');
+    }
+    rows.push(...response.data);
+    if (!response.page.has_next) return rows;
+    if (cursors.has(response.page.next_cursor)) throw new Error('Fluid balance could not be fully loaded. Reload this view.');
+    cursors.add(response.page.next_cursor);
+    query.cursor = response.page.next_cursor;
+  }
+  throw new Error('Too many fluid balance records for this view. Choose a shorter date range.');
+}
+
 export async function getV2FluidBalanceEntries(patientId, filters = {}, { signal } = {}) {
   try {
-    const response = await v2Api.getFluidBalanceEntries({
-      query: { limit: MAX_FLUID_BALANCE_PAGE_SIZE },
-      signal,
-    });
-    const entries = [];
-    for (const item of Array.isArray(response?.data) ? response.data : []) {
-      if (fluidBalanceMatchesFilters(item, patientId, filters)) {
-        entries.push(...adaptV2FluidBalanceItem(item));
-      }
-    }
-    return entries;
+    const rows = await loadFluidPages(v2Api.getFluidBalanceEntries, patientId, filters, signal);
+    return rows.flatMap((item) => fluidBalanceMatchesFilters(item, patientId, filters) ? adaptV2FluidBalanceItem(item) : [])
+      .filter((entry) => !filters.entry_type || filters.entry_type === 'all' || filters.entry_type === entry.entry_type);
   } catch (error) {
     rethrowV2Error(error, 'Failed to load fluid balance entries');
+  }
+}
+
+function validFluidAggregate(item) {
+  return ['entry_count', 'total_intake_ml', 'total_output_ml', 'net_ml'].every((key) => Number.isSafeInteger(item?.[key]))
+    && item.entry_count >= 0 && item.total_intake_ml >= 0 && item.total_output_ml >= 0
+    && item.net_ml === item.total_intake_ml - item.total_output_ml;
+}
+
+export async function getV2FluidBalanceSummary(patientId, filters = {}, { signal } = {}) {
+  try {
+    const query = fluidBalanceQuery(patientId, filters);
+    requireFluidScope(query);
+    const response = await v2Api.getFluidBalanceSummary({ query, signal });
+    const summary = response?.data;
+    if (!validFluidAggregate(summary)) throw new Error('Fluid balance totals could not be confirmed. Reload this view.');
+    return { total_intake: summary.total_intake_ml, total_output: summary.total_output_ml, balance: summary.net_ml,
+      entry_count: summary.entry_count, intake_breakdown: {}, output_breakdown: {} };
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load fluid balance totals');
+  }
+}
+
+export async function getV2FluidBalanceTrends(patientId, filters = {}, { signal } = {}) {
+  try {
+    const points = await loadFluidPages(v2Api.getFluidBalanceTrends, patientId, filters, signal);
+    if (!points.every((point) => validFluidAggregate(point) && /^\d{4}-\d{2}-\d{2}$/.test(point.date))) {
+      throw new Error('Fluid balance trends could not be confirmed. Reload this view.');
+    }
+    return points.map((point) => ({ date: point.date, intake: point.total_intake_ml, output: point.total_output_ml, balance: point.net_ml, entry_count: point.entry_count }));
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load fluid balance trends');
   }
 }
 

@@ -32,4 +32,18 @@ owns the patient context:
   doses and require a shorter date range if that bound is exceeded.
 - Medication history uses server cursor Next/Previous navigation with an unknown
   total; it must not invent a one-page complete count from a facility preview.
+- Fluid entry lists send patient/admission and `[recorded_from, recorded_before)`
+  UTC bounds before following the server's entry cursors. Failed, unconfirmed,
+  or over-100-page reads are unavailable, not an empty or complete partial list.
+- Fluid totals use `/api/v2/nursing/fluid-balance/summary`; daily trends use
+  `/api/v2/nursing/fluid-balance/trends`. SQL aggregates all matching rows, while
+  daily trend responses remain cursor-bounded. All-history trends preserve the
+  complete scope rather than silently showing only a recent entry page.
+- Rust fluid days and displayed entry times use UTC. One shared day rolls over
+  at midnight for the open panel's entries and totals; selected history stays
+  on its chosen date. Fluid creation never automatically retries. An uncertain
+  response refreshes the entries and blocks another submission from that form.
+- Current Rust fluid entry capture persists volume and time. Category, subtype,
+  colour, notes, amendment and deletion remain unsupported and must not be
+  presented as saved clinical facts.
 - Realtime/task updates must use authorized facility/ward/patient subscriptions.

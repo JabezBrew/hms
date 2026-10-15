@@ -45,9 +45,10 @@ pub use nursing_task_board::{
 };
 pub use observations_monitoring::{
     acknowledge_nursing_alert, create_fluid_balance_entry, create_monitoring_event,
-    create_nursing_alert, create_patient_vitals, get_nursing_alert, list_fluid_balance_entries,
-    list_monitoring_events, list_nursing_alerts, list_patient_vitals, NewFluidBalanceEntry,
-    NewMonitoringEvent, NewNursingAlert, NewPatientVitals,
+    create_nursing_alert, create_patient_vitals, fluid_balance_summary, fluid_balance_trends,
+    get_nursing_alert, list_fluid_balance_entries, list_fluid_balance_entries_scoped,
+    list_monitoring_events, list_nursing_alerts, list_patient_vitals, FluidBalanceFilters,
+    NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert, NewPatientVitals,
 };
 pub use staff_assignments::{
     create_ward_staff_assignment, deactivate_ward_staff_assignment, get_ward_staff_assignment,

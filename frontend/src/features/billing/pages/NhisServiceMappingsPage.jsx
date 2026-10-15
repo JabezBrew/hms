@@ -11,6 +11,10 @@ import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useAuth } from '@/lib/auth';
+import { userHasCapability } from '@/shared/lib/access';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { NhisMappingCreateDialog } from '../components/NhisMappingCreateDialog';
 import { useDebounce } from '@/hooks/use-debounce';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -135,7 +139,9 @@ function createMappingColumns({ mappingMutationsAvailable, onEditMapping }) {
 }
 
 function NhisMappingsHeader({
-  mappingMutationsAvailable,
+  mappingCreationAvailable,
+  creationDisabled,
+  csvTemplateAvailable,
   onDownloadTemplate,
   onNewMapping,
   onRefresh,
@@ -154,7 +160,7 @@ function NhisMappingsHeader({
       description="Map internal billable services to NHIS codes (effective-dated)"
       actions={(
         <div className="flex flex-wrap items-center gap-2">
-          <Button
+          {csvTemplateAvailable ? <Button
             variant="outline"
             size="sm"
             className="font-mono text-xs"
@@ -162,7 +168,7 @@ function NhisMappingsHeader({
           >
             <Download className="size-4 mr-2" />
             CSV Template
-          </Button>
+          </Button> : null}
           <Button
             variant="outline"
             size="sm"
@@ -172,11 +178,11 @@ function NhisMappingsHeader({
             <RefreshCw className="size-4 mr-2" />
             Refresh
           </Button>
-          {mappingMutationsAvailable && (
+          {mappingCreationAvailable && (
             <Button
               size="sm"
               className="font-mono text-xs"
-              disabled={!payerId}
+              disabled={!payerId || creationDisabled}
               onClick={onNewMapping}
             >
               <Plus className="size-4 mr-2" />
@@ -189,16 +195,17 @@ function NhisMappingsHeader({
   );
 }
 
-function NhisMappingsReadOnlyNotice({ mappingMutationsAvailable }) {
+function NhisMappingsReadOnlyNotice({ mappingMutationsAvailable, mappingCreationAvailable }) {
   if (mappingMutationsAvailable) {
     return null;
   }
 
   return (
-    <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-      NHIS mapping editing and import are not available in Rust V2 mode yet. Existing
-      mapping views remain read-only until mapping mutation and import contracts are implemented.
-    </section>
+    <Alert role="note"><AlertDescription>
+      {mappingCreationAvailable
+        ? 'Add a dated mapping for review. Payer-specific mappings are not yet applied automatically to new claims. Editing existing mappings and file import are not available.'
+        : 'Creating mappings requires NHIS claims management permission. Existing mappings remain available for review.'}
+    </AlertDescription></Alert>
   );
 }
 
@@ -372,12 +379,12 @@ function NhisMappingFilters({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
       <div className="space-y-2">
-        <Label className="font-mono text-xs uppercase tracking-wider">NHIS Payer</Label>
+        <Label htmlFor="nhis-mapping-payer" className="font-mono text-xs uppercase tracking-wider">NHIS Payer</Label>
         <Select
           value={payerId}
           onValueChange={(value) => setSelectedPayer(value)}
         >
-          <SelectTrigger className="font-mono text-sm">
+          <SelectTrigger id="nhis-mapping-payer" className="font-mono text-sm">
             <SelectValue placeholder="Select NHIS payer" />
           </SelectTrigger>
           <SelectContent>
@@ -390,7 +397,7 @@ function NhisMappingFilters({
         </Select>
         {!nhisProviders.length ? (
           <p className="text-xs text-muted-foreground">
-            Create an insurance provider with `payer_type=nhis` first.
+            No NHIS payer is available. Contact your billing administrator.
           </p>
         ) : null}
       </div>
@@ -399,6 +406,7 @@ function NhisMappingFilters({
         <div className="relative w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
+            aria-label="Search mappings"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search mappings (service name/code, external code)"
@@ -529,13 +537,16 @@ function NhisMappingDialog({
 }
 
 export default function NhisServiceMappingsPage() {
+  const { user } = useAuth();
   const [tableState, setTableState] = useRouteTableState('nhisServiceMappings', {
     search: '',
     selectedPayer: '',
     page: 1,
   });
   const { search, selectedPayer, page } = tableState;
-  const mappingMutationsAvailable = !isRustV2ApiMode();
+  const rustV2Mode = isRustV2ApiMode();
+  const mappingMutationsAvailable = !rustV2Mode;
+  const mappingCreationAvailable = mappingMutationsAvailable || userHasCapability(user, 'nhis.claim.manage');
   const debouncedSearch = useDebounce(search, 250);
 
   const providersQuery = useInsuranceProviders({ page_size: 200 });
@@ -547,7 +558,7 @@ export default function NhisServiceMappingsPage() {
 
   const payerId = selectedPayer || nhisProviders?.[0]?.id || '';
 
-  const servicesQuery = useServices({ page_size: 500, is_active: true });
+  const servicesQuery = useServices({ page_size: 500, is_active: true }, { enabled: !rustV2Mode });
   const services = normalizeResults(servicesQuery.data).results;
 
   const codesQuery = usePayerServiceCodes({
@@ -597,12 +608,16 @@ export default function NhisServiceMappingsPage() {
   });
 
   const handleRefresh = async () => {
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       providersQuery.refetch(),
-      servicesQuery.refetch(),
+      ...(!rustV2Mode ? [servicesQuery.refetch()] : []),
       codesQuery.refetch(),
     ]);
-    toast.success('Refreshed');
+    if (results.some((result) => result.status === 'rejected' || result.value?.isError)) {
+      toast.error('Mappings could not be refreshed. Please try again.');
+    } else {
+      toast.success('Refreshed');
+    }
   };
 
   const setSearch = (nextSearch) => {
@@ -746,7 +761,11 @@ export default function NhisServiceMappingsPage() {
     return <PageState variant="loading" />;
   }
 
-  if (error) {
+  const hasLoadedPage = providersQuery.data
+    && (rustV2Mode || servicesQuery.data)
+    && (!payerId || codesQuery.data);
+
+  if (error && !hasLoadedPage && !dialog.open) {
     return (
       <PageState
         variant="error"
@@ -760,7 +779,9 @@ export default function NhisServiceMappingsPage() {
   return (
     <PageShell>
       <NhisMappingsHeader
-        mappingMutationsAvailable={mappingMutationsAvailable}
+        mappingCreationAvailable={mappingCreationAvailable}
+        creationDisabled={Boolean(error) || codesQuery.isLoading}
+        csvTemplateAvailable={!rustV2Mode}
         onDownloadTemplate={downloadTemplate}
         onNewMapping={openNewMappingDialog}
         onRefresh={handleRefresh}
@@ -768,7 +789,14 @@ export default function NhisServiceMappingsPage() {
       />
 
       <div className="p-4 sm:p-6 space-y-3">
-        <NhisMappingsReadOnlyNotice mappingMutationsAvailable={mappingMutationsAvailable} />
+        <NhisMappingsReadOnlyNotice mappingMutationsAvailable={mappingMutationsAvailable} mappingCreationAvailable={mappingCreationAvailable} />
+        {error && <Alert variant="destructive">
+          <AlertTitle>Mappings could not be refreshed</AlertTitle>
+          <AlertDescription className="flex flex-col items-start gap-2">
+            <p>The last loaded mappings are shown. Refresh successfully before creating another mapping.</p>
+            <Button type="button" variant="outline" size="sm" onClick={handleRefresh}>Retry mappings refresh</Button>
+          </AlertDescription>
+        </Alert>}
 
         <NhisBulkImportPanel
           activeImportJobId={activeImportJobId}
@@ -818,7 +846,14 @@ export default function NhisServiceMappingsPage() {
         />
       </div>
 
-      <NhisMappingDialog
+      {rustV2Mode ? (dialog.open && mappingCreationAvailable ? (
+        <NhisMappingCreateDialog
+          key={payerId}
+          payerId={payerId}
+          payerName={nhisProviders.find((provider) => provider.id === payerId)?.name}
+          onClose={() => handleDialogChange(false)}
+        />
+      ) : null) : <NhisMappingDialog
         createMutation={createMutation}
         dialog={dialog}
         form={form}
@@ -828,7 +863,7 @@ export default function NhisServiceMappingsPage() {
         serviceById={serviceById}
         setForm={setForm}
         updateMutation={updateMutation}
-      />
+      />}
     </PageShell>
   );
 }

@@ -5,6 +5,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { TablePagination } from './table-pagination';
 
 describe('TablePagination', () => {
+  it('navigates cursor pages inside a form without submitting its write action', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn((event) => event.preventDefault());
+    const onPageChange = vi.fn();
+    render(<form onSubmit={onSubmit}><TablePagination currentPage={2} totalCount={100} pageSize={25} countExact={false} canJumpToPage={false} hasNextPage hasPrevPage onPageChange={onPageChange} /></form>);
+    await user.click(screen.getByRole('button', { name: 'Go to next page' }));
+    await user.click(screen.getByRole('button', { name: 'Go to previous page' }));
+    expect(onPageChange.mock.calls).toEqual([[3], [1]]);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('stays hidden for an empty first page', () => {
     const { container } = render(
       <TablePagination

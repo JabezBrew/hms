@@ -1324,15 +1324,18 @@ export const billingApi = {
   },
 
   createNhisClaimBatch: async (data, options = {}) => {
+    if (isRustV2ApiMode() && (!Array.isArray(data.claim_ids)
+      || data.claim_ids.length === 0 || data.claim_ids.length > 100
+      || new Set(data.claim_ids).size !== data.claim_ids.length)) {
+      throw new Error('Select between 1 and 100 distinct claims.');
+    }
     try {
       if (isRustV2ApiMode()) {
-        if (!Array.isArray(data.claim_ids) || data.claim_ids.length === 0) {
-          throw new Error('Rust V2 NHIS batch creation requires selected claim IDs.');
-        }
         const response = await v2Api.postNhisBatches(
           { claim_ids: data.claim_ids },
           { signal: options.signal },
         );
+        if (!response?.data?.id) throw new Error('Saved batch was not returned.');
         return adaptV2NhisBatch(response?.data);
       }
 
@@ -1341,7 +1344,13 @@ export const billingApi = {
       });
     } catch (error) {
       if (isRustV2ApiMode()) {
-        rethrowV2Error(error, 'Failed to create NHIS claim batch');
+        const failure = new Error(handleV2ApiError(error, 'Failed to create NHIS claim batch'));
+        failure.status = error?.status;
+        if (!error?.status || error.status >= 500) {
+          failure.code = 'nhis_batch_unconfirmed';
+          failure.message = 'The save could not be confirmed. Close this dialog and review refreshed batches and claims before creating another batch.';
+        }
+        throw failure;
       }
       throw new Error(handleApiError(error, 'Failed to create NHIS claim batch'));
     }
@@ -1800,18 +1809,17 @@ export const billingApi = {
   createPayerServiceCode: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Request({
-          method: 'POST',
-          path: '/api/v2/nhis/service-mappings',
-          body: {
+        const response = await v2Api.postNhisServiceMappings(
+          {
             payer_id: data.payer_id || data.payer || null,
             service_id: data.service_id || data.service,
             nhis_code: data.nhis_code || data.external_code,
             effective_from: data.effective_from,
             effective_until: data.effective_until || null,
           },
-          signal: data.signal,
-        });
+          { signal: data.signal },
+        );
+        if (!response?.data?.id) throw new Error('Saved mapping was not returned.');
         return adaptV2PayerServiceCode(response?.data);
       }
 
@@ -1820,7 +1828,13 @@ export const billingApi = {
       });
     } catch (error) {
       if (isRustV2ApiMode()) {
-        rethrowV2Error(error, 'Failed to create payer service code');
+        const failure = new Error(handleV2ApiError(error, 'Failed to create payer service code'));
+        failure.status = error?.status;
+        if (!error?.status || error.status >= 500) {
+          failure.code = 'nhis_mapping_unconfirmed';
+          failure.message = 'The save could not be confirmed. Close this dialog and refresh mappings before trying again.';
+        }
+        throw failure;
       }
       throw new Error(handleApiError(error, 'Failed to create payer service code'));
     }

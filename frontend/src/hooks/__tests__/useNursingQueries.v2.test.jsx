@@ -1620,7 +1620,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(2));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/fluid-balance?limit=50',
+      'http://localhost:8080/api/v2/nursing/fluid-balance?patient_id=patient-1&recorded_from=2026-05-12T00%3A00%3A00.000Z&recorded_before=2026-05-13T00%3A00%3A00.000Z&limit=50',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual([
@@ -1641,78 +1641,21 @@ describe('Rust V2 nursing dashboard hooks', () => {
     ]);
   });
 
-  it('derives fluid balance summaries and trends from Rust V2 bounded entries', async () => {
+  it('loads complete fluid balance summaries and daily trends from server aggregate contracts', async () => {
     const todayKey = new Date().toISOString().slice(0, 10);
-    const payload = {
-      data: [
-        {
-          id: 'fluid-1',
-          admission_case_id: 'admission-1',
-          patient_id: 'patient-1',
-          patient_code: 'MRN-001',
-          patient_display_name: 'Ama Mensah',
-          recorded_at: `${todayKey}T08:00:00Z`,
-          intake_ml: 500,
-          output_ml: 0,
-          net_ml: 500,
-        },
-        {
-          id: 'fluid-2',
-          admission_case_id: 'admission-1',
-          patient_id: 'patient-1',
-          patient_code: 'MRN-001',
-          patient_display_name: 'Ama Mensah',
-          recorded_at: `${todayKey}T09:00:00Z`,
-          intake_ml: 0,
-          output_ml: 200,
-          net_ml: -200,
-        },
-      ],
-      page: { limit: 50, has_next: false, next_cursor: null },
-      meta: {},
-    };
-    globalThis.fetch
-      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }));
-
-    const summary = renderHook(() => useFluidBalanceSummary('patient-1', todayKey), {
-      wrapper: createWrapper(),
-    });
-    const today = renderHook(() => useTodayFluidBalance('patient-1'), {
-      wrapper: createWrapper(),
-    });
-    const trends = renderHook(
-      () => useFluidBalanceTrends('patient-1', { start_date: todayKey, end_date: todayKey }),
-      {
-        wrapper: createWrapper(),
-      },
-    );
-
+    const aggregate = { entry_count: 2, total_intake_ml: 500, total_output_ml: 200, net_ml: 300 };
+    globalThis.fetch.mockImplementation(async (url) => new Response(JSON.stringify({
+      data: new URL(url).pathname.endsWith('/trends') ? [{ date: todayKey, ...aggregate }] : aggregate,
+      page: { has_next: false, next_cursor: null, limit: 50 },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const summary = renderHook(() => useFluidBalanceSummary('patient-1', todayKey), { wrapper: createWrapper() });
+    const today = renderHook(() => useTodayFluidBalance('patient-1'), { wrapper: createWrapper() });
+    const trends = renderHook(() => useFluidBalanceTrends('patient-1', { start_date: todayKey, end_date: todayKey }), { wrapper: createWrapper() });
     await waitFor(() => expect(summary.result.current.data?.total_intake).toBe(500));
     await waitFor(() => expect(today.result.current.data?.total_output).toBe(200));
     await waitFor(() => expect(trends.result.current.data).toHaveLength(1));
-
-    expect(summary.result.current.data).toEqual(expect.objectContaining({
-      total_intake: 500,
-      total_output: 200,
-      balance: 300,
-    }));
-    expect(trends.result.current.data[0]).toEqual(expect.objectContaining({
-      date: todayKey,
-      intake: 500,
-      output: 200,
-      balance: 300,
-    }));
+    expect(summary.result.current.data).toMatchObject({ total_intake: 500, total_output: 200, balance: 300 });
+    expect(trends.result.current.data[0]).toMatchObject({ date: todayKey, intake: 500, output: 200, balance: 300 });
   });
 
   it('creates fluid balance entries through the Rust V2 fluid balance contract', async () => {
@@ -1792,54 +1735,16 @@ describe('Rust V2 nursing dashboard hooks', () => {
     }));
   });
 
-  it('derives fluid balance alerts from Rust V2 entries and local thresholds', async () => {
-    globalThis.fetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          data: [
-            {
-              id: 'fluid-1',
-              admission_case_id: 'admission-1',
-              patient_id: 'patient-1',
-              patient_code: 'MRN-001',
-              patient_display_name: 'Ama Mensah',
-              recorded_at: '2026-05-12T08:00:00Z',
-              intake_ml: 100,
-              output_ml: 0,
-              net_ml: 100,
-            },
-            {
-              id: 'fluid-2',
-              admission_case_id: 'admission-1',
-              patient_id: 'patient-1',
-              patient_code: 'MRN-001',
-              patient_display_name: 'Ama Mensah',
-              recorded_at: '2026-05-12T09:00:00Z',
-              intake_ml: 0,
-              output_ml: 900,
-              net_ml: -900,
-            },
-          ],
-          page: { limit: 50, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        },
-      ),
-    );
-
-    const { result } = renderHook(() => useFluidBalanceAlerts('patient-1', '2026-05-12'), {
-      wrapper: createWrapper(),
-    });
-
+  it('derives fluid balance alerts from complete Rust totals and local thresholds', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      entry_count: 2, total_intake_ml: 100, total_output_ml: 900, net_ml: -800,
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const { result } = renderHook(() => useFluidBalanceAlerts('patient-1', '2026-05-12'), { wrapper: createWrapper() });
     await waitFor(() => expect(result.current.data?.alerts?.length).toBeGreaterThan(0));
-
-    expect(result.current.data).toEqual(expect.objectContaining({
+    expect(result.current.data).toMatchObject({
       alerts: expect.arrayContaining([expect.objectContaining({ type: 'negative_balance' })]),
       summary: expect.objectContaining({ total_intake: 100, total_output: 900, balance: -800 }),
-    }));
+    });
   });
 
   it('loads the Rust V2 pharmacy dispensing queue as pending fulfillment work', async () => {

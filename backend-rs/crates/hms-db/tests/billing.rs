@@ -10,6 +10,9 @@ use hms_domain::billing::{
 };
 use hms_domain::deployment::DeploymentProfile;
 
+#[path = "billing/nhis_safety.rs"]
+mod nhis_safety;
+
 #[tokio::test]
 async fn service_catalog_list_is_bounded_and_includes_active_price() {
     let database =
@@ -696,6 +699,7 @@ async fn invoice_locks_after_payment_claim_export_and_finalization() {
             batch_number: "NHB-LOCK-1".to_owned(),
             claim_ids: vec![claim.id],
             actor_user_id: fixture.owner_id,
+            request_id: None,
         },
     )
     .await
@@ -896,6 +900,7 @@ async fn nhis_claim_captures_effective_mapping_version_and_ar_adjustments() {
             effective_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
             effective_until: Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
             actor_user_id: fixture.owner_id,
+            request_id: None,
         },
     )
     .await
@@ -911,6 +916,7 @@ async fn nhis_claim_captures_effective_mapping_version_and_ar_adjustments() {
             effective_from: chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
             effective_until: None,
             actor_user_id: fixture.owner_id,
+            request_id: None,
         },
     )
     .await

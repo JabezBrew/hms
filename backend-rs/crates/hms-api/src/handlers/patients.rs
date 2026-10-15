@@ -1,6 +1,9 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use hms_domain::auth::{BreakGlassGrant, EndBreakGlassGrantsResponse, StartBreakGlassGrantRequest};
+use hms_domain::auth::{
+    BreakGlassGrant, CurrentBreakGlassStatus, EndBreakGlassGrantsResponse,
+    StartBreakGlassGrantRequest,
+};
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::patients::{
     CreatePatientRequest, PatientContextListGetQuery, PatientContextListItem,
@@ -382,6 +385,34 @@ pub async fn start_break_glass_grant(
         state
             .patients_service()
             .start_break_glass_grant(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/patients/{id}/break-glass",
+    operation_id = "getPatientBreakGlass",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Patient id")),
+    responses(
+        (status = 200, description = "Current actor's emergency grant status", body = ObjectResponse<CurrentBreakGlassStatus>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Dedicated permission and patient identity access required", body = ApiErrorResponse),
+        (status = 404, description = "Patient not found in this facility", body = ApiErrorResponse),
+        (status = 409, description = "Grant status unavailable", body = ApiErrorResponse)
+    )
+)]
+pub async fn current_break_glass_status(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<CurrentBreakGlassStatus>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .current_break_glass_status(&user, id)
             .await?,
     ))
 }

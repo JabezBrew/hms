@@ -1,101 +1,81 @@
+import { useId, useState } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+const CATEGORIES = [
+  ['life_threatening_emergency', 'Life-threatening emergency'],
+  ['patient_unconscious_or_unidentified', 'Patient unconscious or unidentified'],
+  ['handover_or_assignment_gap', 'Handover or assignment gap'],
+  ['urgent_clinical_continuity', 'Urgent continuity of care'],
+  ['other_emergency', 'Other emergency'],
+];
 
-const BreakGlassDialog = ({
-  open,
-  onOpenChange,
-  patientName,
-  patientMrn,
-  reason,
-  onReasonChange,
-  onSubmit,
-  isSubmitting,
-  ttlMinutes = 30,
-}) => {
-  const reasonCount = reason?.length || 0;
-  const isValid = reasonCount >= 6;
+export default function BreakGlassDialog({
+  open, onOpenChange, patientName, patientMrn, reason, onReasonChange,
+  onSubmit, isSubmitting, ttlMinutes = 30, rustV2Mode = false, error,
+}) {
+  const id = useId();
+  const [password, setPassword] = useState('');
+  const [category, setCategory] = useState('');
+  const reasonCount = reason?.trim().length || 0;
+  const valid = rustV2Mode ? Boolean(category && password) : reasonCount >= 6;
+  const close = (nextOpen) => {
+    if (isSubmitting) return;
+    if (!nextOpen) { setPassword(''); setCategory(''); }
+    onOpenChange(nextOpen);
+  };
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!valid || isSubmitting) return;
+    try {
+      await onSubmit(rustV2Mode ? { password, category, reason } : undefined);
+    } finally {
+      setPassword('');
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl border-border/70 bg-card/95 shadow-[0_24px_80px_-40px_rgba(0,0,0,0.6)] backdrop-blur">
-        <DialogHeader className="text-left space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
-              Break Glass
-            </span>
-            <span className="text-xs text-muted-foreground">Emergency access</span>
-          </div>
-          <DialogTitle className="font-display text-2xl text-foreground">
-            Temporary clinical access required
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            This action grants time-limited access for urgent care and is fully audited.
-          </DialogDescription>
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="max-h-[90dvh] max-w-xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Emergency clinical access</DialogTitle>
+          <DialogDescription>Request temporary access for urgent care. Your reason and access are audited.</DialogDescription>
         </DialogHeader>
-
-        <div className="rounded-xl border border-border/70 bg-background/60 p-4 space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 text-chronicle-rose">
-              <AlertTriangle className="size-4" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Patient
-              </p>
-              <p className="text-sm text-foreground">
-                {patientName || "Unknown Patient"}
-              </p>
-              {patientMrn && (
-                <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
-              )}
-            </div>
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+            <p className="font-medium">{patientName || 'This patient record'}</p>
+            {patientMrn && <p className="text-muted-foreground">MRN {patientMrn}</p>}
           </div>
-
-          <div className="space-y-2">
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              Reason for access
-            </p>
-            <Textarea
-              value={reason}
-              onChange={(event) => onReasonChange(event.target.value)}
-              placeholder="Explain the clinical need for access."
-              maxLength={500}
-              className="min-h-[110px] bg-background/80 text-sm"
-            />
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span className={cn(reasonCount < 6 && "text-chronicle-rose")}>
-                Minimum 6 characters required.
-              </span>
-              <span>{reasonCount}/500</span>
-            </div>
+          {rustV2Mode && <div className="grid gap-2">
+            <Label htmlFor={`${id}-category`}>Emergency category</Label>
+            <Select value={category} onValueChange={setCategory} disabled={isSubmitting}>
+              <SelectTrigger id={`${id}-category`}><SelectValue placeholder="Choose the clinical need" /></SelectTrigger>
+              <SelectContent>{CATEGORIES.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>}
+          <div className="grid gap-2">
+            <Label htmlFor={`${id}-reason`}>Reason for access{rustV2Mode ? ' (optional)' : ''}</Label>
+            <Textarea id={`${id}-reason`} value={reason} onChange={(event) => onReasonChange(event.target.value)} maxLength={500} rows={3} disabled={isSubmitting} />
+            <p className="text-xs text-muted-foreground">{rustV2Mode ? 'Add clinical context if needed.' : 'Minimum 6 characters required.'} {reason?.length || 0}/500</p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Clock className="size-3.5" />
-          <span>Access expires automatically in about {ttlMinutes} minutes.</span>
-        </div>
-
-        <DialogFooter className="gap-3 sm:justify-end">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            onClick={onSubmit}
-            disabled={!isValid || isSubmitting}
-            className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
-          >
-            {isSubmitting ? "Granting Access..." : "Grant Access"}
-          </Button>
-        </DialogFooter>
+          {rustV2Mode && <div className="grid gap-2">
+            <Label htmlFor={`${id}-password`}>Current password</Label>
+            <Input id={`${id}-password`} type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={isSubmitting} />
+            <p className="text-xs text-muted-foreground">Confirm your password to start a fresh sign-in session before requesting access.</p>
+          </div>}
+          <p className="text-sm text-muted-foreground">Access expires automatically after {ttlMinutes} minutes. End it as soon as urgent care is complete.</p>
+          {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => close(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button type="submit" disabled={!valid || isSubmitting}>{isSubmitting ? 'Verifying and requesting…' : 'Request emergency access'}</Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
-};
-
-export default BreakGlassDialog;
+}

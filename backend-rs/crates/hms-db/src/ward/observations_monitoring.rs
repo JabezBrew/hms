@@ -1,7 +1,8 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::ward::{
-    FluidBalanceListItem, MonitoringEventKind, MonitoringEventListItem, NursingAlertListItem,
-    NursingAlertSeverity, NursingAlertStatus, PatientVitalsListItem,
+    FluidBalanceListItem, FluidBalanceSummary, FluidBalanceTrendPoint, MonitoringEventKind,
+    MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity, NursingAlertStatus,
+    PatientVitalsListItem,
 };
 use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -116,6 +117,32 @@ struct FluidBalanceRow {
     intake_ml: i32,
     output_ml: i32,
     net_ml: i32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FluidBalanceFilters {
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub recorded_from: Option<DateTime<Utc>>,
+    pub recorded_before: Option<DateTime<Utc>>,
+    pub descending: bool,
+}
+
+#[derive(FromRow)]
+struct FluidSummaryRow {
+    entry_count: i64,
+    total_intake_ml: i64,
+    total_output_ml: i64,
+    net_ml: i64,
+}
+
+#[derive(FromRow)]
+struct FluidTrendRow {
+    date: NaiveDate,
+    entry_count: i64,
+    total_intake_ml: i64,
+    total_output_ml: i64,
+    net_ml: i64,
 }
 
 pub async fn list_patient_vitals(
@@ -363,25 +390,138 @@ pub async fn list_fluid_balance_entries(
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<FluidBalanceListItem>> {
-    let mut query = fluid_balance_query();
-    query.push(" WHERE fluid_balance_entries.facility_id = ");
-    query.push_bind(facility_id);
-    append_forward_cursor(
-        &mut query,
-        "fluid_balance_entries.recorded_at",
-        "fluid_balance_entries.id",
+    list_fluid_balance_entries_scoped(
+        pool,
+        facility_id,
+        FluidBalanceFilters::default(),
         cursor,
-    );
-    query.push(
-        " ORDER BY fluid_balance_entries.recorded_at ASC, fluid_balance_entries.id ASC LIMIT ",
-    );
-    query.push_bind(limit);
+        limit,
+    )
+    .await
+}
+
+pub async fn list_fluid_balance_entries_scoped(
+    pool: &PgPool,
+    facility_id: Uuid,
+    filters: FluidBalanceFilters,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<FluidBalanceListItem>> {
+    let mut query = fluid_balance_query();
+    append_fluid_scope(&mut query, facility_id, &filters);
+    if let Some(cursor) = cursor {
+        query.push(" AND (fluid_balance_entries.recorded_at, fluid_balance_entries.id) ");
+        query.push(if filters.descending { "< (" } else { "> (" });
+        query
+            .push_bind(cursor.occurred_at)
+            .push(", ")
+            .push_bind(cursor.id)
+            .push(")");
+    }
+    query.push(if filters.descending {
+        " ORDER BY fluid_balance_entries.recorded_at DESC, fluid_balance_entries.id DESC LIMIT "
+    } else {
+        " ORDER BY fluid_balance_entries.recorded_at ASC, fluid_balance_entries.id ASC LIMIT "
+    });
+    query.push_bind(limit.clamp(1, 101));
     let rows = observe_db_query(
         "ward.observations.fluid_balance.list",
         query.build_query_as::<FluidBalanceRow>().fetch_all(pool),
     )
     .await?;
     Ok(rows.into_iter().map(fluid_balance_from_row).collect())
+}
+
+pub async fn fluid_balance_summary(
+    pool: &PgPool,
+    facility_id: Uuid,
+    filters: FluidBalanceFilters,
+) -> anyhow::Result<FluidBalanceSummary> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT COUNT(*) AS entry_count, COALESCE(SUM(intake_ml), 0)::bigint AS total_intake_ml, COALESCE(SUM(output_ml), 0)::bigint AS total_output_ml, (COALESCE(SUM(intake_ml), 0) - COALESCE(SUM(output_ml), 0))::bigint AS net_ml FROM fluid_balance_entries JOIN patients ON patients.id = fluid_balance_entries.patient_id AND patients.facility_id = fluid_balance_entries.facility_id"
+    );
+    append_fluid_scope(&mut query, facility_id, &filters);
+    let row = observe_db_query(
+        "ward.observations.fluid_balance.summary",
+        query.build_query_as::<FluidSummaryRow>().fetch_one(pool),
+    )
+    .await?;
+    Ok(FluidBalanceSummary {
+        entry_count: row.entry_count,
+        total_intake_ml: row.total_intake_ml,
+        total_output_ml: row.total_output_ml,
+        net_ml: row.net_ml,
+    })
+}
+
+pub async fn fluid_balance_trends(
+    pool: &PgPool,
+    facility_id: Uuid,
+    filters: FluidBalanceFilters,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<FluidBalanceTrendPoint>> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT (recorded_at AT TIME ZONE 'UTC')::date AS date, COUNT(*) AS entry_count, SUM(intake_ml)::bigint AS total_intake_ml, SUM(output_ml)::bigint AS total_output_ml, (SUM(intake_ml) - SUM(output_ml))::bigint AS net_ml FROM fluid_balance_entries JOIN patients ON patients.id = fluid_balance_entries.patient_id AND patients.facility_id = fluid_balance_entries.facility_id"
+    );
+    append_fluid_scope(&mut query, facility_id, &filters);
+    query.push(" GROUP BY (recorded_at AT TIME ZONE 'UTC')::date");
+    if let Some(cursor) = cursor {
+        query.push(" HAVING (recorded_at AT TIME ZONE 'UTC')::date ");
+        query.push(if filters.descending { "< " } else { "> " });
+        query.push_bind(cursor.occurred_at.date_naive());
+    }
+    query.push(if filters.descending {
+        " ORDER BY date DESC LIMIT "
+    } else {
+        " ORDER BY date ASC LIMIT "
+    });
+    query.push_bind(limit.clamp(1, 101));
+    let rows = observe_db_query(
+        "ward.observations.fluid_balance.trends",
+        query.build_query_as::<FluidTrendRow>().fetch_all(pool),
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| FluidBalanceTrendPoint {
+            date: row.date,
+            entry_count: row.entry_count,
+            total_intake_ml: row.total_intake_ml,
+            total_output_ml: row.total_output_ml,
+            net_ml: row.net_ml,
+        })
+        .collect())
+}
+
+fn append_fluid_scope(
+    query: &mut QueryBuilder<'_, Postgres>,
+    facility_id: Uuid,
+    filters: &FluidBalanceFilters,
+) {
+    query
+        .push(" WHERE fluid_balance_entries.facility_id = ")
+        .push_bind(facility_id);
+    if let Some(id) = filters.patient_id {
+        query
+            .push(" AND fluid_balance_entries.patient_id = ")
+            .push_bind(id);
+    }
+    if let Some(id) = filters.admission_case_id {
+        query
+            .push(" AND fluid_balance_entries.admission_case_id = ")
+            .push_bind(id);
+    }
+    if let Some(from) = filters.recorded_from {
+        query
+            .push(" AND fluid_balance_entries.recorded_at >= ")
+            .push_bind(from);
+    }
+    if let Some(before) = filters.recorded_before {
+        query
+            .push(" AND fluid_balance_entries.recorded_at < ")
+            .push_bind(before);
+    }
 }
 
 pub async fn create_fluid_balance_entry(

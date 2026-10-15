@@ -5,6 +5,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
@@ -231,10 +232,10 @@ function createItemColumns({
       cellClassName: 'text-right',
       render: (item) => (
         <span className="font-mono">
-          {USD_CURRENCY_FORMATTER.format(item.unit_price || 0)}
-          <span className="text-muted-foreground text-xs ml-1">
+          {item.unit_price == null ? 'Unavailable' : USD_CURRENCY_FORMATTER.format(item.unit_price)}
+          {item.unit_price != null && <span className="text-muted-foreground text-xs ml-1">
             /{item.unit_of_measure || 'ea'}
-          </span>
+          </span>}
         </span>
       ),
     },
@@ -336,11 +337,11 @@ function ItemsHeader({
 
 function RustV2InventoryNotice() {
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      Inventory item creation and editing is not available in Rust V2 mode yet. Existing
-      item catalog review, stock levels, movement history, and requisition workflows remain
-      available.
-    </div>
+    <Alert role="note"><AlertDescription>
+      Open an item to correct its catalog details with inventory management permission.
+      Item creation and full editing are unavailable. Stock levels, movement history,
+      and requisition workflows remain available.
+    </AlertDescription></Alert>
   );
 }
 

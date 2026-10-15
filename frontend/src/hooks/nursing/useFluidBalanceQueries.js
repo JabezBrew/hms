@@ -1,19 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import { v2Api } from '@/lib/api/v2/client';
+import { getV2ClientScopeKey, v2Api } from '@/lib/api/v2/client';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import {
   DEFAULT_FLUID_BALANCE_SETTINGS,
   adaptV2FluidBalanceItem,
   deriveFluidBalanceAlerts,
-  fluidBalanceTrendPoints,
+  fluidBalanceCacheScope,
   getV2FluidBalanceEntries,
+  getV2FluidBalanceSummary,
+  getV2FluidBalanceTrends,
   normalizeV2FluidBalancePayload,
   rethrowV2Error,
-  summarizeFluidBalance,
 } from '../nursingQueriesV2Bridge';
 import { nursingKeys } from './nursingQueryKeys';
+import { useFluidBalanceDay } from '@/features/nursing/hooks/useFluidBalanceDay';
 
 /**
  * Get fluid balance entries for a patient
@@ -26,7 +28,9 @@ export const useFluidBalance = (patientId, filters = {}, options = {}) => {
   const { admission, admission_id, entry_type, date, start_date, end_date } = filters;
 
   return useQuery({
-    queryKey: nursingKeys.fluidBalance(
+    queryKey: isRustV2ApiMode()
+      ? nursingKeys.fluidBalanceWindow(patientId, getV2ClientScopeKey(), fluidBalanceCacheScope(patientId, filters))
+      : nursingKeys.fluidBalance(
       patientId,
       admission_id || admission,
       entry_type,
@@ -52,7 +56,7 @@ export const useFluidBalance = (patientId, filters = {}, options = {}) => {
     refetchInterval: false,
     refetchOnWindowFocus: false,
     staleTime: 30000,
-    placeholderData: [],
+    placeholderData: isRustV2ApiMode() ? undefined : [],
   });
 };
 
@@ -64,12 +68,15 @@ export const useFluidBalance = (patientId, filters = {}, options = {}) => {
  */
 export const useFluidBalanceSummary = (patientId, date = null, options = {}) => {
   const { enabled = true } = options;
+  const resolvedDate = date || new Date().toISOString().slice(0, 10);
+  const filters = { date: resolvedDate, admission_case_id: options.admission_case_id || options.admission_id || options.admission };
   return useQuery({
-    queryKey: nursingKeys.fluidBalanceSummary(patientId, date),
+    queryKey: isRustV2ApiMode()
+      ? nursingKeys.fluidBalanceSummaryWindow(patientId, getV2ClientScopeKey(), fluidBalanceCacheScope(patientId, filters))
+      : nursingKeys.fluidBalanceSummary(patientId, date),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const records = await getV2FluidBalanceEntries(patientId, { date }, { signal });
-        return summarizeFluidBalance(records);
+        return getV2FluidBalanceSummary(patientId, filters, { signal });
       }
 
       const params = new URLSearchParams();
@@ -83,7 +90,7 @@ export const useFluidBalanceSummary = (patientId, date = null, options = {}) => 
     refetchInterval: false,
     refetchOnWindowFocus: false,
     staleTime: 30000,
-    placeholderData: {
+    placeholderData: isRustV2ApiMode() ? undefined : {
       total_intake: 0,
       total_output: 0,
       balance: 0,
@@ -100,28 +107,20 @@ export const useFluidBalanceSummary = (patientId, date = null, options = {}) => 
  */
 export const useTodayFluidBalance = (patientId, options = {}) => {
   const { enabled = true } = options;
+  const day = useFluidBalanceDay({ utc: isRustV2ApiMode(), enabled: enabled && !options.date });
+  const filters = { date: options.date || day, admission_case_id: options.admission_case_id || options.admission_id || options.admission };
   return useQuery({
-    queryKey: nursingKeys.fluidBalanceToday(patientId),
+    queryKey: isRustV2ApiMode()
+      ? nursingKeys.fluidBalanceSummaryWindow(patientId, getV2ClientScopeKey(), fluidBalanceCacheScope(patientId, filters))
+      : nursingKeys.fluidBalanceToday(patientId),
     queryFn: async ({ signal }) => {
-      if (isRustV2ApiMode()) {
-        const today = new Date().toISOString().slice(0, 10);
-        const records = await getV2FluidBalanceEntries(patientId, { date: today }, { signal });
-        return summarizeFluidBalance(records);
-      }
-
+      if (isRustV2ApiMode()) return getV2FluidBalanceSummary(patientId, filters, { signal });
       const response = await apiClient.get(`/nursing/fluid-balance/today_balance/?patient=${patientId}`, { signal });
-      const data = response?.data ?? response;
-      return data ?? { total_intake: 0, total_output: 0, balance: 0 };
+      return response?.data ?? response ?? { total_intake: 0, total_output: 0, balance: 0 };
     },
     enabled: !!patientId && enabled,
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
     staleTime: 30000,
-    placeholderData: {
-      total_intake: 0,
-      total_output: 0,
-      balance: 0,
-    },
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -136,7 +135,9 @@ export const useFluidBalanceTrends = (patientId, filters = {}, options = {}) => 
   const { admission, admission_id, start_date, end_date } = filters;
 
   return useQuery({
-    queryKey: nursingKeys.fluidBalanceTrends(
+    queryKey: isRustV2ApiMode()
+      ? nursingKeys.fluidBalanceTrendWindow(patientId, getV2ClientScopeKey(), fluidBalanceCacheScope(patientId, filters))
+      : nursingKeys.fluidBalanceTrends(
       patientId,
       admission_id || admission,
       start_date,
@@ -144,12 +145,7 @@ export const useFluidBalanceTrends = (patientId, filters = {}, options = {}) => 
     ),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const records = await getV2FluidBalanceEntries(patientId, {
-          admission: admission_id || admission,
-          start_date,
-          end_date,
-        }, { signal });
-        return fluidBalanceTrendPoints(records);
+        return getV2FluidBalanceTrends(patientId, filters, { signal });
       }
 
       const params = new URLSearchParams();
@@ -167,7 +163,7 @@ export const useFluidBalanceTrends = (patientId, filters = {}, options = {}) => 
     refetchInterval: false,
     refetchOnWindowFocus: false,
     staleTime: 30000,
-    placeholderData: [],
+    placeholderData: isRustV2ApiMode() ? undefined : [],
   });
 };
 
@@ -178,15 +174,23 @@ export const useCreateFluidBalance = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
+        const payload = normalizeV2FluidBalancePayload(data);
         try {
           const response = await v2Api.postFluidBalanceEntries(
-            normalizeV2FluidBalancePayload(data),
+            payload,
             { signal: data?.signal },
           );
+          if (!response?.data?.id) throw new Error('Unconfirmed fluid entry response');
           return adaptV2FluidBalanceItem(response?.data)[0];
         } catch (error) {
+          if (!(error?.status >= 400 && error?.status < 500)) {
+            const uncertain = new Error('The fluid entry may have been saved. Refresh and review the entries before recording it again.');
+            uncertain.name = 'FluidBalanceWriteUnconfirmedError';
+            throw uncertain;
+          }
           rethrowV2Error(error, 'Failed to record fluid balance');
         }
       }
@@ -201,6 +205,8 @@ export const useCreateFluidBalance = () => {
         queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceTodayAll() });
       }
       queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceTrendsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.fluidBalanceAlertsAll() });
     },
   });
 };
@@ -254,12 +260,12 @@ export const useFluidBalanceSettings = () => {
  * @param {string} date - Optional date (YYYY-MM-DD format, defaults to today)
  */
 export const useFluidBalanceAlerts = (patientId, date = null) => {
+  const resolvedDate = date || new Date().toISOString().slice(0, 10);
   return useQuery({
-    queryKey: nursingKeys.fluidBalanceAlerts(patientId, date),
+    queryKey: nursingKeys.fluidBalanceAlerts(patientId, resolvedDate, isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const records = await getV2FluidBalanceEntries(patientId, { date }, { signal });
-        const summary = summarizeFluidBalance(records);
+        const summary = await getV2FluidBalanceSummary(patientId, { date: resolvedDate }, { signal });
         return {
           alerts: deriveFluidBalanceAlerts(summary),
           thresholds: DEFAULT_FLUID_BALANCE_SETTINGS,

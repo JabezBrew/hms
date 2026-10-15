@@ -113,13 +113,14 @@ export function usePatientCurrentContexts(id, options = {}) {
 }
 
 export function usePatientChronicleStartup(id, params = {}, options = {}) {
-  const { enabled = true, staleTime = 30 * 1000 } = options;
+  const { enabled = true, staleTime = 30 * 1000, refetchOnMount } = options;
   return useQuery({
     queryKey: patientKeys.chronicleStartup(id, params),
     queryFn: ({ signal }) => patientsApi.getPatientChronicleStartup(id, params, { signal }),
     enabled: !!id && enabled,
     staleTime,
     refetchOnWindowFocus: false,
+    ...(refetchOnMount !== undefined ? { refetchOnMount } : {}),
   });
 }
 

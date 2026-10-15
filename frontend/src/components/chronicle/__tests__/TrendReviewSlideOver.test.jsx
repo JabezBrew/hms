@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 
 import TrendReviewSlideOver from '@/components/chronicle/TrendReviewSlideOver';
+import { useFluidBalanceTrends } from '@/features/nursing/hooks';
 
 vi.mock('@/features/nursing/hooks', () => ({
   useVitalSignsTrends: vi.fn(() => ({
@@ -58,5 +59,12 @@ describe('TrendReviewSlideOver', () => {
     const fluidTab = screen.getByRole('tab', { name: /fluid balance/i });
     expect(fluidTab).toBeInTheDocument();
     expect(fluidTab).toHaveAttribute('data-state', 'active');
+  });
+
+  it('shows an incomplete trend read as unavailable instead of an empty history', () => {
+    useFluidBalanceTrends.mockReturnValueOnce({ data: [], isLoading: false, error: new Error('Synthetic page failed') });
+    render(<TrendReviewSlideOver open onClose={vi.fn()} patient={patient} allHistory initialTab="fluids" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('could not be fully loaded');
+    expect(screen.queryByText('No fluid-balance data in this scope')).not.toBeInTheDocument();
   });
 });

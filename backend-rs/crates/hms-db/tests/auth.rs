@@ -463,11 +463,16 @@ async fn auth_password_changes_are_user_and_facility_scoped() {
         .await
         .expect("old hash exists");
 
-    let changed =
-        hms_db::auth::change_user_password(&pool, facility_id, owner_id, "new-password-hash")
-            .await
-            .expect("password change succeeds")
-            .expect("user exists");
+    let changed = hms_db::auth::change_user_password(
+        &pool,
+        facility_id,
+        owner_id,
+        &old_hash,
+        "new-password-hash",
+    )
+    .await
+    .expect("password change succeeds")
+    .expect("user exists");
 
     assert_eq!(changed.id, owner_id);
     assert_eq!(changed.password_hash, "new-password-hash");
@@ -484,8 +489,20 @@ async fn auth_password_changes_are_user_and_facility_scoped() {
 
     assert!(hms_db::auth::change_user_password(
         &pool,
+        facility_id,
+        owner_id,
+        &old_hash,
+        "stale-verified-password-hash",
+    )
+    .await
+    .expect("stale credential decision is checked")
+    .is_none());
+
+    assert!(hms_db::auth::change_user_password(
+        &pool,
         Uuid::new_v4(),
         owner_id,
+        "new-password-hash",
         "cross-facility-hash",
     )
     .await

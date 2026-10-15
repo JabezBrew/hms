@@ -1,9 +1,14 @@
 import BreakGlassDialog from '@/components/chronicle/BreakGlassDialog';
 import { Button } from '@/components/ui/button';
+import { ChronicleEmergencyAccess } from './ChronicleEmergencyAccess';
 
 export function ChronicleAccessDeniedState({
   breakGlassExpiresAt,
   breakGlassReason,
+  breakGlassError,
+  breakGlassRefreshError,
+  breakGlassUnconfirmed,
+  breakGlassStatusError,
   canRequestBreakGlass,
   isBreakGlassOpen,
   isSubmitting,
@@ -14,6 +19,8 @@ export function ChronicleAccessDeniedState({
   onBreakGlassOpenChange,
   onBreakGlassReasonChange,
   onBreakGlassSubmit,
+  onBreakGlassEnd,
+  onBreakGlassRefresh,
 }) {
   const patientDetails = patient?.local_data || patient;
   const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
@@ -58,11 +65,13 @@ export function ChronicleAccessDeniedState({
                 )}
               </div>
 
-              {canRequestBreakGlass ? (
+              {rustV2Mode && canRequestBreakGlass && (breakGlassExpiresAt || breakGlassRefreshError || breakGlassUnconfirmed || breakGlassStatusError) ? (
+                <ChronicleEmergencyAccess expiresAt={breakGlassExpiresAt} busy={isSubmitting} error={breakGlassError} refreshError={breakGlassRefreshError} unconfirmed={breakGlassUnconfirmed} statusError={breakGlassStatusError} onEnd={onBreakGlassEnd} onRefresh={onBreakGlassRefresh} />
+              ) : canRequestBreakGlass ? (
                 <div className="flex flex-wrap items-center gap-3">
                   <Button
                     onClick={() => onBreakGlassOpenChange(true)}
-                    className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
+                    disabled={isSubmitting}
                   >
                     Request Break-Glass Access
                   </Button>
@@ -72,7 +81,7 @@ export function ChronicleAccessDeniedState({
                 </div>
               ) : rustV2Mode ? (
                 <p className="text-xs text-muted-foreground">
-                  Break-glass access is not available in Rust V2 mode.
+                  Emergency access requires the dedicated break-glass permission. Contact your clinical access administrator.
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
@@ -93,7 +102,9 @@ export function ChronicleAccessDeniedState({
             onReasonChange={onBreakGlassReasonChange}
             onSubmit={onBreakGlassSubmit}
             isSubmitting={isSubmitting}
-            ttlMinutes={30}
+            rustV2Mode={rustV2Mode}
+            error={breakGlassError}
+            ttlMinutes={rustV2Mode ? 120 : 30}
           />
         )}
       </div>

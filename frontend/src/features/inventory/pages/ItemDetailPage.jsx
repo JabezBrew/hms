@@ -63,7 +63,11 @@ const US_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
  * Format currency
  */
 function formatCurrency(amount) {
-  return USD_CURRENCY_FORMATTER.format(amount || 0);
+  return amount == null ? 'Unavailable' : USD_CURRENCY_FORMATTER.format(amount);
+}
+
+function stockValue(item) {
+  return item.unit_price == null ? null : (item.total_stock || 0) * item.unit_price;
 }
 
 /**
@@ -178,7 +182,7 @@ function OverviewTab({ item, isLoading }) {
           <div className="flex justify-between">
             <span className="text-sm text-muted-foreground">Total Stock Value</span>
             <span className="text-sm font-mono font-semibold text-emerald-500">
-              {formatCurrency((item.total_stock || 0) * (item.unit_price || 0))}
+              {formatCurrency(stockValue(item))}
             </span>
           </div>
         </CardContent>
@@ -706,7 +710,7 @@ export default function ItemDetailPage() {
           <div>
             <p className="text-sm text-muted-foreground">Stock Value</p>
             <p className="text-2xl font-mono font-semibold text-emerald-500">
-              {formatCurrency((item.total_stock || 0) * (item.unit_price || 0))}
+              {formatCurrency(stockValue(item))}
             </p>
           </div>
         </div>

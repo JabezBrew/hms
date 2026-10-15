@@ -111,7 +111,7 @@ function usePatientChroniclePageModel(defaultAction) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
-  const { user, loading: authLoading } = useAuth();
+  const { user, login, loading: authLoading } = useAuth();
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState('all');
@@ -370,6 +370,12 @@ function usePatientChroniclePageModel(defaultAction) {
     accessDenied,
     breakGlassExpiresAt,
     breakGlassReason,
+    breakGlassError,
+    breakGlassRefreshError,
+    breakGlassUnconfirmed,
+    breakGlassStatusError,
+    endBreakGlass,
+    refreshBreakGlassAccess,
     canRequestBreakGlass,
     isBreakGlassOpen,
     isSubmittingBreakGlass,
@@ -387,6 +393,8 @@ function usePatientChroniclePageModel(defaultAction) {
     rustV2Mode,
     startupError,
     user,
+    reauthenticate: login,
+    accessSource: chronicleContext?.access_source,
   });
 
   return {
@@ -394,6 +402,10 @@ function usePatientChroniclePageModel(defaultAction) {
     accessDeniedProps: {
       breakGlassExpiresAt,
       breakGlassReason,
+      breakGlassError,
+      breakGlassRefreshError,
+      breakGlassUnconfirmed,
+      breakGlassStatusError,
       canRequestBreakGlass,
       isBreakGlassOpen,
       isSubmitting: isSubmittingBreakGlass,
@@ -404,8 +416,20 @@ function usePatientChroniclePageModel(defaultAction) {
       onBreakGlassOpenChange: setBreakGlassOpen,
       onBreakGlassReasonChange: setBreakGlassReason,
       onBreakGlassSubmit: submitBreakGlass,
+      onBreakGlassEnd: endBreakGlass,
+      onBreakGlassRefresh: refreshBreakGlassAccess,
     },
     contentProps: {
+      emergencyAccess: rustV2Mode && canRequestBreakGlass ? {
+        expiresAt: breakGlassExpiresAt,
+        error: breakGlassError,
+        refreshError: breakGlassRefreshError,
+        unconfirmed: breakGlassUnconfirmed,
+        statusError: breakGlassStatusError,
+        busy: isSubmittingBreakGlass,
+        onEnd: endBreakGlass,
+        onRefresh: refreshBreakGlassAccess,
+      } : null,
       activeEncounter,
       activeFilter,
       allergies,

@@ -47,6 +47,7 @@ const PHARMACY_DISPENSE_CACHE_TTL: Duration = Duration::from_secs(30);
 const WARD_BOARD_CACHE_TTL: Duration = Duration::from_secs(30);
 const HOT_READ_QUERY_SHAPE_WARMUP_TIMEOUT: Duration = Duration::from_secs(2);
 const AUTH_CACHE_MAX_TTL: Duration = Duration::from_secs(30);
+const PASSWORD_RESET_DELIVERY_MAX_CONCURRENCY: usize = 4;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -65,6 +66,8 @@ struct AppStateInner {
     dashboard_refresh_gate: DashboardRefreshGate,
     cloudflare_access: Option<CloudflareAccessVerifier>,
     account_setup_deliveries: Mutex<Vec<AccountSetupDeliveryRecord>>,
+    password_reset_deliveries: Mutex<Vec<PasswordResetDeliveryRecord>>,
+    password_reset_delivery_limiter: Arc<Semaphore>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -740,6 +743,26 @@ pub struct AccountSetupDeliveryRecord {
     pub expires_at: DateTime<Utc>,
 }
 
+// The sink exists only for configured tests; production retains no raw link.
+#[derive(Clone)]
+pub struct PasswordResetDeliveryRecord {
+    pub user_id: Uuid,
+    pub setup_url: String,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+struct PasswordResetWebhookPayload {
+    purpose: &'static str,
+    facility_code: String,
+    user_id: Uuid,
+    email: String,
+    display_name: String,
+    setup_url: String,
+    expires_at: DateTime<Utc>,
+}
+
 #[derive(Serialize)]
 struct AccountSetupWebhookPayload<'a> {
     purpose: &'static str,
@@ -842,6 +865,10 @@ impl AppState {
                 dashboard_refresh_gate: DashboardRefreshGate::default(),
                 cloudflare_access,
                 account_setup_deliveries: Mutex::new(Vec::new()),
+                password_reset_deliveries: Mutex::new(Vec::new()),
+                password_reset_delivery_limiter: Arc::new(Semaphore::new(
+                    PASSWORD_RESET_DELIVERY_MAX_CONCURRENCY,
+                )),
             }),
         })
     }
@@ -1013,6 +1040,7 @@ impl AppState {
                 };
                 let client = reqwest::Client::builder()
                     .timeout(self.inner.config.account_setup_delivery.timeout)
+                    .redirect(reqwest::redirect::Policy::none())
                     .build()?;
                 let response = client.post(webhook_url).json(&payload).send().await?;
                 if !response.status().is_success() {
@@ -1053,6 +1081,81 @@ impl AppState {
         url.set_path("/reset-password/confirm");
         url.query_pairs_mut().clear().append_pair("token", token);
         Ok(url.to_string())
+    }
+
+    pub fn latest_test_password_reset_delivery(
+        &self,
+        user_id: Uuid,
+    ) -> Option<PasswordResetDeliveryRecord> {
+        if self.inner.config.account_setup_delivery.mode != AccountSetupDeliveryMode::TestSink {
+            return None;
+        }
+        self.inner
+            .password_reset_deliveries
+            .lock()
+            .ok()?
+            .iter()
+            .rev()
+            .find(|delivery| delivery.user_id == user_id)
+            .cloned()
+    }
+
+    fn dispatch_password_reset_link(
+        &self,
+        user: hms_db::auth::UserAccount,
+        token: String,
+        expires_at: DateTime<Utc>,
+        delivery_permit: tokio::sync::OwnedSemaphorePermit,
+    ) -> Result<()> {
+        let setup_url = self.account_setup_url(&token)?;
+        match self.inner.config.account_setup_delivery.mode {
+            AccountSetupDeliveryMode::Disabled => Ok(()),
+            AccountSetupDeliveryMode::TestSink => {
+                self.inner
+                    .password_reset_deliveries
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("password reset delivery sink unavailable"))?
+                    .push(PasswordResetDeliveryRecord {
+                        user_id: user.id,
+                        setup_url,
+                        token,
+                        expires_at,
+                    });
+                Ok(())
+            }
+            AccountSetupDeliveryMode::Webhook => {
+                let webhook_url = self
+                    .inner
+                    .config
+                    .account_setup_delivery
+                    .webhook_url
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("password reset delivery is not configured"))?;
+                let client = reqwest::Client::builder()
+                    .timeout(self.inner.config.account_setup_delivery.timeout)
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()?;
+                let payload = PasswordResetWebhookPayload {
+                    purpose: "password_reset",
+                    facility_code: self.inner.config.facility_code.clone(),
+                    user_id: user.id,
+                    email: user.email,
+                    display_name: user.display_name,
+                    setup_url,
+                    expires_at,
+                };
+                // The token is only in the in-memory link sent to the trusted
+                // adapter. No external I/O or delivery latency on this request.
+                tokio::spawn(async move {
+                    let _delivery_permit = delivery_permit;
+                    match client.post(webhook_url).json(&payload).send().await {
+                        Ok(response) if response.status().is_success() => {}
+                        _ => tracing::warn!("password reset delivery failed"),
+                    }
+                });
+                Ok(())
+            }
+        }
     }
 
     pub async fn omni_search(
@@ -1784,6 +1887,47 @@ impl AppState {
             });
         };
 
+        if self.inner.config.account_setup_delivery.mode == AccountSetupDeliveryMode::Disabled {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        }
+        // Admission happens before issuing a token. Slow delivery must neither
+        // accumulate detached tasks nor consume password-hashing capacity.
+        let Ok(delivery_permit) = self
+            .inner
+            .password_reset_delivery_limiter
+            .clone()
+            .try_acquire_owned()
+        else {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        };
+        // Public reset delivery has a separate persistent budget so an attacker
+        // cannot turn this endpoint into an unbounded email or token generator.
+        let Some(reservation) = hms_db::auth::reserve_login_attempt(
+            &self.inner.pool,
+            user.facility_id,
+            "auth_password_reset",
+            Some(user.id),
+        )
+        .await?
+        else {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        };
+        if !hms_db::auth::complete_login_attempt(&self.inner.pool, reservation, true).await? {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        }
+
         let raw_token = generate_secret_token();
         let expires_at = Utc::now() + chrono::Duration::minutes(30);
         hms_db::auth::insert_password_reset_token(
@@ -1809,9 +1953,18 @@ impl AppState {
         )
         .await?;
 
+        let debug_token = (self.inner.config.environment == "test").then(|| raw_token.clone());
+        if self
+            .dispatch_password_reset_link(user, raw_token, expires_at, delivery_permit)
+            .is_err()
+        {
+            // Never expose account existence, recipient, raw token or adapter URL.
+            tracing::warn!("password reset delivery could not be scheduled");
+        }
+
         Ok(PasswordResetRequestOutcome {
             accepted: true,
-            debug_token: (self.inner.config.environment == "test").then_some(raw_token),
+            debug_token,
         })
     }
 
@@ -1849,6 +2002,9 @@ impl AppState {
             &self.inner.pool,
             &token_hash,
             reset_token.user_id,
+            previous_hashes
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("password reset account unavailable"))?,
             &new_password_hash,
         )
         .await?;
@@ -1913,6 +2069,7 @@ impl AppState {
             &self.inner.pool,
             facility_id,
             user_id,
+            &user.password_hash,
             &new_password_hash,
         )
         .await?;

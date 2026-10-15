@@ -1,10 +1,14 @@
 use chrono::Utc;
-use hms_db::ward::{NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert, NewPatientVitals};
+use hms_db::ward::{
+    FluidBalanceFilters, NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert,
+    NewPatientVitals,
+};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
     CreateFluidBalanceEntryRequest, CreateMonitoringEventRequest, CreateNursingAlertRequest,
-    CreatePatientVitalsRequest, FluidBalanceListItem, MonitoringEventListItem,
+    CreatePatientVitalsRequest, FluidBalanceListItem, FluidBalanceListQuery, FluidBalanceSummary,
+    FluidBalanceSummaryQuery, FluidBalanceTrendPoint, MonitoringEventListItem,
     NursingAlertListItem, PatientVitalsListItem, PatientVitalsListQuery,
 };
 use serde_json::json;
@@ -279,19 +283,32 @@ impl ObservationsMonitoringService {
     pub async fn list_fluid_balance_entries(
         &self,
         ctx: &hms_access::RequestContext,
-        query: CursorListQuery,
+        query: FluidBalanceListQuery,
     ) -> Result<ListResponse<FluidBalanceListItem>, ApiError> {
-        common::require_patient_workflow_access(
+        self.validate_fluid_scope(
             ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
-        let page = common::page_request(query)?;
+            query.patient_id,
+            query.admission_case_id,
+            query.recorded_from,
+            query.recorded_before,
+        )
+        .await?;
+        let page = common::page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::list_fluid_balance_entries(
+        let rows = hms_db::ward::list_fluid_balance_entries_scoped(
             self.state.db_pool(),
             self.state.facility_id(),
+            FluidBalanceFilters {
+                patient_id: query.patient_id,
+                admission_case_id: query.admission_case_id,
+                recorded_from: query.recorded_from,
+                recorded_before: query.recorded_before,
+                descending: query.descending.unwrap_or(false),
+            },
             page.cursor,
             fetch_limit,
         )
@@ -306,6 +323,125 @@ impl ObservationsMonitoringService {
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.recorded_at, item.id)
         }))
+    }
+
+    pub async fn get_fluid_balance_summary(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: FluidBalanceSummaryQuery,
+    ) -> Result<ObjectResponse<FluidBalanceSummary>, ApiError> {
+        self.validate_fluid_scope(
+            ctx,
+            query.patient_id,
+            query.admission_case_id,
+            query.recorded_from,
+            query.recorded_before,
+        )
+        .await?;
+        require_fluid_aggregate_scope(query.patient_id, query.admission_case_id)?;
+        let summary = hms_db::ward::fluid_balance_summary(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            FluidBalanceFilters {
+                patient_id: query.patient_id,
+                admission_case_id: query.admission_case_id,
+                recorded_from: query.recorded_from,
+                recorded_before: query.recorded_before,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "fluid_balance_summary_failed",
+                "Fluid balance totals could not be loaded.",
+            )
+        })?;
+        Ok(object(summary))
+    }
+
+    pub async fn get_fluid_balance_trends(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: FluidBalanceListQuery,
+    ) -> Result<ListResponse<FluidBalanceTrendPoint>, ApiError> {
+        self.validate_fluid_scope(
+            ctx,
+            query.patient_id,
+            query.admission_case_id,
+            query.recorded_from,
+            query.recorded_before,
+        )
+        .await?;
+        require_fluid_aggregate_scope(query.patient_id, query.admission_case_id)?;
+        let page = common::page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::ward::fluid_balance_trends(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            FluidBalanceFilters {
+                patient_id: query.patient_id,
+                admission_case_id: query.admission_case_id,
+                recorded_from: query.recorded_from,
+                recorded_before: query.recorded_before,
+                descending: query.descending.unwrap_or(false),
+            },
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "fluid_balance_trends_failed",
+                "Fluid balance trends could not be loaded.",
+            )
+        })?;
+        Ok(common::page_response(rows, page.limit, |item| {
+            common::encode_cursor(
+                item.date.and_time(chrono::NaiveTime::MIN).and_utc(),
+                Uuid::nil(),
+            )
+        }))
+    }
+
+    async fn validate_fluid_scope(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Option<Uuid>,
+        admission_case_id: Option<Uuid>,
+        from: Option<chrono::DateTime<Utc>>,
+        before: Option<chrono::DateTime<Utc>>,
+    ) -> Result<(), ApiError> {
+        common::require_patient_workflow_access(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        if let Some(admission_id) = admission_case_id {
+            let admission =
+                common::load_admission_for_access(&self.state, ctx, admission_id).await?;
+            if patient_id.is_some_and(|id| id != admission.patient_id) {
+                return Err(ApiError::bad_request(
+                    "invalid_fluid_query",
+                    "Admission does not belong to the requested patient.",
+                ));
+            }
+        } else if let Some(id) = patient_id {
+            let _patient = common::load_patient_for_access(&self.state, ctx, id).await?;
+        }
+        if from
+            .zip(before)
+            .is_some_and(|(from, before)| before <= from)
+        {
+            return Err(ApiError::bad_request(
+                "invalid_fluid_query",
+                "Fluid balance end must be after its start.",
+            ));
+        }
+        Ok(())
     }
 
     pub async fn create_fluid_balance_entry(
@@ -349,6 +485,19 @@ impl ObservationsMonitoringService {
 
         Ok(object(entry))
     }
+}
+
+fn require_fluid_aggregate_scope(
+    patient_id: Option<Uuid>,
+    admission_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    if patient_id.is_none() && admission_id.is_none() {
+        return Err(ApiError::bad_request(
+            "invalid_fluid_query",
+            "Patient or admission scope is required for fluid balance totals and trends.",
+        ));
+    }
+    Ok(())
 }
 
 fn required_text(value: String, field: &'static str) -> Result<String, ApiError> {
