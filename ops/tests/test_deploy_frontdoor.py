@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -67,6 +68,39 @@ def test_deploy_remote_dry_run_defaults_to_gcp_staging():
     assert 'Would verify remote archive byte count before install.' in result.stdout
     assert 'Would run detached remote installer' in result.stdout
     assert 'Would verify edge after remote deploy.' in result.stdout
+
+
+def test_deploy_worktree_accepts_git_file_and_rejects_common_archive_attributes(tmp_path):
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    for relative in ('deploy', 'ops/deploy.sh', 'ops/gcp-staging/install-archive.sh'):
+        target = repository / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO_ROOT / relative, target)
+    migrations = repository / 'backend-rs' / 'migrations'
+    migrations.mkdir(parents=True)
+    (migrations / '202610150001_test.sql').write_text('SELECT 1;\n', encoding='utf-8')
+
+    def git(*arguments):
+        return subprocess.run(['git', '-C', str(repository), *arguments], check=True,
+                              capture_output=True, text=True)
+
+    git('init', '-q')
+    git('add', '.')
+    git('-c', 'user.name=HMS Test', '-c', 'user.email=hms@example.test',
+        'commit', '-qm', 'Create isolated deployment fixture')
+    worktree = tmp_path / 'worktree'
+    git('worktree', 'add', '--detach', str(worktree), 'HEAD')
+    command = ['/bin/sh', str(worktree / 'deploy'), 'staging', '--dry-run']
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert 'Would archive committed SHA:' in result.stdout
+
+    attributes = repository / '.git' / 'info' / 'attributes'
+    attributes.write_text('* export-ignore\n', encoding='utf-8')
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert result.returncode != 0
+    assert 'local .git/info/attributes can change git archive output' in result.stderr
 
 
 def test_deploy_in_place_dry_run_sets_safe_gcp_defaults():

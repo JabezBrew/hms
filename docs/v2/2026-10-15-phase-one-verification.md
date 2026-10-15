@@ -38,6 +38,8 @@ Release status: code accepted; staging deployment pending. This is not productio
   jsonwebtoken. The JWT library uses AWS-LC and retains the Rust 1.88 toolchain
   requirement. A maintained test exercises actual RS256/JWK verification with
   ephemeral keys and rejects invalid claims and signatures.
+- Committed-source deployment accepts Git worktrees while rejecting local
+  archive attributes in either the worktree or shared Git metadata.
 
 ## Independent review
 
@@ -123,6 +125,10 @@ no workflow YAML is present. Deploy only the reviewed committed tree.
   only on explicit Create, and retains the description after reload. Laptop
   and mobile navigation, registry, Chronicle, settings, and appearance checks
   use synthetic data.
-- Read-only load smoke, clean-checkout ops validation, Linux Rust 1.88 image
+- Read-only local load smoke: five virtual users over three minutes, 1,801
+  checks passed with no application errors; HTTP p99 6.53 ms and identity p99
+  5.71 ms. This is a focused administrator smoke against a native debug API,
+  not remote release latency, all-role coverage, or a capacity result.
+- Clean-checkout ops validation, Linux Rust 1.88 image
   compilation, committed release identity, and remote deployment acceptance
   are recorded after release. Rollback anchors are already preserved privately.

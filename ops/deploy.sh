@@ -186,7 +186,7 @@ validate_gcp_remote_timing() {
 }
 
 has_git_checkout() {
-  [ -d "$ROOT_DIR/.git" ] &&
+  [ -e "$ROOT_DIR/.git" ] &&
     command -v git >/dev/null 2>&1 &&
     git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
@@ -354,12 +354,14 @@ validate_migration_versions_at_commit() {
 
 ensure_git_archive_uses_committed_attributes() {
   git_dir="$(git -C "$ROOT_DIR" rev-parse --absolute-git-dir)"
-  info_attributes="$git_dir/info/attributes"
-  if [ -s "$info_attributes" ]; then
-    printf '%s\n' 'Refusing remote deploy because local .git/info/attributes can change git archive output.' >&2
-    printf 'Remove or empty %s before deploying a committed snapshot.\n' "$info_attributes" >&2
-    exit 1
-  fi
+  common_git_dir="$(git -C "$ROOT_DIR" rev-parse --path-format=absolute --git-common-dir)"
+  for info_attributes in "$git_dir/info/attributes" "$common_git_dir/info/attributes"; do
+    if [ -s "$info_attributes" ]; then
+      printf '%s\n' 'Refusing remote deploy because local .git/info/attributes can change git archive output.' >&2
+      printf 'Remove or empty %s before deploying a committed snapshot.\n' "$info_attributes" >&2
+      exit 1
+    fi
+  done
 }
 
 verify_cloudsql_backups() {
