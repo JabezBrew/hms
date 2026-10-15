@@ -287,10 +287,20 @@ function summarizeServerMetrics(baseline, before, after, failures, warnings, inc
         status: statusCode,
       }) === null)
       .map((item) => item.route);
-    const dbQueries = missingDbQueryRoutes.length > 0
+    const observedDbQueries = missingDbQueryRoutes.length > 0
       ? null
       : sumCounterDelta(before, after, 'hms_api_http_db_query_count_sum', routes, method, statusCode, warnings);
+    // Unobserved SQLx calls can leave an explicit zero counter. Only the
+    // independently verified warm auth route establishes a zero-query path.
+    const unverifiedZeroQueryRoutes = routeRequests
+      .filter((item) => item.count > 0
+        && metricValue(after, 'hms_api_http_db_query_count_sum', { method, route: item.route, status: statusCode }) !== null
+        && counterDelta(before, after, 'hms_api_http_db_query_count_sum', { method, route: item.route, status: statusCode }, []) === 0
+        && !(method === 'GET' && item.route === '/api/v2/auth/me' && statusCode === '200'))
+      .map((item) => item.route);
+    const dbQueries = unverifiedZeroQueryRoutes.length > 0 ? null : observedDbQueries;
     const perRequest = requestCount > 0 && dbQueries !== null ? dbQueries / requestCount : null;
+    const observedPerRequest = requestCount > 0 && observedDbQueries !== null ? observedDbQueries / requestCount : null;
     const budget = numeric(surface.db_queries_per_request_max);
     let status = 'pass';
     let note = '';
@@ -303,9 +313,16 @@ function summarizeServerMetrics(baseline, before, after, failures, warnings, inc
       status = 'incomplete';
       note = `missing DB-query counters for matching route requests: ${missingDbQueryRoutes.join(', ')}`;
       incompletes.push(`${surface.label}: ${note}`);
-    } else if (budget !== null && perRequest !== null && perRequest > budget) {
+    } else if (unverifiedZeroQueryRoutes.length > 0) {
+      status = 'incomplete';
+      note = `zero observed DB-query counters do not establish a verified cache-only fast path; actual query counts are unavailable: ${unverifiedZeroQueryRoutes.join(', ')}`;
+      incompletes.push(`${surface.label}: ${note}`);
+    }
+    // A known observed lower bound can prove a breach even when other route
+    // queries are unobserved; incomplete coverage must not erase that failure.
+    if (budget !== null && observedPerRequest !== null && observedPerRequest > budget) {
       status = 'fail';
-      failures.push(`${surface.label} DB queries/request ${formatNumber(perRequest)} exceeded budget ${formatNumber(budget)}`);
+      failures.push(`${surface.label} DB queries/request ${formatNumber(observedPerRequest)} exceeded budget ${formatNumber(budget)}`);
     }
 
     return {
@@ -315,8 +332,10 @@ function summarizeServerMetrics(baseline, before, after, failures, warnings, inc
       routes,
       status_code: statusCode,
       requests: requestCount,
+      observed_db_queries: observedDbQueries,
       db_queries: dbQueries,
       db_queries_per_request: perRequest,
+      unverified_zero_query_routes: unverifiedZeroQueryRoutes,
       budget_db_queries_per_request: budget,
       status,
       note,
@@ -480,6 +499,7 @@ function summarizePoolWaitMetrics(baseline, before, after, server, failures, inc
     );
     const serverSurface = server.surfaces?.find((row) => row.id === surface.id);
     const requestCount = serverRequestCount(server, surface.id);
+    const unverifiedZeroQueryRoutes = serverSurface?.unverified_zero_query_routes || [];
     const missingPoolWaitRoutes = routes.filter((route) => (
       counterDelta(before, after, 'hms_api_http_db_query_count_sum', {
         method: surface.method,
@@ -492,15 +512,19 @@ function summarizePoolWaitMetrics(baseline, before, after, server, failures, inc
     ));
     const zeroDbQueries = requestCount > 0 && serverSurface?.db_queries === 0;
     const emptyValue = zeroDbQueries ? 0 : null;
-    const completeHistogram = histogram.count > 0 && missingPoolWaitRoutes.length === 0;
+    const completeHistogram = histogram.count > 0
+      && missingPoolWaitRoutes.length === 0
+      && unverifiedZeroQueryRoutes.length === 0;
     const p95 = completeHistogram ? histogramQuantile(0.95, histogram.buckets) * 1000 : emptyValue;
     const p99 = completeHistogram ? histogramQuantile(0.99, histogram.buckets) * 1000 : emptyValue;
     let status = 'pass';
     let note = '';
 
-    if (missingPoolWaitRoutes.length > 0 || (histogram.count === 0 && !zeroDbQueries)) {
+    if (unverifiedZeroQueryRoutes.length > 0 || missingPoolWaitRoutes.length > 0 || (histogram.count === 0 && !zeroDbQueries)) {
       status = 'incomplete';
-      note = missingPoolWaitRoutes.length > 0
+      note = unverifiedZeroQueryRoutes.length > 0
+        ? `DB pool wait coverage is unavailable for routes without a verified zero-query fast path: ${unverifiedZeroQueryRoutes.join(', ')}`
+        : missingPoolWaitRoutes.length > 0
         ? `no DB pool wait histogram samples found for matching route DB queries: ${missingPoolWaitRoutes.join(', ')}`
         : 'DB pool wait could not be evaluated without matching route DB-query evidence';
       incompletes.push(`${surface.label}: ${note}`);
@@ -539,7 +563,7 @@ function summarizeSlowSqlMetrics(baseline, before, after, server, failures, inco
     if (budget === null) continue;
 
     const routes = surface.routes || [surface.route];
-    const slowQueries = sumMetricDeltaByRoutes(
+    const observedSlowQueries = sumMetricDeltaByRoutes(
       before,
       after,
       'hms_db_slow_query_total',
@@ -548,17 +572,28 @@ function summarizeSlowSqlMetrics(baseline, before, after, server, failures, inco
       { status_bucket: statusBucketForSurface(surface) }
     );
     const requestCount = serverRequestCount(server, surface.id);
-    const perRequest = requestCount > 0 ? slowQueries / requestCount : null;
+    const serverSurface = server.surfaces?.find((row) => row.id === surface.id);
+    const incompleteQueryEvidence = serverSurface?.db_queries === null;
+    const slowQueries = incompleteQueryEvidence ? null : observedSlowQueries;
+    const perRequest = requestCount > 0 && slowQueries !== null ? slowQueries / requestCount : null;
+    const observedPerRequest = requestCount > 0 ? observedSlowQueries / requestCount : null;
     let status = 'pass';
     let note = '';
 
-    if (perRequest === null) {
+    if (incompleteQueryEvidence) {
+      status = 'incomplete';
+      note = 'actual slow SQL counts are unavailable without complete route DB-query evidence';
+      incompletes.push(`${surface.label}: ${note}`);
+    } else if (perRequest === null) {
       status = 'incomplete';
       note = 'no matching server route requests found';
       incompletes.push(`${surface.label}: ${note}`);
-    } else if (perRequest > budget) {
+    }
+    // Observed slow queries still prove a budget violation even when other
+    // SQL calls are not instrumented; missing evidence must not mask a failure.
+    if (observedPerRequest !== null && observedPerRequest > budget) {
       status = 'fail';
-      failures.push(`${surface.label} slow SQL/query request ratio ${formatNumber(perRequest)} exceeded budget ${formatNumber(budget)}`);
+      failures.push(`${surface.label} slow SQL/query request ratio ${formatNumber(observedPerRequest)} exceeded budget ${formatNumber(budget)}`);
     }
 
     rows.push({
@@ -566,6 +601,7 @@ function summarizeSlowSqlMetrics(baseline, before, after, server, failures, inco
       label: surface.label,
       routes,
       route_requests: requestCount,
+      observed_slow_queries: observedSlowQueries,
       slow_queries: slowQueries,
       slow_queries_per_request: perRequest,
       budget_slow_queries_per_request: budget,
@@ -847,10 +883,11 @@ function printReport(report) {
     lines.push('');
     lines.push(`Server route DB-query budgets (${report.server.mode})`);
     lines.push(table(
-      ['Surface', 'Requests', 'DB queries', 'Queries/request', 'Budget', 'Status'],
+      ['Surface', 'Requests', 'Observed DB queries', 'DB queries', 'Queries/request', 'Budget', 'Status'],
       report.server.surfaces.map((row) => [
         row.label,
         formatNumber(row.requests),
+        formatNumber(row.observed_db_queries),
         formatNumber(row.db_queries),
         row.db_queries_per_request === null ? 'n/a' : formatNumber(row.db_queries_per_request),
         row.budget_db_queries_per_request === null ? 'n/a' : formatNumber(row.budget_db_queries_per_request),
@@ -930,10 +967,11 @@ function printReport(report) {
     lines.push('');
     lines.push('Slow SQL budgets');
     lines.push(table(
-      ['Surface', 'Requests', 'Slow queries', 'Slow/request', 'Budget', 'Status'],
+      ['Surface', 'Requests', 'Observed slow queries', 'Slow queries', 'Slow/request', 'Budget', 'Status'],
       report.slow_sql.rows.map((row) => [
         row.label,
         formatNumber(row.route_requests),
+        formatNumber(row.observed_slow_queries),
         formatNumber(row.slow_queries),
         row.slow_queries_per_request === null ? 'n/a' : formatNumber(row.slow_queries_per_request),
         row.budget_slow_queries_per_request === null ? 'n/a' : formatNumber(row.budget_slow_queries_per_request),
