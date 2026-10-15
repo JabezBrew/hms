@@ -1690,7 +1690,14 @@ test('Rust V2 appointment detail checks in through the existing appointment UI',
 
   const response = await checkInResponse;
   expect(response.status()).toBeLessThan(300);
-  await expect(page.getByText(/^Arrived$/i)).toBeVisible();
+  expect(response.request().postDataJSON()).toHaveProperty('clinic_id');
+  const arrivedVisit = (await response.json()).data;
+  expect(arrivedVisit).toMatchObject({ appointment_id: appointmentId, status: 'waiting' });
+  expect(arrivedVisit.id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(arrivedVisit.clinic_id).toMatch(/^[0-9a-f-]{36}$/);
+  await expect(page.getByText(/^Arrived$/i).first()).toBeVisible();
+  await expect(page.getByRole('complementary').getByText(/^Arrived$/i).locator('..')).toContainText('Current');
+  await expect(page.getByRole('button', { name: 'Check In', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Edit$/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toHaveCount(0);
 

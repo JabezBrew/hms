@@ -882,16 +882,21 @@ function TemplateBuilderFooter({
           {isDirty ? <span className="font-mono text-[10px] text-muted-foreground hidden sm:inline">Unsaved changes</span> : null}
           {currentStep < STEPS.length ? (
             <Button
+              key="advance"
               type="button"
               size="sm"
               className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
-              onClick={onNext}
+              onClick={(event) => {
+                event.preventDefault();
+                onNext();
+              }}
             >
               Next
               <ChevronRight className="size-3.5 ml-1" />
             </Button>
           ) : (
             <Button
+              key="save"
               type="submit"
               size="sm"
               disabled={isSaving}
@@ -1060,6 +1065,10 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
   };
 
   const onSubmit = async (data) => {
+    if (currentStep !== STEPS.length || isSaving) {
+      return;
+    }
+
     const isReadyToSave =
       (await validateStep(1)) &&
       (await validateStep(2)) &&
