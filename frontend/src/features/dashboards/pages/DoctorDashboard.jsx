@@ -1,3 +1,5 @@
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import MyWorkPage from './MyWorkPage';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
@@ -28,6 +30,10 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 
 export default function DoctorDashboard() {
+  return isRustV2ApiMode() ? <MyWorkPage /> : <LegacyDoctorDashboard />;
+}
+
+function LegacyDoctorDashboard() {
   const { facilityCode } = useAuth();
   const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
   const dashboardEnabled = Boolean(facilityCode) && moduleGate.outpatientEncountersEnabled;
@@ -193,7 +199,7 @@ export default function DoctorDashboard() {
         descriptionClassName="text-muted-foreground mt-2"
       />
 
-      <main className="p-6 space-y-6">
+      <section className="p-6 space-y-6">
         <CurrentPatientPanel
           currentPatient={data.current_patient}
           upcomingCount={data.upcoming?.length || 0}
@@ -225,7 +231,7 @@ export default function DoctorDashboard() {
           canUsePatientChronicle={canUsePatientChronicle}
           onViewPatient={handleViewPatient}
         />
-      </main>
+      </section>
     </PageShell>
   );
 }

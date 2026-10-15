@@ -1,6 +1,7 @@
 import { apiClient } from '@/lib/api-client'
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 import { v2Api } from '@/lib/api/v2/client'
+import { clinicalNotesApi } from '@/features/clinical-notes/api'
 
 const DEFAULT_DISCHARGE_LIMIT = 25
 
@@ -10,10 +11,13 @@ function normalizeLimit(params = {}, fallback = DEFAULT_DISCHARGE_LIMIT) {
   return Math.min(parsed, 100)
 }
 
-function mapV2Status(status) {
+function mapV2Status(status, blockers) {
   switch (status) {
     case 'requested':
-      return 'ready_for_finalization'
+      return Array.isArray(blockers) && blockers.length > 0
+        && blockers.every((blocker) => !blocker.blocking || ['completed', 'overridden'].includes(blocker.status))
+        ? 'ready_for_finalization'
+        : 'awaiting_clearance'
     case 'completed':
       return 'finalized'
     default:
@@ -25,7 +29,10 @@ function dischargeWardBoardWorkflowPath(discharge) {
   const params = new URLSearchParams({ view: 'discharge' })
   if (discharge?.patient_id) params.set('patient', discharge.patient_id)
   if (discharge?.id) params.set('case', discharge.id)
-  return `/ward-board?${params.toString()}`
+  const basePath = discharge?.ward_id
+    ? `/wards/${encodeURIComponent(discharge.ward_id)}/board`
+    : '/ward-board'
+  return `${basePath}?${params.toString()}`
 }
 
 function dischargeSummaryWorkflowPath(discharge) {
@@ -35,9 +42,12 @@ function dischargeSummaryWorkflowPath(discharge) {
 
   const params = new URLSearchParams({
     action: 'add_note',
-    note_type: 'discharge_summary',
+    note_type: 'doctor_note',
+    title: 'Discharge Summary',
   })
-  return `/patients/${encodeURIComponent(discharge.patient_id)}?${params.toString()}`
+  if (discharge.encounter_id) params.set('visit', discharge.encounter_id)
+  if (discharge.admission_case_id) params.set('admission', discharge.admission_case_id)
+  return `/patients/${encodeURIComponent(discharge.patient_id)}/chronicle?${params.toString()}`
 }
 
 function mapV2Blocker(blocker, discharge) {
@@ -93,7 +103,7 @@ function buildFallbackV2Blockers(discharge) {
 
 function adaptV2Discharge(discharge) {
   if (!discharge) return discharge
-  const blockers = Array.isArray(discharge.blockers) && discharge.blockers.length > 0
+  const blockers = Array.isArray(discharge.blockers)
     ? discharge.blockers.map((blocker) => mapV2Blocker(blocker, discharge))
     : buildFallbackV2Blockers(discharge)
   return {
@@ -105,18 +115,14 @@ function adaptV2Discharge(discharge) {
     medical_record_number: discharge.patient_code,
     ward: discharge.ward_id,
     ward_name: discharge.ward_name || 'Ward not specified',
-    status: mapV2Status(discharge.status),
+    status: mapV2Status(discharge.status, blockers),
     v2_status: discharge.status,
+    blockers_available: Array.isArray(discharge.blockers) && discharge.blockers.length > 0,
     medical_ready_at: discharge.requested_at,
     billing_cutoff_at: null,
     finalized_at: discharge.discharged_at || null,
     advisory_tasks_open: blockers.filter((task) => !task.blocking && task.status !== 'completed').length,
-    invoice_summary: discharge.invoice_summary || {
-      invoice_count: 0,
-      patient_balance_due: '0.00',
-      patient_balance_due_minor: 0,
-      currency: 'GHS',
-    },
+    invoice_summary: discharge.invoice_summary || null,
     schedule_follow_up_action: discharge.schedule_follow_up_action || {
       label: 'Schedule follow-up',
       path: `/appointments/create?patient=${discharge.patient_id}`,
@@ -182,6 +188,29 @@ function unsupportedInRustV2(message) {
 }
 
 export const dischargeApi = {
+  getSummaryNotes: async ({ patientId, encounterId, cursor }, options = {}) => {
+    const response = await v2Api.getPatientClinicalNotes({ patient_id: patientId }, {
+      query: { encounter_id: encounterId, limit: 25, ...(cursor ? { cursor } : {}) }, signal: options.signal,
+    })
+    return {
+      results: (response?.data || []).filter((note) => note.patient_id === patientId
+        && note.encounter_id === encounterId && note.note_type === 'doctor_note'
+        && note.title?.trim().toLowerCase() === 'discharge summary'),
+      nextCursor: response?.page?.has_next ? response.page.next_cursor : null,
+    }
+  },
+  getSummaryNote: (id, options) => clinicalNotesApi.getNoteEntry(id, options),
+  saveReviewedSummary: async ({ note, patientId, encounterId }) => {
+    const current = await clinicalNotesApi.getNoteEntry(note.id)
+    if (current.id !== note.id || current.patient_id !== patientId || current.encounter_id !== encounterId
+      || current.note_type !== 'doctor_note' || current.title?.trim().toLowerCase() !== 'discharge summary') {
+      throw new Error('This summary does not match the patient and care encounter.')
+    }
+    if (current.version !== note.version || current.body !== note.body) {
+      throw new Error('The summary changed while you reviewed it. Reload and review the latest version.')
+    }
+    return clinicalNotesApi.updateNoteEntry(current.id, current.body)
+  },
   getCases: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return getV2DischargeCases(params, options)
@@ -236,6 +265,17 @@ export const dischargeApi = {
       return adaptV2Discharge(response?.data)
     }
     return apiClient.post(`/discharges/cases/${id}/finalize/`, data, options)
+  },
+  recordNursingRelease: async (id, data, options = {}) => {
+    if (!isRustV2ApiMode()) {
+      return unsupportedInRustV2('This nursing release operation requires the Rust V2 discharge workflow')
+    }
+    const response = await v2Api.postDischargeNursingRelease(
+      { id },
+      { education: data.education, instructions: data.instructions },
+      { signal: options.signal },
+    )
+    return adaptV2Discharge(response?.data)
   },
   cancelCase: async (id, reason = '', options = {}) => {
     if (isRustV2ApiMode()) {

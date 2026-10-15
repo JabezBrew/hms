@@ -64,6 +64,7 @@ pub async fn create_dispense(
           AND item_id = $2
           AND location_id = $3
           AND quantity_on_hand >= $4
+          AND (expires_on IS NULL OR expires_on >= CURRENT_DATE)
         ORDER BY expires_on ASC NULLS LAST, received_at ASC, id ASC
         LIMIT 1
         FOR UPDATE

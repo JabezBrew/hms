@@ -8,8 +8,8 @@ const SIZE_STYLES = {
     meta: 'font-mono text-xs text-muted-foreground uppercase tracking-widest',
   },
   lg: {
-    padding: 'px-6 py-8',
-    title: 'text-4xl',
+    padding: 'px-4 py-6 sm:px-6 sm:py-8',
+    title: 'text-3xl sm:text-4xl',
     description: 'text-muted-foreground mt-2',
     meta: 'font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2',
   },
@@ -32,13 +32,13 @@ export function PageHeader({
   const styles = SIZE_STYLES[size] || SIZE_STYLES.md
 
   const content = (
-    <div className={cn('flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4', contentClassName)}>
-      <div>
+    <div className={cn('flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between', contentClassName)}>
+      <div className="min-w-0 space-y-1">
         {meta ? (
           <p className={cn(styles.meta, metaClassName)}>{meta}</p>
         ) : null}
         {title ? (
-          <h1 className={cn('font-display text-foreground tracking-tight', styles.title, titleClassName)}>
+          <h1 className={cn('break-words font-display font-semibold leading-tight text-foreground tracking-tight', styles.title, titleClassName)}>
             {title}
           </h1>
         ) : null}

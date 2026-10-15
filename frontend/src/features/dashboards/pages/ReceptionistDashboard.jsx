@@ -1,3 +1,5 @@
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import RustReceptionDashboard from './RustReceptionDashboard';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
@@ -35,6 +37,10 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 
 export default function ReceptionistDashboard() {
+  return isRustV2ApiMode() ? <RustReceptionDashboard /> : <LegacyReceptionistDashboard />;
+}
+
+function LegacyReceptionistDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
   const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });

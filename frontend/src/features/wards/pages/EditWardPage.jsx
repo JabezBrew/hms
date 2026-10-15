@@ -189,7 +189,7 @@ export default function EditWardPage() {
         )}
       />
 
-      <main className="p-6">
+      <section className="p-6">
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertCircle className="size-4" />
@@ -309,7 +309,7 @@ export default function EditWardPage() {
           </CardFooter>
         </form>
       </Card>
-      </main>
+      </section>
     </PageShell>
   );
 }

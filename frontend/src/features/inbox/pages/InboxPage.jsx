@@ -106,6 +106,7 @@ function InboxFilterHeader({
             type="button"
             key={filter.id}
             onClick={() => onFilterChange(filter.id)}
+            aria-pressed={activeFilter === filter.id}
             className={cn(
               'px-4 py-2 rounded-full text-sm font-mono transition-all',
               activeFilter === filter.id
@@ -130,6 +131,7 @@ function InboxFilterHeader({
           variant="ghost"
           size="icon"
           onClick={onRefresh}
+          aria-label="Refresh inbox"
           className="shrink-0 size-8"
         >
           <RefreshCw className="size-4" />
@@ -229,7 +231,7 @@ function InboxTimelineItem({
   const Icon = config.icon;
 
   return (
-    <div
+    <article
       className={cn(
         'relative pl-12 group',
         'animate-chronicle-enter'
@@ -331,7 +333,7 @@ function InboxTimelineItem({
           </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -384,7 +386,7 @@ function InboxMainContent({
   onMarkRead,
 }) {
   return (
-    <main className="max-w-4xl mx-auto p-4 sm:p-6">
+    <section aria-label="Inbox items" className="max-w-4xl mx-auto p-4 sm:p-6">
       {isLoading ? (
         <InboxLoadingState />
       ) : filteredItems.length === 0 ? (
@@ -397,7 +399,7 @@ function InboxMainContent({
           onMarkRead={onMarkRead}
         />
       )}
-    </main>
+    </section>
   );
 }
 

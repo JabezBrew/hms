@@ -349,7 +349,7 @@ function LabOrdersContent({
   orders,
 }) {
   return (
-    <main className="p-4 sm:p-6">
+    <section className="p-4 sm:p-6">
       {isLoading ? (
         <LabTableSkeleton rows={6} />
       ) : orders.length === 0 ? (
@@ -388,7 +388,7 @@ function LabOrdersContent({
           />
         </div>
       )}
-    </main>
+    </section>
   );
 }
 
@@ -661,9 +661,9 @@ export default function LabOrdersPage() {
           />
         </>
       ) : (
-        <main className="p-4 sm:p-6">
+        <section className="p-4 sm:p-6">
           <LabTableSkeleton rows={4} />
-        </main>
+        </section>
       )}
     </PageShell>
   );

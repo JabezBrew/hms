@@ -2,7 +2,7 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
 import FileStack from 'lucide-react/dist/esm/icons/files.js'
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js'
 import ReceiptText from 'lucide-react/dist/esm/icons/receipt-text.js'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import format from 'date-fns/format'
 
@@ -13,7 +13,10 @@ import { PageShell } from '@/shared/components/page/PageShell'
 import { PageHeader } from '@/shared/components/page/PageHeader'
 import { PageState } from '@/shared/components/page/PageState'
 import { usePageMeta } from '@/shared/hooks/usePageMeta'
-import { useAdmissionCases } from '@/features/admissions/hooks/useAdmissionCaseQueries'
+import { useAdmissionCasesPage } from '@/features/admissions/hooks/useAdmissionCaseQueries'
+import { useAuth } from '@/lib/auth'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
+import { getAuthQueryScope } from '@/shared/lib/queryKeys'
 import { AdmissionStatusBadge } from '@/features/admissions/components/AdmissionStatusBadge'
 
 function formatDateTime(value) {
@@ -62,13 +65,32 @@ function caseMatchesScope(scope, admissionCase) {
 }
 
 export function AdmissionCaseQueueView({ scope = 'general' }) {
+  const auth = useAuth()
+  return <AdmissionCaseQueueContent key={`${scope}:${getAuthQueryScope(auth)}`} scope={scope} />
+}
+
+function AdmissionCaseQueueContent({ scope }) {
   const navigate = useNavigate()
-  const { title, description, icon: Icon } = scopeConfig(scope)
-  const { data: cases = [], isLoading, error, refetch } = useAdmissionCases()
+  const rustV2Mode = isRustV2ApiMode()
+  const config = scopeConfig(scope)
+  const title = rustV2Mode && scope !== 'general'
+    ? scope === 'billing' ? 'Billing Admissions' : 'Nursing Admissions'
+    : config.title
+  const description = rustV2Mode
+    ? 'Browse admission requests and their current status, oldest first.'
+    : config.description
+  const Icon = config.icon
+  const [cursors, setCursors] = useState([null])
+  const cursor = cursors[cursors.length - 1]
+  const { data, isLoading, isFetching, error, refetch } = useAdmissionCasesPage({ limit: 25, cursor })
+  const cases = useMemo(() => data?.results || [], [data])
+  const hasPrevious = cursors.length > 1
+  const nextCursor = data?.page?.has_next ? data.page.next_cursor : null
+  const previousPage = () => setCursors((previous) => previous.slice(0, -1))
 
   const visibleCases = useMemo(
-    () => cases.filter((admissionCase) => caseMatchesScope(scope, admissionCase)),
-    [cases, scope]
+    () => rustV2Mode ? cases : cases.filter((admissionCase) => caseMatchesScope(scope, admissionCase)),
+    [cases, scope, rustV2Mode]
   )
 
   const pageMeta = usePageMeta({
@@ -95,7 +117,12 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
           variant="error"
           title="Unable to load admission cases"
           description={error.message || 'Please try again.'}
-          action={<Button variant="outline" onClick={() => refetch()}>Retry</Button>}
+          action={(
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => refetch()}>Retry</Button>
+              {hasPrevious && <Button variant="outline" onClick={previousPage}>Previous page</Button>}
+            </div>
+          )}
         />
       </>
     )
@@ -115,16 +142,16 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
       >
         <div className="mt-3 flex items-center gap-2 text-muted-foreground">
           <Icon className="size-4" />
-          <span className="font-mono text-xs">{visibleCases.length} open cases</span>
+          <span className="font-mono text-xs">{visibleCases.length} {visibleCases.length === 1 ? 'case' : 'cases'} on this page</span>
         </div>
       </PageHeader>
 
-      <main className="p-6">
+      <section className="p-6">
         {visibleCases.length === 0 ? (
           <PageState
             variant="empty"
             title="No admission cases"
-            description="There are no open admission cases in this queue."
+            description={data?.page?.has_next ? 'No matching cases are shown on this page. Continue to the next page.' : 'No admission cases are shown on this page.'}
             action={<Button onClick={() => navigate('/admissions/new')}>Start Admission</Button>}
             fullHeight={false}
           />
@@ -140,7 +167,7 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
                         <div className="flex flex-wrap items-center gap-2">
                           <CardTitle className="text-xl">{admissionCase.patient_name}</CardTitle>
                           <AdmissionStatusBadge status={admissionCase.status} />
-                          {admissionCase.active_reservation && (
+                          {admissionCase.active_reservation && (!rustV2Mode || admissionCase.status === 'ready_for_activation') && (
                             <Badge variant="outline">Bed Reserved</Badge>
                           )}
                         </div>
@@ -167,25 +194,51 @@ export function AdmissionCaseQueueView({ scope = 'general' }) {
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Requested</p>
                       <p className="mt-1 text-sm">{formatDateTime(admissionCase.requested_at)}</p>
                     </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Activation Ready</p>
-                      <p className="mt-1 text-sm">{formatDateTime(admissionCase.ready_for_activation_at)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Source</p>
-                      <p className="mt-1 text-sm capitalize">{(admissionCase.admission_source || 'direct').replaceAll('_', ' ')}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending Blockers</p>
-                      <p className="mt-1 text-sm">{pendingBlockers.length}</p>
-                    </div>
+                    {rustV2Mode ? <>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Admitted</p>
+                        <p className="mt-1 text-sm">{formatDateTime(admissionCase.admitted_at)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Discharged</p>
+                        <p className="mt-1 text-sm">{formatDateTime(admissionCase.discharged_at)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Ward</p>
+                        <p className="mt-1 text-sm">{admissionCase.requested_ward_name || 'Not recorded'}</p>
+                      </div>
+                    </> : <>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Activation Ready</p>
+                        <p className="mt-1 text-sm">{formatDateTime(admissionCase.ready_for_activation_at)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Source</p>
+                        <p className="mt-1 text-sm capitalize">{(admissionCase.admission_source || 'direct').replaceAll('_', ' ')}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending Blockers</p>
+                        <p className="mt-1 text-sm">{pendingBlockers.length}</p>
+                      </div>
+                    </>}
                   </CardContent>
                 </Card>
               )
             })}
           </div>
         )}
-      </main>
+        {data?.page && <nav aria-label="Admission cases pagination" className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">Page {cursors.length} · Oldest requests first</p>
+            {data.page.has_next && <p className="text-sm text-muted-foreground">More cases available</p>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" disabled={!hasPrevious || isFetching} onClick={() => setCursors([null])}>First page</Button>
+            <Button variant="outline" size="sm" disabled={!hasPrevious || isFetching} onClick={previousPage}>Previous page</Button>
+            <Button variant="outline" size="sm" disabled={!nextCursor || isFetching} onClick={() => setCursors((previous) => [...previous, nextCursor])}>Next page</Button>
+          </div>
+        </nav>}
+      </section>
     </PageShell>
   )
 }

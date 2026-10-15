@@ -6,7 +6,7 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import format from 'date-fns/format';
 import {
   Dialog,
@@ -32,7 +32,8 @@ import { appointmentsApi } from '@/features/appointments/api';
 import { staffApi } from '@/lib/api/staff';
 import { useAuth } from '@/lib/auth';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
-import { keyWith } from '@/shared/lib/queryKeys';
+import { createScopedQueryKey, getAuthQueryScope, keyWith } from '@/shared/lib/queryKeys';
+import { triageAssignmentApi } from '@/features/triage/api';
 
 const triageAssignKeys = {
   clinics: () => keyWith('clinics', 'walk-in'),
@@ -72,14 +73,91 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
         if (!nextOpen) onClose();
       }}
     >
-      <TriageAssignForm
+      {isRustV2ApiMode() ? <TriageStaffAssignForm
         key={`${entry.id}:${open ? 'open' : 'closed'}`}
         open={open}
         onClose={onClose}
         entry={entry}
         onSuccess={onSuccess}
-      />
+      /> : <TriageAssignForm
+        key={`${entry.id}:${open ? 'open' : 'closed'}`}
+        open={open}
+        onClose={onClose}
+        entry={entry}
+        onSuccess={onSuccess}
+      />}
     </Dialog>
+  );
+}
+
+function TriageStaffAssignForm({ open, onClose, entry, onSuccess }) {
+  const auth = useAuth();
+  const { assignToClinic } = useTriageActions();
+  const [selectedUserId, setSelectedUserId] = React.useState(entry.assigned_to_user_id || '');
+  const staffQuery = useInfiniteQuery({
+    queryKey: createScopedQueryKey(keyWith('triage', 'assignment-staff'), getAuthQueryScope(auth)),
+    queryFn: ({ pageParam, signal }) => triageAssignmentApi.listStaff({ cursor: pageParam, signal }),
+    initialPageParam: undefined,
+    getNextPageParam: (page) => page.next_cursor || undefined,
+    enabled: open && Boolean(auth.facilityCode),
+  });
+  const staff = [...new Map((staffQuery.data?.pages || [])
+    .flatMap((page) => page.results)
+    .map((member) => [member.user_id, member])).values()];
+
+  function submit(event) {
+    event.preventDefault();
+    if (!selectedUserId || assignToClinic.isPending) return;
+    assignToClinic.mutate({ id: entry.id, assigned_to_user_id: selectedUserId }, { onSuccess });
+  }
+
+  return (
+    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle className="font-display text-xl">Assign Triage Staff</DialogTitle>
+        <DialogDescription>Select the staff member responsible for this assessment.</DialogDescription>
+      </DialogHeader>
+      <form onSubmit={submit} className="space-y-6">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="font-heading font-semibold">{entry.patient_name}</p>
+          {entry.assigned_to_name && <p className="mt-1 text-sm text-muted-foreground">Currently assigned to {entry.assigned_to_name}</p>}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="triage_staff">Staff member *</Label>
+          <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={assignToClinic.isPending}>
+            <SelectTrigger id="triage_staff"><SelectValue placeholder="Select staff member..." /></SelectTrigger>
+            <SelectContent>
+              {entry.assigned_to_user_id && !staff.some((member) => member.user_id === entry.assigned_to_user_id) && (
+                <SelectItem value={entry.assigned_to_user_id}>{entry.assigned_to_name || 'Current assignee'}</SelectItem>
+              )}
+              {staff.map((member) => (
+                <SelectItem key={member.user_id} value={member.user_id}>
+                  {member.display_name}{member.position ? ` · ${member.position}` : ''}
+                </SelectItem>
+              ))}
+              {!staff.length && <SelectItem value="__no_staff" disabled>{staffQuery.isPending ? 'Loading staff…' : 'No staff available'}</SelectItem>}
+            </SelectContent>
+          </Select>
+          {staffQuery.isError && (
+            <div role="alert" className="space-y-2 text-sm">
+              <p className="text-destructive">Staff could not be loaded.</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => staffQuery.refetch()}>Retry staff list</Button>
+            </div>
+          )}
+          {staffQuery.hasNextPage && (
+            <Button type="button" variant="outline" size="sm" disabled={staffQuery.isFetchingNextPage} onClick={() => staffQuery.fetchNextPage()}>
+              {staffQuery.isFetchingNextPage ? 'Loading staff…' : 'Load more staff'}
+            </Button>
+          )}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={assignToClinic.isPending}>Cancel</Button>
+          <Button type="submit" disabled={assignToClinic.isPending || !selectedUserId}>
+            {assignToClinic.isPending ? 'Assigning...' : 'Assign Staff'}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   );
 }
 
@@ -164,7 +242,7 @@ function TriageAssignForm({ open, onClose, entry, onSuccess }) {
   const practitionersList = practitioners?.results || practitioners || [];
 
   return (
-    <DialogContent className="sm:max-w-lg">
+    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
       <DialogHeader>
         <DialogTitle className="font-display text-xl">
           Assign to Clinic
@@ -236,7 +314,7 @@ function TriageAssignForm({ open, onClose, entry, onSuccess }) {
               </SelectContent>
             </Select>
             {errors.clinic_id && (
-              <p className="text-sm text-rose-400">{errors.clinic_id.message}</p>
+              <p className="text-sm text-rose-700 dark:text-rose-300">{errors.clinic_id.message}</p>
             )}
           </div>
 
@@ -272,7 +350,7 @@ function TriageAssignForm({ open, onClose, entry, onSuccess }) {
               </SelectContent>
             </Select>
             {errors.appointment_type_id && (
-              <p className="text-sm text-rose-400">{errors.appointment_type_id.message}</p>
+              <p className="text-sm text-rose-700 dark:text-rose-300">{errors.appointment_type_id.message}</p>
             )}
           </div>
 
@@ -288,7 +366,7 @@ function TriageAssignForm({ open, onClose, entry, onSuccess }) {
               {...register('start_time')}
             />
             {errors.start_time && (
-              <p className="text-sm text-rose-400">{errors.start_time.message}</p>
+              <p className="text-sm text-rose-700 dark:text-rose-300">{errors.start_time.message}</p>
             )}
           </div>
 
@@ -337,7 +415,7 @@ function TriageAssignForm({ open, onClose, entry, onSuccess }) {
               </p>
             )}
             {errors.practitioner_id && (
-              <p className="text-sm text-rose-400">{errors.practitioner_id.message}</p>
+              <p className="text-sm text-rose-700 dark:text-rose-300">{errors.practitioner_id.message}</p>
             )}
           </div>
 

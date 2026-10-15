@@ -7,6 +7,13 @@
 
 Status: Agent 0 baseline report for the first Rust V2 performance wave.
 
+Current-tree correction, 2026-10-15: the earlier note below overstates DB
+pool-wait coverage. A final local smoke found no acquisition-path calls to
+`record_db_pool_wait`, and uncached laboratory/billing SQL reads lack query
+observation. Historical zero-query/zero-wait values do not establish those
+measurements. See the [current clinical performance audit](2026-10-14-frontend-performance-audit.md)
+for preserved budgets, the failing Auth/me query guard, and unavailable evidence.
+
 Current-tree note, 2026-05-25: the historical gaps below for route-level
 payload-size metrics and DB pool-wait metrics have since been closed in code,
 and the maintained Rust V2 reporter now enforces payload, pool-wait, and

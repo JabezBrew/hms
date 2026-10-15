@@ -1,4 +1,4 @@
-import { v2Request } from '@/lib/api/v2/client'
+import { v2Api, v2Request } from '@/lib/api/v2/client'
 import { handleV2ApiError } from '@/lib/api/v2/errors'
 
 export const WARD_ROUNDS_PATH = '/api/v2/patients/{patient_id}/chronicle/ward-rounds'
@@ -33,9 +33,9 @@ function emptyToNull(value) {
 
 function mapPrescriptionStatus(action = {}) {
   const decision = action.status || action.decision
-  if (decision === 'hold') return 'on_hold'
-  if (decision === 'stop') return 'stopped'
-  if (decision === 'complete') return 'completed'
+  if (decision === 'hold' || decision === 'on_hold') return 'on_hold'
+  if (decision === 'stop' || decision === 'stopped') return 'stopped'
+  if (decision === 'complete' || decision === 'completed') return 'completed'
   return 'active'
 }
 
@@ -43,6 +43,7 @@ function buildRenderedNote(payload = {}) {
   const note = payload.note || {}
   return [
     ['OVERNIGHT EVENTS', note.overnight_events],
+    ['EXAMINATION', note.examination],
     ['ASSESSMENT', note.assessment],
     ['PLAN', note.plan],
     ['SUMMARY', note.summary],
@@ -57,12 +58,15 @@ function buildRenderedNote(payload = {}) {
 function buildNoteSections(payload = {}) {
   const note = payload.note || {}
   const dischargeNote = emptyToNull(payload.actions?.discharge?.note)
+  const originalBlockers = payload.actions?.discharge?.original_blockers || []
   return {
     interval_history: emptyToNull(note.overnight_events),
-    examination: null,
+    examination: emptyToNull(note.examination),
     assessment: emptyToNull(note.assessment),
     plan: emptyToNull(note.plan || note.summary),
-    clinical_readiness_blockers: dischargeNote ? [dischargeNote] : [],
+    clinical_readiness_blockers: dischargeNote
+      ? originalBlockers.join('\n') === dischargeNote ? originalBlockers : [dischargeNote]
+      : [],
   }
 }
 
@@ -89,34 +93,33 @@ function buildActionRequests(payload = {}) {
     },
   }))
 
-  const testIds = []
-  const panelIds = []
-  const labNames = []
+  const labGroups = new Map()
   ;(actions.lab_orders || []).forEach((order) => {
     const id = order.catalog_item_id || order.id
     if (!id) return
+    const priority = order.priority || actions.lab_priority || 'routine'
+    if (!labGroups.has(priority)) labGroups.set(priority, { test_ids: [], panel_ids: [], names: [] })
+    const group = labGroups.get(priority)
     if ((order.catalog_item_type || order.kind) === 'panel') {
-      panelIds.push(id)
+      group.panel_ids.push(id)
     } else {
-      testIds.push(id)
+      group.test_ids.push(id)
     }
     if (order.test_name || order.name) {
-      labNames.push(order.test_name || order.name)
+      group.names.push(order.test_name || order.name)
     }
   })
 
-  const labAction = testIds.length > 0 || panelIds.length > 0
-    ? [{
+  const labAction = [...labGroups.entries()].map(([priority, group]) => ({
         action_type: 'lab_order',
-        title: labNames.length > 0 ? labNames.join(', ') : 'Laboratory order',
+        title: group.names.length > 0 ? group.names.join(', ') : 'Laboratory order',
         instruction: null,
         payload: {
-          test_ids: testIds,
-          panel_ids: panelIds,
-          priority: actions.lab_priority || 'routine',
+          test_ids: group.test_ids,
+          panel_ids: group.panel_ids,
+          priority,
         },
-      }]
-    : []
+      }))
 
   const nursingActions = (actions.nursing_tasks || []).map((task) => ({
     action_type: 'nursing_task',
@@ -157,6 +160,19 @@ async function requestWardRound(config, failureMessage) {
 }
 
 async function upsertDraft(patientId, payload, options = {}) {
+  if (payload.ward_round_id) {
+    try {
+      const body = buildRoundPayload(payload)
+      const response = await v2Api.patchPatientChronicleWardRound(
+        { patient_id: patientId, round_id: payload.ward_round_id },
+        { expected_version: payload.expected_version, note_sections: body.note_sections, rendered_note: body.rendered_note },
+        { signal: options.signal },
+      )
+      return unwrapObject(response)
+    } catch (error) {
+      throwWardRoundError(error, 'Failed to update ward round draft')
+    }
+  }
   const response = await requestWardRound({
     method: 'POST',
     path: WARD_ROUNDS_PATH,
@@ -191,29 +207,55 @@ async function createAction(patientId, roundId, action, options = {}) {
 async function replaceDraftActions(patientId, round, actionRequests, options = {}) {
   let current = round
   const draftActions = (current.actions || []).filter((action) => action.status === 'draft')
-  for (const action of draftActions) {
-    current = await deleteAction(patientId, current.id, action.id, options)
-  }
-  for (const actionRequest of actionRequests) {
-    current = await createAction(patientId, current.id, actionRequest, options)
+  try {
+    for (const action of draftActions) {
+      current = await deleteAction(patientId, current.id, action.id, options)
+    }
+    for (const actionRequest of actionRequests) {
+      current = await createAction(patientId, current.id, actionRequest, options)
+    }
+  } catch (error) {
+    throw withConfirmedDraftIdentity(error, current)
   }
   return current
 }
 
+function withConfirmedDraftIdentity(error, draft) {
+  if (draft?.id && Number.isSafeInteger(draft.version)) {
+    error.confirmedDraftIdentity = { id: draft.id, version: draft.version }
+  }
+  return error
+}
+
 export const wardRoundApi = {
+  current: async (patientId, options = {}) => {
+    try {
+      return unwrapObject(await v2Api.getPatientChronicleCurrentWardRound(
+        { patient_id: patientId },
+        { signal: options.signal },
+      ))
+    } catch (error) {
+      if (error?.status === 404 && error?.data?.error?.code === 'ward_round_not_found') return null
+      throwWardRoundError(error, 'Failed to load ward round draft')
+    }
+  },
   saveDraft: async (patientId, payload, options = {}) => {
     const draft = await upsertDraft(patientId, payload, options)
     return replaceDraftActions(patientId, draft, buildActionRequests(payload), options)
   },
   commit: async (patientId, payload, options = {}) => {
     const draft = await wardRoundApi.saveDraft(patientId, payload, options)
-    const response = await requestWardRound({
-      method: 'POST',
-      path: WARD_ROUND_COMMIT_PATH,
-      pathParams: { patient_id: patientId, round_id: draft.id },
-      body: { expected_version: draft.version },
-      signal: options.signal,
-    }, 'Failed to sign ward round')
-    return unwrapObject(response)
+    try {
+      const response = await requestWardRound({
+        method: 'POST',
+        path: WARD_ROUND_COMMIT_PATH,
+        pathParams: { patient_id: patientId, round_id: draft.id },
+        body: { expected_version: draft.version },
+        signal: options.signal,
+      }, 'Failed to sign ward round')
+      return unwrapObject(response)
+    } catch (error) {
+      throw withConfirmedDraftIdentity(error, draft)
+    }
   },
 }

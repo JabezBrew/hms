@@ -7,7 +7,9 @@ import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQue
 import { invalidateEncounterMutationQueries } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
-import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { createKeyFactory, keyWith, createScopedQueryKey, getAuthQueryScope } from '@/shared/lib/queryKeys';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   dashboardKeys,
   invalidateOperationalDoctorDashboardQueries,
@@ -26,14 +28,20 @@ const triageKeyFactory = createKeyFactory('triage');
 
 export const visitKeys = {
   all: visitKeyFactory.all,
-  waitingRoom: (clinicId) => keyWith('visits', 'waiting-room', clinicId),
-  detail: (encounterId) => visitKeyFactory.detail(encounterId),
+  waitingRoom: (clinicId, scope) => createScopedQueryKey(keyWith('visits', 'waiting-room', clinicId), scope),
+  detail: (encounterId, scope) => createScopedQueryKey(visitKeyFactory.detail(encounterId), scope),
 };
 
 export const triageKeys = {
   all: triageKeyFactory.all,
-  list: (filters) => triageKeyFactory.list(filters),
-  detail: (id) => triageKeyFactory.detail(id),
+  list: (filters = {}, scope) => createScopedQueryKey(
+    ['triage', 'list', hashQueryValue(JSON.stringify(Object.keys(filters)
+      .filter((key) => key !== 'signal')
+      .sort()
+      .map((key) => [key, filters[key]])))],
+    scope,
+  ),
+  detail: (id, scope) => createScopedQueryKey(triageKeyFactory.detail(id), scope),
 };
 
 function getVisitMutationEncounterId(variables) {
@@ -75,15 +83,16 @@ export function invalidateVisitMutationQueries(queryClient, encounterId) {
  * @param {Object} options - Query options
  */
 export function useWaitingRoom(clinicId, options = {}) {
-  const { facilityCode } = useAuth();
+  const auth = useAuth();
+  const { facilityCode } = auth;
 
   return useQuery({
-    queryKey: visitKeys.waitingRoom(clinicId),
     queryFn: ({ signal }) => visitsApi.waitingRoom(clinicId, { signal }),
     refetchInterval: 10000, // Poll every 10 seconds
     refetchIntervalInBackground: false,
     staleTime: 5000,
     ...options,
+    queryKey: visitKeys.waitingRoom(clinicId, getAuthQueryScope(auth)),
     enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(clinicId),
   });
 }
@@ -92,13 +101,14 @@ export function useWaitingRoom(clinicId, options = {}) {
  * Get visit details for an encounter
  */
 export function useVisit(encounterId, options = {}) {
-  const { facilityCode } = useAuth();
+  const auth = useAuth();
+  const { facilityCode } = auth;
 
   return useQuery({
-    queryKey: visitKeys.detail(encounterId),
     queryFn: ({ signal }) => visitsApi.get(encounterId, { signal }),
     staleTime: 30000,
     ...options,
+    queryKey: visitKeys.detail(encounterId, getAuthQueryScope(auth)),
     enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(encounterId),
   });
 }
@@ -223,15 +233,16 @@ export function useVisitActions() {
  * @param {Object} options - Query options
  */
 export function useTriageQueue(filters = {}, options = {}) {
-  const { facilityCode } = useAuth();
+  const auth = useAuth();
+  const { facilityCode } = auth;
 
   return useQuery({
-    queryKey: triageKeys.list(filters),
     queryFn: ({ signal }) => triageApi.list({ ...filters, signal }),
     refetchInterval: 15000, // Poll every 15 seconds
     refetchIntervalInBackground: false,
     staleTime: 10000,
     ...options,
+    queryKey: triageKeys.list(filters, getAuthQueryScope(auth)),
     enabled: (options.enabled ?? true) && Boolean(facilityCode),
   });
 }
@@ -240,13 +251,14 @@ export function useTriageQueue(filters = {}, options = {}) {
  * Get single triage entry
  */
 export function useTriageEntry(id, options = {}) {
-  const { facilityCode } = useAuth();
+  const auth = useAuth();
+  const { facilityCode } = auth;
 
   return useQuery({
-    queryKey: triageKeys.detail(id),
     queryFn: ({ signal }) => triageApi.get(id, { signal }),
     staleTime: 30000,
     ...options,
+    queryKey: triageKeys.detail(id, getAuthQueryScope(auth)),
     enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(id),
   });
 }
@@ -293,7 +305,7 @@ export function useTriageActions() {
   const assignToClinic = useMutation({
     mutationFn: ({ id, ...data }) => triageApi.assign(id, data),
     onSuccess: () => {
-      toast.success('Patient assigned to clinic');
+      toast.success(isRustV2ApiMode() ? 'Triage staff assignment saved' : 'Patient assigned to clinic');
       queryClient.invalidateQueries({ queryKey: triageKeys.all });
       invalidateTriageQueries();
       queryClient.invalidateQueries({ queryKey: appointmentKeys.all });

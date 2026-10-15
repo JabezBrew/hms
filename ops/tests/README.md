@@ -14,6 +14,7 @@ Scope: operations and deployment configuration tests.
 | `test_create_client_deployment.py` | client deployment generation behavior. |
 | `test_deploy_script.py` | deploy script behavior. |
 | `test_monitoring_config.py` | monitoring configuration behavior. |
+| `test_frontend_security_headers.py` | real Nginx headers on HTML, runtime config, cached/missing assets, and absence of reset-token/patient-path/referrer request logs; opt in with `HMS_TEST_NGINX_DOCKER=1` and a local `nginx:alpine` image. |
 | `test_compose_deploy_readiness.py` | Compose deployment health/readiness gates. |
 | `test_free_testing_deploy.py` | private synthetic env generation, free-testing Compose overrides, Access preflight, explicit public authentication gates, tunnel readiness and local-only behavior. |
 

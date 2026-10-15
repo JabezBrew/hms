@@ -82,7 +82,7 @@ describe('LoginForm', () => {
       renderLoginForm()
 
       expect(screen.getByText('Welcome Back')).toBeInTheDocument()
-      expect(screen.getByText('Sign in to access your account')).toBeInTheDocument()
+      expect(screen.getByText('Sign in to your clinical workspace.')).toBeInTheDocument()
       expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
       expect(screen.getByLabelText('Password')).toBeInTheDocument()
       expect(screen.queryByLabelText('Facility Code')).not.toBeInTheDocument()
@@ -214,8 +214,28 @@ describe('LoginForm', () => {
   // =============================================================================
 
   describe('Loading state', () => {
+    let resolvePendingLogin
+
+    beforeEach(() => {
+      resolvePendingLogin = undefined
+    })
+
+    afterEach(async () => {
+      // Settle even when an assertion fails so no pending submission leaks into
+      // cleanup. A clock-based response can finish before user.click returns.
+      if (resolvePendingLogin) {
+        await act(async () => resolvePendingLogin({ id: '1' }))
+      }
+    })
+
+    function holdLoginPending() {
+      mockLogin.mockImplementation(() => new Promise((resolve) => {
+        resolvePendingLogin = resolve
+      }))
+    }
+
     it('disables form inputs during submission', async () => {
-      mockLogin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
+      holdLoginPending()
 
       const user = userEvent.setup()
 
@@ -227,6 +247,7 @@ describe('LoginForm', () => {
 
       expect(screen.getByLabelText('Email Address')).toBeDisabled()
       expect(screen.getByLabelText('Password')).toBeDisabled()
+      expect(screen.getByRole('button', { name: /show password/i })).toBeDisabled()
     })
 
     it('disables facility code during Rust V2 submission', async () => {
@@ -234,7 +255,7 @@ describe('LoginForm', () => {
         apiMode: 'rust-v2',
         defaultFacilityCode: 'HMS',
       }
-      mockLogin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
+      holdLoginPending()
 
       const user = userEvent.setup()
 
@@ -248,7 +269,7 @@ describe('LoginForm', () => {
     })
 
     it('disables submit button during submission', async () => {
-      mockLogin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
+      holdLoginPending()
 
       const user = userEvent.setup()
 
@@ -262,7 +283,7 @@ describe('LoginForm', () => {
     })
 
     it('shows loading text during submission', async () => {
-      mockLogin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
+      holdLoginPending()
 
       const user = userEvent.setup()
 
@@ -369,9 +390,11 @@ describe('LoginForm', () => {
 
       // Find and click the toggle button
       const toggleButton = screen.getByRole('button', { name: /show password/i })
+      expect(toggleButton).toHaveAttribute('aria-pressed', 'false')
       await user.click(toggleButton)
 
       expect(passwordInput).toHaveAttribute('type', 'text')
+      expect(toggleButton).toHaveAttribute('aria-pressed', 'true')
     })
 
     it('shows Eye icon when password is hidden', () => {

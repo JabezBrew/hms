@@ -802,19 +802,27 @@ function sessionFor(role, credentials) {
   const credential = credentials[role] || credentials.admin || credentials.reception || Object.values(credentials)[0];
   if (!credential) return null;
 
-  const existing = sessions[role];
+  // Shared smoke credentials represent one account, even when the VU switches
+  // workflows. Reuse that account's session without putting private identity or
+  // credential values in cache keys; distinct credentials retain separate keys.
+  const sessionKey = ALL_WORKFLOWS.find((candidate) => (
+    credentials[candidate]
+      && credentials[candidate].email === credential.email
+      && credentials[candidate].password === credential.password
+  )) || role;
+  const existing = sessions[sessionKey];
   const now = Date.now();
   if (!existing) {
-    sessions[role] = loginWithCredentials(role, credential);
-    return sessions[role];
+    sessions[sessionKey] = loginWithCredentials(role, credential);
+    return sessions[sessionKey];
   }
 
   if (now - existing.lastAuthenticatedAt > TOKEN_REFRESH_SECONDS * 1000) {
     const refreshed = refreshSession(existing, role);
-    sessions[role] = refreshed || loginWithCredentials(role, credential);
+    sessions[sessionKey] = refreshed || loginWithCredentials(role, credential);
   }
 
-  return sessions[role];
+  return sessions[sessionKey];
 }
 
 function loginWithCredentials(role, credential) {

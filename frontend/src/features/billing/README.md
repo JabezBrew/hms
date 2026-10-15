@@ -31,3 +31,6 @@ Scope: billing dashboard, invoices, payments, catalog, cash sessions, insurance,
 - Invoice finalization, voids, reversals, and refunds are backend-authoritative.
 - High-risk financial actions require proper permission and reauth behavior.
 - Do not duplicate ledger calculations in UI code.
+- Rust cash payments require an open current cash session and submit its ID.
+  Non-cash methods do not require or associate with a cash drawer. Legacy
+  facility cash-control behavior remains separate.

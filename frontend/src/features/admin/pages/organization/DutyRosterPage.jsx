@@ -219,6 +219,7 @@ function RosterCalendarView({ departmentId, flatUnits }) {
               variant="ghost"
               size="icon"
               onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
+              aria-label="Previous month of duty roster"
               className="size-8"
             >
               <ChevronLeft className="size-4" />
@@ -230,6 +231,7 @@ function RosterCalendarView({ departmentId, flatUnits }) {
               variant="ghost"
               size="icon"
               onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+              aria-label="Next month of duty roster"
               className="size-8"
             >
               <ChevronRight className="size-4" />

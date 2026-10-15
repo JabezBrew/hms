@@ -122,7 +122,7 @@ export function ResetPasswordConfirmForm() {
 
   if (isValidating) {
     return (
-      <div className="mx-auto flex w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
+      <div className="mx-auto flex w-full max-w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
         <LoadingSpinner className="size-8 text-primary" aria-hidden="true" />
         <p className="text-sm text-muted-foreground">Validating reset link…</p>
       </div>
@@ -131,7 +131,7 @@ export function ResetPasswordConfirmForm() {
 
   if (isSuccess) {
     return (
-      <div className="mx-auto flex w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
+      <div className="mx-auto flex w-full max-w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
         <CheckCircle className="size-16 text-green-500" aria-hidden="true" />
         <div className="text-center">
           <h1 className="text-2xl font-semibold">Password Reset Complete</h1>
@@ -144,7 +144,7 @@ export function ResetPasswordConfirmForm() {
 
   if (!isTokenValid) {
     return (
-      <div className="mx-auto flex w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
+      <div className="mx-auto flex w-full max-w-full flex-col items-center justify-center gap-y-6 sm:w-[400px]">
         <XCircle className="size-16 text-red-500" aria-hidden="true" />
         <div className="text-center">
           <h1 className="text-2xl font-semibold">Invalid Reset Link</h1>
@@ -156,7 +156,7 @@ export function ResetPasswordConfirmForm() {
   }
 
   return (
-    <div className="mx-auto flex w-full flex-col justify-center gap-y-6 sm:w-[400px]">
+    <div className="mx-auto flex w-full max-w-full flex-col justify-center gap-y-6 sm:w-[400px]">
       <div className="flex flex-col gap-y-2 text-center">
         <h1 className="text-2xl font-semibold">Create New Password</h1>
         <p className="text-sm text-muted-foreground">

@@ -171,6 +171,7 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
                   size="icon"
                   className="size-8"
                   onClick={() => navigate(`/wards/${assignment.ward}`)}
+                  aria-label={`View ward: ${assignment.ward_name || 'Assigned ward'}`}
                 >
                   <ExternalLink className="size-4" />
                 </Button>
@@ -180,6 +181,7 @@ export function StaffWardAssignments({ practitionerId, practitionerName }) {
                       variant="ghost"
                       size="icon"
                       className="size-8 text-destructive hover:text-destructive"
+                      aria-label={`Remove assignment to ${assignment.ward_name || 'ward'}`}
                     >
                       <Trash2 className="size-4" />
                     </Button>

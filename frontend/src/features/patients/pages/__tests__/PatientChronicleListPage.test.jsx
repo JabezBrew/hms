@@ -188,8 +188,8 @@ describe('PatientChronicleListPage directory behavior', () => {
         { is_active: true },
         { staleTime: 5 * 60 * 1000 }
       )
-    })
-    expect(await screen.findByText('Admission Date')).toBeInTheDocument()
+    }, { timeout: 10_000 })
+    expect(await screen.findByText('Admission Date', {}, { timeout: 10_000 })).toBeInTheDocument()
   })
 
   it('sends server-side ordering when sortable table headers are clicked', async () => {

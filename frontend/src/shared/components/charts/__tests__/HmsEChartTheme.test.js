@@ -1,5 +1,35 @@
-import { describe, expect, it } from 'vitest';
-import { stabilizeChartOption } from '../HmsEChartTheme';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { stabilizeChartOption, useChronicleChartTheme } from '../HmsEChartTheme';
+
+afterEach(() => {
+  cleanup();
+  document.documentElement.classList.remove('dark');
+  vi.restoreAllMocks();
+});
+
+describe('useChronicleChartTheme', () => {
+  it('updates mounted chart colors when HMS toggles dark mode and stops observing on unmount', async () => {
+    const computedStyle = vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({
+      getPropertyValue: (name) => name === '--foreground'
+        ? (document.documentElement.classList.contains('dark') ? '#fafafa' : '#252525')
+        : '',
+    }));
+    const { result, unmount } = renderHook(() => useChronicleChartTheme());
+    expect(result.current.foreground).toBe('#252525');
+
+    act(() => document.documentElement.classList.add('dark'));
+    await waitFor(() => expect(result.current.foreground).toBe('#fafafa'));
+
+    unmount();
+    computedStyle.mockClear();
+    await act(async () => {
+      document.documentElement.classList.remove('dark');
+      await Promise.resolve();
+    });
+    expect(computedStyle).not.toHaveBeenCalled();
+  });
+});
 
 describe('stabilizeChartOption', () => {
   it('keeps line geometry visible through emphasis blur and select states', () => {

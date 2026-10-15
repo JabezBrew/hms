@@ -9,8 +9,13 @@ const ASSETS_DIR = path.join(DIST_DIR, 'assets')
 const KB = 1024
 
 const BUDGETS = {
+  // Preserve the existing entry-file limits. These exclude modulepreloads.
   startupGzipKb: Number(process.env.BUDGET_STARTUP_GZIP_KB || 90),
   startupRawKb: Number(process.env.BUDGET_STARTUP_RAW_KB || 350),
+  // Provisional observed guard, including modulepreloads. This is not a claim
+  // that the application meets the original 90 KiB initial-load target.
+  totalStartupGzipKb: Number(process.env.BUDGET_TOTAL_STARTUP_GZIP_KB || 225),
+  totalStartupRawKb: Number(process.env.BUDGET_TOTAL_STARTUP_RAW_KB || 850),
   entryJsGzipKb: Number(process.env.BUDGET_ENTRY_JS_GZIP_KB || 40),
   entryCssGzipKb: Number(process.env.BUDGET_ENTRY_CSS_GZIP_KB || 45),
   largestChunkGzipKb: Number(process.env.BUDGET_LARGEST_CHUNK_GZIP_KB || 120),
@@ -50,7 +55,11 @@ function parseEntryAssets(indexHtml) {
     styles.push(match[1])
   }
 
-  return { scripts, modulePreloads, styles }
+  return {
+    scripts: [...new Set(scripts)],
+    modulePreloads: [...new Set(modulePreloads)],
+    styles: [...new Set(styles)],
+  }
 }
 
 function resolveDistAsset(assetPath) {
@@ -75,12 +84,17 @@ const entryScriptStats = scripts
   .map((asset) => ({ asset, ...getFileStats(resolveDistAsset(asset)) }))
 const entryStyleStats = styles
   .map((asset) => ({ asset, ...getFileStats(resolveDistAsset(asset)) }))
+const initialJsAssets = [...new Set([...scripts, ...modulePreloads])]
+const initialAssetStats = [...new Set([...initialJsAssets, ...styles])]
+  .map((asset) => ({ asset, ...getFileStats(resolveDistAsset(asset)) }))
 
 const totalEntryRaw = [...entryScriptStats, ...entryStyleStats].reduce((sum, item) => sum + item.rawBytes, 0)
 const totalEntryGzip = [...entryScriptStats, ...entryStyleStats].reduce((sum, item) => sum + item.gzipBytes, 0)
 
 const entryJsGzip = entryScriptStats.reduce((sum, item) => sum + item.gzipBytes, 0)
 const entryCssGzip = entryStyleStats.reduce((sum, item) => sum + item.gzipBytes, 0)
+const totalStartupRaw = initialAssetStats.reduce((sum, item) => sum + item.rawBytes, 0)
+const totalStartupGzip = initialAssetStats.reduce((sum, item) => sum + item.gzipBytes, 0)
 
 const jsChunks = fs.existsSync(ASSETS_DIR)
   ? fs.readdirSync(ASSETS_DIR).filter((name) => name.endsWith('.js'))
@@ -96,14 +110,24 @@ for (const chunk of jsChunks) {
 
 const checks = [
   {
-    label: 'Startup transfer (gzip)',
+    label: 'Entry scripts/styles (gzip; excludes modulepreloads)',
     actual: toKb(totalEntryGzip),
     max: BUDGETS.startupGzipKb,
   },
   {
-    label: 'Startup transfer (raw)',
+    label: 'Entry scripts/styles (raw; excludes modulepreloads)',
     actual: toKb(totalEntryRaw),
     max: BUDGETS.startupRawKb,
+  },
+  {
+    label: 'Initial scripts/styles (gzip; includes modulepreloads)',
+    actual: toKb(totalStartupGzip),
+    max: BUDGETS.totalStartupGzipKb,
+  },
+  {
+    label: 'Initial scripts/styles (raw; includes modulepreloads)',
+    actual: toKb(totalStartupRaw),
+    max: BUDGETS.totalStartupRawKb,
   },
   {
     label: 'Entry JS (gzip)',
@@ -133,7 +157,6 @@ if (largestJsChunk.name) {
   console.log(`  - Largest JS chunk: ${largestJsChunk.name}`)
 }
 
-const initialJsAssets = [...scripts, ...modulePreloads]
 const forbiddenInitialChunks = [/\/vendor-echarts-[^/]+\.js$/, /\/vendor-zrender-[^/]+\.js$/]
 const forbiddenInitialAssets = initialJsAssets.filter((asset) =>
   forbiddenInitialChunks.some((pattern) => pattern.test(asset))

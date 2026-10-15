@@ -69,6 +69,7 @@ export function useWardBoardPageController() {
   const locationStateRef = useRef(location.state);
   locationStateRef.current = location.state;
   const [selectedPatientId, setSelectedPatientId] = useState(null);
+  const openedDischargeLink = useRef(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
 
@@ -216,6 +217,17 @@ export function useWardBoardPageController() {
   });
 
   const patients = useMemo(() => getBoardPatients(boardData), [boardData]);
+  const dischargeCaseParam = searchParams.get('case') || '';
+  useEffect(() => {
+    if (view !== 'discharge' || !queryPatient || !dischargeCaseParam || isFetching) return;
+    const linkKey = `${queryPatient}:${dischargeCaseParam}`;
+    if (openedDischargeLink.current === linkKey) return;
+    const matchingPatient = patients.find((patient) => getPatientId(patient) === queryPatient
+      && patient.discharge_case_id === dischargeCaseParam);
+    if (!matchingPatient) return;
+    openedDischargeLink.current = linkKey;
+    setSelectedPatientId(getPatientId(matchingPatient));
+  }, [dischargeCaseParam, isFetching, patients, queryPatient, view]);
   const summary = useMemo(() => getBoardSummary(boardData, patients), [boardData, patients]);
   const assignedWards = useMemo(
     () => (Array.isArray(boardContext?.assigned_wards) ? boardContext.assigned_wards : []),

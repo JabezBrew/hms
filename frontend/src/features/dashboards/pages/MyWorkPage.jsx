@@ -4,6 +4,7 @@ import BookOpen from 'lucide-react/dist/esm/icons/book-open.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Siren from 'lucide-react/dist/esm/icons/siren.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,8 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useAuth } from '@/lib/auth';
+import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 
 const WORK_AREAS = [
   {
@@ -67,6 +70,7 @@ const WORK_AREAS = [
 ];
 
 export default function MyWorkPage() {
+  const { facilityCode } = useAuth();
   const moduleGate = useDashboardModuleGates();
   const myWorkQuery = useCareAreaMyWork({
     enabled: moduleGate.hasFeatureMap,
@@ -84,13 +88,14 @@ export default function MyWorkPage() {
         title="My Work"
         description="Start from the care context you are working in"
         size="md"
+        actions={<Button size="sm" variant="outline" disabled={!facilityCode || !moduleGate.hasFeatureMap || myWorkQuery.isFetching} onClick={() => myWorkQuery.refetch()}><RefreshCw className="mr-2 size-4" />Refresh work</Button>}
       />
-      <main className="p-4 sm:p-6 space-y-6">
-        {moduleGate.isResolving ? (
+      <section className="p-4 sm:p-6 space-y-6">
+        {!facilityCode ? <FacilityRequiredPanel /> : moduleGate.isResolving ? (
           <PageState variant="loading" fullHeight={false} className="rounded-lg border border-border" />
         ) : null}
 
-        {!moduleGate.isResolving && !moduleGate.hasFeatureMap ? (
+        {facilityCode && !moduleGate.isResolving && !moduleGate.hasFeatureMap ? (
           <PageState
             variant="error"
             title="Work areas unavailable"
@@ -101,7 +106,7 @@ export default function MyWorkPage() {
           />
         ) : null}
 
-        {!moduleGate.isResolving && moduleGate.hasFeatureMap && visibleAreas.length === 0 ? (
+        {facilityCode && !moduleGate.isResolving && moduleGate.hasFeatureMap && visibleAreas.length === 0 ? (
           <PageState
             variant="empty"
             title="No work areas enabled"
@@ -111,7 +116,7 @@ export default function MyWorkPage() {
           />
         ) : null}
 
-        {!moduleGate.isResolving && moduleGate.hasFeatureMap && visibleAreas.length > 0 ? (
+        {facilityCode && !moduleGate.isResolving && moduleGate.hasFeatureMap && visibleAreas.length > 0 ? (
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Care contexts">
             {visibleAreas.map((area) => (
               <WorkAreaCard
@@ -124,7 +129,7 @@ export default function MyWorkPage() {
             ))}
           </section>
         ) : null}
-      </main>
+      </section>
     </PageShell>
   );
 }
@@ -180,12 +185,13 @@ function getAreaPreview(key, myWork) {
   if (!myWork) return null;
 
   if (key === 'outpatient') {
+    const items = [
+      ...(myWork.outpatient?.active_visits || []),
+      ...(myWork.outpatient?.appointments || []),
+    ];
     return {
-      items: [
-        ...(myWork.outpatient?.active_visits || []),
-        ...(myWork.outpatient?.appointments || []),
-      ].slice(0, 5),
-      hasMore: Boolean(myWork.outpatient?.has_more_active_visits || myWork.outpatient?.has_more_appointments),
+      items: items.slice(0, 5),
+      hasMore: items.length > 5 || Boolean(myWork.outpatient?.has_more_active_visits || myWork.outpatient?.has_more_appointments),
       type: 'patient',
     };
   }
@@ -199,12 +205,13 @@ function getAreaPreview(key, myWork) {
   }
 
   if (key === 'emergency') {
+    const items = [
+      ...(myWork.emergency?.assigned_triage || []),
+      ...(myWork.emergency?.waiting_triage || []),
+    ];
     return {
-      items: [
-        ...(myWork.emergency?.assigned_triage || []),
-        ...(myWork.emergency?.waiting_triage || []),
-      ].slice(0, 5),
-      hasMore: Boolean(myWork.emergency?.has_more_assigned_triage || myWork.emergency?.has_more_waiting_triage),
+      items: items.slice(0, 5),
+      hasMore: items.length > 5 || Boolean(myWork.emergency?.has_more_assigned_triage || myWork.emergency?.has_more_waiting_triage),
       type: 'patient',
     };
   }

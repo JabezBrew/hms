@@ -91,6 +91,23 @@ values out of query parameters.
 - Keep PHI out of browser events, query keys, route labels, local storage, and
   screenshots.
 - Defer heavy widgets and keep route shells responsive on modest hardware.
+- Clinical mutations do not retry automatically. Only explicitly idempotent
+  operations may opt into retries after an uncertain response.
+
+## Production Container
+
+The container builds with Node 24 LTS and serves static assets with Nginx.
+`nginx-security-headers.conf` is included at the server and at locations that
+override headers, preserving protections for cached assets and runtime config.
+Request access/error-context logs are disabled to avoid persisting patient
+paths, reset tokens or referrers. Nginx startup diagnostics and safe API
+route/status metrics remain available.
+
+Run the optional real-container security checks from the repository root:
+
+```bash
+HMS_TEST_NGINX_DOCKER=1 python3 -m pytest ops/tests/test_frontend_security_headers.py -q
+```
 
 ## Commands
 

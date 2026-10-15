@@ -9,6 +9,7 @@ use hms_domain::auth::{
     BREAK_GLASS_PERMISSION_CODE,
 };
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
+use serde::Deserialize;
 use serde_json::Value;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -93,6 +94,7 @@ struct RequestContextFactsRow {
     active_authorities: Value,
     feature_entitlements_updated_at: Option<DateTime<Utc>>,
     session_expires_at: DateTime<Utc>,
+    session_started_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -110,6 +112,7 @@ pub struct RequestContextAuthFacts {
     pub active_authorities: Vec<ActiveAuthority>,
     pub feature_entitlements_updated_at: Option<DateTime<Utc>>,
     pub session_expires_at: DateTime<Utc>,
+    pub session_started_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -226,7 +229,7 @@ pub struct AuditBreakGlassChronicleView {
     pub now: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, Debug, Deserialize, FromRow)]
 struct BreakGlassGrantRow {
     id: Uuid,
     facility_id: Uuid,
@@ -734,7 +737,8 @@ pub async fn request_context_facts(
 	                     refresh_sessions.expires_at,
 	                     refresh_sessions.idle_expires_at,
 	                     refresh_sessions.absolute_expires_at
-	                   ) AS session_expires_at
+	                   ) AS session_expires_at,
+                       refresh_sessions.session_started_at
 	            FROM users
 	            JOIN facilities ON facilities.id = users.facility_id
 	            JOIN refresh_sessions
@@ -1885,48 +1889,99 @@ pub async fn clinical_patient_access_evidence(
     patient_id: Uuid,
     now: DateTime<Utc>,
 ) -> anyhow::Result<ClinicalPatientAccessEvidence> {
-    let has_workflow_access = sqlx::query_scalar::<_, bool>(
+    let (has_workflow_access, active_grant) = hms_observability::observe_db_query(
+        "auth.clinical_patient_access_evidence",
+        sqlx::query_as::<_, (bool, Option<Value>)>(
         r#"
         SELECT EXISTS (
-            SELECT 1
-            FROM patient_contexts
-            JOIN patients ON patients.id = patient_contexts.patient_id
-            WHERE patient_contexts.facility_id = $1
-              AND patient_contexts.user_id = $2
-              AND patient_contexts.patient_id = $3
-              AND patients.facility_id = $1
+            SELECT 1 FROM patients
+            WHERE patients.facility_id = $1 AND patients.id = $3
               AND patients.record_status = 'registered'
-              AND patients.vital_status <> 'deceased'
-        ) OR EXISTS (
-            SELECT 1
-            FROM clinical_notes
-            JOIN patients ON patients.id = clinical_notes.patient_id
-            WHERE clinical_notes.facility_id = $1
-              AND clinical_notes.created_by_user_id = $2
-              AND clinical_notes.patient_id = $3
-              AND patients.facility_id = $1
-              AND patients.record_status = 'registered'
-              AND patients.vital_status <> 'deceased'
+              AND (
+                EXISTS (
+                    SELECT 1 FROM patient_contexts
+                    WHERE facility_id = $1 AND user_id = $2 AND patient_id = $3
+                      AND context_kind = 'assigned'
+                ) OR EXISTS (
+                    SELECT 1 FROM clinical_notes
+                    WHERE facility_id = $1 AND created_by_user_id = $2 AND patient_id = $3
+                ) OR EXISTS (
+                    SELECT 1 FROM encounters
+                    WHERE facility_id = $1 AND patient_id = $3 AND status = 'in_progress'
+                      AND (
+                        visit_id IS NULL OR EXISTS (
+                            SELECT 1 FROM visits
+                            WHERE visits.id = encounters.visit_id
+                              AND visits.facility_id = encounters.facility_id
+                              AND visits.patient_id = encounters.patient_id
+                              AND visits.status NOT IN ('checked_out', 'no_show', 'cancelled')
+                        )
+                      )
+                      AND (
+                        created_by_user_id = $2 OR EXISTS (
+                            SELECT 1 FROM encounter_care_team_assignments
+                            WHERE encounter_id = encounters.id AND user_id = $2 AND is_active = TRUE
+                        )
+                      )
+                ) OR EXISTS (
+                    SELECT 1 FROM triage_queue
+                    JOIN visits ON visits.id = triage_queue.visit_id
+                      AND visits.facility_id = triage_queue.facility_id
+                      AND visits.patient_id = triage_queue.patient_id
+                    WHERE triage_queue.facility_id = $1 AND triage_queue.patient_id = $3
+                      AND triage_queue.assigned_to_user_id = $2
+                      AND triage_queue.status IN ('waiting', 'assigned', 'completed')
+                      AND visits.status NOT IN ('checked_out', 'no_show', 'cancelled')
+                ) OR EXISTS (
+                    SELECT 1 FROM admission_cases
+                    WHERE facility_id = $1 AND patient_id = $3
+                      AND status IN ('admitted', 'discharge_pending')
+                      AND (
+                        attending_user_id = $2 OR EXISTS (
+                            SELECT 1 FROM ward_staff_assignments
+                            JOIN practitioner_profiles
+                              ON practitioner_profiles.id = ward_staff_assignments.practitioner_profile_id
+                             AND practitioner_profiles.facility_id = ward_staff_assignments.facility_id
+                            JOIN staff_profiles
+                              ON staff_profiles.id = practitioner_profiles.staff_id
+                             AND staff_profiles.facility_id = ward_staff_assignments.facility_id
+                            WHERE ward_staff_assignments.facility_id = $1
+                              AND ward_staff_assignments.ward_id = admission_cases.ward_id
+                              AND ward_staff_assignments.is_active = TRUE
+                              AND staff_profiles.user_id = $2
+                        )
+                      )
+                )
+              )
+        ), (
+            SELECT to_jsonb(active_grant)
+            FROM (
+                SELECT id, facility_id, user_id, patient_id, category, reason_text,
+                       started_at, expires_at, ended_at
+                FROM patient_break_glass_grants
+                WHERE facility_id = $1 AND user_id = $2 AND patient_id = $3
+                  AND ended_at IS NULL AND started_at <= $4 AND expires_at > $4
+                ORDER BY started_at DESC, id DESC LIMIT 1
+            ) active_grant
         )
         "#,
     )
     .bind(facility_id)
     .bind(user_id)
     .bind(patient_id)
-    .fetch_one(pool)
+    .bind(now)
+    .fetch_one(pool),
+    )
     .await?;
 
     Ok(ClinicalPatientAccessEvidence {
         workflow_reason: has_workflow_access
             .then_some(ClinicalPatientAccessReason::ActiveClinicalRelationship),
-        break_glass_grant: active_break_glass_grant_for_patient(
-            pool,
-            facility_id,
-            user_id,
-            patient_id,
-            now,
-        )
-        .await?,
+        break_glass_grant: active_grant
+            .map(serde_json::from_value::<BreakGlassGrantRow>)
+            .transpose()?
+            .map(break_glass_grant_from_row)
+            .transpose()?,
     })
 }
 
@@ -1937,8 +1992,10 @@ pub async fn active_break_glass_grant_for_patient(
     patient_id: Uuid,
     now: DateTime<Utc>,
 ) -> anyhow::Result<Option<BreakGlassGrant>> {
-    let row = sqlx::query_as::<_, BreakGlassGrantRow>(
-        r#"
+    let row = hms_observability::observe_db_query(
+        "auth.active_break_glass_grant_for_patient",
+        sqlx::query_as::<_, BreakGlassGrantRow>(
+            r#"
         SELECT id,
                facility_id,
                user_id,
@@ -1958,12 +2015,13 @@ pub async fn active_break_glass_grant_for_patient(
         ORDER BY started_at DESC, id DESC
         LIMIT 1
         "#,
+        )
+        .bind(facility_id)
+        .bind(user_id)
+        .bind(patient_id)
+        .bind(now)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(user_id)
-    .bind(patient_id)
-    .bind(now)
-    .fetch_optional(pool)
     .await?;
 
     row.map(break_glass_grant_from_row).transpose()
@@ -2497,6 +2555,7 @@ fn hydrate_request_context_facts(
         active_authorities: crate::admin::active_authorities_from_rows(authority_rows)?,
         feature_entitlements_updated_at: row.feature_entitlements_updated_at,
         session_expires_at: row.session_expires_at,
+        session_started_at: row.session_started_at,
     }))
 }
 

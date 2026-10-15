@@ -38,3 +38,21 @@ Run from `frontend/`:
 npm run test -- WardRoundMode
 npm run test -- ward-round/api
 ```
+
+## Draft recovery
+
+The editor loads the current ward round before accepting changes. Only a draft
+for the active admission is restored; a signed round is never replayed as draft
+orders. A failed lookup keeps the editor unavailable and offers retry, so an
+empty browser state cannot replace an existing draft after a read failure.
+
+Restored draft saves use the existing PATCH operation with `expected_version`
+and retain the version returned after saving actions. Version conflicts preserve
+local content and surface an error. Draft restoration retains note summary and
+examination, prescription decisions, lab priorities, nursing due dates and
+assignees, and discharge blockers. Partial medication work can be saved as a
+draft; signing still requires complete valid actions.
+
+The action replacement sequence continues to use separate existing resource
+writes; it is not an atomic multi-resource save. A partial action-write failure
+can require reloading the current draft before retrying.

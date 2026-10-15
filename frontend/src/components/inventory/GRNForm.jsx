@@ -239,6 +239,7 @@ export function GRNForm({ onSuccess, onCancel, initialPOId }) {
                     name={`items.${index}.quantity_received`}
                     render={({ field }) => (
                       <FormItem>
+                        <FormLabel className="sr-only">Quantity received for item {index + 1}</FormLabel>
                         <FormControl>
                           <Input type="number" min="1" placeholder="Qty" {...field} />
                         </FormControl>
@@ -252,6 +253,7 @@ export function GRNForm({ onSuccess, onCancel, initialPOId }) {
                     name={`items.${index}.batch_number`}
                     render={({ field }) => (
                       <FormItem>
+                        <FormLabel className="sr-only">Batch number for item {index + 1}</FormLabel>
                         <FormControl>
                           <Input placeholder="Batch #" className="font-mono" {...field} />
                         </FormControl>
@@ -264,6 +266,7 @@ export function GRNForm({ onSuccess, onCancel, initialPOId }) {
                     name={`items.${index}.expiry_date`}
                     render={({ field }) => (
                       <FormItem>
+                        <FormLabel className="sr-only">Expiry date for item {index + 1}</FormLabel>
                         <FormControl>
                           <Input type="date" placeholder="Expiry" {...field} />
                         </FormControl>
@@ -280,6 +283,7 @@ export function GRNForm({ onSuccess, onCancel, initialPOId }) {
                   size="icon"
                   className="text-destructive"
                   onClick={() => remove(index)}
+                  aria-label={`Remove receipt item ${index + 1}`}
                 >
                   <Trash2 className="size-4" />
                 </Button>

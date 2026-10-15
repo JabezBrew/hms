@@ -19,8 +19,8 @@ function getSidebarDefaultOpen() {
 
 export function Layout({ children, sidebar }) {
   return (
-    <SidebarProvider defaultOpen={getSidebarDefaultOpen()}>
-      <div className="relative min-h-screen bg-background w-full">
+    <SidebarProvider defaultOpen={getSidebarDefaultOpen()} style={{ '--app-header-height': '4rem', '--page-min-height': '0px' }}>
+      <div className="relative flex min-h-svh w-full flex-col bg-background">
         {/* Skip link for keyboard navigation */}
         <a
           href="#main-content"
@@ -29,12 +29,12 @@ export function Layout({ children, sidebar }) {
           Skip to main content
         </a>
         <OmniBar />
-        <div className="flex pt-14 w-full">
+        <div className="flex min-h-0 w-full flex-1 pt-16">
           <Sidebar>
             <AppSidebar sidebar={sidebar} />
           </Sidebar>
-          <SidebarInset className="p-4 flex-1 min-w-0 flex flex-col">
-            <main id="main-content" data-perf-ready="app-shell" className="w-full flex-1">
+          <SidebarInset className="flex min-w-0 flex-1 flex-col p-3 sm:p-4 lg:p-6">
+            <main id="main-content" tabIndex={-1} data-perf-ready="app-shell" className="flex w-full min-w-0 flex-1 flex-col focus:outline-none">
               <PageBreadcrumb />
               {children}
             </main>

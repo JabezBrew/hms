@@ -4,7 +4,7 @@ const PRELOADERS = [
     load: () => import('@/features/patients/pages/PatientChronicleListPage'),
   },
   {
-    test: (pathname) => /^\/patients\/[^/]+\/?$/.test(pathname),
+    test: (pathname) => /^\/patients\/[^/]+(?:\/chronicle)?\/?$/.test(pathname),
     load: () => Promise.all([
       import('@/features/patients/pages/PatientPage'),
       import('@/features/patients/pages/PatientChroniclePage'),
@@ -38,7 +38,7 @@ function normalizePathname(pathname) {
   if (!pathname || typeof pathname !== 'string') {
     return '/'
   }
-  return pathname.split('?')[0] || '/'
+  return pathname.split(/[?#]/)[0] || '/'
 }
 
 export function preloadCriticalRouteForPath(pathname) {
@@ -49,16 +49,18 @@ export function preloadCriticalRouteForPath(pathname) {
     return null
   }
 
-  if (preloadCache.has(normalizedPathname)) {
-    return preloadCache.get(normalizedPathname)
+  // Chunks are shared by route type. Keying on patient paths would retain
+  // identifiers and grow the cache for every patient opened during a shift.
+  if (preloadCache.has(route)) {
+    return preloadCache.get(route)
   }
 
   const promise = Promise.resolve()
     .then(() => route.load())
     .catch(() => {
-      preloadCache.delete(normalizedPathname)
+      preloadCache.delete(route)
     })
 
-  preloadCache.set(normalizedPathname, promise)
+  preloadCache.set(route, promise)
   return promise
 }

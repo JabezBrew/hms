@@ -150,17 +150,86 @@ pub async fn administer_medication(
     actor_user_id: Uuid,
     witness_user_id: Option<Uuid>,
 ) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
+    let mut transaction = pool.begin().await?;
+    let context = observe_db_query(
+        "ward.mar.medication_administrations.source_context",
+        sqlx::query_as::<_, MedicationSourceContext>(
+            r#"
+        SELECT patient_id, admission_case_id, prescription_id, medication_course_id,
+               pharmacy_fulfillment_id
+        FROM medication_administrations WHERE facility_id = $1 AND id = $2
+        "#,
+        )
+        .bind(facility_id)
+        .bind(medication_id)
+        .fetch_optional(&mut *transaction),
+    )
+    .await?;
+    let Some(context) = context else {
+        return Ok(None);
+    };
+    let clinical_context = crate::pharmacy::lock_medication_context(
+        &mut transaction,
+        facility_id,
+        context.patient_id,
+        context.admission_case_id,
+        context.prescription_id,
+        context.medication_course_id,
+    )
+    .await?;
+    let (status, is_dispensed) = observe_db_query(
+        "ward.mar.medication_administrations.lock_for_administration",
+        sqlx::query_as::<_, (String, bool)>(
+        "SELECT status, is_dispensed FROM medication_administrations WHERE facility_id = $1 AND id = $2 FOR UPDATE",
+    )
+    .bind(facility_id)
+    .bind(medication_id)
+    .fetch_one(&mut *transaction),
+    )
+    .await?;
+    if status == "administered" {
+        // A retry reads the historical result even if its prescription or
+        // admission has since closed. Never rewrite actor, witness, or time.
+        transaction.commit().await?;
+        return optional_medication_by_id(pool, facility_id, medication_id).await;
+    }
+    clinical_context.require_active()?;
+    if status != "scheduled" {
+        anyhow::bail!("medication_not_scheduled");
+    }
+    if (context.prescription_id.is_some()
+        || context.medication_course_id.is_some()
+        || context.pharmacy_fulfillment_id.is_some())
+        && !is_dispensed
+    {
+        anyhow::bail!("medication_not_dispensed");
+    }
+    if let Some(witness_user_id) = witness_user_id {
+        let witness = observe_db_query(
+            "ward.mar.medication_administrations.witness",
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM users WHERE facility_id = $1 AND id = $2 AND is_active = TRUE FOR SHARE",
+            )
+            .bind(facility_id)
+            .bind(witness_user_id)
+            .fetch_optional(&mut *transaction),
+        )
+        .await?;
+        if witness.is_none() {
+            anyhow::bail!("medication_witness_unavailable");
+        }
+    }
     observe_db_query(
         "ward.mar.medication_administrations.administer",
         sqlx::query(
             r#"
         UPDATE medication_administrations
         SET status = $1,
-            administered_at = COALESCE(administered_at, now()),
+            administered_at = now(),
             administered_by_user_id = $2,
             witness_user_id = $3,
             updated_at = now()
-        WHERE facility_id = $4 AND id = $5
+        WHERE facility_id = $4 AND id = $5 AND status = 'scheduled'
         "#,
         )
         .bind(codec::encode(MedicationAdministrationStatus::Administered)?)
@@ -168,11 +237,20 @@ pub async fn administer_medication(
         .bind(witness_user_id)
         .bind(facility_id)
         .bind(medication_id)
-        .execute(pool),
+        .execute(&mut *transaction),
     )
     .await?;
-
+    transaction.commit().await?;
     optional_medication_by_id(pool, facility_id, medication_id).await
+}
+
+#[derive(FromRow)]
+struct MedicationSourceContext {
+    patient_id: Uuid,
+    admission_case_id: Uuid,
+    prescription_id: Option<Uuid>,
+    medication_course_id: Option<Uuid>,
+    pharmacy_fulfillment_id: Option<Uuid>,
 }
 
 pub async fn get_medication_administration(

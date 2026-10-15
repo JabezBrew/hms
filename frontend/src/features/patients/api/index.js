@@ -2,6 +2,26 @@ import { patientsApi as basePatientsApi } from '@/lib/api/patients'
 import { myPatientsApi } from '@/lib/api/my-patients'
 import { v2Request } from '@/lib/api/v2/client'
 import { handleV2ApiError } from '@/lib/api/v2/errors'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
+
+let emergencyClientPromise
+function emergencyClient() {
+  emergencyClientPromise ||= import('@/lib/api/v2/generated/client').then(({ createGeneratedClient }) =>
+    createGeneratedClient((request) => v2Request({ ...request, skipAuthRefresh: true })),
+  )
+  return emergencyClientPromise
+}
+
+async function requestBreakGlass(id, payload) {
+  if (!isRustV2ApiMode()) return basePatientsApi.requestBreakGlass(id, payload)
+  const client = await emergencyClient()
+  return (await client.postPatientBreakGlass({ id }, payload))?.data
+}
+
+async function endBreakGlass(id) {
+  const client = await emergencyClient()
+  return (await client.postPatientBreakGlassEnd({ id }))?.data
+}
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -207,6 +227,8 @@ async function getPatientChronicleTimeline(id, params = {}, options = {}) {
 
 export const patientsApi = {
   ...basePatientsApi,
+  requestBreakGlass,
+  endBreakGlass,
   getPatientChronicleStartup,
   getPatientChronicleTimeline,
 }

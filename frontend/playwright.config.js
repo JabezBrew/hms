@@ -2,6 +2,7 @@ import process from 'node:process';
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173';
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 
 export default defineConfig({
   testDir: './e2e',
@@ -17,6 +18,9 @@ export default defineConfig({
     : 'list',
   use: {
     baseURL,
+    ...(chromiumExecutablePath ? {
+      launchOptions: { executablePath: chromiumExecutablePath },
+    } : {}),
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

@@ -1350,13 +1350,8 @@ pub async fn list_staff_directory(
     query.push(" WHERE staff_profiles.facility_id = ");
     query.push_bind(facility_id);
     query.push(" AND users.is_active = true");
-    append_cursor(
-        &mut query,
-        "staff_profiles.created_at",
-        "staff_profiles.id",
-        cursor,
-    );
-    query.push(" ORDER BY staff_profiles.created_at ASC, staff_profiles.id ASC LIMIT ");
+    append_cursor(&mut query, "staff_profiles.created_at", "users.id", cursor);
+    query.push(" ORDER BY staff_profiles.created_at ASC, users.id ASC LIMIT ");
     query.push_bind(limit);
     let rows = query.build_query_as::<StaffRow>().fetch_all(pool).await?;
     Ok(rows.into_iter().map(staff_directory_from_row).collect())

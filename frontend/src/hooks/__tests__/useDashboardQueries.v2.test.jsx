@@ -29,9 +29,8 @@ vi.mock('@/features/dashboards/api', () => ({
   },
 }));
 
-vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ facilityCode: 'HMS' }),
-}));
+const authState = vi.hoisted(() => ({ auth: { facilityCode: 'HMS', user: { id: 'user-1', role: 'doctor' } } }));
+vi.mock('@/lib/auth', () => ({ useAuth: () => authState.auth }));
 
 vi.mock('@/features/dashboards/hooks/useDoctorDashboardLiveUpdates', () => ({
   useDoctorDashboardLiveUpdates: () => ({ isConnected: false }),
@@ -62,6 +61,7 @@ async function expectSuccessfulHook(render) {
 describe('useDashboardQueries Rust V2 behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.auth = { facilityCode: 'HMS', user: { id: 'user-1', role: 'doctor' } };
     Object.values(dashboardsApi).forEach((mockFn) => {
       mockFn.mockResolvedValue({});
     });
@@ -120,4 +120,21 @@ describe('useDashboardQueries Rust V2 behavior', () => {
       signal: expect.any(AbortSignal),
     });
   });
+  it('forwards enabled sections and isolates operational previews when the user changes', async () => {
+    const sections = { ward_board: true, discharges: false, nursing_tasks: false };
+    const { result, rerender } = renderHook(() => useInpatientDashboard({ sections }), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dashboardsApi.getInpatientDashboard).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), sections });
+    expect(dashboardsApi.getInpatientDashboard).toHaveBeenCalledTimes(1);
+    authState.auth = { facilityCode: 'HMS', user: { id: 'user-2', role: 'doctor' } };
+    rerender();
+    await waitFor(() => expect(dashboardsApi.getInpatientDashboard).toHaveBeenCalledTimes(2));
+  });
+
+  it('includes reception section selection in the cache key and API request', async () => {
+    const sections = { appointments: true, patients: false, invoices: false };
+    await expectSuccessfulHook(() => useReceptionistDashboard({ sections }));
+    expect(dashboardsApi.getReceptionistDashboard).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), sections });
+  });
+
 });

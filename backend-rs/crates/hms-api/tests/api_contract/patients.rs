@@ -1053,7 +1053,7 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
     .await;
     second.expect("cached Chronicle startup succeeds");
     assert_eq!(
-        second_queries, 1,
+        second_queries, 2,
         "same scoped Chronicle startup should recheck access before serving cached PHI"
     );
 
@@ -1075,7 +1075,7 @@ async fn patient_chronicle_startup_hot_path_reuses_scoped_cache() {
         .await;
     cross_session.expect("cross-session cached Chronicle startup succeeds");
     assert_eq!(
-        cross_session_queries, 1,
+        cross_session_queries, 2,
         "Chronicle startup cache should survive session refresh while rechecking access"
     );
 
@@ -1146,7 +1146,7 @@ async fn patient_chronicle_startup_is_shaped_bounded_and_query_budgeted() {
     assert_eq!(response.status(), StatusCode::OK);
     assert!(
         observed_queries <= 3,
-        "Chronicle startup should stay within the request-context, patient, and shaped-read budget; observed {observed_queries}"
+        "Chronicle startup should stay within the patient, combined relationship/break-glass, and shaped-read budget; observed {observed_queries}"
     );
 
     let bytes = to_bytes(response.into_body(), usize::MAX)

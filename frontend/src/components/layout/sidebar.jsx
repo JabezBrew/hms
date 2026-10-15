@@ -896,7 +896,7 @@ export function AppSidebar({ sidebar = SIDEBARS.GLOBAL }) {
   })
 
   return (
-    <SidebarContent>
+    <SidebarContent role="navigation" aria-label="Main navigation">
       <SidebarRenderer sections={sections} badges={{ inbox: inboxCount }} />
 
       {sidebar !== SIDEBARS.SETTINGS ? (

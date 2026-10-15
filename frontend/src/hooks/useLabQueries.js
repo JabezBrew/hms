@@ -176,6 +176,13 @@ export function patchLabOrderStatusSummary(queryClient, order) {
   return patched;
 }
 
+function refreshLabOrderAfterTransition(queryClient, data, id) {
+  patchLabOrderStatusSummary(queryClient, { ...data, id });
+  // A patch can remove a row from its old partition, but cannot populate a
+  // previously empty destination page or reconstruct its server count/cursor.
+  return queryClient.invalidateQueries({ queryKey: labKeys.orders() });
+}
+
 // ========== Lab Tests ==========
 
 /**
@@ -398,12 +405,7 @@ export function useSubmitLabOrder() {
 
   return useMutation({
     mutationFn: (id) => laboratoryApi.submitLabOrder(id),
-    onSuccess: (data, id) => {
-      if (!patchLabOrderStatusSummary(queryClient, { ...data, id })) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(id) });
-        queryClient.invalidateQueries({ queryKey: labKeys.orders() });
-      }
-    },
+    onSuccess: (data, id) => refreshLabOrderAfterTransition(queryClient, data, id),
   });
 }
 
@@ -412,12 +414,7 @@ export function useCollectLabOrder() {
 
   return useMutation({
     mutationFn: (id) => laboratoryApi.collectLabOrder(id),
-    onSuccess: (data, id) => {
-      if (!patchLabOrderStatusSummary(queryClient, { ...data, id })) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(id) });
-        queryClient.invalidateQueries({ queryKey: labKeys.orders() });
-      }
-    },
+    onSuccess: (data, id) => refreshLabOrderAfterTransition(queryClient, data, id),
   });
 }
 
@@ -426,12 +423,7 @@ export function useReceiveLabOrder() {
 
   return useMutation({
     mutationFn: (id) => laboratoryApi.receiveLabOrder(id),
-    onSuccess: (data, id) => {
-      if (!patchLabOrderStatusSummary(queryClient, { ...data, id })) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(id) });
-        queryClient.invalidateQueries({ queryKey: labKeys.orders() });
-      }
-    },
+    onSuccess: (data, id) => refreshLabOrderAfterTransition(queryClient, data, id),
   });
 }
 
@@ -440,12 +432,7 @@ export function useStartProcessingLabOrder() {
 
   return useMutation({
     mutationFn: (id) => laboratoryApi.startProcessingLabOrder(id),
-    onSuccess: (data, id) => {
-      if (!patchLabOrderStatusSummary(queryClient, { ...data, id })) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(id) });
-        queryClient.invalidateQueries({ queryKey: labKeys.orders() });
-      }
-    },
+    onSuccess: (data, id) => refreshLabOrderAfterTransition(queryClient, data, id),
   });
 }
 
@@ -454,12 +441,7 @@ export function useCompleteLabOrder() {
 
   return useMutation({
     mutationFn: (id) => laboratoryApi.completeLabOrder(id),
-    onSuccess: (data, id) => {
-      if (!patchLabOrderStatusSummary(queryClient, { ...data, id })) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(id) });
-        queryClient.invalidateQueries({ queryKey: labKeys.orders() });
-      }
-    },
+    onSuccess: (data, id) => refreshLabOrderAfterTransition(queryClient, data, id),
   });
 }
 
@@ -469,12 +451,7 @@ export function useCancelLabOrder() {
   return useMutation({
     mutationFn: ({ id, cancellationReason }) =>
       laboratoryApi.cancelLabOrder(id, cancellationReason),
-    onSuccess: (data, variables) => {
-      if (!patchLabOrderStatusSummary(queryClient, { ...data, id: variables.id })) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(variables.id) });
-        queryClient.invalidateQueries({ queryKey: labKeys.orders() });
-      }
-    },
+    onSuccess: (data, variables) => refreshLabOrderAfterTransition(queryClient, data, variables.id),
   });
 }
 
@@ -500,14 +477,10 @@ export function useCreateLabSpecimen() {
 
   return useMutation({
     mutationFn: (data) => laboratoryApi.createLabSpecimen(data),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: labKeys.specimens() });
-
-      // Also invalidate the related order
-      if (data.order) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(data.order) });
-      }
-    },
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: labKeys.specimens() }),
+      queryClient.invalidateQueries({ queryKey: labKeys.orders() }),
+    ]),
   });
 }
 
@@ -559,14 +532,10 @@ export function useCreateLabResult() {
 
   return useMutation({
     mutationFn: (data) => laboratoryApi.createLabResult(data),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: labKeys.results() });
-
-      // Invalidate the related order
-      if (data.order_test?.order) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(data.order_test.order) });
-      }
-    },
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: labKeys.results() }),
+      queryClient.invalidateQueries({ queryKey: labKeys.orders() }),
+    ]),
   });
 }
 
@@ -576,15 +545,10 @@ export function useVerifyLabResult() {
   return useMutation({
     mutationFn: ({ id, verificationNotes }) =>
       laboratoryApi.verifyLabResult(id, verificationNotes),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: labKeys.result(variables.id) });
-      queryClient.invalidateQueries({ queryKey: labKeys.results() });
-
-      // Invalidate the related order
-      if (data.order_test?.order) {
-        queryClient.invalidateQueries({ queryKey: labKeys.order(data.order_test.order) });
-      }
-    },
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: labKeys.results() }),
+      queryClient.invalidateQueries({ queryKey: labKeys.orders() }),
+    ]),
   });
 }
 

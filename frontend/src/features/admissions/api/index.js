@@ -257,6 +257,22 @@ async function getV2WardBoardAdmissions(params = {}, options = {}) {
   return v2ListData(response).map(adaptV2WardBoardAdmission)
 }
 
+async function getV2AdmissionCasesPage(params = {}, options = {}) {
+  const query = { limit: normalizeLimit(params) }
+  if (params.cursor || params.next_cursor) {
+    query.cursor = params.cursor || params.next_cursor
+  }
+  const response = await v2Api.getAdmissionCases({ query, signal: options.signal })
+  return {
+    results: adaptV2AdmissionCaseList(response),
+    page: {
+      limit: response?.page?.limit ?? query.limit,
+      has_next: Boolean(response?.page?.has_next),
+      next_cursor: response?.page?.has_next ? response.page.next_cursor || null : null,
+    },
+  }
+}
+
 export const admissionsApi = {
   getAdmissions: async (params = {}, options = {}) => {
     try {
@@ -366,12 +382,8 @@ export const admissionsApi = {
   getCases: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const query = { limit: normalizeLimit(params) }
-        if (params.cursor || params.next_cursor) {
-          query.cursor = params.cursor || params.next_cursor
-        }
-        const response = await v2Api.getAdmissionCases({ query, signal: options.signal })
-        return adaptV2AdmissionCaseList(response)
+        const response = await getV2AdmissionCasesPage(params, options)
+        return response.results
       }
       return await apiClient.get('/admissions/cases/', { ...options, params })
     } catch (error) {
@@ -380,6 +392,18 @@ export const admissionsApi = {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admission cases'))
       }
       throw new Error(handleApiError(error, 'Failed to fetch admission cases'))
+    }
+  },
+  getCasesPage: async (params = {}, options = {}) => {
+    if (!isRustV2ApiMode()) {
+      const response = await admissionsApi.getCases(params, options)
+      return { results: normalizeListResponse(response), page: null }
+    }
+    try {
+      return await getV2AdmissionCasesPage(params, options)
+    } catch (error) {
+      rethrowAbortError(error)
+      throw new Error(handleV2ApiError(error, 'Failed to fetch admission cases'))
     }
   },
   getCase: async (id, options = {}) => {

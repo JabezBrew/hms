@@ -9,6 +9,7 @@ import {
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
 import { resolvePatientDisplayName } from "@/features/patients/utils/resolvePatientDisplayName";
+import { getAuthQueryScope } from '@/shared/lib/queryKeys';
 
 import {
   findActiveChronicleEncounter,
@@ -38,10 +39,11 @@ function shapePatientForChronicle({ patient, rustV2ActiveAdmission, rustV2Active
   };
 }
 
-export function useChroniclePatientRecord({ id, rustV2Mode }) {
+export function useChroniclePatientRecord({ id, rustV2Mode, user, facilityCode }) {
   const {
     data: chronicleStartup,
     isLoading: isStartupLoading,
+    isFetchedAfterMount: isStartupFetchedAfterMount,
     error: startupError,
     refetch: refetchStartup,
   } = usePatientChronicleStartup(id, {}, {
@@ -54,11 +56,18 @@ export function useChroniclePatientRecord({ id, rustV2Mode }) {
     error: patientError,
     refetch: refetchPatient,
   } = usePatient(id, {
-    enabled: !rustV2Mode,
+    enabled: !rustV2Mode || startupError?.status === 403,
+    ...(rustV2Mode ? { scope: getAuthQueryScope({ user, facilityCode }), retry: false } : {}),
   });
 
-  const patient = rustV2Mode ? chronicleStartup?.patient : legacyPatient;
-  const isLoading = rustV2Mode ? isStartupLoading : isPatientLoading;
+  // A denied clinical read may still allow administrative identity lookup.
+  // It identifies the emergency-access request, never supplies clinical data.
+  const patient = rustV2Mode
+    ? startupError?.status === 403
+      ? legacyPatient?.id === id ? legacyPatient : undefined
+      : chronicleStartup?.patient
+    : legacyPatient;
+  const isLoading = rustV2Mode ? isStartupLoading || isStartupFetchedAfterMount === false : isPatientLoading;
   const error = rustV2Mode ? startupError : patientError;
   const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
   const patientPath = id ? `/patients/${id}/chronicle` : '/patients';

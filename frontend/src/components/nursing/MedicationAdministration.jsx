@@ -27,6 +27,7 @@ import isBefore from 'date-fns/isBefore';
 import addHours from 'date-fns/addHours';
 
 import { toast } from 'sonner';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   usePatientMAR,
   useAdministerMedication
@@ -596,6 +597,7 @@ function MedicationAdministrationDialog({
   onFormChange,
   onSubmit
 }) {
+  const isRustV2 = isRustV2ApiMode();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -633,6 +635,7 @@ function MedicationAdministrationDialog({
             <Select
               value={adminForm.status}
               onValueChange={(value) => onFormChange('status', value)}
+              disabled={isRustV2}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -644,6 +647,7 @@ function MedicationAdministrationDialog({
                     Administered
                   </span>
                 </SelectItem>
+                {!isRustV2 && <>
                 <SelectItem value="missed">
                   <span className="flex items-center gap-2">
                     <XCircle className="size-4 text-red-500" />
@@ -662,11 +666,15 @@ function MedicationAdministrationDialog({
                     Held
                   </span>
                 </SelectItem>
+                </>}
               </SelectContent>
             </Select>
+            {isRustV2 && (
+              <p className="text-sm text-muted-foreground">This form records given doses. Document missed, refused or held doses and any additional observations in a nursing note.</p>
+            )}
           </div>
 
-          {NON_ADMINISTERED_STATUSES.includes(adminForm.status) && (
+          {!isRustV2 && NON_ADMINISTERED_STATUSES.includes(adminForm.status) && (
             <div className="space-y-2">
               <Label>Reason *</Label>
               <Textarea
@@ -678,7 +686,7 @@ function MedicationAdministrationDialog({
             </div>
           )}
 
-          <div className="space-y-2">
+          {!isRustV2 && <div className="space-y-2">
             <Label>Notes (optional)</Label>
             <Textarea
               placeholder="Additional observations or notes..."
@@ -686,7 +694,7 @@ function MedicationAdministrationDialog({
               onChange={(event) => onFormChange('administration_notes', event.target.value)}
               rows={2}
             />
-          </div>
+          </div>}
         </div>
 
         <DialogFooter>

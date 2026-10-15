@@ -14,6 +14,17 @@ export function ChronicleAccessDeniedState({
   onBreakGlassOpenChange,
   onBreakGlassReasonChange,
   onBreakGlassSubmit,
+  breakGlassCategory,
+  breakGlassConfirmed,
+  breakGlassError,
+  reauthRequired,
+  isEndingBreakGlass,
+  isCheckingBreakGlass,
+  onBreakGlassCategoryChange,
+  onBreakGlassConfirmedChange,
+  onEndBreakGlass,
+  onCheckRecordAccess,
+  onSignInAgain,
 }) {
   const patientDetails = patient?.local_data || patient;
   const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
@@ -62,7 +73,7 @@ export function ChronicleAccessDeniedState({
                 <div className="flex flex-wrap items-center gap-3">
                   <Button
                     onClick={() => onBreakGlassOpenChange(true)}
-                    className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
+                    disabled={isSubmitting || isEndingBreakGlass || isCheckingBreakGlass}
                   >
                     Request Break-Glass Access
                   </Button>
@@ -70,15 +81,17 @@ export function ChronicleAccessDeniedState({
                     Provide a reason to unlock this record for a limited time.
                   </span>
                 </div>
-              ) : rustV2Mode ? (
-                <p className="text-xs text-muted-foreground">
-                  Break-glass access is not available in Rust V2 mode.
-                </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Break-glass access is available to clinical staff only.
+                  {rustV2Mode ? 'Emergency access requires dedicated permission. Contact an authorized clinical supervisor.' : 'Break-glass access is available to clinical staff only.'}
                 </p>
               )}
+              {rustV2Mode && canRequestBreakGlass && <div className="flex flex-wrap gap-3">
+                <Button variant="outline" onClick={onCheckRecordAccess} disabled={isCheckingBreakGlass || isSubmitting || isEndingBreakGlass}>Check record access</Button>
+                <Button variant="outline" onClick={onEndBreakGlass} disabled={isCheckingBreakGlass || isSubmitting || isEndingBreakGlass}>{isEndingBreakGlass ? 'Ending access…' : 'End emergency access'}</Button>
+              </div>}
+              {isCheckingBreakGlass && <p role="status">Checking record access…</p>}
+              {breakGlassError && !isBreakGlassOpen && <p role="alert" className="text-sm text-destructive">{breakGlassError}</p>}
             </div>
           </div>
         </div>
@@ -94,6 +107,14 @@ export function ChronicleAccessDeniedState({
             onSubmit={onBreakGlassSubmit}
             isSubmitting={isSubmitting}
             ttlMinutes={30}
+            nativeMode={rustV2Mode}
+            category={breakGlassCategory}
+            onCategoryChange={onBreakGlassCategoryChange}
+            confirmed={breakGlassConfirmed}
+            onConfirmedChange={onBreakGlassConfirmedChange}
+            error={breakGlassError}
+            reauthRequired={reauthRequired}
+            onSignInAgain={onSignInAgain}
           />
         )}
       </div>

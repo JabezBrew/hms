@@ -35,9 +35,9 @@ export function CareAreaScaffold({
         actions={actions}
         size="md"
       />
-      <main className="p-4 sm:p-6 space-y-6">
+      <section className="p-4 sm:p-6 space-y-6">
         {children}
-      </main>
+      </section>
     </PageShell>
   );
 }

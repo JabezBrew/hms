@@ -1,3 +1,5 @@
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import MyWorkPage from './MyWorkPage';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
@@ -177,6 +179,10 @@ function ChronicleTaskList({ tasks, filter, onSelectTask }) {
 }
 
 export default function ProviderDashboard() {
+  return isRustV2ApiMode() ? <MyWorkPage /> : <LegacyProviderDashboard />;
+}
+
+function LegacyProviderDashboard() {
   const navigate = useNavigate();
   const [selectedTask, setSelectedTask] = useState(null);
   const { facilityCode } = useAuth();
@@ -297,7 +303,7 @@ export default function ProviderDashboard() {
         ) : null}
       />
 
-      <main className="p-6">
+      <section className="p-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column: Up Next Stream */}
           <div className="lg:col-span-7 space-y-6">
@@ -370,7 +376,7 @@ export default function ProviderDashboard() {
             />
           </div>
         </div>
-      </main>
+      </section>
 
       {/* Task Detail SlideOver */}
       <SlideOver

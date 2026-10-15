@@ -39,9 +39,25 @@ states.
   free-text clinical values.
 - Break-glass and access-denied states must be explicit; do not silently fall
   back to partial clinical views.
+- Native emergency access uses the generated patient-scoped grant/end endpoints,
+  dedicated `patient.break_glass.invoke` permission, an audited category/reason,
+  confirmation and fresh sign-in when the server requires it. Grant/end writes
+  never automatically refresh authentication or retry. Denied clinical reads
+  may fetch scoped demographics solely to identify the confirmation dialog.
+- Grant expiry comes from the server; the local eviction timer is also bounded
+  by the server's two-hour lifetime from request start using a monotonic clock.
+  Expiry, end and failed verification discard clinical cache data before a fresh
+  access check. Native startup requires a fresh read on mount; while open,
+  access is rechecked every 30 seconds and on focus/visibility. After reload,
+  the end control remains available without claiming a grant is active.
 - Heavy timeline or chart work should be deferred until the shell and identity
   context are useful.
 - Preserve AbortSignal behavior through any list or timeline fetch helper.
+- URL workspace commands are consumed once per patient, requested encounter and
+  navigation before opening stateful UI. Router cleanup can be deferred; an
+  unstable callback must not replay the command and reset an in-progress note.
+  Wait for authorized patient context and the requested encounter, and allow a
+  later explicit navigation to request the same action again.
 
 ## Verification
 

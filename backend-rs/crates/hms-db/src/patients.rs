@@ -1512,8 +1512,74 @@ pub async fn list_context_patients(
     limit: i64,
     filters: PatientContextFilters,
 ) -> anyhow::Result<Vec<PatientContextListItem>> {
+    // Assignment rows derived from current care relationships are projections,
+    // never persisted grants: closing an encounter/visit removes their source.
     let mut query = QueryBuilder::<Postgres>::new(
+        "WITH request_scope AS (SELECT id AS user_id, facility_id FROM users WHERE facility_id = ",
+    );
+    query.push_bind(facility_id);
+    query.push(" AND id = ");
+    query.push_bind(user_id);
+    query.push(
         r#"
+          AND is_active = TRUE
+        ), context_sources AS (
+            SELECT contexts.patient_id, contexts.context_kind, contexts.updated_at
+            FROM patient_contexts AS contexts
+            JOIN request_scope AS scope
+              ON scope.facility_id = contexts.facility_id AND scope.user_id = contexts.user_id
+            WHERE contexts.context_kind IN ('assigned', 'recent')
+
+            UNION ALL
+
+            SELECT encounters.patient_id, 'assigned', encounters.started_at
+            FROM encounters
+            JOIN request_scope AS scope
+              ON scope.facility_id = encounters.facility_id
+             AND scope.user_id = encounters.created_by_user_id
+            JOIN patients AS active_patient
+              ON active_patient.id = encounters.patient_id
+             AND active_patient.facility_id = encounters.facility_id
+             AND active_patient.record_status = 'registered'
+            WHERE encounters.status = 'in_progress'
+              AND (encounters.visit_id IS NULL OR EXISTS (
+                  SELECT 1 FROM visits AS visit
+                  WHERE visit.id = encounters.visit_id
+                    AND visit.facility_id = encounters.facility_id
+                    AND visit.patient_id = encounters.patient_id
+                    AND visit.status NOT IN ('checked_out', 'no_show', 'cancelled')
+              ))
+
+            UNION ALL
+
+            SELECT encounters.patient_id, 'assigned',
+                   GREATEST(encounters.started_at, assignments.created_at)
+            FROM encounter_care_team_assignments AS assignments
+            JOIN request_scope AS scope ON scope.user_id = assignments.user_id
+            JOIN encounters
+              ON encounters.id = assignments.encounter_id
+             AND encounters.facility_id = scope.facility_id
+             AND encounters.status = 'in_progress'
+            JOIN patients AS active_patient
+              ON active_patient.id = encounters.patient_id
+             AND active_patient.facility_id = encounters.facility_id
+             AND active_patient.record_status = 'registered'
+            WHERE assignments.is_active = TRUE
+              AND (encounters.visit_id IS NULL OR EXISTS (
+                  SELECT 1 FROM visits AS visit
+                  WHERE visit.id = encounters.visit_id
+                    AND visit.facility_id = encounters.facility_id
+                    AND visit.patient_id = encounters.patient_id
+                    AND visit.status NOT IN ('checked_out', 'no_show', 'cancelled')
+              ))
+        ), contexts AS (
+            SELECT patient_id,
+                   CASE WHEN BOOL_OR(context_kind = 'assigned') THEN 'assigned' ELSE 'recent' END
+                       AS context_kind,
+                   MAX(updated_at) AS updated_at
+            FROM context_sources
+            GROUP BY patient_id
+        )
         SELECT patients.id,
                patients.patient_code,
                patients.first_name,
@@ -1524,18 +1590,14 @@ pub async fn list_context_patients(
                patients.record_status,
                patients.vital_status,
                patients.superseded_by_patient_id,
-               patient_contexts.context_kind,
-               patient_contexts.updated_at
-        FROM patient_contexts
-        INNER JOIN patients ON patients.id = patient_contexts.patient_id
-        WHERE patient_contexts.facility_id =
+               contexts.context_kind,
+               contexts.updated_at
+        FROM contexts
+        JOIN patients ON patients.id = contexts.patient_id
+        JOIN request_scope AS scope ON scope.facility_id = patients.facility_id
+        WHERE TRUE
         "#,
     );
-    query.push_bind(facility_id);
-    query.push(" AND patient_contexts.user_id = ");
-    query.push_bind(user_id);
-    query.push(" AND patients.facility_id = ");
-    query.push_bind(facility_id);
 
     if let Some(patient_id) = filters.patient_id {
         query.push(" AND patients.id = ");
@@ -1556,17 +1618,15 @@ pub async fn list_context_patients(
     }
 
     if let Some(cursor) = cursor {
-        query.push(" AND (patient_contexts.updated_at, patient_contexts.patient_id) < (");
+        query.push(" AND (contexts.updated_at, contexts.patient_id) < (");
         query.push_bind(cursor.updated_at);
         query.push(", ");
         query.push_bind(cursor.patient_id);
         query.push(")");
     }
 
-    query.push(
-        " ORDER BY patient_contexts.updated_at DESC, patient_contexts.patient_id DESC LIMIT ",
-    );
-    query.push_bind(limit);
+    query.push(" ORDER BY contexts.updated_at DESC, contexts.patient_id DESC LIMIT ");
+    query.push_bind(limit.clamp(1, 101));
 
     let rows = observe_db_query(
         "patient.context.list",

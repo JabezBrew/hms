@@ -5,6 +5,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const BreakGlassDialog = ({
   open,
@@ -16,9 +19,17 @@ const BreakGlassDialog = ({
   onSubmit,
   isSubmitting,
   ttlMinutes = 30,
+  nativeMode = false,
+  category = 'urgent_clinical_continuity',
+  onCategoryChange,
+  confirmed = false,
+  onConfirmedChange,
+  error,
+  reauthRequired,
+  onSignInAgain,
 }) => {
-  const reasonCount = reason?.length || 0;
-  const isValid = reasonCount >= 6;
+  const reasonCount = reason?.trim().length || 0;
+  const isValid = reasonCount >= 6 && reasonCount <= 500 && (!nativeMode || confirmed);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,12 +67,27 @@ const BreakGlassDialog = ({
             </div>
           </div>
 
+          {nativeMode && <div className="space-y-2">
+            <Label htmlFor="break-glass-category">Emergency category</Label>
+            <Select value={category} onValueChange={onCategoryChange} disabled={isSubmitting}>
+              <SelectTrigger id="break-glass-category"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="life_threatening_emergency">Life-threatening emergency</SelectItem>
+                <SelectItem value="patient_unconscious_or_unidentified">Patient unconscious or unidentified</SelectItem>
+                <SelectItem value="handover_or_assignment_gap">Handover or assignment gap</SelectItem>
+                <SelectItem value="urgent_clinical_continuity">Urgent clinical continuity</SelectItem>
+                <SelectItem value="other_emergency">Other emergency</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>}
           <div className="space-y-2">
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <Label htmlFor="break-glass-reason" className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
               Reason for access
-            </p>
+            </Label>
             <Textarea
+              id="break-glass-reason"
               value={reason}
+              disabled={isSubmitting}
               onChange={(event) => onReasonChange(event.target.value)}
               placeholder="Explain the clinical need for access."
               maxLength={500}
@@ -74,11 +100,19 @@ const BreakGlassDialog = ({
               <span>{reasonCount}/500</span>
             </div>
           </div>
+          {nativeMode && <div className="flex items-start gap-3">
+            <Checkbox id="break-glass-confirm" checked={confirmed} onCheckedChange={(value) => onConfirmedChange(value === true)} disabled={isSubmitting} />
+            <Label htmlFor="break-glass-confirm" className="text-sm leading-relaxed">I confirm this access is required for urgent clinical care and will be audited.</Label>
+          </div>}
+          {error && <div role="alert" className="space-y-2 text-sm text-destructive">
+            <p>{error}</p>
+            {reauthRequired && onSignInAgain && <Button variant="outline" onClick={onSignInAgain}>Sign out to verify identity</Button>}
+          </div>}
         </div>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Clock className="size-3.5" />
-          <span>Access expires automatically in about {ttlMinutes} minutes.</span>
+          <span>{nativeMode ? 'The server limits emergency access to two hours. You can end it earlier.' : `Access expires automatically in about ${ttlMinutes} minutes.`}</span>
         </div>
 
         <DialogFooter className="gap-3 sm:justify-end">

@@ -519,7 +519,7 @@ export default function InsuranceManagementPage() {
         onAddInsurance={handleAddInsurance}
       />
 
-      <main className="p-4 sm:p-6 space-y-6">
+      <section className="p-4 sm:p-6 space-y-6">
         <InsuranceReadOnlyNotice insuranceMutationsAvailable={insuranceMutationsAvailable} />
 
         <InsuranceFilters
@@ -542,7 +542,7 @@ export default function InsuranceManagementPage() {
           page={page}
           totalCount={totalCount}
         />
-      </main>
+      </section>
 
       <InsuranceMutations
         deleteDialogOpen={deleteDialogOpen}

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { dischargeApi } from '@/features/discharge/api'
-import { createKeyFactory } from '@/shared/lib/queryKeys'
+import { createKeyFactory, createScopedQueryKey } from '@/shared/lib/queryKeys'
 import { patientKeys } from '@/features/patients/hooks/usePatientQueries'
 import { wardKeys } from '@/features/wards/hooks/useWardQueries'
 
@@ -24,6 +24,17 @@ function invalidateDischargeQueries(queryClient, caseId, patientId) {
   }
 }
 
+export async function refreshDischargeWorkflow(queryClient, patientId) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: dischargeKeys.all }),
+    queryClient.invalidateQueries({ queryKey: ['ward-board'] }),
+    queryClient.invalidateQueries({ queryKey: wardKeys.admissions() }),
+    queryClient.invalidateQueries({ queryKey: ['admission-cases'] }),
+    queryClient.invalidateQueries({ queryKey: ['timeline'] }),
+    ...(patientId ? [queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) })] : []),
+  ])
+}
+
 export function useDischargeCases(filters = {}, options = {}) {
   const { enabled = true } = options
   return useQuery({
@@ -34,11 +45,24 @@ export function useDischargeCases(filters = {}, options = {}) {
 }
 
 export function useDischargeCase(id, options = {}) {
-  const { enabled = true } = options
+  const { enabled = true, scope } = options
   return useQuery({
-    queryKey: dischargeKeys.detail(id),
+    queryKey: createScopedQueryKey(dischargeKeys.detail(id), scope),
     queryFn: ({ signal }) => dischargeApi.getCase(id, { signal }),
     enabled: !!id && enabled,
+    staleTime: 0,
+  })
+}
+
+export function useRecordNursingRelease() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ caseId, data }) => dischargeApi.recordNursingRelease(caseId, data),
+    retry: false,
+    onSuccess: () => toast.success('Nursing release recorded'),
+    onSettled: (data, _error, variables) => refreshDischargeWorkflow(
+      queryClient, data?.patient || variables.patientId,
+    ),
   })
 }
 
@@ -85,14 +109,16 @@ export function useFinalizeDischargeCase() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ caseId, data }) => dischargeApi.finalizeCase(caseId, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
-      invalidateDischargeQueries(queryClient, variables.caseId, data?.patient)
+    retry: false,
+    onSuccess: () => {
       toast.success('Discharge finalized')
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to finalize discharge')
     },
+    onSettled: (data, _error, variables) => refreshDischargeWorkflow(
+      queryClient, data?.patient || variables.patientId,
+    ),
   })
 }
 

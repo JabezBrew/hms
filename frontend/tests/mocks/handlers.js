@@ -41,7 +41,7 @@ function generateMockUser(overrides = {}) {
   return {
     id: mockUUID(),
     email: faker.internet.email(),
-    username: faker.internet.userName(),
+    username: faker.internet.username(),
     first_name: faker.person.firstName(),
     last_name: faker.person.lastName(),
     user_type: 'doctor',

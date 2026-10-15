@@ -178,6 +178,7 @@ function PharmacyQueueControls({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by patient name or medication..."
+            aria-label="Search pharmacy queue by patient or medication"
             value={searchTerm}
             onChange={(event) => onSearchChange(event.target.value)}
             className="pl-10 font-mono text-sm bg-background"
@@ -212,7 +213,7 @@ function PharmacyQueueControls({
               All Medications
             </button>
           </div>
-          <Button variant="ghost" size="icon" onClick={onRefresh} className="shrink-0">
+          <Button variant="ghost" size="icon" onClick={onRefresh} className="shrink-0" aria-label="Refresh pharmacy queue">
             <RefreshCw className="size-4" />
           </Button>
         </div>

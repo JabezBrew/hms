@@ -245,11 +245,18 @@ pub fn finish_passkey_authentication(
 }
 
 pub fn generate_recovery_codes(count: usize) -> Vec<String> {
+    // Five bits per character gives 75 bits of entropy per code. This alphabet
+    // excludes separators and is already uppercase, so normalization preserves
+    // every random character when the code is hashed.
+    const ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     (0..count.clamp(1, 20))
         .map(|_| {
-            let mut bytes = [0_u8; 10];
+            let mut bytes = [0_u8; 15];
             OsRng.fill_bytes(&mut bytes);
-            let encoded = URL_SAFE_NO_PAD.encode(bytes);
+            let encoded = bytes
+                .iter()
+                .map(|byte| ALPHABET[(byte & 31) as usize] as char)
+                .collect::<String>();
             format!(
                 "{}-{}-{}",
                 &encoded[0..5],
@@ -341,6 +348,30 @@ mod tests {
             hash_recovery_code("ab12c-def34-ghijk"),
             hash_recovery_code(" AB12C DEF34 GHIJK ")
         );
+    }
+
+    #[test]
+    fn recovery_codes_are_bounded_unique_and_safe_to_normalize() {
+        for (requested, expected) in [(0, 1), (10, 10), (usize::MAX, 20)] {
+            let codes = generate_recovery_codes(requested);
+            assert_eq!(codes.len(), expected);
+            let mut hashes = std::collections::HashSet::new();
+            for code in codes {
+                let groups = code.split('-').collect::<Vec<_>>();
+                assert_eq!(groups.len(), 3);
+                for group in groups {
+                    assert_eq!(group.len(), 5);
+                    assert!(group
+                        .bytes()
+                        .all(|byte| { b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains(&byte) }));
+                }
+                assert!(hashes.insert(hash_recovery_code(&code)));
+                assert_eq!(
+                    hash_recovery_code(&code),
+                    hash_recovery_code(&code.to_lowercase())
+                );
+            }
+        }
     }
 
     #[test]

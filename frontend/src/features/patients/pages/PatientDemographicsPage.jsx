@@ -167,10 +167,10 @@ function PatientDemographicsLoadingState({ pageMeta }) {
             </div>
           </div>
         </header>
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        <section className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
           <Skeleton className="h-48 w-full rounded-xl" />
           <Skeleton className="h-32 w-full rounded-xl" />
-        </main>
+        </section>
       </div>
     </>
   );
@@ -683,7 +683,7 @@ const PatientDemographicsPage = () => {
         />
 
       {/* Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         <Form {...form}>
           <PersonalInformationSection
             dob={dob}
@@ -722,7 +722,7 @@ const PatientDemographicsPage = () => {
           onScheduleAppointment={() => navigate(`/appointments/create?patient=${id}`)}
           onWalkInCheckIn={() => setWalkInOpen(true)}
         />
-      </main>
+      </section>
 
         <WalkInCheckInDialog
           open={walkInOpen}

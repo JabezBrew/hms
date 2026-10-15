@@ -42,13 +42,13 @@ function WardBoardBodyPlaceholder() {
         </div>
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <main className="flex min-w-0 flex-1 flex-col overflow-auto p-4">
+        <section className="flex min-w-0 flex-1 flex-col overflow-auto p-4">
           <div className="space-y-3">
             <div className="h-14 rounded-lg bg-muted" />
             <div className="h-20 rounded-lg bg-muted" />
             <div className="h-20 rounded-lg bg-muted" />
           </div>
-        </main>
+        </section>
       </div>
     </>
   );
@@ -149,7 +149,7 @@ function WardBoardPatientsMain({ board, actions }) {
   } = board;
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-auto">
+    <section className="flex min-w-0 flex-1 flex-col overflow-auto">
       {isError ? (
         <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error?.message || 'Ward board refresh failed.'}
@@ -193,7 +193,7 @@ function WardBoardPatientsMain({ board, actions }) {
         itemLabel="patients"
         className="shrink-0 border-t border-border px-4 py-3"
       />
-    </main>
+    </section>
   );
 }
 

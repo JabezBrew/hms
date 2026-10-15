@@ -26,6 +26,21 @@ describe('Rust V2 laboratory bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it.each([
+    [{ is_critical: true }, 'critical'],
+    [{ is_critical: false }, 'unknown'],
+    [{ is_critical: true, flag: 'normal' }, 'critical'],
+    [{ is_critical: false, flag: 'normal' }, 'normal'],
+    [{ is_critical: true, flag: 'critical_low' }, 'critical_low'],
+  ])('preserves criticality without fabricating interpretation for %j', async (fields, expectedFlag) => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'synthetic-result', patient_id: 'synthetic-patient', test_name: 'Synthetic test',
+      value: '7.5', status: 'entered', ...fields,
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(laboratoryApi.getLabResult('synthetic-result')).resolves.toMatchObject({ flag: expectedFlag });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('loads lab order worklists through generated Rust V2 endpoints', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

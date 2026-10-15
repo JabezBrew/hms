@@ -10,6 +10,8 @@ account's Actions allowance. The CI, CodeQL and dependency-review workflow
 files have been removed. No replacement CI provider is configured yet.
 
 Run the relevant local checks before pushing or deploying changes. Follow
+[`scripts/check-local.sh`](../../scripts/check-local.sh) for the combined local
+release gate (or select `frontend`, `backend`, or `ops`). Follow
 [`AGENTS.md`](../../AGENTS.md) for the maintained backend, frontend and database
 verification commands, and [`ops/tests/README.md`](../../ops/tests/README.md)
 for deployment checks. Automated CodeQL and dependency-review runs are no

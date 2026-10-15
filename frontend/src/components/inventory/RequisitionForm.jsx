@@ -240,6 +240,7 @@ export function RequisitionForm({ onSuccess, onCancel, initialItems = DEFAULT_EM
                     name={`items.${index}.quantity`}
                     render={({ field }) => (
                       <FormItem className="w-32">
+                        <FormLabel className="sr-only">Quantity requested for item {index + 1}</FormLabel>
                         <FormControl>
                           <Input type="number" min="1" placeholder="Qty" {...field} />
                         </FormControl>
@@ -253,6 +254,7 @@ export function RequisitionForm({ onSuccess, onCancel, initialItems = DEFAULT_EM
                     name={`items.${index}.notes`}
                     render={({ field }) => (
                       <FormItem className="flex-1">
+                        <FormLabel className="sr-only">Notes for item {index + 1} (optional)</FormLabel>
                         <FormControl>
                           <Input placeholder="Notes (optional)" {...field} />
                         </FormControl>
@@ -269,6 +271,7 @@ export function RequisitionForm({ onSuccess, onCancel, initialItems = DEFAULT_EM
                   size="icon"
                   className="text-destructive"
                   onClick={() => remove(index)}
+                  aria-label={`Remove requisition item ${index + 1}`}
                 >
                   <Trash2 className="size-4" />
                 </Button>

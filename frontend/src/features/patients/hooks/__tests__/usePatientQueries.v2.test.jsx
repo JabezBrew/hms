@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   usePatientChronicleStartup,
+  usePatient,
   usePatientCurrentContexts,
   usePatientHistory,
   usePatientIdentityLookup,
@@ -13,6 +14,7 @@ import { patientsApi } from '@/features/patients/api';
 
 vi.mock('@/features/patients/api', () => ({
   patientsApi: {
+    getPatient: vi.fn(),
     getCurrentContexts: vi.fn(),
     getPatientHistory: vi.fn(),
     getPatientChronicleStartup: vi.fn(),
@@ -63,6 +65,19 @@ describe('usePatientQueries Rust V2 behavior', () => {
       candidates: [],
       strong_duplicate_found: false,
     });
+  });
+
+  it('does not reuse emergency-confirmation identity across authorization scopes', async () => {
+    patientsApi.getPatient.mockResolvedValueOnce({ id: 'synthetic-patient', name: 'Identity Synthetic' }).mockRejectedValue({ status: 403 });
+    const { wrapper } = createWrapperWithClient();
+    const { result, rerender } = renderHook(({ scope }) => usePatient('synthetic-patient', { scope, retry: false }), { wrapper, initialProps: { scope: 'first-auth-scope' } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data.name).toBe('Identity Synthetic');
+    rerender({ scope: 'new-auth-scope' });
+    expect(result.current.data).toBeUndefined();
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+    expect(patientsApi.getPatient).toHaveBeenCalledTimes(2);
   });
 
   it('threads React Query AbortSignal into patient history reads', async () => {

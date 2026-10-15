@@ -623,3 +623,52 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     .expect("staff account exists");
     assert!(reactivated.is_active);
 }
+
+#[tokio::test]
+async fn staff_directory_cursor_uses_user_ids_for_equal_timestamp_pages() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("isolated test database provisions");
+    let created_at = "2000-01-01T00:00:00Z"
+        .parse::<chrono::DateTime<Utc>>()
+        .expect("synthetic timestamp is valid");
+    let mut expected = Vec::new();
+    for offset in 0..4u128 {
+        let user_id = Uuid::from_u128(0xfa1000 + offset);
+        // Staff profile IDs deliberately order opposite to the exposed user IDs.
+        let staff_id = Uuid::from_u128(0xfb1003 - offset);
+        sqlx::query("INSERT INTO users (id, facility_id, email, display_name, password_hash, is_active) VALUES ($1, $2, $3, 'Synthetic directory staff', 'test-only-unused-hash', $4)")
+            .bind(user_id).bind(db.facility_id()).bind(format!("directory-{offset}@synthetic.invalid"))
+            .bind(offset != 1).execute(db.pool()).await.expect("synthetic directory user creates");
+        sqlx::query("INSERT INTO staff_profiles (id, facility_id, user_id, employee_id, department, position, hire_date, created_at) VALUES ($1, $2, $3, $4, 'Synthetic department', 'Synthetic clinician', '2000-01-01', $5)")
+            .bind(staff_id).bind(db.facility_id()).bind(user_id).bind(format!("SYNTHETIC-{offset}"))
+            .bind(created_at).execute(db.pool()).await.expect("synthetic staff profile creates");
+        if offset != 1 {
+            expected.push(user_id);
+        }
+    }
+    let mut cursor = None;
+    let mut observed = Vec::new();
+    for expected_id in expected {
+        let page = hms_db::admin::list_staff_directory(db.pool(), db.facility_id(), cursor, 1)
+            .await
+            .expect("directory page loads");
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].user_id, expected_id);
+        observed.push(page[0].user_id);
+        // This is the exact identity used by the production API response cursor.
+        cursor = Some(hms_db::admin::AdminCursor {
+            occurred_at: page[0].created_at,
+            id: page[0].user_id,
+        });
+    }
+    observed.sort_unstable();
+    observed.dedup();
+    assert_eq!(observed.len(), 3);
+    assert!(
+        hms_db::admin::list_staff_directory(db.pool(), Uuid::new_v4(), None, 1)
+            .await
+            .expect("unrelated facility query succeeds")
+            .is_empty()
+    );
+}

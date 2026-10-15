@@ -67,7 +67,7 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
     return results[0] || null
   }, [data])
   const openBlockers = useMemo(
-    () => (caseItem?.blockers || []).filter((item) => item.status !== 'completed'),
+    () => (caseItem?.blockers || []).filter((item) => item.blocking && !['completed', 'overridden'].includes(item.status)),
     [caseItem]
   )
   const userType = user?.user_type
@@ -102,7 +102,7 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
               <div className="rounded-lg border p-3">
                 <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                   <Clock3 className="size-3.5" />
-                  Medical Ready
+                  {caseItem.v2_status ? 'Discharge requested' : 'Medical Ready'}
                 </div>
                 <p className="mt-2 text-sm font-medium">{formatDateTime(caseItem.medical_ready_at)}</p>
               </div>
@@ -130,7 +130,7 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
                 Advisory tasks open: {caseItem.advisory_tasks_open ?? 0}
               </div>
               <div className="rounded-full border px-3 py-1">
-                Patient balance due: {caseItem.invoice_summary?.patient_balance_due ?? '0.00'}
+                Patient balance due: {caseItem.invoice_summary?.patient_balance_due ?? 'Unavailable'}
               </div>
             </div>
 

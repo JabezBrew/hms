@@ -377,6 +377,30 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .as_str()
         .expect("fulfillment id exists");
 
+    let first_medication_id = mar_body["data"][0]["id"]
+        .as_str()
+        .expect("first MAR dose exists");
+    let second_medication_id = mar_body["data"][1]["id"]
+        .as_str()
+        .expect("second MAR dose exists");
+    let first_administration_uri =
+        format!("/api/v2/nursing/medication-administrations/{first_medication_id}/administer");
+    let prescription_uri = format!("/api/v2/clinical/prescriptions/{prescription_id}");
+    let (status, denied) = clinical_request(
+        &app,
+        &auth_header,
+        Method::POST,
+        &first_administration_uri,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{denied}");
+    assert_eq!(denied["error"]["code"], "medication_not_dispensed");
+    assert_eq!(
+        denied["error"]["message"],
+        "Pharmacy must dispense this dose before it can be administered."
+    );
+
     let locations_response = app
         .clone()
         .oneshot(
@@ -424,6 +448,37 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
     assert_eq!(batch_response.status(), StatusCode::OK);
     let batch_body = json_body(batch_response).await;
     assert_eq!(batch_body["data"]["quantity_on_hand"], 10);
+
+    let fulfillment_uri = format!("/api/v2/pharmacy/dispensing-queue/{fulfillment_id}/dispense");
+    let (status, on_hold) = clinical_request(
+        &app,
+        &auth_header,
+        Method::PATCH,
+        &prescription_uri,
+        json!({ "status": "on_hold" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{on_hold}");
+    let (status, denied) = clinical_request(
+        &app,
+        &auth_header,
+        Method::POST,
+        &fulfillment_uri,
+        json!({ "item_id": item_id, "location_id": location_id, "quantity": 1 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{denied}");
+    assert_eq!(denied["error"]["code"], "prescription_not_active");
+    assert_eq!(denied["error"]["message"], "This prescription is on hold, stopped, or completed. Review the prescription before dispensing.");
+    let (status, resumed) = clinical_request(
+        &app,
+        &auth_header,
+        Method::PATCH,
+        &prescription_uri,
+        json!({ "status": "active" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resumed}");
 
     let wrong_item_dispense = app
         .clone()
@@ -498,6 +553,66 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .expect("MAR list")
         .iter()
         .all(|entry| entry["is_dispensed"] == true));
+
+    let (status, invalid_witness) = clinical_request(
+        &app,
+        &auth_header,
+        Method::POST,
+        &first_administration_uri,
+        json!({ "witness_user_id": Uuid::new_v4() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{invalid_witness}");
+    assert_eq!(
+        invalid_witness["error"]["code"],
+        "medication_witness_unavailable"
+    );
+    assert_eq!(
+        invalid_witness["error"]["message"],
+        "Choose an active witness from this facility."
+    );
+
+    let (status, administered) = clinical_request(
+        &app,
+        &auth_header,
+        Method::POST,
+        &first_administration_uri,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{administered}");
+    assert_eq!(administered["data"]["status"], "administered");
+    let administered_at = administered["data"]["administered_at"].clone();
+    let (status, stopped) = clinical_request(
+        &app,
+        &auth_header,
+        Method::PATCH,
+        &prescription_uri,
+        json!({ "status": "stopped" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{stopped}");
+    let (status, retried) = clinical_request(
+        &app,
+        &auth_header,
+        Method::POST,
+        &first_administration_uri,
+        json!({ "witness_user_id": Uuid::new_v4() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{retried}");
+    assert_eq!(retried["data"]["administered_at"], administered_at);
+    let (status, denied) = clinical_request(
+        &app,
+        &auth_header,
+        Method::POST,
+        &format!("/api/v2/nursing/medication-administrations/{second_medication_id}/administer"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{denied}");
+    assert_eq!(denied["error"]["code"], "prescription_not_active");
+    assert_eq!(denied["error"]["message"], "This prescription is on hold, stopped, or completed. Review the prescription before administering a dose.");
 
     let prn_response = app
         .clone()
@@ -1424,4 +1539,26 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .await
         .expect("problem link delete succeeds");
     assert_eq!(problem_link_delete.status(), StatusCode::OK);
+}
+
+async fn clinical_request(
+    app: &TestApp,
+    auth: &str,
+    method: Method,
+    uri: &str,
+    payload: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(AUTHORIZATION, auth)
+        .header("content-type", "application/json")
+        .body(Body::from(payload.to_string()))
+        .expect("request builds");
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("request succeeds");
+    (response.status(), json_body(response).await)
 }

@@ -4,7 +4,7 @@ use hms_domain::laboratory::{
     LabResultListItem, LabResultStatus, LabTestCatalogItem, SpecimenListItem, SpecimenStatus,
 };
 use sqlx::types::Json;
-use sqlx::{FromRow, Postgres, QueryBuilder};
+use sqlx::{FromRow, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::codec;
@@ -535,7 +535,9 @@ pub async fn cancel_order(
     actor_user_id: Uuid,
     cancellation_reason: Option<String>,
 ) -> anyhow::Result<Option<LabOrderListItem>> {
-    let current_status = current_order_status(pool, facility_id, order_id).await?;
+    let mut transaction = pool.begin().await?;
+    let current_status = lock_order(&mut transaction, facility_id, order_id).await?;
+    let current_status = current_status.map(|(_, status)| status);
     let Some(current_status) = current_status else {
         return Ok(None);
     };
@@ -547,6 +549,10 @@ pub async fn cancel_order(
             | LabOrderStatus::Cancelled
     ) {
         anyhow::bail!("lab order cannot be cancelled from its current status");
+    }
+    if current_status == LabOrderStatus::Cancelled {
+        transaction.commit().await?;
+        return fetch_order_by_id(pool, facility_id, order_id).await;
     }
 
     sqlx::query(
@@ -565,9 +571,10 @@ pub async fn cancel_order(
     .bind(actor_user_id)
     .bind(facility_id)
     .bind(order_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
+    transaction.commit().await?;
     fetch_order_by_id(pool, facility_id, order_id).await
 }
 
@@ -605,6 +612,14 @@ pub async fn create_specimen(
     specimen: NewSpecimen,
 ) -> anyhow::Result<SpecimenListItem> {
     let mut transaction = pool.begin().await?;
+    let (patient_id, status) =
+        lock_order(&mut transaction, specimen.facility_id, specimen.order_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("lab order was not found"))?;
+    require_open_order(status)?;
+    if specimen.patient_id != patient_id {
+        anyhow::bail!("specimen patient does not match its order");
+    }
     sqlx::query(
         r#"
         INSERT INTO lab_specimens (
@@ -626,7 +641,7 @@ pub async fn create_specimen(
     sqlx::query(
         r#"
         UPDATE lab_orders
-        SET status = $1,
+        SET status = CASE WHEN status = 'ordered' THEN $1 ELSE status END,
             updated_at = now()
         WHERE facility_id = $2 AND id = $3
         "#,
@@ -679,12 +694,27 @@ pub async fn receive_specimen(
     facility_id: Uuid,
     specimen_id: Uuid,
 ) -> anyhow::Result<Option<SpecimenListItem>> {
-    let current_status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM lab_specimens WHERE facility_id = $1 AND id = $2",
+    let mut transaction = pool.begin().await?;
+    let order_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT order_id FROM lab_specimens WHERE facility_id = $1 AND id = $2",
     )
     .bind(facility_id)
     .bind(specimen_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let Some(order_id) = order_id else {
+        return Ok(None);
+    };
+    let (_, order_status) = lock_order(&mut transaction, facility_id, order_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("lab order was not found"))?;
+    require_open_order(order_status)?;
+    let current_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM lab_specimens WHERE facility_id = $1 AND id = $2 FOR UPDATE",
+    )
+    .bind(facility_id)
+    .bind(specimen_id)
+    .fetch_optional(&mut *transaction)
     .await?
     .map(|status| codec::decode::<SpecimenStatus>(&status))
     .transpose()?;
@@ -710,9 +740,10 @@ pub async fn receive_specimen(
     .bind(codec::encode(SpecimenStatus::Received)?)
     .bind(facility_id)
     .bind(specimen_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
+    transaction.commit().await?;
     fetch_specimen_by_id(pool, facility_id, specimen_id).await
 }
 
@@ -766,65 +797,10 @@ pub async fn create_result(
     pool: &PgPool,
     result: NewLabResult,
 ) -> anyhow::Result<LabResultListItem> {
-    let mut transaction = pool.begin().await?;
-    let inserted_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
-        INSERT INTO lab_results (
-            id,
-            facility_id,
-            order_id,
-            specimen_id,
-            patient_id,
-            test_id,
-            value,
-            unit,
-            status,
-            entered_by_user_id
-        )
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-        WHERE EXISTS (
-            SELECT 1
-            FROM lab_order_tests
-            WHERE lab_order_tests.order_id = $3
-              AND lab_order_tests.test_id = $6
-        )
-        RETURNING id
-        "#,
-    )
-    .bind(result.id)
-    .bind(result.facility_id)
-    .bind(result.order_id)
-    .bind(result.specimen_id)
-    .bind(result.patient_id)
-    .bind(result.test_id)
-    .bind(&result.value)
-    .bind(&result.unit)
-    .bind(codec::encode(LabResultStatus::Entered)?)
-    .bind(result.actor_user_id)
-    .fetch_optional(&mut *transaction)
-    .await?;
-
-    if inserted_id.is_none() {
-        anyhow::bail!("lab result test is not part of the order");
-    }
-
-    sqlx::query(
-        r#"
-        UPDATE lab_orders
-        SET status = $1,
-            updated_at = now()
-        WHERE facility_id = $2 AND id = $3
-        "#,
-    )
-    .bind(codec::encode(LabOrderStatus::ResultEntered)?)
-    .bind(result.facility_id)
-    .bind(result.order_id)
-    .execute(&mut *transaction)
-    .await?;
-
-    transaction.commit().await?;
-    fetch_result_by_id(pool, result.facility_id, result.id)
-        .await?
+    let facility_id = result.facility_id;
+    let mut created = create_results(pool, facility_id, result.order_id, vec![result]).await?;
+    created
+        .pop()
         .ok_or_else(|| anyhow::anyhow!("created lab result was not found"))
 }
 
@@ -839,21 +815,23 @@ pub async fn create_results(
     }
 
     let mut transaction = pool.begin().await?;
+    let (patient_id, status) = lock_order(&mut transaction, facility_id, order_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("lab order was not found"))?;
+    require_open_order(status)?;
     let mut inserted_ids = Vec::with_capacity(results.len());
     for result in results {
+        if result.facility_id != facility_id
+            || result.order_id != order_id
+            || result.patient_id != patient_id
+        {
+            anyhow::bail!("lab result scope does not match its order");
+        }
         let inserted_id = sqlx::query_scalar::<_, Uuid>(
             r#"
             INSERT INTO lab_results (
-                id,
-                facility_id,
-                order_id,
-                specimen_id,
-                patient_id,
-                test_id,
-                value,
-                unit,
-                status,
-                entered_by_user_id
+                id, facility_id, order_id, specimen_id, patient_id, test_id,
+                value, unit, status, entered_by_user_id
             )
             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             WHERE EXISTS (
@@ -862,14 +840,20 @@ pub async fn create_results(
                 WHERE lab_order_tests.order_id = $3
                   AND lab_order_tests.test_id = $6
             )
+              AND EXISTS (
+                SELECT 1
+                FROM lab_specimens
+                WHERE facility_id = $2 AND id = $4 AND order_id = $3
+                  AND patient_id = $5 AND status IN ('collected', 'received')
+            )
             RETURNING id
             "#,
         )
         .bind(result.id)
-        .bind(result.facility_id)
-        .bind(result.order_id)
+        .bind(facility_id)
+        .bind(order_id)
         .bind(result.specimen_id)
-        .bind(result.patient_id)
+        .bind(patient_id)
         .bind(result.test_id)
         .bind(&result.value)
         .bind(&result.unit)
@@ -879,7 +863,7 @@ pub async fn create_results(
         .await?;
 
         let Some(inserted_id) = inserted_id else {
-            anyhow::bail!("lab result test is not part of the order");
+            anyhow::bail!("lab result test or specimen is not valid for the order");
         };
         inserted_ids.push(inserted_id);
     }
@@ -898,15 +882,24 @@ pub async fn create_results(
     .execute(&mut *transaction)
     .await?;
 
+    // Hydrate the response in one query while the write remains atomic.
+    let mut query = result_query();
+    query.push(" WHERE lab_results.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND lab_results.id = ANY(");
+    query.push_bind(inserted_ids.clone());
+    query.push(") ORDER BY array_position(");
+    query.push_bind(inserted_ids);
+    query.push(", lab_results.id)");
+    let rows = query
+        .build_query_as::<ResultRow>()
+        .fetch_all(&mut *transaction)
+        .await?;
+    let created = rows
+        .into_iter()
+        .map(result_from_row)
+        .collect::<anyhow::Result<Vec<_>>>()?;
     transaction.commit().await?;
-
-    let mut created = Vec::with_capacity(inserted_ids.len());
-    for result_id in inserted_ids {
-        let Some(result) = fetch_result_by_id(pool, facility_id, result_id).await? else {
-            anyhow::bail!("created lab result was not found");
-        };
-        created.push(result);
-    }
     Ok(created)
 }
 
@@ -957,42 +950,13 @@ pub async fn verify_result(
     result_id: Uuid,
     actor_user_id: Uuid,
 ) -> anyhow::Result<Option<LabResultListItem>> {
-    let mut transaction = pool.begin().await?;
-    let order_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
-        UPDATE lab_results
-        SET status = $1,
-            verified_by_user_id = $2,
-            verified_at = now(),
-            updated_at = now()
-        WHERE facility_id = $3 AND id = $4
-        RETURNING order_id
-        "#,
-    )
-    .bind(codec::encode(LabResultStatus::Verified)?)
-    .bind(actor_user_id)
-    .bind(facility_id)
-    .bind(result_id)
-    .fetch_optional(&mut *transaction)
-    .await?;
-
-    if let Some(order_id) = order_id {
-        sqlx::query(
-            r#"
-            UPDATE lab_orders
-            SET status = $1,
-                updated_at = now()
-            WHERE facility_id = $2 AND id = $3
-            "#,
-        )
-        .bind(codec::encode(LabOrderStatus::Verified)?)
-        .bind(facility_id)
-        .bind(order_id)
-        .execute(&mut *transaction)
-        .await?;
+    if get_result_context(pool, facility_id, result_id)
+        .await?
+        .is_none()
+    {
+        return Ok(None);
     }
-
-    transaction.commit().await?;
+    verify_results(pool, facility_id, None, &[result_id], actor_user_id).await?;
     fetch_result_by_id(pool, facility_id, result_id).await
 }
 
@@ -1006,71 +970,121 @@ pub async fn verify_results(
     if order_id.is_none() && result_ids.is_empty() {
         anyhow::bail!("bulk verification requires an order id or result ids");
     }
+    if order_id.is_some() && !result_ids.is_empty() {
+        anyhow::bail!("bulk verification requires either an order id or result ids");
+    }
 
     let mut transaction = pool.begin().await?;
     let order_ids = if let Some(order_id) = order_id {
-        sqlx::query_scalar::<_, Uuid>(
-            r#"
-            UPDATE lab_results
-            SET status = $1,
-                verified_by_user_id = $2,
-                verified_at = COALESCE(verified_at, now()),
-                updated_at = now()
-            WHERE facility_id = $3
-              AND order_id = $4
-              AND verified_at IS NULL
-            RETURNING order_id
-            "#,
-        )
-        .bind(codec::encode(LabResultStatus::Verified)?)
-        .bind(actor_user_id)
-        .bind(facility_id)
-        .bind(order_id)
-        .fetch_all(&mut *transaction)
-        .await?
+        vec![order_id]
     } else {
-        sqlx::query_scalar::<_, Uuid>(
-            r#"
-            UPDATE lab_results
-            SET status = $1,
-                verified_by_user_id = $2,
-                verified_at = COALESCE(verified_at, now()),
-                updated_at = now()
-            WHERE facility_id = $3
-              AND id = ANY($4)
-              AND verified_at IS NULL
-            RETURNING order_id
-            "#,
+        let results = sqlx::query_as::<_, (Uuid, Uuid)>(
+            "SELECT id, order_id FROM lab_results WHERE facility_id = $1 AND id = ANY($2)",
         )
-        .bind(codec::encode(LabResultStatus::Verified)?)
-        .bind(actor_user_id)
         .bind(facility_id)
         .bind(result_ids)
         .fetch_all(&mut *transaction)
-        .await?
+        .await?;
+        let mut unique_result_ids = result_ids.to_vec();
+        unique_result_ids.sort_unstable();
+        unique_result_ids.dedup();
+        if results.len() != unique_result_ids.len() {
+            anyhow::bail!("lab result was not found");
+        }
+        let mut order_ids: Vec<_> = results.into_iter().map(|(_, order_id)| order_id).collect();
+        order_ids.sort_unstable();
+        order_ids.dedup();
+        order_ids
     };
 
-    let mut distinct_order_ids = order_ids.clone();
-    distinct_order_ids.sort_unstable();
-    distinct_order_ids.dedup();
-    if !distinct_order_ids.is_empty() {
-        sqlx::query(
-            r#"
-            UPDATE lab_orders
-            SET status = $1,
-                updated_at = now()
-            WHERE facility_id = $2 AND id = ANY($3)
-            "#,
-        )
-        .bind(codec::encode(LabOrderStatus::Verified)?)
-        .bind(facility_id)
-        .bind(&distinct_order_ids)
-        .execute(&mut *transaction)
-        .await?;
+    // All laboratory writes lock parent orders first. Stable ordering prevents
+    // deadlocks when a bulk verification spans several orders.
+    let orders = sqlx::query_as::<_, (Uuid, String)>(
+        r#"
+        SELECT id, status FROM lab_orders
+        WHERE facility_id = $1 AND id = ANY($2)
+        ORDER BY id FOR UPDATE
+        "#,
+    )
+    .bind(facility_id)
+    .bind(&order_ids)
+    .fetch_all(&mut *transaction)
+    .await?;
+    if orders.len() != order_ids.len() {
+        anyhow::bail!("lab order was not found");
+    }
+    for (_, status) in orders {
+        if codec::decode::<LabOrderStatus>(&status)? == LabOrderStatus::Cancelled {
+            anyhow::bail!("cancelled lab orders cannot be verified");
+        }
     }
 
+    let changed = sqlx::query(
+        r#"
+        UPDATE lab_results
+        SET status = $1,
+            verified_by_user_id = $2,
+            verified_at = now(),
+            updated_at = now()
+        WHERE facility_id = $3
+          AND (($4::uuid IS NOT NULL AND order_id = $4)
+               OR ($4::uuid IS NULL AND id = ANY($5)))
+          AND verified_at IS NULL
+        "#,
+    )
+    .bind(codec::encode(LabResultStatus::Verified)?)
+    .bind(actor_user_id)
+    .bind(facility_id)
+    .bind(order_id)
+    .bind(result_ids)
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+
+    refresh_order_verification(&mut transaction, facility_id, &order_ids).await?;
     transaction.commit().await?;
-    Ok(order_ids.len() as i64)
+    Ok(changed as i64)
+}
+
+async fn refresh_order_verification(
+    transaction: &mut Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    order_ids: &[Uuid],
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE lab_orders AS orders
+        SET status = CASE
+            WHEN EXISTS (
+                SELECT 1 FROM lab_order_tests WHERE order_id = orders.id
+            ) AND NOT EXISTS (
+                SELECT 1 FROM lab_order_tests AS tests
+                WHERE tests.order_id = orders.id AND NOT EXISTS (
+                    SELECT 1 FROM lab_results AS results
+                    WHERE results.facility_id = orders.facility_id
+                      AND results.order_id = orders.id AND results.test_id = tests.test_id
+                      AND results.status = 'verified' AND results.verified_at IS NOT NULL
+                )
+            ) AND NOT EXISTS (
+                SELECT 1 FROM lab_results AS results
+                WHERE results.facility_id = orders.facility_id AND results.order_id = orders.id
+                  AND (results.status <> 'verified' OR results.verified_at IS NULL)
+            ) THEN 'verified'
+            WHEN EXISTS (
+                SELECT 1 FROM lab_results
+                WHERE facility_id = orders.facility_id AND order_id = orders.id
+            ) THEN 'result_entered'
+            ELSE orders.status END,
+            updated_at = now()
+        WHERE orders.facility_id = $1 AND orders.id = ANY($2)
+          AND orders.status <> 'cancelled'
+        "#,
+    )
+    .bind(facility_id)
+    .bind(order_ids)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
 }
 
 async fn resolve_order_test_ids(pool: &PgPool, order: &NewLabOrder) -> anyhow::Result<Vec<Uuid>> {
@@ -1120,20 +1134,27 @@ async fn resolve_order_test_ids(pool: &PgPool, order: &NewLabOrder) -> anyhow::R
     Ok(ids)
 }
 
-async fn current_order_status(
-    pool: &PgPool,
+async fn lock_order(
+    transaction: &mut Transaction<'_, Postgres>,
     facility_id: Uuid,
     order_id: Uuid,
-) -> anyhow::Result<Option<LabOrderStatus>> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT status FROM lab_orders WHERE facility_id = $1 AND id = $2",
+) -> anyhow::Result<Option<(Uuid, LabOrderStatus)>> {
+    sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT patient_id, status FROM lab_orders WHERE facility_id = $1 AND id = $2 FOR UPDATE",
     )
     .bind(facility_id)
     .bind(order_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **transaction)
     .await?
-    .map(|status| codec::decode::<LabOrderStatus>(&status))
+    .map(|(patient_id, status)| Ok((patient_id, codec::decode(&status)?)))
     .transpose()
+}
+
+fn require_open_order(status: LabOrderStatus) -> anyhow::Result<()> {
+    if matches!(status, LabOrderStatus::Cancelled | LabOrderStatus::Verified) {
+        anyhow::bail!("terminal lab orders cannot accept specimens or results");
+    }
+    Ok(())
 }
 
 async fn transition_order_status(
@@ -1143,7 +1164,9 @@ async fn transition_order_status(
     target_status: LabOrderStatus,
     allowed_statuses: &[LabOrderStatus],
 ) -> anyhow::Result<Option<LabOrderListItem>> {
-    let current_status = current_order_status(pool, facility_id, order_id).await?;
+    let mut transaction = pool.begin().await?;
+    let current_status = lock_order(&mut transaction, facility_id, order_id).await?;
+    let current_status = current_status.map(|(_, status)| status);
     let Some(current_status) = current_status else {
         return Ok(None);
     };
@@ -1162,9 +1185,10 @@ async fn transition_order_status(
     .bind(codec::encode(target_status)?)
     .bind(facility_id)
     .bind(order_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
+    transaction.commit().await?;
     fetch_order_by_id(pool, facility_id, order_id).await
 }
 

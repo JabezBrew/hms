@@ -186,7 +186,7 @@ validate_gcp_remote_timing() {
 }
 
 has_git_checkout() {
-  [ -d "$ROOT_DIR/.git" ] &&
+  [ -e "$ROOT_DIR/.git" ] &&
     command -v git >/dev/null 2>&1 &&
     git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
@@ -353,7 +353,11 @@ validate_migration_versions_at_commit() {
 }
 
 ensure_git_archive_uses_committed_attributes() {
-  git_dir="$(git -C "$ROOT_DIR" rev-parse --absolute-git-dir)"
+  git_dir="$(git -C "$ROOT_DIR" rev-parse --git-common-dir)"
+  case "$git_dir" in
+    /*) ;;
+    *) git_dir="$ROOT_DIR/$git_dir" ;;
+  esac
   info_attributes="$git_dir/info/attributes"
   if [ -s "$info_attributes" ]; then
     printf '%s\n' 'Refusing remote deploy because local .git/info/attributes can change git archive output.' >&2

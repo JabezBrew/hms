@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 
 import { omniSearchApi } from '@/shared/api/omniSearch'
 import { omniSearchKeys } from '@/shared/lib/omniSearchKeys'
+import { useAuth } from '@/lib/auth'
+import { createScopedQueryKey, getAuthQueryScope } from '@/shared/lib/queryKeys'
 
 function normalizeQuery(q) {
   return (q ?? '').trim()
@@ -15,6 +17,7 @@ export function useOmniSearchResults({
   limit = 8,
   enabled = true,
 } = {}) {
+  const authScope = getAuthQueryScope(useAuth())
   const query = normalizeQuery(q)
   const effectiveTypes = Array.isArray(types) ? types.filter(Boolean) : null
 
@@ -25,12 +28,12 @@ export function useOmniSearchResults({
     (query.length === 0 || query.length >= 2)
 
   return useQuery({
-    queryKey: omniSearchKeys.results({
+    queryKey: createScopedQueryKey(omniSearchKeys.results({
       facilityCode,
       q: query,
       types: effectiveTypes,
       limit,
-    }),
+    }), authScope),
     queryFn: ({ signal }) =>
       omniSearchApi.search({
         q: query,

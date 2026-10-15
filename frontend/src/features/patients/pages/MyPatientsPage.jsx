@@ -157,7 +157,7 @@ const MyPatientsPage = () => {
       />
 
       {/* Patient List */}
-      <main className="p-4 sm:p-6">
+      <section className="p-4 sm:p-6">
         {isLoading ? (
           <LoadingSkeleton />
         ) : patients.length === 0 ? (
@@ -181,7 +181,7 @@ const MyPatientsPage = () => {
             />
           </div>
         )}
-      </main>
+      </section>
     </PageShell>
   );
 };
@@ -422,6 +422,7 @@ function MyPatientsSearch({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
           placeholder="Filter your patients..."
+          aria-label="Filter my patients"
           value={searchQuery}
           onChange={onSearchChange}
           className="pl-10 pr-10 font-mono text-sm bg-background"
@@ -430,6 +431,7 @@ function MyPatientsSearch({
           <button
             type="button"
             onClick={onClearSearch}
+            aria-label="Clear patient filter"
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           >
             <X className="size-4" />
@@ -442,6 +444,7 @@ function MyPatientsSearch({
           variant="ghost"
           size="icon"
           onClick={() => onRefresh()}
+          aria-label="Refresh my patients"
           className="shrink-0 size-9"
         >
           <RefreshCw className="size-4" />

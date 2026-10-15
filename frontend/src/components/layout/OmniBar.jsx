@@ -1,12 +1,15 @@
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js'
 import UserCircle from 'lucide-react/dist/esm/icons/circle-user.js'
-import * as React from 'react'
+import Search from 'lucide-react/dist/esm/icons/search.js'
+import Moon from 'lucide-react/dist/esm/icons/moon.js'
+import Sun from 'lucide-react/dist/esm/icons/sun.js'
 
 import { Button } from '@/components/ui/button'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useAuth } from '@/lib/auth'
 import { ThemeToggle } from '../theme-toggle'
+import { useTheme } from '../theme-provider'
 import { FacilitySwitcher } from './FacilitySwitcher'
 import {
     DropdownMenu,
@@ -25,47 +28,57 @@ export function OmniBar() {
     const { user, logout } = useAuth()
     const navigate = useNavigate()
     const { openDialog } = useOmniSearch()
+    const { theme, toggleTheme } = useTheme()
+    const modifierKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
     const handleLogout = async () => {
         await logout()
     }
 
     return (
-        <header className="fixed top-0 left-0 right-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-16 flex items-center px-4 gap-4">
-            <SidebarTrigger />
+        <header data-app-header className="fixed inset-x-0 top-0 z-50 flex h-16 w-full items-center gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-4">
+            <div className="flex shrink-0 items-center gap-3 md:w-[calc(var(--sidebar-width)-1rem)]">
+                <SidebarTrigger />
+                <div className="hidden flex-col gap-0.5 md:flex">
+                    <span className="text-sm font-semibold tracking-wide">HMS</span>
+                    <span className="text-[11px] text-muted-foreground">Clinical workspace</span>
+                </div>
+            </div>
 
-            <div className="flex-1 flex items-center max-w-2xl">
+            <div className="flex min-w-0 flex-1 items-center md:max-w-lg">
                 <Button
                     variant="outline"
-                    className="relative h-9 w-full justify-start rounded-[0.5rem] bg-muted/50 text-sm font-normal text-muted-foreground shadow-none sm:pr-12 md:w-full lg:w-[400px]"
+                    className="relative h-10 w-full min-w-0 justify-start gap-2 rounded-lg border-border bg-background px-3 text-sm font-normal text-muted-foreground shadow-none sm:pr-16"
                     onClick={openDialog}
+                    aria-label="Search patients, pages, or actions"
                 >
+                    <Search className="size-4 shrink-0" aria-hidden="true" />
                     <span className="hidden lg:inline-flex">Search patients, pages, or actions…</span>
-                    <span className="inline-flex lg:hidden">Search…</span>
-                    <kbd className="pointer-events-none absolute right-[0.3rem] top-[0.3rem] hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
-                        <span className="text-xs">⌘</span>K
+                    <span className="inline-flex truncate lg:hidden">Search</span>
+                    <kbd aria-hidden="true" className="pointer-events-none absolute right-2 hidden h-6 select-none items-center gap-1 rounded border border-border bg-card px-1.5 font-mono text-[10px] sm:flex">
+                        <span>{modifierKey}</span>K
                     </kbd>
                 </Button>
             </div>
 
-            <div className="ml-auto flex items-center gap-x-4">
+            <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1.5">
                 {/* Unified notification center */}
                 <NotificationCenter />
 
                 <FacilitySwitcher />
 
-                <ThemeToggle />
+                <div className="hidden sm:block"><ThemeToggle /></div>
 
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="relative size-8 rounded-full">
-                            <UserCircle className="size-6" />
+                        <Button variant="ghost" size="icon" className="relative size-10 rounded-full" aria-label="Account menu">
+                            <UserCircle className="size-5" aria-hidden="true" />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="w-56" align="end" forceMount>
                         <DropdownMenuLabel className="font-normal">
                             <div className="flex flex-col gap-y-1">
-                                <p className="font-display text-sm leading-none">
+                                <p className="text-sm font-semibold leading-none">
                                     {user?.firstName && user?.lastName
                                         ? `${user.firstName} ${user.lastName}`
                                         : user?.firstName || user?.lastName || "User"}
@@ -76,6 +89,10 @@ export function OmniBar() {
                             </div>
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
+                        <DropdownMenuItem className="sm:hidden" onClick={toggleTheme}>
+                            {theme === 'light' ? <Moon className="mr-2 size-4" /> : <Sun className="mr-2 size-4" />}
+                            <span>Switch to {theme === 'light' ? 'dark' : 'light'} mode</span>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigate('/settings')}>
                             <Settings className="mr-2 size-4" />
                             <span>Settings</span>

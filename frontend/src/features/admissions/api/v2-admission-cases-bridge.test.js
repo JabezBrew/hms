@@ -85,12 +85,12 @@ describe('Rust V2 admission cases bridge', () => {
     ]);
   });
 
-  it('preserves AbortError from Rust admission case list calls', async () => {
+  it.each(['getCases', 'getCasesPage'])('preserves AbortError from Rust %s list calls', async (method) => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);
 
     await expect(
-      admissionsApi.getCases({}, { signal: new AbortController().signal }),
+      admissionsApi[method]({}, { signal: new AbortController().signal }),
     ).rejects.toBe(abortError);
   });
 

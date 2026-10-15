@@ -10,6 +10,7 @@ import { useActiveAlerts, useOverdueMedications } from '@/features/nursing/hooks
 import { toast } from 'sonner';
 
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 
 /**
@@ -43,6 +44,9 @@ export default function CriticalAlertsMonitor() {
   const isInpatientDoctor = ['doctor', 'inpatient_doctor'].includes(userRole);
   const isAdmin = userRole === 'admin';
   const isAdminDashboardRoute = location.pathname === '/dashboards/admin';
+  // Rust dashboard snapshots/previews do not provide the urgent alert aggregate.
+  // Nurse monitoring uses its supported scoped alert and medication endpoints.
+  const hasDashboardAlertSource = !isRustV2ApiMode();
 
   const { data: nurseAlerts = [] } = useActiveAlerts({
     enabled: shouldMonitor && isNurse,
@@ -53,13 +57,13 @@ export default function CriticalAlertsMonitor() {
   });
 
   const { data: inpatientDashboardData } = useInpatientDashboard({
-    enabled: shouldMonitor && isInpatientDoctor,
+    enabled: hasDashboardAlertSource && shouldMonitor && isInpatientDoctor,
     refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });
 
   const { data: adminDashboardData } = useAdminDashboard({
-    enabled: shouldMonitor && isAdmin && !isAdminDashboardRoute,
+    enabled: hasDashboardAlertSource && shouldMonitor && isAdmin && !isAdminDashboardRoute,
     refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });

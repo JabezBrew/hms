@@ -1,16 +1,10 @@
-import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
-import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import format from 'date-fns/format';
 
-import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 
 export function AvailabilityCalendarPanel({
   availableDates,
   currentMonth,
-  goToNextMonth,
-  goToPreviousMonth,
   handleSelect,
   isLoading,
   selectedDate,
@@ -20,28 +14,6 @@ export function AvailabilityCalendarPanel({
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border/50 p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={goToPreviousMonth}
-            className="size-8 p-0"
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <h3 className="font-semibold text-foreground">
-            {format(currentMonth, 'MMMM yyyy')}
-          </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={goToNextMonth}
-            className="size-8 p-0"
-          >
-            <ChevronRight className="size-4" />
-          </Button>
-        </div>
-
         {isLoading ? (
           <div className="flex h-[300px] items-center justify-center">
             <LoadingSpinner className="size-8 text-muted-foreground" />

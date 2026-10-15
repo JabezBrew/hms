@@ -4,6 +4,7 @@ import { handleV2ApiError } from '@/lib/api/v2/errors';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { v2Api } from '@/lib/api/v2/client';
 import { toast } from 'sonner';
+import { normalizeV2MedicationAdministerPayload } from './nursingQueriesV2Bridge';
 
 /**
  * Hook for dashboard action handlers
@@ -52,15 +53,6 @@ function normalizeV2VitalsPayload(vitalsData = {}) {
   };
 }
 
-function normalizeV2MedicationAdministrationPayload(administrationData = {}) {
-  return {
-    witness_user_id: administrationData.witness_user_id
-      || administrationData.witnessUserId
-      || administrationData.witness
-      || null,
-  };
-}
-
 function unwrapV2Object(response) {
   return response?.data ?? response;
 }
@@ -86,7 +78,7 @@ export function useDashboardActions() {
         try {
           const response = await v2Api.postMedicationAdministrationAdminister(
             { id: medicationId },
-            normalizeV2MedicationAdministrationPayload(administrationData),
+            normalizeV2MedicationAdministerPayload(administrationData),
             { signal: signal || administrationData?.signal },
           );
           return unwrapV2Object(response);
@@ -160,10 +152,11 @@ export function useDashboardActions() {
       return await apiClient.post(`/appointments/appointments/${appointmentId}/start_visit/`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['dashboards']);
-      queryClient.invalidateQueries(['appointments']);
-      queryClient.invalidateQueries(['visits']);
-      queryClient.invalidateQueries(['encounters']);
+      queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['visits'] });
+      queryClient.invalidateQueries({ queryKey: ['encounters'] });
+      queryClient.invalidateQueries({ queryKey: ['care-areas'] });
       toast.success('Patient checked in successfully');
     },
     onError: (error) => {

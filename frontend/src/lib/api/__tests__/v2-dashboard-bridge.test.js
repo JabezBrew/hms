@@ -92,13 +92,13 @@ describe('Rust V2 dashboard bridge', () => {
     expect(response).toMatchObject({
       kpis: {
         active_patients: { count: 12 },
-        appointment_throughput: { scheduled: 3 },
+        waiting_visits: { count: 3 },
         billing: { open_invoices: 2 },
       },
       section_summaries: {
-        capacity: { status: 'normal' },
-        workforce: { status: 'normal' },
-        compliance: { status: 'normal' },
+        capacity: { status: 'details' },
+        workforce: { status: 'unavailable' },
+        compliance: { status: 'unavailable' },
       },
       alerts_top: [],
       action_queue_top: [],
@@ -108,6 +108,10 @@ describe('Rust V2 dashboard bridge', () => {
         refresh_queued: false,
       },
     });
+    expect(response.kpis).not.toHaveProperty('appointment_throughput');
+    expect(response.kpis).not.toHaveProperty('occupancy');
+    expect(response.kpis).not.toHaveProperty('staffing_coverage');
+    expect(response.kpis).not.toHaveProperty('compliance_risk');
   });
 
   it('adapts the Rust dashboard snapshot for the background critical-alert monitor', async () => {
@@ -158,6 +162,17 @@ describe('Rust V2 dashboard bridge', () => {
       stale: true,
       refresh_queued: true,
     });
+    expect(response.kpis).toEqual({
+      active_patients: { count: null },
+      waiting_visits: { count: null },
+      billing: { open_invoices: null },
+    });
+  });
+
+  it('does not manufacture workforce or compliance measurements without a Rust source', async () => {
+    await expect(dashboardsApi.getAdminDashboardV2Workforce()).resolves.toEqual({ available: false });
+    await expect(dashboardsApi.getAdminDashboardV2Compliance()).resolves.toEqual({ available: false });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('adapts the Rust dashboard snapshot for the my-work dashboard surface', async () => {
@@ -315,9 +330,15 @@ describe('Rust V2 dashboard bridge', () => {
                 bed_code: 'B-12',
                 admitted_at: '2026-05-12T07:00:00Z',
                 open_nursing_task_count: 2,
+                overdue_nursing_task_count: 1,
+                due_medication_count: 3,
+                active_alert_count: 2,
+                critical_alert_count: 1,
+                unverified_result_count: 4,
+                critical_unverified_result_count: 1,
               },
             ],
-            page: { limit: 20, has_next: false, next_cursor: null },
+            page: { limit: 20, has_next: true, next_cursor: 'synthetic-next-page' },
             meta: {},
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
@@ -382,13 +403,29 @@ describe('Rust V2 dashboard bridge', () => {
     );
     expect(response).toEqual(expect.objectContaining({
       new_admissions: [expect.objectContaining({ id: 'admission-1', patient_name: 'Ama Mensah' })],
-      my_patients: [expect.objectContaining({ id: 'admission-1', patient_id: 'patient-1' })],
-      planned_discharges: [expect.objectContaining({ id: 'discharge-1', patient_name: 'Ama Mensah' })],
+      my_patients: [expect.objectContaining({
+        id: 'admission-1', patient_id: 'patient-1', alerts_count: 2, has_critical_alerts: true,
+        active_alert_count: 2, critical_alert_count: 1, unverified_result_count: 4,
+        critical_unverified_result_count: 1, overdue_nursing_task_count: 1, due_medication_count: 3,
+      })],
+      planned_discharges: [expect.objectContaining({
+        id: 'discharge-1', patient_name: 'Ama Mensah', ward_id: 'ward-1',
+        requested_at: '2026-05-12T08:00:00Z', discharged_at: null,
+      })],
       pending: {
-        results_to_review: 0,
-        orders_to_sign: 1,
+        results_to_review: 4,
+        nursing_tasks: 1,
+      },
+      meta: {
+        sections: {
+          ward_board: { status: 'available', has_next: true, limit: 20 },
+          discharges: { status: 'available', has_next: false, limit: 20 },
+          nursing_tasks: { status: 'available', has_next: false, limit: 20 },
+        },
       },
     }));
+    expect(response.pending).not.toHaveProperty('orders_to_sign');
+    expect(response.meta.sections.ward_board).not.toHaveProperty('next_cursor');
   });
 
   it('builds the receptionist dashboard from bounded Rust appointments, patients, and billing summary', async () => {
@@ -483,7 +520,87 @@ describe('Rust V2 dashboard bridge', () => {
         checked_in_count: 1,
         pending_payments_count: 4,
       },
+      meta: {
+        date: '2026-05-12',
+        sections: {
+          appointments: { status: 'available', has_next: false, limit: 50 },
+          patients: { status: 'available', has_next: false, limit: 10 },
+          invoices: { status: 'available', has_next: null, limit: null },
+        },
+      },
     }));
+  });
+
+  function mockJson(data, page = undefined, status = 200) {
+    return new Response(JSON.stringify({ data, page }), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('keeps permitted inpatient sections when the ward preview is forbidden', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(mockJson(null, undefined, 403))
+      .mockResolvedValueOnce(mockJson([{ id: 'synthetic-discharge', requested_at: '2026-10-14T10:00:00Z', status: 'pending' }], { limit: 20, has_next: true }))
+      .mockResolvedValueOnce(mockJson([{ id: 'synthetic-task' }], { limit: 20, has_next: false }));
+    const response = await dashboardsApi.getInpatientDashboard();
+    expect(response.my_patients).toEqual([]);
+    expect(response.planned_discharges).toHaveLength(1);
+    expect(response.pending).toEqual({ results_to_review: null, nursing_tasks: 1 });
+    expect(response.meta.sections.ward_board).toMatchObject({ status: 'unavailable', limit: null, has_next: null });
+    expect(response.meta.sections.discharges).toEqual({ status: 'available', limit: 20, has_next: true });
+  });
+
+  it('distinguishes missing ward counters from measured zero', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(mockJson([{ admission_id: 'synthetic-admission', patient_id: 'synthetic-patient' }], { limit: 20, has_next: false }))
+      .mockResolvedValueOnce(mockJson([], { limit: 20, has_next: false }))
+      .mockResolvedValueOnce(mockJson([], { limit: 20, has_next: false }));
+    const response = await dashboardsApi.getInpatientDashboard();
+    expect(response.my_patients[0]).toMatchObject({ alerts_count: null, has_critical_alerts: null, unverified_result_count: null });
+    expect(response.pending).toEqual({ results_to_review: null, nursing_tasks: 0 });
+  });
+
+  it('preserves appointments when billing fails without exposing response errors as UI metadata', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(mockJson([{ id: 'synthetic-appointment', status: 'scheduled' }], { limit: 50, has_next: true }))
+      .mockResolvedValueOnce(mockJson([], { limit: 10, has_next: false }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Private upstream diagnostic' } }), { status: 500, headers: { 'content-type': 'application/json' } }));
+    const response = await dashboardsApi.getReceptionistDashboard();
+    expect(response.todays_appointments).toHaveLength(1);
+    expect(response.stats).toEqual({ todays_appointments_count: 1, checked_in_count: 0, pending_payments_count: null });
+    expect(response.meta.sections.appointments).toEqual({ status: 'available', limit: 50, has_next: true });
+    expect(response.meta.sections.invoices).toMatchObject({ status: 'unavailable', error: 'This preview could not be loaded. Refresh to try again.' });
+    expect(JSON.stringify(response)).not.toContain('Private upstream diagnostic');
+  });
+
+  it('does not claim zero appointments when that preview is unavailable', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(mockJson(null, undefined, 403))
+      .mockResolvedValueOnce(mockJson([{ id: 'synthetic-patient' }], { limit: 10, has_next: true }))
+      .mockResolvedValueOnce(mockJson({ open_invoices: 0 }));
+    const response = await dashboardsApi.getReceptionistDashboard();
+    expect(response.stats).toEqual({ todays_appointments_count: null, checked_in_count: null, pending_payments_count: 0 });
+    expect(response.recent_registrations).toHaveLength(1);
+    expect(response.meta.sections.patients).toEqual({ status: 'available', limit: 10, has_next: true });
+    expect(response.meta.sections.appointments.status).toBe('unavailable');
+  });
+
+  it('skips disabled reception modules while preserving the enabled measured section', async () => {
+    globalThis.fetch.mockResolvedValueOnce(mockJson({ open_invoices: 2 }));
+    const response = await dashboardsApi.getReceptionistDashboard({ sections: { appointments: false, patients: false } });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('/billing/dashboard-summary'), expect.anything());
+    expect(response.stats.pending_payments_count).toBe(2);
+    expect(response.meta.sections.appointments).toMatchObject({ status: 'unavailable', limit: null });
+    expect(response.meta.sections.patients).toMatchObject({ status: 'unavailable', limit: null });
+  });
+
+  it('skips disabled inpatient modules without requesting unsupported resources', async () => {
+    const response = await dashboardsApi.getInpatientDashboard({ sections: { ward_board: false, discharges: false, nursing_tasks: false } });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(response.pending).toEqual({ results_to_review: null, nursing_tasks: null });
+    expect(Object.values(response.meta.sections).every((section) => section.status === 'unavailable')).toBe(true);
   });
 
   it('preserves AbortError from Rust V2 dashboard reads', async () => {

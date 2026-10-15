@@ -38,7 +38,7 @@ async fn consent_grants_are_patient_access_scoped_and_revocable() {
                         "patient_id": patient_id,
                         "scope": "referral_coordination",
                         "purpose": "Specialist referral coordination",
-                        "expires_at": "2026-06-10T00:00:00Z"
+                        "expires_at": (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339()
                     })
                     .to_string(),
                 ))

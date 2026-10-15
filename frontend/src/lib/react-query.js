@@ -71,8 +71,10 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
     },
     mutations: {
-      // Retry mutations once on failure
-      retry: 1,
+      // A lost response can follow a committed clinical write. Retrying it
+      // automatically can duplicate dispensing, payments, or documentation.
+      // Only explicitly idempotent mutations may opt into retries.
+      retry: 0,
     },
   },
 });

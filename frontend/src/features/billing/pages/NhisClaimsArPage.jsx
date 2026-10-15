@@ -604,7 +604,7 @@ export default function NhisClaimsArPage() {
         )}
       />
 
-      <main className="p-4 sm:p-6">
+      <section className="p-4 sm:p-6">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full sm:w-auto">
             <TabsTrigger value="batches" className="font-mono text-xs">Batches</TabsTrigger>
@@ -666,7 +666,7 @@ export default function NhisClaimsArPage() {
             queue={queue}
           />
         </Tabs>
-      </main>
+      </section>
 
       <ForceExportDialog
         forceExportDialog={forceExportDialog}

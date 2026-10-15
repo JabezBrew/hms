@@ -63,18 +63,23 @@ function getUserCapabilities(user) {
 }
 
 function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate }) {
+  const rustV2Mode = isRustV2ApiMode()
+  const activeStayId = rustV2Mode
+    ? ['admitted', 'discharge_pending'].includes(admissionCase.status) ? admissionCase.admission_id || admissionCase.id : null
+    : admissionCase.admission_id
+  const canCancel = rustV2Mode ? admissionCase.status === 'ready_for_activation' : !admissionCase.admission_id
   return (
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" size="sm" onClick={() => onNavigate('/admissions/requests')}>
         <ChevronLeft className="mr-2 size-4" />
         Admissions
       </Button>
-      {admissionCase.admission_id && (
-        <Button variant="outline" size="sm" onClick={() => onNavigate(`/admissions/${admissionCase.admission_id}`)}>
+      {activeStayId && (
+        <Button variant="outline" size="sm" onClick={() => onNavigate(`/admissions/${activeStayId}`)}>
           Active Stay
         </Button>
       )}
-      {!admissionCase.admission_id && (
+      {canCancel && (
         <Button
           variant="outline"
           size="sm"
@@ -89,11 +94,16 @@ function AdmissionCaseHeaderActions({ admissionCase, cancelCase, onNavigate }) {
 }
 
 function AdmissionCaseHeaderBadges({ admissionCase }) {
+  const rustV2Mode = isRustV2ApiMode()
+  const canReserve = !rustV2Mode || admissionCase.status === 'ready_for_activation'
+  const occupied = rustV2Mode && ['admitted', 'discharge_pending'].includes(admissionCase.status)
+    && (admissionCase.requested_bed || admissionCase.active_reservation)
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <AdmissionStatusBadge status={admissionCase.status} />
-      {admissionCase.active_reservation && <Badge variant="outline">Bed Reserved</Badge>}
-      {admissionCase.admission_id && <Badge variant="outline">Activated</Badge>}
+      {canReserve && admissionCase.active_reservation && <Badge variant="outline">Bed Reserved</Badge>}
+      {occupied && <Badge variant="outline">Bed Occupied</Badge>}
+      {!rustV2Mode && admissionCase.admission_id && <Badge variant="outline">Activated</Badge>}
     </div>
   )
 }
@@ -108,20 +118,26 @@ function SummaryField({ label, value }) {
 }
 
 function AdmissionCaseSummaryCard({ admissionCase }) {
+  const rustV2Mode = isRustV2ApiMode()
   return (
     <Card>
       <CardHeader>
         <CardTitle>Admission Summary</CardTitle>
-        <CardDescription>Request timing, placement state, and activation status.</CardDescription>
+        <CardDescription>{rustV2Mode ? 'Recorded request, admission, and discharge dates.' : 'Request timing, placement state, and activation status.'}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-4">
         <SummaryField label="Requested" value={formatDateTime(admissionCase.requested_at)} />
         <SummaryField
-          label="Requested Placement"
+          label={rustV2Mode ? 'Ward and bed' : 'Requested Placement'}
           value={admissionCase.requested_bed_label || admissionCase.requested_ward_name || 'Not assigned'}
         />
-        <SummaryField label="Ready for Activation" value={formatDateTime(admissionCase.ready_for_activation_at)} />
-        <SummaryField label="Activated" value={formatDateTime(admissionCase.activated_at)} />
+        {rustV2Mode ? <>
+          <SummaryField label="Admitted" value={formatDateTime(admissionCase.admitted_at)} />
+          <SummaryField label="Discharged" value={formatDateTime(admissionCase.discharged_at)} />
+        </> : <>
+          <SummaryField label="Ready for Activation" value={formatDateTime(admissionCase.ready_for_activation_at)} />
+          <SummaryField label="Activated" value={formatDateTime(admissionCase.activated_at)} />
+        </>}
       </CardContent>
     </Card>
   )
@@ -131,9 +147,9 @@ function ReservedBedPanel({ reservation }) {
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-4">
       <p className="font-medium">{reservation.ward_name} · Bed {reservation.bed_number}</p>
-      <p className="mt-1 text-sm text-muted-foreground">
+      {!isRustV2ApiMode() && <p className="mt-1 text-sm text-muted-foreground">
         Reserved at {formatDateTime(reservation.reserved_at)}
-      </p>
+      </p>}
     </div>
   )
 }
@@ -147,7 +163,7 @@ function AdmissionPlacementCard({
   reserveBed,
   selectedBed,
 }) {
-  if (admissionCase.admission_id) {
+  if (isRustV2ApiMode() ? admissionCase.status !== 'ready_for_activation' : admissionCase.admission_id) {
     return null
   }
 
@@ -185,7 +201,7 @@ function AdmissionPlacementCard({
 }
 
 function AdmissionActivationCard({ admissionCase, activateCase, canActivateAdmission }) {
-  if (!admissionCase.can_activate || !canActivateAdmission) {
+  if (!admissionCase.can_activate || !canActivateAdmission || (isRustV2ApiMode() && admissionCase.status !== 'ready_for_activation')) {
     return null
   }
 
@@ -193,7 +209,7 @@ function AdmissionActivationCard({ admissionCase, activateCase, canActivateAdmis
     <Card>
       <CardHeader>
         <CardTitle>Ward Activation</CardTitle>
-        <CardDescription>All activation blockers are clear. You can now create the live inpatient stay.</CardDescription>
+        <CardDescription>{isRustV2ApiMode() ? 'Admit this patient to the ward. An available bed is required.' : 'All activation blockers are clear. You can now create the live inpatient stay.'}</CardDescription>
       </CardHeader>
       <CardContent>
         <Button onClick={() => activateCase.mutateAsync({ caseId: admissionCase.id, data: {} })} disabled={activateCase.isPending}>
@@ -240,7 +256,7 @@ function AdmissionTaskReviewNotice() {
         Admission task review
       </p>
       <p className="mt-1">
-        Admission task clearance and intake completion are not available for this deployment yet. Bed reservation, activation, and case cancellation remain available.
+        Admission task clearance and intake completion are not available for this deployment yet.
       </p>
     </div>
   )
@@ -329,7 +345,7 @@ function AdmissionTasksCard({
           <ClipboardList className="size-5" />
           Tasks
         </CardTitle>
-        <CardDescription>Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.</CardDescription>
+        <CardDescription>{admissionTaskMutationsAvailable ? 'Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.' : 'Admission task details are not supplied for this case.'}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!admissionTaskMutationsAvailable && <AdmissionTaskReviewNotice />}
@@ -468,7 +484,7 @@ export default function AdmissionCaseDetailPage() {
         <AdmissionCaseHeaderBadges admissionCase={admissionCase} />
       </PageHeader>
 
-      <main className="space-y-6 p-6">
+      <section className="space-y-6 p-6">
         <AdmissionCaseSummaryCard admissionCase={admissionCase} />
 
         <AdmissionPlacementCard
@@ -505,7 +521,7 @@ export default function AdmissionCaseDetailPage() {
           onTaskComplete={handleTaskComplete}
           userType={userType}
         />
-      </main>
+      </section>
     </PageShell>
   )
 }

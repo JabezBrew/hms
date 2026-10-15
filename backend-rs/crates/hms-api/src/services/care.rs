@@ -1260,15 +1260,18 @@ impl CareService {
             }
             payload.notes = if notes.is_empty() { None } else { Some(notes) };
         }
-        let triage = hms_db::care::assess_triage(self.pool(), self.facility_id(), id, payload)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "triage_assessment_failed",
-                    "Triage assessment could not be saved.",
-                )
-            })?
-            .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+        let triage =
+            hms_db::care::assess_triage(self.pool(), self.facility_id(), id, payload, ctx.user_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "triage_assessment_failed",
+                        "Triage assessment could not be saved.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("triage_not_found", "Triage item was not found.")
+                })?;
 
         Ok(object(triage))
     }

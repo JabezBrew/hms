@@ -99,6 +99,8 @@ also read [`CONTRIBUTING.md`](../CONTRIBUTING.md) and
   production-readiness files.
 - [`performance/README.md`](performance/README.md): performance budgets,
   baseline evidence, slow-SQL follow-up, and realtime UI policy.
+- [`quality/2026-10-14-clinical-quality-phase.md`](quality/2026-10-14-clinical-quality-phase.md): clinician workflow, security, design and local verification phase.
+- [`security/2026-10-14-clinical-security-audit.md`](security/2026-10-14-clinical-security-audit.md): security fixes, regression evidence and remaining limits for the active clinical workspace.
 - [`ownership/README.md`](ownership/README.md): path ownership and review
   triggers.
 - [`runbooks/README.md`](runbooks/README.md): current staging, rollback, smoke,
@@ -109,6 +111,7 @@ also read [`CONTRIBUTING.md`](../CONTRIBUTING.md) and
 - Rust V2 in `backend-rs/` is active.
 - React/Vite in `frontend/` is active.
 - Django in `backend/` is legacy reference only.
-- GCP is the current staging/performance-validation path.
+- [`ops/free-testing`](../ops/free-testing/README.md) is the synthetic solo-testing
+  deployment path; GCP remains the earlier staging/performance-validation path.
 - Hetzner remains rollback and reusable Rust V2 Compose reference.
 - Patient Chronicle is the product home for patient clinical data.

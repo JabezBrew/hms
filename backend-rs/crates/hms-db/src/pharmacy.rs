@@ -6,7 +6,7 @@ use hms_domain::pharmacy::{
     PharmacyFulfillmentDispenseResult, PharmacyFulfillmentStatus, PharmacyQueueItem,
 };
 use hms_observability::observe_db_query;
-use sqlx::{FromRow, Postgres, QueryBuilder};
+use sqlx::{FromRow, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::codec;
@@ -95,6 +95,7 @@ struct FulfillmentForUpdate {
 #[derive(Clone, Debug, FromRow)]
 struct MedicationCourseForUpdate {
     id: Uuid,
+    status: String,
     medication_name: String,
     dose: String,
     route: String,
@@ -110,41 +111,50 @@ pub async fn generate_mar_for_prescription(
     pool: &PgPool,
     command: GenerateMarCommand,
 ) -> anyhow::Result<GenerateMedicationAdministrationResponse> {
-    let prescription = sqlx::query_as::<_, PrescriptionGenerationRow>(
+    let mut transaction = pool.begin().await?;
+    let admission = observe_db_query(
+        "pharmacy.mar_generation.admission_context",
+        sqlx::query_as::<_, AdmissionGenerationRow>(
+            r#"
+        SELECT patient_id, status
+        FROM admission_cases
+        WHERE facility_id = $1 AND id = $2
+        FOR SHARE
+        "#,
+        )
+        .bind(command.facility_id)
+        .bind(command.admission_case_id)
+        .fetch_optional(&mut *transaction),
+    )
+    .await?
+    .context("admission_not_found")?;
+    if !matches!(admission.status.as_str(), "admitted" | "discharge_pending") {
+        anyhow::bail!("admission_not_active");
+    }
+
+    // Serializing on the prescription also makes concurrent initial generation
+    // idempotent, before a medication-course row exists to lock.
+    let prescription = observe_db_query(
+        "pharmacy.mar_generation.prescription_context",
+        sqlx::query_as::<_, PrescriptionGenerationRow>(
         r#"
         SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, duration_days, status
         FROM prescriptions
         WHERE facility_id = $1 AND id = $2
+        FOR UPDATE
         "#,
     )
     .bind(command.facility_id)
     .bind(command.prescription_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction),
+    )
     .await?
     .context("prescription_not_found")?;
-
     if codec::decode::<PrescriptionStatus>(&prescription.status)? != PrescriptionStatus::Active {
         anyhow::bail!("prescription_not_active");
     }
-
-    let admission = sqlx::query_as::<_, AdmissionGenerationRow>(
-        r#"
-        SELECT patient_id, status
-        FROM admission_cases
-        WHERE facility_id = $1 AND id = $2
-        "#,
-    )
-    .bind(command.facility_id)
-    .bind(command.admission_case_id)
-    .fetch_optional(pool)
-    .await?
-    .context("admission_not_found")?;
-
     if admission.patient_id != prescription.patient_id {
         anyhow::bail!("admission_patient_mismatch");
-    }
-    if !matches!(admission.status.as_str(), "admitted" | "discharge_pending") {
-        anyhow::bail!("admission_not_active");
     }
 
     let schedule = MedicationSchedule::parse(&prescription.frequency)?;
@@ -157,14 +167,19 @@ pub async fn generate_mar_for_prescription(
         .map(|days| days.min(bounded_days))
         .unwrap_or(bounded_days)
         .max(1);
-    let window_start = command.first_dose_at;
-    let window_end = command.first_dose_at + Duration::days(actual_days);
-    let dose_times = schedule.dose_times(command.first_dose_at, window_end);
+    // PostgreSQL timestamps preserve microseconds. Normalize the anchor before
+    // comparing a retry with its stored course or computing scheduled doses.
+    let first_dose_at = DateTime::from_timestamp_micros(command.first_dose_at.timestamp_micros())
+        .context("invalid_first_dose_at")?;
+    let window_start = first_dose_at;
+    let window_end = first_dose_at + Duration::days(actual_days);
+    let dose_times = schedule.dose_times(first_dose_at, window_end);
 
-    let mut transaction = pool.begin().await?;
-    let existing_course = sqlx::query_as::<_, MedicationCourseForUpdate>(
+    let existing_course = observe_db_query(
+        "pharmacy.mar_generation.lock_course",
+        sqlx::query_as::<_, MedicationCourseForUpdate>(
         r#"
-        SELECT id, medication_name, dose, route, frequency, inventory_item_id, first_dose_at,
+        SELECT id, status, medication_name, dose, route, frequency, inventory_item_id, first_dose_at,
                interval_minutes, generation_window_start, generation_window_end
         FROM medication_courses
         WHERE facility_id = $1 AND prescription_id = $2 AND admission_case_id = $3
@@ -174,17 +189,21 @@ pub async fn generate_mar_for_prescription(
     .bind(command.facility_id)
     .bind(prescription.id)
     .bind(command.admission_case_id)
-    .fetch_optional(&mut *transaction)
+    .fetch_optional(&mut *transaction),
+    )
     .await?;
 
     let requested_interval = schedule.interval_minutes();
     let course_id = if let Some(course) = existing_course {
+        if course.status != "active" {
+            anyhow::bail!("medication_course_not_active");
+        }
         if course.medication_name != prescription.medication_name
             || course.dose != prescription.dose
             || course.route != prescription.route
             || course.frequency != prescription.frequency
             || course.inventory_item_id != prescription.inventory_item_id
-            || course.first_dose_at != command.first_dose_at
+            || course.first_dose_at != first_dose_at
             || course.interval_minutes != requested_interval
             || course.generation_window_start != window_start
             || course.generation_window_end != window_end
@@ -194,6 +213,8 @@ pub async fn generate_mar_for_prescription(
         course.id
     } else {
         let course_id = Uuid::new_v4();
+        observe_db_query(
+        "pharmacy.mar_generation.create_course",
         sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO medication_courses (
@@ -215,13 +236,14 @@ pub async fn generate_mar_for_prescription(
         .bind(&prescription.route)
         .bind(&prescription.frequency)
         .bind(prescription.inventory_item_id)
-        .bind(command.first_dose_at)
+        .bind(first_dose_at)
         .bind(requested_interval)
         .bind(window_start)
         .bind(window_end)
         .bind(command.actor_user_id)
-        .fetch_one(&mut *transaction)
-        .await?
+        .fetch_one(&mut *transaction),
+    )
+    .await?
     };
 
     if schedule.is_prn() {
@@ -240,7 +262,9 @@ pub async fn generate_mar_for_prescription(
     }
 
     let fulfillment_id = Uuid::new_v4();
-    let fulfillment_id = sqlx::query_scalar::<_, Uuid>(
+    let fulfillment_id = observe_db_query(
+        "pharmacy.mar_generation.fulfillment",
+        sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO pharmacy_fulfillments (
             id, facility_id, patient_id, admission_case_id, prescription_id, medication_course_id,
@@ -276,28 +300,33 @@ pub async fn generate_mar_for_prescription(
     .bind(window_end)
     .bind(i32::try_from(dose_times.len()).unwrap_or(i32::MAX))
     .bind(command.actor_user_id)
-    .fetch_one(&mut *transaction)
+    .fetch_one(&mut *transaction),
+    )
     .await?;
 
-    let mut created_count = 0_i64;
-    let mut existing_count = 0_i64;
-    for (index, scheduled_at) in dose_times.iter().enumerate() {
-        let medication_id = Uuid::new_v4();
-        let dose_sequence = i32::try_from(index + 1).unwrap_or(i32::MAX);
-        let result = sqlx::query(
+    let medication_ids: Vec<_> = dose_times.iter().map(|_| Uuid::new_v4()).collect();
+    let dose_sequences: Vec<_> = (1..=dose_times.len()).map(|index| index as i32).collect();
+    let created_count = observe_db_query(
+        "pharmacy.mar_generation.insert_doses",
+        sqlx::query(
             r#"
             INSERT INTO medication_administrations (
                 id, facility_id, admission_case_id, patient_id, prescription_id,
                 medication_course_id, pharmacy_fulfillment_id, medication_name, dose, route,
                 frequency, dose_sequence, scheduled_at, status, created_by_user_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'scheduled', $14)
+            SELECT scheduled.id, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                   scheduled.dose_sequence, scheduled.scheduled_at, 'scheduled', $14
+            FROM UNNEST($1::uuid[], $2::timestamptz[], $3::integer[])
+                AS scheduled(id, scheduled_at, dose_sequence)
             ON CONFLICT (facility_id, medication_course_id, scheduled_at, dose_sequence)
             WHERE medication_course_id IS NOT NULL
             DO NOTHING
             "#,
         )
-        .bind(medication_id)
+        .bind(&medication_ids)
+        .bind(&dose_times)
+        .bind(&dose_sequences)
         .bind(command.facility_id)
         .bind(command.admission_case_id)
         .bind(prescription.patient_id)
@@ -308,45 +337,35 @@ pub async fn generate_mar_for_prescription(
         .bind(&prescription.dose)
         .bind(&prescription.route)
         .bind(&prescription.frequency)
-        .bind(dose_sequence)
-        .bind(*scheduled_at)
         .bind(command.actor_user_id)
-        .execute(&mut *transaction)
-        .await?;
-        if result.rows_affected() == 1 {
-            created_count += 1;
-        } else {
-            existing_count += 1;
-        }
-
-        let medication_id = sqlx::query_scalar::<_, Uuid>(
+        .execute(&mut *transaction),
+    )
+    .await?
+    .rows_affected() as i64;
+    let existing_count = dose_times.len() as i64 - created_count;
+    observe_db_query(
+        "pharmacy.mar_generation.link_doses",
+        sqlx::query(
             r#"
-            SELECT id
-            FROM medication_administrations
-            WHERE facility_id = $1
-              AND medication_course_id = $2
-              AND scheduled_at = $3
-              AND dose_sequence = $4
+            INSERT INTO pharmacy_fulfillment_mar_entries (fulfillment_id, medication_administration_id)
+            SELECT $5, medication_administrations.id
+            FROM UNNEST($3::timestamptz[], $4::integer[]) AS scheduled(scheduled_at, dose_sequence)
+            JOIN medication_administrations
+              ON medication_administrations.facility_id = $1
+             AND medication_administrations.medication_course_id = $2
+             AND medication_administrations.scheduled_at = scheduled.scheduled_at
+             AND medication_administrations.dose_sequence = scheduled.dose_sequence
+            ON CONFLICT DO NOTHING
             "#,
         )
         .bind(command.facility_id)
         .bind(course_id)
-        .bind(*scheduled_at)
-        .bind(dose_sequence)
-        .fetch_one(&mut *transaction)
-        .await?;
-        sqlx::query(
-            r#"
-            INSERT INTO pharmacy_fulfillment_mar_entries (fulfillment_id, medication_administration_id)
-            VALUES ($1, $2)
-            ON CONFLICT DO NOTHING
-            "#,
-        )
+        .bind(&dose_times)
+        .bind(&dose_sequences)
         .bind(fulfillment_id)
-        .bind(medication_id)
-        .execute(&mut *transaction)
-        .await?;
-    }
+        .execute(&mut *transaction),
+    )
+    .await?;
 
     transaction.commit().await?;
     Ok(GenerateMedicationAdministrationResponse {
@@ -426,6 +445,30 @@ pub async fn dispense_fulfillment(
     command: DispenseFulfillmentCommand,
 ) -> anyhow::Result<PharmacyFulfillmentDispenseResult> {
     let mut transaction = pool.begin().await?;
+    let (patient_id, admission_case_id, prescription_id, medication_course_id) = observe_db_query(
+        "pharmacy.fulfillments.source_context",
+        sqlx::query_as::<_, (Uuid, Uuid, Uuid, Uuid)>(
+            r#"
+            SELECT patient_id, admission_case_id, prescription_id, medication_course_id
+            FROM pharmacy_fulfillments WHERE facility_id = $1 AND id = $2
+            "#,
+        )
+        .bind(command.facility_id)
+        .bind(command.fulfillment_id)
+        .fetch_optional(&mut *transaction),
+    )
+    .await?
+    .context("fulfillment_not_found")?;
+    lock_medication_context(
+        &mut transaction,
+        command.facility_id,
+        patient_id,
+        admission_case_id,
+        Some(prescription_id),
+        Some(medication_course_id),
+    )
+    .await?
+    .require_active()?;
     let fulfillment = sqlx::query_as::<_, FulfillmentForUpdate>(
         r#"
         SELECT id, patient_id, status, inventory_item_id, dispensed_dose_count, requested_dose_count
@@ -475,6 +518,7 @@ pub async fn dispense_fulfillment(
           AND item_id = $2
           AND location_id = $3
           AND quantity_on_hand >= $4
+          AND (expires_on IS NULL OR expires_on >= CURRENT_DATE)
         ORDER BY expires_on ASC NULLS LAST, received_at ASC, id ASC
         LIMIT 1
         FOR UPDATE
@@ -611,6 +655,125 @@ pub async fn dispense_fulfillment(
         fulfillment,
         dispensed_dose_count: i64::from(dispensed_now),
     })
+}
+
+#[derive(Debug)]
+pub(crate) struct MedicationContextCheck {
+    failure: Option<&'static str>,
+}
+
+impl MedicationContextCheck {
+    pub(crate) fn require_active(self) -> anyhow::Result<()> {
+        if let Some(failure) = self.failure {
+            anyhow::bail!(failure);
+        }
+        Ok(())
+    }
+}
+
+pub(crate) async fn lock_medication_context(
+    transaction: &mut Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    patient_id: Uuid,
+    admission_case_id: Uuid,
+    prescription_id: Option<Uuid>,
+    medication_course_id: Option<Uuid>,
+) -> anyhow::Result<MedicationContextCheck> {
+    let admission = observe_db_query(
+        "pharmacy.medication_context.admission",
+        sqlx::query_as::<_, AdmissionGenerationRow>(
+        "SELECT patient_id, status FROM admission_cases WHERE facility_id = $1 AND id = $2 FOR SHARE",
+    )
+    .bind(facility_id)
+    .bind(admission_case_id)
+    .fetch_optional(&mut **transaction),
+    )
+    .await?
+    .context("admission_not_found")?;
+    let mut failure = if admission.patient_id != patient_id {
+        Some("medication_context_mismatch")
+    } else if !matches!(admission.status.as_str(), "admitted" | "discharge_pending") {
+        Some("admission_not_active")
+    } else {
+        None
+    };
+
+    let prescription = if let Some(prescription_id) = prescription_id {
+        let prescription = observe_db_query(
+            "pharmacy.medication_context.prescription",
+            sqlx::query_as::<_, PrescriptionGenerationRow>(
+                r#"
+            SELECT id, patient_id, medication_name, dose, route, frequency,
+                   inventory_item_id, duration_days, status
+            FROM prescriptions WHERE facility_id = $1 AND id = $2 FOR SHARE
+            "#,
+            )
+            .bind(facility_id)
+            .bind(prescription_id)
+            .fetch_optional(&mut **transaction),
+        )
+        .await?
+        .context("prescription_not_found")?;
+        if prescription.patient_id != patient_id {
+            failure = failure.or(Some("medication_context_mismatch"));
+        } else if codec::decode::<PrescriptionStatus>(&prescription.status)?
+            != PrescriptionStatus::Active
+        {
+            failure = failure.or(Some("prescription_not_active"));
+        }
+        Some(prescription)
+    } else {
+        None
+    };
+
+    if let Some(medication_course_id) = medication_course_id {
+        let course = observe_db_query(
+            "pharmacy.medication_context.course",
+            sqlx::query_as::<_, CourseClinicalContext>(
+                r#"
+            SELECT patient_id, admission_case_id, prescription_id, status,
+                   medication_name, dose, route, frequency, inventory_item_id
+            FROM medication_courses WHERE facility_id = $1 AND id = $2 FOR SHARE
+            "#,
+            )
+            .bind(facility_id)
+            .bind(medication_course_id)
+            .fetch_optional(&mut **transaction),
+        )
+        .await?
+        .context("medication_course_not_found")?;
+        if course.patient_id != patient_id
+            || course.admission_case_id != admission_case_id
+            || Some(course.prescription_id) != prescription_id
+        {
+            failure = failure.or(Some("medication_context_mismatch"));
+        } else if course.status != "active" {
+            failure = failure.or(Some("medication_course_not_active"));
+        } else if let Some(prescription) = prescription {
+            if course.medication_name != prescription.medication_name
+                || course.dose != prescription.dose
+                || course.route != prescription.route
+                || course.frequency != prescription.frequency
+                || course.inventory_item_id != prescription.inventory_item_id
+            {
+                failure = failure.or(Some("medication_course_prescription_changed"));
+            }
+        }
+    }
+    Ok(MedicationContextCheck { failure })
+}
+
+#[derive(FromRow)]
+struct CourseClinicalContext {
+    patient_id: Uuid,
+    admission_case_id: Uuid,
+    prescription_id: Uuid,
+    status: String,
+    medication_name: String,
+    dose: String,
+    route: String,
+    frequency: String,
+    inventory_item_id: Option<Uuid>,
 }
 
 fn queue_query() -> QueryBuilder<'static, Postgres> {

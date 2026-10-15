@@ -30,10 +30,12 @@ use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
+use crate::auth::{
+    issue_access_token, verify_access_token, AccessClaims, AuthAttempt, AuthAttemptLimiter,
+};
 use crate::config::{AccountSetupDeliveryMode, Config, OpsAuthMode, OpsPrometheusConfig};
 use crate::ops_auth::{CloudflareAccessError, CloudflareAccessIdentity, CloudflareAccessVerifier};
-use crate::passwords::hash_password;
+use crate::passwords::{dummy_password_hash, hash_password};
 use crate::response::{ListResponse, ObjectResponse};
 use crate::services::patients::PatientChronicleStartup;
 
@@ -62,6 +64,9 @@ struct AppStateInner {
     auth_cache: AuthCache,
     hot_read_cache: HotReadCache,
     password_work_limiter: Arc<Semaphore>,
+    dummy_password_hash: String,
+    auth_attempt_limiter: AuthAttemptLimiter,
+    login_admission: Arc<Semaphore>,
     dashboard_refresh_gate: DashboardRefreshGate,
     cloudflare_access: Option<CloudflareAccessVerifier>,
     account_setup_deliveries: Mutex<Vec<AccountSetupDeliveryRecord>>,
@@ -707,6 +712,7 @@ pub struct PasswordResetRequestOutcome {
 pub enum AccountSetupDeliveryPurpose {
     StaffAccountSetup,
     StaffPasswordReset,
+    PasswordReset,
 }
 
 impl AccountSetupDeliveryPurpose {
@@ -714,6 +720,7 @@ impl AccountSetupDeliveryPurpose {
         match self {
             Self::StaffAccountSetup => "staff_account_setup",
             Self::StaffPasswordReset => "staff_password_reset",
+            Self::PasswordReset => "password_reset",
         }
     }
 }
@@ -731,7 +738,7 @@ pub struct StaffAccountSetupDelivery {
 #[derive(Clone)]
 pub struct AccountSetupDeliveryRecord {
     pub purpose: AccountSetupDeliveryPurpose,
-    pub staff_id: Uuid,
+    pub staff_id: Option<Uuid>,
     pub user_id: Uuid,
     pub email: String,
     pub display_name: String,
@@ -744,11 +751,22 @@ pub struct AccountSetupDeliveryRecord {
 struct AccountSetupWebhookPayload<'a> {
     purpose: &'static str,
     facility_code: &'a str,
-    staff_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    staff_id: Option<Uuid>,
     user_id: Uuid,
     email: &'a str,
     display_name: &'a str,
     setup_url: &'a str,
+    expires_at: DateTime<Utc>,
+}
+
+struct AccountSetupDelivery {
+    purpose: AccountSetupDeliveryPurpose,
+    staff_id: Option<Uuid>,
+    user_id: Uuid,
+    email: String,
+    display_name: String,
+    token: String,
     expires_at: DateTime<Utc>,
 }
 
@@ -829,6 +847,10 @@ impl AppState {
             None
         };
 
+        let dummy_password_hash = tokio::task::spawn_blocking(dummy_password_hash)
+            .await
+            .context("dummy password initialization task failed")??;
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 config,
@@ -839,6 +861,11 @@ impl AppState {
                 auth_cache: AuthCache::new(auth_cache_max_entries),
                 hot_read_cache: HotReadCache::new(HOT_READ_CACHE_MAX_ENTRIES),
                 password_work_limiter: Arc::new(Semaphore::new(password_work_max_concurrency)),
+                dummy_password_hash,
+                auth_attempt_limiter: AuthAttemptLimiter::default(),
+                login_admission: Arc::new(Semaphore::new(
+                    password_work_max_concurrency.clamp(1, 4),
+                )),
                 dashboard_refresh_gate: DashboardRefreshGate::default(),
                 cloudflare_access,
                 account_setup_deliveries: Mutex::new(Vec::new()),
@@ -970,6 +997,19 @@ impl AppState {
         &self,
         delivery: StaffAccountSetupDelivery,
     ) -> Result<()> {
+        self.deliver_account_setup(AccountSetupDelivery {
+            purpose: delivery.purpose,
+            staff_id: Some(delivery.staff_id),
+            user_id: delivery.user_id,
+            email: delivery.email,
+            display_name: delivery.display_name,
+            token: delivery.token,
+            expires_at: delivery.expires_at,
+        })
+        .await
+    }
+
+    async fn deliver_account_setup(&self, delivery: AccountSetupDelivery) -> Result<()> {
         self.ensure_account_setup_delivery_available()?;
         let setup_url = self.account_setup_url(&delivery.token)?;
         match self.inner.config.account_setup_delivery.mode {
@@ -1013,6 +1053,7 @@ impl AppState {
                 };
                 let client = reqwest::Client::builder()
                     .timeout(self.inner.config.account_setup_delivery.timeout)
+                    .redirect(reqwest::redirect::Policy::none())
                     .build()?;
                 let response = client.post(webhook_url).json(&payload).send().await?;
                 if !response.status().is_success() {
@@ -1529,12 +1570,24 @@ impl AppState {
         device_label: Option<&str>,
         request_id: Option<String>,
     ) -> Result<Option<LoginOutcome>> {
+        let Ok(_admission) = self.inner.login_admission.clone().try_acquire_owned() else {
+            return Ok(None);
+        };
+        if !self
+            .inner
+            .auth_attempt_limiter
+            .claim(AuthAttempt::Login, email, facility_code)
+        {
+            return Ok(None);
+        }
         if !self
             .inner
             .config
             .facility_code
             .eq_ignore_ascii_case(facility_code.trim())
         {
+            self.verify_password_bounded(&self.inner.dummy_password_hash, password)
+                .await?;
             hms_db::auth::insert_login_failure_audit(
                 &self.inner.pool,
                 NewAuthAuditEvent {
@@ -1562,6 +1615,8 @@ impl AppState {
         )
         .await?;
         let Some(user) = user else {
+            self.verify_password_bounded(&self.inner.dummy_password_hash, password)
+                .await?;
             hms_db::auth::insert_login_failure_audit(
                 &self.inner.pool,
                 NewAuthAuditEvent {
@@ -1730,6 +1785,14 @@ impl AppState {
         email: &str,
         facility_code: &str,
     ) -> Result<PasswordResetRequestOutcome> {
+        // Keep the public acknowledgement identical for unknown, throttled, and
+        // unavailable-delivery cases. Disabled delivery must not mint lost tokens.
+        if self.inner.config.account_setup_delivery.mode == AccountSetupDeliveryMode::Disabled {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        }
         if !self
             .inner
             .config
@@ -1755,6 +1818,19 @@ impl AppState {
             });
         };
 
+        // Unknown identities must not consume the finite delivery budget and
+        // deny recovery to other staff without doing any delivery work.
+        if !self
+            .inner
+            .auth_attempt_limiter
+            .claim(AuthAttempt::PasswordReset, email, facility_code)
+        {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        }
+
         let raw_token = generate_secret_token();
         let expires_at = Utc::now() + chrono::Duration::minutes(30);
         hms_db::auth::insert_password_reset_token(
@@ -1779,6 +1855,28 @@ impl AppState {
             },
         )
         .await?;
+
+        let delivery = AccountSetupDelivery {
+            purpose: AccountSetupDeliveryPurpose::PasswordReset,
+            staff_id: None,
+            user_id: user.id,
+            email: user.email,
+            display_name: user.display_name,
+            token: raw_token.clone(),
+            expires_at,
+        };
+        if self.inner.config.account_setup_delivery.mode == AccountSetupDeliveryMode::TestSink {
+            self.deliver_account_setup(delivery).await?;
+        } else {
+            // No database transaction spans external delivery. Returning before
+            // the webhook also avoids exposing account existence through its delay.
+            let state = self.clone();
+            tokio::spawn(async move {
+                if state.deliver_account_setup(delivery).await.is_err() {
+                    warn!("password reset delivery failed");
+                }
+            });
+        }
 
         Ok(PasswordResetRequestOutcome {
             accepted: true,
@@ -2153,7 +2251,7 @@ impl AppState {
         .context("password hash task failed")?
     }
 
-    async fn verify_password_bounded(&self, hash: &str, password: &str) -> Result<bool> {
+    pub(crate) async fn verify_password_bounded(&self, hash: &str, password: &str) -> Result<bool> {
         let permit = self
             .inner
             .password_work_limiter
@@ -2333,4 +2431,49 @@ fn password_meets_policy(password: &str) -> bool {
 
 pub(crate) fn csrf_compare_hash(token: &str) -> String {
     hash_refresh_token(token)
+}
+
+#[cfg(test)]
+mod auth_admission_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn saturated_login_admission_releases_without_timed_lockout_for_another_identity() {
+        let database =
+            hms_db::test_support::TestDatabase::create().expect("test database available");
+        let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+        config.password_work_max_concurrency = 1;
+        let state = AppState::new(config).await.expect("test state initializes");
+        let occupied = state
+            .inner
+            .login_admission
+            .clone()
+            .try_acquire_owned()
+            .expect("initial admission available");
+        let attempts = (0..8)
+            .map(|_| {
+                let state = state.clone();
+                tokio::spawn(async move {
+                    state
+                        .login("limited@hms.local", "ChangeMe123!", "HMS", None, None)
+                        .await
+                })
+            })
+            .collect::<Vec<_>>();
+        for attempt in attempts {
+            assert!(attempt
+                .await
+                .expect("attempt completes")
+                .expect("saturation returns safely")
+                .is_none());
+        }
+        drop(occupied);
+        let allowed = state
+            .login("limited@hms.local", "ChangeMe123!", "HMS", None, None)
+            .await
+            .expect("fresh capacity accepts login");
+        assert!(allowed.is_some());
+        assert_eq!(state.inner.login_admission.available_permits(), 1);
+        assert_eq!(state.inner.password_work_limiter.available_permits(), 1);
+    }
 }

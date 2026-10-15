@@ -34,6 +34,9 @@ Scope: ward clinical task board UI.
 - Patient rows stay fixed-height launch points. Patient-specific work opens in
   the side drawer so task details, Chronicle shortcuts, and sourced board
   signal cards do not stretch the board table.
+- Rust discharge work is performed in that patient drawer using the discharge
+  feature panel. Canonical discharge links open only a matching patient/case;
+  nursing release and finalization use backend clearances and capabilities.
 - The patient detail drawer prioritizes current clinical work and board
   signals. Audit/compliance history must not occupy a permanent drawer rail;
   route deeper history through Chronicle or an explicit audit surface.

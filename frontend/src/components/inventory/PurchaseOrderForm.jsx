@@ -250,6 +250,7 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
                     name={`items.${index}.quantity`}
                     render={({ field }) => (
                       <FormItem className="w-24">
+                        <FormLabel className="sr-only">Quantity for item {index + 1}</FormLabel>
                         <FormControl>
                           <Input type="number" min="1" placeholder="Qty" {...field} />
                         </FormControl>
@@ -263,11 +264,12 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
                     name={`items.${index}.unit_price`}
                     render={({ field }) => (
                       <FormItem className="w-32">
-                        <FormControl>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                              $
-                            </span>
+                        <FormLabel className="sr-only">Unit price for item {index + 1}</FormLabel>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                            $
+                          </span>
+                          <FormControl>
                             <Input
                               type="number"
                               min="0"
@@ -276,8 +278,8 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
                               className="pl-7"
                               {...field}
                             />
-                          </div>
-                        </FormControl>
+                          </FormControl>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -296,6 +298,7 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
                   size="icon"
                   className="text-destructive"
                   onClick={() => remove(index)}
+                  aria-label={`Remove purchase order item ${index + 1}`}
                 >
                   <Trash2 className="size-4" />
                 </Button>

@@ -27,3 +27,12 @@ owns the patient context:
   ward workflow surfaces.
 - MAR, vitals, handoff, alerts, and treatment-sheet state are backend-authoritative.
 - Realtime/task updates must use authorized facility/ward/patient subscriptions.
+
+## Medication outcome support
+
+The current Rust V2 MAR write endpoint records administered doses only. Nursing
+and dashboard adapters reject explicit held, missed, refused, or other outcomes
+before sending a write; create-and-administer validates this before scheduling a
+dose. The compatibility administration dialog offers only the given-dose action
+in Rust V2 and directs other outcomes and observations to a nursing note. A
+non-administration MAR outcome endpoint is not implemented in this phase.

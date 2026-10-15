@@ -11,3 +11,8 @@ Scope: role dashboard cards, widgets, charts, and urgent banners.
   clinical scans.
 - Heavy widgets and charts should be deferred.
 - Widget telemetry must remain aggregate and PHI-safe.
+- CriticalAlertsMonitor uses real scoped nurse alert/overdue-medication sources.
+  Rust doctor/admin dashboard payloads do not contain an urgent-alert aggregate,
+  so their ineffective background dashboard polls are disabled. Legacy monitoring
+  remains supported. Future Rust doctor/admin monitoring requires an explicitly
+  permission-scoped alert aggregation source; an empty snapshot is not all-clear.

@@ -900,13 +900,13 @@ function RosterBuilderControls({
           </div>
 
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={goToPreviousPeriod}>
+            <Button variant="ghost" size="icon" onClick={goToPreviousPeriod} aria-label="Previous roster period">
               <ChevronLeft className="size-4" />
             </Button>
             <span className="font-heading font-medium w-36 text-center">
               {format(periodDate, 'MMMM yyyy')}
             </span>
-            <Button variant="ghost" size="icon" onClick={goToNextPeriod}>
+            <Button variant="ghost" size="icon" onClick={goToNextPeriod} aria-label="Next roster period">
               <ChevronRight className="size-4" />
             </Button>
           </div>

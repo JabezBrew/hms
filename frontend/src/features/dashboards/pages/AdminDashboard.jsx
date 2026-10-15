@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   useAdminDashboardLiveUpdates,
   useAdminDashboardV2Capacity,
@@ -52,6 +53,14 @@ const STATUS_CLASSES = {
   normal: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
   warning: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
   critical: 'text-rose-500 bg-rose-500/10 border-rose-500/20',
+  details: 'text-muted-foreground bg-muted/50 border-border',
+  unavailable: 'text-muted-foreground bg-muted/50 border-border',
+};
+
+const SNAPSHOT_METRICS = {
+  active_patients: { label: 'Active Patients', subvalue: 'Active patient records', icon: Users },
+  waiting_visits: { label: 'Waiting Visits', subvalue: 'Waiting and called visits', icon: Calendar },
+  open_invoices: { label: 'Open Invoices', subvalue: 'Issued and partially paid invoices', icon: ClipboardList },
 };
 
 function formatTime(value) {
@@ -78,7 +87,7 @@ function formatRatio(filled, required) {
 }
 
 function statusBadge(status) {
-  const label = String(status || 'normal').toUpperCase();
+  const label = status === 'details' ? 'DETAILS ON DEMAND' : String(status || 'normal').toUpperCase();
   return (
     <span
       className={cn(
@@ -107,6 +116,7 @@ function MetricCard({ icon: Icon, label, value, subvalue, status = 'normal' }) {
               status === 'critical' && 'border-rose-500/30 bg-rose-500/10 text-rose-500',
               status === 'warning' && 'border-amber-500/30 bg-amber-500/10 text-amber-500',
               status === 'normal' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
+              status === 'neutral' && 'border-primary/20 bg-primary/5 text-primary',
             )}
           >
             <Icon className="size-4" />
@@ -190,6 +200,7 @@ function SectionPanel({
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const isRustMode = isRustV2ApiMode();
   const [window, setWindow] = useState('today');
   const [expanded, setExpanded] = useState({
     capacity: false,
@@ -233,14 +244,14 @@ export default function AdminDashboard() {
   const workforceQuery = useAdminDashboardV2Workforce(
     { window },
     {
-      enabled: dashboardSectionQueriesEnabled && workforceSectionEnabled && expanded.workforce,
+      enabled: !isRustMode && dashboardSectionQueriesEnabled && workforceSectionEnabled && expanded.workforce,
     },
   );
 
   const complianceQuery = useAdminDashboardV2Compliance(
     { window },
     {
-      enabled: dashboardSectionQueriesEnabled && complianceSectionEnabled && expanded.compliance,
+      enabled: !isRustMode && dashboardSectionQueriesEnabled && complianceSectionEnabled && expanded.compliance,
     },
   );
 
@@ -276,15 +287,26 @@ export default function AdminDashboard() {
     if (expanded.capacity && capacitySectionEnabled) {
       capacityQuery.refetch();
     }
-    if (expanded.workforce && workforceSectionEnabled) {
+    if (!isRustMode && expanded.workforce && workforceSectionEnabled) {
       workforceQuery.refetch();
     }
-    if (expanded.compliance && complianceSectionEnabled) {
+    if (!isRustMode && expanded.compliance && complianceSectionEnabled) {
       complianceQuery.refetch();
     }
   };
 
   const metricCards = useMemo(() => {
+    if (isRustMode) {
+      return (dashboardData.metrics || []).flatMap((metric) => {
+        const definition = SNAPSHOT_METRICS[metric.key];
+        const value = metric.value === null || metric.value === undefined || metric.value === ''
+          ? NaN
+          : Number(metric.value);
+        return definition && Number.isFinite(value)
+          ? [{ ...definition, value: String(value), status: 'neutral' }]
+          : [];
+      });
+    }
     const occupancy = kpis.occupancy || {};
     const admissions = kpis.admissions_today || {};
     const discharges = kpis.discharges_today || {};
@@ -342,7 +364,7 @@ export default function AdminDashboard() {
         features: DASHBOARD_FEATURES.audit,
       },
     ].filter((metric) => moduleGate.canUse(metric.features));
-  }, [kpis, moduleGate]);
+  }, [dashboardData.metrics, isRustMode, kpis, moduleGate]);
 
   if (!facilityCode) {
     return (
@@ -432,6 +454,7 @@ export default function AdminDashboard() {
             description="Operational command center for capacity, workforce, and compliance"
             actions={(
               <AdminDashboardActions
+                showWindow={!isRustMode}
                 window={window}
                 onWindowChange={setWindow}
                 onOpenSettings={() => navigate('/admin/settings')}
@@ -452,11 +475,15 @@ export default function AdminDashboard() {
             <MetricCardsGrid
               loading={summaryQuery.isLoading}
               metricCards={metricCards}
+              awaitingInitialSnapshot={isRustMode && generatedAt === null}
+              refreshQueued={dashboardData?.meta?.refresh_queued}
+              isRustMode={isRustMode}
             />
             <AlertsAndQueue
               alerts={alerts}
               actionQueue={actionQueue}
               onNavigate={navigate}
+              available={!isRustMode}
             />
             <AdminDetailSections
               capacitySectionEnabled={capacitySectionEnabled}
@@ -468,6 +495,7 @@ export default function AdminDashboard() {
               capacityQuery={capacityQuery}
               workforceQuery={workforceQuery}
               complianceQuery={complianceQuery}
+              isRustMode={isRustMode}
             />
           </div>
         ) : (
@@ -479,6 +507,7 @@ export default function AdminDashboard() {
 }
 
 function AdminDashboardActions({
+  showWindow,
   window,
   onWindowChange,
   onOpenSettings,
@@ -487,7 +516,7 @@ function AdminDashboardActions({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select value={window} onValueChange={onWindowChange}>
+      {showWindow ? <Select value={window} onValueChange={onWindowChange}>
         <SelectTrigger className="w-[170px]">
           <SelectValue placeholder="Select window" />
         </SelectTrigger>
@@ -498,7 +527,7 @@ function AdminDashboardActions({
             </SelectItem>
           ))}
         </SelectContent>
-      </Select>
+      </Select> : null}
       <Button variant="outline" size="sm" onClick={onOpenSettings}>
         <Settings className="mr-2 size-4" />
         Settings
@@ -554,7 +583,7 @@ function OperationalPostureCard({ generatedAt, isLiveConnected, isStale }) {
   );
 }
 
-function MetricCardsGrid({ loading, metricCards }) {
+function MetricCardsGrid({ loading, metricCards, awaitingInitialSnapshot, refreshQueued, isRustMode }) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -563,6 +592,25 @@ function MetricCardsGrid({ loading, metricCards }) {
         ))}
       </div>
     );
+  }
+
+  if (awaitingInitialSnapshot) {
+    return (
+      <Card className="py-5" role="status">
+        <CardContent className="space-y-2 px-5">
+          <p className="font-heading text-base">Preparing operational summary</p>
+          <p className="text-sm text-muted-foreground">
+            {refreshQueued
+              ? 'The first facility summary has been requested. This page checks for updates automatically.'
+              : 'Waiting for the first facility summary. Refresh to check for an update.'}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isRustMode && metricCards.length === 0) {
+    return <UnavailableSummary title="No summary metrics available" description="No operational summary metrics are available for your current access." />;
   }
 
   return (
@@ -581,7 +629,26 @@ function MetricCardsGrid({ loading, metricCards }) {
   );
 }
 
-function AlertsAndQueue({ alerts, actionQueue, onNavigate }) {
+function UnavailableSummary({ title, description }) {
+  return (
+    <Card className="gap-3 py-4">
+      <CardHeader className="px-4 py-0">
+        <CardTitle className="font-heading text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="px-4 text-sm text-muted-foreground">{description}</CardContent>
+    </Card>
+  );
+}
+
+function AlertsAndQueue({ alerts, actionQueue, onNavigate, available = true }) {
+  if (!available) {
+    return (
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.8fr_1fr]">
+        <UnavailableSummary title="Top Alerts" description="Alert summary unavailable. Review alerts in the relevant clinical workflows." />
+        <UnavailableSummary title="Action Queue" description="Intervention summary unavailable. Review pending work in the relevant clinical workflows." />
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.8fr_1fr]">
       <TopAlertsCard alerts={alerts} onNavigate={onNavigate} />
@@ -675,6 +742,7 @@ function AdminDetailSections({
   capacityQuery,
   workforceQuery,
   complianceQuery,
+  isRustMode,
 }) {
   return (
     <div className="space-y-4">
@@ -699,10 +767,12 @@ function AdminDetailSections({
           summary={sectionSummaries.workforce}
           open={expanded.workforce}
           onToggle={() => setExpanded((current) => ({ ...current, workforce: !current.workforce }))}
-          loading={workforceQuery.isLoading}
-          error={workforceQuery.error}
+          loading={!isRustMode && workforceQuery.isLoading}
+          error={!isRustMode && workforceQuery.error}
         >
-          <WorkforceSectionDetails data={workforceQuery.data} />
+          {isRustMode ? (
+            <p className="text-sm text-muted-foreground">Workforce summary unavailable. Review staffing and duty rosters for current coverage.</p>
+          ) : <WorkforceSectionDetails data={workforceQuery.data} />}
         </SectionPanel>
       ) : null}
 
@@ -713,10 +783,12 @@ function AdminDetailSections({
           summary={sectionSummaries.compliance}
           open={expanded.compliance}
           onToggle={() => setExpanded((current) => ({ ...current, compliance: !current.compliance }))}
-          loading={complianceQuery.isLoading}
-          error={complianceQuery.error}
+          loading={!isRustMode && complianceQuery.isLoading}
+          error={!isRustMode && complianceQuery.error}
         >
-          <ComplianceSectionDetails data={complianceQuery.data} />
+          {isRustMode ? (
+            <p className="text-sm text-muted-foreground">Compliance summary unavailable. Review audit activity and access reviews directly.</p>
+          ) : <ComplianceSectionDetails data={complianceQuery.data} />}
         </SectionPanel>
       ) : null}
     </div>

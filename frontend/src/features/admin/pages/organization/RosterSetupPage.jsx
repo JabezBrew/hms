@@ -505,10 +505,10 @@ function DutyTypeTableRow({ dutyType, index, onEdit, onDelete }) {
         <DutyTypeStatusBadge isActive={dutyType.is_active} />
       </TableCell>
       <TableCell className="text-right">
-        <Button variant="ghost" size="icon" onClick={() => onEdit(dutyType)}>
+        <Button variant="ghost" size="icon" onClick={() => onEdit(dutyType)} aria-label={`Edit duty type: ${dutyType.name}`}>
           <Pencil className="size-4" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => onDelete(dutyType)}>
+        <Button variant="ghost" size="icon" onClick={() => onDelete(dutyType)} aria-label={`Delete duty type: ${dutyType.name}`}>
           <Trash2 className="size-4" />
         </Button>
       </TableCell>
@@ -987,6 +987,7 @@ function ClinicBreakRow({ breakItem, index, breaks, setFormState }) {
         type="button"
         variant="ghost"
         size="icon"
+        aria-label={`Remove break ${index + 1}`}
         onClick={() => {
           setFormState((p) => ({
             ...p,
@@ -1320,10 +1321,10 @@ function RotationRuleCard({ rule, index, getTeamName, getDutyTypeName, onEdit, o
           </div>
           <div className="flex gap-1">
             <DutyTypeStatusBadge isActive={rule.is_active} />
-            <Button variant="ghost" size="icon" onClick={() => onEdit(rule)}>
+            <Button variant="ghost" size="icon" onClick={() => onEdit(rule)} aria-label={`Edit roster rule: ${rule.name}`}>
               <Pencil className="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => onDelete(rule)}>
+            <Button variant="ghost" size="icon" onClick={() => onDelete(rule)} aria-label={`Delete roster rule: ${rule.name}`}>
               <Trash2 className="size-4" />
             </Button>
           </div>
@@ -1616,6 +1617,8 @@ function FixedWeeklyAssignmentCell({ day, team, isSelected, setFormState }) {
   return (
     <button
       type="button"
+      aria-label={`Assign ${team.name} to ${day.label}`}
+      aria-pressed={isSelected}
       onClick={() =>
         setFormState((prev) => {
           const newAssignments = { ...prev.day_assignments };
@@ -1902,13 +1905,14 @@ function ValidationRuleCard({ rule, dutyTypes, getDutyTypeName, onEdit, onDelete
           </p>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => onEdit(rule)}>
+          <Button variant="ghost" size="icon" onClick={() => onEdit(rule)} aria-label={`Edit roster rule: ${rule.name}`}>
             <Pencil className="size-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => onDelete(rule)}
+            aria-label={`Delete roster rule: ${rule.name}`}
             disabled={isDeleting}
           >
             <Trash2 className="size-4" />
@@ -2236,6 +2240,7 @@ function DayPairRow({ pair, index, pairs, setFormState }) {
       <Button
         variant="ghost"
         size="icon"
+        aria-label={`Remove day pair ${index + 1}`}
         onClick={() => {
           const newPairs = pairs.filter((_, pairIndex) => pairIndex !== index);
           setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));

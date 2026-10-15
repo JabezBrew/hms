@@ -73,6 +73,11 @@ export HMS_LOAD_EMAIL='owner@hms.local'
 export HMS_LOAD_PASSWORD='<password>'
 ```
 
+Each VU reuses a session when several workflows use identical credentials;
+session keys remain static role labels. This keeps shared-account smoke runs
+from creating one login per workflow and triggering account rate limits.
+Distinct account or password combinations retain separate sessions.
+
 For realistic role behavior, prefer role-specific credentials:
 
 ```bash
@@ -141,7 +146,7 @@ k6 run \
 
 | Profile | Shape | Use |
 | --- | --- | --- |
-| `smoke` | 5 users for 2 minutes | Verify credentials, routing, and basic metrics. |
+| `smoke` | 30s ramp to 5 users, 2m hold, 30s ramp down | Verify credentials, routing, and basic metrics. |
 | `baseline` | 25 users for 15 minutes | Normal small-clinic concurrency. |
 | `small-site` | 50 users for 30 minutes | Small facility day-load. |
 | `busy-site` | 100 users for 30 minutes | Busy outpatient/inpatient concurrency. |

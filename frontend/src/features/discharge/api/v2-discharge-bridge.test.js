@@ -106,18 +106,18 @@ describe('Rust V2 discharge bridge', () => {
         patient_name: 'Ama Mensah',
         medical_record_number: 'MRN-001',
         ward_name: 'Medical Ward',
-        status: 'ready_for_finalization',
+        status: 'awaiting_clearance',
         medical_ready_at: '2026-05-12T09:00:00Z',
         blockers: [
           expect.objectContaining({
             task_type: 'discharge_summary',
             status: 'completed',
-            workflow_path: '/patients/patient-1?action=add_note&note_type=discharge_summary',
+            workflow_path: '/patients/patient-1/chronicle?action=add_note&note_type=doctor_note&title=Discharge+Summary&admission=admission-1',
           }),
           expect.objectContaining({
             task_type: 'nursing_release',
             status: 'pending',
-            workflow_path: '/ward-board?view=discharge&patient=patient-1&case=discharge-1',
+            workflow_path: '/wards/ward-1/board?view=discharge&patient=patient-1&case=discharge-1',
           }),
           expect.objectContaining({
             task_type: 'billing_clearance',
@@ -211,7 +211,7 @@ describe('Rust V2 discharge bridge', () => {
       id: 'discharge-2',
       admission: 'admission-2',
       patient_name: 'Kojo Mensah',
-      status: 'ready_for_finalization',
+      status: 'awaiting_clearance',
     }));
   });
 
@@ -249,7 +249,7 @@ describe('Rust V2 discharge bridge', () => {
       id: 'discharge-1',
       admission: 'admission-1',
       patient_name: 'Ama Mensah',
-      status: 'ready_for_finalization',
+      status: 'awaiting_clearance',
     }));
   });
 
@@ -374,5 +374,82 @@ describe('Rust V2 discharge bridge', () => {
       'Rust V2 does not expose discharge task operations yet',
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, []])('never infers readiness or a zero balance from missing clearance data', async (blockers) => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'discharge-1', admission_case_id: 'admission-1', patient_id: 'patient-1', status: 'requested', blockers,
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const item = await dischargeApi.getCase('discharge-1');
+    expect(item.status).toBe('awaiting_clearance');
+    expect(item.blockers_available).toBe(false);
+    expect(item.invoice_summary).toBeNull();
+  });
+
+  it('derives ready state only from server clearances and preserves the summary encounter scope', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'discharge-1', admission_case_id: 'admission-1', patient_id: 'patient-1', encounter_id: 'encounter-1',
+      status: 'requested', blockers: [
+        { blocker_type: 'discharge_summary', status: 'completed', blocking: true },
+        { blocker_type: 'nursing_release', status: 'completed', blocking: true },
+        { blocker_type: 'billing_clearance', status: 'overridden', blocking: true },
+      ],
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const item = await dischargeApi.getCase('discharge-1');
+    expect(item.status).toBe('ready_for_finalization');
+    const summary = item.blockers.find((blocker) => blocker.task_type === 'discharge_summary');
+    const target = new URL(summary.workflow_path, 'http://localhost');
+    expect(Object.fromEntries(target.searchParams)).toEqual({
+      action: 'add_note', note_type: 'doctor_note', title: 'Discharge Summary', visit: 'encounter-1', admission: 'admission-1',
+    });
+  });
+
+  it('records nursing release with the exact Rust request shape and AbortSignal', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'discharge-1', patient_id: 'patient-1', status: 'requested',
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await dischargeApi.recordNursingRelease('discharge-1', {
+      education: 'Education documented', instructions: 'Instructions documented', ignored: 'not sent',
+    }, { signal });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/discharges/discharge-1/nursing-release',
+      expect.objectContaining({ method: 'POST', signal, body: JSON.stringify({
+        education: 'Education documented', instructions: 'Instructions documented',
+      }) }),
+    );
+  });
+
+  it('fetches bounded encounter notes and filters summaries using real patient/context metadata', async () => {
+    const base = { id: 'note-1', patient_id: 'patient-1', encounter_id: 'encounter-1', title: 'Discharge Summary', note_type: 'doctor_note' };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [
+      base, { ...base, id: 'note-2', encounter_id: 'other-encounter' },
+      { ...base, id: 'note-3', note_type: 'nursing_note' },
+      { ...base, id: 'note-4', title: 'Other note' },
+    ], page: { has_next: true, next_cursor: 'next-page' } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const result = await dischargeApi.getSummaryNotes({ patientId: 'patient-1', encounterId: 'encounter-1' });
+    expect(result).toEqual({ results: [base], nextCursor: 'next-page' });
+    const target = new URL(globalThis.fetch.mock.calls[0][0]);
+    expect(target.pathname).toBe('/api/v2/patients/patient-1/clinical/notes');
+    expect(Object.fromEntries(target.searchParams)).toEqual({ encounter_id: 'encounter-1', limit: '25' });
+  });
+
+  it.each(['version', 'body', 'patient_id', 'encounter_id'])('rejects a changed summary %s before creating a reviewed version', async (field) => {
+    const original = { id: 'note-1', patient_id: 'patient-1', encounter_id: 'encounter-1', note_type: 'doctor_note', title: 'Discharge Summary', version: 1, body: 'Reviewed content' };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      ...original, [field]: field === 'version' ? 2 : 'changed',
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(dischargeApi.saveReviewedSummary({ note: original, patientId: 'patient-1', encounterId: 'encounter-1' })).rejects.toThrow();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch.mock.calls[0][1].method).toBe('GET');
+  });
+
+  it('saves only the full body explicitly reviewed by the clinician through the existing version endpoint', async () => {
+    const original = { id: 'note-1', patient_id: 'patient-1', encounter_id: 'encounter-1', note_type: 'doctor_note', title: 'Discharge Summary', version: 1, body: '{"plan":"Reviewed content"}' };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: original }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { note_id: 'note-1', version: 2, body: original.body } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await dischargeApi.saveReviewedSummary({ note: original, patientId: 'patient-1', encounterId: 'encounter-1' });
+    expect(globalThis.fetch.mock.calls[1][0]).toBe('http://localhost:8080/api/v2/clinical/notes/note-1/versions');
+    expect(globalThis.fetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST', body: JSON.stringify({ body: original.body }) }));
   });
 });
