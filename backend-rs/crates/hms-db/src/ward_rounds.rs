@@ -759,28 +759,23 @@ async fn commit_prescription_action(
 ) -> anyhow::Result<CreatedArtifact> {
     let payload: WardRoundPrescriptionPayload = serde_json::from_value(action.payload.clone())?;
     let (resource_id, title) = if let Some(prescription_id) = payload.prescription_id {
-        let row = sqlx::query_as::<_, PrescriptionArtifactRow>(
-            r#"
-            UPDATE prescriptions
-            SET medication_name = COALESCE($4, medication_name),
-                dose = COALESCE($5, dose),
-                frequency = COALESCE($6, frequency),
-                status = COALESCE($7, status),
-                updated_at = now()
-            WHERE facility_id = $1
-              AND patient_id = $2
-              AND id = $3
-            RETURNING id, medication_name
-            "#,
+        let row = crate::clinical::update_prescription_in_transaction(
+            transaction,
+            facility_id,
+            prescription_id,
+            Some(patient_id),
+            hms_domain::clinical::UpdatePrescriptionRequest {
+                medication_name: payload.medication_name,
+                dose: payload.dose,
+                frequency: payload.frequency,
+                status: payload.status,
+                route: None,
+                inventory_item_id: None,
+                start_date: None,
+                duration_days: None,
+                first_dose_at: None,
+            },
         )
-        .bind(facility_id)
-        .bind(patient_id)
-        .bind(prescription_id)
-        .bind(payload.medication_name)
-        .bind(payload.dose)
-        .bind(payload.frequency)
-        .bind(payload.status.map(codec::encode).transpose()?)
-        .fetch_optional(&mut **transaction)
         .await?
         .context("ward_round_prescription_not_found")?;
         (row.id, row.medication_name)

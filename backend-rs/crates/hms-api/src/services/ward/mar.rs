@@ -136,8 +136,8 @@ impl MarService {
         .await
         .map_err(|_| {
             ApiError::conflict(
-                "med_admin_update_failed",
-                "Medication administration could not be updated.",
+                "med_admin_not_actionable",
+                "This dose can no longer be administered. Reload the medication schedule and check the current prescription.",
             )
         })?
         .ok_or_else(|| {

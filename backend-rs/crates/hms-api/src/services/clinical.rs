@@ -886,11 +886,18 @@ impl ClinicalService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "prescription_create_failed",
-                "Prescription could not be saved.",
-            )
+        .map_err(|error| {
+            if error.to_string() == "prescription_inventory_item_invalid" {
+                validation_error(
+                    "inventory_item_id",
+                    "Select an inventory item from this facility.",
+                )
+            } else {
+                ApiError::conflict(
+                    "prescription_create_failed",
+                    "Prescription could not be saved.",
+                )
+            }
         })?;
 
         self.state.invalidate_patient_chronicle_cache();
@@ -946,17 +953,24 @@ impl ClinicalService {
         let prescription =
             hms_db::clinical::update_prescription(self.pool(), self.facility_id(), id, payload)
                 .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "prescription_update_failed",
-                        "Prescription could not be updated.",
-                    )
+                .map_err(|error| {
+                    if error.to_string() == "prescription_inventory_item_invalid" {
+                        validation_error("inventory_item_id", "Select an inventory item from this facility.")
+                    } else if error.to_string() == "prescription_regimen_locked" {
+                        ApiError::conflict("prescription_regimen_locked", "This prescription already has a medication schedule. Stop it and create a replacement prescription to change the regimen.")
+                    } else if error.to_string() == "prescription_course_closed" {
+                        ApiError::conflict("prescription_course_closed", "A stopped or completed medication schedule cannot be resumed. Create a replacement prescription.")
+                    } else {
+                        ApiError::conflict("prescription_update_failed", "Prescription could not be updated.")
+                    }
                 })?
                 .ok_or_else(|| {
                     ApiError::not_found("prescription_not_found", "Prescription was not found.")
                 })?;
 
         self.state.invalidate_patient_chronicle_cache();
+        self.state.invalidate_ward_board_cache();
+        self.state.invalidate_pharmacy_dispense_cache();
         Ok(object(prescription))
     }
 
@@ -983,10 +997,6 @@ impl ClinicalService {
             ));
         }
         let _patient = load_patient_for_access(&self.state, ctx, admission.patient_id).await?;
-        let first_dose_at = payload
-            .first_dose_at
-            .or(prescription.first_dose_at)
-            .unwrap_or_else(Utc::now);
         let result = hms_db::pharmacy::generate_mar_for_prescription(
             self.pool(),
             hms_db::pharmacy::GenerateMarCommand {
@@ -994,7 +1004,7 @@ impl ClinicalService {
                 prescription_id: id,
                 admission_case_id: payload.admission_case_id,
                 days: payload.days.unwrap_or(7).clamp(1, 31),
-                first_dose_at,
+                first_dose_at: payload.first_dose_at,
                 actor_user_id: ctx.user_id,
             },
         )
@@ -1006,11 +1016,15 @@ impl ClinicalService {
                     "frequency",
                     "Frequency is not supported for MAR generation.",
                 )
+            } else if message == "prescription_inventory_item_invalid" {
+                validation_error("inventory_item_id", "Select an inventory item from this facility.")
             } else if message.contains("prescription_not_active") {
                 ApiError::bad_request(
                     "prescription_not_active",
                     "MAR can only be generated for active prescriptions.",
                 )
+            } else if matches!(message.as_str(), "first_dose_before_prescription_start" | "prescription_course_ended" | "prescription_schedule_invalid") {
+                ApiError::bad_request("prescription_schedule_invalid", "The requested medication schedule is outside the prescribed start and duration.")
             } else if message.contains("admission_not_active") {
                 ApiError::bad_request(
                     "admission_not_active",

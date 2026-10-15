@@ -115,7 +115,9 @@ impl PharmacyService {
         .await
         .map_err(|error| {
             let message = error.to_string();
-            if message.contains("controlled_item_requires_controlled_workflow") {
+            if matches!(message.as_str(), "prescription_not_active" | "prescription_regimen_stale") {
+                ApiError::conflict("prescription_not_actionable", "This prescription can no longer be dispensed. Reload the queue and check the current medication plan.")
+            } else if message.contains("controlled_item_requires_controlled_workflow") {
                 ApiError::conflict(
                     "controlled_item_requires_controlled_workflow",
                     "Controlled medications require the controlled-substance workflow.",

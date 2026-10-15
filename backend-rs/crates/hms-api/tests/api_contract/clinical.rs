@@ -499,6 +499,98 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .iter()
         .all(|entry| entry["is_dispensed"] == true));
 
+    let regimen_change = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/prescriptions/{prescription_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"dose": "1000 mg"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(regimen_change.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        json_body(regimen_change).await["error"]["code"],
+        "prescription_regimen_locked"
+    );
+    let dose_id = dispensed_mar_body["data"][0]["id"]
+        .as_str()
+        .expect("dose id exists");
+    let next_dose_id = dispensed_mar_body["data"][1]["id"]
+        .as_str()
+        .expect("next dose id exists");
+    let administer_uri = format!("/api/v2/nursing/medication-administrations/{dose_id}/administer");
+    for expected in [StatusCode::OK, StatusCode::CONFLICT] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(&administer_uri)
+                    .header(AUTHORIZATION, auth_header.clone())
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+    }
+    let hold = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/prescriptions/{prescription_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"status":"on_hold"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(hold.status(), StatusCode::OK);
+    let blocked = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/nursing/medication-administrations/{next_dose_id}/administer"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), StatusCode::CONFLICT);
+    let held_mar = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/nursing/medication-administrations?limit=100")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let held_body = json_body(held_mar).await;
+    let held = held_body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == next_dose_id)
+        .expect("held dose remains visible");
+    assert_eq!(held["status"], "held");
+
     let prn_response = app
         .clone()
         .oneshot(

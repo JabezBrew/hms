@@ -1115,6 +1115,19 @@ Medication fulfillment is prescription-led:
 - MAR generation inserts scheduled `medication_administrations`
   idempotently for the requested window and does not rewrite administered or
   dispensed rows.
+- Source updates (including ward-round commits), MAR generation, dose
+  administration, and dispensing serialize on the prescription row before
+  locking generated work. Generated regimen and timing snapshots must still
+  match an active source before administration or dispensing.
+- After a course exists, changing its drug, dose, route, frequency, stock link,
+  or timing requires a replacement prescription. An unchanged PATCH is allowed;
+  regimen changes return 409. Historical administration and supply remain intact.
+- Holding a prescription holds only scheduled doses. Resume restores only
+  future doses held by that source, retaining independently held and elapsed
+  doses. Stopped/completed courses cannot resume; pending supply is retired.
+- An omitted first dose reuses an existing course anchor on retry. A future
+  prescribed start date defaults to UTC midnight; generation must respect the
+  source start and finite duration. Timing arithmetic is checked for overflow.
 - `prn` creates/keeps the clinical prescription/course context but does not
   create scheduled MAR rows or a pharmacy fulfillment obligation.
 - Pharmacy sees `pharmacy_fulfillments`: patient, prescription/course,

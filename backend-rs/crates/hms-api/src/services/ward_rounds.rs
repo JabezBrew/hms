@@ -334,6 +334,8 @@ impl WardRoundsService {
         .ok_or_else(|| ApiError::not_found("ward_round_not_found", "Ward Round was not found."))?;
         let round = self.with_permissions(round, &decision, ctx);
         self.state.invalidate_patient_chronicle_cache();
+        self.state.invalidate_ward_board_cache();
+        self.state.invalidate_pharmacy_dispense_cache();
         Ok(object(CommitWardRoundResponse {
             created_artifacts: round.artifacts.clone(),
             ward_round: round,
@@ -510,6 +512,11 @@ impl AppState {
 }
 
 fn map_commit_error(error: anyhow::Error) -> ApiError {
+    match error.root_cause().to_string().as_str() {
+        "prescription_regimen_locked" => return ApiError::conflict("prescription_regimen_locked", "A medication schedule already exists. Stop this prescription and create a replacement to change the regimen."),
+        "prescription_course_closed" => return ApiError::conflict("prescription_course_closed", "A stopped or completed medication schedule cannot be resumed. Create a replacement prescription."),
+        _ => {}
+    }
     let message = error.to_string();
     if message.contains("ward_round_stale_version") {
         return ApiError::conflict(

@@ -150,28 +150,63 @@ pub async fn administer_medication(
     actor_user_id: Uuid,
     witness_user_id: Option<Uuid>,
 ) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
-    observe_db_query(
+    let mut transaction = pool.begin().await?;
+    let source = sqlx::query_as::<_, (Option<Uuid>,)>(
+        "SELECT prescription_id FROM medication_administrations WHERE facility_id = $1 AND id = $2",
+    )
+    .bind(facility_id)
+    .bind(medication_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let Some((prescription_id,)) = source else {
+        return Ok(None);
+    };
+    if let Some(prescription_id) = prescription_id {
+        let prescription =
+            crate::clinical::lock_prescription(&mut transaction, facility_id, prescription_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("prescription_not_found"))?;
+        if prescription.status != hms_domain::clinical::PrescriptionStatus::Active {
+            anyhow::bail!("prescription_not_active");
+        }
+    }
+    let result = observe_db_query(
         "ward.mar.medication_administrations.administer",
         sqlx::query(
             r#"
-        UPDATE medication_administrations
-        SET status = $1,
-            administered_at = COALESCE(administered_at, now()),
-            administered_by_user_id = $2,
-            witness_user_id = $3,
-            updated_at = now()
-        WHERE facility_id = $4 AND id = $5
+        UPDATE medication_administrations m
+        SET status = 'administered', administered_at = now(),
+            administered_by_user_id = $1, witness_user_id = $2, updated_at = now()
+        WHERE m.facility_id = $3 AND m.id = $4 AND m.status = 'scheduled'
+          AND (m.prescription_id IS NULL OR EXISTS (
+            SELECT 1 FROM prescriptions p
+            JOIN medication_courses c ON c.id = m.medication_course_id
+                AND c.prescription_id = p.id AND c.facility_id = p.facility_id
+                AND c.patient_id = p.patient_id AND c.admission_case_id = m.admission_case_id
+            WHERE p.id = m.prescription_id AND p.facility_id = m.facility_id
+                AND p.patient_id = m.patient_id AND p.status = 'active' AND c.status = 'active'
+                AND m.medication_name = p.medication_name AND m.dose = p.dose
+                AND m.route = p.route AND m.frequency = p.frequency
+                AND c.medication_name = p.medication_name AND c.dose = p.dose
+                AND c.route = p.route AND c.frequency = p.frequency
+                AND c.inventory_item_id IS NOT DISTINCT FROM p.inventory_item_id
+                AND c.prescription_start_date IS NOT DISTINCT FROM p.start_date
+                AND c.prescription_duration_days IS NOT DISTINCT FROM p.duration_days
+                AND c.prescription_first_dose_at IS NOT DISTINCT FROM p.first_dose_at
+          ))
         "#,
         )
-        .bind(codec::encode(MedicationAdministrationStatus::Administered)?)
         .bind(actor_user_id)
         .bind(witness_user_id)
         .bind(facility_id)
         .bind(medication_id)
-        .execute(pool),
+        .execute(&mut *transaction),
     )
     .await?;
-
+    if result.rows_affected() != 1 {
+        anyhow::bail!("medication_not_scheduled_or_prescription_stale");
+    }
+    transaction.commit().await?;
     optional_medication_by_id(pool, facility_id, medication_id).await
 }
 
@@ -272,9 +307,34 @@ fn medication_query() -> QueryBuilder<'static, Postgres> {
                medication_administrations.administered_at,
                medication_administrations.is_dispensed,
                medication_administrations.dispensed_at,
-               medication_administrations.status
+               CASE WHEN medication_administrations.status = 'scheduled'
+                    AND medication_administrations.prescription_id IS NOT NULL
+                    AND (prescriptions.id IS NULL OR prescriptions.status <> 'active'
+                        OR medication_courses.id IS NULL OR medication_courses.status <> 'active'
+                        OR medication_administrations.medication_name IS DISTINCT FROM prescriptions.medication_name
+                        OR medication_administrations.dose IS DISTINCT FROM prescriptions.dose
+                        OR medication_administrations.route IS DISTINCT FROM prescriptions.route
+                        OR medication_administrations.frequency IS DISTINCT FROM prescriptions.frequency
+                        OR medication_courses.medication_name IS DISTINCT FROM prescriptions.medication_name
+                        OR medication_courses.dose IS DISTINCT FROM prescriptions.dose
+                        OR medication_courses.route IS DISTINCT FROM prescriptions.route
+                        OR medication_courses.frequency IS DISTINCT FROM prescriptions.frequency
+                        OR medication_courses.inventory_item_id IS DISTINCT FROM prescriptions.inventory_item_id
+                        OR medication_courses.prescription_start_date IS DISTINCT FROM prescriptions.start_date
+                        OR medication_courses.prescription_duration_days IS DISTINCT FROM prescriptions.duration_days
+                        OR medication_courses.prescription_first_dose_at IS DISTINCT FROM prescriptions.first_dose_at)
+                    THEN 'held' ELSE medication_administrations.status END AS status
         FROM medication_administrations
         JOIN patients ON patients.id = medication_administrations.patient_id
+            AND patients.facility_id = medication_administrations.facility_id
+        LEFT JOIN prescriptions ON prescriptions.id = medication_administrations.prescription_id
+            AND prescriptions.facility_id = medication_administrations.facility_id
+            AND prescriptions.patient_id = medication_administrations.patient_id
+        LEFT JOIN medication_courses ON medication_courses.id = medication_administrations.medication_course_id
+            AND medication_courses.facility_id = medication_administrations.facility_id
+            AND medication_courses.patient_id = medication_administrations.patient_id
+            AND medication_courses.admission_case_id = medication_administrations.admission_case_id
+            AND medication_courses.prescription_id = medication_administrations.prescription_id
         "#,
     )
 }
