@@ -591,6 +591,59 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .expect("held dose remains visible");
     assert_eq!(held["status"], "held");
 
+    for (status, is_active) in [("on_hold", false), ("active", true), ("stopped", false)] {
+        if status != "on_hold" {
+            let update = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::PATCH)
+                        .uri(format!("/api/v2/clinical/prescriptions/{prescription_id}"))
+                        .header(AUTHORIZATION, auth_header.clone())
+                        .header("content-type", "application/json")
+                        .body(Body::from(json!({"status": status}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(update.status(), StatusCode::OK);
+        }
+        let startup = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/api/v2/patients/{patient_id}/chronicle?limit=100"))
+                    .header(AUTHORIZATION, auth_header.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(startup.status(), StatusCode::OK);
+        let startup = json_body(startup).await;
+        let active = startup["data"]["active_medications"].as_array().unwrap();
+        assert_eq!(
+            active.iter().any(|rx| rx["id"] == prescription_id),
+            is_active
+        );
+        assert!(active.iter().all(|rx| rx["status"] == "active"));
+        assert_eq!(
+            startup["data"]["summaries"]["medications"],
+            startup["data"]["active_medications"]
+        );
+        assert!(startup["data"]["prescriptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|rx| rx["id"] == prescription_id && rx["status"] == status));
+        assert!(startup["data"]["timeline"]["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["id"] == prescription_id && entry["data"]["status"] == status));
+    }
+
     let prn_response = app
         .clone()
         .oneshot(

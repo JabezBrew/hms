@@ -40,6 +40,25 @@ Release status: code accepted; staging deployment pending. This is not productio
   ephemeral keys and rejects invalid claims and signatures.
 - Committed-source deployment accepts Git worktrees while rejecting local
   archive attributes in either the worktree or shared Git metadata.
+- Medication lifecycle writes share a prescription lock across Chronicle,
+  ward rounds, MAR, and dispensing. Hold/resume preserves actual history and
+  restores only eligible future source-held doses; stopped courses and stale
+  regimen/timing snapshots fail closed. Generated regimens require replacement
+  prescriptions for changes. Migration backfill retires unsafe legacy pending
+  work while preserving administration and dispensing evidence.
+- Prescription forms distinguish saved prescriptions from failed/unconfirmed
+  MAR generation, preventing duplicate create retries. Outpatient prescriptions
+  default to no MAR; supported duration persists, unsupported V2 renewal/text
+  controls are removed, and patient/MAR/pharmacy caches refresh correctly.
+- Browser testing found a stale-status cache mismatch after a successful stop.
+  Mutations now invalidate the actual patient-scoped Rust Chronicle startup and
+  timeline keys, including seeded multi-page views. Old in-flight page reads
+  cannot restore stale medication status after the refreshed startup arrives.
+- Active medication summaries now use a separate bounded Active-only slice
+  inside the existing startup SQL query. Held/stopped/completed orders stay in
+  history and timeline; newer ended orders cannot hide older active orders.
+  A 5,000-order regression confirms the existing status index is used without
+  a sequential scan, preserving the Chronicle request's three-query budget.
 
 ## Independent review
 
@@ -55,11 +74,16 @@ No additional actionable regression remained in the reviewed auth, worker,
 shell, landmark, or theme changes. This is a scoped review, not certification
 of every existing HMS feature.
 
+A further medication review closed source-writer bypasses, generation races,
+retry-count drift, zero-work fulfillment queues, future-start/duration errors,
+legacy timing drift, and foreign-facility stock links. The frozen medication
+patch passed 32 focused backend and 47 frontend checks before full acceptance.
+
 ## Verification
 
-The final backend run passed 241 tests with no failures or ignored tests.
+The final backend run passed 252 tests with no failures or ignored tests.
 Generated OpenAPI matches the tracked HTTP contract byte for byte.
-The final frontend run passed 1,202 tests in 202 files. Local gates include
+The final frontend run passed 1,230 tests in 203 files. Local gates include
 formatting, lint, production build,
 generated API bridge, bundle budget, React Doctor, deployment tests, and
 database-backed contract tests against Docker PostgreSQL/Redis.
@@ -82,6 +106,10 @@ API. The migration is additive and retains active failure budgets. An older
 binary can run with the additional table, but it does not provide the new
 atomic admission guarantee. Preserve a private database backup, previous
 source tree, image tags, and build identity before replacing the test stack.
+Also apply `202610150002_prescription_medication_lifecycle.sql` before the
+medication update. It adds source-hold and timing provenance and conservatively
+retires unsafe pending work; this is a data repair as well as an additive schema
+change. Retain the private database backup for rollback.
 
 The current destination is the existing Oracle/Cloudflare synthetic testing
 deployment described in `ops/free-testing/README.md`. Do not restore the older
@@ -101,6 +129,11 @@ no workflow YAML is present. Deploy only the reviewed committed tree.
 - Template icon/mode/estimated-step preferences lack complete V2 persistence;
   those controls are hidden in V2. JSON display metadata must never be treated
   as authorization.
+- Prescription-to-stock selection needs a bounded clinical medication-catalog
+  API and an explicit picker. The existing inventory endpoint requires separate
+  inventory access and exposes mixed stock types; no name-to-stock mapping or
+  permission widening was added. Free-text prescriptions without a stock link
+  cannot be dispensed through the stock-bound fulfillment queue.
 - The Rust OSV rescan covers 337 public crate versions. Its remaining match,
   [RSA timing leakage](https://rustsec.org/advisories/RUSTSEC-2023-0071.html), is
   an unpatched lockfile dependency excluded from both ARM64 and x86-64 Linux
@@ -112,23 +145,31 @@ no workflow YAML is present. Deploy only the reviewed committed tree.
 
 ## Final acceptance and release
 
-- Rust: 241 tests pass; formatting and generated OpenAPI comparison pass.
-- Frontend: 1,202 tests pass; lint has zero errors and 71 existing warnings;
+- Rust: 252 tests pass; formatting and generated OpenAPI comparison pass.
+- Frontend: 1,230 tests pass; lint has zero errors and 71 existing warnings;
   production build, generated-client check, and every bundle budget pass.
-- React Doctor: 82/100, zero changed-code diagnostics. The score is not an
-  accessibility or security certification.
+- React Doctor: the initial interface diff scored 82/100 with zero changed-code
+  diagnostics; the final medication/cache diff scored 91/100 with zero errors
+  and two maintainability warnings (one existing large component and the hook's
+  added control-flow complexity). These are different diff scopes, not a
+  project-wide score improvement or accessibility/security certification.
 - Dependencies: npm reports zero advisories; Rust remaining inactive RSA
   advisory is described above.
-- Ops: 82 tests pass. The additional clean-checkout-only dry-run test must be
-  run from an isolated clean checkout because unrelated local work is retained.
+- Ops: all 84 tests pass from an isolated clean worktree, including the real
+  Git-worktree/archive-attribute regression. Unrelated local work is retained.
 - Browser: the final production build reaches Review without creating, saves
   only on explicit Create, and retains the description after reload. Laptop
   and mobile navigation, registry, Chronicle, settings, and appearance checks
   use synthetic data.
+- Medication browser replay uses the production frontend and real Rust API:
+  one prescription is created, duration persists, and hold/resume/stop update
+  without reload. The active summary counts follow 4 → 5 → 4 → 5 → 4 while
+  stopped entries remain in history. Read-only API checks confirm persisted
+  duration and a single saved prescription.
 - Read-only local load smoke: five virtual users over three minutes, 1,801
   checks passed with no application errors; HTTP p99 6.53 ms and identity p99
   5.71 ms. This is a focused administrator smoke against a native debug API,
   not remote release latency, all-role coverage, or a capacity result.
-- Clean-checkout ops validation, Linux Rust 1.88 image
+- Linux Rust 1.88 image
   compilation, committed release identity, and remote deployment acceptance
   are recorded after release. Rollback anchors are already preserved privately.

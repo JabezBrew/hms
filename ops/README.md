@@ -2,13 +2,15 @@
 
 Status: active
 Owner: Operations
-Last reviewed: 2026-10-13
+Last reviewed: 2026-10-15
 Scope: deployment, rollback, and operations tooling under `ops/`.
 
 ## Current Role
 
-No current live deployment is verified. `free-testing/` is the prepared $0
-hosting path for one tester using synthetic data. GCP documents the earlier
+The Oracle/Cloudflare synthetic testing deployment is verified at
+`staging.thehms.systems`; see `free-testing/README.md` for dated release evidence.
+`free-testing/` is the $0 hosting path for one tester using synthetic data.
+GCP documents the earlier
 staging and performance-validation path. `compose-v2/` is the reusable Rust V2
 single-VM Compose kit used by both the free-testing profile and client VPS
 shapes. Hetzner remains an environment rollback option; the older Hetzner

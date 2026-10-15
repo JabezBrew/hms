@@ -325,6 +325,7 @@ pub struct PatientChronicleStartupRead {
     pub problems: Vec<ProblemListItem>,
     pub allergies: Vec<AllergyListItem>,
     pub prescriptions: Vec<PrescriptionListItem>,
+    pub active_medications: Vec<PrescriptionListItem>,
     pub chart_entries: Vec<ChartEntryListItem>,
     pub lab_results: Vec<ChronicleLabResultRead>,
     pub timeline_entries: Vec<ChronicleTimelineEntryRead>,
@@ -340,6 +341,7 @@ struct ChronicleStartupRow {
     problems: JsonValue,
     allergies: JsonValue,
     prescriptions: JsonValue,
+    active_medications: JsonValue,
     chart_entries: JsonValue,
     lab_results: JsonValue,
     timeline_entries: JsonValue,
@@ -1496,6 +1498,7 @@ pub async fn patient_chronicle_startup_for_patient(
         problems: decode_chronicle_section(row.problems, "problems")?,
         allergies: decode_chronicle_section(row.allergies, "allergies")?,
         prescriptions: decode_chronicle_section(row.prescriptions, "prescriptions")?,
+        active_medications: decode_chronicle_section(row.active_medications, "active_medications")?,
         chart_entries: decode_chronicle_section(row.chart_entries, "chart_entries")?,
         lab_results: decode_chronicle_section(row.lab_results, "lab_results")?,
         timeline_entries: decode_chronicle_section(row.timeline_entries, "timeline_entries")?,
@@ -1945,6 +1948,20 @@ SELECT
       LIMIT $3
     ) prescriptions
   ), '[]'::jsonb) AS prescriptions,
+  -- Filter before limiting so recent historical orders cannot displace older
+  -- active treatment. Held orders remain available in prescriptions/timeline.
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(active_medications) ORDER BY active_medications.prescribed_at DESC, active_medications.id ASC)
+    FROM (
+      SELECT id, patient_id, encounter_id, visit_id, discharge_case_id,
+             medication_name, dose, route, frequency, inventory_item_id,
+             start_date, duration_days, first_dose_at, status, prescribed_at
+      FROM prescriptions
+      WHERE facility_id = $1 AND patient_id = $2 AND status = 'active'
+      ORDER BY prescribed_at DESC, id ASC
+      LIMIT $3
+    ) active_medications
+  ), '[]'::jsonb) AS active_medications,
   COALESCE((
     SELECT jsonb_agg(to_jsonb(chart_entries) ORDER BY chart_entries.measured_at DESC, chart_entries.id DESC)
     FROM (
