@@ -81,7 +81,7 @@ patch passed 32 focused backend and 47 frontend checks before full acceptance.
 
 ## Verification
 
-The final backend run passed 252 tests with no failures or ignored tests.
+The final backend run passed 251 tests with no failures or ignored tests.
 Generated OpenAPI matches the tracked HTTP contract byte for byte.
 The final frontend run passed 1,230 tests in 203 files. Local gates include
 formatting, lint, production build,
@@ -145,7 +145,7 @@ no workflow YAML is present. Deploy only the reviewed committed tree.
 
 ## Final acceptance and release
 
-- Rust: 252 tests pass; formatting and generated OpenAPI comparison pass.
+- Rust: 251 tests pass; formatting and generated OpenAPI comparison pass.
 - Frontend: 1,230 tests pass; lint has zero errors and 71 existing warnings;
   production build, generated-client check, and every bundle budget pass.
 - React Doctor: the initial interface diff scored 82/100 with zero changed-code
