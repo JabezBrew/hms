@@ -78,6 +78,17 @@ cd frontend
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 npm run e2e
 ```
 
+Run the triage, discharge, and emergency-access workflows with a 390 × 844
+Chromium touch viewport:
+
+```bash
+npm run e2e -- --config=playwright.mobile.config.js --workers=1
+```
+
+The mobile configuration inherits the target, credentials, browser executable,
+and failure artifact settings from the normal local environment. The default
+desktop test project is unchanged.
+
 To use an installed Chromium instead of a Playwright browser download:
 
 ```bash

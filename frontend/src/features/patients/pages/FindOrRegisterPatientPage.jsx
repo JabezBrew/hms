@@ -83,7 +83,7 @@ function PatientLookupForm({
   onSubmit,
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
+    <section className="min-w-0 max-w-full self-start rounded-lg border border-border bg-card p-4">
       <form className="space-y-4" onSubmit={onSubmit}>
         <div className="space-y-2">
           <Label htmlFor="patient-code">MRN / Hospital Number</Label>
@@ -182,7 +182,7 @@ function MatchingRecordsPanel({
   const { status } = lookupState;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="min-w-0 max-w-full shrink-0 overflow-hidden rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-base font-semibold">Matching Records</h2>
       </div>
@@ -201,8 +201,8 @@ function MatchingRecordsPanel({
             : 'No matching records. Re-enter identity details to continue new registration.'}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="w-full max-w-full overflow-x-auto overscroll-x-contain" role="region" aria-label="Matching patient records" tabIndex={0}>
+          <table className="w-full min-w-[48rem] text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Patient</th>
@@ -281,9 +281,9 @@ function NewPatientRegistrationPanel({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
+    <div className="min-w-0 max-w-full shrink-0 rounded-lg border border-border bg-card p-4">
+      <div className="mb-4 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold">New Patient Registration</h2>
           <p className="text-sm text-muted-foreground">
             {!hasRequiredDetails
@@ -297,17 +297,18 @@ function NewPatientRegistrationPanel({
           type="button"
           disabled={isBusy || !hasRequiredDetails || !canStartCareContext}
           onClick={onRegister}
+          className="h-auto w-full min-w-0 whitespace-normal py-2 text-center sm:w-auto sm:max-w-[20rem]"
         >
           <UserPlus className="mr-2 size-4" />
           {candidates.length > 0 ? 'Register New Distinct Patient' : 'Continue New Registration'}
         </Button>
       </div>
       {candidates.length > 0 ? (
-        <div className="grid gap-3 md:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[240px_minmax(0,1fr)]">
           <div className="space-y-2">
             <Label htmlFor="duplicate-reason">Reason</Label>
             <Select value={overrideReasonCode} onValueChange={setOverrideReasonCode}>
-              <SelectTrigger id="duplicate-reason">
+              <SelectTrigger id="duplicate-reason" className="w-full min-w-0">
                 <SelectValue placeholder="Select reason" />
               </SelectTrigger>
               <SelectContent>
@@ -321,6 +322,7 @@ function NewPatientRegistrationPanel({
             <Label htmlFor="duplicate-note">Note</Label>
             <Textarea
               id="duplicate-note"
+              className="w-full min-w-0 max-w-full"
               value={overrideReasonNote}
               onChange={(event) => setOverrideReasonNote(event.target.value)}
               rows={3}
@@ -645,7 +647,7 @@ export default function FindOrRegisterPatientPage() {
         )}
       />
 
-      <section className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <section className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-1 items-start gap-6 px-4 py-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <PatientLookupForm
           form={workflow.lookupForm.form}
           lookupDisabled={workflow.lookupForm.lookupDisabled}
@@ -654,7 +656,7 @@ export default function FindOrRegisterPatientPage() {
           onSubmit={workflow.lookupForm.onSubmit}
         />
 
-        <section className="space-y-4">
+        <section className="flex min-w-0 flex-col gap-4">
           <IntakeContextWarnings
             canStartInpatient={workflow.contextWarnings.canStartInpatient}
             canStartOutpatient={workflow.contextWarnings.canStartOutpatient}
