@@ -168,7 +168,7 @@ async fn resolve_request_context(
             .get("x-hms-offsite")
             .and_then(|value| value.to_str().ok()),
     );
-    let reauth = ReauthState::from_authentication_time(access_token_issued_at(&claims)?);
+    let reauth = access_token_reauth(&claims);
     let context = hms_access::RequestContext::new(
         request_id.clone(),
         claims.session_id,
@@ -261,6 +261,11 @@ fn enabled_features(feature_flags: &HashMap<FeatureKey, bool>, user: &AuthUser) 
         .collect()
 }
 
-fn access_token_issued_at(claims: &AccessClaims) -> Result<DateTime<Utc>, ApiError> {
-    DateTime::<Utc>::from_timestamp(claims.iat as i64, 0).ok_or_else(ApiError::unauthorized)
+fn access_token_reauth(claims: &AccessClaims) -> ReauthState {
+    claims
+        .auth_time
+        .and_then(|timestamp| i64::try_from(timestamp).ok())
+        .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
+        .map(ReauthState::from_authentication_time)
+        .unwrap_or_else(|| ReauthState::missing(Utc::now()))
 }

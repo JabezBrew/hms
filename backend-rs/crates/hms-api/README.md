@@ -65,6 +65,28 @@ Service interfaces are the main API-layer seam. New complex workflows belong
 under `src/services/<domain>/` when they coordinate access, domain policy,
 repository calls, events, and response shape.
 
+## Authentication Safety
+
+Access tokens carry the original credential authentication time separately
+from token issue time. Refresh rotation preserves the session family's
+authentication time; it does not renew the fifteen-minute high-risk action
+window. Tokens issued before this field was introduced may still authenticate
+ordinary requests but do not provide fresh reauthentication evidence.
+
+Login atomically reserves the persisted fifteen-minute budget before password
+verification. Failed and in-flight attempts together cannot exceed ten for
+that account across API instances. Successful verification releases its slot;
+failed verification consumes it. Cancelled/abandoned reservations remain
+closed until the original window expires, and stale completion cannot change
+a newer window. Unresolved identities and invalid facility attempts have
+separate atomic budgets. Rejections keep the ordinary generic login failure
+response and never persist raw login input in limiter keys.
+
+Apply migration `202610150001_auth_login_attempt_budgets.sql` before starting
+this API version. It preserves active audited failure budgets and adds a table
+without changing existing tables, so an older API binary can still run against
+the migrated schema during code rollback.
+
 ## Staff Onboarding Delivery
 
 Staff creation and forced password reset generate short-lived setup/reset

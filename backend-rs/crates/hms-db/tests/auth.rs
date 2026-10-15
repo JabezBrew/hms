@@ -54,6 +54,106 @@ async fn insert_test_refresh_session(
 }
 
 #[tokio::test]
+async fn login_admission_reservations_expire_and_cannot_complete_a_new_window() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database initializes");
+    let pool = db.pool();
+    let facility_id = db.facility_id();
+    let user_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
+    let initial_success =
+        hms_db::auth::reserve_login_attempt(pool, facility_id, "auth_user", Some(user_id))
+            .await
+            .expect("initial admission completes")
+            .expect("initial capacity reserves");
+    assert!(
+        hms_db::auth::complete_login_attempt(pool, initial_success, false)
+            .await
+            .expect("initial success completes")
+    );
+    sqlx::query("UPDATE auth_login_attempt_budgets SET window_started_at = now() - interval '14 minutes' WHERE facility_id = $1 AND resource_type = 'auth_user' AND resource_key = $2")
+        .bind(facility_id).bind(user_id.to_string()).execute(pool).await.expect("empty successful window ages");
+    let after_success =
+        hms_db::auth::reserve_login_attempt(pool, facility_id, "auth_user", Some(user_id))
+            .await
+            .expect("admission after success completes")
+            .expect("capacity after success reserves");
+    let fresh_window = sqlx::query_scalar::<_, bool>(
+        "SELECT window_started_at > now() - interval '1 minute' FROM auth_login_attempt_budgets WHERE facility_id = $1 AND resource_type = 'auth_user' AND resource_key = $2"
+    ).bind(facility_id).bind(user_id.to_string()).fetch_one(pool).await.expect("window freshness loads");
+    assert!(
+        fresh_window,
+        "a successful old login cannot shorten a later failure window"
+    );
+    assert!(
+        hms_db::auth::complete_login_attempt(pool, after_success, false)
+            .await
+            .expect("next success completes")
+    );
+    let mut reservations = Vec::new();
+    for _ in 0..10 {
+        reservations.push(
+            hms_db::auth::reserve_login_attempt(pool, facility_id, "auth_user", Some(user_id))
+                .await
+                .expect("admission completes")
+                .expect("capacity reserves"),
+        );
+    }
+    assert!(
+        hms_db::auth::reserve_login_attempt(pool, facility_id, "auth_user", Some(user_id))
+            .await
+            .expect("full admission check completes")
+            .is_none()
+    );
+    // Success frees exactly one slot; failure consumes its reserved slot.
+    let success = reservations.pop().expect("reservation exists");
+    assert!(hms_db::auth::complete_login_attempt(pool, success, false)
+        .await
+        .expect("success completes"));
+    let failed = hms_db::auth::reserve_login_attempt(pool, facility_id, "auth_user", Some(user_id))
+        .await
+        .expect("new admission completes")
+        .expect("released capacity reserves");
+    assert!(hms_db::auth::complete_login_attempt(pool, failed, true)
+        .await
+        .expect("failure completes"));
+    assert!(
+        hms_db::auth::reserve_login_attempt(pool, facility_id, "auth_user", Some(user_id))
+            .await
+            .expect("full admission check completes")
+            .is_none()
+    );
+
+    sqlx::query("UPDATE auth_login_attempt_budgets SET window_started_at = now() - interval '16 minutes' WHERE facility_id = $1 AND resource_type = 'auth_user' AND resource_key = $2")
+        .bind(facility_id).bind(user_id.to_string()).execute(pool).await.expect("reservation window ages");
+    let new_window =
+        hms_db::auth::reserve_login_attempt(pool, facility_id, "auth_user", Some(user_id))
+            .await
+            .expect("next-window admission completes")
+            .expect("abandoned reservations expire");
+    for reservation in reservations {
+        assert!(
+            !hms_db::auth::complete_login_attempt(pool, reservation, true)
+                .await
+                .expect("stale completion rejects")
+        );
+    }
+    let budget = sqlx::query_as::<_, (i16, i16)>(
+        "SELECT failed_attempts, in_flight_attempts FROM auth_login_attempt_budgets WHERE facility_id = $1 AND resource_type = 'auth_user' AND resource_key = $2"
+    ).bind(facility_id).bind(user_id.to_string()).fetch_one(pool).await.expect("current budget loads");
+    assert_eq!(
+        budget,
+        (0, 1),
+        "stale completions cannot consume a new window's reservation"
+    );
+    assert!(
+        hms_db::auth::complete_login_attempt(pool, new_window, false)
+            .await
+            .expect("new-window success completes")
+    );
+}
+
+#[tokio::test]
 async fn request_context_facts_are_loaded_in_one_scoped_query() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

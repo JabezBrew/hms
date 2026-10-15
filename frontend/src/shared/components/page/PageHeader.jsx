@@ -3,15 +3,15 @@ import { cn } from '@/lib/utils'
 const SIZE_STYLES = {
   md: {
     padding: 'px-4 sm:px-6 py-4 sm:py-6',
-    title: 'text-2xl sm:text-3xl lg:text-4xl',
-    description: 'text-sm text-muted-foreground',
-    meta: 'font-mono text-xs text-muted-foreground uppercase tracking-widest',
+    title: 'text-3xl sm:text-4xl',
+    description: 'mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground',
+    meta: 'mb-1 text-xs font-medium text-muted-foreground',
   },
   lg: {
-    padding: 'px-6 py-8',
-    title: 'text-4xl',
-    description: 'text-muted-foreground mt-2',
-    meta: 'font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2',
+    padding: 'px-4 sm:px-6 py-6 sm:py-8',
+    title: 'text-4xl sm:text-5xl',
+    description: 'mt-2 max-w-2xl text-sm sm:text-base leading-relaxed text-muted-foreground',
+    meta: 'mb-2 text-xs font-medium text-muted-foreground',
   },
 }
 
@@ -32,13 +32,13 @@ export function PageHeader({
   const styles = SIZE_STYLES[size] || SIZE_STYLES.md
 
   const content = (
-    <div className={cn('flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4', contentClassName)}>
-      <div>
+    <div className={cn('flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between', contentClassName)}>
+      <div className="min-w-0">
         {meta ? (
           <p className={cn(styles.meta, metaClassName)}>{meta}</p>
         ) : null}
         {title ? (
-          <h1 className={cn('font-display text-foreground tracking-tight', styles.title, titleClassName)}>
+          <h1 className={cn('font-display font-medium text-foreground tracking-tight leading-tight break-words', styles.title, titleClassName)}>
             {title}
           </h1>
         ) : null}
@@ -47,7 +47,7 @@ export function PageHeader({
         ) : null}
         {children}
       </div>
-      {actions ? <div className="w-full min-w-0 sm:w-auto sm:shrink-0">{actions}</div> : null}
+      {actions ? <div className="flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto md:max-w-[50%] md:justify-end">{actions}</div> : null}
     </div>
   )
 

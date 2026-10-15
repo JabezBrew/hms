@@ -24,3 +24,9 @@ Scope: clinical note creation and template management.
   care, and similar labels are template titles/structures, not note types.
 - Note versions and free-text clinical content must not be logged.
 - Template management must not bypass clinical-note permissions.
+- Rust V2 templates are shared with authorized clinical staff in the current
+  facility. Private, role, and department sharing choices are legacy behavior.
+- Structured `body_template` values use a JSON envelope containing `sections`
+  and presentation metadata such as `description`. Builder edits preserve
+  existing metadata. The envelope must never determine access permissions.
+  Existing array and plain-text template bodies remain compatible.

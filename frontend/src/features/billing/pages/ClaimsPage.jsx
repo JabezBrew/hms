@@ -334,7 +334,7 @@ export default function ClaimsPage() {
       </div>
 
       {/* Claims List */}
-      <main className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         {claims.length > 0 ? (
           <div className="overflow-x-auto">
             <VirtualizedTable
@@ -373,7 +373,7 @@ export default function ClaimsPage() {
           page={page}
           pageSize={20}
         />
-      </main>
+      </div>
     </PageShell>
   );
 }

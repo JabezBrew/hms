@@ -594,7 +594,7 @@ export default function InvoicesPage() {
       />
 
       {/* Invoice List */}
-      <main className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         <InvoicesTable
           invoices={invoices}
           columns={invoiceColumns}
@@ -611,7 +611,7 @@ export default function InvoicesPage() {
           pageSize={20}
           onPageChange={handlePageChange}
         />
-      </main>
+      </div>
 
       <PatientContextPanel
         open={contextOpen}

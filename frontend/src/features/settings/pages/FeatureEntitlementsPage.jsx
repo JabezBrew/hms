@@ -466,7 +466,7 @@ export default function FeatureEntitlementsPage() {
       {pageMeta}
       <FeatureEntitlementsHeader onBack={() => navigate('/settings')} />
 
-      <main className="p-4 sm:p-6 lg:p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
           <ModuleTogglesPanel
             capabilities={capabilities}
@@ -500,7 +500,7 @@ export default function FeatureEntitlementsPage() {
             toggleContext={toggleContext}
           />
         </div>
-      </main>
+      </div>
     </PageShell>
   )
 }

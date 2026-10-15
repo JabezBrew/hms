@@ -560,6 +560,323 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
 }
 
 #[tokio::test]
+async fn refresh_does_not_restore_high_risk_authentication_freshness() {
+    let app = app_with_request_context_probe().await;
+    enroll_owner_test_passkey(&app).await;
+    let (access_token, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;
+    let claims = access_claims(&access_token);
+    let authenticated_at = Utc::now() - Duration::minutes(16);
+    let pool = app.db_pool().await;
+    sqlx::query("UPDATE refresh_sessions SET session_started_at = $1 WHERE session_id = $2")
+        .bind(authenticated_at)
+        .bind(claims.session_id)
+        .execute(&pool)
+        .await
+        .expect("test authentication age updates");
+
+    let refreshed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, cookie)
+                .header("x-hms-csrf", csrf_token)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("refresh succeeds");
+    assert_eq!(refreshed.status(), StatusCode::OK);
+    let body = json_body(refreshed).await;
+    let token = body["data"]["access_token"]
+        .as_str()
+        .expect("access token exists");
+    let refreshed_claims = access_claims(token);
+    assert_eq!(
+        refreshed_claims.auth_time,
+        Some(authenticated_at.timestamp() as usize)
+    );
+    assert!(
+        refreshed_claims.iat
+            > refreshed_claims
+                .auth_time
+                .expect("authentication time exists")
+    );
+
+    let probe = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/__test/request-context")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("request context resolves");
+    assert_eq!(probe.status(), StatusCode::OK);
+    assert_eq!(json_body(probe).await["reauth_fresh"], false);
+
+    let denied = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/permission-assignments")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "grantee_user_id": Uuid::from_u128(hms_db::provision::LIMITED_USER_ID),
+                        "permission_code": "patient.create",
+                        "scope_type": "facility",
+                        "reason_code": "refresh_does_not_reauthenticate"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("high risk request completes");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+    assert_eq!(json_body(denied).await["error"]["code"], "reauth_required");
+}
+
+#[tokio::test]
+async fn access_tokens_without_authentication_evidence_do_not_grant_fresh_reauth() {
+    let app = app_with_request_context_probe().await;
+    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let mut claims = access_claims(&token);
+    claims.auth_time = None;
+    let legacy_token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(b"test-only-hms-v2-jwt-secret"),
+    )
+    .expect("legacy test token encodes");
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/__test/request-context")
+                .header(AUTHORIZATION, format!("Bearer {legacy_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("legacy access request completes");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["reauth_fresh"], false);
+}
+
+#[tokio::test]
+async fn recovery_code_generation_requires_password_and_returns_usable_one_time_codes() {
+    let app = app().await;
+    let (token, _, _) = login(app.clone(), "owner@hms.local").await;
+    for (password, status) in [
+        ("incorrect-password", StatusCode::FORBIDDEN),
+        ("ChangeMe123!", StatusCode::OK),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v2/auth/mfa/recovery-codes")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"current_password": password}).to_string(),
+                    ))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("recovery code request completes");
+        assert_eq!(response.status(), status);
+        if status != StatusCode::OK {
+            continue;
+        }
+        let body = json_body(response).await;
+        let codes = body["data"]["codes"].as_array().expect("codes exist");
+        assert_eq!(codes.len(), 10);
+        let pool = app.db_pool().await;
+        let facility_id = access_claims(&token).facility_id;
+        let user_id = access_claims(&token).sub;
+        assert_eq!(
+            hms_db::auth::recovery_codes_remaining(&pool, facility_id, user_id)
+                .await
+                .expect("remaining count loads"),
+            10
+        );
+        let code = codes[0].as_str().expect("code is a string");
+        let hash = hms_auth::hash_recovery_code(code);
+        assert!(
+            hms_db::auth::consume_recovery_code(&pool, facility_id, user_id, &hash)
+                .await
+                .expect("code consumes")
+        );
+        assert!(
+            !hms_db::auth::consume_recovery_code(&pool, facility_id, user_id, &hash)
+                .await
+                .expect("used code rejects")
+        );
+    }
+}
+
+#[tokio::test]
+async fn login_failure_throttle_survives_app_restart_and_expires_without_cross_account_lockout() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    let app = app_with_config(config.clone(), Arc::clone(&database)).await;
+    for _ in 0..10 {
+        let response = app.clone().oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"email": "owner@hms.local", "password": "incorrect-password", "facility_code": "HMS"}).to_string()))
+                .expect("request builds")
+        ).await.expect("failed login completes");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    let restarted = app_with_config(config, Arc::clone(&database)).await;
+    let blocked = restarted
+        .state()
+        .login("owner@hms.local", "ChangeMe123!", "HMS", None, None)
+        .await
+        .expect("throttled login completes");
+    assert!(
+        blocked.is_none(),
+        "a fresh API process must enforce the persisted failure budget"
+    );
+    let (_, _, _) = login(restarted.clone(), "limited@hms.local").await;
+
+    let pool = restarted.db_pool().await;
+    sqlx::query("UPDATE auth_login_attempt_budgets SET window_started_at = now() - interval '16 minutes' WHERE resource_type = 'auth_user'")
+        .execute(&pool).await.expect("test failure window ages");
+    let (_, _, _) = login(restarted, "owner@hms.local").await;
+}
+
+#[tokio::test]
+async fn concurrent_login_attempts_share_atomic_admission_across_api_instances() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    assert!(config.password_work_max_concurrency > 1);
+    let app = app_with_config(config.clone(), Arc::clone(&database)).await;
+    let other = app_with_config(config, database).await;
+    // Successful attempts release their reservation instead of consuming the
+    // failure budget, even when an independent API instance issues the session.
+    let (_, _, _) = login(app.clone(), "owner@hms.local").await;
+    let (_, _, _) = login(other.clone(), "owner@hms.local").await;
+    for _ in 0..9 {
+        assert!(app
+            .state()
+            .login("owner@hms.local", "incorrect-password", "HMS", None, None)
+            .await
+            .expect("prior failure completes")
+            .is_none());
+    }
+    let mut requests = tokio::task::JoinSet::new();
+    let barrier = Arc::new(tokio::sync::Barrier::new(21));
+    for index in 0..20 {
+        let app = if index % 2 == 0 {
+            app.clone()
+        } else {
+            other.clone()
+        };
+        let barrier = Arc::clone(&barrier);
+        requests.spawn(async move {
+            barrier.wait().await;
+            app.oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v2/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "owner@hms.local",
+                            "password": "incorrect-password",
+                            "facility_code": "HMS"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("queued login completes")
+            .status()
+        });
+    }
+    barrier.wait().await;
+    while let Some(response) = requests.join_next().await {
+        assert_eq!(
+            response.expect("login task completes"),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let pool = app.db_pool().await;
+    let attempts = sqlx::query_scalar::<_, i64>(
+        "SELECT failure_count FROM auth_login_failure_counters WHERE resource_type = 'auth_user' AND resource_key = $1"
+    ).bind(Uuid::from_u128(hms_db::provision::OWNER_USER_ID).to_string())
+        .fetch_one(&pool).await.expect("failure count loads");
+    assert_eq!(
+        attempts, 10,
+        "exactly one further failure may pass admission across both API instances"
+    );
+    let budget = sqlx::query_as::<_, (i16, i16)>(
+        "SELECT failed_attempts, in_flight_attempts FROM auth_login_attempt_budgets WHERE resource_type = 'auth_user' AND resource_key = $1"
+    ).bind(Uuid::from_u128(hms_db::provision::OWNER_USER_ID).to_string())
+        .fetch_one(&pool).await.expect("admission budget loads");
+    assert_eq!(budget, (10, 0));
+    assert!(other
+        .state()
+        .login("owner@hms.local", "ChangeMe123!", "HMS", None, None)
+        .await
+        .expect("post-budget correct attempt completes")
+        .is_none());
+
+    for (facility_code, resource_type) in [("HMS", "auth_login"), ("INVALID", "auth_facility")] {
+        let mut requests = tokio::task::JoinSet::new();
+        for index in 0..20 {
+            let state = if index % 2 == 0 {
+                app.state()
+            } else {
+                other.state()
+            };
+            requests.spawn(async move {
+                state
+                    .login(
+                        "unresolved@hms.local",
+                        "incorrect-password",
+                        facility_code,
+                        None,
+                        None,
+                    )
+                    .await
+                    .expect("unresolved login completes")
+                    .is_none()
+            });
+        }
+        while let Some(result) = requests.join_next().await {
+            assert!(result.expect("unresolved login task completes"));
+        }
+        let budget = sqlx::query_as::<_, (i16, i16)>(
+            "SELECT failed_attempts, in_flight_attempts FROM auth_login_attempt_budgets WHERE resource_type = $1"
+        ).bind(resource_type).fetch_one(&pool).await.expect("unresolved budget loads");
+        assert_eq!(budget, (10, 0));
+        let audited = sqlx::query_scalar::<_, i64>(
+            "SELECT failure_count FROM auth_login_failure_counters WHERE resource_type = $1",
+        )
+        .bind(resource_type)
+        .fetch_one(&pool)
+        .await
+        .expect("unresolved failure count loads");
+        assert_eq!(audited, 10);
+    }
+}
+
+#[tokio::test]
 async fn session_issue_warms_request_context_for_parallel_requests() {
     let app = app_with_request_context_probe().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;

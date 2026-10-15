@@ -316,7 +316,7 @@ export default function PaymentsPage() {
         onRefresh={refetch}
       />
 
-      <main className="p-4 sm:p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
         <PaymentsFilters
           search={search}
           paymentMethod={paymentMethod}
@@ -336,7 +336,7 @@ export default function PaymentsPage() {
           onClearFilters={handleClearFilters}
           onPageChange={handlePageChange}
         />
-      </main>
+      </div>
     </PageShell>
   );
 }

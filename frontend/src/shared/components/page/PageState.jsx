@@ -11,6 +11,24 @@ const DEFAULT_TITLES = {
   empty: 'No results',
 }
 
+function LoadingSkeleton({ rows = 4 }) {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-6">
+      <LoadingSpinner className="h-6 w-12 text-primary" />
+      <Skeleton className="h-10 w-full max-w-64" />
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Skeleton className="h-10 w-full max-w-md" />
+        <Skeleton className="h-10 w-32" />
+      </div>
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: rows }).map((_, index) => (
+          <Skeleton key={index} className="h-16 rounded-lg" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function PageState({
   variant,
   title,
@@ -27,23 +45,13 @@ export function PageState({
 
   if (variant === 'loading') {
     return (
-      <div className={cn('bg-background p-4 sm:p-6 space-y-6', fullHeight && 'min-h-screen', className)}>
-        {children || (
-          <>
-            <p className="sr-only">{DEFAULT_TITLES.loading}</p>
-            <LoadingSpinner className="h-6 w-12 text-primary" aria-hidden="true" />
-            <Skeleton className="h-12 w-64" />
-            <div className="flex gap-4">
-              <Skeleton className="h-10 flex-1 max-w-md" />
-              <Skeleton className="h-10 w-40" />
-            </div>
-            <div className="space-y-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-20 rounded-xl" />
-              ))}
-            </div>
-          </>
-        )}
+      <div
+        role="status"
+        aria-live="polite"
+        className={cn('min-w-0 bg-background p-4 sm:p-6', fullHeight && 'min-h-[calc(100svh-12rem)]', className)}
+      >
+        <p className="sr-only">{title || DEFAULT_TITLES.loading}</p>
+        {children || <LoadingSkeleton />}
       </div>
     )
   }
@@ -53,26 +61,28 @@ export function PageState({
 
   return (
     <div
+      role={variant === 'error' ? 'alert' : undefined}
       className={cn(
-        'bg-background p-6 flex items-center justify-center',
-        fullHeight && 'min-h-screen',
+        'min-w-0 bg-background px-4 py-8 sm:p-8 flex items-center justify-center',
+        fullHeight && 'min-h-[calc(100svh-12rem)]',
         className,
       )}
     >
-      <div className="text-center space-y-4">
-        <div className="size-16 rounded-full bg-muted/60 flex items-center justify-center mx-auto">
-          {ResolvedIcon ? <ResolvedIcon className="size-8 text-muted-foreground" /> : null}
+      <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl border border-border bg-card">
+          {ResolvedIcon ? <ResolvedIcon aria-hidden="true" className="size-5 text-muted-foreground" /> : null}
         </div>
         <div>
-          <h2 className="font-display text-2xl text-foreground">{resolvedTitle}</h2>
+          <h2 className="font-heading text-lg font-semibold text-foreground">{resolvedTitle}</h2>
           {description ? (
-            <p className="text-muted-foreground mt-1">{description}</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
           ) : null}
         </div>
+        {children}
         {action ? (
           <div className="flex items-center justify-center">
             {typeof action === 'function' ? (
-              <Button onClick={action} className="font-mono text-xs">
+              <Button onClick={action}>
                 Retry
               </Button>
             ) : (
@@ -87,19 +97,8 @@ export function PageState({
 
 export function PageLoader({ rows = 6, className }) {
   return (
-    <div className={cn('bg-background p-4 sm:p-6 space-y-6 min-h-screen', className)}>
-      <p className="sr-only">{DEFAULT_TITLES.loading}</p>
-      <LoadingSpinner className="h-6 w-12 text-primary" aria-hidden="true" />
-      <Skeleton className="h-12 w-64" />
-      <div className="flex gap-4">
-        <Skeleton className="h-10 flex-1 max-w-md" />
-        <Skeleton className="h-10 w-40" />
-      </div>
-      <div className="space-y-3">
-        {Array.from({ length: rows }).map((_, i) => (
-          <Skeleton key={i} className="h-20 rounded-xl" />
-        ))}
-      </div>
-    </div>
+    <PageState variant="loading" className={className}>
+      <LoadingSkeleton rows={rows} />
+    </PageState>
   )
 }

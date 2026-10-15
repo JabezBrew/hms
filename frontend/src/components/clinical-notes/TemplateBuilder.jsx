@@ -35,6 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 const VISIBILITY_OPTIONS = [
   { value: 'private', label: 'Private', icon: Lock, description: 'Only you can see and use this template.' },
@@ -230,7 +231,7 @@ function TemplateBuilderSteps({ currentStep, onGoToStep }) {
   );
 }
 
-function TemplateBasicsStep({ errors, register, setValue, watch }) {
+function TemplateBasicsStep({ errors, register, setValue, watch, rustV2Mode }) {
   return (
     <section className="space-y-5 animate-chronicle-enter">
       <div>
@@ -266,12 +267,15 @@ function TemplateBasicsStep({ errors, register, setValue, watch }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className={cn('grid grid-cols-1 gap-4', !rustV2Mode && 'md:grid-cols-2 xl:grid-cols-3')}>
         <TemplateNoteTypeSelect setValue={setValue} watch={watch} />
+        {!rustV2Mode ? <>
         <TemplateIconSelect setValue={setValue} watch={watch} />
         <TemplateModeSelect setValue={setValue} watch={watch} />
+        </> : null}
       </div>
 
+      {!rustV2Mode ? (
       <div className="space-y-2 max-w-sm">
         <Label htmlFor="estimated_steps" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           Estimated Steps
@@ -293,6 +297,7 @@ function TemplateBasicsStep({ errors, register, setValue, watch }) {
           <p className="text-xs text-rose-600">Estimated steps must be between 1 and 10.</p>
         ) : null}
       </div>
+      ) : null}
     </section>
   );
 }
@@ -300,14 +305,14 @@ function TemplateBasicsStep({ errors, register, setValue, watch }) {
 function TemplateNoteTypeSelect({ setValue, watch }) {
   return (
     <div className="space-y-2">
-      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor="template-note-type" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         Note Type
       </Label>
       <Select
         value={watch('category')}
         onValueChange={(value) => setValue('category', normalizeClinicalNoteType(value), { shouldDirty: true })}
       >
-        <SelectTrigger className="font-mono">
+        <SelectTrigger id="template-note-type" className="font-mono">
           <SelectValue placeholder="Select note type" />
         </SelectTrigger>
         <SelectContent>
@@ -331,14 +336,14 @@ function TemplateNoteTypeSelect({ setValue, watch }) {
 function TemplateIconSelect({ setValue, watch }) {
   return (
     <div className="space-y-2">
-      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor="template-icon" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         Icon
       </Label>
       <Select
         value={watch('icon')}
         onValueChange={(value) => setValue('icon', value, { shouldDirty: true })}
       >
-        <SelectTrigger className="font-mono">
+        <SelectTrigger id="template-icon" className="font-mono">
           <SelectValue placeholder="Select icon" />
         </SelectTrigger>
         <SelectContent>
@@ -356,14 +361,14 @@ function TemplateIconSelect({ setValue, watch }) {
 function TemplateModeSelect({ setValue, watch }) {
   return (
     <div className="space-y-2">
-      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor="template-mode" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         Template Mode
       </Label>
       <Select
         value={watch('template_mode')}
         onValueChange={(value) => setValue('template_mode', value, { shouldDirty: true })}
       >
-        <SelectTrigger className="font-mono">
+        <SelectTrigger id="template-mode" className="font-mono">
           <SelectValue placeholder="Select mode" />
         </SelectTrigger>
         <SelectContent>
@@ -378,16 +383,22 @@ function TemplateModeSelect({ setValue, watch }) {
   );
 }
 
-function TemplateAccessStep({ errors, register, setValue, visibility, watch }) {
+function TemplateAccessStep({ errors, register, setValue, visibility, watch, rustV2Mode, canSetActive }) {
   return (
     <section className="space-y-5 animate-chronicle-enter">
       <div>
-        <h2 className="font-display text-xl text-foreground">Visibility & Status</h2>
+        <h2 className="font-display text-xl text-foreground">{rustV2Mode ? 'Facility Sharing & Status' : 'Visibility & Status'}</h2>
         <p className="font-mono text-xs text-muted-foreground mt-1">
-          Control who can discover and apply this template.
+          {rustV2Mode ? 'Templates follow clinical-note permissions in the current facility.' : 'Control who can discover and apply this template.'}
         </p>
       </div>
 
+      {rustV2Mode ? (
+        <div className="rounded-xl border border-border bg-muted/20 p-4">
+          <p className="font-heading text-sm font-medium">Shared within your facility</p>
+          <p className="mt-1 text-sm text-muted-foreground">Authorized clinical staff in the current facility can discover and use this template.</p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {VISIBILITY_OPTIONS.map((option) => (
           <VisibilityOptionButton
@@ -398,8 +409,9 @@ function TemplateAccessStep({ errors, register, setValue, visibility, watch }) {
           />
         ))}
       </div>
+      )}
 
-      {visibility === 'department' ? (
+      {!rustV2Mode && visibility === 'department' ? (
         <div className="space-y-2 max-w-md">
           <Label htmlFor="department" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             Department *
@@ -423,19 +435,24 @@ function TemplateAccessStep({ errors, register, setValue, visibility, watch }) {
         </div>
       ) : null}
 
+      {canSetActive ? (
       <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card/50">
         <div>
-          <p className="font-mono text-sm text-foreground">Active Template</p>
-          <p className="font-mono text-[11px] text-muted-foreground mt-1">
+          <Label htmlFor="is_active" className="font-mono text-sm text-foreground">Active Template</Label>
+          <p id="template-active-description" className="font-mono text-[11px] text-muted-foreground mt-1">
             Inactive templates are hidden from routine template selection.
           </p>
         </div>
         <Switch
           id="is_active"
+          aria-describedby="template-active-description"
           checked={Boolean(watch('is_active'))}
           onCheckedChange={(checked) => setValue('is_active', checked, { shouldDirty: true })}
         />
       </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">New templates start active. Their status can be changed after creation.</p>
+      )}
     </section>
   );
 }
@@ -651,8 +668,9 @@ function TemplateSectionActions({ fieldsLength, index, move, remove }) {
         className="size-7"
         onClick={() => move(index, Math.max(index - 1, 0))}
         disabled={index === 0}
+        aria-label={`Move section ${index + 1} up`}
       >
-        <MoveUp className="size-3.5" />
+        <MoveUp className="size-3.5" aria-hidden="true" />
       </Button>
       <Button
         type="button"
@@ -661,8 +679,9 @@ function TemplateSectionActions({ fieldsLength, index, move, remove }) {
         className="size-7"
         onClick={() => move(index, Math.min(index + 1, fieldsLength - 1))}
         disabled={index === fieldsLength - 1}
+        aria-label={`Move section ${index + 1} down`}
       >
-        <MoveDown className="size-3.5" />
+        <MoveDown className="size-3.5" aria-hidden="true" />
       </Button>
       <Button
         type="button"
@@ -670,8 +689,9 @@ function TemplateSectionActions({ fieldsLength, index, move, remove }) {
         size="icon"
         className="size-7 text-rose-500 hover:text-rose-600"
         onClick={() => remove(index)}
+        aria-label={`Remove section ${index + 1}`}
       >
-        <Trash2 className="size-3.5" />
+        <Trash2 className="size-3.5" aria-hidden="true" />
       </Button>
     </div>
   );
@@ -680,7 +700,7 @@ function TemplateSectionActions({ fieldsLength, index, move, remove }) {
 function TemplateSectionTypeSelect({ currentType, index, setValue }) {
   return (
     <div className="space-y-2">
-      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor={`structure.${index}.type`} className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         Section Type
       </Label>
       <Select
@@ -692,7 +712,7 @@ function TemplateSectionTypeSelect({ currentType, index, setValue }) {
           }
         }}
       >
-        <SelectTrigger className="font-mono">
+        <SelectTrigger id={`structure.${index}.type`} className="font-mono">
           <SelectValue placeholder="Select type" />
         </SelectTrigger>
         <SelectContent>
@@ -710,7 +730,7 @@ function TemplateSectionTypeSelect({ currentType, index, setValue }) {
 function TemplateObservationTypeSelect({ index, setValue, watch }) {
   return (
     <div className="space-y-2 md:col-span-2">
-      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor={`structure.${index}.observation_type`} className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         Observation Type
       </Label>
       <Select
@@ -719,7 +739,7 @@ function TemplateObservationTypeSelect({ index, setValue, watch }) {
           setValue(`structure.${index}.observation_type`, value, { shouldDirty: true })
         }
       >
-        <SelectTrigger className="font-mono">
+        <SelectTrigger id={`structure.${index}.observation_type`} className="font-mono">
           <SelectValue placeholder="Select observation type" />
         </SelectTrigger>
         <SelectContent>
@@ -742,12 +762,16 @@ function TemplateRequiredToggle({ index, setValue, watch }) {
   return (
     <div className="md:col-span-2 flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3">
       <div>
-        <p className="font-mono text-xs text-foreground">Required Section</p>
-        <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
+        <Label htmlFor={`structure.${index}.required`} className="font-mono text-xs text-foreground">
+          Required Section <span className="sr-only">{index + 1}</span>
+        </Label>
+        <p id={`structure.${index}.required-description`} className="font-mono text-[10px] text-muted-foreground mt-0.5">
           Clinicians must complete this section before signing.
         </p>
       </div>
       <Switch
+        id={`structure.${index}.required`}
+        aria-describedby={`structure.${index}.required-description`}
         checked={Boolean(watch(`structure.${index}.required`))}
         onCheckedChange={(checked) =>
           setValue(`structure.${index}.required`, checked, { shouldDirty: true })
@@ -757,7 +781,7 @@ function TemplateRequiredToggle({ index, setValue, watch }) {
   );
 }
 
-function TemplateReviewStep({ noteTypeLabel, fields, visibility, watchedStructure, watch }) {
+function TemplateReviewStep({ noteTypeLabel, fields, visibility, watchedStructure, watch, rustV2Mode }) {
   return (
     <section className="space-y-5 animate-chronicle-enter">
       <div>
@@ -771,18 +795,19 @@ function TemplateReviewStep({ noteTypeLabel, fields, visibility, watchedStructur
         <div className="rounded-xl border border-border bg-card/60 p-4">
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Title</p>
           <p className="font-display text-lg text-foreground mt-1">{watch('title') || 'Untitled Template'}</p>
+          {watch('description') ? <p className="mt-2 text-sm text-muted-foreground">{watch('description')}</p> : null}
           <p className="font-mono text-xs text-muted-foreground mt-2">Type: {noteTypeLabel}</p>
         </div>
 
         <div className="rounded-xl border border-border bg-card/60 p-4">
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Access</p>
-          <p className="font-mono text-sm text-foreground mt-1">{visibility || 'private'}</p>
+          <p className="font-mono text-sm text-foreground mt-1">{rustV2Mode ? 'Authorized clinical staff in this facility' : visibility || 'private'}</p>
           <p className="font-mono text-xs text-muted-foreground mt-2">
             {watch('is_active') ? 'Active and selectable' : 'Inactive after save'}
           </p>
-          <p className="font-mono text-xs text-muted-foreground mt-2">
+          {!rustV2Mode ? <p className="font-mono text-xs text-muted-foreground mt-2">
             Mode: {watch('template_mode') || 'structured'}
-          </p>
+          </p> : null}
         </div>
       </div>
 
@@ -794,10 +819,10 @@ function TemplateReviewStep({ noteTypeLabel, fields, visibility, watchedStructur
               {watchedStructure.length} section{watchedStructure.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-[10px] font-mono">
+          {!rustV2Mode ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-[10px] font-mono">
             <CircleDot className="size-3" />
             {watch('estimated_steps') || 0} steps
-          </span>
+          </span> : null}
         </div>
 
         <div className="p-3 sm:p-4 space-y-2">
@@ -879,16 +904,21 @@ function TemplateBuilderFooter({
           {isDirty ? <span className="font-mono text-[10px] text-muted-foreground hidden sm:inline">Unsaved changes</span> : null}
           {currentStep < STEPS.length ? (
             <Button
+              key="next-step"
               type="button"
               size="sm"
               className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
-              onClick={onNext}
+              onClick={(event) => {
+                event.preventDefault();
+                onNext();
+              }}
             >
               Next
               <ChevronRight className="size-3.5 ml-1" />
             </Button>
           ) : (
             <Button
+              key="save-template"
               type="submit"
               size="sm"
               disabled={isSaving}
@@ -916,6 +946,7 @@ function TemplateBuilderFooter({
 const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const { user } = useAuth();
+  const rustV2Mode = isRustV2ApiMode();
   const inferredNoteType = useMemo(
     () => inferClinicalNoteTypeForRole(user?.role || user?.user_type),
     [user?.role, user?.user_type],
@@ -939,7 +970,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
       title: initialTemplate?.title || '',
       description: initialTemplate?.description || '',
       is_active: initialTemplate?.is_active ?? true,
-      visibility: initialTemplate?.visibility || 'private',
+      visibility: rustV2Mode ? 'public' : initialTemplate?.visibility || 'private',
       department: initialTemplate?.department || '',
       category: initialNoteType,
       icon: initialTemplate?.icon || 'file-text',
@@ -966,7 +997,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
 
   const validateStep = async (step) => {
     if (step === 1) {
-      const isBasicValid = await trigger(['title', 'estimated_steps']);
+      const isBasicValid = await trigger(rustV2Mode ? ['title'] : ['title', 'estimated_steps']);
       if (!isBasicValid) {
         toast.error('Complete required basic fields before continuing.');
         return false;
@@ -982,7 +1013,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
     }
 
     if (step === 2) {
-      if (getValues('visibility') === 'department') {
+      if (!rustV2Mode && getValues('visibility') === 'department') {
         const hasDepartment = await trigger('department');
         if (!hasDepartment) {
           toast.error('Department is required for department visibility.');
@@ -1057,6 +1088,9 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
   };
 
   const onSubmit = async (data) => {
+    if (currentStep !== STEPS.length || isSaving) {
+      return;
+    }
     const isReadyToSave =
       (await validateStep(1)) &&
       (await validateStep(2)) &&
@@ -1069,6 +1103,9 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
     const normalizedNoteType = clinicalNoteTypeForWrite(data.category, inferredNoteType);
     const formattedData = {
       ...data,
+      ...(rustV2Mode && initialTemplate?.body_template !== undefined
+        ? { body_template: initialTemplate.body_template }
+        : {}),
       title: data.title.trim(),
       category: normalizedNoteType,
       note_type: normalizedNoteType,
@@ -1100,9 +1137,8 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
       }
 
       onSuccess?.();
-    } catch (error) {
+    } catch {
       toast.error(initialTemplate ? 'Failed to update template.' : 'Failed to create template.');
-      console.error('Error saving note template:', error);
     }
   };
 
@@ -1118,6 +1154,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
               register={register}
               setValue={setValue}
               watch={watch}
+              rustV2Mode={rustV2Mode}
             />
           ) : null}
 
@@ -1128,6 +1165,8 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
               setValue={setValue}
               visibility={visibility}
               watch={watch}
+              rustV2Mode={rustV2Mode}
+              canSetActive={!rustV2Mode || Boolean(initialTemplate)}
             />
           ) : null}
 
@@ -1152,6 +1191,7 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
               visibility={visibility}
               watchedStructure={watchedStructure}
               watch={watch}
+              rustV2Mode={rustV2Mode}
             />
           ) : null}
         </div>

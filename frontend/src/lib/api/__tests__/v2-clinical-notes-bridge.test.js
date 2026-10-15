@@ -115,6 +115,57 @@ describe('Rust V2 clinical notes bridge', () => {
     );
   });
 
+  it('roundtrips a template description inside its structured body envelope', async () => {
+    const document = {
+      sections: [{ name: 'Review', type: 'text', required: true }],
+      description: 'A reusable clinical workflow.',
+    };
+    const template = {
+      id: 'template-described', title: 'Routine review', note_type: 'doctor_note',
+      body_template: JSON.stringify(document), is_active: true,
+    };
+    const response = () => new Response(JSON.stringify({ data: template, meta: {} }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+    globalThis.fetch.mockResolvedValueOnce(response()).mockResolvedValueOnce(response());
+
+    const created = await clinicalNotesApi.createNoteTemplate({
+      title: template.title, note_type: template.note_type,
+      structure: { sections: document.sections }, description: document.description,
+    });
+    const persisted = await clinicalNotesApi.getNoteTemplate(template.id);
+
+    const sent = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    expect(JSON.parse(sent.body_template)).toEqual(document);
+    expect(sent).not.toHaveProperty('description');
+    expect(created.description).toBe(document.description);
+    expect(persisted.description).toBe(document.description);
+    expect(persisted.structure).toEqual(document.sections);
+  });
+
+  it('preserves existing body metadata while editing sections and description', async () => {
+    const original = {
+      sections: [{ name: 'Original', type: 'text' }], description: 'Original description',
+      schema_version: 2, presentation: { layout: 'compact' },
+    };
+    const updatedDocument = {
+      ...original, sections: [{ name: 'Updated', type: 'condition' }], description: 'Updated description',
+    };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({
+      data: { id: 'template-edit', title: 'Routine review', note_type: 'doctor_note', body_template: JSON.stringify(updatedDocument) },
+      meta: {},
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const updated = await clinicalNotesApi.updateNoteTemplate('template-edit', {
+      body_template: JSON.stringify(original),
+      structure: { sections: updatedDocument.sections }, description: updatedDocument.description,
+    });
+
+    expect(JSON.parse(JSON.parse(globalThis.fetch.mock.calls[0][1].body).body_template)).toEqual(updatedDocument);
+    expect(updated.description).toBe('Updated description');
+    expect(updated.structure).toEqual(updatedDocument.sections);
+  });
+
   it('routes clinical note template mutations through generated Rust V2 endpoints', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(

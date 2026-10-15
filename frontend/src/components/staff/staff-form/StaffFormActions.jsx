@@ -21,6 +21,7 @@ export function StaffFormActions({
 
       {!isLastStep ? (
         <Button
+          key="next-step"
           type="button"
           onClick={onNext}
           disabled={isSubmitting}
@@ -30,6 +31,7 @@ export function StaffFormActions({
         </Button>
       ) : (
         <Button
+          key="create-staff"
           type="submit"
           disabled={isSubmitting}
           className="font-mono text-sm bg-primary hover:bg-primary/90"

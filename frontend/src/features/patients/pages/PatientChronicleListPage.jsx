@@ -345,7 +345,7 @@ const PatientChronicleListPage = () => {
         }}
       />
 
-      <main
+      <div
         data-perf-ready={isSearchLoading ? undefined : 'patient-registry'}
         className="p-4 sm:p-6 space-y-8"
       >
@@ -373,7 +373,7 @@ const PatientChronicleListPage = () => {
           onOpenPatient={handleOpenPatient}
           onPointerDownPatient={handlePointerDownPatient}
         />
-      </main>
+      </div>
     </PageShell>
   );
 };

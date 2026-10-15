@@ -716,7 +716,7 @@ export default function CashSessionsPage() {
         }}
       />
 
-      <main className="p-4 sm:p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
         <CashSessionReviewUnavailableNotice
           isAdmin={isAdmin}
           cashSessionReviewAvailable={cashSessionReviewAvailable}
@@ -751,7 +751,7 @@ export default function CashSessionsPage() {
           sessions={sessions}
           totalCount={totalCount}
         />
-      </main>
+      </div>
 
       <CloseCashSessionDialog
         closeCashSessionMutation={closeCashSessionMutation}

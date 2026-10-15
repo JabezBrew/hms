@@ -8,15 +8,17 @@ const OpsDashboardPage = lazy(() => import('@/features/ops/pages/OpsDashboardPag
 
 export default function OpsDashboardApp() {
   return (
-    <ErrorBoundary>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/system/ops" replace />} />
-          <Route path="/system/ops" element={<OpsDashboardPage />} />
-          <Route path="/system/ops/*" element={<OpsDashboardPage />} />
-          <Route path="*" element={<Navigate to="/system/ops" replace />} />
-        </Routes>
-      </Suspense>
-    </ErrorBoundary>
+    <main className="min-h-svh">
+      <ErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/system/ops" replace />} />
+            <Route path="/system/ops" element={<OpsDashboardPage />} />
+            <Route path="/system/ops/*" element={<OpsDashboardPage />} />
+            <Route path="*" element={<Navigate to="/system/ops" replace />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
+    </main>
   )
 }

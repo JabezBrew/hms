@@ -35,9 +35,23 @@ path.
 ## Invariants
 
 - Dashboard projection jobs must be safe to retry through DB job state.
+- Claims use a 120-second lease. Abandoned claims are recovered by the next
+  worker poll, and a job is retired after three attempts. Completion and failure
+  are fenced to the current worker, attempt, and unexpired lease.
+- Projection refreshes time out after 60 seconds, before their claim expires.
+  Refresh transactions also set PostgreSQL statement, lock, and idle transaction
+  timeouts to 25, 3, and 30 seconds respectively. These are local transaction
+  settings, so a dropped client future cannot leave unbounded database work and
+  other pooled operations keep their own timeout policy. Metrics aggregate
+  without holding a job-row lock; final snapshot persistence locks and validates
+  the current claim, then persists and completes atomically.
+  Failed refreshes retry after 30 seconds. Malformed payloads are retired with a
+  fixed diagnostic code so they cannot block later work in the same batch.
 - Worker logs must not contain PHI.
 - Failing jobs should surface through ops/observability without exposing raw
   clinical payloads.
+- Persisted job failures and processing logs use fixed codes/classes. Never
+  persist or log arbitrary SQL, payload, serde, or error-chain text.
 - Add new worker job families deliberately; do not imply external side effects
   exist here until code implements them.
 

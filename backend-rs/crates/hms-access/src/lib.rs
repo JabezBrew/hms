@@ -231,7 +231,12 @@ impl ReauthState {
     }
 
     pub fn is_fresh_at(&self, now: DateTime<Utc>) -> bool {
-        self.verified_at.is_some() && now <= self.required_after
+        self.verified_at.is_some_and(|verified_at| {
+            verified_at <= now
+                && now <= self.required_after
+                && self.required_after
+                    <= verified_at + Duration::minutes(HIGH_RISK_REAUTH_WINDOW_MINUTES)
+        })
     }
 }
 
@@ -826,6 +831,22 @@ mod tests {
     use super::*;
     use hms_domain::auth::AuthSecurityState;
 
+    #[test]
+    fn reauth_freshness_rejects_future_missing_and_extended_evidence() {
+        let now = Utc::now();
+        assert!(ReauthState::from_authentication_time(now).is_fresh_at(now));
+        assert!(!ReauthState::missing(now).is_fresh_at(now));
+        assert!(
+            !ReauthState::from_authentication_time(now + Duration::seconds(1)).is_fresh_at(now)
+        );
+        assert!(
+            !ReauthState::from_authentication_time(now - Duration::minutes(16)).is_fresh_at(now)
+        );
+        let mut extended = ReauthState::from_authentication_time(now);
+        extended.required_after = now + Duration::hours(1);
+        assert!(!extended.is_fresh_at(now));
+    }
+
     fn make_ctx() -> RequestContext {
         let facility_id = Uuid::new_v4();
         let permissions = vec![
@@ -1276,6 +1297,7 @@ mod tests {
 
         let mut ctx = make_ctx();
         ctx.offsite = OffsiteState::OffsiteReadOnly;
+        let now = Utc::now();
         assert_eq!(
             require_high_risk_facility_permission(
                 &ctx,

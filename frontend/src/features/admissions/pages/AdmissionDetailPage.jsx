@@ -484,7 +484,7 @@ export default function AdmissionDetailPage() {
         </div>
       </PageHeader>
 
-      <main className="p-6 space-y-6">
+      <div className="p-6 space-y-6">
         <AdmissionActionError message={actionError} />
 
         <AdmissionSummaryCard
@@ -510,7 +510,7 @@ export default function AdmissionDetailPage() {
           lengthOfStayLabel={lengthOfStayLabel}
           totalCostLabel={totalCostLabel}
         />
-      </main>
+      </div>
     </PageShell>
   );
 }

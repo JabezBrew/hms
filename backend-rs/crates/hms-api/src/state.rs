@@ -25,7 +25,7 @@ use hms_events::DomainEventKind;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex as TokioMutex, Semaphore};
+use tokio::sync::{Mutex as TokioMutex, OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
@@ -1535,6 +1535,19 @@ impl AppState {
             .facility_code
             .eq_ignore_ascii_case(facility_code.trim())
         {
+            let Some(reservation) = hms_db::auth::reserve_login_attempt(
+                &self.inner.pool,
+                self.inner.facility_id,
+                "auth_facility",
+                Some(self.inner.facility_id),
+            )
+            .await?
+            else {
+                return Ok(None);
+            };
+            if !hms_db::auth::complete_login_attempt(&self.inner.pool, reservation, true).await? {
+                return Ok(None);
+            }
             hms_db::auth::insert_login_failure_audit(
                 &self.inner.pool,
                 NewAuthAuditEvent {
@@ -1562,6 +1575,19 @@ impl AppState {
         )
         .await?;
         let Some(user) = user else {
+            let Some(reservation) = hms_db::auth::reserve_login_attempt(
+                &self.inner.pool,
+                self.inner.facility_id,
+                "auth_login",
+                None,
+            )
+            .await?
+            else {
+                return Ok(None);
+            };
+            if !hms_db::auth::complete_login_attempt(&self.inner.pool, reservation, true).await? {
+                return Ok(None);
+            }
             hms_db::auth::insert_login_failure_audit(
                 &self.inner.pool,
                 NewAuthAuditEvent {
@@ -1582,10 +1608,13 @@ impl AppState {
             return Ok(None);
         };
 
-        if !self
-            .verify_password_bounded(&user.password_hash, password)
-            .await?
-        {
+        let Some((password_matches, _password_work_permit)) =
+            self.verify_login_password_bounded(&user, password).await?
+        else {
+            return Ok(None);
+        };
+
+        if !password_matches {
             hms_db::auth::insert_login_failure_audit(
                 &self.inner.pool,
                 NewAuthAuditEvent {
@@ -2100,6 +2129,7 @@ impl AppState {
             active_profile,
             user.permission_version,
             user.session_version,
+            deadlines.session_started_at,
             self.inner.config.access_token_ttl,
         )
         .context("failed to issue access token")?;
@@ -2169,6 +2199,43 @@ impl AppState {
         })
         .await
         .context("password verify task failed")
+    }
+
+    async fn verify_login_password_bounded(
+        &self,
+        user: &UserAccount,
+        password: &str,
+    ) -> Result<Option<(bool, OwnedSemaphorePermit)>> {
+        let permit = self
+            .inner
+            .password_work_limiter
+            .clone()
+            .acquire_owned()
+            .await
+            .context("password work limiter closed")?;
+        // Reserve atomically after CPU admission. The durable reservation
+        // counts against every API instance before credential work begins.
+        let Some(reservation) = hms_db::auth::reserve_login_attempt(
+            &self.inner.pool,
+            user.facility_id,
+            "auth_user",
+            Some(user.id),
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let hash = user.password_hash.clone();
+        let password = password.to_owned();
+        let (matches, permit, reservation) = tokio::task::spawn_blocking(move || {
+            (verify_password(&hash, &password), permit, reservation)
+        })
+        .await
+        .context("password verify task failed")?;
+        if !hms_db::auth::complete_login_attempt(&self.inner.pool, reservation, !matches).await? {
+            return Ok(None);
+        }
+        Ok(Some((matches, permit)))
     }
 }
 

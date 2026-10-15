@@ -384,7 +384,7 @@ function InboxMainContent({
   onMarkRead,
 }) {
   return (
-    <main className="max-w-4xl mx-auto p-4 sm:p-6">
+    <div className="max-w-4xl mx-auto p-4 sm:p-6">
       {isLoading ? (
         <InboxLoadingState />
       ) : filteredItems.length === 0 ? (
@@ -397,7 +397,7 @@ function InboxMainContent({
           onMarkRead={onMarkRead}
         />
       )}
-    </main>
+    </div>
   );
 }
 

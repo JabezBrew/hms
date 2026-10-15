@@ -172,8 +172,8 @@ const NotificationCenter = () => {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="size-5" />
+        <Button variant="ghost" size="icon" className="relative" aria-label={totalCount > 0 ? `Notifications, ${totalCount} items` : 'Notifications'}>
+          <Bell aria-hidden="true" />
           {totalCount > 0 && (
             <span className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-[10px] font-mono bg-primary text-primary-foreground rounded-full">
               {totalCount > 99 ? '99+' : totalCount}

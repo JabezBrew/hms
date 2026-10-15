@@ -532,7 +532,7 @@ export default function InvoiceCreatePage() {
     <PageShell>
       <InvoiceCreateHeader onBack={() => navigate('/billing/invoices')} />
 
-      <main className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="space-y-6">
             <PatientInformationSection
@@ -564,7 +564,7 @@ export default function InvoiceCreatePage() {
             />
           </form>
         </div>
-      </main>
+      </div>
     </PageShell>
   );
 }

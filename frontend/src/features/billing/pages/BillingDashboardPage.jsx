@@ -144,7 +144,7 @@ export default function BillingDashboardPage() {
         onRefresh={refetchMetrics}
       />
 
-      <main className="p-4 sm:p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
         <MetricsSection metrics={metrics} />
         <QuickStatsSection metrics={metrics} />
         <CashSessionSection
@@ -167,7 +167,7 @@ export default function BillingDashboardPage() {
           onOpenInvoice={(invoiceId) => navigate(`/billing/invoices/${invoiceId}`)}
         />
         <BillingQuickActions onNavigate={navigate} />
-      </main>
+      </div>
 
       <CloseCashSessionDialog
         open={closeDialogOpen}

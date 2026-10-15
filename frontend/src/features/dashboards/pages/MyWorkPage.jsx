@@ -62,7 +62,7 @@ const WORK_AREAS = [
     description: 'Search all patient records',
     href: '/patients',
     icon: BookOpen,
-    features: ['patient_chronicle'],
+    features: ['patient_registration'],
   },
 ];
 
@@ -85,7 +85,7 @@ export default function MyWorkPage() {
         description="Start from the care context you are working in"
         size="md"
       />
-      <main className="p-4 sm:p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
         {moduleGate.isResolving ? (
           <PageState variant="loading" fullHeight={false} className="rounded-lg border border-border" />
         ) : null}
@@ -112,7 +112,7 @@ export default function MyWorkPage() {
         ) : null}
 
         {!moduleGate.isResolving && moduleGate.hasFeatureMap && visibleAreas.length > 0 ? (
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Care contexts">
+          <section className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Care contexts">
             {visibleAreas.map((area) => (
               <WorkAreaCard
                 key={area.key}
@@ -124,7 +124,7 @@ export default function MyWorkPage() {
             ))}
           </section>
         ) : null}
-      </main>
+      </div>
     </PageShell>
   );
 }
@@ -135,24 +135,22 @@ function WorkAreaCard({ area, myWork, isLoading, error }) {
 
   return (
     <Card className="rounded-lg">
-      <CardHeader className="gap-3">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 rounded-md border border-border bg-muted p-2 text-muted-foreground">
+      <CardHeader className="gap-3 has-data-[slot=card-action]:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="shrink-0 rounded-md border border-border bg-muted p-2 text-muted-foreground">
             <Icon className="size-4" aria-hidden="true" />
           </div>
-          <div className="min-w-0">
-            <CardTitle className="font-heading text-base">{area.title}</CardTitle>
-            <CardDescription>{area.description}</CardDescription>
-          </div>
+          <CardTitle className="truncate font-heading text-base">{area.title}</CardTitle>
         </div>
-        <CardAction>
+        <CardAction className="row-span-1">
           <Button asChild size="sm" variant="outline" className="font-mono text-xs">
-            <Link to={area.href}>
+            <Link to={area.href} aria-label={`Open ${area.title}`}>
               Open
               <ArrowRight className="ml-2 size-4" aria-hidden="true" />
             </Link>
           </Button>
         </CardAction>
+        <CardDescription className="col-span-full">{area.description}</CardDescription>
       </CardHeader>
       <CardContent className="border-t border-border p-0">
         {isLoading ? (

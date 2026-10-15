@@ -817,7 +817,7 @@ export default function ServiceCatalogPage() {
         tab={tab}
       />
 
-      <main className="p-4 sm:p-6 space-y-4">
+      <div className="p-4 sm:p-6 space-y-4">
         {!catalogMutationsAvailable ? <ServiceCatalogReadOnlyNotice /> : null}
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -845,7 +845,7 @@ export default function ServiceCatalogPage() {
             setCategorySearch={setCategorySearch}
           />
         </Tabs>
-      </main>
+      </div>
 
       <CategoryDialog
         categoryDialog={categoryDialog}

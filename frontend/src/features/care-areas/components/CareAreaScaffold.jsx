@@ -35,9 +35,9 @@ export function CareAreaScaffold({
         actions={actions}
         size="md"
       />
-      <main className="p-4 sm:p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
         {children}
-      </main>
+      </div>
     </PageShell>
   );
 }
@@ -75,7 +75,7 @@ export function CareAreaCard({
         </div>
         <CardAction>
           <Button asChild variant="outline" size="sm" className="font-mono text-xs">
-            <Link to={to}>
+            <Link to={to} aria-label={`${actionLabel} ${title}`}>
               {actionLabel}
               <ArrowRight className="ml-2 size-4" aria-hidden="true" />
             </Link>

@@ -14,8 +14,8 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 
 | Role | Font | Usage |
 |------|------|-------|
-| Display | `Fraunces` | Patient names, page titles |
-| Heading | `DM Sans` | Section headers, labels |
+| Display | `Cormorant Garamond` | Patient names, page titles |
+| Interface | `DM Sans` | Navigation, controls, body copy, section headers, labels |
 | Data | `IBM Plex Mono` | MRNs, vitals, timestamps, clinical data |
 
 ```css
@@ -24,6 +24,11 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 .font-mono { font-family: var(--font-ibm-plex-mono); }
 ```
 
+Fonts are served locally from `public/assets/`. The legacy `--font-fraunces`
+token remains the display alias for Cormorant Garamond; `--font-dm-sans` and
+Tailwind `font-sans` use the actual DM Sans interface font. Keep display serif
+type out of operational controls and dense clinical text.
+
 ---
 
 ## Color Palette
@@ -31,8 +36,8 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 ### Base
 
 #### Light (Warm Cream)
-- Background: `oklch(0.98 0.005 60)` - warm cream
-- Foreground: `oklch(0.15 0.01 50)` - warm charcoal text
+- Background: `oklch(0.975 0.004 70)` - warm stone
+- Foreground: `oklch(0.22 0.012 55)` - warm charcoal text
 - Card: `oklch(1 0 0)` - elevated surface
 - Border: `oklch(0.90 0.005 60)` - subtle dividers
 
@@ -50,13 +55,21 @@ Chronicle transforms clinical data from database rows into meaningful narratives
 | Rose | `oklch(0.65 0.22 15)` | Critical alerts, allergies |
 | Sky | `oklch(0.70 0.15 230)` | Informational, medications |
 
+Light-mode primary actions and links use deep bronze `oklch(0.49 0.10 57)`
+with near-white button text. Amber remains the attention and timeline accent;
+it is not the foreground for small text on white. Chronicle badge utilities use
+separate readable foreground tokens in light and dark themes, so clinical
+meaning remains recognizable without relying on a low-contrast accent color.
+
 ---
 
 ## Components
 
 ### PageShell
 Base page container for Chronicle layouts.
-- Applies `min-h-screen bg-background` and consistent padding.
+- Applies `w-full min-w-0 bg-background`; content owns its padding.
+- The app shell owns viewport height. Do not add a second viewport-height
+  minimum to ordinary pages below its fixed 64px toolbar.
 - Use as the outer wrapper for page content.
 
 ```jsx

@@ -25,6 +25,35 @@ async fn consent_grants_are_patient_access_scoped_and_revocable() {
         .expect("patient id exists")
         .to_owned();
 
+    let expired_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/consents")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "scope": "referral_coordination",
+                        "purpose": "Specialist referral coordination",
+                        "expires_at": Utc::now() - Duration::hours(1)
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("expired consent request completes");
+    assert_eq!(expired_response.status(), StatusCode::BAD_REQUEST);
+    let expired_body = json_body(expired_response).await;
+    assert_eq!(expired_body["error"]["code"], "invalid_request");
+    assert_eq!(
+        expired_body["error"]["details"]["expires_at"][0],
+        "Expiration must be in the future."
+    );
+
     let create_response = app
         .clone()
         .oneshot(
@@ -38,7 +67,7 @@ async fn consent_grants_are_patient_access_scoped_and_revocable() {
                         "patient_id": patient_id,
                         "scope": "referral_coordination",
                         "purpose": "Specialist referral coordination",
-                        "expires_at": "2026-06-10T00:00:00Z"
+                        "expires_at": Utc::now() + Duration::days(1)
                     })
                     .to_string(),
                 ))

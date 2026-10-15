@@ -11,9 +11,9 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
 
-    <!-- Self-hosted shell fonts: Cormorant Garamond (display + headings), IBM Plex Mono (data) -->
+    <!-- Self-hosted shell fonts: DM Sans (interface), Cormorant Garamond (display), IBM Plex Mono (data) -->
     <link rel="preload" as="style" href="/assets/hms-fonts-20260522.css" />
-    <link rel="preload" as="font" href="/assets/cormorant-garamond-normal-v21-co3bmX5s.woff2" type="font/woff2" crossorigin />
+    <link rel="preload" as="font" href="/assets/dm-sans-latin-variable-v17.woff2" type="font/woff2" crossorigin />
     <link rel="preload" as="font" href="/assets/ibm-plex-mono-normal-400-v20-F63fjptA.woff2" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/assets/hms-fonts-20260522.css" />
   </head>
@@ -48,9 +48,9 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(120% 120% at 50% 0%, #fff7e8 0%, #ffffff 45%, #ffffff 100%);
-        color: #d97706;
-        font: 500 14px/1.4 "Cormorant Garamond", Georgia, serif;
+        background: #f7f6f4;
+        color: #835a30;
+        font: 500 14px/1.4 "DM Sans", system-ui, sans-serif;
       }
       .hms-boot__inner {
         display: flex;
@@ -82,10 +82,8 @@
       }
       .hms-boot__title {
         margin: 0;
-        font-size: 11px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: #64748b;
+        font-size: 13px;
+        color: #66615b;
       }
       @keyframes hms-boot-dash {
         0% {

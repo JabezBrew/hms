@@ -21,3 +21,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 hms-domain = { path = "../hms-domain" }
+serde_json.workspace = true

@@ -31,6 +31,10 @@ session safety.
 - Privileged/high-risk action support must fail closed when required auth facts
   are missing.
 - Session data must not expose PHI in logs or metrics.
+- Access JWT issue time is distinct from credential authentication time;
+  refresh rotation must preserve the latter.
+- Recovery-code generation must return complete bounded codes without panics;
+  persistence receives hashes only and consumes each code at most once.
 
 ## Verification
 

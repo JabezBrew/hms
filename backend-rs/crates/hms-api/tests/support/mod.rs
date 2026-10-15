@@ -545,6 +545,7 @@ pub(crate) fn token_with_stale_reauth(access_token: &str) -> String {
     let mut claims = hms_auth::verify_access_token(TEST_JWT_SECRET, access_token)
         .expect("test access token verifies");
     claims.iat = (Utc::now() - Duration::minutes(16)).timestamp() as usize;
+    claims.auth_time = Some(claims.iat);
     claims.exp = (Utc::now() + Duration::minutes(5)).timestamp() as usize;
     encode(
         &Header::default(),

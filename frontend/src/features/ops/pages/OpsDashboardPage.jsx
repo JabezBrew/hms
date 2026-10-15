@@ -1060,9 +1060,9 @@ function LoadingDashboard({ pageMeta }) {
         titleClassName="tracking-normal"
         className="rounded-lg border border-border bg-card"
       />
-      <main className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         <PageState variant="loading" fullHeight={false} className="min-h-[420px] rounded-lg border border-border" />
-      </main>
+      </div>
     </PageShell>
   )
 }
@@ -1200,7 +1200,7 @@ export default function OpsDashboardPage() {
       />
       <TabNav activeTab={activeTab} onChange={setActiveTab} />
 
-      <main className="space-y-6 p-4 sm:p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {activeQuery.isError && activeQuery !== overviewQuery ? (
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200">
             The selected drilldown did not load; showing the last overview snapshot where available.
@@ -1268,7 +1268,7 @@ export default function OpsDashboardPage() {
             <IncidentPanel incidents={incidents} />
           </section>
         ) : null}
-      </main>
+      </div>
     </PageShell>
   )
 }

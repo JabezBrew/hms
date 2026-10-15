@@ -20,6 +20,10 @@ pub struct AccessClaims {
     pub active_profile: String,
     pub permission_version: i64,
     pub session_version: i64,
+    /// Time of the credential verification that started the session family.
+    /// Refreshing an access token must never advance this timestamp.
+    #[serde(default)]
+    pub auth_time: Option<usize>,
     pub iat: usize,
     pub exp: usize,
 }
@@ -32,6 +36,7 @@ pub fn issue_access_token(
     active_profile: String,
     permission_version: i64,
     session_version: i64,
+    authenticated_at: DateTime<Utc>,
     ttl: Duration,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let now = unix_seconds();
@@ -42,6 +47,7 @@ pub fn issue_access_token(
         active_profile,
         permission_version,
         session_version,
+        auth_time: usize::try_from(authenticated_at.timestamp()).ok(),
         iat: now,
         exp: now + ttl.as_secs() as usize,
     };
@@ -57,11 +63,22 @@ pub fn verify_access_token(
     secret: &str,
     token: &str,
 ) -> Result<AccessClaims, jsonwebtoken::errors::Error> {
+    let mut validation = Validation::default();
+    validation.leeway = 0;
     let data = decode::<AccessClaims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::default(),
+        &validation,
     )?;
+    if data.claims.iat > unix_seconds()
+        || data.claims.iat >= data.claims.exp
+        || data
+            .claims
+            .auth_time
+            .is_some_and(|auth_time| auth_time > data.claims.iat)
+    {
+        return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+    }
     Ok(data.claims)
 }
 
@@ -247,7 +264,9 @@ pub fn finish_passkey_authentication(
 pub fn generate_recovery_codes(count: usize) -> Vec<String> {
     (0..count.clamp(1, 20))
         .map(|_| {
-            let mut bytes = [0_u8; 10];
+            // Twelve bytes encode to sixteen ASCII characters, leaving enough
+            // characters for all three five-character groups below.
+            let mut bytes = [0_u8; 12];
             OsRng.fill_bytes(&mut bytes);
             let encoded = URL_SAFE_NO_PAD.encode(bytes);
             format!(
@@ -334,6 +353,72 @@ fn credential_id_from_credential(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn token_for_claims(claims: &AccessClaims) -> String {
+        encode(
+            &Header::default(),
+            claims,
+            &EncodingKey::from_secret(b"test-only-auth-secret"),
+        )
+        .expect("test claims encode")
+    }
+
+    fn valid_claims() -> AccessClaims {
+        let token = issue_access_token(
+            "test-only-auth-secret",
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "hospital".to_owned(),
+            1,
+            1,
+            Utc::now() - chrono::Duration::minutes(20),
+            Duration::from_secs(300),
+        )
+        .expect("test access token issues");
+        verify_access_token("test-only-auth-secret", &token).expect("test access token verifies")
+    }
+
+    #[test]
+    fn access_token_keeps_authentication_time_separate_from_issue_time() {
+        let claims = valid_claims();
+        assert!(claims
+            .auth_time
+            .is_some_and(|auth_time| auth_time + 1100 < claims.iat));
+    }
+
+    #[test]
+    fn access_tokens_reject_expiry_and_impossible_authentication_times() {
+        let mut claims = valid_claims();
+        claims.exp = unix_seconds() - 1;
+        assert!(verify_access_token("test-only-auth-secret", &token_for_claims(&claims)).is_err());
+
+        claims = valid_claims();
+        claims.iat = unix_seconds() + 120;
+        assert!(verify_access_token("test-only-auth-secret", &token_for_claims(&claims)).is_err());
+
+        claims = valid_claims();
+        claims.auth_time = Some(claims.iat + 1);
+        assert!(verify_access_token("test-only-auth-secret", &token_for_claims(&claims)).is_err());
+    }
+
+    #[test]
+    fn recovery_codes_are_bounded_unique_and_have_three_complete_groups() {
+        for (requested, expected) in [(0, 1), (10, 10), (usize::MAX, 20)] {
+            let codes = generate_recovery_codes(requested);
+            assert_eq!(codes.len(), expected);
+            let unique = codes.iter().collect::<std::collections::HashSet<_>>();
+            assert_eq!(unique.len(), expected);
+            for code in codes {
+                assert_eq!(code.len(), 17);
+                assert_eq!(code.as_bytes()[5], b'-');
+                assert_eq!(code.as_bytes()[11], b'-');
+                assert!(code
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')));
+            }
+        }
+    }
 
     #[test]
     fn recovery_code_hash_normalizes_case_spacing_and_dashes() {

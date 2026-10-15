@@ -61,24 +61,43 @@ function parseNoteBody(value) {
   }
 }
 
-function parseTemplateStructure(value) {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'object') {
-    return Array.isArray(value.sections) ? value.sections : [];
+function parseTemplateDocument(value) {
+  if (!value) return null;
+  let document = value;
+  if (typeof value === 'string') {
+    try {
+      document = JSON.parse(value);
+    } catch {
+      return null;
+    }
   }
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed;
-    return Array.isArray(parsed?.sections) ? parsed.sections : [];
-  } catch {
-    return [];
-  }
+  if (Array.isArray(document)) return { sections: document };
+  return document && typeof document === 'object' ? document : null;
 }
 
-function serializeTemplateStructure(value) {
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value);
+function parseTemplateStructure(value) {
+  const document = parseTemplateDocument(value);
+  return Array.isArray(document?.sections) ? document.sections : [];
+}
+
+// This envelope holds presentation metadata only. Access remains a backend rule.
+function serializeTemplateDocument(data) {
+  const source = data.structure ?? data.template ?? data.body_template;
+  if (data.structure === undefined && data.template === undefined && data.description === undefined) {
+    return typeof source === 'string' ? source : JSON.stringify(source);
+  }
+
+  const document = parseTemplateDocument(source);
+  if (!document) return typeof source === 'string' ? source : JSON.stringify(source);
+  if (Array.isArray(source) && data.body_template === undefined && data.description === undefined) {
+    return JSON.stringify(source);
+  }
+
+  return JSON.stringify({
+    ...parseTemplateDocument(data.body_template),
+    ...document,
+    ...(data.description !== undefined ? { description: String(data.description ?? '') } : {}),
+  });
 }
 
 function serializeNoteBody(data = {}) {
@@ -121,12 +140,14 @@ function adaptV2Template(template) {
   }
 
   const structure = parseTemplateStructure(template.body_template);
+  const document = parseTemplateDocument(template.body_template);
   return {
     ...template,
     name: template.title,
     category: normalizeClinicalNoteType(template.note_type),
     note_type: normalizeClinicalNoteType(template.note_type),
     is_active: template.is_active !== false,
+    description: typeof document?.description === 'string' ? document.description : '',
     structure,
   };
 }
@@ -140,7 +161,7 @@ function normalizeTemplatePayload(data = {}) {
     payload.note_type = clinicalNoteTypeForWrite(data.note_type ?? data.category ?? data.type);
   }
   if (data.body_template !== undefined || data.structure !== undefined || data.template !== undefined) {
-    payload.body_template = serializeTemplateStructure(data.body_template ?? data.structure ?? data.template);
+    payload.body_template = serializeTemplateDocument(data);
   }
   if (data.is_active !== undefined) {
     payload.is_active = Boolean(data.is_active);

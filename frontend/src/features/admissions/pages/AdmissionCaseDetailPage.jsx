@@ -468,7 +468,7 @@ export default function AdmissionCaseDetailPage() {
         <AdmissionCaseHeaderBadges admissionCase={admissionCase} />
       </PageHeader>
 
-      <main className="space-y-6 p-6">
+      <div className="space-y-6 p-6">
         <AdmissionCaseSummaryCard admissionCase={admissionCase} />
 
         <AdmissionPlacementCard
@@ -505,7 +505,7 @@ export default function AdmissionCaseDetailPage() {
           onTaskComplete={handleTaskComplete}
           userType={userType}
         />
-      </main>
+      </div>
     </PageShell>
   )
 }

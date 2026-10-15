@@ -227,7 +227,7 @@ const AuditLogsPage = () => {
         />
 
         {/* Logs List */}
-        <main className="p-4 sm:p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Stats Row */}
           {stats && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -375,7 +375,7 @@ const AuditLogsPage = () => {
               />
             </div>
           )}
-        </main>
+        </div>
       </PageShell>
   );
 };

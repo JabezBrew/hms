@@ -1019,6 +1019,100 @@ pub async fn insert_auth_audit_event(
     Ok(())
 }
 
+/// Opaque proof that a credential attempt reserved durable admission capacity.
+/// A reservation belongs to one fixed window and cannot affect a newer one.
+pub struct LoginAttemptReservation {
+    facility_id: Uuid,
+    resource_type: String,
+    resource_key: String,
+    window_started_at: DateTime<Utc>,
+}
+
+/// Atomically reserves the shared failure budget before password work. Scope
+/// contains only an internal identifier, never raw login input. A process crash
+/// or cancelled attempt leaves a fail-closed reservation until the window ends.
+pub async fn reserve_login_attempt(
+    pool: &PgPool,
+    facility_id: Uuid,
+    resource_type: &str,
+    resource_id: Option<Uuid>,
+) -> anyhow::Result<Option<LoginAttemptReservation>> {
+    let resource_key = resource_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "none".to_owned());
+    let window_started_at = sqlx::query_scalar::<_, DateTime<Utc>>(
+        r#"
+        INSERT INTO auth_login_attempt_budgets (
+            facility_id, resource_type, resource_key, window_started_at,
+            failed_attempts, in_flight_attempts
+        )
+        VALUES ($1, $2, $3, now(), 0, 1)
+        ON CONFLICT (facility_id, resource_type, resource_key) DO UPDATE SET
+            window_started_at = CASE
+                WHEN auth_login_attempt_budgets.window_started_at <= now() - interval '15 minutes'
+                  OR auth_login_attempt_budgets.failed_attempts + auth_login_attempt_budgets.in_flight_attempts = 0
+                THEN now() ELSE auth_login_attempt_budgets.window_started_at END,
+            failed_attempts = CASE
+                WHEN auth_login_attempt_budgets.window_started_at <= now() - interval '15 minutes'
+                  OR auth_login_attempt_budgets.failed_attempts + auth_login_attempt_budgets.in_flight_attempts = 0
+                THEN 0 ELSE auth_login_attempt_budgets.failed_attempts END,
+            in_flight_attempts = CASE
+                WHEN auth_login_attempt_budgets.window_started_at <= now() - interval '15 minutes'
+                  OR auth_login_attempt_budgets.failed_attempts + auth_login_attempt_budgets.in_flight_attempts = 0
+                THEN 1 ELSE auth_login_attempt_budgets.in_flight_attempts + 1 END,
+            updated_at = now()
+        WHERE auth_login_attempt_budgets.window_started_at <= now() - interval '15 minutes'
+           OR auth_login_attempt_budgets.failed_attempts + auth_login_attempt_budgets.in_flight_attempts < 10
+        RETURNING window_started_at
+        "#,
+    )
+    .bind(facility_id)
+    .bind(resource_type)
+    .bind(&resource_key)
+    .fetch_optional(pool)
+    .await?;
+    Ok(
+        window_started_at.map(|window_started_at| LoginAttemptReservation {
+            facility_id,
+            resource_type: resource_type.to_owned(),
+            resource_key,
+            window_started_at,
+        }),
+    )
+}
+
+/// Converts a reservation into a failure or releases it after success. False
+/// means the reservation's window was lost/expired; callers must not issue a
+/// session on that result. The update never releases another window's budget.
+pub async fn complete_login_attempt(
+    pool: &PgPool,
+    reservation: LoginAttemptReservation,
+    failed: bool,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"
+        UPDATE auth_login_attempt_budgets
+        SET in_flight_attempts = in_flight_attempts - 1,
+            failed_attempts = failed_attempts + CASE WHEN $5 THEN 1 ELSE 0 END,
+            updated_at = now()
+        WHERE facility_id = $1
+          AND resource_type = $2
+          AND resource_key = $3
+          AND window_started_at = $4
+          AND window_started_at > now() - interval '15 minutes'
+          AND in_flight_attempts > 0
+        "#,
+    )
+    .bind(reservation.facility_id)
+    .bind(&reservation.resource_type)
+    .bind(&reservation.resource_key)
+    .bind(reservation.window_started_at)
+    .bind(failed)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 pub async fn insert_login_failure_audit(
     pool: &PgPool,
     audit_event: NewAuthAuditEvent,

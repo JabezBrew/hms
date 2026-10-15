@@ -355,7 +355,7 @@ export function PatientChroniclePageContent({
                 onViewVitalsTrends={() => handleViewTrends('vitals')}
                 onViewFluidTrends={() => handleViewTrends('fluids')}
               />
-              <main className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
+              <div className="min-w-0 flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] transition-all duration-300 sm:p-6">
                 <div ref={contentMeasure.ref}>
                   {isWardRoundMode ? (
                     <WardRoundChronicleMode
@@ -414,7 +414,7 @@ export function PatientChroniclePageContent({
                     </Suspense>
                   )}
                 </div>
-              </main>
+              </div>
 
               <Suspense fallback={null}>
                 <ChronicleWorkspaceHost

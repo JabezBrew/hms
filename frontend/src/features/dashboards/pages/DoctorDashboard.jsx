@@ -193,7 +193,7 @@ export default function DoctorDashboard() {
         descriptionClassName="text-muted-foreground mt-2"
       />
 
-      <main className="p-6 space-y-6">
+      <div className="p-6 space-y-6">
         <CurrentPatientPanel
           currentPatient={data.current_patient}
           upcomingCount={data.upcoming?.length || 0}
@@ -225,7 +225,7 @@ export default function DoctorDashboard() {
           canUsePatientChronicle={canUsePatientChronicle}
           onViewPatient={handleViewPatient}
         />
-      </main>
+      </div>
     </PageShell>
   );
 }

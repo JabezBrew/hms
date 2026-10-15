@@ -101,9 +101,9 @@ function FacilitySwitcherMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="font-mono text-xs">
-          <Building2 className="size-3.5 mr-2" />
-          {facilityCode || DEFAULT_FACILITY_CODE || "Facility"}
+        <Button variant="outline" size="sm" aria-label={`Facility: ${facilityCode || DEFAULT_FACILITY_CODE || 'choose facility'}`}>
+          <Building2 data-icon="inline-start" aria-hidden="true" />
+          <span className="max-w-20 truncate sm:max-w-32">{facilityCode || DEFAULT_FACILITY_CODE || "Facility"}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">

@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use hms_db::dashboard::{DashboardProjectionJobClaim, DashboardProjectionRefreshFailure};
 use sqlx::Row;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
@@ -66,10 +67,10 @@ async fn main() -> anyhow::Result<()> {
                 if let Err(error) =
                     process_dashboard_projection_jobs(&pool, &worker_id, job_batch_size).await
                 {
-                    warn!(%error, "dashboard projection job processing failed");
+                    warn!(error_class = safe_error_class(&error), "dashboard projection job processing failed");
                 }
                 if let Err(error) = refresh_worker_metrics(&pool).await {
-                    warn!(%error, "worker metrics refresh failed");
+                    warn!(error_class = safe_error_class(&error), "worker metrics refresh failed");
                 }
             }
         }
@@ -85,31 +86,46 @@ async fn process_dashboard_projection_jobs(
 ) -> anyhow::Result<u64> {
     let mut processed = 0;
     for _ in 0..batch_limit {
-        let Some(job) =
+        let Some(claim) =
             hms_db::dashboard::lock_next_dashboard_projection_refresh_job(pool, worker_id).await?
         else {
             break;
         };
-        let job_id = job.id;
-        match hms_db::dashboard::refresh_dashboard_projection(
-            pool,
-            job.facility_id,
-            job.deployment_profile,
+        let DashboardProjectionJobClaim::Ready(job) = claim else {
+            processed += 1;
+            warn!("dashboard projection job rejected");
+            continue;
+        };
+        // PostgreSQL bounds statements/locks inside the repository transaction;
+        // this outer deadline also bounds client-side work and pool acquisition.
+        let refresh = tokio::time::timeout(
+            Duration::from_secs(60),
+            hms_db::dashboard::refresh_dashboard_projection_for_job(pool, &job),
         )
-        .await
-        {
-            Ok(_) => {
-                hms_db::dashboard::complete_dashboard_projection_refresh_job(pool, job_id).await?;
-            }
-            Err(error) => {
-                let error_summary = safe_error_summary(&error);
+        .await;
+        match refresh {
+            Ok(Ok(true)) => {}
+            Ok(Ok(false)) => warn!("dashboard projection refresh skipped after claim loss"),
+            Ok(Err(error)) => {
                 hms_db::dashboard::fail_dashboard_projection_refresh_job(
                     pool,
-                    job_id,
-                    &error_summary,
+                    &job,
+                    DashboardProjectionRefreshFailure::RefreshFailed,
                 )
                 .await?;
-                warn!(%job_id, %error, "dashboard projection refresh job failed");
+                warn!(
+                    error_class = safe_error_class(&error),
+                    "dashboard projection refresh job failed"
+                );
+            }
+            Err(_) => {
+                hms_db::dashboard::fail_dashboard_projection_refresh_job(
+                    pool,
+                    &job,
+                    DashboardProjectionRefreshFailure::TimedOut,
+                )
+                .await?;
+                warn!("dashboard projection refresh job timed out");
             }
         }
         processed += 1;
@@ -184,7 +200,10 @@ fn spawn_metrics_server(addr: SocketAddr, pool: hms_db::PgPool) {
 
 async fn worker_metrics(State(pool): State<hms_db::PgPool>) -> impl IntoResponse {
     if let Err(error) = refresh_worker_metrics(&pool).await {
-        warn!(%error, "worker metrics refresh failed");
+        warn!(
+            error_class = safe_error_class(&error),
+            "worker metrics refresh failed"
+        );
     }
     (
         [(CONTENT_TYPE, "text/plain; version=0.0.4")],
@@ -196,7 +215,10 @@ async fn worker_health_ready(State(pool): State<hms_db::PgPool>) -> impl IntoRes
     match check_database_ready(&pool).await {
         Ok(()) => StatusCode::OK,
         Err(error) => {
-            warn!(%error, "worker readiness check failed");
+            warn!(
+                error_class = safe_error_class(&error),
+                "worker readiness check failed"
+            );
             StatusCode::SERVICE_UNAVAILABLE
         }
     }
@@ -210,17 +232,14 @@ fn worker_id() -> String {
     format!("hms-worker-{}", std::process::id())
 }
 
-fn safe_error_summary(error: &anyhow::Error) -> String {
-    let mut summary: String = error
-        .to_string()
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(240)
-        .collect();
-    if summary.is_empty() {
-        summary = "dashboard projection refresh failed".to_owned();
+fn safe_error_class(error: &anyhow::Error) -> &'static str {
+    match error.downcast_ref::<sqlx::Error>() {
+        Some(sqlx::Error::PoolTimedOut) => "database_pool_timeout",
+        Some(sqlx::Error::PoolClosed) => "database_pool_closed",
+        Some(sqlx::Error::Io(_) | sqlx::Error::Tls(_)) => "database_connection_failed",
+        Some(_) => "database_operation_failed",
+        None => "worker_operation_failed",
     }
-    summary
 }
 
 fn parse_u32(value: &str, name: &str) -> anyhow::Result<u32> {
@@ -250,6 +269,26 @@ mod tests {
     use super::*;
     use hms_db::provision::{provision_baseline, BaselineProvisioning};
     use hms_domain::deployment::DeploymentProfile;
+
+    #[test]
+    fn worker_error_diagnostics_never_echo_arbitrary_error_text() {
+        let sensitive_error = anyhow::anyhow!("synthetic-sensitive-value: raw payload");
+        assert_eq!(
+            safe_error_class(&sensitive_error),
+            "worker_operation_failed"
+        );
+        let database_error = anyhow::Error::new(sqlx::Error::Protocol(
+            "synthetic-sensitive-value: database detail".to_owned(),
+        ));
+        assert_eq!(
+            safe_error_class(&database_error),
+            "database_operation_failed"
+        );
+        assert_eq!(
+            safe_error_class(&anyhow::Error::new(sqlx::Error::PoolTimedOut)),
+            "database_pool_timeout"
+        );
+    }
 
     #[tokio::test]
     async fn database_readiness_check_accepts_postgres_select_one() {
@@ -313,6 +352,59 @@ mod tests {
         .await
         .expect("dashboard projection job status loads");
         assert_eq!(status, "completed");
+    }
+
+    #[tokio::test]
+    async fn rejected_payload_does_not_stop_valid_jobs_in_the_same_batch() {
+        let db = hms_db::test_support::TestDb::hospital()
+            .await
+            .expect("test database provisions");
+        sqlx::query(
+            "INSERT INTO jobs (id, kind, payload, available_at)
+             VALUES (gen_random_uuid(), $1, $2, now() - INTERVAL '1 second')",
+        )
+        .bind(hms_db::dashboard::DASHBOARD_REFRESH_JOB_KIND)
+        .bind(serde_json::json!({ "deployment_profile": "synthetic-sensitive-value" }))
+        .execute(db.pool())
+        .await
+        .expect("poison job inserts ahead of valid work");
+        hms_db::dashboard::queue_dashboard_projection_refresh(
+            db.pool(),
+            db.facility_id(),
+            DeploymentProfile::Hospital,
+        )
+        .await
+        .expect("valid projection queues");
+
+        let processed = process_dashboard_projection_jobs(db.pool(), "worker-test", 5)
+            .await
+            .expect("worker continues after malformed payload");
+        assert_eq!(processed, 2);
+        let states: Vec<(String, Option<String>)> = sqlx::query_as(
+            "SELECT status, last_error FROM jobs WHERE kind = $1 ORDER BY created_at, id",
+        )
+        .bind(hms_db::dashboard::DASHBOARD_REFRESH_JOB_KIND)
+        .fetch_all(db.pool())
+        .await
+        .expect("job states load");
+        assert_eq!(
+            states,
+            vec![
+                (
+                    "failed".to_owned(),
+                    Some("invalid_dashboard_projection_payload".to_owned())
+                ),
+                ("completed".to_owned(), None),
+            ]
+        );
+        let snapshot_count: i64 = sqlx::query_scalar(
+            "SELECT count(*)::bigint FROM dashboard_snapshots WHERE facility_id = $1",
+        )
+        .bind(db.facility_id())
+        .fetch_one(db.pool())
+        .await
+        .expect("dashboard projection loads");
+        assert_eq!(snapshot_count, 1);
     }
 }
 

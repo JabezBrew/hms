@@ -658,7 +658,7 @@ function LabResultsContent({
   verificationFilter,
 }) {
   return (
-    <main className="p-4 sm:p-6 space-y-4">
+    <div className="p-4 sm:p-6 space-y-4">
       {targetResultId ? (
         <TargetLabResultPanel isLoading={targetResultLoading} result={targetResult} />
       ) : null}
@@ -701,7 +701,7 @@ function LabResultsContent({
           />
         </div>
       )}
-    </main>
+    </div>
   );
 }
 

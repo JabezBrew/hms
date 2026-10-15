@@ -1234,6 +1234,7 @@ function PatientFormActions({
 
       {!isLastStep ? (
         <Button
+          key="next-step"
           type="button"
           onClick={handleNext}
           disabled={isSubmitting || (!isEditMode && activeStep === 'encounter' && encounterBlocksOutpatient)}
@@ -1243,6 +1244,7 @@ function PatientFormActions({
         </Button>
       ) : (
         <Button
+          key="save-patient"
           type="submit"
           disabled={isSubmitting || (!isEditMode && encounterBlocksOutpatient)}
           className="font-mono text-sm bg-primary hover:bg-primary/90"

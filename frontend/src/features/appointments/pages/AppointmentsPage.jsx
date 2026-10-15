@@ -226,7 +226,7 @@ const AppointmentsPage = () => {
         )}
       />
 
-      <main className="space-y-6 p-6">
+      <div className="space-y-6 p-6">
         <AppointmentMetrics
           activeWaitlistCount={activeWaitlist.length}
           remainingCapacity={remainingCapacity}
@@ -352,7 +352,7 @@ const AppointmentsPage = () => {
             <BookableServicesPanel services={services} isLoading={servicesLoading} />
           </TabsContent>
         </Tabs>
-      </main>
+      </div>
     </PageShell>
   );
 };

@@ -16,6 +16,8 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { ADMIN_CAPABILITIES } from '@/shared/constants/roles';
 import { userCanAccess } from '@/shared/lib/access';
+import { useSystemCapabilities } from '@/hooks/useSystemQueries';
+import { areFeaturesEnabled } from '@/shared/lib/features';
 
 /**
  * SettingsHubPage - Central hub for user settings with role-based category cards
@@ -24,6 +26,7 @@ import { userCanAccess } from '@/shared/lib/access';
 const SettingsHubPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { data: deploymentCapabilities } = useSystemCapabilities();
 
   const pageMeta = usePageMeta({
     title: 'Settings | HMS',
@@ -46,7 +49,7 @@ const SettingsHubPage = () => {
     {
       id: 'security',
       title: 'Security',
-      description: 'Password, multi-factor authentication, and active sessions',
+      description: 'Password, passkeys, recovery codes, and active sessions',
       icon: Shield,
       color: 'rose',
       route: '/settings/security',
@@ -55,7 +58,7 @@ const SettingsHubPage = () => {
     {
       id: 'preferences',
       title: 'Preferences',
-      description: 'Theme, notifications, and display settings',
+      description: 'Light, dark, or device appearance for your workspace',
       icon: Palette,
       color: 'sky',
       route: '/settings/preferences',
@@ -63,13 +66,13 @@ const SettingsHubPage = () => {
     },
     {
       id: 'clinical',
-      title: 'Clinical Settings',
-      description: 'Default templates, order sets, and clinical preferences',
+      title: 'Clinical Templates',
+      description: 'Review and manage reusable clinical note templates',
       icon: Stethoscope,
       color: 'emerald',
-      route: '/settings/clinical',
-      roles: ['doctor', 'nurse', 'lab_technician', 'pharmacist', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor'],
-      placeholder: true, // Not yet implemented
+      route: '/clinical-notes/templates',
+      roles: ['admin', 'doctor', 'nurse'],
+      features: ['clinical_notes'],
     },
     {
       id: 'facility',
@@ -105,6 +108,7 @@ const SettingsHubPage = () => {
 
   // Filter categories based on user role
   const visibleCategories = categories.filter(category => {
+    if (!areFeaturesEnabled(category.features, deploymentCapabilities?.features)) return false;
     if (!category.roles && !category.capabilities) return true; // Visible to all
     return userCanAccess(user, {
       roles: category.roles,
@@ -113,9 +117,6 @@ const SettingsHubPage = () => {
   });
 
   const handleCategoryClick = (category) => {
-    if (category.placeholder) {
-      return; // Could show a "coming soon" toast
-    }
     navigate(category.route);
   };
 
@@ -137,7 +138,7 @@ const SettingsHubPage = () => {
         />
 
         {/* Settings Categories Grid */}
-        <main className="p-4 sm:p-6 lg:p-8">
+        <div className="p-4 sm:p-6 lg:p-8">
           <div className="max-w-4xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {visibleCategories.map((category, index) => (
@@ -150,7 +151,7 @@ const SettingsHubPage = () => {
               ))}
             </div>
           </div>
-        </main>
+        </div>
       </PageShell>
   );
 };
@@ -159,7 +160,7 @@ const SettingsHubPage = () => {
  * SettingsCategoryCard - Chronicle-styled card for settings navigation
  */
 const SettingsCategoryCard = ({ category, index, onClick }) => {
-  const { title, description, icon: Icon, color, placeholder } = category;
+  const { title, description, icon: Icon, color } = category;
 
   const colorConfig = {
     amber: {
@@ -172,21 +173,21 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
     emerald: {
       iconBg: 'bg-emerald-500/10',
       iconBorder: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
+      iconColor: 'text-emerald-700 dark:text-emerald-400',
       hoverBorder: 'hover:border-emerald-500/40',
       glowColor: 'group-hover:shadow-emerald-500/20',
     },
     rose: {
       iconBg: 'bg-rose-500/10',
       iconBorder: 'border-rose-500/20',
-      iconColor: 'text-rose-400',
+      iconColor: 'text-rose-700 dark:text-rose-400',
       hoverBorder: 'hover:border-rose-500/40',
       glowColor: 'group-hover:shadow-rose-500/20',
     },
     sky: {
       iconBg: 'bg-sky-500/10',
       iconBorder: 'border-sky-500/20',
-      iconColor: 'text-sky-400',
+      iconColor: 'text-sky-700 dark:text-sky-400',
       hoverBorder: 'hover:border-sky-500/40',
       glowColor: 'group-hover:shadow-sky-500/20',
     },
@@ -198,16 +199,13 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
     <button
       type="button"
       className={cn(
-        'group relative rounded-2xl p-5 sm:p-6',
+        'group relative rounded-2xl p-5 sm:p-6 text-left',
         'bg-card border border-border',
-        'transition-all duration-300 ease-out',
+        'transition-colors duration-150 ease-out',
         'cursor-pointer',
         config.hoverBorder,
-        'hover:shadow-lg',
-        config.glowColor,
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'animate-chronicle-enter',
-        placeholder && 'opacity-60'
+        'animate-chronicle-enter'
       )}
       style={{ animationDelay: `${index * 75}ms` }}
       onClick={onClick}
@@ -226,9 +224,9 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
       {/* Content */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <h3 className="font-display text-lg sm:text-xl font-medium text-foreground">
+          <h2 className="font-display text-lg sm:text-xl font-medium text-foreground">
             {title}
-          </h3>
+          </h2>
           <ChevronRight
             className="size-5 text-muted-foreground/50 group-hover:text-foreground group-hover:translate-x-1 transition-all"
             aria-hidden="true"
@@ -239,12 +237,6 @@ const SettingsCategoryCard = ({ category, index, onClick }) => {
         </p>
       </div>
 
-      {/* Placeholder badge */}
-      {placeholder && (
-        <span className="absolute top-4 right-4 font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-          Coming Soon
-        </span>
-      )}
     </button>
   );
 };

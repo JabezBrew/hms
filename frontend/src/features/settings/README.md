@@ -26,3 +26,7 @@ Scope: profile, security, preferences, session, password, MFA, and feature entit
 - Security settings must not weaken backend session/auth enforcement.
 - Feature entitlement edits are admin-only.
 - Session lists and device labels must avoid PHI.
+- Appearance supports light, dark, and the device preference, persists locally,
+  and responds to device changes while the device option is selected.
+- The hub links clinical templates to their existing feature-gated manager;
+  it must not advertise unimplemented clinical or notification preferences.

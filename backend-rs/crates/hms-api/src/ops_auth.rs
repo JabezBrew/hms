@@ -204,3 +204,96 @@ impl CloudflareAccessVerifier {
 fn normalize_email(email: &str) -> String {
     email.trim().to_ascii_lowercase()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_lc_rs::rand::SystemRandom;
+    use aws_lc_rs::rsa::{KeyPair, KeySize, PublicKeyComponents};
+    use aws_lc_rs::signature::{self, KeyPair as _};
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine as _;
+
+    #[tokio::test]
+    async fn cloudflare_access_verifies_rs256_jwk_and_rejects_invalid_signed_claims() {
+        // Keys exist only in memory for this test. Seed the same cache used by
+        // production JWKS retrieval to exercise verification without network I/O.
+        let key = KeyPair::generate(KeySize::Rsa2048).expect("ephemeral key generates");
+        let public = PublicKeyComponents::<Vec<u8>>::from(key.public_key());
+        let issuer = "https://access.example.test";
+        let audience = "synthetic-ops-audience";
+        let verifier = CloudflareAccessVerifier::new(CloudflareAccessConfig {
+            team_domain: Some(issuer.to_owned()),
+            audience: Some(audience.to_owned()),
+            allowed_emails: vec!["operator@example.test".to_owned()],
+            test_secret: None,
+        })
+        .expect("verifier config is valid");
+        *verifier
+            .cached_jwks
+            .write()
+            .expect("cache lock is available") = Some(CachedJwks {
+            jwks: serde_json::from_value(serde_json::json!({ "keys": [{
+                "kty": "RSA", "kid": "synthetic-key", "alg": "RS256", "use": "sig",
+                "n": URL_SAFE_NO_PAD.encode(public.n),
+                "e": URL_SAFE_NO_PAD.encode(public.e),
+            }] }))
+            .expect("public JWK parses"),
+            expires_at: Instant::now() + JWKS_CACHE_TTL,
+        });
+        let now = chrono::Utc::now().timestamp();
+        let claims = serde_json::json!({
+            "sub": "synthetic-operator", "email": "operator@example.test",
+            "iss": issuer, "aud": audience, "iat": now, "exp": now + 300,
+        });
+        let sign = |claims: &serde_json::Value| {
+            let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","kid":"synthetic-key"}"#);
+            let payload =
+                URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).expect("claims encode"));
+            let message = format!("{header}.{payload}");
+            let mut signature_bytes = vec![0; key.public_modulus_len()];
+            key.sign(
+                &signature::RSA_PKCS1_SHA256,
+                &SystemRandom::new(),
+                message.as_bytes(),
+                &mut signature_bytes,
+            )
+            .expect("ephemeral signature generates");
+            format!("{message}.{}", URL_SAFE_NO_PAD.encode(signature_bytes))
+        };
+        let token = sign(&claims);
+        assert_eq!(
+            verifier.verify(&token).await.expect("RS256 JWK verifies"),
+            CloudflareAccessIdentity {
+                subject: "synthetic-operator".to_owned(),
+                email: "operator@example.test".to_owned(),
+            }
+        );
+        for (field, value) in [
+            ("aud", serde_json::json!("different-audience")),
+            ("iss", serde_json::json!("https://different.example.test")),
+            ("exp", serde_json::json!(now - 3600)),
+            ("exp", serde_json::json!("invalid-numeric-claim")),
+        ] {
+            let mut invalid = claims.clone();
+            invalid[field] = value;
+            assert!(matches!(
+                verifier.verify(&sign(&invalid)).await,
+                Err(CloudflareAccessError::InvalidToken)
+            ));
+        }
+        let mut tampered = token.into_bytes();
+        let signature_start = tampered.iter().rposition(|byte| *byte == b'.').unwrap() + 1;
+        tampered[signature_start] = if tampered[signature_start] == b'A' {
+            b'B'
+        } else {
+            b'A'
+        };
+        assert!(matches!(
+            verifier
+                .verify(std::str::from_utf8(&tampered).unwrap())
+                .await,
+            Err(CloudflareAccessError::InvalidToken)
+        ));
+    }
+}

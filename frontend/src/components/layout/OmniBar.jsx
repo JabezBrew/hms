@@ -1,7 +1,7 @@
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js'
 import UserCircle from 'lucide-react/dist/esm/icons/circle-user.js'
-import * as React from 'react'
+import Search from 'lucide-react/dist/esm/icons/search.js'
 
 import { Button } from '@/components/ui/button'
 import { SidebarTrigger } from '@/components/ui/sidebar'
@@ -11,6 +11,7 @@ import { FacilitySwitcher } from './FacilitySwitcher'
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
@@ -31,24 +32,27 @@ export function OmniBar() {
     }
 
     return (
-        <header className="fixed top-0 left-0 right-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-16 flex items-center px-4 gap-4">
+        <header className="fixed top-0 left-0 right-0 z-50 flex h-16 w-full items-center gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-5">
             <SidebarTrigger />
 
-            <div className="flex-1 flex items-center max-w-2xl">
+            <div className="flex min-w-0 flex-1 items-center max-w-xl">
                 <Button
                     variant="outline"
-                    className="relative h-9 w-full justify-start rounded-[0.5rem] bg-muted/50 text-sm font-normal text-muted-foreground shadow-none sm:pr-12 md:w-full lg:w-[400px]"
+                    className="h-9 w-full min-w-9 justify-start gap-2 px-2 sm:px-3"
                     onClick={openDialog}
+                    aria-label="Search patients, pages, or actions"
+                    aria-keyshortcuts="Meta+K Control+K"
                 >
-                    <span className="hidden lg:inline-flex">Search patients, pages, or actions…</span>
-                    <span className="inline-flex lg:hidden">Search…</span>
-                    <kbd className="pointer-events-none absolute right-[0.3rem] top-[0.3rem] hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+                    <Search data-icon="inline-start" aria-hidden="true" />
+                    <span className="hidden min-w-0 truncate text-muted-foreground lg:block">Search patients, pages, or actions…</span>
+                    <span className="hidden min-w-0 truncate text-muted-foreground sm:block lg:hidden">Search…</span>
+                    <kbd aria-hidden="true" className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-muted-foreground sm:flex">
                         <span className="text-xs">⌘</span>K
                     </kbd>
                 </Button>
             </div>
 
-            <div className="ml-auto flex items-center gap-x-4">
+            <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
                 {/* Unified notification center */}
                 <NotificationCenter />
 
@@ -58,32 +62,34 @@ export function OmniBar() {
 
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="relative size-8 rounded-full">
-                            <UserCircle className="size-6" />
+                        <Button variant="ghost" size="icon" aria-label="Account menu">
+                            <UserCircle aria-hidden="true" />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="w-56" align="end" forceMount>
                         <DropdownMenuLabel className="font-normal">
                             <div className="flex flex-col gap-y-1">
-                                <p className="font-display text-sm leading-none">
+                                <p className="text-sm font-medium leading-snug">
                                     {user?.firstName && user?.lastName
                                         ? `${user.firstName} ${user.lastName}`
                                         : user?.firstName || user?.lastName || "User"}
                                 </p>
-                                <p className="font-mono text-[10px] leading-none text-muted-foreground uppercase tracking-wide">
-                                    {user?.role || ""}
+                                <p className="text-xs capitalize leading-snug text-muted-foreground">
+                                    {user?.role?.replaceAll('_', ' ') || ""}
                                 </p>
                             </div>
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => navigate('/settings')}>
-                            <Settings className="mr-2 size-4" />
-                            <span>Settings</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleLogout}>
-                            <LogOut className="mr-2 size-4" />
-                            <span>Log out</span>
-                        </DropdownMenuItem>
+                        <DropdownMenuGroup>
+                            <DropdownMenuItem onClick={() => navigate('/settings')}>
+                                <Settings aria-hidden="true" />
+                                <span>Settings</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={handleLogout}>
+                                <LogOut aria-hidden="true" />
+                                <span>Log out</span>
+                            </DropdownMenuItem>
+                        </DropdownMenuGroup>
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>

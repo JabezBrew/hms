@@ -157,7 +157,7 @@ const MyPatientsPage = () => {
       />
 
       {/* Patient List */}
-      <main className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         {isLoading ? (
           <LoadingSkeleton />
         ) : patients.length === 0 ? (
@@ -181,7 +181,7 @@ const MyPatientsPage = () => {
             />
           </div>
         )}
-      </main>
+      </div>
     </PageShell>
   );
 };

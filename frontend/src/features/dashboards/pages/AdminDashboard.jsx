@@ -522,7 +522,7 @@ function AdminDashboardActions({
 
 function OperationalPostureCard({ generatedAt, isLiveConnected, isStale }) {
   return (
-    <Card className="gap-3 border-primary/20 bg-gradient-to-r from-amber-500/5 to-sky-500/5 py-4">
+    <Card className="gap-3 border-border bg-card py-4">
       <CardContent className="px-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="space-y-1">
@@ -536,15 +536,15 @@ function OperationalPostureCard({ generatedAt, isLiveConnected, isStale }) {
               className={cn(
                 'inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-mono tracking-wide',
                 isLiveConnected
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
-                  : 'border-amber-500/30 bg-amber-500/10 text-amber-500',
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : 'border-primary/20 bg-primary/5 text-primary',
               )}
             >
-              {isLiveConnected ? 'LIVE' : 'POLLING'}
+              {isLiveConnected ? 'Automatic updates' : 'Periodic updates'}
             </span>
             {isStale ? (
-              <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-mono tracking-wide text-amber-500">
-                STALE READ
+              <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-mono tracking-wide text-amber-800 dark:text-amber-300">
+                Refresh needed
               </span>
             ) : null}
           </div>

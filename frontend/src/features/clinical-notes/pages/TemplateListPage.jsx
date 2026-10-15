@@ -88,7 +88,7 @@ function TemplateListView({
         )}
       />
 
-      <main className="p-4 sm:p-6 space-y-4">
+      <div className="p-4 sm:p-6 space-y-4">
         <TemplateListToolbar
           onClearSearch={onClearSearch}
           onRefresh={onRefresh}
@@ -128,7 +128,7 @@ function TemplateListView({
             ))}
           </div>
         )}
-      </main>
+      </div>
     </PageShell>
   );
 }
@@ -146,6 +146,7 @@ function TemplateListToolbar({
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
+          aria-label="Search templates"
           placeholder="Search templates..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -157,6 +158,8 @@ function TemplateListToolbar({
         <div className="flex bg-muted rounded-lg p-0.5 ml-auto">
           <button
             type="button"
+            aria-label="Grid view"
+            aria-pressed={viewMode === 'grid'}
             onClick={() => setViewMode('grid')}
             className={cn(
               "p-1.5 rounded-md transition-colors",
@@ -169,6 +172,8 @@ function TemplateListToolbar({
           </button>
           <button
             type="button"
+            aria-label="List view"
+            aria-pressed={viewMode === 'list'}
             onClick={() => setViewMode('list')}
             className={cn(
               "p-1.5 rounded-md transition-colors",
@@ -185,6 +190,7 @@ function TemplateListToolbar({
           variant="ghost"
           size="icon"
           onClick={onRefresh}
+          aria-label="Refresh templates"
           className="shrink-0 size-9"
         >
           <RefreshCw className="size-4" />
@@ -239,12 +245,12 @@ function TemplateEditorView({ isEditingTemplate, onBack, onTemplateSuccess, page
         )}
       />
 
-      <main className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
         <TemplateBuilder
           initialTemplate={selectedTemplate}
           onSuccess={onTemplateSuccess}
         />
-      </main>
+      </div>
     </PageShell>
   );
 }
@@ -281,10 +287,10 @@ function TemplateDetailView({ onBack, onEdit, pageMeta, selectedTemplate }) {
         </Button>
       </PageHeader>
 
-      <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
         <TemplateDetailHeader selectedTemplate={selectedTemplate} />
         <TemplateStructure sections={sections} />
-      </main>
+      </div>
     </PageShell>
   );
 }
@@ -557,29 +563,20 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
   return (
     <div
       className={cn(
-        "group relative bg-card/50 backdrop-blur border border-border",
+        "group relative bg-card border border-border",
         "rounded-xl sm:rounded-2xl p-4 sm:p-6",
-        "hover:border-primary/30 transition-all duration-500",
-        "hover:shadow-[0_0_40px_-12px_var(--chronicle-amber)]",
+        "hover:border-primary/30 transition-colors duration-150",
         "animate-chronicle-enter",
         viewMode === 'list' && "max-w-none"
       )}
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      {/* Status Bar */}
-      <div className={cn(
-        "absolute top-0 left-0 right-0 h-1 rounded-t-xl sm:rounded-t-2xl",
-        template.is_active
-          ? "bg-gradient-to-r from-emerald-500/30 to-transparent"
-          : "bg-gradient-to-r from-muted/50 to-transparent"
-      )} />
-
       {/* Header */}
       <header className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
         <div className="min-w-0 flex-1">
-          <h3 className="font-display text-lg sm:text-xl text-foreground tracking-tight truncate">
+          <h2 className="font-display text-lg sm:text-xl text-foreground tracking-tight truncate">
             {template.title}
-          </h3>
+          </h2>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1 line-clamp-2">
             {template.description || 'No description'}
           </p>
@@ -590,13 +587,13 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
           <span className={cn(
             "inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium",
             template.is_active
-              ? "bg-emerald-500/10 text-emerald-600"
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
               : "bg-muted text-muted-foreground"
           )}>
             {template.is_active ? 'Active' : 'Inactive'}
           </span>
           {template.is_public && (
-            <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-sky-500/10 text-sky-600">
+            <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-sky-500/10 text-sky-700 dark:text-sky-300">
               <Globe className="size-2.5 sm:h-3 sm:w-3" />
               <span className="hidden sm:inline">Public</span>
             </span>
@@ -632,7 +629,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
         )}
 
         {/* Actions - Always visible on mobile */}
-        <div className="flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity ml-auto">
+        <div className="flex gap-2 ml-auto">
           <Button
             variant="secondary"
             size="sm"
@@ -661,6 +658,7 @@ function TemplateCard({ template, index, sections, viewMode, onView, onEdit, onD
             variant="secondary"
             size="sm"
             className="font-mono text-[10px] sm:text-xs h-8 text-destructive hover:text-destructive"
+            aria-label={`Delete ${template.title}`}
             onClick={(e) => {
               e.stopPropagation();
               onDelete();

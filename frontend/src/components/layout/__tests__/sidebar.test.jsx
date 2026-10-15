@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect } from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { SidebarProvider, useSidebar } from '@/components/ui/sidebar'
+import { SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLES } from '@/shared/constants/roles'
 import { resolveSidebarSections, SidebarRenderer } from '../sidebar'
@@ -86,6 +86,27 @@ function MobileSidebarProbe() {
 }
 
 describe('dynamic sidebar', () => {
+  it('preserves editor shortcuts while keeping global navigation shortcuts available', () => {
+    render(
+      <SidebarProvider>
+        <SidebarTrigger />
+        <label htmlFor="workflow-notes">Workflow notes</label>
+        <textarea id="workflow-notes" />
+        <div contentEditable aria-label="Formatted notes" />
+      </SidebarProvider>,
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Toggle Sidebar' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.keyDown(screen.getByLabelText('Workflow notes'), { key: 'b', ctrlKey: true })
+    fireEvent.keyDown(screen.getByLabelText('Formatted notes'), { key: 'b', metaKey: true })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.keyDown(document.body, { key: 'b', ctrlKey: true })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('filters contextual items by role', () => {
     renderSidebar({
       sidebar: SIDEBARS.LABORATORY,
@@ -120,6 +141,8 @@ describe('dynamic sidebar', () => {
     })
 
     expect(screen.getByRole('link', { name: /Invoices/i })).toHaveAttribute('data-active', 'true')
+    expect(screen.getByRole('link', { name: /Invoices/i })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /^Dashboard$/i })).not.toHaveAttribute('aria-current')
   })
 
   it('opens and marks a global parent group when a child route is active', () => {
@@ -132,6 +155,26 @@ describe('dynamic sidebar', () => {
 
     expect(screen.getByRole('button', { name: /Laboratory/i })).toHaveAttribute('data-active', 'true')
     expect(screen.getByRole('link', { name: /Orders/i })).toHaveAttribute('data-active', 'true')
+    expect(screen.getByRole('link', { name: /Orders/i })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: /Laboratory/i })).not.toHaveAttribute('aria-current')
+  })
+
+  it('lets users collapse and reopen the group containing their current page', async () => {
+    const user = userEvent.setup()
+    renderSidebar({
+      sidebar: SIDEBARS.GLOBAL,
+      user: { role: ROLES.LAB_TECHNICIAN },
+      route: '/laboratory/orders',
+      enabledFeatures: { laboratory: true },
+    })
+
+    const groupToggle = screen.getByRole('button', { name: /Laboratory/i })
+    expect(groupToggle).toHaveAttribute('aria-expanded', 'true')
+    await user.click(groupToggle)
+    expect(groupToggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(groupToggle)
+    expect(groupToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: /Orders/i })).toHaveAttribute('aria-current', 'page')
   })
 
   it('renders role-aware shortcuts for contextual sidebars', () => {

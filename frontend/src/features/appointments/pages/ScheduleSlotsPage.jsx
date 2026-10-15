@@ -179,7 +179,7 @@ const ScheduleSlotsPage = () => {
                 )}
             />
 
-            <main className="p-6 space-y-6">
+            <div className="p-6 space-y-6">
                 <Card>
                 <CardHeader>
                     <CardTitle>Schedule Details</CardTitle>
@@ -268,7 +268,7 @@ const ScheduleSlotsPage = () => {
                     )}
                 </CardContent>
             </Card>
-        </main>
+        </div>
         </PageShell>
     );
 };

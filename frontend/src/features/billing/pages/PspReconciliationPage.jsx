@@ -651,7 +651,7 @@ export default function PspReconciliationPage() {
     <PageShell>
       <PspCollectionsHeader onRefresh={handleRefresh} />
 
-      <main className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid grid-cols-2 w-full sm:w-auto">
             <TabsTrigger value="intents" className="font-mono text-xs">Payment Intents</TabsTrigger>
@@ -694,7 +694,7 @@ export default function PspReconciliationPage() {
             />
           </TabsContent>
         </Tabs>
-      </main>
+      </div>
 
       <SettlementLinesDialog
         canJumpToPage={!rustV2Mode}

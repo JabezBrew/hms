@@ -63,6 +63,7 @@ import { areFeaturesEnabled } from '@/shared/lib/features'
 import { useSidebarState } from '@/hooks/useSidebarState'
 import { SIDEBARS } from '@/app/routes/routeTypes'
 import { useLocation, useParams } from 'react-router-dom'
+import { useState } from 'react'
 
 const DASHBOARD_ROLES = [
   ROLES.ADMIN,
@@ -811,14 +812,19 @@ function SidebarLeafItem({ entry, badgeValue, nested = false }) {
 function SidebarGroupItem({ entry, getCollapsibleProps }) {
   const Icon = entry.icon
   const openState = getCollapsibleProps(entry.key)
-  const forcedOpen = entry.childActive
+  const { pathname } = useLocation()
+  const [collapsedPath, setCollapsedPath] = useState(null)
+  const forcedOpen = entry.childActive && collapsedPath !== pathname
 
   return (
     <Collapsible
       asChild
       className="group/collapsible"
       open={forcedOpen || openState.open}
-      onOpenChange={openState.onOpenChange}
+      onOpenChange={(open) => {
+        setCollapsedPath(open ? null : pathname)
+        openState.onOpenChange(open)
+      }}
     >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
@@ -896,36 +902,38 @@ export function AppSidebar({ sidebar = SIDEBARS.GLOBAL }) {
   })
 
   return (
-    <SidebarContent>
-      <SidebarRenderer sections={sections} badges={{ inbox: inboxCount }} />
+    <nav aria-label="Main navigation" className="flex min-h-0 flex-1 flex-col">
+      <SidebarContent>
+        <SidebarRenderer sections={sections} badges={{ inbox: inboxCount }} />
 
-      {sidebar !== SIDEBARS.SETTINGS ? (
-        <div className="mt-auto">
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarLeafItem
-                  entry={{
-                    key: 'settings-footer',
-                    label: 'Settings',
-                    href: '/settings',
-                    icon: Settings,
-                    active: sidebarItemIsActive({ exact: false }, '/settings', location.pathname),
-                  }}
-                />
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </div>
-      ) : (
-        <div className="mt-auto" />
-      )}
+        {sidebar !== SIDEBARS.SETTINGS ? (
+          <div className="mt-auto">
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarLeafItem
+                    entry={{
+                      key: 'settings-footer',
+                      label: 'Settings',
+                      href: '/settings',
+                      icon: Settings,
+                      active: sidebarItemIsActive({ exact: false }, '/settings', location.pathname),
+                    }}
+                  />
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </div>
+        ) : (
+          <div className="mt-auto" />
+        )}
 
-      <SidebarFooter>
-        <div className="px-2 text-xs text-muted-foreground">
-          HMS v2.0
-        </div>
-      </SidebarFooter>
-    </SidebarContent>
+        <SidebarFooter>
+          <div className="px-2 text-xs text-muted-foreground">
+            HMS v2.0
+          </div>
+        </SidebarFooter>
+      </SidebarContent>
+    </nav>
   )
 }

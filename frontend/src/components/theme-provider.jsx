@@ -1,30 +1,58 @@
-import { useMemo, useState, useContext, useEffect, createContext } from 'react'
+import { useCallback, useMemo, useState, useContext, useEffect, createContext } from 'react'
 import { safeStorage } from '@/lib/safe-storage'
 
-const ThemeContext = createContext({
-  theme: "light",
-  setTheme: () => null,
-})
+const ThemeContext = createContext(undefined)
+const isTheme = (value) => ['light', 'dark', 'system'].includes(value)
+const systemQuery = '(prefers-color-scheme: dark)'
+
+function readSystemTheme() {
+  return typeof window.matchMedia === 'function' && window.matchMedia(systemQuery).matches
+    ? 'dark'
+    : 'light'
+}
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() =>
-    safeStorage.get("theme", "light")
-  )
+  const [theme, updateTheme] = useState(() => {
+    const stored = safeStorage.get('theme', 'light')
+    return isTheme(stored) ? stored : 'light'
+  })
+  const [systemTheme, setSystemTheme] = useState(readSystemTheme)
+  const resolvedTheme = theme === 'system' ? systemTheme : theme
+
+  useEffect(() => {
+    if (theme !== 'system' || typeof window.matchMedia !== 'function') return undefined
+    const media = window.matchMedia(systemQuery)
+    const onChange = () => setSystemTheme(media.matches ? 'dark' : 'light')
+    onChange()
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [theme])
 
   useEffect(() => {
     const root = window.document.documentElement
     root.classList.remove("light", "dark")
-    root.classList.add(theme)
+    root.classList.add(resolvedTheme)
+  }, [resolvedTheme])
+
+  useEffect(() => {
     safeStorage.set("theme", theme)
   }, [theme])
+
+  const setTheme = useCallback((nextTheme) => {
+    if (isTheme(nextTheme)) updateTheme(nextTheme)
+  }, [])
+  const toggleTheme = useCallback(() => {
+    updateTheme((current) => (current === 'system' ? readSystemTheme() : current) === 'light' ? 'dark' : 'light')
+  }, [])
 
   const value = useMemo(
     () => ({
       theme,
-      setTheme: (newTheme) => setTheme(newTheme),
-      toggleTheme: () => setTheme(theme === "light" ? "dark" : "light"),
+      resolvedTheme,
+      setTheme,
+      toggleTheme,
     }),
-    [theme]
+    [theme, resolvedTheme, setTheme, toggleTheme]
   )
 
   return (
