@@ -1,8 +1,8 @@
 # HMS free solo-testing deployment
 
-Status: Oracle origin and public HTTPS/API verified; browser workflow review pending
+Status: Oracle origin, public HTTPS/API, and scoped browser workflows verified
 Owner: Operations
-Last reviewed: 2026-10-14
+Last reviewed: 2026-10-15
 Scope: synthetic data, public HMS login with existing accounts, $0 hosting target.
 
 Use one Oracle Cloud Always Free Ubuntu ARM64 VM for the complete Rust V2
@@ -40,10 +40,9 @@ electricity and Internet costs still apply.
 
 ## 2. Prepare HMS privately
 
-The new kit must be present in the reviewed remote commit/branch before cloning
+The kit must be present in the reviewed remote commit/branch before cloning
 it on the VM. Commit and push that reviewed revision from the operator checkout
-first; no push or remote revision verification was performed during this
-preparation. On the host, clone the repository and select that exact revision.
+first, then verify the remote branch and select that exact revision on the host.
 From its root:
 
 ```bash
@@ -204,6 +203,25 @@ authenticated identity, bounded registry and dashboard. Anonymous identity and
 patient-list requests returned 401; metrics and ops returned 404. The tunnel
 reported healthy with four connections. Administrator credentials remain private.
 The application image is from `8a820c09b`; public-mode deployment scripts are
-from `57d91d300`. Public self-registration remains unimplemented. Interactive
-browser workflows, passkeys, WebSockets and remote latency remain unverified.
+from `57d91d300`. Public self-registration remains unimplemented. At that point,
+interactive browser workflows, passkeys, WebSockets and remote latency were unverified.
 This runbook is a testing deployment path, not production or clinical approval.
+
+On 2026-10-15, code release `88f800ccb18c5f324b130b875e763895ccff3a5c` was
+pushed and deployed from a checksum-verified Git archive. Native ARM64 Rust 1.88
+and frontend images built successfully. Both phase migrations applied; API,
+worker, frontend, gateway, and tunnel checks passed, and runtime build identity
+matches the archived release. Private source/environment/database/image rollback
+anchors were retained before each phase replacement. DNS and paid resources
+were unchanged.
+
+Public readiness returns 200; anonymous identity/registry return 401; metrics
+and ops routes return 404. Authenticated registry, Chronicle, dashboard,
+templates, and synthetic medication create/update/stop pass. A public browser
+also verified login, registry, prescription create/stop and active-summary
+refresh. Laptop/mobile layout, navigation-sheet closure and persisted dark
+appearance passed scoped checks. A 100-request origin read smoke at concurrency
+five had no failures (p50 4.30 ms, p99 9.14 ms); it excludes edge/client latency
+and does not establish capacity. Passkey enforcement and continuous realtime
+remain incomplete. See the full [phase evidence](../../docs/v2/2026-10-15-phase-one-verification.md)
+for local test counts, security/performance scope, and remaining feature gaps.

@@ -2,7 +2,9 @@
 
 Date: 2026-10-15
 Scope: active Rust V2 and React frontend; synthetic testing only.
-Release status: code accepted; staging deployment pending. This is not production or clinical approval.
+Release status: deployed and verified on synthetic staging at `staging.thehms.systems`.
+Code release: `88f800ccb18c5f324b130b875e763895ccff3a5c`.
+This is not production or clinical approval.
 
 ## Completed changes
 
@@ -170,6 +172,19 @@ no workflow YAML is present. Deploy only the reviewed committed tree.
   checks passed with no application errors; HTTP p99 6.53 ms and identity p99
   5.71 ms. This is a focused administrator smoke against a native debug API,
   not remote release latency, all-role coverage, or a capacity result.
-- Linux Rust 1.88 image
-  compilation, committed release identity, and remote deployment acceptance
-  are recorded after release. Rollback anchors are already preserved privately.
+- Release: native ARM64 Rust 1.88 and frontend images built successfully. The
+  checksum-verified committed archive, source marker, and API/worker runtime
+  build SHA match the code release above. Both phase migrations are applied;
+  API, worker, frontend, and gateway are healthy, and the tunnel is ready.
+- Public checks: readiness 200; anonymous identity/registry 401; metrics and ops
+  routes 404. Authenticated identity, registry, Chronicle, dashboard, templates,
+  and synthetic prescription create/update/stop pass. Stopped medication is
+  excluded from active summaries and retained in history. Public browser login,
+  registry, create/stop, responsive navigation, and appearance checks pass.
+- Release-origin read smoke: 100 requests at concurrency five, all successful;
+  p50 4.30 ms and p99 9.14 ms. This is a small warm-origin sanity check, excluding
+  Cloudflare/client latency; it is not a hospital capacity result.
+- GitHub Actions remains disabled with zero queued or running jobs and no
+  executable workflow YAML. Private rollback source, environment, database
+  backup validation, and image tags exist for both the original and first
+  verified phase releases. No DNS or paid-resource changes were made.
