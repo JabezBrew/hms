@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Performance Engineering
-Last reviewed: 2026-06-01
+Last reviewed: 2026-10-15
 Scope: HMS performance budgets, measurement records, and frontend/backend latency policies.
 
 ## File Map
@@ -13,7 +13,8 @@ Scope: HMS performance budgets, measurement records, and frontend/backend latenc
 | `rust-v2-performance-baseline.md` | Rust V2 baseline evidence and known results. |
 | `2026-05-25-performance-coverage.md` | performance coverage report. |
 | `2026-05-30-rust-v2-slow-sql-followup.md` | slow SQL follow-up evidence. |
-| `2026-10-14-frontend-performance-audit.md` | initial dependency transfer and route-prefetch audit evidence. |
+| `2026-10-14-frontend-performance-audit.md` | final bundle, quiet browser, local load smoke, and instrumentation limitations. |
+| `2026-10-15-local-smoke-evidence.json` | sanitized measured aggregates; local-smoke-only and overall fail. |
 | `ops-dashboard.md` | ops dashboard performance signal map. |
 | `realtime-delta-optimistic-ui-policy.md` | realtime delta and optimistic UI policy. |
 

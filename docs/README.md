@@ -100,6 +100,7 @@ also read [`CONTRIBUTING.md`](../CONTRIBUTING.md) and
 - [`performance/README.md`](performance/README.md): performance budgets,
   baseline evidence, slow-SQL follow-up, and realtime UI policy.
 - [`quality/2026-10-14-clinical-quality-phase.md`](quality/2026-10-14-clinical-quality-phase.md): clinician workflow, security, design and local verification phase.
+- [`security/2026-10-14-clinical-security-audit.md`](security/2026-10-14-clinical-security-audit.md): security fixes, regression evidence and remaining limits for the active clinical workspace.
 - [`ownership/README.md`](ownership/README.md): path ownership and review
   triggers.
 - [`runbooks/README.md`](runbooks/README.md): current staging, rollback, smoke,

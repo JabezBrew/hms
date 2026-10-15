@@ -1,16 +1,47 @@
-# Frontend performance audit — 2026-10-14
+# Clinical performance audit — 2026-10-14–15
 
-Status: local implementation evidence; backend latency acceptance incomplete
+Status: improvements verified locally; overall performance acceptance **not met**
 Owner: Performance Engineering
-Scope: initial dependency transfer, optional route prefetch, and preload-cache growth
+Scope: initial transfer, route prefetch, authenticated browser readiness, and synthetic Rust V2 read smoke
+
+The retained frontend reduces initial JavaScript/CSS transfer, bounds route
+preload memory, and avoids ineffective background requests. The final local
+read-only smoke passes HTTP checks, latency, and payload budgets, but its
+maintained reporter remains **fail**: Auth/me observed 0.2 DB queries/request
+against the unchanged zero-query budget. DB pool-wait evidence is unavailable,
+and laboratory/billing query instrumentation is incomplete. Uncached Chronicle
+readiness also remains above the first-useful-view ceiling in these observations.
+
+The aggregate artifact is
+[`2026-10-15-local-smoke-evidence.json`](2026-10-15-local-smoke-evidence.json).
+It contains no credentials, fixture identifiers, raw URLs, bodies, or SQL text.
+Raw runtime/k6 reports and Prometheus snapshots remain outside the repository.
+
+## Provenance and limits
+
+- Frontend source: `3538ed17cbc4356610d1a5656d6964b3c3671ffd`, local production
+  Vite assets served through a same-origin local proxy.
+- Backend tree: `050036ae5c707cfd9ef310862b3a00ae55b80ef0`; actual Rust 1.88
+  release Docker image
+  `846c75b952193c5fad78389b8574d311525e101be8a361a33b3cb10a9efce1f9`.
+  Readiness, login, and authenticated identity smoke passed before measurement.
+- Local synthetic fixture only, shared synthetic owner credentials, five VUs,
+  small current dataset. These results do not establish production capacity,
+  representative role permissions, larger patient histories, or write latency.
+- CPU quota was four CPUs (`cpu.max=400000 100000`). Build, unit-test, Doctor,
+  and other browser lanes stopped before the three sequential browser probes
+  and subsequent k6 smoke. Existing idle API and two-second background worker
+  services remained running against the shared local database.
+- Functional evidence on this frontend source was 1,395 tests in 224 files,
+  32 desktop workflows, and three touch workflows passing. ESLint had zero
+  errors and 69 warnings. The separate React Doctor scan retained its baseline
+  15 errors and 261 warnings; static analysis is not wholly clean.
 
 ## Measured bundle change
 
-The maintained `npm run build` / `npm run perf:bundle-budget` harness was run
-before and after changing Vite's React vendor chunk to let optional Radix
-widgets split with their consuming routes. Both builds use the same installed
-dependencies. Values are KiB, using gzip level 9. These measurements precede
-the typography and dependency updates in the same implementation phase.
+The isolated Vite experiment used the same installed dependencies before and
+after allowing optional Radix widgets to split with their consuming routes.
+Values are KiB, using gzip level 9, before later typography/dependency changes.
 
 | Measurement | Before | After | Change |
 | --- | ---: | ---: | ---: |
@@ -21,159 +52,211 @@ the typography and dependency updates in the same implementation phase.
 | Largest JS chunk, gzip | 115.36 | 115.36 | unchanged |
 | Initial chart-engine chunks | 0 | 0 | unchanged |
 
-The final frozen typography/dependency build measures 173.94 KiB initial
-JS/CSS gzip and 661.67 KiB raw: 18.2% and 16.2% below the original baseline.
-Entry scripts/styles measure 62.63 KiB gzip and 317.77 KiB raw. All entry,
-explicit initial-dependency, largest-chunk, and lazy-chart guards pass.
+The final local production build measures **174.21 KiB initial JS/CSS gzip and
+662.38 KiB raw**, 18.0% and 16.1% below the original baseline. Entry
+scripts/styles measure 62.75 KiB gzip and 317.99 KiB raw. Five initial
+modulepreloads are included, and charts remain lazy. The measured browser
+artifact was the same source with timestamp metadata accounting for 0.01 KiB
+more gzip; raw totals are identical.
 
-The previous harness reported only entry scripts/styles as “startup transfer,”
-omitting five initial modulepreloads. The corrected harness keeps the historical
-90/350 KiB entry limits and reports/enforces the full initial JS/CSS set with an
-explicit provisional 225/850 KiB ceiling. Actual initial JS/CSS remains above
-the original 90/350 KiB target. Font binaries, images, HTML, runtime config, and
-later idle prefetches are excluded from this specific bundle measurement.
+The previous harness called entry scripts/styles “startup transfer” while
+omitting modulepreloads. The corrected harness retains the historical 90/350
+KiB entry limits and enforces an explicit provisional 225/850 KiB ceiling for
+the complete initial JS/CSS set. All current bundle guards pass, but actual
+initial JS/CSS **does not meet the original 90/350 KiB startup target**. Fonts,
+images, HTML, runtime configuration, and later idle prefetches are excluded
+from this bundle calculation.
 
-One attempted shared Radix vendor chunk produced a circular chunk warning and
-was discarded. The retained automatic widget splitting produced no circular
-chunk warnings. Production Chromium smoke loaded the login form and synthetic
-authenticated My Work shell at desktop and mobile sizes with zero JavaScript
-page errors. This establishes rendering compatibility, not clinical latency.
+A shared Radix vendor chunk produced a circular chunk warning and was
+discarded. Retained automatic splitting produced no circular chunk warnings.
+Container and local builds have equivalent normalized JavaScript/import graphs
+and font assets, but timestamp/Git build metadata changes their hashes; these
+figures describe the local production build, not byte-identical Docker output.
 
-## Prefetch and long-session changes
+## Prefetch, cache, and workflow changes
 
-- Critical route preloads now share a promise per static route group. A test
-  opening 2,000 synthetic patient routes observes one Chronicle preload promise,
-  replacing one retained path/promise per patient. No patient paths remain in
-  the preload cache.
-- Optional route warmup previously launched ten imports together after one idle
-  turn. It now runs at most one loader at a time and yields before each next
-  chunk. Hidden tabs pause; Save-Data and slow-2G/2G connections skip optional
-  downloads; cleanup prevents further scheduling after session unmount.
-- The public-form authenticated-shell prefetch follows the same connection and
-  visibility conditions. An interrupted optional asset request no longer
-  produces an unhandled rejection. Required route loading remains on demand.
-- Doctor/admin background critical-alert monitoring previously polled Rust
-  dashboard payloads that never contain an urgent-alert aggregate. Those
-  ineffective reads are now disabled; actual nurse alert/overdue-medication
-  sources and legacy monitoring remain enabled. Permission-scoped Rust
-  doctor/admin alert aggregation remains unimplemented, not an all-clear result.
+- Critical preloads share a promise per static route group. Opening 2,000
+  synthetic patient routes retains one Chronicle preload promise rather than
+  patient paths and one promise per path.
+- Optional warmup performs one import per idle turn, pauses hidden tabs, skips
+  Save-Data/slow-2G/2G connections, and stops after session unmount. Optional
+  public-form shell preloads follow the same restrictions and recover from
+  interrupted requests without unhandled rejections.
+- Ineffective Rust doctor/admin urgent-alert dashboard polling is disabled.
+  Actual nurse alert/overdue-medication sources and legacy monitoring remain.
+  Permission-scoped Rust doctor/admin aggregate alerting remains unimplemented;
+  missing evidence is never an all-clear result.
+- Laboratory transitions now patch safe detail fields and await bounded order
+  query-prefix refreshes, including specimen/result parent aliases. Real
+  QueryClient regressions cover cached source lists, empty destinations, and
+  mutation pending state until the refreshed partition arrives. Collection
+  appears in Collected without a reload; retry remains zero.
+- Login inbox session flags are consumed after commit rather than during
+  render. StrictMode regressions verify one urgent notification and retained
+  manual read/navigation behavior.
 
-Regression coverage verifies long-session deduplication, route-group separation,
-idle yielding, connection restrictions, visibility changes, queue cancellation,
-optional-loader failure recovery, full modulepreload accounting, duplicate asset
-accounting, retained entry limits, lazy chart guards, and safe runtime-probe setup
-errors. All 25 focused tests pass with the patched frontend toolchain.
+The original preload/bundle/runtime harness regressions passed 25 focused
+tests. The subsequent laboratory cache and inbox suites passed 12 and 10
+focused tests respectively, and are included in the final full frontend suite.
 
-## Local authenticated runtime observation
+## Quiet authenticated browser observations
 
-The maintained runtime probe subsequently completed against a migrated,
-synthetic-seeded local Rust debug-profile API and production frontend assets, using Chromium
-with 4× CPU throttling. Every warm transition used SPA history navigation; the
-optional warmup queue completed in 1.30 seconds. The harness now targets the
-canonical Chronicle route and explicitly opens the administrative all-ward
-board, avoiding compatibility redirects and the assigned-ward resolver.
+Three sequential maintained probes used Chromium, a 1366×768 viewport, and
+4× CPU throttling. The canonical Chronicle and administrative all-ward routes
+avoid redirects and assigned-ward resolution. The runtime-config route override
+enables Playwright routing, which **disables HTTP cache**. Document-load cases
+therefore measure uncached assets; SPA cases retain the running module/query
+caches. This corrects the earlier suggestion that document cases might reuse
+browser HTTP cache.
 
-| Route | Document-load ready, ms | Warm SPA ready, ms |
-| --- | ---: | ---: |
-| Dashboard | 3309.47 | 435.12 |
-| Patient registry | 5072.42 | 1225.93 |
-| Patient Chronicle | 3146.83 | 775.60 |
-| Ward board | 4290.96 | 1245.38 |
-| Laboratory orders | 4730.31 | 335.40 |
-| Inventory items | 5143.36 | 823.86 |
+| Route | Document-load samples, ms | Document median, ms | Warm SPA samples, ms | Warm median, ms |
+| --- | --- | ---: | --- | ---: |
+| Dashboard | 699.77 / 701.43 / 695.74 | 699.77 | 214.86 / 242.20 / 162.61 | 214.86 |
+| Patient registry | 1346.28 / 1415.35 / 1454.73 | 1415.35 | 480.32 / 549.65 / 359.97 | 480.32 |
+| Patient Chronicle | 1420.00 / 1554.66 / 1590.62 | 1554.66 | 302.86 / 320.05 / 211.58 | 302.86 |
+| Ward board | 1577.11 / 1468.87 / 1496.32 | 1496.32 | 315.65 / 362.59 / 280.64 | 315.65 |
+| Laboratory orders | 779.37 / 937.82 / 869.97 | 869.97 | 301.77 / 225.24 / 166.07 | 225.24 |
+| Inventory items | 1392.60 / 1921.45 / 1474.80 | 1474.80 | 352.67 / 390.34 / 298.06 | 352.67 |
 
-App-shell document-load readiness was 3713.91 ms, above the 2500 ms p99 ceiling.
-These are one observation per route, not route p95/p99. The restricted shared
-host was running concurrent Rust builds, unit tests, and browser tests; its
-observed load averages were 10.30/16.98/12.34. The cgroup CPU quota subsequently
-checked as 400000/100000, equivalent to four CPUs. The cause and acceptance of these timings
-remain unresolved until repeated quiet-host measurements. A document load
-reinitializes the application but may reuse browser-cached HTTP assets; it is
-not a fresh-browser network-cache measurement.
+App-shell samples were 767.83, 777.34, and 914.68 ms, median 777.34 ms. All
+18 warm transitions used SPA history navigation, without document fallback;
+optional warmup completed in 1,349–1,507 ms. Recorded windows contained 144
+API resource entries including login, all with known 2xx status and zero
+recorded API errors. These are resource entries, not an independent server
+request census.
 
-The probe now records API response-status buckets and an explicit completeness
-flag when Resource Timing exposes response status. Unknown statuses do not
-prove an error-free run. The first completed timing capture predates this
-status-bucket addition; it is not an accepted API-error report.
+Three samples are **not browser p95/p99 evidence**. Readiness follows the
+maintained route marker, with a 100 ms post-ready resource collection window;
+it does not establish every widget or interaction is ready. Chronicle's
+1.42–1.59 second document observations exceed the frozen 1.2-second p99
+first-useful ceiling as a provisional comparison, while warm observations
+remain below it. Browser percentile acceptance is unresolved.
 
-## Independent laboratory review
+Each uncached Chronicle window loaded 79 scripts and three styles, about
+1,491.91 KiB total resource transfer including more than the bundle guard's
+initial JS/CSS set, and no chart engine. Total long-task time was 239–266 ms;
+the largest task was 76–84 ms. The slowest recorded Chronicle API resource per
+probe was 106–172 ms. These timings identify substantial client work but do
+not attribute it to individual modules without a CPU trace.
 
-The laboratory batch-response change replaces per-result hydration with one
-query. The write count is still proportional to the bounded request size; API
-batches are capped at 50. The response-order `array_position` sort is bounded to
-at most 2,500 comparisons. Existing primary keys and the result `order_id` index
-support the new order-test/result existence checks. Cancellation and verification
-lock the same parent orders; multi-order verification locks them in sorted ID
-order. No external I/O is held inside those database transactions.
+A bounded, same-method trial removed four eager deferred-body preloads and
+avoided mounting the closed lazy workspace. It reduced scripts to 61–70 but
+did not improve document Chronicle median (1,599.91 vs 1,554.66 ms), and shell
+median worsened (1,581.80 vs 777.34 ms). The trial was reverted. Targets,
+readiness, and cache-disabled methodology were preserved.
 
-The backend agent also ran the exact completion UPDATE against a rolled-back
-temporary-table model with schema-equivalent primary/order indexes: 1,000
-synthetic orders, 50 tests per order, and 50,000 results. Planning took 2.833 ms;
-execution took 1.772 ms. The plan used a one-row order primary-key lookup,
-50-row order-test index-only scans, and 50-row result order-index scans. This
-proves indexed query shape at that cardinality, not route or production p99
-latency. Lock-wait and request latency still require the integration/load harness.
+An earlier debug-profile capture ran concurrently with builds/tests at load
+averages 10.30/16.98/12.34. Its shell took 3,713.91 ms and several routes
+exceeded four seconds. That contended capture is not accepted latency or
+API-error evidence and is superseded by the quiet observations above.
 
-## Independent medication and patient-context review
+## Maintained read-only load smoke
 
-Scheduled medication generation previously issued three child queries per dose
-while holding its parent locks: a maximum 186-dose schedule implied 558 child
-round trips. The reviewed implementation batches dose creation with bounded
-`UNNEST` arrays and links the exact facility/course/time/sequence schedule in one
-query. Existing conflict handling preserves administered, held, and dispensed
-history. The backend query-count regression reports seven observed queries for
-both one-dose and 186-dose initial generation, and six on retry, with 186 links
-and retained history. Parent lock ordering remains admission, prescription,
-course, then child fulfillment/MAR records. This is a round-trip reduction, not
-a measured write-latency claim.
+The maintained `k6-rust-v2-realistic.js` smoke used 30 seconds ramp up, two
+minutes at five VUs, and 30 seconds ramp down, all seven workflow labels,
+read-only requests, and unchanged budgets. Shared credentials reuse one
+session per VU across workflow role keys; distinct credentials remain isolated.
+Six network-free regressions verify reuse, refresh, fallback, and isolation.
+Six logins (setup plus five VUs) and no refreshes were observed. The account's
+ten-login-per-minute limit was retained, with cooldown after browser work.
 
-My Patients now derives current ownership/care-team relationships in the same
-observed query as persisted contexts, before deduplication and cursor paging.
-The added partial owner and active-care-team indexes match the caller predicates;
-encounter, visit, and patient joins retain facility/lifecycle checks. A
-rollback-only synthetic plan reported 1,000 callers, 10,000 rows per source,
-and target-caller candidates of 200 persisted, 100 owned, and 50 care-team rows.
-It produced 200 deduplicated patients and a 26-row page in 2.339 ms execution,
-with 3.922 ms planning. The plan used the context index, owner index-only scan,
-care-team bitmap scan, and scoped primary-key joins. Grouping and sorting still
-scale with the caller's candidate/history set before the page limit; this is
-neither O(page-size) execution nor production route-p99 evidence.
+**391/391 checks passed, with zero HTTP or custom errors. The maintained
+reporter result is fail**, both before and after correcting its missing-query
+interpretation. No acceptance target was weakened.
 
-## Acceptance limits
+| Surface | k6 p95 / p99, ms | Successful server requests | Observed DB queries / request | Query budget |
+| --- | ---: | ---: | ---: | ---: |
+| Auth/me | 3.15 / 3.79 | 25 | 5 / 25 = **0.200** | **0: fail** |
+| Patient list | 9.19 / 10.87 | 29 | 22 / 29 = 0.759 | 2 |
+| Patient Chronicle | 10.58 / 10.81 | 23 | 63 / 23 = 2.739 | 3 |
+| Omni search | 20.60 / 22.56 | 14 | 10 / 14 = 0.714 | 2 |
+| Ward board | 11.86 / 12.22 | 21 | 5 / 21 = 0.238 | 2 |
+| Dashboard snapshot | 5.98 / 27.16 | 21 | 11 / 21 = 0.524 | 3 |
+| Laboratory | 5.87 / 10.73 | 37 | **Unavailable**; raw observed counter 0 | 2 |
+| Inventory/pharmacy | 9.34 / 19.61 | 22 | **Unavailable**; raw observed counter 4 | 2 |
+| Billing | 8.77 / 18.97 | 26 | **Unavailable**; raw observed counter 0 | 2 |
 
-Backend route p95/p99, database query-count/pool-wait visibility, response payload
-budgets, and repeated authenticated clinical-route timings are not established
-by these frontend measurements. The maintained Rust V2 load harness and quiet
-repeated browser probe must be run after final backend restart and broad-suite
-completion. Do not treat browser smoke, individual timings, or bundle ceilings
-as a claim that clinical hot paths meet their p99 budgets.
+All current absolute/drift API latency and payload guards passed. k6 timings
+are client-side HTTP trends; payload p95/p99 are estimates from route
+histograms, not exact response quantiles. The aggregate artifact preserves
+their values/budgets. Sparse local samples and comparison to a remote
+historical baseline do not establish production capacity or improvement.
+The dashboard refresh guard observed zero refresh queries over 21 requests;
+the auth-version lookup guard observed zero. End-of-run pool snapshots were
+main size 10/idle 9 and auth size 2/idle 2; these do not establish peak pressure.
 
-Final local timing should use the optimized release-profile API with the same
-source, lockfile, feature set, and runtime configuration. Debug-profile browser
-checks validate workflows; release readiness/auth smoke and subsequent quiet
-measurements provide separate optimized-runtime evidence.
+The five Auth/me queries were `auth.user_by_id_for_facility_session` cache
+rehydrations after the existing 30-second auth-cache lifetime. They validate
+active facility/user, unrevoked session, matching versions, and session
+deadlines. The three-minute run mixes warm and expired-cache requests, so its
+0.2 average does not establish the warm-only zero-query target. Required
+security checks and expiry were preserved. Existing warm-zero, singleflight,
+logout/revocation, and permission invalidation unit tests provide separate
+functional evidence; they do not turn this aggregate failure into a pass.
 
-DB pool-wait instrumentation is a confirmed pre-existing blocker:
-`hms-observability` exposes `record_db_pool_wait` and emits route histograms only
-when the request recorder contains wait observations, but neither `hms-db` nor
-`hms-api` calls that function. Actual connection acquisition currently occurs
-inside SQLx executors. A truthful latency measurement needs an explicit pool
-acquisition adapter; absent observations cannot establish zero wait. The
-maintained reporter now marks missing wait evidence incomplete for routes with
-observed DB work, while preserving the legitimate zero-query warm-auth case.
+## Missing measurement evidence
 
-Local load-harness preparation also fixed shared-account session duplication.
-Each VU now shares one login across workflows with identical credentials, using
-static role cache keys. Separate credentials and separate VUs remain isolated.
-Six network-free regressions cover reuse, distinct credentials, refresh,
-fallback, and isolation. This preserves the ten-login-per-minute backend limit
-instead of weakening it for testing. The maintained smoke schedule remains
-30 seconds ramp up, two minutes at five VUs, and 30 seconds ramp down.
+Laboratory order/catalog/specimen/result lists and billing summary/list methods
+perform uncached raw SQLx reads without the query observer. Their zero emitted
+query counters are **not zero actual queries**. The reporter marks their query
+counts, slow SQL, and pool wait unavailable/incomplete while retaining clearly
+labelled raw observed counters. Positive observed query counts on other routes
+are instrumented counts, not independent proof that every underlying query is
+observed. No recorded slow queries does not prove uninstrumented SQL was fast.
+The inventory group is also incomplete because active zero-count subroutes
+lack a verified zero-query fast path, despite four observed queries elsewhere
+in the group. Corrected query statuses are five pass, one fail, and three
+incomplete; slow-SQL statuses are six pass and three incomplete.
 
-The reporter includes available k6 p95 alongside p99 and treats absent route
-query counters as incomplete evidence. Eighteen reporter regressions cover
-budget behavior, missing evidence, grouped routes, and valid zero-query auth.
-Private raw k6 summaries and logs remain
-outside the repository because setup data can contain synthetic fixture IDs.
-Only aggregate local-smoke results should be published, with the workload and
-missing-instrumentation limits stated explicitly.
+Pool wait is unavailable across all nine measured groups. The observability
+crate exposes `record_db_pool_wait`, but no DB/API acquisition path calls it;
+absent histogram samples cannot establish zero wait. SQLx's optional
+`sqlx::pool::acquire` event measures total successful acquisition, including
+queueing, connection checks, and new-connection setup. It omits failed/cancelled
+acquisitions and is not an isolated queue-wait measurement. Reusing that
+duration for the frozen pool-wait budget would require an explicit metric/
+budget contract, coverage, and a new baseline; no such relabelling or synthetic
+samples were introduced.
+
+The maintained reporter preserves a verified zero-query Auth/me fast path but
+marks unsupported zero-query DB evidence incomplete. Its 25 regressions run
+without network access; combined with session tests, 31 harness tests pass.
+The corrected report was regenerated from the same private k6 summary and
+before/after snapshots, without another load run.
+
+## Independent database review
+
+Laboratory batch hydration now uses one response query rather than one per
+result. Writes remain proportional to the capped 50-result request. The
+bounded response-order sort and completion existence checks use existing
+order/test/result indexes. Cancellation and verification lock common parent
+orders, with sorted IDs for multi-order verification. A rollback-only
+schema-equivalent synthetic plan (1,000 orders × 50 tests/results) reported
+2.833 ms planning and 1.772 ms execution using scoped index lookups. This is
+query-shape evidence, not route p99 or lock-wait acceptance.
+
+Scheduled medication generation previously made three child round trips per
+dose: a maximum 186-dose schedule implied 558 child queries. Bounded `UNNEST`
+creation and exact schedule linking now use seven observed queries initially
+and six on retry for both one and 186 doses. Tests preserve administered,
+held, and dispensed history and 186 fulfillment links. Parent locks remain
+admission → prescription → course → child rows. This establishes round-trip
+reduction, not measured write latency.
+
+My Patients derives current ownership/care-team and persisted contexts in one
+observed scoped query before deduplication/cursor paging. Partial indexes match
+caller predicates and joins preserve facility/lifecycle checks. A rollback-only
+synthetic plan with 1,000 callers and 10,000 rows per source scanned 200
+persisted, 100 owned, and 50 team candidates for the target caller, producing
+200 deduplicated patients and a 26-row page in 2.339 ms execution/3.922 ms
+planning. Grouping/sorting still scale with caller history before the limit;
+this is not O(page-size) or production route-p99 evidence.
+
+## Remaining acceptance work
+
+The original startup-transfer target, uncached Chronicle first-useful timing,
+mixed-cache Auth/me zero-query guard, complete query observation, and real
+pool-wait measurements remain open. Production-like data sizes, separate
+role credentials, sustained concurrent users, write contention, and peak pool
+pressure also need dedicated measurements. Bundle, functional, and local
+latency passes should not be presented as overall performance acceptance.
