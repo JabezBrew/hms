@@ -23,6 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 
 const SearchBar = ({
+  id,
   options = DEFAULT_EMPTY_ARRAY,
   value,
   onChange,
@@ -93,6 +94,7 @@ const SearchBar = ({
             <div className="relative flex-grow">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                id={id}
                 ref={inputRef}
                 value={selectedOption ? displayValue ? displayValue(value) : selectedOption.label : searchQuery}
                 onChange={(e) => {

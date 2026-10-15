@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { admissionsApi } from '@/features/admissions/api'
-import { createKeyFactory } from '@/shared/lib/queryKeys'
+import { createKeyFactory, createScopedQueryKey, getAuthQueryScope } from '@/shared/lib/queryKeys'
+import { hashQueryValue } from '@/shared/lib/privateQueryKey'
+import { useAuth } from '@/lib/auth'
 import { patientKeys } from '@/features/patients/hooks/usePatientQueries'
 import { wardKeys } from '@/features/wards/hooks/useWardQueries'
 
@@ -10,6 +12,7 @@ const baseKeys = createKeyFactory('admission-cases')
 
 export const admissionCaseKeys = {
   ...baseKeys,
+  page: (filters) => [...baseKeys.lists(), 'page', hashQueryValue(JSON.stringify(filters))],
   tasks: () => [...admissionCaseKeys.all, 'tasks'],
   taskList: (filters) => [...admissionCaseKeys.tasks(), { filters }],
 }
@@ -32,6 +35,16 @@ export function useAdmissionCases(filters = {}, options = {}) {
   return useQuery({
     queryKey: admissionCaseKeys.list(filters),
     queryFn: ({ signal }) => admissionsApi.getCases(filters, { signal }),
+    enabled,
+  })
+}
+
+export function useAdmissionCasesPage(filters = {}, options = {}) {
+  const auth = useAuth()
+  const { enabled = true } = options
+  return useQuery({
+    queryKey: createScopedQueryKey(admissionCaseKeys.page(filters), getAuthQueryScope(auth)),
+    queryFn: ({ signal }) => admissionsApi.getCasesPage(filters, { signal }),
     enabled,
   })
 }

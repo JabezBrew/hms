@@ -38,10 +38,10 @@ const AlertDialogOverlay = forwardRef(({ className, ...props }, ref) => {
   );
 });
 
-const AlertDialogContent = forwardRef(({ className, ...props }, ref) => {
+const AlertDialogContent = forwardRef(({ className, overlayClassName, ...props }, ref) => {
   return (
     <AlertDialogPortal>
-      <AlertDialogOverlay />
+      <AlertDialogOverlay className={overlayClassName} />
       <AlertDialogPrimitive.Content
         ref={ref}
         data-slot="alert-dialog-content"

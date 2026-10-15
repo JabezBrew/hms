@@ -215,6 +215,7 @@ export function TransferRequestForm({ onSuccess, onCancel, initialToLocation }) 
                 name={`items.${index}.quantity`}
                 render={({ field }) => (
                   <FormItem className="w-28">
+                    <FormLabel className="sr-only">Quantity to transfer for item {index + 1}</FormLabel>
                     <FormControl>
                       <Input type="number" min="1" placeholder="Qty" {...field} />
                     </FormControl>

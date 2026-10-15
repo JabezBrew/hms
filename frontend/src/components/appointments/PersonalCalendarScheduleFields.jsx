@@ -146,6 +146,7 @@ function BreakFields({ form }) {
               name={`breaks.${index}.start`}
               render={({ field }) => (
                 <FormItem className="flex-1 space-y-0">
+                  <FormLabel className="sr-only">Break {index + 1} start time</FormLabel>
                   <FormControl>
                     <TimePicker
                       value={field.value}
@@ -164,6 +165,7 @@ function BreakFields({ form }) {
               name={`breaks.${index}.end`}
               render={({ field }) => (
                 <FormItem className="flex-1 space-y-0">
+                  <FormLabel className="sr-only">Break {index + 1} end time</FormLabel>
                   <FormControl>
                     <TimePicker
                       value={field.value}

@@ -164,7 +164,7 @@ export function DischargeWorkflowPanel({ caseId, patientId, admissionId }) {
       ) : null}
 
       <AlertDialog open={confirmOpen} onOpenChange={(open) => { if (!busy) setConfirmOpen(open) }}>
-        <AlertDialogContent>
+        <AlertDialogContent className="z-[90]" overlayClassName="z-[80]">
           <AlertDialogHeader>
             <AlertDialogTitle>Finalize this discharge?</AlertDialogTitle>
             <AlertDialogDescription>This closes the inpatient stay and releases the occupied bed for cleaning. Confirm that the patient is ready to leave and the recorded clearances are correct.</AlertDialogDescription>

@@ -2285,8 +2285,35 @@ test('Rust V2 admission and discharge clearances complete the inpatient movement
   const admissionCaseId = admissionCasePayload?.data?.id;
   expect(admissionCaseId).toBeTruthy();
 
+  const initialQueueResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v2/admissions/cases'
+      && response.request().method() === 'GET'
+      && !url.searchParams.get('cursor');
+  });
   await page.goto('/admissions/requests');
   await expect(page.getByRole('heading', { name: 'Admission Requests' })).toBeVisible();
+  const initialQueueResponse = await initialQueueResponsePromise;
+  expect(initialQueueResponse.ok()).toBe(true);
+  let queuePage = await initialQueueResponse.json();
+  for (let pageNumber = 1; !v2DataList(queuePage).some((item) => item.id === admissionCaseId) && pageNumber < 10; pageNumber += 1) {
+    const cursor = queuePage.page?.next_cursor;
+    expect(queuePage.page?.has_next).toBe(true);
+    expect(cursor).toBeTruthy();
+    const nextQueueResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/v2/admissions/cases'
+        && response.request().method() === 'GET'
+        && url.searchParams.get('cursor') === cursor
+        && url.searchParams.get('limit') === '25';
+    });
+    const pagination = page.getByRole('navigation', { name: 'Admission cases pagination' });
+    await pagination.getByRole('button', { name: 'Next page', exact: true }).click();
+    const nextQueueResponse = await nextQueueResponsePromise;
+    expect(nextQueueResponse.ok()).toBe(true);
+    queuePage = await nextQueueResponse.json();
+  }
+  expect(v2DataList(queuePage).some((item) => item.id === admissionCaseId)).toBe(true);
   await expect(page.getByText(patientName).first()).toBeVisible();
 
   await page.goto(`/admissions/cases/${admissionCaseId}`);

@@ -11,6 +11,7 @@ import {
   FormControl,
   FormField,
   FormItem,
+  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { SearchBar } from '@/components/ui/search-bar';
@@ -41,6 +42,7 @@ function AppointmentCreatePatientField({
         name="patientId"
         render={({ field }) => (
           <FormItem>
+            <FormLabel className="sr-only">Patient</FormLabel>
             <FormControl>
               <SearchBar
                 options={patientOptions}
@@ -154,6 +156,7 @@ function AppointmentCreatePractitionerField({
           name="practitionerId"
           render={({ field }) => (
             <FormItem>
+              <FormLabel className="sr-only">Doctor</FormLabel>
               <FormControl>
                 <SearchBar
                   options={practitionerOptions}
