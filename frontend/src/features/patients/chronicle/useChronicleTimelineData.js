@@ -51,6 +51,7 @@ export function useChronicleTimelineData({
   const queryClient = useQueryClient();
   const invalidateTimeline = useInvalidateTimeline();
   const loadMoreRef = useRef(null);
+  const appliedTimelineSeedRef = useRef(null);
 
   const chronicleTimelineParams = useMemo(() => ({
     type: CHRONICLE_TYPE_MAPPING[activeFilter] || 'all',
@@ -97,22 +98,33 @@ export function useChronicleTimelineData({
 
     return timelineData;
   }, [seededRustTimelineData, timelineData]);
+  const timelineSeedGeneration = chronicleContext?.generated_at ?? chronicleContext?.timeline;
 
   useEffect(() => {
     if (!patientId || !seededRustTimelineData) {
       return;
     }
+    if (appliedTimelineSeedRef.current?.patientId === patientId
+      && appliedTimelineSeedRef.current.generation === timelineSeedGeneration) {
+      return;
+    }
+    appliedTimelineSeedRef.current = { patientId, generation: timelineSeedGeneration };
 
+    const queryKey = patientKeys.chronicleTimeline(patientId, chronicleTimelineParams);
+    const current = queryClient.getQueryData(queryKey);
+    const queryState = queryClient.getQueryState(queryKey);
+    const hasLoadedHistory = Array.isArray(current?.pages) && current.pages.length > 1;
+    // Each fresh startup response refreshes loaded history once. Pagination can
+    // clear isInvalidated before startup returns, so that flag is not durable.
+    if (hasLoadedHistory || queryState?.fetchStatus === 'fetching') {
+      void refetchTimeline({ cancelRefetch: true });
+      return;
+    }
     queryClient.setQueryData(
-      patientKeys.chronicleTimeline(patientId, chronicleTimelineParams),
-      (current) => {
-        if (Array.isArray(current?.pages) && current.pages.length > 1) {
-          return current;
-        }
-        return seededRustTimelineData;
-      },
+      queryKey,
+      seededRustTimelineData,
     );
-  }, [chronicleTimelineParams, patientId, queryClient, seededRustTimelineData]);
+  }, [chronicleTimelineParams, patientId, queryClient, refetchTimeline, seededRustTimelineData, timelineSeedGeneration]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(

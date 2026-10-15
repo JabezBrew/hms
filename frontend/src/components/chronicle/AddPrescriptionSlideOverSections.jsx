@@ -7,6 +7,7 @@ import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import { useId } from 'react';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -228,10 +229,11 @@ function DrugFormSelector({
 function DosageField({ value, error, onFieldChange }) {
   return (
     <div className="space-y-2">
-      <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor="prescription-dosage" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
         Dosage *
       </Label>
       <Input
+        id="prescription-dosage"
         placeholder="e.g., 500 MG, 10 ML, 2 tablets"
         value={value}
         onChange={(event) => onFieldChange('dosage', event.target.value)}
@@ -246,13 +248,14 @@ function DosageField({ value, error, onFieldChange }) {
 }
 
 function SelectField({ label, value, error, options, onValueChange }) {
+  const controlId = useId();
   return (
     <div className="space-y-2">
-      <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor={controlId} className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
         {label}
       </Label>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className={cn('font-mono', error && 'border-red-500')}>
+        <SelectTrigger id={controlId} className={cn('font-mono', error && 'border-red-500')}>
           <SelectValue placeholder={`Select ${label.toLowerCase().replace(' *', '')}`} />
         </SelectTrigger>
         <SelectContent className="z-[200]">
@@ -289,29 +292,35 @@ function RouteFrequencyFields({ formData, errors, onFieldChange }) {
   );
 }
 
-function DurationStartDateFields({ formData, onFieldChange }) {
+function DurationStartDateFields({ formData, errors, onFieldChange }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="space-y-2">
-        <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        <Label htmlFor="prescription-duration" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
           Duration (days)
         </Label>
         <Input
+          id="prescription-duration"
           type="number"
+          min="1"
+          step="1"
+          aria-invalid={Boolean(errors.duration_days)}
           placeholder="e.g., 7, 14, 30"
           value={formData.duration_days}
           onChange={(event) => onFieldChange('duration_days', event.target.value)}
           className="font-mono"
         />
         <p className="text-xs text-muted-foreground">Leave empty for ongoing</p>
+        {errors.duration_days ? <p className="text-xs text-destructive">{errors.duration_days}</p> : null}
       </div>
 
       <div className="space-y-2">
-        <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        <Label htmlFor="prescription-start-date" className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
           <Calendar className="size-3.5" />
           Start Date
         </Label>
         <Input
+          id="prescription-start-date"
           type="date"
           value={formData.start_date}
           onChange={(event) => onFieldChange('start_date', event.target.value)}
@@ -326,10 +335,11 @@ function ReasonInstructionsFields({ formData, onFieldChange }) {
   return (
     <>
       <div className="space-y-2">
-        <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        <Label htmlFor="prescription-reason" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
           Reason for Prescription
         </Label>
         <Input
+          id="prescription-reason"
           placeholder="e.g., Bacterial infection, Hypertension management"
           value={formData.reason}
           onChange={(event) => onFieldChange('reason', event.target.value)}
@@ -338,10 +348,11 @@ function ReasonInstructionsFields({ formData, onFieldChange }) {
       </div>
 
       <div className="space-y-2">
-        <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        <Label htmlFor="prescription-instructions" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
           Special Instructions
         </Label>
         <Textarea
+          id="prescription-instructions"
           placeholder="e.g., Take with food, Avoid alcohol, Take 30 minutes before meals"
           value={formData.instructions}
           onChange={(event) => onFieldChange('instructions', event.target.value)}
@@ -457,6 +468,7 @@ export function PrescriptionFormContent({
   drugForms,
   isLoadingForms,
   drugSafetyEnhancementsAvailable,
+  clinicalTextFieldsAvailable = true,
   marGenerationAvailable,
   generateMAR,
   marDays,
@@ -490,8 +502,8 @@ export function PrescriptionFormContent({
           onFieldChange={onFieldChange}
         />
         <RouteFrequencyFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
-        <DurationStartDateFields formData={formData} onFieldChange={onFieldChange} />
-        <ReasonInstructionsFields formData={formData} onFieldChange={onFieldChange} />
+        <DurationStartDateFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
+        {clinicalTextFieldsAvailable ? <ReasonInstructionsFields formData={formData} onFieldChange={onFieldChange} /> : null}
         <MarGenerationPanel
           available={marGenerationAvailable}
           generateMAR={generateMAR}

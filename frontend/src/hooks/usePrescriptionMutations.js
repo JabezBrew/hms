@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 import { invalidatePatientTimelineQueries } from './useTimelineQueries';
+import { nursingKeys } from './nursing/nursingQueryKeys';
 
 /**
  * Prescription mutation hooks for managing prescription lifecycle
@@ -51,6 +52,15 @@ function getPrescriptionPatientId(data = {}) {
   return normalizeIdentifier(data.patient || data.patient_id || data.patientId || data.patient?.id);
 }
 
+function normalizeDurationDays(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const duration = Number(value);
+  if (!Number.isInteger(duration) || duration < 1 || duration > 2147483647) {
+    throw new Error('Duration must be a whole number of at least one day.');
+  }
+  return duration;
+}
+
 function normalizeCreatePrescriptionPayload(data = {}) {
   const payload = {
     medication_name: data.medication_name,
@@ -67,9 +77,8 @@ function normalizeCreatePrescriptionPayload(data = {}) {
   if (data.start_date !== undefined) {
     payload.start_date = data.start_date;
   }
-  if (data.duration_days !== undefined) {
-    payload.duration_days = data.duration_days;
-  }
+  const durationDays = normalizeDurationDays(data.duration_days);
+  if (durationDays !== undefined) payload.duration_days = durationDays;
   if (data.first_dose_at !== undefined) {
     payload.first_dose_at = data.first_dose_at;
   }
@@ -104,6 +113,11 @@ function normalizeUpdatePrescriptionPayload(data = {}) {
   if (data.frequency !== undefined) {
     payload.frequency = data.frequency;
   }
+  for (const field of ['route', 'inventory_item_id', 'start_date', 'first_dose_at']) {
+    if (data[field] !== undefined) payload[field] = data[field];
+  }
+  const durationDays = normalizeDurationDays(data.duration_days);
+  if (durationDays !== undefined) payload.duration_days = durationDays;
   if (data.status !== undefined) {
     payload.status = data.status;
   }
@@ -116,47 +130,54 @@ export async function createPrescription(data, options = {}) {
     if (!patientId) {
       throw new Error('Patient is required to create a prescription');
     }
+    const generateMar = data.generate_mar === 'yes' || data.generate_mar === true;
+    const admissionCaseId = normalizeIdentifier(data.admission_case_id || data.admissionCaseId || data.admission);
+    const marDays = Number(data.mar_days ?? data.days ?? 7);
+    if (generateMar && !admissionCaseId) {
+      throw new Error('Active admission is required to generate MAR. Create this prescription without MAR for outpatient care.');
+    }
+    if (generateMar && (!Number.isInteger(marDays) || marDays < 1 || marDays > 30)) {
+      throw new Error('MAR generation must cover between 1 and 30 whole days.');
+    }
+    let prescription;
     try {
       const response = await v2Api.postPatientPrescriptions(
         { patient_id: patientId },
         normalizeCreatePrescriptionPayload(data),
         { signal: options.signal },
       );
-      const prescription = normalizePrescriptionResponse(response?.data);
-
-      if (data.generate_mar === 'yes' || data.generate_mar === true) {
-        const admissionCaseId = normalizeIdentifier(
-          data.admission_case_id || data.admissionCaseId || data.admission,
-        );
-        if (!admissionCaseId) {
-          throw new Error('Active admission is required to generate MAR in Rust V2.');
-        }
-
-        const generateBody = {
-          admission_case_id: admissionCaseId,
-          days: Number(data.mar_days || data.days || 7),
-        };
-        if (data.first_dose_at) {
-          generateBody.first_dose_at = data.first_dose_at;
-        }
-
-        const marResponse = await v2Api.postClinicalPrescriptionGenerateMar(
-          { id: prescription.id },
-          generateBody,
-          { signal: options.signal },
-        );
-
-        return {
-          ...prescription,
-          mar_generated: true,
-          mar_generation: marResponse?.data,
-        };
-      }
-
-      return prescription;
+      prescription = normalizePrescriptionResponse(response?.data);
     } catch (error) {
       rethrowAbortError(error);
       throw new Error(handleV2ApiError(error, 'Failed to create prescription'));
+    }
+    if (!generateMar) return prescription;
+
+    // The prescription has committed. A later scheduling failure must never turn
+    // this into a failed create that the caller retries as a second prescription.
+    try {
+      const marResponse = await v2Api.postClinicalPrescriptionGenerateMar(
+        { id: prescription.id },
+        {
+          admission_case_id: admissionCaseId,
+          days: marDays,
+          ...(data.first_dose_at ? { first_dose_at: data.first_dose_at } : {}),
+        },
+        { signal: options.signal },
+      );
+      const marGeneration = marResponse?.data;
+      return {
+        ...prescription,
+        mar_generated: !marGeneration?.skipped_reason,
+        mar_generation: marGeneration,
+        ...(marGeneration?.skipped_reason ? { mar_generation_status: 'skipped' } : {}),
+      };
+    } catch (error) {
+      return {
+        ...prescription,
+        mar_generated: false,
+        mar_generation_status: error?.status >= 400 && error?.status < 500 ? 'failed' : 'unconfirmed',
+      };
     }
   }
   return apiClient.post('/clinical-notes/prescriptions/', data, options);
@@ -218,10 +239,10 @@ function resolvePrescriptionPatientId(queryClient, { prescriptionId, patientId, 
 
   for (const source of sources) {
     if (!source) continue;
-    candidates.push(source);
-
     if (typeof source === 'object') {
       candidates.push(source.patient, source.patient_id, source.patientId, source.patient?.id);
+    } else {
+      candidates.push(source);
     }
   }
 
@@ -252,6 +273,16 @@ export function invalidatePrescriptionMutationQueries(
   { prescriptionId, patientId } = {},
 ) {
   const tasks = [];
+  tasks.push(invalidateQueryKeys(queryClient, [
+    nursingKeys.medicationAdministrationsAll(),
+    nursingKeys.medicationAdministrationHistoryAll(),
+    nursingKeys.patientMarAll(),
+    nursingKeys.marGridAll(),
+    nursingKeys.pendingDispensingAll(),
+    nursingKeys.readyForAdminAll(),
+    nursingKeys.medicationsDueNow(),
+    nursingKeys.medicationsOverdue(),
+  ]));
 
   if (prescriptionId) {
     tasks.push(invalidateQueryKeys(queryClient, [prescriptionKeys.detail(prescriptionId)]));
@@ -398,6 +429,9 @@ export function useRenewPrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId, duration_days, instructions }) => {
+      if (isRustV2ApiMode()) {
+        throw new Error('Renewal is not available for this prescription. Create a new prescription from the current care context.');
+      }
       return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/renew/`, {
         duration_days,
         instructions,

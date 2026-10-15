@@ -17,6 +17,7 @@ const chronicleKeyFactory = createKeyFactory('chronicle');
 export const chronicleKeys = {
   all: chronicleKeyFactory.all,
   context: (patientId) => keyWith('chronicle', 'context', patientId),
+  timelines: (patientId) => keyWith('chronicle', 'timeline', patientId),
   timeline: (patientId, filters) => keyWith('chronicle', 'timeline', patientId, filters),
 };
 

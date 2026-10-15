@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -105,7 +106,7 @@ function CurrentMedicationSummary({ prescription, compact = false }) {
   );
 }
 
-function EditPrescriptionFields({ prescription, formData, errors, onFieldChange }) {
+function EditPrescriptionFields({ prescription, formData, errors, onFieldChange, clinicalTextFieldsAvailable }) {
   return (
     <div className="space-y-4">
       <CurrentMedicationSummary prescription={prescription} compact />
@@ -130,7 +131,7 @@ function EditPrescriptionFields({ prescription, formData, errors, onFieldChange 
           value={formData.frequency || 'daily'}
           onValueChange={(value) => onFieldChange('frequency', value)}
         >
-          <SelectTrigger>
+          <SelectTrigger id="frequency">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -149,12 +150,17 @@ function EditPrescriptionFields({ prescription, formData, errors, onFieldChange 
           id="duration"
           type="number"
           min="1"
+          step="1"
+          aria-invalid={Boolean(errors.duration_days)}
           value={formData.duration_days || ''}
           onChange={(event) => onFieldChange('duration_days', event.target.value)}
-          placeholder="Leave empty for ongoing"
+          placeholder={clinicalTextFieldsAvailable ? 'Leave empty for ongoing' : 'Keep current duration'}
         />
+        {!clinicalTextFieldsAvailable ? <p className="text-xs text-muted-foreground">Leave empty to keep the current duration.</p> : null}
+        {errors.duration_days ? <p className="text-xs text-destructive">{errors.duration_days}</p> : null}
       </div>
 
+      {clinicalTextFieldsAvailable ? (
       <div className="space-y-2">
         <Label htmlFor="instructions">Special Instructions</Label>
         <Textarea
@@ -165,11 +171,12 @@ function EditPrescriptionFields({ prescription, formData, errors, onFieldChange 
           rows={2}
         />
       </div>
+      ) : null}
     </div>
   );
 }
 
-function DiscontinuePrescriptionFields({ prescription, formData, errors, onFieldChange }) {
+function DiscontinuePrescriptionFields({ prescription, formData, errors, onFieldChange, clinicalTextFieldsAvailable }) {
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3 p-3 bg-destructive/10 rounded-lg border border-destructive/30">
@@ -178,12 +185,12 @@ function DiscontinuePrescriptionFields({ prescription, formData, errors, onField
           <p className="font-medium text-destructive">This will stop the medication</p>
           <p className="text-muted-foreground mt-1">
             The patient will no longer receive {prescription?.medication_name}.
-            This action is logged in the patient's medical record.
+            {clinicalTextFieldsAvailable ? "This action is logged in the patient's medical record." : 'The prescription status and pending medication schedule will be updated.'}
           </p>
         </div>
       </div>
 
-      <div className="space-y-2">
+      {clinicalTextFieldsAvailable ? <div className="space-y-2">
         <Label htmlFor="reason">Reason for Discontinuation *</Label>
         <Textarea
           id="reason"
@@ -196,12 +203,12 @@ function DiscontinuePrescriptionFields({ prescription, formData, errors, onField
         {errors.reason && (
           <p className="text-xs text-destructive">{errors.reason}</p>
         )}
-      </div>
+      </div> : null}
     </div>
   );
 }
 
-function HoldPrescriptionFields({ formData, onFieldChange }) {
+function HoldPrescriptionFields({ formData, onFieldChange, clinicalTextFieldsAvailable }) {
   return (
     <div className="space-y-4">
       <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/30">
@@ -210,7 +217,7 @@ function HoldPrescriptionFields({ formData, onFieldChange }) {
         </p>
       </div>
 
-      <div className="space-y-2">
+      {clinicalTextFieldsAvailable ? <div className="space-y-2">
         <Label htmlFor="reason">Reason (optional)</Label>
         <Textarea
           id="reason"
@@ -219,7 +226,7 @@ function HoldPrescriptionFields({ formData, onFieldChange }) {
           placeholder="e.g., Pending lab results, pre-operative hold..."
           rows={2}
         />
-      </div>
+      </div> : null}
     </div>
   );
 }
@@ -270,6 +277,7 @@ function PrescriptionActionFields({
   formData,
   errors,
   onFieldChange,
+  clinicalTextFieldsAvailable,
 }) {
   switch (action) {
     case 'edit':
@@ -279,6 +287,7 @@ function PrescriptionActionFields({
           formData={formData}
           errors={errors}
           onFieldChange={onFieldChange}
+          clinicalTextFieldsAvailable={clinicalTextFieldsAvailable}
         />
       );
     case 'discontinue':
@@ -288,10 +297,11 @@ function PrescriptionActionFields({
           formData={formData}
           errors={errors}
           onFieldChange={onFieldChange}
+          clinicalTextFieldsAvailable={clinicalTextFieldsAvailable}
         />
       );
     case 'hold':
-      return <HoldPrescriptionFields formData={formData} onFieldChange={onFieldChange} />;
+      return <HoldPrescriptionFields formData={formData} onFieldChange={onFieldChange} clinicalTextFieldsAvailable={clinicalTextFieldsAvailable} />;
     case 'resume':
       return <ResumePrescriptionFields prescription={prescription} />;
     case 'renew':
@@ -317,6 +327,8 @@ export function PrescriptionActionDialogFrame({
   isLoading,
   onFieldChange,
   onSubmit,
+  clinicalTextFieldsAvailable = true,
+  actionUnavailable,
 }) {
   const config = getActionConfig(action);
   const ActionIcon = config.icon;
@@ -335,28 +347,31 @@ export function PrescriptionActionDialogFrame({
             )} />
             {config.title}
           </DialogTitle>
-          <DialogDescription>{config.getDescription(prescription)}</DialogDescription>
+          <DialogDescription>{actionUnavailable ? 'A new course needs a separate prescription.' : config.getDescription(prescription)}</DialogDescription>
         </DialogHeader>
 
         <div className="py-4">
-          <PrescriptionActionFields
+          {actionUnavailable ? <Alert><AlertDescription>{actionUnavailable}</AlertDescription></Alert> : <PrescriptionActionFields
             action={action}
             prescription={prescription}
             formData={formData}
             errors={errors}
             onFieldChange={onFieldChange}
-          />
+            clinicalTextFieldsAvailable={clinicalTextFieldsAvailable}
+          />}
         </div>
 
         <DialogFooter>
           <Button
+            type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isLoading}
           >
-            Cancel
+            {actionUnavailable ? 'Close' : 'Cancel'}
           </Button>
-          <Button
+          {!actionUnavailable ? <Button
+            type="button"
             variant={config.confirmVariant}
             onClick={onSubmit}
             disabled={isLoading}
@@ -369,7 +384,7 @@ export function PrescriptionActionDialogFrame({
             ) : (
               config.confirmLabel
             )}
-          </Button>
+          </Button> : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -8,6 +8,7 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +31,10 @@ const getStatusBadge = (status) => {
     },
     discontinued: {
       label: 'Discontinued',
+      className: 'bg-rose-500/10 text-rose-600 border-rose-500/30',
+    },
+    stopped: {
+      label: 'Stopped',
       className: 'bg-rose-500/10 text-rose-600 border-rose-500/30',
     },
     completed: {
@@ -66,7 +71,7 @@ export const MedicationContent = ({ medication, entry }) => {
   const canDiscontinue = status === 'active' || status === 'on_hold';
   const canHold = status === 'active';
   const canResume = status === 'on_hold';
-  const canRenew = status === 'active' || status === 'completed';
+  const canRenew = !isRustV2ApiMode() && (status === 'active' || status === 'completed');
   const hasAnyAction = canEdit || canDiscontinue || canHold || canResume || canRenew;
 
   return (

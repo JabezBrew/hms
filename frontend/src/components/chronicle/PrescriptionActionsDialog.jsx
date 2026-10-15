@@ -8,6 +8,7 @@ import {
   useRenewPrescription,
 } from "@/hooks/usePrescriptionMutations";
 import { PrescriptionActionDialogFrame } from './PrescriptionActionsDialogSections';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 /**
  * PrescriptionActionsDialog - Unified dialog for prescription lifecycle actions
@@ -25,7 +26,7 @@ const createActionFormData = ({ action, prescription }) => {
   switch (action) {
     case 'edit':
       return {
-        dosage: prescription?.dosage || '',
+        dosage: prescription?.dosage || prescription?.dose || '',
         frequency: prescription?.frequency || 'daily',
         duration_days: prescription?.duration_days || '',
         instructions: prescription?.instructions || '',
@@ -104,6 +105,10 @@ const PrescriptionActionsDialogContent = ({
     createActionState,
   );
   const { formData, errors } = state;
+  const rustV2Mode = isRustV2ApiMode();
+  const actionUnavailable = rustV2Mode && action === 'renew'
+    ? 'To prescribe another course, create a new prescription from the current care context. Renewal is not available for this prescription.'
+    : null;
 
   // Mutations
   const updateMutation = useUpdatePrescription();
@@ -124,14 +129,18 @@ const PrescriptionActionsDialogContent = ({
   // Validate form
   const validate = () => {
     const newErrors = {};
+    if (actionUnavailable) return false;
 
     if (action === 'edit') {
       if (!formData.dosage?.trim()) {
         newErrors.dosage = 'Dosage is required';
       }
+      if (formData.duration_days && (!Number.isInteger(Number(formData.duration_days)) || Number(formData.duration_days) < 1)) {
+        newErrors.duration_days = 'Enter a whole number of at least one day.';
+      }
     }
 
-    if (action === 'discontinue') {
+    if (action === 'discontinue' && !rustV2Mode) {
       if (!formData.reason?.trim()) {
         newErrors.reason = 'Reason is required for discontinuation';
       }
@@ -143,6 +152,7 @@ const PrescriptionActionsDialogContent = ({
 
   // Handle form submission
   const handleSubmit = async () => {
+    if (isLoading || actionUnavailable) return;
     if (!validate()) return;
 
     const prescriptionId = getPrescriptionId(prescription);
@@ -155,9 +165,8 @@ const PrescriptionActionsDialogContent = ({
             data: {
               dosage: formData.dosage,
               frequency: formData.frequency,
-              duration_days: formData.duration_days || null,
-              instructions: formData.instructions,
-              reason: formData.reason,
+              ...(formData.duration_days ? { duration_days: Number(formData.duration_days) } : {}),
+              ...(!rustV2Mode ? { instructions: formData.instructions, reason: formData.reason } : {}),
             },
           });
           break;
@@ -191,9 +200,8 @@ const PrescriptionActionsDialogContent = ({
 
       onOpenChange(false);
       onSuccess?.();
-    } catch (error) {
+    } catch {
       // Error is handled by the mutation's onError
-      console.error('Prescription action failed:', error);
     }
   };
 
@@ -210,6 +218,8 @@ const PrescriptionActionsDialogContent = ({
       formData={formData}
       errors={errors}
       isLoading={isLoading}
+      clinicalTextFieldsAvailable={!rustV2Mode}
+      actionUnavailable={actionUnavailable}
       onFieldChange={updateActionField}
       onSubmit={handleSubmit}
     />

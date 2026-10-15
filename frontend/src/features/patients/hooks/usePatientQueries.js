@@ -15,8 +15,9 @@ export const patientKeys = {
   context: (params) => [...patientKeys.all, 'context', params],
   identityLookup: (lookupId) => [...patientKeys.all, 'identity-lookup', lookupId],
   currentContexts: (id) => [...patientKeys.detail(id), 'current-contexts'],
-  chronicleStartup: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'startup', params],
-  chronicleTimeline: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'timeline', params],
+  chronicle: (id) => [...patientKeys.detail(id), 'chronicle'],
+  chronicleStartup: (id, params = {}) => [...patientKeys.chronicle(id), 'startup', params],
+  chronicleTimeline: (id, params = {}) => [...patientKeys.chronicle(id), 'timeline', params],
 };
 
 const patientSearchKeySalt = (() => {

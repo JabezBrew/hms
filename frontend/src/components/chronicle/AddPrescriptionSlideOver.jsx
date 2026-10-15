@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useReducer, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -167,7 +167,7 @@ const buildPrescriptionPayload = ({
   }
 
   if (formData.duration_days) {
-    data.duration_days = parseInt(formData.duration_days);
+    data.duration_days = Number(formData.duration_days);
   }
 
   if (formData.instructions.trim()) {
@@ -202,8 +202,16 @@ const AddPrescriptionSlideOverContent = ({
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
   const rustV2Mode = isRustV2ApiMode();
-  const marGenerationAvailable = true;
+  const admissionCaseId = encounter?.admission_id
+    || encounter?.admission_case_id
+    || patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || null;
+  const encounterId = encounter?.id || encounter?.encounter_id || null;
+  const marGenerationAvailable = !rustV2Mode || Boolean(admissionCaseId);
   const drugSafetyEnhancementsAvailable = !rustV2Mode;
+  const creationInFlightRef = useRef(false);
+  const savedPrescriptionRef = useRef(null);
 
   const queryClient = useQueryClient();
 
@@ -226,12 +234,6 @@ const AddPrescriptionSlideOverContent = ({
 
   // Check if patient is admitted (for MAR generation hint)
   const isPatientAdmitted = patient?.local_data?.current_admission || patient?.is_admitted || false;
-  const admissionCaseId = encounter?.admission_id
-    || encounter?.admission_case_id
-    || patient?.local_data?.current_admission_id
-    || patient?.current_admission_id
-    || null;
-  const encounterId = encounter?.id || encounter?.encounter_id || null;
 
   // Hooks for drug safety - only fetch when slide-over is open
   const safetyCheck = useSafetyCheck();
@@ -245,6 +247,7 @@ const AddPrescriptionSlideOverContent = ({
 
   // API mutation
   const createPrescriptionMutation = useMutation({
+    retry: false,
     mutationFn: async (data) => {
       const response = await createPrescriptionRequest(data);
       return response;
@@ -303,6 +306,9 @@ const AddPrescriptionSlideOverContent = ({
     if (!formData.frequency) {
       newErrors.frequency = 'Frequency is required';
     }
+    if (formData.duration_days && (!Number.isInteger(Number(formData.duration_days)) || Number(formData.duration_days) < 1)) {
+      newErrors.duration_days = 'Enter a whole number of at least one day.';
+    }
 
     dispatch({ type: 'validationFailed', errors: newErrors });
     return Object.keys(newErrors).length === 0;
@@ -339,7 +345,6 @@ const AddPrescriptionSlideOverContent = ({
       // No alerts, proceed with prescription
       return true;
     } catch (error) {
-      console.error('Safety check failed:', error);
       // Check for permission-related errors
       const errorMsg = error.message?.toLowerCase() || '';
       if (errorMsg.includes('practitioner') || errorMsg.includes('doctor') || errorMsg.includes('permission')) {
@@ -359,6 +364,7 @@ const AddPrescriptionSlideOverContent = ({
 
   // Handle submit
   const handleSubmit = async () => {
+    if (creationInFlightRef.current || savedPrescriptionRef.current) return;
     // Perform safety check first
     const canProceed = await performSafetyCheck();
     if (!canProceed) return;
@@ -368,6 +374,8 @@ const AddPrescriptionSlideOverContent = ({
 
   // Create prescription (called after safety check passes)
   const createPrescription = async (overrideReason = '') => {
+    if (creationInFlightRef.current || savedPrescriptionRef.current) return;
+    creationInFlightRef.current = true;
     const data = buildPrescriptionPayload({
       patientId,
       encounterId,
@@ -381,13 +389,26 @@ const AddPrescriptionSlideOverContent = ({
 
     try {
       const result = await createPrescriptionMutation.mutateAsync(data);
+      savedPrescriptionRef.current = result;
       emitOnboardingEvent('chronicle.prescription_created', {
         success: true,
         prescription_id: result?.id || null,
         patient_id: patientId || null,
       });
 
-      if (result.mar_generated) {
+      if (result.mar_generation_status === 'skipped') {
+        toast.success(result.mar_generation?.skipped_reason === 'prn'
+          ? 'Prescription saved. As-needed doses are not automatically scheduled.'
+          : 'Prescription saved. No scheduled MAR entries were created.');
+      } else if (result.mar_generation_status === 'failed') {
+        toast.warning('Prescription saved. MAR entries were not generated.', {
+          description: 'Review the medication administration record before scheduling doses. Do not recreate the prescription.',
+        });
+      } else if (result.mar_generation_status === 'unconfirmed') {
+        toast.warning('Prescription saved. MAR generation could not be confirmed.', {
+          description: 'Check the medication administration record before scheduling doses. Do not recreate the prescription.',
+        });
+      } else if (result.mar_generated) {
         toast.success('Prescription created and MAR entries generated for nursing');
       } else {
         toast.success('Prescription created successfully');
@@ -397,15 +418,17 @@ const AddPrescriptionSlideOverContent = ({
       queryClient.invalidateQueries({ queryKey: nursingKeys.pendingDispensingAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
       onPrescriptionCreated?.();
-      onClose();
     } catch (err) {
-      console.error('Failed to create prescription:', err);
+      if (savedPrescriptionRef.current) return;
       const errorMsg = err.message?.toLowerCase() || '';
       if (errorMsg.includes('practitioner') || errorMsg.includes('doctor') || errorMsg.includes('permission')) {
         toast.error('Only doctors can prescribe medications');
       } else {
         toast.error(err.message || 'Failed to create prescription');
       }
+    } finally {
+      creationInFlightRef.current = false;
+      if (savedPrescriptionRef.current) onClose();
     }
   };
 
@@ -450,6 +473,7 @@ const AddPrescriptionSlideOverContent = ({
         drugForms={drugForms}
         isLoadingForms={isLoadingForms}
         drugSafetyEnhancementsAvailable={drugSafetyEnhancementsAvailable}
+        clinicalTextFieldsAvailable={!rustV2Mode}
         marGenerationAvailable={marGenerationAvailable}
         generateMAR={generateMAR}
         marDays={marDays}

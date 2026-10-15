@@ -1,7 +1,8 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
-import { fetchChronicleContext } from '@/hooks/useChronicleContext';
+import { chronicleKeys, fetchChronicleContext } from '@/hooks/useChronicleContext';
+import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 
@@ -515,14 +516,21 @@ export function useInvalidateTimeline() {
   return (patientId) => invalidatePatientTimelineQueries(queryClient, patientId);
 }
 
-export function invalidatePatientTimelineQueries(queryClient, patientId) {
+export async function invalidatePatientTimelineQueries(queryClient, patientId) {
   if (!patientId) {
     return queryClient.invalidateQueries({ queryKey: timelineKeys.all });
   }
 
+  // Disabled startup-seeded timelines do not refetch on invalidation. Cancel
+  // older reads first so their completion cannot clear the new invalidation.
+  await queryClient.cancelQueries({ queryKey: patientKeys.chronicle(patientId) });
+
   return invalidateQueryKeys(queryClient, [
     timelineKeys.list(patientId),
     timelineKeys.stats(patientId),
+    chronicleKeys.context(patientId),
+    chronicleKeys.timelines(patientId),
+    patientKeys.chronicle(patientId),
   ]);
 }
 

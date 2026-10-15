@@ -27,6 +27,7 @@ export const nursingKeys = {
   medicationsOverdue: () => keyWith('medications-overdue'),
   medicationAdministrationHistory: (patient, status, startDate, endDate, ordering, page, pageSize) =>
     keyWith('medication-administration-history', patient, status, startDate, endDate, ordering, page, pageSize),
+  medicationAdministrationHistoryAll: () => keyWith('medication-administration-history'),
   patientMar: (patientId, date) => keyWith('patient-mar', patientId, date),
   patientMarAll: () => keyWith('patient-mar'),
   marGrid: (admissionId, startDate, days) => keyWith('mar-grid', admissionId, startDate, days),
