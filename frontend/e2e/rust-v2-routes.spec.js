@@ -115,6 +115,7 @@ async function submitMinimumPatientRegistration(page, identity = {}) {
   const lookupResponse = await lookupResponsePromise;
   expect(lookupResponse.ok()).toBe(true);
   await expect(page.getByRole('heading', { name: 'New Patient Registration' })).toBeVisible();
+  await expectMobileViewportFits(page);
   if (await page.getByRole('combobox', { name: 'Reason', exact: true }).isVisible()) {
     await page.getByRole('combobox', { name: 'Reason', exact: true }).click();
     await page.getByRole('option', { name: 'Different person confirmed', exact: true }).click();

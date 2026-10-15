@@ -282,8 +282,8 @@ function NewPatientRegistrationPanel({
 
   return (
     <div className="min-w-0 max-w-full shrink-0 rounded-lg border border-border bg-card p-4">
-      <div className="mb-4 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
+      <div className="mb-4 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1 sm:basis-48">
           <h2 className="text-base font-semibold">New Patient Registration</h2>
           <p className="text-sm text-muted-foreground">
             {!hasRequiredDetails
