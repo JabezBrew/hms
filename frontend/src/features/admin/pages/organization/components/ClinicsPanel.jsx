@@ -254,10 +254,10 @@ function ClinicCard({ clinic, linkedTemplateCount, onLink, onRoster, onEdit, onD
         >
           <CalendarClock className="size-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="size-8" onClick={() => onEdit(clinic)}>
+        <Button variant="ghost" size="icon" className="size-8" onClick={() => onEdit(clinic)} aria-label={`Edit clinic: ${clinic.name}`}>
           <Pencil className="size-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="size-8" onClick={() => onDelete(clinic)}>
+        <Button variant="ghost" size="icon" className="size-8" onClick={() => onDelete(clinic)} aria-label={`Delete clinic: ${clinic.name}`}>
           <Trash2 className="size-4" />
         </Button>
       </div>

@@ -269,6 +269,7 @@ export function RequisitionForm({ onSuccess, onCancel, initialItems = DEFAULT_EM
                   size="icon"
                   className="text-destructive"
                   onClick={() => remove(index)}
+                  aria-label={`Remove requisition item ${index + 1}`}
                 >
                   <Trash2 className="size-4" />
                 </Button>

@@ -5,6 +5,7 @@ import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 import { v2Api, v2Request } from './v2/client';
+import { getLabResultFlag } from '@/shared/lib/labResultFlags';
 import {
   cacheCursorForNextPage as cacheScopedCursorForNextPage,
   resolveCursorPage as resolveScopedCursorPage,
@@ -125,6 +126,7 @@ function adaptV2LabResult(item = {}) {
 
   return {
     ...item,
+    flag: getLabResultFlag(item),
     order: item.order_id,
     specimen: item.specimen_id,
     patient: item.patient_id,

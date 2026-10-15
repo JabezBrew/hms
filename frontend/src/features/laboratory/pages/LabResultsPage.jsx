@@ -14,7 +14,7 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,6 @@ import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
-import { useRouteTableState } from '@/shared/hooks/useRouteTableState';
 import { useUrlEnumParam } from '@/shared/hooks/useUrlEnumParam';
 import {
   LabEmptyState,
@@ -76,6 +75,7 @@ import {
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { toast } from "sonner";
+import { getLabResultFlag } from '@/shared/lib/labResultFlags';
 
 const RESULTS_PAGE_SIZE = 100;
 const LAB_RESULT_TABS = ['all', 'critical'];
@@ -87,7 +87,7 @@ const RESULT_VERIFICATION_OPTIONS = [
 ];
 
 function isCriticalLabFlag(flag) {
-  return ["critical_low", "critical_high"].includes(flag);
+  return ["critical", "critical_low", "critical_high"].includes(flag);
 }
 
 function formatLabResultDate(dateString) {
@@ -102,6 +102,8 @@ function formatLabResultDate(dateString) {
 function getLabResultFlagConfig(flag) {
   const configs = {
     normal: { label: "Normal", className: "text-emerald-600", icon: null },
+    unknown: { label: 'Not classified', className: 'text-muted-foreground', icon: null },
+    critical: { label: 'Critical', className: 'text-rose-600 font-semibold', icon: AlertTriangle },
     low: { label: "Low", className: "text-amber-600", icon: TrendingDown },
     high: { label: "High", className: "text-amber-600", icon: TrendingUp },
     critical_low: {
@@ -120,7 +122,7 @@ function getLabResultFlagConfig(flag) {
       icon: AlertTriangle,
     },
   };
-  return configs[flag] || configs.normal;
+  return configs[flag] || configs.unknown;
 }
 
 function getInterpretationConfidenceConfig(band) {
@@ -178,7 +180,7 @@ function useGroupedLabResults(results) {
         groups[groupKey].hasUnverified = true;
       }
 
-      if (isCriticalLabFlag(result.flag)) {
+      if (isCriticalLabFlag(getLabResultFlag(result))) {
         groups[groupKey].hasCritical = true;
       }
     });
@@ -195,7 +197,7 @@ function useLabResultsStats(results, groupedResults, totalCount) {
     const visible = results.length;
     const verified = results.filter((result) => result.is_verified).length;
     const pending = visible - verified;
-    const critical = results.filter((result) => isCriticalLabFlag(result.flag)).length;
+    const critical = results.filter((result) => isCriticalLabFlag(getLabResultFlag(result))).length;
     const orders = groupedResults.length;
 
     return { total, visible, verified, pending, critical, orders };
@@ -763,7 +765,7 @@ function TargetLabResultPanel({ isLoading, result }) {
     );
   }
 
-  const flag = result.flag || (result.is_critical ? "critical_high" : "normal");
+  const flag = getLabResultFlag(result);
   const flagConfig = getLabResultFlagConfig(flag);
 
   return (
@@ -1031,7 +1033,7 @@ function ExpandedResultRow({
   result,
   targetResultId,
 }) {
-  const flagConfig = getLabResultFlagConfig(result.flag);
+  const flagConfig = getLabResultFlagConfig(getLabResultFlag(result));
   const FlagIcon = flagConfig.icon;
   const isTargetResult = Boolean(targetResultId) && String(result.id) === String(targetResultId);
 
@@ -1040,7 +1042,7 @@ function ExpandedResultRow({
       data-omni-target={isTargetResult ? 'true' : undefined}
       className={cn(
         "text-sm",
-        isCriticalLabFlag(result.flag) && "bg-rose-50/50 dark:bg-rose-900/10",
+        isCriticalLabFlag(getLabResultFlag(result)) && "bg-rose-50/50 dark:bg-rose-900/10",
         isTargetResult && "bg-primary/5"
       )}
     >
@@ -1470,8 +1472,8 @@ function VerifySingleResultSummary({ selectedResult }) {
       </div>
       <div className="flex justify-between text-sm">
         <span className="text-muted-foreground">Flag:</span>
-        <span className={getLabResultFlagConfig(selectedResult.flag).className}>
-          {selectedResult.flag_display || selectedResult.flag}
+        <span className={getLabResultFlagConfig(getLabResultFlag(selectedResult)).className}>
+          {getLabResultFlagConfig(getLabResultFlag(selectedResult)).label}
         </span>
       </div>
     </div>
@@ -1489,17 +1491,14 @@ function VerifySingleResultSummary({ selectedResult }) {
  * - Filter by verification status, critical values
  */
 export default function LabResultsPage() {
-  const { search: routeSearch } = useLocation();
+  const { search: routeSearch, pathname, state: routeState } = useLocation();
+  const navigate = useNavigate();
   const routeSearchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
   const targetResultId = routeSearchParams.get("result") || "";
   const { user } = useAuth();
   const userRole = user?.role || "";
   const aiInterpretationAvailable = !isRustV2ApiMode();
-  const [persistedResultsState, setPersistedResultsState] = useRouteTableState('laboratory:resultsTable', {
-    searchQuery: '',
-    verificationFilter: 'all',
-    page: 1,
-  });
+  const persistedResultsState = routeState?.['laboratory:resultsTable'] || {};
 
   // Can verify results
   const canVerify = ["admin", "lab_technician", "doctor", "physician"].includes(
@@ -1511,13 +1510,29 @@ export default function LabResultsPage() {
   const [verificationFilter, setVerificationFilter] = useState(
     persistedResultsState.verificationFilter || "all"
   );
-  const [activeTab, setActiveTab] = useUrlEnumParam({
+  const [activeTab] = useUrlEnumParam({
     param: 'tab',
     values: LAB_RESULT_TABS,
     defaultValue: 'all',
   });
   const [expandedOrders, setExpandedOrders] = useState(new Set());
   const [page, setPage] = useState(persistedResultsState.page || 1);
+
+  // Commit tab and table state together. Separate navigations let the older
+  // location.search overwrite a just-selected critical-results filter.
+  const setPersistedResultsState = useCallback((updates, tab = activeTab) => {
+    const params = new URLSearchParams(routeSearch);
+    if (tab === 'all') params.delete('tab');
+    else params.set('tab', tab);
+    navigate({ pathname, search: params.toString() }, {
+      replace: true,
+      preventScrollReset: true,
+      state: {
+        ...(routeState || {}),
+        'laboratory:resultsTable': { searchQuery, verificationFilter, page, ...updates },
+      },
+    });
+  }, [activeTab, navigate, page, pathname, routeSearch, routeState, searchQuery, verificationFilter]);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -1549,7 +1564,7 @@ export default function LabResultsPage() {
   }, [verificationFilter, activeTab, debouncedSearchQuery, page]);
 
   // Fetch results
-  const { data: resultsData, isLoading, isFetching, refetch } = usePaginatedLabResults(queryFilters);
+  const { data: resultsData, isLoading, isFetching, isError: resultsError, refetch } = usePaginatedLabResults(queryFilters);
   const { data: targetResult, isLoading: targetResultLoading } = useLabResult(targetResultId);
 
   // Mutations
@@ -1707,9 +1722,8 @@ export default function LabResultsPage() {
 
   // Handle clear filters
   const handleTabChange = (value) => {
-    setActiveTab(value);
     setPage(1);
-    setPersistedResultsState({ page: 1 });
+    setPersistedResultsState({ page: 1 }, value);
   };
 
   const handleSearchChange = (event) => {
@@ -1728,13 +1742,12 @@ export default function LabResultsPage() {
   const handleClearFilters = () => {
     setSearchQuery("");
     setVerificationFilter("all");
-    setActiveTab("all");
     setPage(1);
     setPersistedResultsState({
       searchQuery: "",
       verificationFilter: "all",
       page: 1,
-    });
+    }, 'all');
   };
 
   const handlePageChange = (nextPage) => {
@@ -1757,6 +1770,26 @@ export default function LabResultsPage() {
       setInterpretContext(null);
     }
   };
+
+  if (resultsError) {
+    return <PageShell>
+      <PageHeader title="Lab Results" description="Results are unavailable until access and the connection can be verified." />
+      <LabResultsTabs activeTab={activeTab} onTabChange={handleTabChange} stats={{ critical: null }} />
+      <LabResultsFilters
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={handleClearFilters}
+        onSearchChange={handleSearchChange}
+        onVerificationFilterChange={handleVerificationFilterChange}
+        searchQuery={searchQuery}
+        verificationFilter={verificationFilter}
+      />
+      <section role="alert" className="mx-4 my-6 space-y-3 rounded-lg border border-border bg-card p-5 sm:mx-6">
+        <h2 className="font-semibold">Lab results could not be loaded</h2>
+        <p className="text-sm text-muted-foreground">Results and counts are hidden until a fresh read succeeds. Your filters are preserved.</p>
+        <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>{isFetching ? 'Retrying…' : 'Retry results'}</Button>
+      </section>
+    </PageShell>;
+  }
 
   return (
     <PageShell>

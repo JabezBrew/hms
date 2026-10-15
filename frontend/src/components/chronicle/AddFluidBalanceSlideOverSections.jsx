@@ -565,6 +565,7 @@ function FluidHistoryDateNav({
             size="icon"
             className="size-8"
             onClick={onPreviousDay}
+            aria-label="Previous day of fluid balance history"
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -595,6 +596,7 @@ function FluidHistoryDateNav({
             size="icon"
             className="size-8"
             onClick={onNextDay}
+            aria-label="Next day of fluid balance history"
             disabled={isHistoryToday}
           >
             <ChevronRight className="size-4" />

@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import ClinicalSummarySidebar, { ProblemsSection } from '../ClinicalSummarySidebar';
+import ClinicalSummarySidebar, { MiniClinicalSummary, ProblemsSection } from '../ClinicalSummarySidebar';
 
 vi.mock('@/features/nursing/hooks', () => ({
   useTodayFluidBalance: () => ({ data: null, isLoading: false }),
@@ -25,6 +25,11 @@ function sectionByHeading(container, heading) {
 }
 
 describe('ClinicalSummarySidebar', () => {
+  it.each([['full', ClinicalSummarySidebar], ['compact', MiniClinicalSummary]])('does not infer a negative allergy assessment from an empty %s record', (_label, Component) => {
+    render(<Component patient={{ id: 'synthetic-patient' }} allergies={[]} />);
+    expect(screen.getByText('No allergies recorded')).toBeInTheDocument();
+    expect(screen.queryByText(/NKDA|No Known Drug Allergies/i)).not.toBeInTheDocument();
+  });
   it('renders as a natural-height scroll panel inside the page-defined sidebar boundary', () => {
     const { container } = render(
       <ClinicalSummarySidebar

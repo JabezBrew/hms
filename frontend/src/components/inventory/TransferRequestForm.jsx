@@ -230,6 +230,7 @@ export function TransferRequestForm({ onSuccess, onCancel, initialToLocation }) 
                   size="icon"
                   className="text-destructive"
                   onClick={() => remove(index)}
+                  aria-label={`Remove transfer item ${index + 1}`}
                 >
                   <Trash2 className="size-4" />
                 </Button>

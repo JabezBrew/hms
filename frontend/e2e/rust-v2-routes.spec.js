@@ -3,6 +3,7 @@ import { paceIdentityLogin } from './login-pacing.js';
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL || 'owner@hms.local';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD;
+const adminPasskeyEnrolled = process.env.E2E_ADMIN_PASSKEY_ENROLLED === 'true';
 const staffSetupDeliveryEnabled = process.env.E2E_STAFF_SETUP_DELIVERY_ENABLED === 'true';
 const patientDetailRoutePattern = /\/patients\/[0-9a-f-]{36}(?:\/(?:profile|chronicle))?$/;
 const appointmentDetailRoutePattern = /\/appointments\/[0-9a-f-]{36}$/;
@@ -198,7 +199,7 @@ async function createSmokeAppointment(page, identity = {}) {
   await page.getByRole('button', { name: /\d{1,2}:\d{2} [AP]M - \d{1,2}:\d{2} [AP]M/, disabled: false }).first().click();
 
   const createAppointmentResponse = page.waitForResponse((response) => (
-    response.url().includes('/api/v2/appointments') &&
+    new URL(response.url()).pathname === '/api/v2/scheduling/appointments/book' &&
     response.request().method() === 'POST'
   ));
 
@@ -308,6 +309,14 @@ function v2DataList(payload) {
   return Array.isArray(payload?.data) ? payload.data : [];
 }
 
+async function expectMobileViewportFits(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 480) return;
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth), {
+    message: 'Clinical workflow must fit the mobile viewport without page-level horizontal scrolling',
+  }).toBeLessThanOrEqual(viewport.width);
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -323,6 +332,7 @@ async function pickVisibleCalendarDay(page, fieldLabel, day) {
   await expect(dayButton).toBeVisible();
   await dayButton.click();
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('grid')).toHaveCount(0);
 }
 
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
@@ -357,6 +367,7 @@ test('Rust V2 static work surfaces load without route crashes or server errors',
     });
   }
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -414,6 +425,7 @@ test('Rust V2 settings shell loads profile, security sessions, and preferences t
   await page.getByRole('button', { name: /Dark/i }).click();
   await expect(page.getByRole('button', { name: /Dark/i })).toHaveAttribute('aria-pressed', 'true');
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -495,6 +507,7 @@ test('Rust V2 inbox lists marks read and exposes PHI-safe realtime subscriptions
   expect(v2DataList(unreadPayload).some((item) => item.id === notification.id)).toBe(false);
   await expect(page.locator('article').filter({ hasText: notification.title })).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -693,6 +706,7 @@ test('Rust V2 role dashboards render generated snapshot and operational lists', 
   await expect(page.getByText('Ward preview', { exact: true })).toBeVisible();
   await expect(page.getByText('Discharge records', { exact: true })).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -832,6 +846,7 @@ test('Rust V2 referrals create inbox sent SLA and waitlist workflows use generat
   expect(offerNextResponse?.data?.status).toBe('offered');
   expect(offerNextResponse?.data?.patient_id).toBe(patientId);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -895,6 +910,7 @@ test('Rust V2 consent grant stays inside patient context and uses generated cons
   const consentPayload = await consentResponse.json();
   expect(consentPayload?.data?.status).toBe('active');
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -920,6 +936,7 @@ test('Rust V2 registration starts with identity lookup and keeps creation disabl
   await expect(page.getByLabel('MRN / Hospital Number', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Continue New Registration|Register New Distinct Patient/ })).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -941,6 +958,7 @@ test('Rust V2 patient registration completes identity lookup and opens the admin
   await submitMinimumPatientRegistration(page);
   await expect(page.getByRole('heading', { name: 'Playwright Smoke' })).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -980,7 +998,7 @@ test('Rust V2 patient edit preloads and updates demographics from the existing f
       await updateButton.click({ force: true });
       break;
     }
-    const nextButton = page.getByRole('button', { name: 'Next' });
+    const nextButton = page.getByRole('button', { name: 'Next', exact: true });
     if (!(await nextButton.isVisible({ timeout: 500 }).catch(() => false))) {
       break;
     }
@@ -992,6 +1010,7 @@ test('Rust V2 patient edit preloads and updates demographics from the existing f
   await expect(page).toHaveURL(patientDetailRoutePattern);
   await expect(page.getByRole('heading', { name: 'Playwright Updated' })).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1042,7 +1061,7 @@ test('Rust V2 patient registry searches real patients and opens an owned clinica
   await expect(resultRow).toContainText('Registered');
 
   const detailResponsePromise = page.waitForResponse((response) => (
-    response.url().endsWith(`/api/v2/patients/${patientId}`)
+    new URL(response.url()).pathname === `/api/v2/patients/${patientId}/chronicle`
       && response.request().method() === 'GET'
   ));
   await resultRow.click();
@@ -1051,6 +1070,7 @@ test('Rust V2 patient registry searches real patients and opens an owned clinica
   await expect(page).toHaveURL(new RegExp(`/patients/${patientId}/chronicle$`));
   await expect(page.getByRole('heading', { name: `${firstName} ${lastName}` })).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1103,7 +1123,7 @@ test('Rust V2 my patients page renders context patients from the generated endpo
   await expect(patientRow).toContainText('Context');
 
   const detailResponsePromise = page.waitForResponse((response) => (
-    response.url().endsWith(`/api/v2/patients/${contextPatient.id}`)
+    new URL(response.url()).pathname === `/api/v2/patients/${contextPatient.id}/chronicle`
       && response.request().method() === 'GET'
   ));
   await patientRow.click();
@@ -1111,6 +1131,7 @@ test('Rust V2 my patients page renders context patients from the generated endpo
   expect(detailResponse.status()).toBeLessThan(300);
   await expect(page).toHaveURL(new RegExp(`/patients/${contextPatient.id}/chronicle$`));
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1195,6 +1216,7 @@ test('Rust V2 pharmacy dispensing surface calls generated dispenses without surf
   await expect(pharmacyMain.getByRole('button', { name: /Dispense Selected/i })).toHaveCount(0);
   await expect(pharmacyMain.getByRole('checkbox')).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1323,7 +1345,7 @@ test('Rust V2 billing invoice creation detail and manual payment use generated e
   const receiptNumber = paymentPayload?.data?.receipt_number;
   expect(paymentId).toBeTruthy();
   expect(receiptNumber).toBeTruthy();
-  await expect(paymentPanel).toHaveClass(/translate-x-full/);
+  await expect(paymentPanel).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Record Payment', exact: true })).toHaveCount(0);
   await expect(page.getByText(/^Paid$/i).first()).toBeVisible();
 
@@ -1395,9 +1417,10 @@ test('Rust V2 billing invoice creation detail and manual payment use generated e
     method: 'cash',
     cash_session_id: cashSessionId,
   });
-  await expect(cashPanel).toHaveClass(/translate-x-full/);
+  await expect(cashPanel).toHaveCount(0);
   await expect(page.getByText(/^Paid$/i).first()).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1497,7 +1520,7 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
     page.getByRole('combobox').filter({ hasText: /Select user type/i }).first(),
     'Receptionist',
   );
-  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
 
   await expect(page.getByPlaceholder('Employee ID')).toHaveCount(0);
   await selectByVisibleText(
@@ -1507,10 +1530,10 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
   );
   await page.getByPlaceholder('Position').fill(initialPosition);
   await pickVisibleCalendarDay(page, 'Hire Date', '11');
-  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
 
   await expect(page.getByPlaceholder('Temporary password')).toHaveCount(0);
-  const contactNextButton = page.getByRole('button', { name: 'Next' });
+  const contactNextButton = page.getByRole('button', { name: 'Next', exact: true });
   await expect(contactNextButton).toBeVisible();
   await contactNextButton.click();
   await expect(page.getByText('Temporary Password:')).toHaveCount(0);
@@ -1539,9 +1562,18 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
 
   const createdStaffPayload = await createStaffResponse.json();
   let staffId;
-  if (!staffSetupDeliveryEnabled) {
-    expect(createStaffResponse.status()).toBe(409);
-    expect(createdStaffPayload?.error?.code).toBe('staff_account_setup_delivery_unavailable');
+  if (!adminPasskeyEnrolled || !staffSetupDeliveryEnabled) {
+    if (!adminPasskeyEnrolled) {
+      expect(createStaffResponse.status()).toBe(403);
+      expect(createdStaffPayload?.error).toMatchObject({
+        code: 'passkey_required',
+        message: 'Passkey enrollment is required for this privileged action.',
+      });
+      await expect(page.getByText('Passkey enrollment is required for this privileged action.').first()).toBeVisible();
+    } else {
+      expect(createStaffResponse.status()).toBe(409);
+      expect(createdStaffPayload?.error?.code).toBe('staff_account_setup_delivery_unavailable');
+    }
     await expect(page).toHaveURL(/\/staff\/create$/);
     const staffAfterAttempt = await getV2FromBrowser(page, `/api/v2/admin/staff?search=${encodeURIComponent(staffEmail)}`);
     expect(v2DataList(staffAfterAttempt).some((staff) => staff.email === staffEmail)).toBe(false);
@@ -1587,22 +1619,23 @@ test('Rust V2 admin organization staff and audit workflows use generated endpoin
 
   const auditSearchResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname.endsWith('/api/v2/admin/audit-events')
-      && url.searchParams.get('search') === 'staff'
-      && response.request().method() === 'GET';
+    return url.pathname === '/api/v2/admin/audit-events/search'
+      && response.request().method() === 'POST'
+      && response.request().postDataJSON()?.search === 'staff';
   });
   await page.getByLabel('Search logs by description, user, or resource').fill('staff');
   const auditSearchResponse = await auditSearchResponsePromise;
   expect(auditSearchResponse.status()).toBeLessThan(300);
   const auditSearchPayload = await auditSearchResponse.json();
   expect(Array.isArray(auditSearchPayload?.data)).toBe(true);
-  if (staffSetupDeliveryEnabled) {
+  if (adminPasskeyEnrolled && staffSetupDeliveryEnabled) {
     expect(v2DataList(auditSearchPayload).some((event) => (
       event.resource_id === staffId && /^admin\.staff\./i.test(event.event_type || '')
     ))).toBe(true);
     await expect(page.getByText(/Admin Staff/i).first()).toBeVisible();
   }
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1624,6 +1657,7 @@ test('Rust V2 appointment create schedules through the existing appointment UI',
   const appointmentId = await createSmokeAppointment(page);
   expect(appointmentId).toBeTruthy();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1648,7 +1682,7 @@ test('Rust V2 appointment detail checks in through the existing appointment UI',
   await expect(page.getByRole('button', { name: 'Check In' })).toBeVisible();
 
   const checkInResponse = page.waitForResponse((response) => (
-    response.url().includes('/api/v2/visits/check-in') &&
+    new URL(response.url()).pathname === `/api/v2/scheduling/appointments/${appointmentId}/arrive` &&
     response.request().method() === 'POST'
   ));
 
@@ -1660,6 +1694,7 @@ test('Rust V2 appointment detail checks in through the existing appointment UI',
   await expect(page.getByRole('button', { name: /^Edit$/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1702,6 +1737,7 @@ test('Rust V2 appointment detail cancels scheduled appointments through the exis
   await expect(page.getByRole('button', { name: /^Edit$/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1741,6 +1777,7 @@ test('Rust V2 appointment edit reschedules through the existing appointment UI',
   await expect(page).toHaveURL(new RegExp(`/appointments/${appointmentId}$`));
   await expect(page.getByText(/^Booked$/i).first()).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1768,6 +1805,7 @@ test('Rust V2 practitioner availability opens as a read-only scheduling surface'
   await expect(page.getByRole('button', { name: /block time/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /create rule/i })).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1794,7 +1832,7 @@ test('Rust V2 clinic waiting room calls a checked-in visit through the existing 
   expect(appointmentId).toBeTruthy();
 
   const checkInResponse = page.waitForResponse((response) => (
-    response.url().includes('/api/v2/visits/check-in') &&
+    new URL(response.url()).pathname === `/api/v2/scheduling/appointments/${appointmentId}/arrive` &&
     response.request().method() === 'POST'
   ));
 
@@ -1814,7 +1852,7 @@ test('Rust V2 clinic waiting room calls a checked-in visit through the existing 
   const waitingCard = page
     .locator('.group.relative')
     .filter({ hasText: patientName })
-    .filter({ hasText: 'Call Patient' })
+    .filter({ hasText: 'Room Patient' })
     .first();
   await expect(waitingCard).toBeVisible();
 
@@ -1823,19 +1861,20 @@ test('Rust V2 clinic waiting room calls a checked-in visit through the existing 
     response.request().method() === 'POST'
   ));
 
-  await waitingCard.getByRole('button', { name: 'Call Patient' }).click();
+  await waitingCard.getByRole('button', { name: 'Room Patient', exact: true }).click();
 
   const response = await callResponse;
   expect(response.status()).toBeLessThan(300);
 
   const calledCard = page
-    .locator('article')
+    .locator('.group.relative')
     .filter({ hasText: patientName })
     .filter({ hasText: 'Start Consultation' })
     .first();
   await expect(page.getByText(/Called/i).first()).toBeVisible();
   await expect(calledCard).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -1896,15 +1935,23 @@ test('Rust V2 triage assigns staff and completes an emergency assessment through
   await page.goto('/triage');
   await expect(page.getByRole('heading', { name: 'Triage Queue' })).toBeVisible();
   const waitingCard = page
-    .locator('article')
+    .locator('.group.relative')
     .filter({ hasText: patientName })
     .first();
   await expect(waitingCard).toBeVisible();
 
+  const directoryResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === '/api/v2/staff/directory'
+      && response.request().method() === 'GET'
+  ));
   await waitingCard.getByRole('button', { name: 'Assign staff', exact: true }).click();
+  const directoryResponse = await directoryResponsePromise;
+  expect(directoryResponse.ok()).toBe(true);
+  const assignee = v2DataList(await directoryResponse.json())[0];
+  expect(assignee?.user_id).toMatch(/^[0-9a-f-]{36}$/);
   const assignmentDialog = page.getByRole('dialog', { name: 'Assign Triage Staff' });
   await assignmentDialog.getByRole('combobox', { name: 'Staff member *' }).click();
-  await page.getByRole('option').filter({ hasNotText: 'No staff available' }).first().click();
+  await page.getByRole('option', { name: new RegExp(escapeRegExp(assignee.display_name)) }).click();
   const assignmentResponsePromise = page.waitForResponse((response) => (
     response.url().endsWith(`/api/v2/triage/${triageId}/assign`)
       && response.request().method() === 'POST'
@@ -1912,7 +1959,7 @@ test('Rust V2 triage assigns staff and completes an emergency assessment through
   await assignmentDialog.getByRole('button', { name: 'Assign Staff', exact: true }).click();
   const assignmentResponse = await assignmentResponsePromise;
   expect(assignmentResponse.status()).toBeLessThan(300);
-  expect(assignmentResponse.request().postDataJSON().assigned_to_user_id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(assignmentResponse.request().postDataJSON().assigned_to_user_id).toBe(assignee.user_id);
 
   await page.getByRole('tab', { name: 'Assigned', exact: true }).click();
   const assignedCard = page.locator('.group.relative').filter({ hasText: patientName }).first();
@@ -1941,6 +1988,7 @@ test('Rust V2 triage assigns staff and completes an emergency assessment through
   await expect(triagedCard).toBeVisible();
   await expect(triagedCard.getByRole('button', { name: /Assess|Assign staff|Reassign staff|Cancel/, exact: true })).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2010,9 +2058,12 @@ test('Rust V2 encounters create, detail, edit, workspace, and cancel through the
   await expect(page.getByRole('heading', { name: 'Emergency Visit' })).toBeVisible();
 
   await page.goto(`/encounters/${encounterId}/workspace`);
-  await expect(page.getByRole('tab', { name: 'Clinical Note' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Review of Systems' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Orders & Plan' })).toBeVisible();
+  await expect(page).toHaveURL((url) => (
+    url.pathname === `/patients/${patientId}/chronicle`
+      && url.searchParams.get('visit') === encounterId
+  ));
+  await expect(page.getByRole('heading', { name: patientName, exact: true })).toBeVisible();
+  await expect(page.getByText(/Hypertension|Diabetes|Lisinopril|Metformin/, { exact: true })).toHaveCount(0);
 
   await page.goto(`/encounters/${encounterId}`);
   await page.getByRole('button', { name: /^Cancel$/ }).click();
@@ -2029,6 +2080,7 @@ test('Rust V2 encounters create, detail, edit, workspace, and cancel through the
   expect(cancelResponse.status()).toBeLessThan(300);
   await expect(page.getByText(/^Cancelled$/i)).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2114,6 +2166,7 @@ test('Rust V2 wards list, detail, section setup, and reports use the existing UI
   await expect(page.getByRole('region', { name: 'Report controls' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export Report' })).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2159,16 +2212,18 @@ test('Rust V2 Ward board patient scope loads through the existing UI', async ({ 
     const url = new URL(response.url());
     return url.pathname.endsWith('/api/v2/wards/board/search')
       && response.request().method() === 'POST'
-      && response.request().postDataJSON()?.patient_id === patientId;
+      && response.request().postDataJSON()?.patient_id === patientId
+      && response.request().postDataJSON()?.ward_id === wardId;
   });
 
-  await page.goto(`/ward-board?patient=${patientId}`);
+  await page.goto(`/wards/${wardId}/board?patient=${patientId}`);
 
   const boardResponse = await boardResponsePromise;
   expect(boardResponse.status()).toBeLessThan(300);
-  await expect(page.getByRole('heading', { name: 'Ward Board' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: wardPayload.data.name, exact: true })).toBeVisible();
   await expect(page.getByText(patientName).first()).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2198,7 +2253,7 @@ test('Rust V2 admission and discharge clearances complete the inpatient movement
 
   const encounter = await postV2FromBrowser(page, '/api/v2/encounters', {
     patient_id: patientId,
-    encounter_type: 'inpatient',
+    encounter_type: 'outpatient',
   });
   expect(encounter.data.id).toBeTruthy();
   const summaryTemplateTitle = `AAA Synthetic discharge summary ${Date.now()}`;
@@ -2343,6 +2398,7 @@ test('Rust V2 admission and discharge clearances complete the inpatient movement
   const beds = v2DataList(await getV2FromBrowser(page, `/api/v2/wards/${wardId}/beds`));
   expect(beds.find((bed) => bed.id === bedPayload.data.id)?.status).toBe('cleaning');
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2403,7 +2459,7 @@ test('Rust V2 Ward Board completes nursing tasks and the handoff API records com
   expect(taskId).toBeTruthy();
 
   await page.goto(`/wards/${wardId}/board?view=my-work&patient=${patientId}`);
-  await expect(page.getByRole('heading', { name: 'Ward Board', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: wardPayload.data.name, exact: true })).toBeVisible();
   const patientRow = page.getByRole('row', { name: `Open ward-board details for ${patientName}` });
   await expect(patientRow).toBeVisible();
   await patientRow.click();
@@ -2436,6 +2492,7 @@ test('Rust V2 Ward Board completes nursing tasks and the handoff API records com
   expect(completedHandoff.data.status).toBe('completed');
   expect(completedHandoff.data.to_user_id).toBe(receivingNurse.user_id);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2465,10 +2522,11 @@ test('Rust V2 clinical note templates and encounter notes use generated clinical
   await expect(page.getByRole('heading', { name: 'New Note Template' })).toBeVisible();
   await page.getByLabel(/Template Title/i).fill(templateTitle);
 
-  await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
   await page.getByRole('button', { name: 'SOAP', exact: true }).click();
-  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Review Template', exact: true })).toBeVisible();
 
   const createTemplateResponsePromise = page.waitForResponse((response) => (
     response.url().endsWith('/api/v2/clinical/note-templates') &&
@@ -2547,6 +2605,7 @@ test('Rust V2 clinical note templates and encounter notes use generated clinical
   });
   expect(versionPayload?.data?.version).toBe(2);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2626,6 +2685,7 @@ test('Rust V2 patient Chronicle grants and ends audited emergency access through
   await expect(page.getByRole('heading', { name: 'Team-based access required' })).toBeVisible();
   await expect(page.getByPlaceholder('Search notes, prescriptions...')).toHaveCount(0);
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -2672,9 +2732,9 @@ test('Rust V2 laboratory catalog order result workflow uses real specimen ids', 
   await labCheckbox.focus();
   await labCheckbox.press('Space');
   await expect(labCheckbox).toBeChecked();
-  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
   await page.getByLabel(/Clinical Indication/i).fill('Playwright Rust V2 laboratory smoke order');
-  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
 
   const createOrderResponsePromise = page.waitForResponse((response) => (
     response.url().endsWith('/api/v2/laboratory/orders') &&
@@ -2805,6 +2865,7 @@ test('Rust V2 laboratory catalog order result workflow uses real specimen ids', 
     order_id: orderId,
   }));
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });
 
@@ -3006,5 +3067,6 @@ test('Rust V2 inventory stock procurement and controlled workflows use generated
   await expect(page.getByRole('heading', { name: 'Controlled Substances' })).toBeVisible();
   await expect(page.getByText(/Passkey|Controlled substances/i).first()).toBeVisible();
 
+  await expectMobileViewportFits(page);
   expect(failures).toEqual([]);
 });

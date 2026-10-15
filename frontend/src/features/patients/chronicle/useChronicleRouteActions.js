@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 function handleChronicleRouteAction({
@@ -49,18 +49,16 @@ function handleChronicleRouteAction({
       || patient?.current_admission_id;
 
     if (!admissionId) {
-      if (!patient && !admissionParam) {
-        return;
-      }
+      if (!patient && !admissionParam) return false;
       toast.error('No active admission found for this patient');
       if (actionParam || admissionParam) clearQueryParams();
-      return;
+      return true;
     }
 
     setRequestedDischargeAdmissionId(String(admissionId));
     if (!canUseStandaloneClinicalWorkflows) {
       if (actionParam || admissionParam) clearQueryParams();
-      return;
+      return true;
     }
     openChronicleWorkspace('discharge');
     if (actionParam || admissionParam) clearQueryParams();
@@ -73,23 +71,41 @@ function handleChronicleRouteAction({
       || patient?.current_admission_id;
 
     if (!admissionId) {
-      if (!patient && !admissionParam) {
-        return;
-      }
+      if (!patient && !admissionParam) return false;
       toast.error('No active admission found for this patient');
       if (actionParam || admissionParam) clearQueryParams();
-      return;
+      return true;
     }
 
     setRequestedTreatmentSheetAdmissionId(String(admissionId));
     openChronicleWorkspace('treatmentSheet');
     if (actionParam || admissionParam) clearQueryParams();
+  } else {
+    return false;
   }
+  return true;
 }
 
 export function useChronicleRouteActions(routeAction) {
+  const consumedIntent = useRef(null);
   useEffect(() => {
+    const action = routeAction.actionParam || routeAction.defaultAction;
+    const hasIntent = action || routeAction.wardRoundParam === 'true' || routeAction.consultationParam === 'true';
+    if (!hasIntent) {
+      consumedIntent.current = null;
+      return;
+    }
+    if (!routeAction.canOpenClinicalActions) return;
+    const intent = JSON.stringify([
+      routeAction.intentScope, action, routeAction.admissionParam,
+      routeAction.noteTitleParam, routeAction.noteTypeParam,
+      routeAction.wardRoundParam, routeAction.consultationParam,
+    ]);
+    if (consumedIntent.current === intent) return;
+    // Navigation cleanup can be deferred by the router. Claim the command
+    // before opening stateful UI so unstable callbacks cannot replay it.
+    consumedIntent.current = intent;
     // react-doctor-disable-next-line react-doctor/no-event-handler -- Route/default action params are external navigation commands; this effect is the boundary that opens the matching Chronicle workspace once patient context is available.
-    handleChronicleRouteAction(routeAction);
+    if (!handleChronicleRouteAction(routeAction)) consumedIntent.current = null;
   }, [routeAction]);
 }

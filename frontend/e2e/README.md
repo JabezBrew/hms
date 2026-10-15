@@ -40,6 +40,12 @@ Scope: Playwright end-to-end tests.
   standalone nursing pages are not supported workflow entry points. Structured
   handoff authoring remains outside the active UI; its browser fixture checks
   the native API boundary explicitly.
+- Native triage assignment and handoff checks require a dedicated active
+  synthetic nurse with a same-facility `staff_profiles` row and nursing
+  permissions, including `nursing.task.manage`. Prepare this local test fixture
+  through the normal database test factory before the browser gate. Keep its
+  credentials private or discard its random password. Demonstration staff are
+  deliberately inactive; do not enable them to satisfy browser tests.
 - Scheduling fixtures create actual future bookable sessions rather than
   depending on fixed dates in demonstration seed data. The static route catalog
   checks active routes and rejects accidental feature-unavailable redirects.
@@ -50,10 +56,13 @@ Scope: Playwright end-to-end tests.
   synthetic identity by at least 6.2 seconds. This respects the server's
   ten-attempts-per-minute limit, including successful logins. Run the native
   browser gate with one worker so concurrent fixtures do not exhaust that limit.
-- Staff coverage defaults to delivery being disabled: creation must return
-  `staff_account_setup_delivery_unavailable` and leave no staff account behind.
-  Set `E2E_STAFF_SETUP_DELIVERY_ENABLED=true` only with a configured synthetic
-  delivery fixture to exercise generated Employee IDs and account setup.
+- Staff coverage defaults to an unenrolled synthetic administrator: privileged
+  creation must return `403 passkey_required` and leave no staff account behind.
+  This proves the fail-closed provisioning boundary, not successful provisioning.
+  Set `E2E_ADMIN_PASSKEY_ENROLLED=true` only for a prepared enrolled fixture. With
+  that fixture, disabled delivery must return `staff_account_setup_delivery_unavailable`.
+  Also set `E2E_STAFF_SETUP_DELIVERY_ENABLED=true` only with configured synthetic
+  delivery to exercise generated Employee IDs and account setup.
 
 ## Run
 

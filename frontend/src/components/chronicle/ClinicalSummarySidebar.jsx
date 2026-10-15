@@ -350,7 +350,7 @@ const AllergiesSection = ({ allergies }) => {
             Allergies
           </h3>
         </header>
-        <p className="text-sm text-muted-foreground">NKDA (No Known Drug Allergies)</p>
+        <p className="text-sm text-muted-foreground">No allergies recorded</p>
       </section>
     );
   }
@@ -701,7 +701,7 @@ const MiniClinicalSummary = ({ allergies = EMPTY_ARRAY, problems = EMPTY_ARRAY }
       ) : (
         <div className="flex items-center gap-2">
           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            NKDA
+            No allergies recorded
           </span>
         </div>
       )}

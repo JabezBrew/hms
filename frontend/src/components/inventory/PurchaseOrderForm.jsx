@@ -296,6 +296,7 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
                   size="icon"
                   className="text-destructive"
                   onClick={() => remove(index)}
+                  aria-label={`Remove purchase order item ${index + 1}`}
                 >
                   <Trash2 className="size-4" />
                 </Button>

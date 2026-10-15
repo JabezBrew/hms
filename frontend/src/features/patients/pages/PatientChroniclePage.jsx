@@ -111,7 +111,7 @@ function useChronicleWardBoardAccess({
 function usePatientChroniclePageModel(defaultAction) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { pathname, search } = useLocation();
+  const { pathname, search, key: locationKey } = useLocation();
   const { user, facilityCode, logout, loading: authLoading } = useAuth();
   const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
@@ -173,9 +173,14 @@ function usePatientChroniclePageModel(defaultAction) {
     visitParam,
   } = useChronicleRouteState({
     canUseStandaloneClinicalWorkflows,
+    canOpenClinicalActions: Boolean(patient) && !isLoading && hasClinicalAccess
+      && (!rustV2Mode || patientLocalId === id),
+    areEncountersLoading,
+    encounters,
     clearQueryParams,
     defaultAction,
     id,
+    locationKey,
     openChronicleWorkspace,
     openWardRoundMode,
     patient,

@@ -53,6 +53,11 @@ states.
 - Heavy timeline or chart work should be deferred until the shell and identity
   context are useful.
 - Preserve AbortSignal behavior through any list or timeline fetch helper.
+- URL workspace commands are consumed once per patient, requested encounter and
+  navigation before opening stateful UI. Router cleanup can be deferred; an
+  unstable callback must not replay the command and reset an in-progress note.
+  Wait for authorized patient context and the requested encounter, and allow a
+  later explicit navigation to request the same action again.
 
 ## Verification
 

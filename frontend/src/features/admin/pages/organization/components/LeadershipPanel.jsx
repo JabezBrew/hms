@@ -171,6 +171,7 @@ export function LeadershipPanel({ unitId }) {
                   size="icon"
                   className="size-8 opacity-0 group-hover:opacity-100 transition-opacity text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20"
                   onClick={() => handleDelete(leader.id)}
+                  aria-label={`Remove ${leader.user_name} from ${leader.role_name} leadership assignment`}
                 >
                   <Trash2 className="size-4" />
                 </Button>

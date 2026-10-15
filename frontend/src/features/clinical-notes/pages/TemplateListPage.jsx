@@ -147,6 +147,7 @@ function TemplateListToolbar({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
           placeholder="Search templates..."
+          aria-label="Search note templates"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           className="pl-10 font-mono text-sm bg-background"
@@ -158,6 +159,8 @@ function TemplateListToolbar({
           <button
             type="button"
             onClick={() => setViewMode('grid')}
+            aria-label="Show templates as a grid"
+            aria-pressed={viewMode === 'grid'}
             className={cn(
               "p-1.5 rounded-md transition-colors",
               viewMode === 'grid'
@@ -170,6 +173,8 @@ function TemplateListToolbar({
           <button
             type="button"
             onClick={() => setViewMode('list')}
+            aria-label="Show templates as a list"
+            aria-pressed={viewMode === 'list'}
             className={cn(
               "p-1.5 rounded-md transition-colors",
               viewMode === 'list'
@@ -185,6 +190,7 @@ function TemplateListToolbar({
           variant="ghost"
           size="icon"
           onClick={onRefresh}
+          aria-label="Refresh note templates"
           className="shrink-0 size-9"
         >
           <RefreshCw className="size-4" />

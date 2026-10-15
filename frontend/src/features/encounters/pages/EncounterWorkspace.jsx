@@ -1,5 +1,7 @@
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { useEncounter } from '@/features/encounters/hooks/useEncounterQueries';
 import { usePatient } from '@/features/patients/hooks/usePatientQueries';
@@ -13,11 +15,49 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
-const EncounterWorkspace = () => {
+function RustEncounterWorkspace() {
+    const { id } = useParams();
+    const encounterQuery = useEncounter(id);
+    const pageMeta = usePageMeta({
+        title: 'Encounter Workspace | Hospital Management System',
+        breadcrumbs: [
+            { label: 'Encounters', path: '/encounters' },
+            { label: 'Workspace', path: `/encounters/${id}/workspace` },
+        ],
+    });
+    const encounter = encounterQuery.data;
+
+    if (encounterQuery.isLoading) {
+        return <PageShell>{pageMeta}<PageState variant="loading" title="Loading encounter" /></PageShell>;
+    }
+
+    if (encounterQuery.isError || !encounter?.id || encounter.id !== id || !encounter?.patient_id) {
+        return (
+            <PageShell>
+                {pageMeta}
+                <PageState
+                    variant="error"
+                    title="Encounter unavailable"
+                    description="The encounter could not be loaded. Retry to open its patient record."
+                    action={() => encounterQuery.refetch()}
+                />
+            </PageShell>
+        );
+    }
+
+    const search = new URLSearchParams({ visit: String(encounter.id) });
+    return <Navigate to={`/patients/${encodeURIComponent(encounter.patient_id)}/chronicle?${search}`} replace />;
+}
+
+function EncounterWorkspace() {
+    return isRustV2ApiMode() ? <RustEncounterWorkspace /> : <LegacyEncounterWorkspace />;
+}
+
+const LegacyEncounterWorkspace = () => {
     const { id } = useParams();
     const { data: encounter, isLoading: loadingEncounter } = useEncounter(id);
     // Fetch patient using encounter's patient_id if available
-    const { data: patient, isLoading: loadingPatient } = usePatient(encounter?.patient_id);
+    const { data: patient } = usePatient(encounter?.patient_id);
     const pageMeta = usePageMeta({
         title: 'Encounter Workspace | Hospital Management System',
         breadcrumbs: [

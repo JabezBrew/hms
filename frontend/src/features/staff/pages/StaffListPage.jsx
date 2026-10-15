@@ -241,6 +241,7 @@ function StaffDirectoryFilters({
           variant="ghost"
           size="icon"
           onClick={onRefresh}
+          aria-label="Refresh staff directory"
           className="shrink-0 size-9"
         >
           <RefreshCw className="size-4" />

@@ -650,6 +650,7 @@ function TemplateSectionActions({ fieldsLength, index, move, remove }) {
         size="icon"
         className="size-7"
         onClick={() => move(index, Math.max(index - 1, 0))}
+        aria-label={`Move section ${index + 1} up`}
         disabled={index === 0}
       >
         <MoveUp className="size-3.5" />
@@ -660,6 +661,7 @@ function TemplateSectionActions({ fieldsLength, index, move, remove }) {
         size="icon"
         className="size-7"
         onClick={() => move(index, Math.min(index + 1, fieldsLength - 1))}
+        aria-label={`Move section ${index + 1} down`}
         disabled={index === fieldsLength - 1}
       >
         <MoveDown className="size-3.5" />
@@ -670,6 +672,7 @@ function TemplateSectionActions({ fieldsLength, index, move, remove }) {
         size="icon"
         className="size-7 text-rose-500 hover:text-rose-600"
         onClick={() => remove(index)}
+        aria-label={`Remove section ${index + 1}`}
       >
         <Trash2 className="size-3.5" />
       </Button>

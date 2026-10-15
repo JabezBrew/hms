@@ -100,6 +100,7 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
           <button
             type="button"
             onClick={administerDose}
+            aria-label={`${isClickable ? 'Record administration for ' : ''}${medication.medication_name}, dose ${dose.dose_number} on ${date}: ${status.label}`}
             disabled={!isClickable}
             className={cn(
               "size-7 rounded-full border-2 flex items-center justify-center transition-all",

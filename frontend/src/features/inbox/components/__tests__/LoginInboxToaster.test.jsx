@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, render, screen } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import { StrictMode } from 'react';
 
 vi.mock('sonner', () => {
   const fn = vi.fn();
@@ -22,6 +23,11 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { useInboxItems, useMarkInboxRead } from '@/features/inbox/hooks';
 import LoginInboxToaster from '../LoginInboxToaster';
+
+function CurrentLocation() {
+  const location = useLocation();
+  return <output data-testid="current-location">{location.pathname}</output>;
+}
 
 const renderToaster = () =>
   render(
@@ -97,6 +103,50 @@ describe('LoginInboxToaster', () => {
     expect(toast.mock.calls[0][0]).toBe('9 unread');
   });
 
+  it('shows the login summary and urgent notification once under StrictMode replay', () => {
+    sessionStorage.setItem('hms.pendingLoginToast', '1');
+    const urgent = item({ id: 'strict-urgent', title: 'Urgent review ready', priority: 'urgent' });
+    useInboxItems.mockImplementation((_params, { enabled }) => ({
+      data: enabled ? { results: [urgent], count: 1 } : undefined,
+    }));
+
+    const view = render(
+      <StrictMode>
+        <MemoryRouter><LoginInboxToaster /></MemoryRouter>
+      </StrictMode>,
+    );
+
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.warning.mock.calls[0][0]).toBe('Urgent review ready');
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast.mock.calls[0][0]).toBe('1 unread • 1 urgent');
+    expect(sessionStorage.getItem('hms.pendingLoginToast')).toBeNull();
+    expect(mutate).not.toHaveBeenCalled();
+
+    view.unmount();
+    render(<StrictMode><MemoryRouter><LoginInboxToaster /></MemoryRouter></StrictMode>);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the committed login request until the unread query finishes', () => {
+    sessionStorage.setItem('hms.pendingLoginToast', '1');
+    let inboxData;
+    useInboxItems.mockImplementation((_params, { enabled }) => ({ data: enabled ? inboxData : undefined }));
+    const tree = <StrictMode><MemoryRouter><LoginInboxToaster /></MemoryRouter></StrictMode>;
+    const view = render(tree);
+    expect(sessionStorage.getItem('hms.pendingLoginToast')).toBeNull();
+    expect(toast).not.toHaveBeenCalled();
+
+    inboxData = { results: [item({ priority: 'urgent' })], count: 1 };
+    view.rerender(<StrictMode><MemoryRouter><LoginInboxToaster /></MemoryRouter></StrictMode>);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledTimes(1);
+    view.rerender(<StrictMode><MemoryRouter><LoginInboxToaster /></MemoryRouter></StrictMode>);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
+
   it('fires up to 3 urgent toasts + summary, newest first', () => {
     sessionStorage.setItem('hms.pendingLoginToast', '1');
     useInboxItems.mockReturnValue({
@@ -146,7 +196,7 @@ describe('LoginInboxToaster', () => {
     const u = item({ id: 'abc', title: 'Urgent', priority: 'urgent', action_url: '/patients/x' });
     useInboxItems.mockReturnValue({ data: { results: [u], count: 1 } });
 
-    renderToaster();
+    render(<MemoryRouter><LoginInboxToaster /><CurrentLocation /></MemoryRouter>);
 
     const opts = toast.warning.mock.calls[0][1];
     act(() => {
@@ -154,6 +204,7 @@ describe('LoginInboxToaster', () => {
     });
 
     expect(mutate).toHaveBeenCalledWith('abc');
+    expect(screen.getByTestId('current-location')).toHaveTextContent('/patients/x');
   });
 
   it('consumes the flag so a remount does not retoast', () => {

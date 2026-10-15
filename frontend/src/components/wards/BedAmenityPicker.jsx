@@ -231,6 +231,7 @@ export function BedAmenityPicker({
                 <button
                   type="button"
                   onClick={() => handleToggle(amenity.id)}
+                  aria-label={`Remove ${amenity.name} amenity`}
                   className="ml-1 rounded-full p-0.5 hover:bg-amber-200 transition-colors"
                 >
                   <X className="size-3" />

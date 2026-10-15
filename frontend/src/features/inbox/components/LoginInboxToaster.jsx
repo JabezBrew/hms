@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -31,24 +31,30 @@ export default function LoginInboxToaster() {
   const navigate = useNavigate();
   const markRead = useMarkInboxRead();
 
-  const armedRef = useRef(null);
-  if (armedRef.current === null) {
-    armedRef.current = isAuthenticated ? consumePendingFlag() : false;
-  }
-  const armed = armedRef.current;
+  const [armed, setArmed] = useState(false);
+  const firedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setArmed(false);
+      firedRef.current = false;
+      return;
+    }
+    // Consume only after commit: StrictMode may discard a render, and its
+    // effect replay must retain the first setup's successful arming.
+    if (consumePendingFlag()) setArmed(true);
+  }, [isAuthenticated]);
 
   const { data } = useInboxItems(
     { status: 'unread', page_size: 20 },
     { enabled: isAuthenticated && armed },
   );
 
-  const firedRef = useRef(false);
-
   const items = useMemo(() => (Array.isArray(data?.results) ? data.results : []), [data]);
   const totalUnread = typeof data?.count === 'number' ? data.count : items.length;
 
   useEffect(() => {
-    if (!armed || !data || firedRef.current) return;
+    if (!isAuthenticated || !armed || !data || firedRef.current) return;
     firedRef.current = true;
 
     if (items.length === 0) return;
@@ -87,7 +93,7 @@ export default function LoginInboxToaster() {
         onClick: () => navigate('/inbox'),
       },
     });
-  }, [armed, data, items, totalUnread, markRead, navigate]);
+  }, [isAuthenticated, armed, data, items, totalUnread, markRead, navigate]);
 
   return null;
 }

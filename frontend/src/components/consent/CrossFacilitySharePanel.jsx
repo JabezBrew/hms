@@ -323,7 +323,7 @@ function SharePanelHeader({ patientName, onClose }) {
           </p>
         </div>
       </div>
-      <Button variant="ghost" size="icon" onClick={onClose}>
+      <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close cross-facility share">
         <X className="size-4" />
       </Button>
     </header>

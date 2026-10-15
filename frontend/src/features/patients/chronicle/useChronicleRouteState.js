@@ -1,13 +1,17 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { CHRONICLE_VISIT_PARAM } from "./visitScopeUtils";
+import { CHRONICLE_ALL_VISITS, CHRONICLE_VISIT_PARAM } from "./visitScopeUtils";
 import { useChronicleRouteActions } from "./useChronicleRouteActions";
 
 export function useChronicleRouteState({
   canUseStandaloneClinicalWorkflows,
+  canOpenClinicalActions,
+  areEncountersLoading,
+  encounters,
   clearQueryParams,
   defaultAction,
   id,
+  locationKey,
   openChronicleWorkspace,
   openWardRoundMode,
   patient,
@@ -23,6 +27,8 @@ export function useChronicleRouteState({
   const chronicleModeParam = searchParams.get('mode');
   const wardRoundParam = searchParams.get('wardRound');
   const consultationParam = searchParams.get('consultation');
+  const requestedEncounterReady = !visitParam || visitParam === CHRONICLE_ALL_VISITS
+    || (!areEncountersLoading && encounters?.some((encounter) => String(encounter.id) === visitParam));
   const isWardRoundMode = chronicleModeParam === 'ward-round' || defaultAction === 'ward_round';
   const [requestedDischargeAdmission, setRequestedDischargeAdmission] = useState(null);
   const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
@@ -36,6 +42,8 @@ export function useChronicleRouteState({
   }, [id]);
 
   const routeAction = useMemo(() => ({
+    intentScope: JSON.stringify([id, visitParam || '', locationKey || '']),
+    canOpenClinicalActions: Boolean(canOpenClinicalActions && requestedEncounterReady),
     actionParam,
     admissionParam,
     canUseStandaloneClinicalWorkflows,
@@ -51,6 +59,11 @@ export function useChronicleRouteState({
     setRequestedTreatmentSheetAdmissionId,
     wardRoundParam,
   }), [
+    canOpenClinicalActions,
+    id,
+    locationKey,
+    requestedEncounterReady,
+    visitParam,
     actionParam,
     admissionParam,
     canUseStandaloneClinicalWorkflows,
