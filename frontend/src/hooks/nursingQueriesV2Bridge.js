@@ -6,6 +6,7 @@ export const MAX_VITALS_PAGE_SIZE = 50;
 const MAX_TASK_PAGE_SIZE = 50;
 const MAX_ALERT_PAGE_SIZE = 50;
 const MAX_MEDICATION_ADMIN_PAGE_SIZE = 50;
+const MAX_MEDICATION_ADMIN_WINDOW_PAGES = 100;
 const MAX_FLUID_BALANCE_PAGE_SIZE = 50;
 const MAX_TREATMENT_SHEET_PAGE_SIZE = 50;
 const MAX_WARD_STOCK_REQUEST_PAGE_SIZE = 50;
@@ -685,20 +686,94 @@ function adaptMatchingV2Items(items, adapt, matches) {
   return adaptedItems;
 }
 
-export async function getV2MedicationAdministrations(filters = {}, { signal } = {}) {
+function marDateBoundary(value, nextDay = false) {
+  if (!value) return undefined;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime())
+    || date.toISOString().slice(0, 10) !== value) {
+    throw new Error('Choose a valid medication schedule date.');
+  }
+  if (nextDay) date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString();
+}
+
+function marTimestamp(value) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error('Choose a valid medication schedule time.');
+  return date.toISOString();
+}
+
+export function medicationAdministrationQuery(filters = {}) {
+  const status = filters.status && filters.status !== 'all' ? filters.status : undefined;
+  if (status && !['scheduled', 'administered', 'held'].includes(status)) {
+    throw new Error('This medication administration status is not supported in this deployment.');
+  }
+  const limit = Number.parseInt(filters.page_size || filters.limit, 10);
+  return {
+    limit: Number.isFinite(limit) ? Math.min(100, Math.max(1, limit)) : MAX_MEDICATION_ADMIN_PAGE_SIZE,
+    patient_id: filters.patient_id || filters.patient || undefined,
+    admission_case_id: filters.admission_case_id || filters.admission_id || filters.admission || undefined,
+    scheduled_from: marTimestamp(filters.scheduled_from) || marDateBoundary(filters.date || filters.start_date),
+    scheduled_before: marTimestamp(filters.scheduled_before) || marDateBoundary(filters.date || filters.end_date, true),
+    status,
+    descending: filters.descending ?? (filters.ordering ? filters.ordering.startsWith('-') : undefined),
+    cursor: filters.cursor || undefined,
+  };
+}
+
+export function medicationAdministrationCacheScope(filters = {}) {
+  try {
+    return medicationAdministrationQuery(filters);
+  } catch {
+    // Invalid user filters become query errors; never put their raw input in
+    // the cache key or throw during React rendering.
+    return { invalid: true };
+  }
+}
+
+export async function getV2MedicationAdministrationPage(filters = {}, { signal } = {}) {
   try {
     const response = await v2Api.getMedicationAdministrations({
-      query: { limit: MAX_MEDICATION_ADMIN_PAGE_SIZE },
+      query: medicationAdministrationQuery(filters),
       signal,
     });
-    return adaptMatchingV2Items(
-      response?.data,
-      adaptV2MedicationAdministration,
-      (item) => medicationAdministrationMatchesFilters(item, filters)
-    );
+    if (!Array.isArray(response?.data) || typeof response?.page?.has_next !== 'boolean'
+      || (response.page.has_next && !response.page.next_cursor)) {
+      throw new Error('Medication schedule pagination could not be confirmed. Reload this view.');
+    }
+    return {
+      results: adaptMatchingV2Items(
+        response.data,
+        adaptV2MedicationAdministration,
+        (item) => medicationAdministrationMatchesFilters(item, filters)
+      ),
+      has_next: response.page.has_next,
+      next_cursor: response?.page?.next_cursor || null,
+    };
   } catch (error) {
     rethrowV2Error(error, 'Failed to load medication administrations');
   }
+}
+
+// A date-window MAR is a complete clinical grid, not a preview of the first
+// facility page. Follow the server's scoped cursors; never return partial data
+// as a complete schedule when the safety bound or a later page fails.
+export async function getV2MedicationAdministrations(filters = {}, { signal } = {}) {
+  const results = [];
+  const seenCursors = new Set();
+  let cursor = filters.cursor;
+  for (let page = 0; page < MAX_MEDICATION_ADMIN_WINDOW_PAGES; page += 1) {
+    const response = await getV2MedicationAdministrationPage({ ...filters, cursor }, { signal });
+    results.push(...response.results);
+    if (!response.has_next) return results;
+    if (!response.next_cursor || seenCursors.has(response.next_cursor)) {
+      throw new Error('Medication schedule could not be fully loaded. Reload this view.');
+    }
+    seenCursors.add(response.next_cursor);
+    cursor = response.next_cursor;
+  }
+  throw new Error('Too many medication doses for this view. Choose a shorter date range.');
 }
 
 export async function getV2TreatmentSheets(filters = {}, { signal } = {}) {

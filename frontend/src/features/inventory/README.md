@@ -36,3 +36,16 @@ Scope: inventory catalog, locations, stock, requisitions, procurement, transfers
 - Controlled-substance actions require high-severity audit and reauth where the
   backend contract requires it.
 - Do not derive stock truth from cached frontend state.
+
+## Catalog corrections
+
+Users with explicit `inventory.manage` permission can correct an existing active
+item's code, name and unit from its detail page. The dialog posts the effective
+date and reason to `/api/v2/inventory/catalog-edits`, shows the persisted version
+returned by the server, and refreshes current item reads. It does not enable the
+legacy whole-item editor.
+
+The UI permits today or earlier dates in UTC. Future-dated versions currently
+have no activation worker/current-read projection, and the API has no version
+history list. Those remain separate parity work. An unconfirmed save disables a
+repeat submission until the user closes and reviews the refreshed item.

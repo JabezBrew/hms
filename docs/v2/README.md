@@ -14,6 +14,8 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `v2-production-cutover.md` | production readiness gates and environment-independent proof sequence. |
 | `rust-v2-demo-seed.md` | demo seed behavior and provisioning expectations. |
 | `2026-10-15-phase-one-verification.md` | scoped security, worker reliability, clinical UI changes, acceptance evidence, and remaining gaps. |
+| `2026-10-15-parity-ledger.md` | expanded Python-to-Rust and UI parity phases, concrete gaps, acceptance rules, and implementation state. |
+| `2026-10-15-phase-two-verification.md` | first parity increment and exact staged-source local acceptance. |
 | `archive/` | historical V2 material kept out of the active path. |
 
 ## Invariants

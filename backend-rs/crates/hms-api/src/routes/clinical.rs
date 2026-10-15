@@ -7,6 +7,10 @@ use crate::state::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/api/v2/clinical/medication-catalog",
+            get(clinical::list_medication_catalog),
+        )
+        .route(
             "/api/v2/clinical/note-templates",
             get(clinical::list_note_templates).post(clinical::create_note_template),
         )

@@ -7,6 +7,7 @@ import AddPrescriptionSlideOver from '../AddPrescriptionSlideOver';
 
 const safetyMutate = vi.fn();
 const createPrescription = vi.fn();
+const getMedicationCatalog = vi.fn();
 const onClose = vi.fn();
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
@@ -47,6 +48,11 @@ vi.mock('@/hooks/usePrescriptionMutations', () => ({
 
 vi.mock('@/features/onboarding', () => ({
   emitOnboardingEvent: vi.fn(),
+}));
+
+vi.mock('@/features/pharmacy/api/medicationCatalog', () => ({
+  getMedicationCatalog: (...args) => getMedicationCatalog(...args),
+  medicationCatalogKeys: { search: (scope) => ['medication-catalog', scope] },
 }));
 
 function renderPanel({ selectedPatient = patient, onPrescriptionCreated } = {}) {
@@ -142,6 +148,41 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     await waitFor(() => expect(createPrescription).toHaveBeenCalledTimes(1));
     expect(createPrescription.mock.calls[0][0]).not.toHaveProperty('generate_mar');
     expect(createPrescription.mock.calls[0][0]).not.toHaveProperty('admission_case_id');
+  });
+
+  it('links the explicitly selected stock item and clears that link if medication text changes', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    getMedicationCatalog.mockResolvedValue({
+      data: [{ id: 'stock-1', code: 'MED-1', name: 'Synthetic catalog medication', unit: 'tablet', controlled: false }],
+      page: { has_next: false, next_cursor: null },
+    });
+    createPrescription.mockResolvedValueOnce({ id: 'rx-stock' });
+    renderPanel({ selectedPatient: { id: 'patient-1', is_admitted: false } });
+    // The catalog is deferred until requested and never fuzzy-matches typed text.
+    expect(getMedicationCatalog).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose facility medication' }));
+    fireEvent.click(await screen.findByRole('button', { name: /synthetic catalog medication.*med-1/i }));
+    expect(screen.getByLabelText('Medication')).toHaveValue('Synthetic catalog medication');
+    expect(screen.getByText('Linked: MED-1 · Synthetic catalog medication')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '1 tablet' } });
+    fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
+    await waitFor(() => expect(createPrescription).toHaveBeenCalledTimes(1));
+    expect(createPrescription.mock.calls[0][0]).toMatchObject({ inventory_item_id: 'stock-1', medication_name: 'Synthetic catalog medication', dosage: '1 tablet' });
+  });
+
+  it('removes an old stock binding after editing the medication name', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    getMedicationCatalog.mockResolvedValue({ data: [{ id: 'stock-1', code: 'MED-1', name: 'Synthetic catalog medication', unit: 'tablet' }], page: { has_next: false } });
+    createPrescription.mockResolvedValueOnce({ id: 'rx-free-text' });
+    renderPanel({ selectedPatient: { id: 'patient-1', is_admitted: false } });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose facility medication' }));
+    fireEvent.click(await screen.findByRole('button', { name: /synthetic catalog medication.*med-1/i }));
+    fireEvent.change(screen.getByLabelText('Medication'), { target: { value: 'Different medication' } });
+    expect(screen.queryByText(/^Linked:/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Dosage *'), { target: { value: '1 tablet' } });
+    fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
+    await waitFor(() => expect(createPrescription).toHaveBeenCalledTimes(1));
+    expect(createPrescription.mock.calls[0][0]).not.toHaveProperty('inventory_item_id');
   });
 
   it.each(['failed', 'unconfirmed'])('warns after a saved prescription with %s MAR, closes, and prevents create retry', async (status) => {

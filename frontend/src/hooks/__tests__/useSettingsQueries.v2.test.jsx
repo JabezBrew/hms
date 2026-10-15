@@ -221,17 +221,37 @@ describe('Rust V2 settings queries', () => {
     expect(response).toEqual({ changed: true });
   });
 
-  it('does not call legacy MFA endpoints when Rust V2 has no MFA management contract', async () => {
+  it('loads actual passkey enrollment and policy from the Rust MFA status contract', async () => {
+    const status = {
+      totp_enrolled: false,
+      webauthn_enrolled: true,
+      recovery_codes_remaining: 4,
+      passkey_required: true,
+      privileged_user: true,
+      privileged_actions_allowed: true,
+    };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: status, meta: {} }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
     const { result } = renderHook(() => useMfaStatus(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(result.current.data).toEqual({
-      totp_enrolled: false,
-      webauthn_enrolled: false,
-      recovery_codes_remaining: 0,
-      rust_v2_unsupported: true,
-    });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(result.current.data).toEqual(status);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/auth/mfa/status',
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('reports status request failures instead of fabricating an unenrolled account', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'permission_denied', message: 'Not permitted.' } }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const { result } = renderHook(() => useMfaStatus(), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
   });
 });

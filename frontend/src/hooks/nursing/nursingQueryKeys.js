@@ -20,17 +20,19 @@ export const nursingKeys = {
   nursingAlerts: (patient, ward, severity, status) => keyWith('nursing-alerts', patient, ward, severity, status),
   nursingAlertsAll: () => keyWith('nursing-alerts'),
   nursingAlertsActive: () => keyWith('nursing-alerts-active'),
-  medicationAdministrations: (patient, admission, date, status) =>
-    keyWith('medication-administrations', patient, admission, date, status),
+  medicationAdministrations: (patient, admission, date, status, startDate, endDate) =>
+    keyWith('medication-administrations', patient, admission, date, status, startDate, endDate),
   medicationAdministrationsAll: () => keyWith('medication-administrations'),
-  medicationsDueNow: () => keyWith('medications-due-now'),
-  medicationsOverdue: () => keyWith('medications-overdue'),
-  medicationAdministrationHistory: (patient, status, startDate, endDate, ordering, page, pageSize) =>
-    keyWith('medication-administration-history', patient, status, startDate, endDate, ordering, page, pageSize),
+  medicationAdministrationList: (scope, query) => keyWith('medication-administrations', 'scoped', scope, query),
+  medicationsDueNow: (scope) => scope ? keyWith('medications-due-now', scope) : keyWith('medications-due-now'),
+  medicationsOverdue: (scope) => scope ? keyWith('medications-overdue', scope) : keyWith('medications-overdue'),
+  medicationAdministrationHistory: (patient, status, startDate, endDate, ordering, page, pageSize, cursor) =>
+    keyWith('medication-administration-history', patient, status, startDate, endDate, ordering, page, pageSize, cursor),
   medicationAdministrationHistoryAll: () => keyWith('medication-administration-history'),
-  patientMar: (patientId, date) => keyWith('patient-mar', patientId, date),
+  medicationAdministrationHistoryPage: (scope, query, page) => keyWith('medication-administration-history', 'scoped', scope, query, page),
+  patientMar: (patientId, date, scope) => keyWith('patient-mar', patientId, date, scope),
   patientMarAll: () => keyWith('patient-mar'),
-  marGrid: (admissionId, startDate, days) => keyWith('mar-grid', admissionId, startDate, days),
+  marGrid: (admissionId, startDate, days, scope) => keyWith('mar-grid', admissionId, startDate, days, scope),
   marGridAll: () => keyWith('mar-grid'),
   pendingDispensing: (patientId) => keyWith('pending-dispensing', patientId),
   pendingDispensingAll: () => keyWith('pending-dispensing'),

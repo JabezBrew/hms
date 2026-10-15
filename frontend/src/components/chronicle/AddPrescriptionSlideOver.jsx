@@ -32,6 +32,8 @@ import {
  */
 const createPrescriptionFormData = () => ({
   medication_name: '',
+  inventory_item_id: null,
+  inventory_item_name: '',
   dosage: '',
   route: 'oral',
   frequency: 'daily',
@@ -73,6 +75,7 @@ const prescriptionReducer = (state, action) => {
         formData: {
           ...state.formData,
           [action.field]: action.value,
+          ...(action.field === 'medication_name' ? { inventory_item_id: null, inventory_item_name: '' } : {}),
         },
         errors: withoutFieldError(state.errors, action.field),
       };
@@ -82,8 +85,21 @@ const prescriptionReducer = (state, action) => {
         formData: {
           ...state.formData,
           medication_name: action.name,
+          inventory_item_id: null,
+          inventory_item_name: '',
         },
         selectedRxcui: action.rxcui,
+        errors: withoutFieldError(state.errors, 'medication_name'),
+      };
+    case 'stockSelected':
+      return {
+        ...state,
+        formData: {
+          ...state.formData,
+          inventory_item_id: action.item?.id || null,
+          inventory_item_name: action.item ? `${action.item.code} · ${action.item.name}` : '',
+          ...(action.item ? { medication_name: action.item.name } : {}),
+        },
         errors: withoutFieldError(state.errors, 'medication_name'),
       };
     case 'drugFormSelected':
@@ -152,6 +168,10 @@ const buildPrescriptionPayload = ({
     frequency: formData.frequency,
     start_date: formData.start_date,
   };
+
+  if (formData.inventory_item_id) {
+    data.inventory_item_id = formData.inventory_item_id;
+  }
 
   if (encounterId) {
     data.encounter_id = encounterId;
@@ -474,6 +494,8 @@ const AddPrescriptionSlideOverContent = ({
         isLoadingForms={isLoadingForms}
         drugSafetyEnhancementsAvailable={drugSafetyEnhancementsAvailable}
         clinicalTextFieldsAvailable={!rustV2Mode}
+        medicationCatalogAvailable={rustV2Mode && open}
+        onStockSelect={(item) => dispatch({ type: 'stockSelected', item })}
         marGenerationAvailable={marGenerationAvailable}
         generateMAR={generateMAR}
         marDays={marDays}

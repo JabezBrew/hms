@@ -689,6 +689,19 @@ pub struct MedicationAdministrationListItem {
     pub status: MedicationAdministrationStatus,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct MedicationAdministrationListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub scheduled_from: Option<DateTime<Utc>>,
+    pub scheduled_before: Option<DateTime<Utc>>,
+    pub status: Option<MedicationAdministrationStatus>,
+    pub descending: Option<bool>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct ScheduleMedicationAdministrationRequest {
     pub admission_case_id: Uuid,

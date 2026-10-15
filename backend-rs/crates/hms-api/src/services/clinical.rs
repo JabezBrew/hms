@@ -57,6 +57,38 @@ impl ClinicalService {
         self.state.db_pool()
     }
 
+    pub async fn list_medication_catalog(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: hms_domain::clinical::MedicationCatalogQuery,
+    ) -> Result<ListResponse<hms_domain::clinical::MedicationCatalogItem>, ApiError> {
+        // Prescribers need a small medication projection, not inventory access.
+        require_clinical_write_access(ctx, self.facility_id())?;
+        let search = normalize_optional_text(query.search, "search", MAX_TITLE_LEN)?;
+        let page = page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::clinical::list_medication_catalog(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+            search.as_deref(),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "medication_catalog_load_failed",
+                "Medication catalog could not be loaded.",
+            )
+        })?;
+        Ok(page_response(rows, page.limit, |item| {
+            encode_cursor(item.updated_at, item.id)
+        }))
+    }
+
     pub async fn list_note_templates(
         &self,
         ctx: &hms_access::RequestContext,

@@ -1,9 +1,12 @@
-use hms_db::ward::{NewMedicationAdministration, NewTreatmentSheet};
+use hms_db::ward::{
+    MedicationAdministrationFilters, NewMedicationAdministration, NewTreatmentSheet,
+};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
     AdministerMedicationRequest, CreateTreatmentSheetRequest, MedicationAdministrationListItem,
-    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
+    MedicationAdministrationListQuery, ScheduleMedicationAdministrationRequest,
+    TreatmentSheetListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -26,19 +29,53 @@ impl MarService {
     pub async fn list_medication_administrations(
         &self,
         ctx: &hms_access::RequestContext,
-        query: CursorListQuery,
+        query: MedicationAdministrationListQuery,
     ) -> Result<ListResponse<MedicationAdministrationListItem>, ApiError> {
         common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let page = common::page_request(query)?;
+        if let Some(admission_case_id) = query.admission_case_id {
+            let admission =
+                common::load_admission_for_access(&self.state, ctx, admission_case_id).await?;
+            if query
+                .patient_id
+                .is_some_and(|id| id != admission.patient_id)
+            {
+                return Err(ApiError::bad_request(
+                    "invalid_mar_query",
+                    "Admission does not belong to the requested patient.",
+                ));
+            }
+        } else if let Some(patient_id) = query.patient_id {
+            let _patient = common::load_patient_for_access(&self.state, ctx, patient_id).await?;
+        }
+        if let (Some(from), Some(before)) = (query.scheduled_from, query.scheduled_before) {
+            if before <= from {
+                return Err(ApiError::bad_request(
+                    "invalid_mar_query",
+                    "Medication schedule end must be after its start.",
+                ));
+            }
+        }
+        let page = common::page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::list_medication_administrations(
+        let rows = hms_db::ward::list_medication_administrations_scoped(
             self.state.db_pool(),
             self.state.facility_id(),
+            MedicationAdministrationFilters {
+                patient_id: query.patient_id,
+                admission_case_id: query.admission_case_id,
+                scheduled_from: query.scheduled_from,
+                scheduled_before: query.scheduled_before,
+                status: query.status,
+                descending: query.descending.unwrap_or(false),
+            },
             page.cursor,
             fetch_limit,
         )

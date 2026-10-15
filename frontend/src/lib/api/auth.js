@@ -4,6 +4,7 @@ import { getDefaultFacilityCode } from '../runtime-config';
 import { isRustV2ApiMode } from './v2/runtime';
 import { handleV2ApiError } from './v2/errors';
 import { performV2TokenRefresh, v2Request } from './v2/session';
+import { v2Api } from './v2/client';
 
 function splitDisplayName(displayName, email) {
   const parts = String(displayName || '').trim().split(/\s+/).filter(Boolean);
@@ -477,13 +478,15 @@ export const authApi = {
   mfaStatus: async (mfaSession = null, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2AuthRequest('/api/v2/auth/mfa/status', {
+        const response = await v2Api.getAuthMfaStatus({
           signal: options.signal,
         });
+        return response?.data || response;
       }
       const headers = mfaSession ? { 'X-MFA-Session': mfaSession } : undefined;
       return await apiClient.get('/auth/mfa/status/', { headers });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to load MFA status'));
       }
@@ -536,18 +539,19 @@ export const authApi = {
   mfaRecoveryGenerate: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2AuthRequest('/api/v2/auth/mfa/recovery', {
-          method: 'POST',
-          body: {
+        const response = await v2Api.postAuthRecoveryCodes(
+          {
             current_password: options.currentPassword,
           },
-          signal: options.signal,
-        });
+          { signal: options.signal },
+        );
+        return response?.data || response;
       }
       return await apiClient.post('/auth/mfa/recovery/', {});
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw new Error(handleV2ApiError(error, 'Failed to generate recovery codes'));
+        throw Object.assign(new Error(handleV2ApiError(error, 'Failed to generate recovery codes')), { status: error?.status });
       }
       throw new Error(handleApiError(error, 'Failed to generate recovery codes'));
     }
@@ -570,14 +574,15 @@ export const authApi = {
   mfaWebAuthnRegistrationOptions: async (mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/registration/options', {
-          method: 'POST',
-          body: { mfa_session: mfaSession || null },
-          signal: options.signal,
-        });
+        const response = await v2Api.postAuthWebauthnRegisterOptions(
+          { mfa_session: mfaSession || null },
+          { signal: options.signal },
+        );
+        return response?.data || response;
       }
       return await apiClient.post('/auth/mfa/webauthn/registration/options/', { mfa_session: mfaSession });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to start WebAuthn registration'));
       }
@@ -588,20 +593,21 @@ export const authApi = {
   mfaWebAuthnRegistrationVerify: async (credential, mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/registration/verify', {
-          method: 'POST',
-          body: {
+        const response = await v2Api.postAuthWebauthnRegisterVerify(
+          {
             credential,
             mfa_session: mfaSession || null,
           },
-          signal: options.signal,
-        });
+          { signal: options.signal },
+        );
+        return response?.data || response;
       }
       return await apiClient.post('/auth/mfa/webauthn/registration/verify/', {
         credential,
         mfa_session: mfaSession,
       });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to verify WebAuthn registration'));
       }
@@ -612,14 +618,15 @@ export const authApi = {
   mfaWebAuthnAuthOptions: async (mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/authentication/options', {
-          method: 'POST',
-          body: { mfa_session: mfaSession || null },
-          signal: options.signal,
-        });
+        const response = await v2Api.postAuthWebauthnAuthenticateOptions(
+          { mfa_session: mfaSession || null },
+          { signal: options.signal },
+        );
+        return response?.data || response;
       }
       return await apiClient.post('/auth/mfa/webauthn/authentication/options/', { mfa_session: mfaSession });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to start WebAuthn authentication'));
       }
@@ -630,20 +637,21 @@ export const authApi = {
   mfaWebAuthnAuthVerify: async (credential, mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/authentication/verify', {
-          method: 'POST',
-          body: {
+        const response = await v2Api.postAuthWebauthnAuthenticateVerify(
+          {
             credential,
             mfa_session: mfaSession || null,
           },
-          signal: options.signal,
-        });
+          { signal: options.signal },
+        );
+        return response?.data || response;
       }
       return await apiClient.post('/auth/mfa/webauthn/authentication/verify/', {
         credential,
         mfa_session: mfaSession,
       });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to verify WebAuthn authentication'));
       }

@@ -22,6 +22,33 @@ use crate::state::AppState;
 
 #[utoipa::path(
     get,
+    path = "/api/v2/clinical/medication-catalog",
+    operation_id = "getClinicalMedicationCatalog",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(hms_domain::clinical::MedicationCatalogQuery),
+    responses(
+        (status = 200, body = ListResponse<hms_domain::clinical::MedicationCatalogItem>),
+        (status = 400, body = ApiErrorResponse),
+        (status = 401, body = ApiErrorResponse),
+        (status = 403, body = ApiErrorResponse)
+    )
+)]
+pub async fn list_medication_catalog(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<hms_domain::clinical::MedicationCatalogQuery>,
+) -> Result<Json<ListResponse<hms_domain::clinical::MedicationCatalogItem>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_medication_catalog(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/v2/clinical/note-templates",
     operation_id = "getClinicalNoteTemplates",
     tag = "clinical",

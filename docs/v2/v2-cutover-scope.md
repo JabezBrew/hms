@@ -2,6 +2,14 @@
 
 Updated: 2026-05-19
 
+Expanded scope (2026-10-15): the user requested the subsequent phases through
+Python backend and UI feature completeness. Track current implementation in
+[`2026-10-15-parity-ledger.md`](2026-10-15-parity-ledger.md). The first-cutover
+baseline below remains historical; it must not be used to claim full parity.
+Previously deferred workflows are now backlog work with the acceptance criteria
+in that ledger. External PHI egress and provider-dependent workflows still need
+their explicit trust, safety, lifecycle and sandbox contracts before activation.
+
 This is the active planning tracker for the Rust V2 cutover. It replaces the
 older parity matrix, UI workflow matrix, product-decision list, and standalone
 `frontend-v2` planning notes.

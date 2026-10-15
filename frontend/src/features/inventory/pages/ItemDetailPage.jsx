@@ -1,8 +1,12 @@
 import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState } from 'react';
+import { useAuth } from '@/lib/auth';
+import { userHasCapability } from '@/shared/lib/access';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/shared/components/page/PageHeader';
@@ -29,6 +33,7 @@ import {
   useItemStockByLocation,
 } from '@/features/inventory/hooks';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { CatalogCorrectionDialog } from '../components/CatalogCorrectionDialog';
 import { format, parseISO } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Edit from 'lucide-react/dist/esm/icons/pencil.js';
@@ -491,11 +496,15 @@ export default function ItemDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
+  const [catalogCorrectionOpen, setCatalogCorrectionOpen] = useState(false);
   const itemMutationAvailable = !isRustV2ApiMode();
 
   const activeTab = searchParams.get('tab') || 'overview';
 
   const { data: item, isLoading, error, refetch } = useInventoryItem(id);
+  const catalogCorrectionAvailable = !itemMutationAvailable && item?.is_active !== false
+    && userHasCapability(user, 'inventory.manage');
 
   const handleTabChange = (value) => {
     setSearchParams((prev) => {
@@ -538,7 +547,7 @@ export default function ItemDetailPage() {
   }
 
   // Error state
-  if (error) {
+  if (error && !item) {
     return (
       <PageState
         variant="error"
@@ -619,9 +628,15 @@ export default function ItemDetailPage() {
                 Edit
               </Button>
             )}
+            {catalogCorrectionAvailable ? (
+              <Button variant="outline" onClick={() => setCatalogCorrectionOpen(true)} disabled={Boolean(error)}>
+                <Edit data-icon="inline-start" />
+                Correct catalog details
+              </Button>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon">
+                <Button variant="outline" size="icon" aria-label="Item actions">
                   <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -652,12 +667,19 @@ export default function ItemDetailPage() {
       </PageHeader>
 
       <div className="p-4 sm:p-6 space-y-6">
+      {error ? <Alert variant="destructive">
+        <AlertTitle>Current item could not be refreshed</AlertTitle>
+        <AlertDescription>
+          <p>The last loaded item details are shown. Refresh before making another correction.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>Retry item refresh</Button>
+        </AlertDescription>
+      </Alert> : null}
       {!itemMutationAvailable && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Inventory item editing is not available in Rust V2 mode yet. Item details, stock
-          history, and requisition creation remain available through generated /api/v2
-          contracts.
-        </div>
+        <Alert role="note"><AlertDescription>
+          {catalogCorrectionAvailable
+            ? 'Catalog corrections record changes to the code, name and unit with an effective date and reason.'
+            : 'Catalog corrections require inventory management permission and an active item.'}
+        </AlertDescription></Alert>
       )}
 
       {/* Stock Summary Bar */}
@@ -743,6 +765,9 @@ export default function ItemDetailPage() {
         </TabsContent>
       </Tabs>
       </div>
+      {catalogCorrectionOpen && catalogCorrectionAvailable ? (
+        <CatalogCorrectionDialog key={id} item={item} onClose={() => setCatalogCorrectionOpen(false)} />
+      ) : null}
     </PageShell>
   );
 }

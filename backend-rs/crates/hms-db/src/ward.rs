@@ -35,7 +35,8 @@ pub use discharge_cases::{
 pub use handoff::{complete_handoff, create_handoff, get_handoff, list_handoffs, NewHandoff};
 pub use mar::{
     administer_medication, create_treatment_sheet, get_medication_administration,
-    list_medication_administrations, list_treatment_sheets, schedule_medication_administration,
+    list_medication_administrations, list_medication_administrations_scoped, list_treatment_sheets,
+    schedule_medication_administration, MedicationAdministrationFilters,
     NewMedicationAdministration, NewTreatmentSheet,
 };
 pub use nursing_task_board::{

@@ -374,17 +374,18 @@ pub async fn apply_catalog_edit(
     edit: CatalogEditCommand,
 ) -> anyhow::Result<InventoryCatalogVersionItem> {
     let mut tx = pool.begin().await?;
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (
-            SELECT 1 FROM inventory_items
-            WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
-         )",
+    // Serialize version changes on the source item, including when no catalog
+    // version exists yet. Locking only existing versions misses that case.
+    let item = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM inventory_items
+         WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+         FOR UPDATE",
     )
     .bind(edit.facility_id)
     .bind(edit.item_id)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
-    if !exists {
+    if item.is_none() {
         anyhow::bail!("inventory item was not found");
     }
 

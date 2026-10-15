@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import { v2Api } from '@/lib/api/v2/client';
+import { getV2ClientScopeKey, v2Api } from '@/lib/api/v2/client';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import {
@@ -19,7 +19,7 @@ import { nursingKeys } from './nursingQueryKeys';
 
 export const useMARGrid = (admissionId, startDate = null, days = 7) => {
   return useQuery({
-    queryKey: nursingKeys.marGrid(admissionId, startDate, days),
+    queryKey: nursingKeys.marGrid(admissionId, startDate, days, isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         const firstDate = startDate || new Date().toISOString().slice(0, 10);

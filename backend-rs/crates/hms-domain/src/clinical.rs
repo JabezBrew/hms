@@ -62,6 +62,24 @@ pub enum PrescriptionStatus {
     Completed,
 }
 
+/// Prescribing catalog projection. Deliberately excludes procurement and stock details.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct MedicationCatalogItem {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub unit: String,
+    pub controlled: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct MedicationCatalogQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ChartEntryType {

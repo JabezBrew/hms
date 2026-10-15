@@ -25,11 +25,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import PasskeySettings from './PasskeySettings';
 
 /**
  * MFAStatus - Shows MFA status and enrollment controls within Settings > Security.
  */
 export default function MFAStatus() {
+  return isRustV2ApiMode() ? <PasskeySettings /> : <LegacyMfaStatus />;
+}
+
+function LegacyMfaStatus() {
   const { completeMfa } = useAuth();
   const { data: mfaStatus, isLoading, isError, refetch } = useMfaStatus();
   const totpStart = useMfaTotpStart();
@@ -59,10 +65,6 @@ export default function MFAStatus() {
 
   if (isError) {
     return <MfaErrorState onRetry={() => refetch()} />;
-  }
-
-  if (mfaStatus?.rust_v2_unsupported) {
-    return <MfaUnsupportedState />;
   }
 
   const hasTotp = Boolean(mfaStatus?.totp_enrolled);
@@ -244,24 +246,6 @@ function MfaErrorState({ onRetry }) {
         <RefreshCw className="size-4 mr-2" />
         Retry
       </Button>
-    </div>
-  );
-}
-
-function MfaUnsupportedState() {
-  return (
-    <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-muted/30">
-      <div className="p-2.5 rounded-lg shrink-0 bg-muted border border-border">
-        <ShieldOff className="size-5 text-muted-foreground" />
-      </div>
-      <div>
-        <p className="font-display text-sm font-medium text-foreground">
-          MFA Management Unavailable
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          This Rust V2 build has not exposed account MFA management yet.
-        </p>
-      </div>
     </div>
   );
 }

@@ -9,9 +9,9 @@ use hms_domain::ward::{
     CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
     CreateWardStaffAssignmentRequest, CreateWardStockRequestRequest, DischargeBlockerActionRequest,
     DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
-    MonitoringEventListItem, MyWardBoardContextResponse, NursingAlertListItem, NursingTaskListItem,
-    NursingTaskListQuery, PatientVitalsListItem, PatientVitalsListQuery,
-    RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
+    MedicationAdministrationListQuery, MonitoringEventListItem, MyWardBoardContextResponse,
+    NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery, PatientVitalsListItem,
+    PatientVitalsListQuery, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
     ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
     UpdateWardRequest, UpdateWardSectionRequest, UpdateWardStaffAssignmentRequest,
     WardAnalyticsQuery, WardAnalyticsResponse, WardBedMapResponse, WardBoardGetQuery,
@@ -1357,7 +1357,7 @@ pub async fn cancel_nursing_task(
     operation_id = "getMedicationAdministrations",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(MedicationAdministrationListQuery),
     responses(
         (status = 200, description = "Medication administration list", body = ListResponse<MedicationAdministrationListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1367,7 +1367,7 @@ pub async fn cancel_nursing_task(
 pub async fn list_medication_administrations(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<MedicationAdministrationListQuery>,
 ) -> Result<Json<ListResponse<MedicationAdministrationListItem>>, ApiError> {
     Ok(Json(
         state

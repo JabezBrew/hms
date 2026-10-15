@@ -86,18 +86,11 @@ const settingsApi = {
     }
   },
 
-  getMfaStatus: async () => {
+  getMfaStatus: async (options = {}) => {
     try {
-      if (isRustV2ApiMode()) {
-        return {
-          totp_enrolled: false,
-          webauthn_enrolled: false,
-          recovery_codes_remaining: 0,
-          rust_v2_unsupported: true,
-        };
-      }
-      return await authApi.mfaStatus();
+      return await authApi.mfaStatus(null, options);
     } catch (error) {
+      if (error?.name === 'AbortError') throw error;
       throw new Error(handleApiError(error, 'Failed to fetch MFA status'));
     }
   },
@@ -206,7 +199,7 @@ export function useRevokeAllSessions() {
 export function useMfaStatus() {
   return useQuery({
     queryKey: settingsKeys.mfaStatus(),
-    queryFn: settingsApi.getMfaStatus,
+    queryFn: ({ signal }) => settingsApi.getMfaStatus({ signal }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

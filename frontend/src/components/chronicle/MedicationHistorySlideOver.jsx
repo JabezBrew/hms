@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useMedicationAdministrationHistory } from '@/features/nursing/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 const STATUS_BADGE_CLASS = {
   administered: 'bg-emerald-600 text-white',
@@ -49,6 +50,8 @@ const MedicationHistorySlideOver = ({
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [pageCursors, setPageCursors] = useState([undefined]);
+  const rustV2Mode = isRustV2ApiMode();
   const previousOpenRef = useRef(open);
   const pageScope = `${patientId || ''}:${statusFilter}`;
   const previousPageScopeRef = useRef(pageScope);
@@ -58,6 +61,7 @@ const MedicationHistorySlideOver = ({
     if (!open) {
       setStatusFilter('all');
       setPage(1);
+      setPageCursors([undefined]);
     }
   }
 
@@ -66,15 +70,17 @@ const MedicationHistorySlideOver = ({
     if (page !== 1) {
       setPage(1);
     }
+    setPageCursors([undefined]);
   }
 
-  const { data, isLoading } = useMedicationAdministrationHistory(
+  const { data, isLoading, isFetching, error, refetch } = useMedicationAdministrationHistory(
     {
       patient: patientId,
       status: statusFilter,
       page,
       page_size: 20,
       ordering: '-scheduled_time',
+      cursor: pageCursors[page - 1],
     },
     {
       enabled: open,
@@ -82,6 +88,14 @@ const MedicationHistorySlideOver = ({
   );
 
   const records = useMemo(() => data?.results ?? [], [data]);
+  const changePage = (nextPage) => {
+    if (isFetching) return;
+    if (rustV2Mode && nextPage > page) {
+      if (!data?.has_next || !data.next_cursor) return;
+      setPageCursors((current) => [...current.slice(0, page), data.next_cursor]);
+    }
+    setPage(nextPage);
+  };
 
   return (
     <div
@@ -133,10 +147,10 @@ const MedicationHistorySlideOver = ({
               <SelectItem value="all" className="font-mono">All statuses</SelectItem>
               <SelectItem value="administered" className="font-mono">Administered</SelectItem>
               <SelectItem value="scheduled" className="font-mono">Scheduled</SelectItem>
-              <SelectItem value="missed" className="font-mono">Missed</SelectItem>
-              <SelectItem value="refused" className="font-mono">Refused</SelectItem>
+              {!rustV2Mode && <SelectItem value="missed" className="font-mono">Missed</SelectItem>}
+              {!rustV2Mode && <SelectItem value="refused" className="font-mono">Refused</SelectItem>}
               <SelectItem value="held" className="font-mono">Held</SelectItem>
-              <SelectItem value="cancelled" className="font-mono">Cancelled</SelectItem>
+              {!rustV2Mode && <SelectItem value="cancelled" className="font-mono">Cancelled</SelectItem>}
             </SelectContent>
           </Select>
         </div>
@@ -146,6 +160,11 @@ const MedicationHistorySlideOver = ({
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
             <LoadingSpinner className="size-6 text-muted-foreground" />
+          </div>
+        ) : error ? (
+          <div role="alert" className="space-y-3 py-16 text-center">
+            <p className="text-sm text-destructive">Medication history could not be loaded.</p>
+            <Button type="button" variant="outline" onClick={() => refetch()}>Retry</Button>
           </div>
         ) : records.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
@@ -218,10 +237,10 @@ const MedicationHistorySlideOver = ({
           className="border-t-0 py-0"
           countExact={data?.count_exact !== false && data?.total_is_lower_bound !== true}
           currentPage={data?.page ?? page}
-          hasNextPage={Boolean(data?.has_next || data?.next)}
+          hasNextPage={!isFetching && !error && Boolean(data?.has_next || data?.next)}
           hasPrevPage={Boolean(data?.has_previous || data?.previous) || page > 1}
           itemLabel="records"
-          onPageChange={setPage}
+          onPageChange={changePage}
           pageSize={20}
           totalCount={data?.count ?? 0}
           totalPages={data?.total_pages}

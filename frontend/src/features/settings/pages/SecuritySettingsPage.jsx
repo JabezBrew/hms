@@ -12,6 +12,7 @@ import SessionManagement from '@/components/settings/SessionManagement';
 import MFAStatus from '@/components/settings/MFAStatus';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 /**
  * SecuritySettingsPage - Password, MFA, and session management
@@ -19,6 +20,7 @@ import { PageShell } from '@/shared/components/page/PageShell';
  */
 const SecuritySettingsPage = () => {
   const navigate = useNavigate();
+  const passkeySettings = isRustV2ApiMode();
 
   const pageMeta = usePageMeta({
     title: 'Security Settings | HMS',
@@ -100,11 +102,13 @@ const SecuritySettingsPage = () => {
                   <Smartphone className="size-4 text-emerald-400" aria-hidden="true" />
                 </div>
                 <h2 className="font-display text-lg text-foreground">
-                  Multi-Factor Authentication
+                  {passkeySettings ? 'Passkeys & Recovery' : 'Multi-Factor Authentication'}
                 </h2>
               </div>
               <p className="text-sm text-muted-foreground mb-5 ml-11">
-                Add an extra layer of security by requiring a verification code in addition to your password.
+                {passkeySettings
+                  ? 'Register and test a passkey, and manage stored recovery codes.'
+                  : 'Add an extra layer of security by requiring a verification code in addition to your password.'}
               </p>
               <div className="ml-11">
                 <MFAStatus />

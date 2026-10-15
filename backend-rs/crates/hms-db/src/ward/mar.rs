@@ -70,26 +70,80 @@ struct TreatmentSheetRow {
     updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct MedicationAdministrationFilters {
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub scheduled_from: Option<DateTime<Utc>>,
+    pub scheduled_before: Option<DateTime<Utc>>,
+    pub status: Option<MedicationAdministrationStatus>,
+    pub descending: bool,
+}
+
 pub async fn list_medication_administrations(
     pool: &PgPool,
     facility_id: Uuid,
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<MedicationAdministrationListItem>> {
-    let mut query = medication_query();
+    list_medication_administrations_scoped(
+        pool,
+        facility_id,
+        MedicationAdministrationFilters::default(),
+        cursor,
+        limit,
+    )
+    .await
+}
+
+pub async fn list_medication_administrations_scoped(
+    pool: &PgPool,
+    facility_id: Uuid,
+    filters: MedicationAdministrationFilters,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<MedicationAdministrationListItem>> {
+    // Scope before pagination. The outer status filter uses the effective MAR
+    // status, including the fail-closed projection for stale source orders.
+    let mut query = QueryBuilder::<Postgres>::new("SELECT * FROM (");
+    query.push(medication_query().sql());
     query.push(" WHERE medication_administrations.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND medication_administrations.patient_id = ");
+        query.push_bind(patient_id);
+    }
+    if let Some(admission_case_id) = filters.admission_case_id {
+        query.push(" AND medication_administrations.admission_case_id = ");
+        query.push_bind(admission_case_id);
+    }
+    if let Some(scheduled_from) = filters.scheduled_from {
+        query.push(" AND medication_administrations.scheduled_at >= ");
+        query.push_bind(scheduled_from);
+    }
+    if let Some(scheduled_before) = filters.scheduled_before {
+        query.push(" AND medication_administrations.scheduled_at < ");
+        query.push_bind(scheduled_before);
+    }
+    query.push(") scoped WHERE TRUE");
+    if let Some(status) = filters.status {
+        query.push(" AND scoped.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
     if let Some(cursor) = cursor {
-        query.push(
-            " AND (medication_administrations.scheduled_at, medication_administrations.id) > (",
-        );
+        query.push(" AND (scoped.scheduled_at, scoped.id) ");
+        query.push(if filters.descending { "< (" } else { "> (" });
         query.push_bind(cursor.occurred_at);
         query.push(", ");
         query.push_bind(cursor.id);
         query.push(")");
     }
-    query.push(" ORDER BY medication_administrations.scheduled_at ASC, medication_administrations.id ASC LIMIT ");
-    query.push_bind(limit);
+    query.push(if filters.descending {
+        " ORDER BY scoped.scheduled_at DESC, scoped.id DESC LIMIT "
+    } else {
+        " ORDER BY scoped.scheduled_at ASC, scoped.id ASC LIMIT "
+    });
+    query.push_bind(limit.clamp(1, 101));
 
     let rows = observe_db_query(
         "ward.mar.medication_administrations.list",

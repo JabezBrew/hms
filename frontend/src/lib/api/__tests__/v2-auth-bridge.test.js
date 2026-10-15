@@ -485,12 +485,12 @@ describe('Rust V2 auth bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      'http://localhost:8080/api/v2/auth/mfa/webauthn/registration/options',
+      'http://localhost:8080/api/v2/auth/mfa/webauthn/register/options',
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ mfa_session: null }), signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       3,
-      'http://localhost:8080/api/v2/auth/mfa/webauthn/registration/verify',
+      'http://localhost:8080/api/v2/auth/mfa/webauthn/register/verify',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ credential: { id: 'credential-id' }, mfa_session: null }),
@@ -499,12 +499,45 @@ describe('Rust V2 auth bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       4,
-      'http://localhost:8080/api/v2/auth/mfa/recovery',
+      'http://localhost:8080/api/v2/auth/mfa/recovery-codes',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ current_password: 'ChangeMe123!' }),
         signal,
       }),
     );
+  });
+
+  it('uses Rust passkey authentication routes and preserves the challenge identifier', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { challenge: 'AA', mfa_session: 'challenge-2' } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { verified: true } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }));
+    const signal = new AbortController().signal;
+    const options = await authApi.mfaWebAuthnAuthOptions(null, { signal });
+    await authApi.mfaWebAuthnAuthVerify({ id: 'credential-2' }, options.mfa_session, { signal });
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(1,
+      'http://localhost:8080/api/v2/auth/mfa/webauthn/authenticate/options',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ mfa_session: null }), signal }));
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(2,
+      'http://localhost:8080/api/v2/auth/mfa/webauthn/authenticate/verify',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ credential: { id: 'credential-2' }, mfa_session: 'challenge-2' }), signal }));
+  });
+
+  it.each([
+    ['status', (signal) => authApi.mfaStatus(null, { signal })],
+    ['registration options', (signal) => authApi.mfaWebAuthnRegistrationOptions(null, { signal })],
+    ['registration verify', (signal) => authApi.mfaWebAuthnRegistrationVerify({}, 'challenge-1', { signal })],
+    ['authentication options', (signal) => authApi.mfaWebAuthnAuthOptions(null, { signal })],
+    ['authentication verify', (signal) => authApi.mfaWebAuthnAuthVerify({}, 'challenge-2', { signal })],
+    ['recovery generation', (signal) => authApi.mfaRecoveryGenerate({ currentPassword: 'not-logged', signal })],
+  ])('preserves cancellation for %s', async (_name, request) => {
+    const aborted = new DOMException('Cancelled', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(aborted);
+    await expect(request(new AbortController().signal)).rejects.toBe(aborted);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });

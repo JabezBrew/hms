@@ -732,7 +732,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/medication-administrations?limit=50',
+      'http://localhost:8080/api/v2/nursing/medication-administrations?limit=50&patient_id=patient-1&status=scheduled',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual([
@@ -787,7 +787,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     expect(result.current.data).toEqual(expect.objectContaining({
       count: 1,
       page: 1,
-      total_pages: 1,
+      count_exact: false,
       has_next: false,
       results: [expect.objectContaining({ id: 'med-admin-1', patient: 'patient-1' })],
     }));
@@ -1061,7 +1061,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data?.medications).toHaveLength(2));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/medication-administrations?limit=50',
+      'http://localhost:8080/api/v2/nursing/medication-administrations?limit=50&patient_id=patient-1&scheduled_from=2026-05-12T00%3A00%3A00.000Z&scheduled_before=2026-05-13T00%3A00%3A00.000Z',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual(expect.objectContaining({

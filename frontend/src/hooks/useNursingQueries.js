@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import { v2Api, v2Request } from '@/lib/api/v2/client';
+import { getV2ClientScopeKey, v2Api, v2Request } from '@/lib/api/v2/client';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import {
@@ -19,6 +19,8 @@ import {
   buildPatientMAR,
   isDueMedicationAdministration,
   getV2MedicationAdministrations,
+  getV2MedicationAdministrationPage,
+  medicationAdministrationCacheScope,
   getV2NursingAlerts,
   getV2NursingTasks,
   getV2PatientVitals,
@@ -620,12 +622,12 @@ export const useAcknowledgeAlert = () => {
 // ========== Medication Administration ==========
 
 export const useMedicationAdministrations = (filters = {}) => {
-  // Extract filter values to use as stable primitives in query key
-  const { patient, admission, date, status } = filters;
+  const rustV2Mode = isRustV2ApiMode();
 
   return useQuery({
-    // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.medicationAdministrations(patient, admission, date, status),
+    queryKey: rustV2Mode
+      ? nursingKeys.medicationAdministrationList(getV2ClientScopeKey(), medicationAdministrationCacheScope(filters))
+      : nursingKeys.medicationAdministrations(filters.patient, filters.admission, filters.date, filters.status, filters.start_date, filters.end_date),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         return getV2MedicationAdministrations(filters, { signal });
@@ -652,11 +654,16 @@ export const useMedicationAdministrationHistory = (filters = {}, options = {}) =
     ordering = '-scheduled_time',
     page = 1,
     page_size = 20,
+    cursor,
   } = filters;
   const { enabled = true } = options;
+  const rustV2Mode = isRustV2ApiMode();
+  const requestFilters = { patient, status, start_date, end_date, ordering, page_size, cursor };
 
   return useQuery({
-    queryKey: nursingKeys.medicationAdministrationHistory(
+    queryKey: rustV2Mode
+      ? nursingKeys.medicationAdministrationHistoryPage(getV2ClientScopeKey(), medicationAdministrationCacheScope(requestFilters), page)
+      : nursingKeys.medicationAdministrationHistory(
       patient,
       status,
       start_date,
@@ -664,22 +671,22 @@ export const useMedicationAdministrationHistory = (filters = {}, options = {}) =
       ordering,
       page,
       page_size,
+      cursor,
     ),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const results = await getV2MedicationAdministrations({
-          patient,
-          status,
-          start_date,
-          end_date,
-        }, { signal });
+        if (page > 1 && !cursor) {
+          throw new Error('Choose the next history page from the current results.');
+        }
+        const response = await getV2MedicationAdministrationPage(requestFilters, { signal });
         return {
-          count: results.length,
-          results,
+          count: (page - 1) * page_size + response.results.length,
+          count_exact: false,
+          results: response.results,
           page,
-          total_pages: 1,
-          has_next: false,
-          has_previous: false,
+          next_cursor: response.next_cursor,
+          has_next: response.has_next,
+          has_previous: page > 1,
         };
       }
 
@@ -730,10 +737,10 @@ export const useMedicationAdministrationHistory = (filters = {}, options = {}) =
 
 export const useMedicationsDueNow = () => {
   return useQuery({
-    queryKey: nursingKeys.medicationsDueNow(),
+    queryKey: nursingKeys.medicationsDueNow(isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const rows = await getV2MedicationAdministrations({ status: 'scheduled' }, { signal });
+        const rows = await getV2MedicationAdministrations({ status: 'scheduled', scheduled_before: new Date().toISOString() }, { signal });
         return rows.filter(isDueMedicationAdministration);
       }
 
@@ -750,10 +757,10 @@ export const useMedicationsDueNow = () => {
 export const useOverdueMedications = (options = {}) => {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: nursingKeys.medicationsOverdue(),
+    queryKey: nursingKeys.medicationsOverdue(isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const rows = await getV2MedicationAdministrations({ status: 'scheduled' }, { signal });
+        const rows = await getV2MedicationAdministrations({ status: 'scheduled', scheduled_before: new Date().toISOString() }, { signal });
         return rows.filter(isDueMedicationAdministration);
       }
 
@@ -868,7 +875,7 @@ export const useCreateAndAdminister = () => {
 
 export const usePatientMAR = (patientId, date = null) => {
   return useQuery({
-    queryKey: nursingKeys.patientMar(patientId, date),
+    queryKey: nursingKeys.patientMar(patientId, date, isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         const records = await getV2MedicationAdministrations({ patient: patientId, date }, { signal });

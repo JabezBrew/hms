@@ -26,6 +26,64 @@ pub struct ClinicalCursor {
     pub id: Uuid,
 }
 
+/// Facility prescribing choices; no stock, pricing, supplier or patient payload.
+pub async fn list_medication_catalog(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<ClinicalCursor>,
+    limit: i64,
+    search: Option<&str>,
+) -> anyhow::Result<Vec<hms_domain::clinical::MedicationCatalogItem>> {
+    #[derive(FromRow)]
+    struct CatalogRow {
+        id: Uuid,
+        code: String,
+        name: String,
+        unit: String,
+        controlled: bool,
+        updated_at: DateTime<Utc>,
+    }
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT id, code, name, unit, controlled, updated_at FROM inventory_items WHERE facility_id = ",
+    );
+    query.push_bind(facility_id);
+    query.push(" AND is_active AND item_type IN ('medication', 'controlled_substance')");
+    if let Some(search) = search.filter(|value| !value.is_empty()) {
+        let escaped = search
+            .to_lowercase()
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{escaped}%");
+        query.push(" AND (lower(name) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR lower(code) LIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    if let Some(cursor) = cursor {
+        query.push(" AND (updated_at, id) < (");
+        query.push_bind(cursor.occurred_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+    query.push(" ORDER BY updated_at DESC, id DESC LIMIT ");
+    query.push_bind(limit.clamp(1, 101));
+    let rows = query.build_query_as::<CatalogRow>().fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| hms_domain::clinical::MedicationCatalogItem {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            unit: row.unit,
+            controlled: row.controlled,
+            updated_at: row.updated_at,
+        })
+        .collect())
+}
+
 #[derive(Clone, Debug)]
 pub struct NoteContext {
     pub id: Uuid,
@@ -1102,7 +1160,7 @@ pub async fn create_prescription(
 ) -> anyhow::Result<PrescriptionListItem> {
     if let Some(item_id) = prescription.inventory_item_id {
         let local_item = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM inventory_items WHERE facility_id = $1 AND id = $2)",
+            "SELECT EXISTS (SELECT 1 FROM inventory_items WHERE facility_id = $1 AND id = $2 AND is_active AND item_type IN ('medication', 'controlled_substance'))",
         )
         .bind(prescription.facility_id)
         .bind(item_id)
@@ -1248,7 +1306,7 @@ pub(crate) async fn update_prescription_in_transaction(
         .filter(|item_id| Some(*item_id) != current.inventory_item_id)
     {
         let local_item = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM inventory_items WHERE facility_id = $1 AND id = $2)",
+            "SELECT EXISTS (SELECT 1 FROM inventory_items WHERE facility_id = $1 AND id = $2 AND is_active AND item_type IN ('medication', 'controlled_substance'))",
         )
         .bind(facility_id)
         .bind(item_id)

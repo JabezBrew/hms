@@ -62,6 +62,11 @@ lives in `hms-db::ward`.
   or dispenses that lack care-journey provenance.
 - MAR, observation, and handoff paths must keep PHI out of logs and metric
   labels.
+- MAR lists accept patient/admission scope, effective status, `[scheduled_from,
+  scheduled_before)` UTC bounds, and a deterministic schedule/id cursor.
+  Patient/admission filters must be authorized and applied before pagination;
+  mismatched patient/admission pairs are rejected. Unspecified ordering remains
+  ascending; history may explicitly request descending order.
 - External side effects belong in worker jobs or later async paths, not inside
   open DB transactions.
 

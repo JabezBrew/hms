@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { MedicationAutocomplete } from '@/components/drug-safety/MedicationAutocomplete';
+import { MedicationStockPicker } from '@/features/pharmacy/components/MedicationStockPicker';
 
 const ROUTE_OPTIONS = [
   { value: 'oral', label: 'Oral (PO)' },
@@ -469,6 +470,8 @@ export function PrescriptionFormContent({
   isLoadingForms,
   drugSafetyEnhancementsAvailable,
   clinicalTextFieldsAvailable = true,
+  medicationCatalogAvailable = false,
+  onStockSelect,
   marGenerationAvailable,
   generateMAR,
   marDays,
@@ -496,6 +499,9 @@ export function PrescriptionFormContent({
           isLoadingForms={isLoadingForms}
           onDrugFormSelect={onDrugFormSelect}
         />
+        {medicationCatalogAvailable ? (
+          <MedicationStockPicker itemId={formData.inventory_item_id} itemName={formData.inventory_item_name} onSelect={onStockSelect} />
+        ) : null}
         <DosageField
           value={formData.dosage}
           error={errors.dosage}

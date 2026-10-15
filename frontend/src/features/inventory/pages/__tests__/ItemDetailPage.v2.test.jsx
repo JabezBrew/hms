@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ItemDetailPage from '../ItemDetailPage';
 
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { adminAccess: { capabilities: [] } } }) }));
+
 vi.mock('@/features/inventory/hooks', () => ({
   useInventoryItem: () => ({
     data: {
@@ -68,7 +70,7 @@ describe('ItemDetailPage Rust V2 guards', () => {
     expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create requisition/i })).toBeInTheDocument();
     expect(
-      screen.getByText(/inventory item editing is not available in rust v2/i),
+      screen.getByText(/catalog corrections require inventory management permission/i),
     ).toBeInTheDocument();
   });
 

@@ -648,6 +648,60 @@ async fn effective_dated_catalog_edit_records_version_updates_item_and_audits() 
 }
 
 #[tokio::test]
+async fn concurrent_catalog_corrections_keep_a_single_open_version() {
+    let db = provisioned_inventory_db().await;
+    let pool = db.pool();
+    let item_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM inventory_items WHERE facility_id = $1 ORDER BY code LIMIT 1",
+    )
+    .bind(db.facility_id())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let today = Utc::now().date_naive();
+    let command = |days: i64| CatalogEditCommand {
+        id: Uuid::new_v4(),
+        facility_id: db.facility_id(),
+        item_id,
+        effective_from: today - Duration::days(days),
+        code: "SYNTHETIC-CATALOG".to_owned(),
+        name: "Synthetic corrected medication".to_owned(),
+        unit: "tablet".to_owned(),
+        reason: "Synthetic concurrent correction".to_owned(),
+        actor_user_id: db.owner_user_id(),
+    };
+    // With the source row held, both requests reach the version transition
+    // together after release. This covers the empty-version-table race.
+    let mut blocker = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM inventory_items WHERE id = $1 FOR UPDATE")
+        .bind(item_id)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let first = command(1);
+    let second = command(0);
+    let writes = async {
+        tokio::join!(
+            hms_db::inventory::apply_catalog_edit(pool, first),
+            hms_db::inventory::apply_catalog_edit(pool, second)
+        )
+    };
+    let release = async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        blocker.commit().await.unwrap();
+    };
+    let ((first, second), ()) = tokio::join!(writes, release);
+    // If today's version wins first, the backdated correction safely conflicts.
+    assert!(first.is_ok() || second.is_ok());
+    let open: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory_item_catalog_versions WHERE facility_id = $1 AND item_id = $2 AND effective_to IS NULL")
+        .bind(db.facility_id()).bind(item_id).fetch_one(pool).await.unwrap();
+    assert_eq!(open, 1);
+    let invalid: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory_item_catalog_versions WHERE item_id = $1 AND effective_to < effective_from")
+        .bind(item_id).fetch_one(pool).await.unwrap();
+    assert_eq!(invalid, 0);
+}
+
+#[tokio::test]
 async fn standing_orders_supply_dispense_and_stock_check_queue_have_explicit_states() {
     let db = provisioned_inventory_db().await;
     let pool = db.pool();
