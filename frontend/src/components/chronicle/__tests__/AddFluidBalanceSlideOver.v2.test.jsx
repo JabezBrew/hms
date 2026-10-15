@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AddFluidBalanceSlideOver from '../AddFluidBalanceSlideOver';
-import { useFluidBalance, useTodayFluidBalance } from '@/features/nursing/hooks';
+import { useFluidBalance, useFluidBalanceSummary, useTodayFluidBalance } from '@/features/nursing/hooks';
 
 const onClose = vi.fn();
 const createFluid = vi.fn();
@@ -30,10 +30,10 @@ vi.mock('@/features/nursing/hooks', () => ({
     error: readError,
     refetch: vi.fn(),
   })),
-  useFluidBalanceSummary: () => ({
+  useFluidBalanceSummary: vi.fn(() => ({
     data: { total_intake: 250, total_output: 0, balance: 250 },
     error: readError,
-  }),
+  })),
   useFluidBalance: vi.fn(() => ({
     data: [fluidRecord],
     isLoading: false,
@@ -68,7 +68,7 @@ describe('AddFluidBalanceSlideOver Rust V2 guards', () => {
     expect(screen.getByText(/morning fluids/i)).toBeInTheDocument();
     expect(container.querySelector('.lucide-trash-2')).not.toBeInTheDocument();
     expect(
-      screen.getByText(/fluid balance deletion is not available in rust v2/i),
+      screen.getByText(/corrections are not available yet/i),
     ).toBeInTheDocument();
   });
 
@@ -80,7 +80,7 @@ describe('AddFluidBalanceSlideOver Rust V2 guards', () => {
 
     expect(container.querySelector('.lucide-trash-2')).toBeInTheDocument();
     expect(
-      screen.queryByText(/fluid balance deletion is not available in rust v2/i),
+      screen.queryByText(/corrections are not available yet/i),
     ).not.toBeInTheDocument();
   });
 
@@ -93,6 +93,19 @@ describe('AddFluidBalanceSlideOver Rust V2 guards', () => {
     fireEvent.change(screen.getByPlaceholderText('Enter amount'), { target: { value: '250' } });
     fireEvent.click(screen.getByRole('button', { name: /record intake/i }));
     await waitFor(() => expect(createFluid).toHaveBeenCalledWith(expect.objectContaining({ admission: 'synthetic-admission', volume_ml: 250 })));
+  });
+
+  it('keeps current-admission rows and totals together across entry and history views', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    render(<AddFluidBalanceSlideOver open onClose={onClose} patient={patient} admission={{ id: 'current-admission' }} />);
+    expect(screen.getByText(/current admission/i)).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Amount (ml)' })).toBeInTheDocument();
+    expect(useTodayFluidBalance).toHaveBeenLastCalledWith(patient.id, expect.objectContaining({ admission_case_id: 'current-admission' }));
+    for (const [, filters] of useFluidBalance.mock.calls) expect(filters.admission_case_id).toBe('current-admission');
+    expect(useFluidBalanceSummary).toHaveBeenLastCalledWith(patient.id, expect.any(String), expect.objectContaining({ admission_case_id: 'current-admission' }));
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    expect(useFluidBalance.mock.calls.at(-1)[1].admission_case_id).toBe('current-admission');
+    expect(useFluidBalanceSummary.mock.calls.at(-1)[2].admission_case_id).toBe('current-admission');
   });
 
   it('shows unread data as unavailable instead of zero totals or no entries', () => {

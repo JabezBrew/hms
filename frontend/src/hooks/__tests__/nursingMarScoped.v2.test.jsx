@@ -149,6 +149,7 @@ describe('scoped Rust MAR reads', () => {
       patient_id: 'selected-patient', scheduled_from: '2026-05-12T00:00:00.000Z', scheduled_before: '2026-05-13T00:00:00.000Z',
     });
     expect(() => medicationAdministrationQuery({ date: '2026-02-30' })).toThrow('valid');
-    expect(() => medicationAdministrationQuery({ status: 'refused' })).toThrow('not supported');
+    expect(medicationAdministrationQuery({ status: 'refused' })).toMatchObject({ status: 'refused' });
+    expect(() => medicationAdministrationQuery({ status: 'cancelled' })).toThrow('not supported');
   });
 });

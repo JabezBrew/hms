@@ -40,6 +40,9 @@ fn nhis_write_error(
             NhisWriteConflict::MixedCurrencies => "nhis_batch_currency_mismatch",
             NhisWriteConflict::AmountOutOfRange => "nhis_amount_out_of_range",
             NhisWriteConflict::MappingVersionExhausted => "nhis_mapping_version_exhausted",
+            NhisWriteConflict::ExportStateLocked => "nhis_export_state_locked",
+            NhisWriteConflict::ExportSnapshotInvalid => "nhis_export_snapshot_invalid",
+            NhisWriteConflict::ExportClaimsIneligible => "nhis_export_claims_ineligible",
         };
         return ApiError::conflict(code, conflict.message());
     }
@@ -162,7 +165,7 @@ impl NhisService {
             nhis_write_error(
                 error,
                 "nhis_mapping_create_failed",
-                "NHIS service mapping could not be saved.",
+                "NHIS service mapping could not be confirmed.",
             )
         })?;
         Ok(object(mapping))
@@ -263,7 +266,7 @@ impl NhisService {
             nhis_write_error(
                 error,
                 "nhis_batch_create_failed",
-                "NHIS batch could not be saved.",
+                "NHIS batch could not be confirmed.",
             )
         })?;
         Ok(object(batch))
@@ -285,10 +288,11 @@ impl NhisService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
+        .map_err(|error| {
+            nhis_write_error(
+                error,
                 "nhis_batch_export_failed",
-                "NHIS batch could not be exported.",
+                "The export record could not be confirmed.",
             )
         })?
         .ok_or_else(|| ApiError::not_found("nhis_batch_not_found", "NHIS batch was not found."))?;

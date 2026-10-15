@@ -343,7 +343,7 @@ pub async fn user_by_id(pool: &PgPool, user_id: Uuid) -> anyhow::Result<Option<U
         JOIN facilities ON facilities.id = users.facility_id
         LEFT JOIN LATERAL (
             SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
-            FROM user_permissions
+            FROM effective_user_permissions
             WHERE user_id = users.id
         ) user_permissions ON TRUE
         LEFT JOIN LATERAL (
@@ -437,7 +437,10 @@ pub async fn user_by_id_for_facility_session_with_deadline(
                LEAST(
                    refresh_sessions.expires_at,
                    refresh_sessions.idle_expires_at,
-                   refresh_sessions.absolute_expires_at
+                   refresh_sessions.absolute_expires_at,
+                   (SELECT MIN(boundary_at) FROM user_authority_boundaries b
+                    CROSS JOIN LATERAL (VALUES (b.starts_at), (b.ends_at)) boundary(boundary_at)
+                    WHERE b.user_id = users.id AND b.facility_id = users.facility_id AND boundary_at > now())
                ) AS session_expires_at
         FROM users
         JOIN facilities ON facilities.id = users.facility_id
@@ -453,7 +456,7 @@ pub async fn user_by_id_for_facility_session_with_deadline(
          AND refresh_sessions.absolute_expires_at > now()
         LEFT JOIN LATERAL (
             SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
-            FROM user_permissions
+            FROM effective_user_permissions
             WHERE user_id = users.id
         ) user_permissions ON TRUE
         LEFT JOIN LATERAL (
@@ -526,7 +529,7 @@ async fn user_by_id_for_facility_with_session(
         JOIN facilities ON facilities.id = users.facility_id
         LEFT JOIN LATERAL (
             SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
-            FROM user_permissions
+            FROM effective_user_permissions
             WHERE user_id = users.id
         ) user_permissions ON TRUE
         LEFT JOIN LATERAL (
@@ -733,7 +736,10 @@ pub async fn request_context_facts(
 	                   LEAST(
 	                     refresh_sessions.expires_at,
 	                     refresh_sessions.idle_expires_at,
-	                     refresh_sessions.absolute_expires_at
+	                     refresh_sessions.absolute_expires_at,
+                   (SELECT MIN(boundary_at) FROM user_authority_boundaries b
+                    CROSS JOIN LATERAL (VALUES (b.starts_at), (b.ends_at)) boundary(boundary_at)
+                    WHERE b.user_id = users.id AND b.facility_id = users.facility_id AND boundary_at > now())
 	                   ) AS session_expires_at
 	            FROM users
 	            JOIN facilities ON facilities.id = users.facility_id
@@ -749,7 +755,7 @@ pub async fn request_context_facts(
 	             AND refresh_sessions.absolute_expires_at > now()
 	            LEFT JOIN LATERAL (
 	                SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
-	                FROM user_permissions
+	                FROM effective_user_permissions
 	                WHERE user_id = users.id
             ) user_permissions ON TRUE
             LEFT JOIN LATERAL (
@@ -820,7 +826,7 @@ pub async fn user_by_email_and_facility(
         JOIN facilities ON facilities.id = users.facility_id
         LEFT JOIN LATERAL (
             SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
-            FROM user_permissions
+            FROM effective_user_permissions
             WHERE user_id = users.id
         ) user_permissions ON TRUE
         LEFT JOIN LATERAL (
@@ -2163,7 +2169,7 @@ pub async fn start_break_glass_grant(
         SELECT EXISTS (
             SELECT 1
             FROM users
-            JOIN user_permissions ON user_permissions.user_id = users.id
+            JOIN effective_user_permissions AS user_permissions ON user_permissions.user_id = users.id
             WHERE users.id = $1
               AND users.facility_id = $2
               AND users.is_active = TRUE

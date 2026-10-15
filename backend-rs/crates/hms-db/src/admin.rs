@@ -751,6 +751,28 @@ pub async fn create_authority_appointment(
 ) -> anyhow::Result<AuthorityAppointmentListItem> {
     let id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
+    let target = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR NO KEY UPDATE",
+    )
+    .bind(appointment.user_id)
+    .bind(appointment.facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        target.is_some(),
+        "authority recipient is unavailable in this facility"
+    );
+    let position = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM positions WHERE id=$1 AND facility_id=$2 AND status='active' FOR SHARE",
+    )
+    .bind(appointment.position_id)
+    .bind(appointment.facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        position.is_some(),
+        "authority position is unavailable in this facility"
+    );
     sqlx::query(
         "INSERT INTO authority_appointments (
             id, facility_id, position_id, user_id, appointed_by_user_id, appointment_type,
@@ -769,6 +791,8 @@ pub async fn create_authority_appointment(
     .bind(codec::encode(AuthorityAppointmentStatus::Active)?)
     .execute(&mut *tx)
     .await?;
+    sqlx::query("UPDATE users SET permission_version=permission_version+1, updated_at=now() WHERE id=$1 AND facility_id=$2")
+        .bind(appointment.user_id).bind(appointment.facility_id).execute(&mut *tx).await?;
     insert_audit_event_tx(
         &mut tx,
         NewAuditEvent {
@@ -997,6 +1021,32 @@ pub async fn create_permission_assignment(
     let id = Uuid::new_v4();
     let permission_code = codec::encode(assignment.permission_code)?;
     let mut tx = pool.begin().await?;
+    let target = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR NO KEY UPDATE",
+    )
+    .bind(assignment.grantee_user_id)
+    .bind(assignment.facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        target.is_some(),
+        "authority recipient is unavailable in this facility"
+    );
+    match assignment.scope_type.as_str() {
+        "facility" => anyhow::ensure!(
+            assignment.scope_id.is_none(),
+            "facility scope must not have a unit id"
+        ),
+        "organization_unit" => {
+            let unit = sqlx::query_scalar::<_, Uuid>("SELECT id FROM organization_units WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR SHARE")
+                .bind(assignment.scope_id).bind(assignment.facility_id).fetch_optional(&mut *tx).await?;
+            anyhow::ensure!(
+                unit.is_some(),
+                "authority scope is unavailable in this facility"
+            );
+        }
+        _ => anyhow::bail!("authority scope is unsupported"),
+    }
     sqlx::query(
         "INSERT INTO permission_assignments (
             id, facility_id, grantee_user_id, permission_code, scope_type, scope_id,
@@ -1015,15 +1065,6 @@ pub async fn create_permission_assignment(
     .bind(assignment.ends_at)
     .bind(codec::encode(PermissionAssignmentStatus::Active)?)
     .bind(assignment.reason_code)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "INSERT INTO user_permissions (user_id, permission_code)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id, permission_code) DO NOTHING",
-    )
-    .bind(assignment.grantee_user_id)
-    .bind(&permission_code)
     .execute(&mut *tx)
     .await?;
     sqlx::query("UPDATE users SET permission_version = permission_version + 1, updated_at = now() WHERE id = $1 AND facility_id = $2")
@@ -2075,6 +2116,28 @@ pub async fn create_delegation(
     let id = Uuid::new_v4();
     let permission_code = codec::encode(delegation.permission_code)?;
     let mut tx = pool.begin().await?;
+    let target = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE FOR NO KEY UPDATE",
+    )
+    .bind(delegation.delegate_user_id)
+    .bind(delegation.facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        target.is_some(),
+        "authority recipient is unavailable in this facility"
+    );
+    let delegator = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id=$1 AND facility_id=$2 AND is_active=TRUE",
+    )
+    .bind(delegation.delegator_user_id)
+    .bind(delegation.facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        delegator.is_some(),
+        "delegator is unavailable in this facility"
+    );
     sqlx::query(
         "INSERT INTO delegations (
             id, facility_id, delegator_user_id, delegate_user_id, permission_code,
@@ -2091,15 +2154,6 @@ pub async fn create_delegation(
     .bind(delegation.ends_at)
     .bind(codec::encode(DelegationStatus::Active)?)
     .bind(delegation.reason)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "INSERT INTO user_permissions (user_id, permission_code)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id, permission_code) DO NOTHING",
-    )
-    .bind(delegation.delegate_user_id)
-    .bind(&permission_code)
     .execute(&mut *tx)
     .await?;
     sqlx::query("UPDATE users SET permission_version = permission_version + 1, updated_at = now() WHERE id = $1 AND facility_id = $2")
@@ -2306,7 +2360,7 @@ pub async fn insert_audit_event(pool: &PgPool, event: NewAuditEvent) -> anyhow::
     Ok(())
 }
 
-async fn insert_audit_event_tx(
+pub(crate) async fn insert_audit_event_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event: NewAuditEvent,
 ) -> anyhow::Result<()> {

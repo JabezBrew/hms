@@ -524,7 +524,8 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
         .as_str()
         .expect("next dose id exists");
     let administer_uri = format!("/api/v2/nursing/medication-administrations/{dose_id}/administer");
-    for expected in [StatusCode::OK, StatusCode::CONFLICT] {
+    let mut first_recorded_outcome = None;
+    for _ in 0..2 {
         let response = app
             .clone()
             .oneshot(
@@ -538,7 +539,16 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), expected);
+        assert_eq!(response.status(), StatusCode::OK);
+        let recorded = json_body(response).await["data"].clone();
+        if let Some(first) = &first_recorded_outcome {
+            assert_eq!(
+                &recorded, first,
+                "same-actor replay preserves every recorded field"
+            );
+        } else {
+            first_recorded_outcome = Some(recorded);
+        }
     }
     let hold = app
         .clone()

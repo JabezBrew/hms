@@ -504,7 +504,8 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
     let response = response.expect("request context probe succeeds");
 
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(observed_queries, 0);
+    // One indexed durable version read; the policy projection stays warm.
+    assert_eq!(observed_queries, 1);
     let body = json_body(response).await;
     assert_eq!(body["request_id"], "request-context-test");
     assert_eq!(body["facility_code"], "HMS");
@@ -549,7 +550,8 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
         .await;
     let cached_response = cached_response.expect("cached request context probe succeeds");
     assert_eq!(cached_response.status(), StatusCode::OK);
-    assert_eq!(cached_observed_queries, 0);
+    // A warm policy cache still requires exactly one durable version read.
+    assert_eq!(cached_observed_queries, 1);
 
     let metrics = hms_observability::prometheus_metrics();
     assert!(metrics.contains("hms_request_context_cache_hits_total"));
@@ -918,7 +920,8 @@ async fn session_issue_warms_request_context_for_parallel_requests() {
             StatusCode::OK
         );
     }
-    assert_eq!(observed_queries, 0);
+    // Eight requests each check durable versions; none rehydrates policy.
+    assert_eq!(observed_queries, 8);
 }
 
 #[tokio::test]
@@ -970,7 +973,8 @@ async fn logout_invalidates_warmed_request_context_cache_for_session() {
     .await;
     let rejected = rejected.expect("revoked-session request completes");
     assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(observed_queries, 1);
+    // One durable version read plus one rejected session hydration.
+    assert_eq!(observed_queries, 2);
 }
 
 #[tokio::test]
@@ -1048,7 +1052,8 @@ async fn auth_me_single_flights_cold_session_cache_hydration() {
     for user in users {
         assert!(user.is_some());
     }
-    assert_eq!(observed_queries, 1);
+    // Eight durable version reads plus exactly one single-flight hydration.
+    assert_eq!(observed_queries, 9);
 }
 
 #[tokio::test]

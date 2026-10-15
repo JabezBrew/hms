@@ -29,6 +29,9 @@ pub enum NhisWriteConflict {
     MixedCurrencies,
     AmountOutOfRange,
     MappingVersionExhausted,
+    ExportStateLocked,
+    ExportSnapshotInvalid,
+    ExportClaimsIneligible,
 }
 
 impl NhisWriteConflict {
@@ -43,6 +46,15 @@ impl NhisWriteConflict {
             Self::MixedCurrencies => "All claims in a batch must use the same currency.",
             Self::AmountOutOfRange => "The selected claim total is outside the supported range.",
             Self::MappingVersionExhausted => "The service mapping version limit has been reached.",
+            Self::ExportStateLocked => {
+                "Submitted or remitted batches cannot record another export."
+            }
+            Self::ExportSnapshotInvalid => {
+                "The batch no longer matches its saved claim summary. Review the batch before recording an export."
+            }
+            Self::ExportClaimsIneligible => {
+                "Only a draft batch with ready claims can record an export."
+            }
         }
     }
 }
@@ -519,6 +531,10 @@ struct BatchExportRow {
     batch_number: String,
     claim_count: i64,
     total_amount_minor: i64,
+    currency: String,
+    status: String,
+    export_checksum: Option<String>,
+    exported_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -1527,20 +1543,88 @@ pub async fn export_nhis_batch(
 ) -> anyhow::Result<Option<NhisBatchExport>> {
     let facility_id = command.facility_id;
     let batch_id = command.batch_id;
+    let mut transaction = pool.begin().await?;
     let row = sqlx::query_as::<_, BatchExportRow>(
         r#"
-        SELECT batch_number, claim_count, total_amount_minor
+        SELECT batch_number, claim_count, total_amount_minor, currency, status,
+               export_checksum, exported_at
         FROM nhis_batches
         WHERE facility_id = $1 AND id = $2
+        FOR UPDATE
         "#,
     )
     .bind(facility_id)
     .bind(batch_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?;
     let Some(row) = row else {
         return Ok(None);
     };
+
+    match codec::decode::<NhisBatchStatus>(&row.status)? {
+        NhisBatchStatus::Exported => {
+            let checksum = row
+                .export_checksum
+                .clone()
+                .filter(|value| !value.is_empty())
+                .ok_or(NhisWriteConflict::ExportSnapshotInvalid)?;
+            if row.exported_at.is_none() {
+                return Err(NhisWriteConflict::ExportSnapshotInvalid.into());
+            }
+            // Replays return the saved record without touching member status,
+            // timestamps, invoice locks, or audit history.
+            transaction.commit().await?;
+            return Ok(Some(nhis_export_record(batch_id, &row, checksum)));
+        }
+        NhisBatchStatus::Submitted | NhisBatchStatus::Remitted => {
+            return Err(NhisWriteConflict::ExportStateLocked.into());
+        }
+        NhisBatchStatus::Draft => {}
+    }
+    if !(1..=100).contains(&row.claim_count)
+        || row.export_checksum.is_some()
+        || row.exported_at.is_some()
+    {
+        return Err(NhisWriteConflict::ExportSnapshotInvalid.into());
+    }
+    let claims = sqlx::query_as::<_, ClaimAmountRow>(
+        r#"SELECT nhis_claims.amount_minor, nhis_claims.currency, nhis_claims.status
+        FROM nhis_claims
+        INNER JOIN nhis_batch_claims
+          ON nhis_batch_claims.claim_id = nhis_claims.id
+         AND nhis_batch_claims.facility_id = nhis_claims.facility_id
+        WHERE nhis_batch_claims.facility_id = $1 AND nhis_batch_claims.batch_id = $2
+        ORDER BY nhis_claims.id
+        LIMIT 101
+        FOR UPDATE OF nhis_claims"#,
+    )
+    .bind(facility_id)
+    .bind(batch_id)
+    .fetch_all(&mut *transaction)
+    .await?;
+    if claims.len() as i64 != row.claim_count
+        || claims.iter().any(|claim| claim.currency != row.currency)
+    {
+        return Err(NhisWriteConflict::ExportSnapshotInvalid.into());
+    }
+    let mut total = 0_i64;
+    for claim in &claims {
+        if !matches!(
+            codec::decode::<ClaimStatus>(&claim.status)?,
+            ClaimStatus::Ready
+        ) {
+            return Err(NhisWriteConflict::ExportClaimsIneligible.into());
+        }
+        if claim.amount_minor < 0 {
+            return Err(NhisWriteConflict::AmountOutOfRange.into());
+        }
+        total = total
+            .checked_add(claim.amount_minor)
+            .ok_or(NhisWriteConflict::AmountOutOfRange)?;
+    }
+    if total != row.total_amount_minor {
+        return Err(NhisWriteConflict::ExportSnapshotInvalid.into());
+    }
 
     let checksum = export_checksum(
         batch_id,
@@ -1548,37 +1632,17 @@ pub async fn export_nhis_batch(
         row.claim_count,
         row.total_amount_minor,
     );
-    let mut transaction = pool.begin().await?;
     sqlx::query(
         r#"
         UPDATE nhis_batches
         SET status = $1,
             export_checksum = $2,
-            exported_at = COALESCE(exported_at, now())
+            exported_at = now()
         WHERE facility_id = $3 AND id = $4
         "#,
     )
     .bind(codec::encode(NhisBatchStatus::Exported)?)
     .bind(&checksum)
-    .bind(facility_id)
-    .bind(batch_id)
-    .execute(&mut *transaction)
-    .await?;
-
-    sqlx::query(
-        r#"
-        UPDATE nhis_claims
-        SET status = $1,
-            updated_at = now()
-        WHERE facility_id = $2
-          AND id IN (
-              SELECT claim_id
-              FROM nhis_batch_claims
-              WHERE facility_id = $2 AND batch_id = $3
-          )
-        "#,
-    )
-    .bind(codec::encode(ClaimStatus::Submitted)?)
     .bind(facility_id)
     .bind(batch_id)
     .execute(&mut *transaction)
@@ -1634,21 +1698,26 @@ pub async fn export_nhis_batch(
         "severity": "high",
         "claim_count": row.claim_count,
         "total_amount_minor": row.total_amount_minor,
-        "export_format": "nhis_v2_baseline_json"
+        "export_format": "nhis_export_record_v1",
+        "record_only": true
     }))
     .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
 
-    Ok(Some(NhisBatchExport {
+    Ok(Some(nhis_export_record(batch_id, &row, checksum)))
+}
+
+fn nhis_export_record(batch_id: Uuid, row: &BatchExportRow, checksum: String) -> NhisBatchExport {
+    NhisBatchExport {
         batch_id,
-        batch_number: row.batch_number,
-        export_format: "nhis_v2_baseline_json".to_owned(),
+        batch_number: row.batch_number.clone(),
+        export_format: "nhis_export_record_v1".to_owned(),
         claim_count: row.claim_count,
         total_amount_minor: row.total_amount_minor,
         checksum,
-    }))
+    }
 }
 
 pub async fn list_remittance_imports(
@@ -2261,10 +2330,10 @@ pub async fn list_nhis_export_jobs(
         SELECT id,
                id AS batch_id,
                batch_number,
-               CASE WHEN status = 'exported' THEN 'ready' ELSE status END AS status,
+               'recorded'::text AS status,
                export_checksum AS checksum,
                exported_at AS created_at,
-               exported_at + INTERVAL '7 days' AS expires_at
+               NULL::timestamptz AS expires_at
         FROM nhis_batches
         WHERE facility_id =
         "#,

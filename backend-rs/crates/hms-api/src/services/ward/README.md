@@ -67,6 +67,12 @@ lives in `hms-db::ward`.
   Patient/admission filters must be authorized and applied before pagination;
   mismatched patient/admission pairs are rejected. Unspecified ordering remains
   ascending; history may explicitly request descending order.
+- MAR `/outcome` requires an explicit typed decision. Actual sourced
+  administration requires pharmacy supply; nonadministration requires a bounded
+  reason and retains distinct server actor/time evidence. Prescription-before-
+  dose locks serialize competing decisions; exact replay cannot rewrite history.
+  Independent nurse holds never acquire the reversible prescription-hold marker.
+  A generic persistence/commit failure is unconfirmed, not proof of no write.
 - Fluid lists use patient/admission scope and `[recorded_from, recorded_before)`
   bounds before schedule/id pagination. Summary and daily-trend reads require a
   patient or admission, authorize that scope, and reject mismatched pairs.

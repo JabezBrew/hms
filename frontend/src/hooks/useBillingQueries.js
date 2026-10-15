@@ -1008,10 +1008,17 @@ export function useExportNhisClaimBatch() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: ({ batchId, data }) => billingApi.exportNhisClaimBatch(batchId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: billingKeys.nhisExports() });
       queryClient.invalidateQueries({ queryKey: billingKeys.nhisBatches() });
+    },
+    onError: (error) => {
+      if (error.code === 'nhis_export_unconfirmed') {
+        queryClient.invalidateQueries({ queryKey: billingKeys.nhisExports() });
+        queryClient.invalidateQueries({ queryKey: billingKeys.nhisBatches() });
+      }
     },
   });
 }

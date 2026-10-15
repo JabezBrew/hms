@@ -1164,7 +1164,7 @@ fn audit_timestamp_desc(ordering: Option<&str>) -> Result<bool, ApiError> {
     }
 }
 
-fn require_high_risk_admin_access(
+pub(super) fn require_high_risk_admin_access(
     ctx: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,

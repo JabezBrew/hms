@@ -1475,6 +1475,11 @@ impl AppState {
             return Ok(None);
         }
 
+        if !self.current_auth_versions_match(claims).await? {
+            self.invalidate_auth_cache_for_user(claims.facility_id, claims.sub);
+            return Ok(None);
+        }
+
         let cache_key = AuthCacheKey::from_claims(claims);
         if let Some(user) = self.cached_auth_user_for_claims(&cache_key, claims) {
             return Ok(Some(user));
@@ -1504,6 +1509,22 @@ impl AppState {
             }
         }
         Ok(user)
+    }
+
+    async fn current_auth_versions_match(&self, claims: &AccessClaims) -> Result<bool> {
+        let Some(versions) = hms_db::auth::user_auth_versions_for_facility(
+            &self.inner.auth_pool,
+            claims.sub,
+            claims.facility_id,
+        )
+        .await?
+        else {
+            return Ok(false);
+        };
+        Ok(versions.session_version == claims.session_version
+            && versions.permission_version == claims.permission_version
+            && deployment_profile_claim_value(versions.active_profile).as_deref()
+                == Some(claims.active_profile.as_str()))
     }
 
     fn cached_auth_user_for_claims(
@@ -1549,6 +1570,11 @@ impl AppState {
         let facility_safe = self.inner.config.facility_code.as_str();
         if claims.facility_id != self.facility_id() {
             hms_observability::record_request_context_cache_miss(route_pattern, facility_safe);
+            return Ok(None);
+        }
+
+        if !self.current_auth_versions_match(claims).await? {
+            self.invalidate_auth_cache_for_user(claims.facility_id, claims.sub);
             return Ok(None);
         }
 
@@ -2291,18 +2317,17 @@ impl AppState {
         )
         .context("failed to issue access token")?;
 
-        let auth_user = user.to_auth_user();
+        let mut auth_user = user.to_auth_user();
         if let Some(cache_key) = AuthCacheKey::from_user_account(user, session_id) {
-            if let Some(ttl) = self.auth_cache_ttl_until(deadlines.refresh_expires_at) {
-                self.inner
-                    .auth_cache
-                    .put_user(cache_key.clone(), auth_user.clone(), ttl);
-            }
             if let Some(facts) = self
                 .request_context_facts(user.id, user.facility_id, session_id)
                 .await?
             {
+                auth_user = facts.user.clone();
                 if let Some(ttl) = self.auth_cache_ttl_until(facts.session_expires_at) {
+                    self.inner
+                        .auth_cache
+                        .put_user(cache_key.clone(), auth_user.clone(), ttl);
                     self.inner
                         .auth_cache
                         .put_request_context(cache_key, facts, ttl);

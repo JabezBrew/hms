@@ -30,7 +30,7 @@ also need configured sandbox validation before they can be described as working.
 
 | Workflow | Python behavior reference | Required Rust / UI work | Status |
 | --- | --- | --- | --- |
-| MAR nonadministration / PRN | `nursing/models.py` medication outcomes; `nursing/views.py` | Missed/refused/held actor/reason/notes and single-dose PRN provenance; retain source prescription locking and immutable administration history. Compatibility dialog drops outcome fields; active grid lacks these choices. | outcome slice in progress; PRN supply contract queued |
+| MAR nonadministration / PRN | `nursing/models.py` medication outcomes; `nursing/views.py` | Missed/refused/held actor/reason/notes and single-dose PRN provenance; retain source prescription locking and immutable administration history. Compatibility dialog drops outcome fields; active grid lacks these choices. | outcomes implemented and browser-verified in third checkpoint; PRN implementation under review |
 | Patient treatment / supply | `nursing/models.py` treatment entries; `pharmacy/services.py` | Regimen, ordered/dispensed/administered balances, discontinue, repeat supply. Ward stock requisitions are a separate existing workflow. | queued |
 | Fluid corrections and facility thresholds | `nursing/models.py`; `core/views.py` fluid settings | Audited corrections, categories/notes, effective facility thresholds and monitoring integration; server complete totals. | queued |
 | Clinical handover | `nursing/models.py` shift handoff | Patient narrative/context and governed delivery/acknowledgment; Rust ward/recipient/shift header alone is partial. | queued |
@@ -44,7 +44,7 @@ also need configured sandbox validation before they can be described as working.
 
 | Workflow | Evidence | Required work | Status |
 | --- | --- | --- | --- |
-| Grant revocation | Python `organization/views.py`; Rust admin list/create + expiry queries | Append-safe authority/permission/delegation ending, permission-version invalidation and immediate session/socket denial. | queued |
+| Grant revocation | Python `organization/views.py`; Rust admin list/create + expiry queries | Append-safe authority/permission/delegation ending, permission-version invalidation and immediate request denial. Socket reauthorization remains a realtime slice. | request lifecycle implemented in third checkpoint; realtime queued |
 | Organization lifecycle/membership | Python clinical units/members/coverage; UI `organization.js` | Audited unit updates/activation and hierarchy constraints, scoped membership/coverage; replace empty-array placeholders only when real contracts exist. | queued |
 | Account setup/reset delivery | Rust `state.rs` delivery interfaces / reset request | Trusted reset adapter, bounded asynchronous delivery, no raw-token persistence/logging, account-locked all-link invalidation and stale-proof fencing. Durable retries and actual configured provider delivery still require work. | adapter/lifecycle implemented; external sandbox and durable delivery queued |
 | Strong authentication | Python MFA flow; Rust enrollment primitives | Verified second-factor login/recovery and fresh privileged proof; enrollment alone is insufficient. | queued |
@@ -56,12 +56,12 @@ also need configured sandbox validation before they can be described as working.
 
 | Workflow | Current evidence | Required work | Status |
 | --- | --- | --- | --- |
-| NHIS mappings/batches/remittance | Rust billing create mappings, selected-claim batch and structured remittance APIs | Mapping versions and selected-claim batches connected with locked eligibility/snapshots and real UI. Export replay currently resets later states; remittance has no accounting settlement. | mappings/batch creation implemented; export lifecycle in progress; real download/remittance queued |
+| NHIS mappings/batches/remittance | Rust billing create mappings, selected-claim batch and structured remittance APIs | Mapping versions and selected-claim batches connected with locked eligibility/snapshots and real UI. Export metadata must preserve later states; remittance has no accounting settlement. | mappings/batch creation and internal export record lifecycle implemented; real download/remittance queued |
 | Billing catalog/insurance/cash review | Python billing models/views; UI `billing.js` guarded mutations | Persist supported effective catalog/insurance lifecycle and cash review; preserve immutable finalized invoices/reversal ledger. | queued |
 | PSP settlement | Python billing provider modules; Rust adapter guarded | Provider scope, credential isolation, idempotent async intake and settlement reconciliation; sandbox evidence required. | queued; external configuration required |
 | Inventory item/location administration | Python inventory; Rust read surfaces | Governed create/update/deactivate, stock/history constraints and audits; catalog correction is a narrower phase-2 slice. | queued |
 | GRN/procurement/transfers | Python inventory; Rust limited transitions | GRN item correction/rejection, requisition-to-order conversion and explicit transfer lifecycle, concurrency and stock conservation. | queued |
-| Standing orders | Rust creates metadata and generates empty draft; legacy UI expects recurring items | Versioned recurring-item payload and real populated requisitions; do not enable an empty generator as parity. | queued |
+| Standing orders | Rust previously created metadata and generated empty drafts; legacy UI expects recurring items | Versioned recurring-item payload, populated requisitions and conserved stock issue. Scheduled automatic generation remains separate. | implementation under review |
 | Catalog versions | Rust stores future versions but reads current item; no activation worker/history API | Version history/conflicts and deterministic future activation before offering scheduled edits. | queued |
 
 ## Phase 6: scheduling, laboratory, configurable charting

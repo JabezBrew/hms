@@ -13,7 +13,7 @@ import {
   adaptV2MedicationAdministration,
   adaptV2PatientVitals,
   normalizeV2MedicationAdministrationPayload,
-  normalizeV2MedicationAdministerPayload,
+  recordV2MedicationOutcome,
   normalizeV2TaskPayload,
   normalizeV2CreateVitalsPayload,
   buildPatientMAR,
@@ -807,29 +807,25 @@ export const useAdministerMedication = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async ({ medicationId, data, signal }) => {
       if (isRustV2ApiMode()) {
-        try {
-          const response = await v2Api.postMedicationAdministrationAdminister(
-            { id: medicationId },
-            normalizeV2MedicationAdministerPayload(data),
-            { signal: signal || data?.signal },
-          );
-          return adaptV2MedicationAdministration(response?.data);
-        } catch (error) {
-          rethrowV2Error(error, 'Failed to administer medication');
-        }
+        return recordV2MedicationOutcome(medicationId, data, { signal: signal || data?.signal });
       }
 
       const response = await apiClient.post(`/nursing/medications/${medicationId}/administer/`, data);
       return response.data;
     },
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationHistoryAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMarAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsDueNow() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsOverdue() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.marGridAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.pendingDispensingAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.readyForAdminAll() });
     },
   });
 };
@@ -838,23 +834,10 @@ export const useCreateAndAdminister = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
-        try {
-          const created = await v2Api.postMedicationAdministrations(
-            normalizeV2MedicationAdministrationPayload(data),
-            { signal: data?.signal },
-          );
-          const createdAdministration = adaptV2MedicationAdministration(created?.data);
-          const administered = await v2Api.postMedicationAdministrationAdminister(
-            { id: createdAdministration.id },
-            normalizeV2MedicationAdministerPayload(data),
-            { signal: data?.signal },
-          );
-          return adaptV2MedicationAdministration(administered?.data);
-        } catch (error) {
-          rethrowV2Error(error, 'Failed to create and administer medication');
-        }
+        throw new Error('On-demand doses require a source-linked request and supply workflow. Use the prescribed medication schedule.');
       }
 
       // data: { patient_id, prescription_id, scheduled_time, notes? }

@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
@@ -139,7 +140,7 @@ function FluidEntryRow({
   );
 }
 
-export function FluidBalanceHeader({ patientName, onClose }) {
+export function FluidBalanceHeader({ patientName, scopeLabel, onClose }) {
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
       <div className="flex items-center gap-3">
@@ -151,16 +152,16 @@ export function FluidBalanceHeader({ patientName, onClose }) {
             Fluid Balance
           </h2>
           <p className="font-mono text-xs text-muted-foreground mt-0.5">
-            {patientName}
+            {patientName}{scopeLabel ? ` · ${scopeLabel}` : ''}
           </p>
         </div>
       </div>
 
       <Button
-        variant="destructive"
+        variant="outline"
         size="sm"
         onClick={onClose}
-        className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+        className="font-mono text-xs"
       >
         <X className="size-4 mr-1.5" />
         Close
@@ -213,8 +214,8 @@ function RustV2DeletionNotice({ visible }) {
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 font-mono text-xs text-amber-900 dark:text-amber-100">
-      Fluid balance deletion is not available in Rust V2 mode yet.
+    <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+      Saved entries are kept in the clinical history. Corrections are not available yet.
     </div>
   );
 }
@@ -312,14 +313,19 @@ function CategoryFields({
 }
 
 function AmountField({ value, onAmountChange }) {
+  const amountId = useId();
   return (
     <div className="space-y-2">
-      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        Amount *
+      <Label htmlFor={amountId} className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Amount (ml)
       </Label>
       <div className="relative">
         <Input
+          id={amountId}
           type="number"
+          inputMode="numeric"
+          step="1"
+          required
           placeholder="Enter amount"
           value={value}
           onChange={(event) => onAmountChange(event.target.value)}

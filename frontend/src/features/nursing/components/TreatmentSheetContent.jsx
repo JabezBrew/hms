@@ -30,6 +30,8 @@ import subDays from 'date-fns/subDays';
 import { toast } from 'sonner';
 import { useMARGrid, useAdministerMedication, useCreateAndAdminister } from '@/features/nursing/hooks';
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { MedicationOutcomeDialog } from './MedicationOutcomeDialog';
 
 // Status colors for dose indicators
 const DOSE_STATUS = {
@@ -58,6 +60,8 @@ const DOSE_STATUS = {
     text: 'text-white',
     label: 'Missed',
   },
+  refused: { bg: 'bg-amber-100', border: 'border-amber-600', text: 'text-amber-900', label: 'Refused' },
+  held: { bg: 'bg-slate-100', border: 'border-slate-500', text: 'text-slate-700', label: 'Held' },
   not_started: {
     bg: 'bg-slate-100',
     border: 'border-slate-200',
@@ -75,7 +79,7 @@ const DOSE_STATUS = {
 // Single dose indicator component
 function DoseIndicator({ dose, medication, date, onAdminister }) {
   const status = DOSE_STATUS[dose.status] || DOSE_STATUS.scheduled;
-  const isClickable = ['scheduled', 'due', 'missed'].includes(dose.status);
+  const isClickable = (isRustV2ApiMode() ? ['scheduled', 'due'] : ['scheduled', 'due', 'missed']).includes(dose.status);
 
   const administerDose = () => {
     if (isClickable && onAdminister) {
@@ -101,6 +105,7 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
             type="button"
             onClick={administerDose}
             disabled={!isClickable}
+            aria-label={`${isClickable ? 'Record outcome' : status.label}: ${medication.medication_name}, dose ${dose.dose_number}, ${date}`}
             className={cn(
               "size-7 rounded-full border-2 flex items-center justify-center transition-all",
               status.bg,
@@ -114,6 +119,7 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
             {dose.status === 'administered' && <Check className="size-4" />}
             {dose.status === 'due' && <Clock className="size-3.5" />}
             {dose.status === 'missed' && <XCircle className="size-3.5" />}
+            {['refused', 'held'].includes(dose.status) && <XCircle className="size-3.5" />}
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs">
@@ -132,8 +138,10 @@ function DoseIndicator({ dose, medication, date, onAdminister }) {
             {dose.notes && (
               <p className="text-xs italic mt-1">{dose.notes}</p>
             )}
+            {dose.reason_not_given && <p className="text-xs">Reason: {dose.reason_not_given}</p>}
+            {dose.outcome_recorded_at && <p className="text-xs text-muted-foreground">Recorded at {formatTime(dose.outcome_recorded_at)}{dose.outcome_recorded_by_display_name ? ` by ${dose.outcome_recorded_by_display_name}` : ''}</p>}
             {isClickable && (
-              <p className="text-xs text-blue-600 mt-1">Click to record administration</p>
+              <p className="text-xs text-blue-600 mt-1">Click to record dose outcome</p>
             )}
           </div>
         </TooltipContent>
@@ -202,7 +210,7 @@ function MedicationRow({ medication, dateHeaders, onAdminister }) {
               {medication.total_doses_required > 0 && (
                 <div className="mt-2 space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Course progress</span>
+                    <span className="text-muted-foreground">{medication.progress_scope === 'selected_period' ? 'Given in selected period' : 'Course progress'}</span>
                     <span className={cn(
                       "font-medium",
                       medication.course_complete ? "text-emerald-600" : "text-foreground"
@@ -211,10 +219,10 @@ function MedicationRow({ medication, dateHeaders, onAdminister }) {
                     </span>
                   </div>
                   <Progress value={progressPercent} className="h-1.5" />
-                  {medication.course_complete && (
+                  {(medication.course_complete || medication.period_complete) && (
                     <Badge variant="outline" className="text-emerald-600 border-emerald-300 text-xs">
                       <Check className="size-3 mr-1" />
-                      Complete
+                      {medication.progress_scope === 'selected_period' ? 'All shown doses recorded' : 'Complete'}
                     </Badge>
                   )}
                 </div>
@@ -245,15 +253,21 @@ function MedicationRow({ medication, dateHeaders, onAdminister }) {
   );
 }
 
-export function TreatmentSheetContent({
+export function TreatmentSheetContent(props) {
+  return <TreatmentSheetWorkspace key={props.admissionId || 'no-admission'} {...props} />;
+}
+
+function TreatmentSheetWorkspace({
   admissionId,
   showHeader = true,
   onBack = null,
 }) {
   const navigate = useNavigate();
+  const rustV2Mode = isRustV2ApiMode();
+  const [selectedDose, setSelectedDose] = useState(null);
 
   // Date navigation state - start from today
-  const [startDate, setStartDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [startDate, setStartDate] = useState(() => rustV2Mode ? new Date().toISOString().slice(0, 10) : format(new Date(), 'yyyy-MM-dd'));
   const [daysToShow] = useState(7);
 
   const { data: marData, isLoading, error, refetch } = useMARGrid(admissionId, startDate, daysToShow);
@@ -262,21 +276,26 @@ export function TreatmentSheetContent({
 
   // Navigation handlers
   const handlePreviousWeek = () => {
-    const newDate = subDays(new Date(startDate), 7);
+    const newDate = subDays(new Date(`${startDate}T12:00:00`), 7);
     setStartDate(format(newDate, 'yyyy-MM-dd'));
   };
 
   const handleNextWeek = () => {
-    const newDate = addDays(new Date(startDate), 7);
+    const newDate = addDays(new Date(`${startDate}T12:00:00`), 7);
     setStartDate(format(newDate, 'yyyy-MM-dd'));
   };
 
   const handleToday = () => {
-    setStartDate(format(new Date(), 'yyyy-MM-dd'));
+    setStartDate(rustV2Mode ? new Date().toISOString().slice(0, 10) : format(new Date(), 'yyyy-MM-dd'));
   };
 
   // Handle administer click
   const handleAdminister = async ({ medication, date, dose }) => {
+    if (rustV2Mode) {
+      if (!dose.id) { toast.error('Reload the prescribed schedule before recording this dose.'); return; }
+      setSelectedDose({ ...dose, medication_name: medication.medication_name, dosage: medication.dosage, route_display: medication.route_display });
+      return;
+    }
     if (dose.id) {
       // Existing MAR entry - update it
       try {
@@ -341,6 +360,7 @@ export function TreatmentSheetContent({
 
   return (
     <>
+      {selectedDose && <MedicationOutcomeDialog key={selectedDose.id} medication={selectedDose} onClose={() => setSelectedDose(null)} onRecorded={refetch} />}
       {showHeader && (
         <PageHeader
           title="Medication Administration Record"

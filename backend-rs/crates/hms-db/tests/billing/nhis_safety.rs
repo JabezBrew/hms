@@ -33,7 +33,7 @@ async fn mapping(
     }
 }
 
-async fn claim(fixture: &BillingFixture) -> hms_domain::billing::ClaimListItem {
+pub(super) async fn claim(fixture: &BillingFixture) -> hms_domain::billing::ClaimListItem {
     let invoice = fixture
         .create_invoice(&format!("INV-{}", Uuid::new_v4()), 1)
         .await;
@@ -51,7 +51,7 @@ async fn claim(fixture: &BillingFixture) -> hms_domain::billing::ClaimListItem {
     .expect("synthetic claim creates")
 }
 
-fn batch(fixture: &BillingFixture, claim_ids: Vec<Uuid>) -> NewNhisBatch {
+pub(super) fn batch(fixture: &BillingFixture, claim_ids: Vec<Uuid>) -> NewNhisBatch {
     NewNhisBatch {
         id: Uuid::new_v4(),
         facility_id: fixture.facility_id,

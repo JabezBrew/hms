@@ -150,6 +150,12 @@ async fn medication_hold_resume_preserves_history_and_independent_holds_and_retr
     let generated = f.generate().await;
     let ids = f.dose_ids().await;
     assert_eq!(ids.len(), 8);
+    hms_db::pharmacy::dispense_fulfillment(
+        f.db.pool(),
+        f.dispense(generated.pharmacy_fulfillment_id.unwrap(), 1),
+    )
+    .await
+    .expect("history dose is supplied before administration");
     hms_db::ward::administer_medication(
         f.db.pool(),
         f.db.facility_id(),
@@ -213,7 +219,7 @@ async fn medication_hold_resume_preserves_history_and_independent_holds_and_retr
     assert_eq!(history, administered);
     let retried = f.generate().await;
     assert_eq!(retried.created_count, 0);
-    assert_eq!(retried.requested_dose_count, 5);
+    assert_eq!(retried.requested_dose_count, 6);
     let dispensed = hms_db::pharmacy::dispense_fulfillment(
         f.db.pool(),
         f.dispense(generated.pharmacy_fulfillment_id.unwrap(), 5),
@@ -221,7 +227,7 @@ async fn medication_hold_resume_preserves_history_and_independent_holds_and_retr
     .await
     .expect("only future eligible doses dispense");
     assert_eq!(dispensed.remaining_dose_count, 0);
-    assert_eq!(dispensed.fulfillment.requested_dose_count, 5);
+    assert_eq!(dispensed.fulfillment.requested_dose_count, 6);
     // Neither duplicate administration nor a different witness may rewrite history.
     assert!(hms_db::ward::administer_medication(
         f.db.pool(),
@@ -234,7 +240,7 @@ async fn medication_hold_resume_preserves_history_and_independent_holds_and_retr
     .is_err());
     f.status(PrescriptionStatus::OnHold).await;
     f.status(PrescriptionStatus::Active).await;
-    assert_eq!(f.generate().await.requested_dose_count, 5);
+    assert_eq!(f.generate().await.requested_dose_count, 6);
 }
 
 #[tokio::test]
@@ -243,6 +249,12 @@ async fn medication_terminal_status_cancels_pending_work_and_cannot_resurrect() 
         let f = Fixture::new().await;
         let generated = f.generate().await;
         let ids = f.dose_ids().await;
+        hms_db::pharmacy::dispense_fulfillment(
+            f.db.pool(),
+            f.dispense(generated.pharmacy_fulfillment_id.unwrap(), 1),
+        )
+        .await
+        .expect("history dose is supplied");
         hms_db::ward::administer_medication(
             f.db.pool(),
             f.db.facility_id(),
@@ -649,6 +661,12 @@ async fn medication_migration_retires_legacy_unsafe_work_without_rewriting_histo
         let f = Fixture::new().await;
         let generated = f.generate().await;
         let ids = f.dose_ids().await;
+        hms_db::pharmacy::dispense_fulfillment(
+            f.db.pool(),
+            f.dispense(generated.pharmacy_fulfillment_id.unwrap(), 1),
+        )
+        .await
+        .expect("legacy history dose is supplied");
         hms_db::ward::administer_medication(
             f.db.pool(),
             f.db.facility_id(),

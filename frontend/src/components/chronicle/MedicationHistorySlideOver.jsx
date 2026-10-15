@@ -147,8 +147,8 @@ const MedicationHistorySlideOver = ({
               <SelectItem value="all" className="font-mono">All statuses</SelectItem>
               <SelectItem value="administered" className="font-mono">Administered</SelectItem>
               <SelectItem value="scheduled" className="font-mono">Scheduled</SelectItem>
-              {!rustV2Mode && <SelectItem value="missed" className="font-mono">Missed</SelectItem>}
-              {!rustV2Mode && <SelectItem value="refused" className="font-mono">Refused</SelectItem>}
+              <SelectItem value="missed" className="font-mono">Missed</SelectItem>
+              <SelectItem value="refused" className="font-mono">Refused</SelectItem>
               <SelectItem value="held" className="font-mono">Held</SelectItem>
               {!rustV2Mode && <SelectItem value="cancelled" className="font-mono">Cancelled</SelectItem>}
             </SelectContent>
@@ -202,6 +202,9 @@ const MedicationHistorySlideOver = ({
                         Prescribed by {record.prescriber_name}
                       </p>
                     )}
+                    {record.reason_not_given && <p className="text-sm text-foreground mt-2">Reason: {record.reason_not_given}</p>}
+                    {record.administration_notes && <p className="text-sm text-muted-foreground mt-2">Notes: {record.administration_notes}</p>}
+                    {record.outcome_recorded_at && <p className="text-xs text-muted-foreground mt-2">Recorded {formatDateTime(record.outcome_recorded_at)}{record.outcome_recorded_by_display_name ? ` by ${record.outcome_recorded_by_display_name}` : ''}</p>}
                   </div>
 
                   <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[280px]">

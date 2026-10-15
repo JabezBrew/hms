@@ -224,10 +224,14 @@ export function adaptV2MedicationAdministration(item = {}) {
     scheduled_time: scheduledAt,
     administered_at: administeredAt,
     administered_time: administeredAt,
-    dosage: item.dosage || '',
+    dosage: item.dose ?? item.dosage ?? '',
     route: item.route || '',
     route_display: item.route_display || item.route || '',
-    frequency_display: item.frequency_display || '',
+    frequency_display: item.frequency_display || item.frequency || '',
+    status_display: ({ scheduled: 'Scheduled', administered: 'Administered', missed: 'Missed', refused: 'Refused', held: 'Held' })[item.status] || item.status || 'Scheduled',
+    administration_notes: item.administration_notes || '',
+    reason_not_given: item.reason_not_given || '',
+    notes: item.administration_notes || '',
     is_dispensed: item.is_dispensed ?? true,
     status: item.status || 'scheduled',
   };
@@ -397,9 +401,43 @@ export function normalizeV2MedicationAdministrationPayload(data = {}) {
 }
 
 export function normalizeV2MedicationAdministerPayload(data = {}) {
-  return {
-    witness_user_id: data.witness_user_id || data.witness || null,
+  const status = data.status || 'administered';
+  if (!['administered', 'missed', 'refused', 'held'].includes(status)) {
+    throw new Error('Choose a supported medication dose outcome.');
+  }
+  const text = (value, maxBytes, label) => {
+    if (value == null || value === '') return null;
+    if (typeof value !== 'string' || new TextEncoder().encode(value.trim()).length > maxBytes) {
+      throw new Error(`${label} is too long or invalid.`);
+    }
+    return value.trim() || null;
   };
+  const reason = status === 'administered' ? null : text(data.reason_not_given, 1000, 'Reason');
+  if (status !== 'administered' && !reason) throw new Error('A reason is required when a dose is not given.');
+  return {
+    status,
+    witness_user_id: status === 'administered' ? data.witness_user_id || data.witness || data.witnessUserId || null : null,
+    reason_not_given: reason,
+    administration_notes: text(data.administration_notes ?? data.notes, 2000, 'Notes'),
+  };
+}
+
+export async function recordV2MedicationOutcome(medicationId, data, { signal } = {}) {
+  const payload = normalizeV2MedicationAdministerPayload(data);
+  try {
+    const response = await v2Api.postMedicationAdministrationOutcome({ id: medicationId }, payload, { signal });
+    if (response?.data?.id !== medicationId || response?.data?.status !== payload.status) {
+      throw new Error('The response did not confirm the requested dose outcome.');
+    }
+    return adaptV2MedicationAdministration(response.data);
+  } catch (error) {
+    if (!(error?.status >= 400 && error?.status < 500) || error?.data?.error?.code === 'medication_outcome_unconfirmed') {
+      const uncertain = new Error('The dose outcome may have been saved. Review the refreshed record before trying again.');
+      uncertain.name = 'MedicationOutcomeUnconfirmedError';
+      throw uncertain;
+    }
+    rethrowV2Error(error, 'The dose outcome could not be recorded.');
+  }
 }
 
 export function normalizeV2TaskPayload(data = {}) {
@@ -626,7 +664,8 @@ export function buildMARGrid(records = [], admissionId, startDate = null, days =
         dosage: record.dosage || '',
         route_display: record.route_display || record.route || '',
         frequency_display: record.frequency_display || '',
-        duration_days: safeDays,
+        duration_days: null,
+        progress_scope: 'selected_period',
         total_doses_required: 0,
         total_doses_administered: 0,
         course_complete: false,
@@ -643,7 +682,13 @@ export function buildMARGrid(records = [], admissionId, startDate = null, days =
       scheduled_time: record.scheduled_time,
       administered_time: record.administered_time || record.administered_at || null,
       administered_by: record.administered_by || '',
-      notes: record.notes || '',
+      notes: record.administration_notes || record.notes || '',
+      reason_not_given: record.reason_not_given || '',
+      outcome_recorded_at: record.outcome_recorded_at,
+      outcome_recorded_by_display_name: record.outcome_recorded_by_display_name,
+      is_dispensed: record.is_dispensed,
+      prescription_id: record.prescription_id,
+      pharmacy_fulfillment_id: record.pharmacy_fulfillment_id,
     };
     day.doses.push(dose);
     day.doses_required += 1;
@@ -658,7 +703,8 @@ export function buildMARGrid(records = [], admissionId, startDate = null, days =
 
   const medications = Array.from(rows.values()).map((row) => ({
     ...row,
-    course_complete: row.total_doses_required > 0 && row.total_doses_administered >= row.total_doses_required,
+    course_complete: false,
+    period_complete: Object.values(row.days).flatMap((day) => day.doses).every((dose) => ['administered', 'missed', 'refused', 'held'].includes(dose.status)),
   }));
   const first = records[0] || {};
 
@@ -709,7 +755,7 @@ function marTimestamp(value) {
 
 export function medicationAdministrationQuery(filters = {}) {
   const status = filters.status && filters.status !== 'all' ? filters.status : undefined;
-  if (status && !['scheduled', 'administered', 'held'].includes(status)) {
+  if (status && !['scheduled', 'administered', 'missed', 'refused', 'held'].includes(status)) {
     throw new Error('This medication administration status is not supported in this deployment.');
   }
   const limit = Number.parseInt(filters.page_size || filters.limit, 10);

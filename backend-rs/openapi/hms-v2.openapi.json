@@ -12,6 +12,160 @@
         },
         "type": "object"
       },
+      "AccessGrantKind": {
+        "enum": [
+          "permission_assignment",
+          "delegation",
+          "authority_appointment"
+        ],
+        "type": "string"
+      },
+      "AccessGrantListItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AccessGrantKind"
+          },
+          "permission_code": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PermissionCode"
+              }
+            ]
+          },
+          "position_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reconciliation_required": {
+            "type": "boolean"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope_type": {
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "user_id",
+          "display_name",
+          "scope_type",
+          "starts_at",
+          "status",
+          "reconciliation_required",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "AccessGrantListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AccessGrantKind"
+              }
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AccessGrantRevocation": {
+        "properties": {
+          "effective_permission_remaining": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "independent_access_retained": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AccessGrantKind"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "user_id",
+          "status",
+          "revoked_at",
+          "independent_access_retained"
+        ],
+        "type": "object"
+      },
       "AdminCapacityCounts": {
         "properties": {
           "high_occupancy_wards": {
@@ -138,6 +292,28 @@
       },
       "AdministerMedicationRequest": {
         "properties": {
+          "administration_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_not_given": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MedicationAdministrationOutcome"
+              }
+            ]
+          },
           "witness_user_id": {
             "format": "uuid",
             "type": [
@@ -8229,6 +8405,107 @@
         },
         "type": "object"
       },
+      "LegacyPermissionReconciliation": {
+        "enum": [
+          "retain_independent",
+          "remove_historical_copy"
+        ],
+        "type": "string"
+      },
+      "ListResponse_AccessGrantListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "display_name": {
+                  "type": "string"
+                },
+                "ends_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/AccessGrantKind"
+                },
+                "permission_code": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PermissionCode"
+                    }
+                  ]
+                },
+                "position_title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reconciliation_required": {
+                  "type": "boolean"
+                },
+                "revoked_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scope_type": {
+                  "type": "string"
+                },
+                "starts_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "user_id",
+                "display_name",
+                "scope_type",
+                "starts_at",
+                "status",
+                "reconciliation_required",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_AdmissionCaseListItem": {
         "properties": {
           "data": {
@@ -11329,6 +11606,12 @@
                     "null"
                   ]
                 },
+                "administration_notes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "admission_case_id": {
                   "format": "uuid",
                   "type": "string"
@@ -11376,6 +11659,26 @@
                 "medication_name": {
                   "type": "string"
                 },
+                "outcome_recorded_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "outcome_recorded_by_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "outcome_recorded_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "patient_code": {
                   "type": "string"
                 },
@@ -11393,8 +11696,17 @@
                     "null"
                   ]
                 },
+                "prescription_held": {
+                  "type": "boolean"
+                },
                 "prescription_id": {
                   "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason_not_given": {
                   "type": [
                     "string",
                     "null"
@@ -11423,7 +11735,8 @@
                 "medication_name",
                 "scheduled_at",
                 "is_dispensed",
-                "status"
+                "status",
+                "prescription_held"
               ],
               "type": "object"
             },
@@ -15618,6 +15931,12 @@
               "null"
             ]
           },
+          "administration_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "admission_case_id": {
             "format": "uuid",
             "type": "string"
@@ -15665,6 +15984,26 @@
           "medication_name": {
             "type": "string"
           },
+          "outcome_recorded_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome_recorded_by_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome_recorded_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "patient_code": {
             "type": "string"
           },
@@ -15682,8 +16021,17 @@
               "null"
             ]
           },
+          "prescription_held": {
+            "type": "boolean"
+          },
           "prescription_id": {
             "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_not_given": {
             "type": [
               "string",
               "null"
@@ -15712,7 +16060,8 @@
           "medication_name",
           "scheduled_at",
           "is_dispensed",
-          "status"
+          "status",
+          "prescription_held"
         ],
         "type": "object"
       },
@@ -15779,10 +16128,21 @@
         },
         "type": "object"
       },
+      "MedicationAdministrationOutcome": {
+        "enum": [
+          "administered",
+          "missed",
+          "refused",
+          "held"
+        ],
+        "type": "string"
+      },
       "MedicationAdministrationStatus": {
         "enum": [
           "scheduled",
           "administered",
+          "missed",
+          "refused",
           "held"
         ],
         "type": "string"
@@ -16658,6 +17018,56 @@
           "handoff"
         ],
         "type": "string"
+      },
+      "ObjectResponse_AccessGrantRevocation": {
+        "properties": {
+          "data": {
+            "properties": {
+              "effective_permission_remaining": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "independent_access_retained": {
+                "type": "boolean"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/AccessGrantKind"
+              },
+              "revoked_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "user_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "user_id",
+              "status",
+              "revoked_at",
+              "independent_access_retained"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
       },
       "ObjectResponse_AdminCapacitySummary": {
         "properties": {
@@ -20247,6 +20657,12 @@
                   "null"
                 ]
               },
+              "administration_notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "admission_case_id": {
                 "format": "uuid",
                 "type": "string"
@@ -20294,6 +20710,26 @@
               "medication_name": {
                 "type": "string"
               },
+              "outcome_recorded_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "outcome_recorded_by_display_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "outcome_recorded_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "patient_code": {
                 "type": "string"
               },
@@ -20311,8 +20747,17 @@
                   "null"
                 ]
               },
+              "prescription_held": {
+                "type": "boolean"
+              },
               "prescription_id": {
                 "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason_not_given": {
                 "type": [
                   "string",
                   "null"
@@ -20341,7 +20786,8 @@
               "medication_name",
               "scheduled_at",
               "is_dispensed",
-              "status"
+              "status",
+              "prescription_held"
             ],
             "type": "object"
           },
@@ -29437,6 +29883,37 @@
         ],
         "type": "object"
       },
+      "RecordMedicationOutcomeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "administration_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_not_given": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/MedicationAdministrationOutcome"
+          },
+          "witness_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "RecordNhisArAdjustmentRequest": {
         "properties": {
           "adjustment_kind": {
@@ -29918,6 +30395,22 @@
           "reversal_kind",
           "approval"
         ],
+        "type": "object"
+      },
+      "RevokeAccessGrantRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reconciliation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LegacyPermissionReconciliation"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "RevokeAllSessionsRequest": {
@@ -33824,6 +34317,196 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v2/admin/access-grants": {
+      "get": {
+        "operationId": "getAdminAccessGrants",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/AccessGrantKind"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_AccessGrantListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/access-grants/{kind}/{id}/revoke": {
+      "post": {
+        "operationId": "postAdminAccessGrantRevoke",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AccessGrantKind"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeAccessGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AccessGrantRevocation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v2/admin/audit-events": {
       "get": {
         "operationId": "getAdminAuditEvents",
@@ -52537,7 +53220,17 @@
                 }
               }
             },
-            "description": "Medication administered"
+            "description": "Medication dose outcome recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid outcome, reason, notes or witness"
           },
           "401": {
             "content": {
@@ -52568,6 +53261,113 @@
               }
             },
             "description": "Medication administration not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Dose is terminal, unsupplied or its source prescription changed"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/medication-administrations/{id}/outcome": {
+      "post": {
+        "operationId": "postMedicationAdministrationOutcome",
+        "parameters": [
+          {
+            "description": "Medication administration id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordMedicationOutcomeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_MedicationAdministrationListItem"
+                }
+              }
+            },
+            "description": "Medication dose outcome recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid outcome, reason, notes or witness"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Medication administration not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Dose is terminal, unsupplied or its source prescription changed"
           }
         },
         "security": [

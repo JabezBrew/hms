@@ -106,6 +106,17 @@ pub enum NursingTaskStatus {
 pub enum MedicationAdministrationStatus {
     Scheduled,
     Administered,
+    Missed,
+    Refused,
+    Held,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MedicationAdministrationOutcome {
+    Administered,
+    Missed,
+    Refused,
     Held,
 }
 
@@ -687,6 +698,12 @@ pub struct MedicationAdministrationListItem {
     pub is_dispensed: bool,
     pub dispensed_at: Option<DateTime<Utc>>,
     pub status: MedicationAdministrationStatus,
+    pub prescription_held: bool,
+    pub reason_not_given: Option<String>,
+    pub administration_notes: Option<String>,
+    pub outcome_recorded_at: Option<DateTime<Utc>>,
+    pub outcome_recorded_by_user_id: Option<Uuid>,
+    pub outcome_recorded_by_display_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
@@ -715,6 +732,18 @@ pub struct ScheduleMedicationAdministrationRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct AdministerMedicationRequest {
     pub witness_user_id: Option<Uuid>,
+    pub status: Option<MedicationAdministrationOutcome>,
+    pub reason_not_given: Option<String>,
+    pub administration_notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RecordMedicationOutcomeRequest {
+    pub status: MedicationAdministrationOutcome,
+    pub witness_user_id: Option<Uuid>,
+    pub reason_not_given: Option<String>,
+    pub administration_notes: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

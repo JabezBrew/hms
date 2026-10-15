@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod admin_access;
 pub mod auth;
 pub mod billing;
 pub mod capabilities;

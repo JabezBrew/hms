@@ -2,6 +2,7 @@ import { lazy } from 'react'
 import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 
+const AccessGrantsPage = lazy(() => import('./access/AccessGrantsPage'))
 const AuditLogsPage = lazy(() => import('./pages/AuditLogsPage'))
 const OrganizationPage = lazy(() => import('./pages/organization/OrganizationPage'))
 const UnitTypesPage = lazy(() => import('./pages/organization/UnitTypesPage'))
@@ -14,6 +15,13 @@ const ADMIN_BREADCRUMB = { label: 'Admin', path: '/admin/organization' }
 const ORG_BREADCRUMB = { label: 'Organization', path: '/admin/organization' }
 
 export const adminRoutes = [
+  {
+    path: '/admin/access-grants', component: AccessGrantsPage,
+    roles: [], capabilities: ['admin.authority.manage'], features: ['admin'],
+    layout: ROUTE_LAYOUTS.APP, sidebar: SIDEBARS.ADMIN,
+    title: 'Access Grants | Hospital Management System',
+    breadcrumbs: [ADMIN_BREADCRUMB, { label: 'Access grants', path: '/admin/access-grants' }],
+  },
   {
     path: '/admin/audit-logs',
     component: AuditLogsPage,

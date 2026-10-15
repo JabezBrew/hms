@@ -53,6 +53,13 @@ handlers.
   workflow facts, with request correlation and no service code or patient text.
 - These guards do not implement external claim submission, remittance allocation,
   or AR settlement. Those remain separate workflow contracts.
+- Export recording locks the batch, then bounded member claims in deterministic
+  order. Only a draft batch whose ready claims match its saved summary can create
+  a record. The metadata/audit/invoice lock changes are atomic; claim status is
+  unchanged. Exported replay returns the stored checksum without rewriting
+  timestamps or history, and submitted/remitted batches reject the transition.
+  The existing export-list contract represents saved records (`recorded`, no
+  expiry); it does not represent a worker job, artifact, or NHIS submission.
 
 ## Verification
 

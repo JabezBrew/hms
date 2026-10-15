@@ -459,6 +459,7 @@ const globalSections = [
           features: ['department_rosters'],
           exact: true,
         }),
+        item({ key: 'access-grants', label: 'Access grants', href: '/admin/access-grants', icon: Shield, roles: [], capabilities: ['admin.authority.manage'], features: ['admin'], exact: true }),
         item({
           key: 'audit-logs',
           label: 'Audit Logs',
@@ -589,6 +590,7 @@ const adminSections = [
     item({ key: 'staff', label: 'Staff', href: '/staff', icon: Shield, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW], exact: false }),
     item({ key: 'organization', label: 'Organization', href: '/admin/organization', icon: FolderTree, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE], exact: false }),
     item({ key: 'duty-roster', label: 'Duty Roster', href: '/admin/organization/duty-roster', icon: CalendarClock, roles: DUTY_ROSTER_ROLES, capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW], features: ['department_rosters'], exact: true }),
+    item({ key: 'access-grants', label: 'Access grants', href: '/admin/access-grants', icon: Shield, roles: [], capabilities: ['admin.authority.manage'], features: ['admin'], exact: true }),
     item({ key: 'audit-logs', label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW], features: ['audit'], exact: true }),
     item({ key: 'ops-dashboard', label: 'Ops Dashboard', href: '/system/ops', icon: Gauge, roles: [], capabilities: [ADMIN_CAPABILITIES.SYSTEM_OPS_VIEW], host: 'ops', exact: true }),
   ]),

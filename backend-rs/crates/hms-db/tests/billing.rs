@@ -10,6 +10,8 @@ use hms_domain::billing::{
 };
 use hms_domain::deployment::DeploymentProfile;
 
+#[path = "billing/nhis_export_safety.rs"]
+mod nhis_export_safety;
 #[path = "billing/nhis_safety.rs"]
 mod nhis_safety;
 

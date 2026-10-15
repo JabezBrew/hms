@@ -16,6 +16,7 @@ import { useAuth } from '@/lib/auth';
 import { userHasCapability } from '@/shared/lib/access';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { NhisBatchCreateDialog } from '../components/NhisBatchCreateDialog';
+import { NhisExportRecordDialog } from '../components/NhisExportRecordDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -84,11 +85,12 @@ function formatDate(dateString) {
   });
 }
 
-function BatchStatusBadge({ status }) {
+function BatchStatusBadge({ status, recordOnly }) {
   const meta = {
     draft: { label: 'Draft', cls: 'bg-muted text-muted-foreground', icon: Clock },
-    exported: { label: 'Exported', cls: 'badge-chronicle-sky', icon: FileSpreadsheet },
+    exported: { label: recordOnly ? 'Export recorded' : 'Exported', cls: 'badge-chronicle-sky', icon: FileSpreadsheet },
     submitted: { label: 'Submitted', cls: 'badge-chronicle-amber', icon: Clock },
+    remitted: { label: 'Remitted', cls: 'badge-chronicle-emerald', icon: CheckCircle },
     closed: { label: 'Closed', cls: 'badge-chronicle-emerald', icon: CheckCircle },
   }[status] || { label: status, cls: 'bg-muted text-muted-foreground', icon: Clock };
   const Icon = meta.icon;
@@ -105,6 +107,7 @@ function ExportStatusBadge({ status }) {
   const meta = {
     pending: { cls: 'badge-chronicle-amber', label: 'Pending', icon: Clock },
     ready: { cls: 'badge-chronicle-emerald', label: 'Ready', icon: CheckCircle },
+    recorded: { cls: 'badge-chronicle-sky', label: 'Recorded', icon: FileSpreadsheet },
     delivered: { cls: 'bg-muted text-muted-foreground', label: 'Delivered', icon: CheckCircle },
     failed: { cls: 'badge-chronicle-rose', label: 'Failed', icon: AlertTriangle },
   }[status] || { cls: 'bg-muted text-muted-foreground', label: status, icon: Clock };
@@ -137,6 +140,9 @@ function RemittanceStatusBadge({ status }) {
 
 function createBatchColumns({
   rustV2Mode,
+  canManageExports,
+  setExportRecordBatch,
+  exportRecordDisabled,
   lintBatchMutation,
   exportBatchMutation,
   setTab,
@@ -162,7 +168,7 @@ function createBatchColumns({
       key: 'status',
       header: 'Status',
       width: '140px',
-      render: (row) => <BatchStatusBadge status={row.status} />,
+      render: (row) => <BatchStatusBadge status={row.status} recordOnly={rustV2Mode} />,
     },
     {
       key: 'claim_count',
@@ -194,7 +200,11 @@ function createBatchColumns({
       width: '240px',
       headerClassName: 'text-right',
       cellClassName: 'text-right',
-      render: (row) => (
+      render: (row) => rustV2Mode ? (
+        canManageExports && ['draft', 'exported'].includes(row.status)
+          ? <Button type="button" size="sm" variant="outline" disabled={exportRecordDisabled} onClick={() => setExportRecordBatch(row)}>{row.status === 'exported' ? 'View record' : 'Record export'}</Button>
+          : null
+      ) : (
         <BatchActions
           row={row}
           lintAvailable={!rustV2Mode}
@@ -274,9 +284,9 @@ function createExportColumns({ exportDownloadsAvailable, exportsQuery }) {
       render: (row) => (
         <div>
           <p className="font-mono text-sm text-foreground">{formatDate(row.created_at)}</p>
-          <p className="font-mono text-xs text-muted-foreground">
+          {exportDownloadsAvailable && <p className="font-mono text-xs text-muted-foreground">
             Expires {formatDate(row.expires_at)}
-          </p>
+          </p>}
         </div>
       ),
     },
@@ -479,6 +489,7 @@ export default function NhisClaimsArPage() {
   const remittanceFileImportAvailable = !rustV2Mode;
   const selectedBatchCreationAvailable = rustV2Mode && userHasCapability(user, 'nhis.claim.manage');
   const [isBatchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [exportRecordBatch, setExportRecordBatch] = useState(null);
 
   // Batches
   const [batchPage, setBatchPage] = useState(1);
@@ -548,12 +559,15 @@ export default function NhisClaimsArPage() {
   const batchColumns = useMemo(
     () => createBatchColumns({
       rustV2Mode,
+      canManageExports: selectedBatchCreationAvailable,
+      setExportRecordBatch,
+      exportRecordDisabled: Boolean(error),
       lintBatchMutation,
       exportBatchMutation,
       setTab,
       setForceExportDialog,
     }),
-    [exportBatchMutation, lintBatchMutation, setTab, rustV2Mode]
+    [exportBatchMutation, lintBatchMutation, setTab, rustV2Mode, selectedBatchCreationAvailable, error]
   );
 
   const exportColumns = useMemo(
@@ -572,7 +586,7 @@ export default function NhisClaimsArPage() {
   const queue = queueQuery.data || {};
 
   const hasLoadedPage = batchesQuery.data && exportsQuery.data && remittancesQuery.data;
-  if (isLoading && !hasLoadedPage && !isBatchDialogOpen) {
+  if (isLoading && !hasLoadedPage && !isBatchDialogOpen && !exportRecordBatch) {
     return (
       <PageState variant="loading">
         <Skeleton className="h-12 w-64" />
@@ -586,7 +600,7 @@ export default function NhisClaimsArPage() {
     );
   }
 
-  if (error && !hasLoadedPage && !isBatchDialogOpen) {
+  if (error && !hasLoadedPage && !isBatchDialogOpen && !exportRecordBatch) {
     return (
       <PageState
         variant="error"
@@ -606,7 +620,7 @@ export default function NhisClaimsArPage() {
             NHIS Claims + AR
           </span>
         )}
-        description="Claim batching, export, remittance posting, and insurance receivables."
+        description={rustV2Mode ? 'Claim batches and internal export records.' : 'Claim batching, export, remittance posting, and insurance receivables.'}
         actions={(
           <Button
             variant="outline"
@@ -622,12 +636,12 @@ export default function NhisClaimsArPage() {
       <div className="p-4 sm:p-6">
         {error && <Alert variant="destructive" className="mb-4">
           <AlertTitle>NHIS records could not be refreshed</AlertTitle>
-          <AlertDescription className="flex flex-col items-start gap-2"><p>The last loaded records are shown. Refresh successfully before creating another batch.</p><Button type="button" variant="outline" size="sm" onClick={handleRefresh}>Retry NHIS refresh</Button></AlertDescription>
+          <AlertDescription className="flex flex-col items-start gap-2"><p>The last loaded records are shown. Refresh successfully before creating another batch or export record.</p><Button type="button" variant="outline" size="sm" onClick={handleRefresh}>Retry NHIS refresh</Button></AlertDescription>
         </Alert>}
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full sm:w-auto">
             <TabsTrigger value="batches" className="font-mono text-xs">Batches</TabsTrigger>
-            <TabsTrigger value="exports" className="font-mono text-xs">Exports</TabsTrigger>
+            <TabsTrigger value="exports" className="font-mono text-xs">{rustV2Mode ? 'Export records' : 'Exports'}</TabsTrigger>
             <TabsTrigger value="remittances" className="font-mono text-xs">Remittances</TabsTrigger>
             <TabsTrigger value="ar" className="font-mono text-xs">AR</TabsTrigger>
           </TabsList>
@@ -691,6 +705,7 @@ export default function NhisClaimsArPage() {
       </div>
 
       {isBatchDialogOpen && selectedBatchCreationAvailable && <NhisBatchCreateDialog onClose={() => setBatchDialogOpen(false)} />}
+      {exportRecordBatch && selectedBatchCreationAvailable && <NhisExportRecordDialog batch={exportRecordBatch} onClose={() => setExportRecordBatch(null)} />}
 
       <ForceExportDialog
         forceExportDialog={forceExportDialog}
@@ -852,15 +867,12 @@ function ExportsTab({
   return (
     <TabsContent value="exports" className="mt-6 space-y-6">
       {!exportDownloadsAvailable && (
-        <UnavailableNotice
-          label="Rust V2 export downloads"
-          description="NHIS export ZIP downloads are not available in Rust V2 mode yet. Export job history remains visible when returned by the backend."
-        />
+        <Alert><AlertTitle>Internal export records</AlertTitle><AlertDescription>Records confirm a saved batch summary. They do not generate a file or submit claims to NHIS.</AlertDescription></Alert>
       )}
       <PaginatedTableSection
-        title="Export Jobs"
+        title={exportDownloadsAvailable ? 'Export Jobs' : 'Export records'}
         total={exportsTotal}
-        emptyText="No export jobs found."
+        emptyText={exportDownloadsAvailable ? 'No export jobs found.' : 'No export records found.'}
         rows={exportJobs}
         columns={exportColumns}
         page={exportPage}

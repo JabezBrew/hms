@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::ward::{
-    MedicationAdministrationListItem, MedicationAdministrationStatus, TreatmentSheetListItem,
-    TreatmentSheetStatus,
+    MedicationAdministrationListItem, MedicationAdministrationOutcome,
+    MedicationAdministrationStatus, TreatmentSheetListItem, TreatmentSheetStatus,
 };
 use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -56,6 +56,70 @@ struct MedicationAdministrationRow {
     is_dispensed: bool,
     dispensed_at: Option<DateTime<Utc>>,
     status: String,
+    prescription_held: bool,
+    reason_not_given: Option<String>,
+    administration_notes: Option<String>,
+    outcome_recorded_at: Option<DateTime<Utc>>,
+    outcome_recorded_by_user_id: Option<Uuid>,
+    outcome_recorded_by_display_name: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecordMedicationOutcome {
+    pub facility_id: Uuid,
+    pub medication_id: Uuid,
+    pub actor_user_id: Uuid,
+    pub status: MedicationAdministrationOutcome,
+    pub witness_user_id: Option<Uuid>,
+    pub reason_not_given: Option<String>,
+    pub administration_notes: Option<String>,
+    pub request_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MedicationOutcomeError {
+    InvalidReason,
+    NotesTooLong,
+    InvalidWitness,
+    NotActionable,
+    NotDispensed,
+    FutureMissed,
+}
+
+impl std::fmt::Display for MedicationOutcomeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+impl MedicationOutcomeError {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::InvalidReason => "A reason of at most 1000 bytes is required when a dose is not given.",
+            Self::NotesTooLong => "Administration notes must be at most 2000 bytes.",
+            Self::InvalidWitness => "The witness must be active in this facility and can only witness an administered dose.",
+            Self::NotActionable => "This dose can no longer be recorded. Reload the schedule and check the current prescription.",
+            Self::NotDispensed => "This prescribed dose has not been dispensed. Record its supply before administering it.",
+            Self::FutureMissed => "A future dose cannot be recorded as missed.",
+        }
+    }
+}
+impl std::error::Error for MedicationOutcomeError {}
+
+#[derive(FromRow)]
+struct LockedMedicationOutcomeRow {
+    prescription_id: Option<Uuid>,
+    medication_course_id: Option<Uuid>,
+    pharmacy_fulfillment_id: Option<Uuid>,
+    status: String,
+    is_dispensed: bool,
+    is_due: bool,
+    administered_at: Option<DateTime<Utc>>,
+    administered_by_user_id: Option<Uuid>,
+    witness_user_id: Option<Uuid>,
+    outcome_recorded_at: Option<DateTime<Utc>>,
+    outcome_recorded_by_user_id: Option<Uuid>,
+    reason_not_given: Option<String>,
+    administration_notes: Option<String>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -204,24 +268,132 @@ pub async fn administer_medication(
     actor_user_id: Uuid,
     witness_user_id: Option<Uuid>,
 ) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
+    record_medication_outcome(
+        pool,
+        RecordMedicationOutcome {
+            facility_id,
+            medication_id,
+            actor_user_id,
+            status: MedicationAdministrationOutcome::Administered,
+            witness_user_id,
+            reason_not_given: None,
+            administration_notes: None,
+            request_id: None,
+        },
+    )
+    .await
+}
+
+pub async fn record_medication_outcome(
+    pool: &PgPool,
+    command: RecordMedicationOutcome,
+) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
+    let status = codec::encode(command.status)?;
+    let reason = command
+        .reason_not_given
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let notes = command
+        .administration_notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let administered = command.status == MedicationAdministrationOutcome::Administered;
+    if (!administered && reason.is_none())
+        || reason.is_some_and(|value| value.len() > 1000)
+        || (administered && reason.is_some())
+    {
+        return Err(MedicationOutcomeError::InvalidReason.into());
+    }
+    if notes.is_some_and(|value| value.len() > 2000) {
+        return Err(MedicationOutcomeError::NotesTooLong.into());
+    }
+    if !administered && command.witness_user_id.is_some() {
+        return Err(MedicationOutcomeError::InvalidWitness.into());
+    }
     let mut transaction = pool.begin().await?;
     let source = sqlx::query_as::<_, (Option<Uuid>,)>(
         "SELECT prescription_id FROM medication_administrations WHERE facility_id = $1 AND id = $2",
     )
-    .bind(facility_id)
-    .bind(medication_id)
+    .bind(command.facility_id)
+    .bind(command.medication_id)
     .fetch_optional(&mut *transaction)
     .await?;
     let Some((prescription_id,)) = source else {
         return Ok(None);
     };
-    if let Some(prescription_id) = prescription_id {
-        let prescription =
-            crate::clinical::lock_prescription(&mut transaction, facility_id, prescription_id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("prescription_not_found"))?;
-        if prescription.status != hms_domain::clinical::PrescriptionStatus::Active {
-            anyhow::bail!("prescription_not_active");
+    let prescription = if let Some(prescription_id) = prescription_id {
+        Some(
+            crate::clinical::lock_prescription(
+                &mut transaction,
+                command.facility_id,
+                prescription_id,
+            )
+            .await?
+            .ok_or(MedicationOutcomeError::NotActionable)?,
+        )
+    } else {
+        None
+    };
+    // All source-based writers lock prescription before child rows. Competing
+    // dose outcomes then serialize on this row; a terminal decision is immutable.
+    let existing = sqlx::query_as::<_, LockedMedicationOutcomeRow>(
+        r#"SELECT prescription_id, medication_course_id, pharmacy_fulfillment_id,
+            status, is_dispensed, scheduled_at <= clock_timestamp() AS is_due,
+            administered_at, administered_by_user_id, witness_user_id,
+            outcome_recorded_at, outcome_recorded_by_user_id,
+            reason_not_given, administration_notes
+        FROM medication_administrations WHERE facility_id = $1 AND id = $2 FOR UPDATE"#,
+    )
+    .bind(command.facility_id)
+    .bind(command.medication_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let Some(existing) = existing else {
+        return Ok(None);
+    };
+    if existing.prescription_id != prescription_id {
+        return Err(MedicationOutcomeError::NotActionable.into());
+    }
+    if existing.outcome_recorded_at.is_some()
+        && existing.status == status
+        && existing.outcome_recorded_by_user_id == Some(command.actor_user_id)
+        && existing.reason_not_given.as_deref() == reason
+        && existing.administration_notes.as_deref() == notes
+        && existing.witness_user_id == command.witness_user_id
+    {
+        transaction.commit().await?;
+        return optional_medication_by_id(pool, command.facility_id, command.medication_id).await;
+    }
+    if existing.status != "scheduled"
+        || existing.outcome_recorded_at.is_some()
+        || existing.administered_at.is_some()
+        || existing.administered_by_user_id.is_some()
+        || (prescription_id.is_none()
+            && (existing.medication_course_id.is_some()
+                || existing.pharmacy_fulfillment_id.is_some()))
+    {
+        return Err(MedicationOutcomeError::NotActionable.into());
+    }
+    if prescription
+        .as_ref()
+        .is_some_and(|source| source.status != hms_domain::clinical::PrescriptionStatus::Active)
+    {
+        return Err(MedicationOutcomeError::NotActionable.into());
+    }
+    if administered && prescription_id.is_some() && !existing.is_dispensed {
+        return Err(MedicationOutcomeError::NotDispensed.into());
+    }
+    if command.status == MedicationAdministrationOutcome::Missed && !existing.is_due {
+        return Err(MedicationOutcomeError::FutureMissed.into());
+    }
+    if let Some(witness_id) = command.witness_user_id {
+        let witness = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM users WHERE facility_id = $1 AND id = $2 AND is_active = TRUE FOR SHARE",
+        ).bind(command.facility_id).bind(witness_id).fetch_optional(&mut *transaction).await?;
+        if witness.is_none() {
+            return Err(MedicationOutcomeError::InvalidWitness.into());
         }
     }
     let result = observe_db_query(
@@ -229,8 +401,11 @@ pub async fn administer_medication(
         sqlx::query(
             r#"
         UPDATE medication_administrations m
-        SET status = 'administered', administered_at = now(),
-            administered_by_user_id = $1, witness_user_id = $2, updated_at = now()
+        SET status = $5, administered_at = CASE WHEN $5 = 'administered' THEN clock_timestamp() END,
+            administered_by_user_id = CASE WHEN $5 = 'administered' THEN $1 END,
+            witness_user_id = $2, updated_at = now(), prescription_held = false,
+            reason_not_given = $6, administration_notes = $7,
+            outcome_recorded_at = clock_timestamp(), outcome_recorded_by_user_id = $1
         WHERE m.facility_id = $3 AND m.id = $4 AND m.status = 'scheduled'
           AND (m.prescription_id IS NULL OR EXISTS (
             SELECT 1 FROM prescriptions p
@@ -250,18 +425,44 @@ pub async fn administer_medication(
           ))
         "#,
         )
-        .bind(actor_user_id)
-        .bind(witness_user_id)
-        .bind(facility_id)
-        .bind(medication_id)
+        .bind(command.actor_user_id)
+        .bind(command.witness_user_id)
+        .bind(command.facility_id)
+        .bind(command.medication_id)
+        .bind(&status)
+        .bind(reason)
+        .bind(notes)
         .execute(&mut *transaction),
     )
     .await?;
     if result.rows_affected() != 1 {
-        anyhow::bail!("medication_not_scheduled_or_prescription_stale");
+        return Err(MedicationOutcomeError::NotActionable.into());
     }
+    if !administered {
+        // Retire only unsupplied planned work. Never rewrite stock movements,
+        // dispensed counts, actors or timestamps when a dose is not given.
+        sqlx::query(r#"
+            UPDATE pharmacy_fulfillments f
+            SET requested_dose_count = f.dispensed_dose_count + remaining.pending_count,
+                status = CASE WHEN remaining.pending_count = 0
+                    THEN CASE WHEN f.dispensed_dose_count > 0 THEN 'dispensed' ELSE 'cancelled' END
+                    WHEN f.dispensed_dose_count > 0 THEN 'partially_dispensed' ELSE 'pending' END,
+                updated_at = now()
+            FROM (SELECT count(*)::integer AS pending_count FROM medication_administrations
+                WHERE facility_id = $1 AND pharmacy_fulfillment_id = $2
+                    AND status = 'scheduled' AND NOT is_dispensed) remaining
+            WHERE f.facility_id = $1 AND f.id = $2 AND f.status IN ('pending', 'partially_dispensed')
+        "#).bind(command.facility_id).bind(existing.pharmacy_fulfillment_id)
+            .execute(&mut *transaction).await?;
+    }
+    sqlx::query(r#"INSERT INTO audit_events
+        (id, facility_id, actor_user_id, request_id, event_type, resource_type, resource_id, metadata)
+        VALUES ($1, $2, $3, $4, 'nursing.medication_outcome.recorded', 'medication_administration', $5, $6)"#)
+        .bind(Uuid::new_v4()).bind(command.facility_id).bind(command.actor_user_id)
+        .bind(command.request_id).bind(command.medication_id)
+        .bind(serde_json::json!({ "outcome": status })).execute(&mut *transaction).await?;
     transaction.commit().await?;
-    optional_medication_by_id(pool, facility_id, medication_id).await
+    optional_medication_by_id(pool, command.facility_id, command.medication_id).await
 }
 
 pub async fn get_medication_administration(
@@ -361,6 +562,12 @@ fn medication_query() -> QueryBuilder<'static, Postgres> {
                medication_administrations.administered_at,
                medication_administrations.is_dispensed,
                medication_administrations.dispensed_at,
+               medication_administrations.prescription_held,
+               medication_administrations.reason_not_given,
+               medication_administrations.administration_notes,
+               medication_administrations.outcome_recorded_at,
+               medication_administrations.outcome_recorded_by_user_id,
+               outcome_actor.display_name AS outcome_recorded_by_display_name,
                CASE WHEN medication_administrations.status = 'scheduled'
                     AND medication_administrations.prescription_id IS NOT NULL
                     AND (prescriptions.id IS NULL OR prescriptions.status <> 'active'
@@ -381,6 +588,8 @@ fn medication_query() -> QueryBuilder<'static, Postgres> {
         FROM medication_administrations
         JOIN patients ON patients.id = medication_administrations.patient_id
             AND patients.facility_id = medication_administrations.facility_id
+        LEFT JOIN users outcome_actor ON outcome_actor.id = medication_administrations.outcome_recorded_by_user_id
+            AND outcome_actor.facility_id = medication_administrations.facility_id
         LEFT JOIN prescriptions ON prescriptions.id = medication_administrations.prescription_id
             AND prescriptions.facility_id = medication_administrations.facility_id
             AND prescriptions.patient_id = medication_administrations.patient_id
@@ -483,6 +692,12 @@ fn medication_from_row(
         is_dispensed: row.is_dispensed,
         dispensed_at: row.dispensed_at,
         status: codec::decode(&row.status)?,
+        prescription_held: row.prescription_held,
+        reason_not_given: row.reason_not_given,
+        administration_notes: row.administration_notes,
+        outcome_recorded_at: row.outcome_recorded_at,
+        outcome_recorded_by_user_id: row.outcome_recorded_by_user_id,
+        outcome_recorded_by_display_name: row.outcome_recorded_by_display_name,
     })
 }
 

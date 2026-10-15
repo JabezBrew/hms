@@ -57,3 +57,18 @@ The confirmation displays the persisted batch, not a submission or AR settlement
 Pending writes cannot be repeated or dismissed; an uncertain result requires
 reviewing refreshed batches and claims. Unsupported lint, file remittance import,
 and ZIP downloads remain hidden in Rust V2.
+
+## NHIS export records
+
+Rust V2 batch actions save internal export metadata only. Users with
+`nhis.claim.manage` explicitly confirm a draft batch before recording its saved
+summary and checksum. The backend rechecks ready member claims and the stored
+count, currency and total under ordered locks. Export records keep claim states
+unchanged; they are neither NHIS submission nor a generated download. Reopening
+an exported batch loads its immutable saved record without another audit event
+or timestamp change. Submitted and remitted batches cannot be exported again.
+
+The UI shows persisted response values and retains confirmation when list
+refresh fails. Pending requests cannot be repeated or dismissed; an unknown
+result requires reviewing refreshed records. History labels these as records
+and does not invent a ready job, download expiry or file.

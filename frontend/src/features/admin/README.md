@@ -8,6 +8,7 @@ Scope: admin organization, staff, permission, feature, authority, and audit UI.
 ## Routes
 
 - `/admin/audit-logs`
+- `/admin/access-grants` (Rust V2 managed-grant review and revocation)
 - `/admin/organization`
 - `/admin/organization/unit-types`
 - `/admin/organization/leadership-roles`
@@ -26,3 +27,5 @@ Scope: admin organization, staff, permission, feature, authority, and audit UI.
   roles.
 - Permission/authority UI must not invent frontend-only access rules.
 - Audit log views must avoid PHI leakage in filters, URLs, and logs.
+
+Managed-grant lifecycle details and historical-permission reconciliation are documented in [access/README.md](access/README.md).

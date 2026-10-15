@@ -73,6 +73,18 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getAdminAccessGrants": {
+    "operationId": "getAdminAccessGrants",
+    "method": "GET",
+    "path": "/api/v2/admin/access-grants",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "kind"
+    ],
+    "hasBody": false
+  },
   "getAdminAuditEvents": {
     "operationId": "getAdminAuditEvents",
     "method": "GET",
@@ -2625,6 +2637,17 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAdminAccessGrantRevoke": {
+    "operationId": "postAdminAccessGrantRevoke",
+    "method": "POST",
+    "path": "/api/v2/admin/access-grants/{kind}/{id}/revoke",
+    "pathParamNames": [
+      "kind",
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAdminAuthorityAppointments": {
     "operationId": "postAdminAuthorityAppointments",
     "method": "POST",
@@ -3455,6 +3478,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postMedicationAdministrationOutcome": {
+    "operationId": "postMedicationAdministrationOutcome",
+    "method": "POST",
+    "path": "/api/v2/nursing/medication-administrations/{id}/outcome",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postMedicationAdministrations": {
     "operationId": "postMedicationAdministrations",
     "method": "POST",
@@ -4198,6 +4231,7 @@ export function createGeneratedClient(request) {
     deleteClinicById: createOperation(request, operations.deleteClinicById),
     deletePatientChronicleWardRoundAction: createOperation(request, operations.deletePatientChronicleWardRoundAction),
     deleteWardStaffAssignment: createOperation(request, operations.deleteWardStaffAssignment),
+    getAdminAccessGrants: createOperation(request, operations.getAdminAccessGrants),
     getAdminAuditEvents: createOperation(request, operations.getAdminAuditEvents),
     getAdminAuthorityAppointments: createOperation(request, operations.getAdminAuthorityAppointments),
     getAdminCommittees: createOperation(request, operations.getAdminCommittees),
@@ -4414,6 +4448,7 @@ export function createGeneratedClient(request) {
     patchWardBed: createOperation(request, operations.patchWardBed),
     patchWardSection: createOperation(request, operations.patchWardSection),
     patchWardStaffAssignment: createOperation(request, operations.patchWardStaffAssignment),
+    postAdminAccessGrantRevoke: createOperation(request, operations.postAdminAccessGrantRevoke),
     postAdminAuthorityAppointments: createOperation(request, operations.postAdminAuthorityAppointments),
     postAdminCommittees: createOperation(request, operations.postAdminCommittees),
     postAdminDelegations: createOperation(request, operations.postAdminDelegations),
@@ -4508,6 +4543,7 @@ export function createGeneratedClient(request) {
     postLaboratorySpecimenReceive: createOperation(request, operations.postLaboratorySpecimenReceive),
     postLaboratorySpecimens: createOperation(request, operations.postLaboratorySpecimens),
     postMedicationAdministrationAdminister: createOperation(request, operations.postMedicationAdministrationAdminister),
+    postMedicationAdministrationOutcome: createOperation(request, operations.postMedicationAdministrationOutcome),
     postMedicationAdministrations: createOperation(request, operations.postMedicationAdministrations),
     postMonitoringEvents: createOperation(request, operations.postMonitoringEvents),
     postNhisBatches: createOperation(request, operations.postNhisBatches),

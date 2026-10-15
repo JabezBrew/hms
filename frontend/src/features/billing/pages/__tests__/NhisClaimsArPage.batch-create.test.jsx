@@ -171,6 +171,26 @@ describe('NHIS batch creation through the active page', () => {
     expect(writes()).toHaveLength(1);
   });
 
+  it('blocks a repeated batch create when a generic database failure follows a persisted save', async () => {
+    renderPage();
+    const user = await open();
+    await user.click(screen.getByRole('checkbox', { name: 'Select claim DRAFT-PAGE-1' }));
+    const original = globalThis.fetch.getMockImplementation();
+    globalThis.fetch.mockImplementation(async (url, request = {}) => {
+      if (request.method === 'POST' && new URL(url).pathname.endsWith('/nhis/batches')) {
+        await original(url, request);
+        return json({ error: { code: 'nhis_batch_create_failed', message: 'NHIS batch could not be confirmed.' } }, 409);
+      }
+      return original(url, request);
+    });
+    await user.click(screen.getByRole('button', { name: 'Create batch' }));
+    await screen.findByText('Save status unknown');
+    expect(screen.getByRole('button', { name: 'Create batch' })).toBeDisabled();
+    expect(writes()).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Close and review batches' }));
+    await screen.findByText('SAVED-BATCH');
+  });
+
   it('preserves the saved confirmation through failed batch refresh and blocks another create until a fresh read', async () => {
     renderPage();
     const user = await open();

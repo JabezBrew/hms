@@ -239,11 +239,12 @@ export function useChronicleWorkspaceActions({
   }, [navigate, id]);
 
   const handleViewTreatmentSheet = useCallback(() => {
-    const admissionId = activeEncounter?.admission_id
-      || activeEncounter?.id
+    const admissionId = rustV2ActiveAdmissionId
+      || activeEncounter?.admission_case_id
+      || activeEncounter?.admission_id
       || patient?.local_data?.current_admission_id
       || patient?.current_admission_id
-      || rustV2ActiveAdmissionId;
+      || (!rustV2Mode ? activeEncounter?.id : null);
 
     if (admissionId) {
       setRequestedTreatmentSheetAdmissionId(String(admissionId));
@@ -251,7 +252,7 @@ export function useChronicleWorkspaceActions({
     } else {
       toast.error('No active admission found for this patient');
     }
-  }, [activeEncounter, patient, rustV2ActiveAdmissionId, openChronicleWorkspace, setRequestedTreatmentSheetAdmissionId]);
+  }, [activeEncounter, patient, rustV2ActiveAdmissionId, rustV2Mode, openChronicleWorkspace, setRequestedTreatmentSheetAdmissionId]);
 
   const workspaceContext = useMemo(() => ({
     patientId: id,

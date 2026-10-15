@@ -64,6 +64,14 @@ the public edge URL when configured:
 https://<client-domain>/api/v2/health/ready
 ```
 
+Rust image builds keep registry, Git and native target caches in Docker
+BuildKit. The target cache is separated by Rust toolchain/base distribution and
+CPU architecture. Local workspace and migration file timestamps are refreshed
+inside the build so an older Git archive cannot reuse newer application
+artifacts during rollback. Dependencies can be reused; application binaries are
+copied out of the cache mount into the image in the same build step. The first
+build remains cold, and clearing a builder cache only affects build speed.
+
 Public DNS and Cloudflare are not treated as the only source of deployment
 truth. Container health, migrations, and Caddy readiness prove the VM deploy;
 the public URL proves DNS/Cloudflare cutover. Configure the public edge check

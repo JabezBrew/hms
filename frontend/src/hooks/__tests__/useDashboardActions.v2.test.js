@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 import { useDashboardActions } from '../useDashboardActions';
 
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...await importOriginal(),
   useMutation: vi.fn((config) => config),
   useQueryClient: vi.fn(() => ({
     invalidateQueries: vi.fn(),
@@ -147,7 +148,7 @@ describe('Rust V2 dashboard action bridge', () => {
     })).resolves.toMatchObject({ id: 'vitals-1' });
 
     expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
-      ['http://localhost:8080/api/v2/nursing/medication-administrations/med-1/administer', 'POST', signal],
+      ['http://localhost:8080/api/v2/nursing/medication-administrations/med-1/outcome', 'POST', signal],
       ['http://localhost:8080/api/v2/nursing/tasks/task-1/complete', 'POST', signal],
       ['http://localhost:8080/api/v2/visits/check-in', 'POST', signal],
       ['http://localhost:8080/api/v2/nursing/alerts/alert-1/acknowledge', 'POST', signal],

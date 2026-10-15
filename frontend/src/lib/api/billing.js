@@ -1346,7 +1346,7 @@ export const billingApi = {
       if (isRustV2ApiMode()) {
         const failure = new Error(handleV2ApiError(error, 'Failed to create NHIS claim batch'));
         failure.status = error?.status;
-        if (!error?.status || error.status >= 500) {
+        if (!error?.status || error.status >= 500 || error.data?.error?.code === 'nhis_batch_create_failed') {
           failure.code = 'nhis_batch_unconfirmed';
           failure.message = 'The save could not be confirmed. Close this dialog and review refreshed batches and claims before creating another batch.';
         }
@@ -1375,6 +1375,14 @@ export const billingApi = {
           { id: batchId },
           { signal: options.signal },
         );
+        const saved = response?.data;
+        if (saved?.batch_id !== batchId || typeof saved.batch_number !== 'string' || !saved.batch_number.trim()
+          || typeof saved.checksum !== 'string' || !saved.checksum.trim()
+          || saved.export_format !== 'nhis_export_record_v1'
+          || !Number.isSafeInteger(saved.claim_count) || saved.claim_count < 1
+          || !Number.isSafeInteger(saved.total_amount_minor) || saved.total_amount_minor < 0) {
+          throw new Error('Saved export record was not returned.');
+        }
         return response?.data;
       }
 
@@ -1383,7 +1391,13 @@ export const billingApi = {
       });
     } catch (error) {
       if (isRustV2ApiMode()) {
-        rethrowV2Error(error, 'Failed to export NHIS claim batch');
+        const failure = new Error(handleV2ApiError(error, 'The export record could not be saved.'));
+        failure.status = error?.status;
+        if (!error?.status || error.status >= 500 || error.data?.error?.code === 'nhis_batch_export_failed') {
+          failure.code = 'nhis_export_unconfirmed';
+          failure.message = 'The export record could not be confirmed. Close this dialog and review refreshed batches and export records before continuing.';
+        }
+        throw failure;
       }
       throw new Error(handleApiError(error, 'Failed to export NHIS claim batch'));
     }
@@ -1830,7 +1844,7 @@ export const billingApi = {
       if (isRustV2ApiMode()) {
         const failure = new Error(handleV2ApiError(error, 'Failed to create payer service code'));
         failure.status = error?.status;
-        if (!error?.status || error.status >= 500) {
+        if (!error?.status || error.status >= 500 || error.data?.error?.code === 'nhis_mapping_create_failed') {
           failure.code = 'nhis_mapping_unconfirmed';
           failure.message = 'The save could not be confirmed. Close this dialog and refresh mappings before trying again.';
         }

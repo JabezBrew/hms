@@ -125,11 +125,11 @@ describe('Rust V2 dashboard actions bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       3,
-      'http://localhost:8080/api/v2/nursing/medication-administrations/med-admin-1/administer',
+      'http://localhost:8080/api/v2/nursing/medication-administrations/med-admin-1/outcome',
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
     );
     expect(JSON.parse(globalThis.fetch.mock.calls[2][1].body)).toEqual({
-      witness_user_id: 'witness-1',
+      status: 'administered', witness_user_id: 'witness-1', reason_not_given: null, administration_notes: null,
     });
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       4,

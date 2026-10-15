@@ -13,6 +13,24 @@ INSTALL_ARCHIVE = REPO_ROOT / 'ops' / 'gcp-staging' / 'install-archive.sh'
 DEPLOY_CMD = ['/bin/sh', str(ROOT_DEPLOY)]
 
 
+def deployment_repository(tmp_path: Path) -> Path:
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    for relative in ('deploy', 'ops/deploy.sh', 'ops/gcp-staging/install-archive.sh'):
+        target = repository / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO_ROOT / relative, target)
+    migrations = repository / 'backend-rs' / 'migrations'
+    migrations.mkdir(parents=True)
+    (migrations / '202610150001_test.sql').write_text('SELECT 1;\n', encoding='utf-8')
+    for args in (('init', '-q'), ('add', '.'),
+                 ('-c', 'user.name=HMS Test', '-c', 'user.email=hms@example.test',
+                  'commit', '-qm', 'Create isolated deployment fixture')):
+        subprocess.run(['git', '-C', str(repository), *args], check=True,
+                       capture_output=True, text=True)
+    return repository
+
+
 def write_dirty_marker() -> Path:
     marker = REPO_ROOT / f'.deploy-ignore-dirty-test-{os.getpid()}'
     marker.write_text('dirty\n', encoding='utf-8')
@@ -51,9 +69,10 @@ def test_deploy_help_shows_short_happy_paths():
     assert 'GCP_SSH_CONNECT_TIMEOUT_SECONDS' in result.stdout
 
 
-def test_deploy_remote_dry_run_defaults_to_gcp_staging():
+def test_deploy_remote_dry_run_defaults_to_gcp_staging(tmp_path):
+    repository = deployment_repository(tmp_path)
     result = subprocess.run(
-        [*DEPLOY_CMD, 'staging', '--dry-run'],
+        ['/bin/sh', str(repository / 'deploy'), 'staging', '--dry-run'],
         check=False,
         capture_output=True,
         text=True,
@@ -71,24 +90,12 @@ def test_deploy_remote_dry_run_defaults_to_gcp_staging():
 
 
 def test_deploy_worktree_accepts_git_file_and_rejects_common_archive_attributes(tmp_path):
-    repository = tmp_path / 'repository'
-    repository.mkdir()
-    for relative in ('deploy', 'ops/deploy.sh', 'ops/gcp-staging/install-archive.sh'):
-        target = repository / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPO_ROOT / relative, target)
-    migrations = repository / 'backend-rs' / 'migrations'
-    migrations.mkdir(parents=True)
-    (migrations / '202610150001_test.sql').write_text('SELECT 1;\n', encoding='utf-8')
+    repository = deployment_repository(tmp_path)
 
     def git(*arguments):
         return subprocess.run(['git', '-C', str(repository), *arguments], check=True,
                               capture_output=True, text=True)
 
-    git('init', '-q')
-    git('add', '.')
-    git('-c', 'user.name=HMS Test', '-c', 'user.email=hms@example.test',
-        'commit', '-qm', 'Create isolated deployment fixture')
     worktree = tmp_path / 'worktree'
     git('worktree', 'add', '--detach', str(worktree), 'HEAD')
     command = ['/bin/sh', str(worktree / 'deploy'), 'staging', '--dry-run']

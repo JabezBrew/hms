@@ -36,8 +36,9 @@ pub use handoff::{complete_handoff, create_handoff, get_handoff, list_handoffs, 
 pub use mar::{
     administer_medication, create_treatment_sheet, get_medication_administration,
     list_medication_administrations, list_medication_administrations_scoped, list_treatment_sheets,
-    schedule_medication_administration, MedicationAdministrationFilters,
-    NewMedicationAdministration, NewTreatmentSheet,
+    record_medication_outcome, schedule_medication_administration, MedicationAdministrationFilters,
+    MedicationOutcomeError, NewMedicationAdministration, NewTreatmentSheet,
+    RecordMedicationOutcome,
 };
 pub use nursing_task_board::{
     cancel_nursing_task, complete_nursing_task, create_nursing_task, get_nursing_task,

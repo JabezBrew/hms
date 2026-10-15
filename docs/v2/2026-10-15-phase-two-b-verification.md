@@ -69,5 +69,21 @@ Logs: `/tmp/hms-phase2b-workspace-acceptance.log`,
 `/tmp/hms-phase2b-index-frontend-final.log`,
 `/tmp/hms-phase2b-index-{lint,client,build,bundle,final-cache}.log`, and
 `/tmp/hms-phase2b-password-reset-delivery-final.log`. Reviewed source/index
-fingerprints were saved before concurrent phase-three work resumed. No staging
-deployment of this checkpoint is claimed by these local checks.
+fingerprints were saved before concurrent phase-three work resumed.
+
+## Synthetic staging release
+
+Commit `c3b2394441f81be6fb7a47be92ab2ed36a519762` was pushed and deployed to
+the existing free staging host. Archive SHA-256:
+`0ce1febc2a3fd4cb31e509392f9da8e1ff7f1227cfe620fb1ee9391597ff981a`.
+Independent post-deploy checks passed all 33 assertions: exact source/API/worker
+identity, healthy native ARM64 containers, migrations 001–005, public readiness,
+anonymous denial, scoped fluid/grant contracts, and synthetic stock-linked
+prescription create/update/stop/history. A small origin-only read smoke measured
+100 requests at concurrency five: p50 3.99 ms, p99 8.60 ms. This is not edge or
+production-capacity evidence.
+
+Rollback source, private configuration, validated database dump and image tags
+are preserved under `/home/ubuntu/hms-phase-two-b-rollback`, with the previous
+source at `/home/ubuntu/hms-source-before-c3b239444`. GitHub Actions remains
+disabled; validation ran locally.

@@ -127,6 +127,10 @@ pub fn routes() -> Router<AppState> {
             post(ward::administer_medication),
         )
         .route(
+            "/api/v2/nursing/medication-administrations/:id/outcome",
+            post(ward::record_medication_outcome),
+        )
+        .route(
             "/api/v2/nursing/handoffs",
             get(ward::list_handoffs).post(ward::create_handoff),
         )

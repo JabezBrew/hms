@@ -32,6 +32,12 @@ owns the patient context:
   doses and require a shorter date range if that bound is exceeded.
 - Medication history uses server cursor Next/Previous navigation with an unknown
   total; it must not invent a one-page complete count from a facility preview.
+- The active MAR grid records explicit Administered/Missed/Refused/Held outcomes
+  through `/outcome`, with a reason when not given. It never posts anonymous
+  create-and-administer doses in Rust mode. Unknown save results block another
+  decision pending review; shared mutation retries are disabled. History, grid,
+  patient MAR and pharmacy request caches refresh after attempts. Displayed
+  period progress is not source prescription duration or course completion.
 - Fluid entry lists send patient/admission and `[recorded_from, recorded_before)`
   UTC bounds before following the server's entry cursors. Failed, unconfirmed,
   or over-100-page reads are unavailable, not an empty or complete partial list.

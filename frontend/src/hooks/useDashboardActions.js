@@ -4,6 +4,9 @@ import { handleV2ApiError } from '@/lib/api/v2/errors';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { v2Api } from '@/lib/api/v2/client';
 import { toast } from 'sonner';
+import { recordV2MedicationOutcome } from './nursingQueriesV2Bridge';
+import { nursingKeys } from './nursing/nursingQueryKeys';
+import { dashboardKeys } from './useDashboardQueries';
 
 /**
  * Hook for dashboard action handlers
@@ -52,15 +55,6 @@ function normalizeV2VitalsPayload(vitalsData = {}) {
   };
 }
 
-function normalizeV2MedicationAdministrationPayload(administrationData = {}) {
-  return {
-    witness_user_id: administrationData.witness_user_id
-      || administrationData.witnessUserId
-      || administrationData.witness
-      || null,
-  };
-}
-
 function unwrapV2Object(response) {
   return response?.data ?? response;
 }
@@ -81,18 +75,10 @@ export function useDashboardActions() {
 
   // Administer medication
   const administerMedication = useMutation({
+    retry: false,
     mutationFn: async ({ medicationId, administrationData, signal }) => {
       if (isRustV2ApiMode()) {
-        try {
-          const response = await v2Api.postMedicationAdministrationAdminister(
-            { id: medicationId },
-            normalizeV2MedicationAdministrationPayload(administrationData),
-            { signal: signal || administrationData?.signal },
-          );
-          return unwrapV2Object(response);
-        } catch (error) {
-          rethrowV2DashboardError(error, 'Failed to administer medication');
-        }
+        return recordV2MedicationOutcome(medicationId, administrationData, { signal: signal || administrationData?.signal });
       }
       return await apiClient.patch(
         `/nursing/medication-administration/${medicationId}/administer/`,
@@ -100,9 +86,12 @@ export function useDashboardActions() {
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['dashboards']);
-      queryClient.invalidateQueries(['nursing']);
-      toast.success('Medication administered successfully');
+      toast.success('Medication dose outcome recorded');
+    },
+    onSettled: () => {
+      for (const queryKey of [dashboardKeys.inpatient(), nursingKeys.medicationAdministrationsAll(), nursingKeys.medicationAdministrationHistoryAll(), nursingKeys.patientMarAll(), nursingKeys.marGridAll(), nursingKeys.pendingDispensingAll(), nursingKeys.patientMonitoringAll()]) {
+        queryClient.invalidateQueries({ queryKey });
+      }
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to administer medication');

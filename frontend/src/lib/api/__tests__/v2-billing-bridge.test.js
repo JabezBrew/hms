@@ -26,6 +26,33 @@ describe('Rust V2 billing bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it.each([
+    { data: { id: 'job-1', status: 'queued' } },
+    { data: { batch_id: 'another-batch', batch_number: 'BATCH', export_format: 'nhis_export_record_v1', claim_count: 1, total_amount_minor: 100, checksum: 'saved' } },
+  ])('treats an invalid export success response as unconfirmed rather than a queued job', async (response) => {
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse(response));
+    await expect(billingApi.exportNhisClaimBatch('batch-1')).rejects.toMatchObject({ code: 'nhis_export_unconfirmed' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a lost export response as unknown without retrying the write', async () => {
+    globalThis.fetch.mockRejectedValueOnce(new TypeError('Lost response'));
+    await expect(billingApi.exportNhisClaimBatch('batch-1')).rejects.toMatchObject({ code: 'nhis_export_unconfirmed' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves authoritative export conflicts without calling them an unknown save', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'nhis_export_state_locked', message: 'This batch is already remitted.' } }), { status: 409, headers: { 'content-type': 'application/json' } }));
+    await expect(billingApi.exportNhisClaimBatch('batch-1')).rejects.toMatchObject({ status: 409, message: 'This batch is already remitted.' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats the generic database export failure as uncertain even when the legacy error mapper uses 409', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'nhis_batch_export_failed', message: 'The export record could not be confirmed.' } }), { status: 409, headers: { 'content-type': 'application/json' } }));
+    await expect(billingApi.exportNhisClaimBatch('batch-1')).rejects.toMatchObject({ status: 409, code: 'nhis_export_unconfirmed' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('loads patient invoices through Rust /api/v2 and adapts patient billing fields', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
@@ -765,9 +792,12 @@ describe('Rust V2 billing bridge', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         data: {
-          id: 'export-1',
           batch_id: 'batch-1',
-          status: 'queued',
+          batch_number: 'BATCH-1',
+          export_format: 'nhis_export_record_v1',
+          claim_count: 1,
+          total_amount_minor: 3000,
+          checksum: 'abc123',
         },
         meta: {},
       }));
@@ -796,9 +826,12 @@ describe('Rust V2 billing bridge', () => {
       claim_ids: ['claim-1'],
     }, { signal })).resolves.toMatchObject({ id: 'batch-1', total_amount: 30 });
     await expect(billingApi.exportNhisClaimBatch('batch-1', {}, { signal })).resolves.toEqual({
-      id: 'export-1',
       batch_id: 'batch-1',
-      status: 'queued',
+      batch_number: 'BATCH-1',
+      export_format: 'nhis_export_record_v1',
+      claim_count: 1,
+      total_amount_minor: 3000,
+      checksum: 'abc123',
     });
 
     expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
@@ -1000,10 +1033,10 @@ describe('Rust V2 billing bridge', () => {
               batch_id: 'batch-1',
               batch: 'BATCH-1',
               batch_number: 'BATCH-1',
-              status: 'ready',
+              status: 'recorded',
               checksum: 'abc123',
               created_at: '2026-05-12T10:00:00Z',
-              expires_at: '2026-05-19T10:00:00Z',
+              expires_at: null,
             },
           ],
           page: { limit: 20, has_next: false, next_cursor: null },

@@ -140,6 +140,7 @@ function AddFluidBalanceSlideOverContent({
   allowEntry,
 }) {
   const rustV2Mode = isRustV2ApiMode();
+  const admissionScope = rustV2Mode && admission?.id ? { admission_case_id: admission.id } : {};
   const todayDateString = useFluidBalanceDay({ utc: rustV2Mode, enabled: open });
   // Active tab state
   const [activeTabValue, setActiveTab] = useState(allowEntry ? 'entry' : 'history'); // 'entry' | 'history'
@@ -161,15 +162,15 @@ function AddFluidBalanceSlideOverContent({
 
   // API hooks - only fetch when slide-over is open
   // Today's data for entry tab
-  const todaySummaryQuery = useTodayFluidBalance(patientId, { enabled: open, date: todayDateString });
+  const todaySummaryQuery = useTodayFluidBalance(patientId, { enabled: open, date: todayDateString, ...admissionScope });
   const { data: todaySummary } = todaySummaryQuery;
-  const todayQuery = useFluidBalance(patientId, { date: todayDateString, descending: true }, { enabled: open });
+  const todayQuery = useFluidBalance(patientId, { date: todayDateString, descending: true, ...admissionScope }, { enabled: open });
   const { data: todayRecords = [], isLoading: todayLoading } = todayQuery;
 
   // Historical data for history tab
-  const historyQuery = useFluidBalance(patientId, { date: historyDateString }, { enabled: open });
+  const historyQuery = useFluidBalance(patientId, { date: historyDateString, ...admissionScope }, { enabled: open });
   const { data: historyRecords = [], isLoading: historyLoading } = historyQuery;
-  const historySummaryQuery = useFluidBalanceSummary(patientId, historyDateString, { enabled: open });
+  const historySummaryQuery = useFluidBalanceSummary(patientId, historyDateString, { enabled: open, ...admissionScope });
   const { data: historySummary } = historySummaryQuery;
 
   const createMutation = useCreateFluidBalance();
@@ -260,7 +261,7 @@ function AddFluidBalanceSlideOverContent({
   // Handle delete entry
   const handleDelete = async (entryId) => {
     if (!fluidBalanceDeletionAvailable) {
-      toast.error('Fluid balance deletion is not available in Rust V2 mode yet.');
+      toast.error('Saved fluid entries cannot be removed. Corrections are not available yet.');
       return;
     }
 
@@ -331,6 +332,8 @@ function AddFluidBalanceSlideOverContent({
 
   return (
     <div
+      role="region"
+      aria-label="Fluid balance"
       className={cn(
         "fixed inset-y-0 right-0 z-[100] w-full lg:w-1/2 bg-background border-l border-border",
         "transform transition-transform duration-300 ease-in-out",
@@ -338,7 +341,7 @@ function AddFluidBalanceSlideOverContent({
         open ? "translate-x-0" : "translate-x-full"
       )}
     >
-      <FluidBalanceHeader patientName={patientName} onClose={handleClose} />
+      <FluidBalanceHeader patientName={patientName} scopeLabel={rustV2Mode && admission?.id ? 'Current admission' : undefined} onClose={handleClose} />
       <FluidBalanceTabs
         allowEntry={allowEntry}
         activeTab={activeTab}

@@ -6,6 +6,14 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v2/admin/access-grants",
+            get(crate::handlers::admin_access::list),
+        )
+        .route(
+            "/api/v2/admin/access-grants/:kind/:id/revoke",
+            post(crate::handlers::admin_access::revoke),
+        )
         .route("/api/v2/staff/directory", get(admin::list_staff_directory))
         .route(
             "/api/v2/admin/org-units",

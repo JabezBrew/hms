@@ -70,6 +70,35 @@ describe('NHIS mapping creation through the active page', () => {
     return user;
   }
 
+  it('blocks another mapping write when a generic database failure follows a persisted save', async () => {
+    renderPage();
+    const user = await openAndFill();
+    const original = globalThis.fetch.getMockImplementation();
+    globalThis.fetch.mockImplementation(async (url, request = {}) => {
+      if (request.method === 'POST' && new URL(url).pathname.endsWith('/nhis/service-mappings')) {
+        await original(url, request);
+        return json({ error: { code: 'nhis_mapping_create_failed', message: 'NHIS service mapping could not be confirmed.' } }, 409);
+      }
+      return original(url, request);
+    });
+    await user.click(screen.getByRole('button', { name: 'Save mapping' }));
+    await screen.findByText('Save status unknown');
+    expect(screen.getByRole('button', { name: 'Save mapping' })).toBeDisabled();
+    expect(globalThis.fetch.mock.calls.filter(([url, request]) => request.method === 'POST' && new URL(url).pathname.endsWith('/nhis/service-mappings'))).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Close and review mappings' }));
+    await screen.findByText(/SAVED-CODE/);
+  });
+
+  it('keeps an authoritative inactive-service rejection distinct from an unknown save', async () => {
+    renderPage();
+    const user = await openAndFill();
+    globalThis.fetch.mockResolvedValueOnce(json({ error: { code: 'nhis_service_unavailable', message: 'An active service in this facility is required.' } }, 409));
+    await user.click(screen.getByRole('button', { name: 'Save mapping' }));
+    await screen.findByText('An active service in this facility is required.');
+    expect(screen.queryByText('Save status unknown')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save mapping' })).toBeEnabled();
+  });
+
   it('creates a mapping using a service beyond the first page and shows persisted values', async () => {
     renderPage();
     const user = await openAndFill({ secondPage: true });

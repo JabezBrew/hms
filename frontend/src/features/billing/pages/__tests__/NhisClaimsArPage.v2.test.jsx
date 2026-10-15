@@ -138,13 +138,13 @@ describe('NhisClaimsArPage Rust V2 guards', () => {
     expect(
       screen.getByText(/creating batches requires nhis claims management permission/i),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /view record|record export/i })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: /exports/i }));
+    await user.click(screen.getByRole('tab', { name: /export/i }));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/nhis?tab=exports');
     expect(screen.queryByRole('button', { name: /download zip/i })).not.toBeInTheDocument();
     expect(
-      screen.getByText(/nhis export zip downloads are not available in rust v2/i),
+      screen.getByText(/they do not generate a file or submit claims to nhis/i),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /remittances/i }));
@@ -165,7 +165,7 @@ describe('NhisClaimsArPage Rust V2 guards', () => {
 
     expect(screen.getByRole('button', { name: /create batch/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: /exports/i }));
+    await user.click(screen.getByRole('tab', { name: /export/i }));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/billing/nhis?tab=exports');
     expect(screen.getByRole('button', { name: /download zip/i })).toBeInTheDocument();
 

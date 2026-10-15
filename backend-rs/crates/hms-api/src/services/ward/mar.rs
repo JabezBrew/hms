@@ -1,11 +1,13 @@
 use hms_db::ward::{
-    MedicationAdministrationFilters, NewMedicationAdministration, NewTreatmentSheet,
+    MedicationAdministrationFilters, MedicationOutcomeError, NewMedicationAdministration,
+    NewTreatmentSheet, RecordMedicationOutcome,
 };
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
     AdministerMedicationRequest, CreateTreatmentSheetRequest, MedicationAdministrationListItem,
-    MedicationAdministrationListQuery, ScheduleMedicationAdministrationRequest,
+    MedicationAdministrationListQuery, MedicationAdministrationOutcome,
+    RecordMedicationOutcomeRequest, ScheduleMedicationAdministrationRequest,
     TreatmentSheetListItem,
 };
 use serde_json::json;
@@ -132,6 +134,25 @@ impl MarService {
         Ok(object(medication))
     }
 
+    pub async fn record_medication_outcome(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: RecordMedicationOutcomeRequest,
+    ) -> Result<ObjectResponse<MedicationAdministrationListItem>, ApiError> {
+        self.administer_medication(
+            ctx,
+            id,
+            AdministerMedicationRequest {
+                status: Some(payload.status),
+                witness_user_id: payload.witness_user_id,
+                reason_not_given: payload.reason_not_given,
+                administration_notes: payload.administration_notes,
+            },
+        )
+        .await
+    }
+
     pub async fn administer_medication(
         &self,
         ctx: &hms_access::RequestContext,
@@ -163,18 +184,31 @@ impl MarService {
         })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let medication = hms_db::ward::administer_medication(
+        let medication = hms_db::ward::record_medication_outcome(
             self.state.db_pool(),
-            self.state.facility_id(),
-            id,
-            ctx.user_id,
-            payload.witness_user_id,
+            RecordMedicationOutcome {
+                facility_id: self.state.facility_id(), medication_id: id,
+                actor_user_id: ctx.user_id,
+                status: payload.status.unwrap_or(MedicationAdministrationOutcome::Administered),
+                witness_user_id: payload.witness_user_id,
+                reason_not_given: payload.reason_not_given,
+                administration_notes: payload.administration_notes,
+                request_id: Some(ctx.request_id.clone()),
+            },
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
+            if let Some(reason) = error.downcast_ref::<MedicationOutcomeError>() {
+                return match reason {
+                    MedicationOutcomeError::InvalidReason | MedicationOutcomeError::NotesTooLong
+                        | MedicationOutcomeError::InvalidWitness | MedicationOutcomeError::FutureMissed =>
+                        ApiError::bad_request("invalid_medication_outcome", reason.message()),
+                    _ => ApiError::conflict("med_admin_not_actionable", reason.message()),
+                };
+            }
             ApiError::conflict(
-                "med_admin_not_actionable",
-                "This dose can no longer be administered. Reload the medication schedule and check the current prescription.",
+                "medication_outcome_unconfirmed",
+                "The dose outcome could not be confirmed. Reload the medication schedule and review the saved record before trying again.",
             )
         })?
         .ok_or_else(|| {

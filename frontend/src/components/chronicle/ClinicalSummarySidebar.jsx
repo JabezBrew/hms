@@ -51,6 +51,7 @@ const ClinicalSummarySidebar = ({
     patient?.current_ward_id;
 
   const patientId = patient?.local_data?.id || patient?.id;
+  const admissionId = patient?.local_data?.current_admission_id || patient?.current_admission_id;
 
   return (
     <aside
@@ -94,7 +95,7 @@ const ClinicalSummarySidebar = ({
       {isAdmitted && patientId && (
         <>
           <div className="divider-gradient" />
-          <FluidBalanceSection patientId={patientId} onViewTrends={onViewFluidTrends} />
+          <FluidBalanceSection patientId={patientId} admissionId={admissionId} onViewTrends={onViewFluidTrends} />
         </>
       )}
 
@@ -547,8 +548,9 @@ const LabResultsSection = ({ results = EMPTY_ARRAY, maxVisible = 4 }) => {
 /**
  * FluidBalanceSection - Today's fluid balance for admitted patients
  */
-const FluidBalanceSection = ({ patientId, onViewTrends }) => {
-  const { data: fluidData, isLoading, error } = useTodayFluidBalance(patientId);
+const FluidBalanceSection = ({ patientId, admissionId, onViewTrends }) => {
+  const { data: fluidData, isLoading, error } = useTodayFluidBalance(patientId,
+    isRustV2ApiMode() && admissionId ? { admission_case_id: admissionId } : {});
 
   if (error) return <section role="alert"><p className="text-sm text-destructive">Today’s fluid balance is unavailable.</p></section>;
 

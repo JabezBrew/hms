@@ -2,9 +2,10 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import ClinicalSummarySidebar, { ProblemsSection } from '../ClinicalSummarySidebar';
+import { useTodayFluidBalance } from '@/features/nursing/hooks';
 
 vi.mock('@/features/nursing/hooks', () => ({
-  useTodayFluidBalance: () => ({ data: null, isLoading: false }),
+  useTodayFluidBalance: vi.fn(() => ({ data: null, isLoading: false })),
 }));
 
 vi.mock('@/components/billing', () => ({
@@ -25,6 +26,15 @@ function sectionByHeading(container, heading) {
 }
 
 describe('ClinicalSummarySidebar', () => {
+  it('uses the active admission for the Rust fluid summary', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    try {
+      render(<ClinicalSummarySidebar patient={{ id: 'patient-fluid', current_admission_id: 'current-fluid-admission' }} />);
+      expect(useTodayFluidBalance).toHaveBeenLastCalledWith('patient-fluid', { admission_case_id: 'current-fluid-admission' });
+    } finally {
+      delete window.__HMS_RUNTIME_CONFIG__;
+    }
+  });
   it('renders as a natural-height scroll panel inside the page-defined sidebar boundary', () => {
     const { container } = render(
       <ClinicalSummarySidebar

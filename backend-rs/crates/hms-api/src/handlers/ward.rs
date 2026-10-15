@@ -12,14 +12,15 @@ use hms_domain::ward::{
     FluidBalanceSummaryQuery, FluidBalanceTrendPoint, HandoffListItem,
     MedicationAdministrationListItem, MedicationAdministrationListQuery, MonitoringEventListItem,
     MyWardBoardContextResponse, NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery,
-    PatientVitalsListItem, PatientVitalsListQuery, RecordNursingReleaseRequest,
-    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
-    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
-    UpdateWardStaffAssignmentRequest, WardAnalyticsQuery, WardAnalyticsResponse,
-    WardBedMapResponse, WardBoardGetQuery, WardBoardItem, WardBoardQuery, WardListItem,
-    WardListQuery, WardSectionListItem, WardStaffAssignmentByPractitionerQuery,
-    WardStaffAssignmentListItem, WardStaffAssignmentListQuery, WardStaffListItem,
-    WardStaffListQuery, WardStaffRoleItem, WardStaffRoleListQuery, WardStockRequestListItem,
+    PatientVitalsListItem, PatientVitalsListQuery, RecordMedicationOutcomeRequest,
+    RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
+    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
+    UpdateWardRequest, UpdateWardSectionRequest, UpdateWardStaffAssignmentRequest,
+    WardAnalyticsQuery, WardAnalyticsResponse, WardBedMapResponse, WardBoardGetQuery,
+    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
+    WardStaffAssignmentByPractitionerQuery, WardStaffAssignmentListItem,
+    WardStaffAssignmentListQuery, WardStaffListItem, WardStaffListQuery, WardStaffRoleItem,
+    WardStaffRoleListQuery, WardStockRequestListItem,
 };
 use uuid::Uuid;
 
@@ -1417,10 +1418,12 @@ pub async fn schedule_medication_administration(
     params(("id" = Uuid, Path, description = "Medication administration id")),
     request_body = AdministerMedicationRequest,
     responses(
-        (status = 200, description = "Medication administered", body = ObjectResponse<MedicationAdministrationListItem>),
+        (status = 200, description = "Medication dose outcome recorded", body = ObjectResponse<MedicationAdministrationListItem>),
+        (status = 400, description = "Invalid outcome, reason, notes or witness", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Medication administration not found", body = ApiErrorResponse)
+        (status = 404, description = "Medication administration not found", body = ApiErrorResponse),
+        (status = 409, description = "Dose is terminal, unsupplied or its source prescription changed", body = ApiErrorResponse)
     )
 )]
 pub async fn administer_medication(
@@ -1434,6 +1437,38 @@ pub async fn administer_medication(
             .ward_services()
             .mar()
             .administer_medication(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/nursing/medication-administrations/{id}/outcome",
+    operation_id = "postMedicationAdministrationOutcome",
+    tag = "nursing",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Medication administration id")),
+    request_body = RecordMedicationOutcomeRequest,
+    responses(
+        (status = 200, description = "Medication dose outcome recorded", body = ObjectResponse<MedicationAdministrationListItem>),
+        (status = 400, description = "Invalid outcome, reason, notes or witness", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Medication administration not found", body = ApiErrorResponse),
+        (status = 409, description = "Dose is terminal, unsupplied or its source prescription changed", body = ApiErrorResponse)
+    )
+)]
+pub async fn record_medication_outcome(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<RecordMedicationOutcomeRequest>,
+) -> Result<Json<ObjectResponse<MedicationAdministrationListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .record_medication_outcome(&user, id, payload)
             .await?,
     ))
 }

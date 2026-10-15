@@ -136,29 +136,6 @@ describe('Rust V2 nursing mutation bridge', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         data: {
-          id: 'med-2',
-          admission_case_id: 'admission-1',
-          patient_id: 'patient-1',
-          medication_name: 'Ibuprofen',
-          scheduled_at: scheduledAt,
-          status: 'scheduled',
-        },
-        meta: {},
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        data: {
-          id: 'med-2',
-          admission_case_id: 'admission-1',
-          patient_id: 'patient-1',
-          medication_name: 'Ibuprofen',
-          scheduled_at: scheduledAt,
-          administered_at: '2026-05-12T10:10:00Z',
-          status: 'administered',
-        },
-        meta: {},
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        data: {
           id: 'handoff-1',
           ward_id: 'ward-1',
           from_user_id: 'user-1',
@@ -279,13 +256,15 @@ describe('Rust V2 nursing mutation bridge', () => {
       data: { witness: 'user-2' },
       signal,
     })).resolves.toMatchObject({ id: 'med-1', status: 'administered' });
+    const requestsBeforeAnonymousDose = globalThis.fetch.mock.calls.length;
     await expect(useCreateAndAdminister().mutationFn({
       admission_case_id: 'admission-1',
       medication_name: 'Ibuprofen',
       scheduled_at: scheduledAt,
       witness: 'user-2',
       signal,
-    })).resolves.toMatchObject({ id: 'med-2', status: 'administered' });
+    })).rejects.toThrow('source-linked request');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(requestsBeforeAnonymousDose);
     await expect(useCreateShiftHandoff().mutationFn({
       ward_id: 'ward-1',
       to_user_id: 'user-2',
@@ -332,9 +311,7 @@ describe('Rust V2 nursing mutation bridge', () => {
       ['http://localhost:8080/api/v2/nursing/tasks/task-2/cancel', 'POST', signal],
       ['http://localhost:8080/api/v2/nursing/alerts/alert-1/acknowledge', 'POST', signal],
       ['http://localhost:8080/api/v2/nursing/medication-administrations', 'POST', signal],
-      ['http://localhost:8080/api/v2/nursing/medication-administrations/med-1/administer', 'POST', signal],
-      ['http://localhost:8080/api/v2/nursing/medication-administrations', 'POST', signal],
-      ['http://localhost:8080/api/v2/nursing/medication-administrations/med-2/administer', 'POST', signal],
+      ['http://localhost:8080/api/v2/nursing/medication-administrations/med-1/outcome', 'POST', signal],
       ['http://localhost:8080/api/v2/nursing/handoffs', 'POST', signal],
       ['http://localhost:8080/api/v2/nursing/handoffs/handoff-1/complete', 'POST', signal],
       ['http://localhost:8080/api/v2/nursing/treatment-sheets', 'POST', signal],
