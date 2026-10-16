@@ -9,6 +9,7 @@ mod discharge_cases;
 pub mod fluid;
 mod handoff;
 mod mar;
+pub mod nursing_access;
 mod nursing_task_board;
 mod observations_monitoring;
 pub mod patient_handover;
@@ -48,15 +49,19 @@ pub use mar::{
     NewMedicationAdministration, NewTreatmentSheet, RecordMedicationOutcome, TreatmentSheetFilters,
 };
 pub use nursing_task_board::{
-    cancel_nursing_task, complete_nursing_task, create_nursing_task, get_nursing_task,
-    list_nursing_tasks, NewNursingTask, NursingTaskFilters,
+    cancel_nursing_task, complete_nursing_task, create_nursing_task, create_nursing_task_for_actor,
+    decide_nursing_task_for_actor, get_nursing_task, list_nursing_tasks,
+    list_nursing_tasks_for_actor, NewNursingTask, NursingTaskFilters,
 };
 pub use observations_monitoring::{
-    acknowledge_nursing_alert, acknowledge_nursing_alert_with_request, create_fluid_balance_entry,
-    create_monitoring_event, create_nursing_alert, create_patient_vitals, fluid_balance_summary,
+    acknowledge_nursing_alert, acknowledge_nursing_alert_for_actor,
+    acknowledge_nursing_alert_with_request, create_fluid_balance_entry, create_monitoring_event,
+    create_monitoring_event_for_actor, create_nursing_alert, create_nursing_alert_for_actor,
+    create_patient_vitals, create_patient_vitals_for_actor, fluid_balance_summary,
     fluid_balance_trends, get_nursing_alert, list_fluid_balance_entries,
-    list_fluid_balance_entries_scoped, list_monitoring_events, list_nursing_alerts,
-    list_nursing_alerts_scoped, list_patient_vitals, FluidBalanceFilters, NewFluidBalanceEntry,
+    list_fluid_balance_entries_scoped, list_monitoring_events, list_monitoring_events_for_actor,
+    list_nursing_alerts, list_nursing_alerts_for_actor, list_nursing_alerts_scoped,
+    list_patient_vitals, list_patient_vitals_for_actor, FluidBalanceFilters, NewFluidBalanceEntry,
     NewMonitoringEvent, NewNursingAlert, NewPatientVitals, NursingAlertFilters,
 };
 pub use prn::{list_prn_orders, request_prn_dose, PrnError, RequestPrnDose};

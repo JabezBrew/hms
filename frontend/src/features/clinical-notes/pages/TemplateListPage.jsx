@@ -34,6 +34,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import TemplateBuilder from '@/components/clinical-notes/TemplateBuilder';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import RustTemplateCatalogPage from './RustTemplateCatalogPage';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 
@@ -404,7 +406,7 @@ function DeleteTemplateDialog({ onConfirm, onOpenChange, templateToDelete }) {
   );
 }
 
-export default function TemplateListPage() {
+function LegacyTemplateListPage() {
   const [view, setView] = useState('list'); // 'list', 'create', 'edit', 'detail'
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templateToDelete, setTemplateToDelete] = useState(null);
@@ -555,6 +557,8 @@ export default function TemplateListPage() {
 
   return null;
 }
+
+export default function TemplateListPage() { return isRustV2ApiMode() ? <RustTemplateCatalogPage /> : <LegacyTemplateListPage />; }
 
 /**
  * TemplateCard - Chronicle-style template card

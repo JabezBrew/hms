@@ -3,6 +3,12 @@ use super::*;
 #[tokio::test]
 async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scoped() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
 

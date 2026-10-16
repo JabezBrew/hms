@@ -142,7 +142,7 @@ async fn trusted_app() -> TestApp {
     app_with_config(config, database).await
 }
 fn template() -> Value {
-    json!({"title":"Synthetic network workflow","note_type":"doctor_note","body_template":"Synthetic clinical template"})
+    json!({"client_request_id":Uuid::new_v4(),"title":"Synthetic network workflow","note_type":"doctor_note","body_template":"Synthetic clinical template","is_active":true})
 }
 
 #[tokio::test]
@@ -319,7 +319,7 @@ async fn fresh_reauth_only_allows_known_clients_and_stale_or_missing_proof_stays
             &app,
             &token,
             Method::POST,
-            "/api/v2/clinical/note-templates",
+            "/api/v2/clinical/note-templates/record",
             template(),
             "192.0.2.23:44000",
             &[]
@@ -342,7 +342,7 @@ async fn fresh_reauth_only_allows_known_clients_and_stale_or_missing_proof_stays
             &app,
             proof,
             Method::POST,
-            "/api/v2/clinical/note-templates",
+            "/api/v2/clinical/note-templates/record",
             template(),
             "192.0.2.23:44000",
             &[],
@@ -364,7 +364,7 @@ async fn fresh_reauth_only_allows_known_clients_and_stale_or_missing_proof_stays
                 &app,
                 &token,
                 Method::POST,
-                "/api/v2/clinical/note-templates",
+                "/api/v2/clinical/note-templates/record",
                 template(),
                 "10.20.0.2:44000",
                 &headers
@@ -566,7 +566,7 @@ async fn missing_socket_identity_never_inherits_loopback_or_fresh_credential_wri
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/v2/clinical/note-templates")
+                .uri("/api/v2/clinical/note-templates/record")
                 .header(AUTHORIZATION, format!("Bearer {token}"))
                 .header("content-type", "application/json")
                 .body(Body::from(template().to_string()))

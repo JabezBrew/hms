@@ -7,6 +7,7 @@ mod discharge_cases;
 mod fluid;
 mod handoff;
 mod mar;
+mod nursing_access;
 mod nursing_task_board;
 mod observations_monitoring;
 pub mod patient_handover;

@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import WardBoardPage from '../WardBoardPage';
+import { AuthContext } from '@/lib/auth/AuthContext';
+const testActor = { id: 'synthetic-test-actor', accessContext: { patient_visibility: ['full_clinical'], features: ['nursing'] }, adminAccess: { capabilities: ['nursing.task.manage'] } };
 import {
   useWardBoard,
   useWardBoardContext,
@@ -83,11 +85,11 @@ function boardResponse(overrides = {}) {
 
 function renderPage(route, path = '/ward-board') {
   return render(
-    <MemoryRouter initialEntries={[route]}>
+    <AuthContext.Provider value={{ user: testActor }}><MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route path={path} element={<WardBoardPage />} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter></AuthContext.Provider>
   );
 }
 
@@ -101,7 +103,7 @@ function LocationProbe({ onLocation }) {
 
 function renderPageWithLocation(route, onLocation) {
   return render(
-    <MemoryRouter initialEntries={[route]}>
+    <AuthContext.Provider value={{ user: testActor }}><MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route
           path="/ward-board"
@@ -122,7 +124,7 @@ function renderPageWithLocation(route, onLocation) {
           )}
         />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter></AuthContext.Provider>
   );
 }
 

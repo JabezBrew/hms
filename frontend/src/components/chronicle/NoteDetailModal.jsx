@@ -16,8 +16,10 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import ChronicleNoteBody from "./ChronicleNoteBody";
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 const NoteHistoryModal = lazy(() => import("./NoteHistoryModal"));
+const ClinicalNoteDialog = lazy(() => import('@/features/clinical-notes/components/ClinicalNoteDialog'));
 
 /**
  * NoteDetailModal - A generic modal for viewing full note content
@@ -37,6 +39,7 @@ const NoteDetailModal = ({ open, onOpenChange, entry, currentUserId, onEditNote,
   const [historyOpen, setHistoryOpen] = useState(false);
 
   if (!entry) return null;
+  if (isRustV2ApiMode() && (entry.entry_type === 'note' || ['doctor_note', 'nursing_note', 'allied_health_note'].includes(entry.type))) return <Suspense fallback={null}><ClinicalNoteDialog {...{ open, onOpenChange, entry }} /></Suspense>;
 
   // Check if this is an editable note type (has an id, template, and data)
   // AND the current user is the author

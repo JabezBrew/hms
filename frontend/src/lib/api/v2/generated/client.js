@@ -705,6 +705,27 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalNoteHistory": {
+    "operationId": "getClinicalNoteHistory",
+    "method": "GET",
+    "path": "/api/v2/clinical/notes/{note_id}/history",
+    "pathParamNames": [
+      "note_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getClinicalNoteRequestReceipt": {
+    "operationId": "getClinicalNoteRequestReceipt",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/clinical/note-requests/{request_id}",
+    "pathParamNames": [
+      "patient_id",
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinicalNoteTemplateById": {
     "operationId": "getClinicalNoteTemplateById",
     "method": "GET",
@@ -715,14 +736,33 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalNoteTemplateRequestReceipt": {
+    "operationId": "getClinicalNoteTemplateRequestReceipt",
+    "method": "GET",
+    "path": "/api/v2/clinical/note-templates/requests/{request_id}",
+    "pathParamNames": [
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinicalNoteTemplates": {
     "operationId": "getClinicalNoteTemplates",
     "method": "GET",
     "path": "/api/v2/clinical/note-templates",
     "pathParamNames": [],
-    "queryParamNames": [
-      "limit"
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getClinicalNoteVersion": {
+    "operationId": "getClinicalNoteVersion",
+    "method": "GET",
+    "path": "/api/v2/clinical/notes/{note_id}/versions/{version_id}",
+    "pathParamNames": [
+      "note_id",
+      "version_id"
     ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getClinicalNoteVersions": {
@@ -1438,7 +1478,14 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id",
+      "admission_case_id",
+      "ward_id",
+      "event_kind",
+      "recorded_from",
+      "recorded_before",
+      "descending"
     ],
     "hasBody": false
   },
@@ -1600,7 +1647,13 @@ export const operations = {
       "cursor",
       "limit",
       "patient_id",
-      "admission_case_id"
+      "admission_case_id",
+      "ward_id",
+      "task_type",
+      "status",
+      "due_from",
+      "due_before",
+      "descending"
     ],
     "hasBody": false
   },
@@ -2138,7 +2191,11 @@ export const operations = {
       "limit",
       "patient_id",
       "admission_case_id",
-      "hours"
+      "hours",
+      "ward_id",
+      "recorded_from",
+      "recorded_before",
+      "descending"
     ],
     "hasBody": false
   },
@@ -3333,6 +3390,44 @@ export const operations = {
     "operationId": "postCashSessions",
     "method": "POST",
     "path": "/api/v2/billing/cash-sessions",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postClinicalNoteAmendment": {
+    "operationId": "postClinicalNoteAmendment",
+    "method": "POST",
+    "path": "/api/v2/clinical/notes/{note_id}/amendments",
+    "pathParamNames": [
+      "note_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postClinicalNoteRecord": {
+    "operationId": "postClinicalNoteRecord",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/clinical/notes/record",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postClinicalNoteTemplateChange": {
+    "operationId": "postClinicalNoteTemplateChange",
+    "method": "POST",
+    "path": "/api/v2/clinical/note-templates/{id}/changes",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postClinicalNoteTemplateRecord": {
+    "operationId": "postClinicalNoteTemplateRecord",
+    "method": "POST",
+    "path": "/api/v2/clinical/note-templates/record",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -4782,8 +4877,12 @@ export function createGeneratedClient(request) {
     getClinicalAllergyById: createOperation(request, operations.getClinicalAllergyById),
     getClinicalMedicationCatalog: createOperation(request, operations.getClinicalMedicationCatalog),
     getClinicalNoteById: createOperation(request, operations.getClinicalNoteById),
+    getClinicalNoteHistory: createOperation(request, operations.getClinicalNoteHistory),
+    getClinicalNoteRequestReceipt: createOperation(request, operations.getClinicalNoteRequestReceipt),
     getClinicalNoteTemplateById: createOperation(request, operations.getClinicalNoteTemplateById),
+    getClinicalNoteTemplateRequestReceipt: createOperation(request, operations.getClinicalNoteTemplateRequestReceipt),
     getClinicalNoteTemplates: createOperation(request, operations.getClinicalNoteTemplates),
+    getClinicalNoteVersion: createOperation(request, operations.getClinicalNoteVersion),
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
     getClinicalPrescriptionById: createOperation(request, operations.getClinicalPrescriptionById),
     getClinicalPrescriptionDocumentationReceipt: createOperation(request, operations.getClinicalPrescriptionDocumentationReceipt),
@@ -5013,6 +5112,10 @@ export function createGeneratedClient(request) {
     postBillingPaymentsSearch: createOperation(request, operations.postBillingPaymentsSearch),
     postCashSessionClose: createOperation(request, operations.postCashSessionClose),
     postCashSessions: createOperation(request, operations.postCashSessions),
+    postClinicalNoteAmendment: createOperation(request, operations.postClinicalNoteAmendment),
+    postClinicalNoteRecord: createOperation(request, operations.postClinicalNoteRecord),
+    postClinicalNoteTemplateChange: createOperation(request, operations.postClinicalNoteTemplateChange),
+    postClinicalNoteTemplateRecord: createOperation(request, operations.postClinicalNoteTemplateRecord),
     postClinicalNoteTemplates: createOperation(request, operations.postClinicalNoteTemplates),
     postClinicalNoteVersions: createOperation(request, operations.postClinicalNoteVersions),
     postClinicalPrescriptionGenerateMar: createOperation(request, operations.postClinicalPrescriptionGenerateMar),

@@ -15,6 +15,13 @@ Profiles:
 | `medium` | 2,000 | 3 | Richer clinical workflow dataset for staging-scale product validation. |
 | `large` | 10,000 | 5 | Large rich clinical workflow dataset modeled after the legacy production seeder. Use the performance seed only for synthetic load shape. |
 
+After migration017, a facility with saved demo note-version evidence rejects
+reseed with `demo_seed_existing_clinical_evidence` before deleting any graph.
+Initial seeding remains supported on an empty isolated fixture database. Use a
+new isolated fixture for another seed; saved notes, authorship and care-context
+links are retained. Normal API startup must leave the seed profile disabled on
+an already populated database.
+
 Clinical seeding runs atomically: if a reseed fails, the previous demo-owned
 graph remains in place instead of leaving a partially rebuilt facility. Treat
 `large` as an intentional staging validation run on suitably provisioned

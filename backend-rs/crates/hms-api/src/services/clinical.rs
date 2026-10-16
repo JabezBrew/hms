@@ -1,17 +1,17 @@
+pub mod note_records;
 pub mod prescription_courses;
 mod visibility;
 
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
-    ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
-    NewPrescription, NewProblem, NewProblemArtifactLink, NoteContext, UpdateClinicalNoteTemplate,
+    ClinicalCursor, NewAllergy, NewChartEntry, NewPrescription, NewProblem, NewProblemArtifactLink,
+    NoteContext,
 };
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
-    AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
-    ClinicalNoteListItem, ClinicalNoteListQuery, ClinicalNoteTemplate,
-    ClinicalNoteTemplateListQuery, ClinicalNoteVersion, CreateAllergyRequest,
+    AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteListItem,
+    ClinicalNoteListQuery, ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest,
     CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
     CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
     GenerateMedicationAdministrationRequest, GenerateMedicationAdministrationResponse,
@@ -34,7 +34,6 @@ const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_TITLE_LEN: usize = 160;
 const MAX_SHORT_TEXT_LEN: usize = 120;
-const MAX_NOTE_BODY_LEN: usize = 20_000;
 
 #[derive(Clone, Copy, Debug)]
 struct CareContextIds {
@@ -92,134 +91,25 @@ impl ClinicalService {
         }))
     }
 
-    pub async fn list_note_templates(
-        &self,
-        ctx: &hms_access::RequestContext,
-        query: ClinicalNoteTemplateListQuery,
-    ) -> Result<ListResponse<ClinicalNoteTemplate>, ApiError> {
-        require_clinical_list_access(ctx, self.facility_id())?;
-        let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-        let templates = hms_db::clinical::list_note_templates(
-            self.pool(),
-            self.facility_id(),
-            page_size as i64,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_list_failed",
-                "Clinical note templates could not be loaded.",
-            )
-        })?;
-
-        Ok(cursor_list::static_list(templates, page_size))
-    }
-
     pub async fn create_note_template(
         &self,
         ctx: &hms_access::RequestContext,
         payload: CreateClinicalNoteTemplateRequest,
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
         require_template_write_access(ctx, self.facility_id())?;
-        let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
-        let body_template =
-            normalize_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
-        let template = hms_db::clinical::create_note_template(
-            self.pool(),
-            NewClinicalNoteTemplate {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                title,
-                note_type: payload.note_type,
-                body_template,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_create_failed",
-                "Clinical note template could not be saved.",
-            )
-        })?;
-
-        Ok(object(template))
-    }
-
-    pub async fn get_note_template(
-        &self,
-        ctx: &hms_access::RequestContext,
-        id: Uuid,
-    ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.facility_id(),
-            PermissionCode::ClinicalDocumentationView,
-        )?;
-        let template = hms_db::clinical::get_note_template(self.pool(), self.facility_id(), id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinical_template_load_failed",
-                    "Clinical note template could not be loaded.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found(
-                    "clinical_template_not_found",
-                    "Clinical note template was not found.",
-                )
-            })?;
-
-        Ok(object(template))
+        let _ = payload;
+        Err(note_records::legacy_command_required())
     }
 
     pub async fn update_note_template(
         &self,
         ctx: &hms_access::RequestContext,
         id: Uuid,
-        mut payload: UpdateClinicalNoteTemplateRequest,
+        payload: UpdateClinicalNoteTemplateRequest,
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
         require_template_write_access(ctx, self.facility_id())?;
-        payload.title = normalize_optional_text(payload.title, "title", MAX_TITLE_LEN)?;
-        payload.body_template =
-            normalize_optional_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
-        if payload.title.is_none()
-            && payload.note_type.is_none()
-            && payload.body_template.is_none()
-            && payload.is_active.is_none()
-        {
-            return Err(validation_error(
-                "template",
-                "At least one field is required.",
-            ));
-        }
-
-        let template = hms_db::clinical::update_note_template(
-            self.pool(),
-            self.facility_id(),
-            id,
-            UpdateClinicalNoteTemplate {
-                title: payload.title,
-                note_type: payload.note_type,
-                body_template: payload.body_template,
-                is_active: payload.is_active,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_update_failed",
-                "Clinical note template could not be saved.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "clinical_template_not_found",
-                "Clinical note template was not found.",
-            )
-        })?;
-
-        Ok(object(template))
+        let _ = (id, payload);
+        Err(note_records::legacy_command_required())
     }
 
     pub async fn delete_note_template(
@@ -228,23 +118,8 @@ impl ClinicalService {
         id: Uuid,
     ) -> Result<ObjectResponse<ClinicalNoteTemplate>, ApiError> {
         require_template_write_access(ctx, self.facility_id())?;
-        let template =
-            hms_db::clinical::deactivate_note_template(self.pool(), self.facility_id(), id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "clinical_template_delete_failed",
-                        "Clinical note template could not be deactivated.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found(
-                        "clinical_template_not_found",
-                        "Clinical note template was not found.",
-                    )
-                })?;
-
-        Ok(object(template))
+        let _ = id;
+        Err(note_records::legacy_command_required())
     }
 
     pub async fn list_notes(
@@ -305,80 +180,9 @@ impl ClinicalService {
         payload: CreateClinicalNoteRequest,
     ) -> Result<ObjectResponse<ClinicalNoteListItem>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
-        let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
-        if let Some(encounter_id) = payload.encounter_id {
-            let encounter =
-                hms_db::care::get_encounter(self.pool(), self.facility_id(), encounter_id)
-                    .await
-                    .map_err(|_| {
-                        ApiError::conflict(
-                            "encounter_load_failed",
-                            "Encounter could not be loaded.",
-                        )
-                    })?
-                    .ok_or_else(|| {
-                        ApiError::not_found("encounter_not_found", "Encounter was not found.")
-                    })?;
-            if encounter.patient_id != patient_id {
-                return Err(validation_error(
-                    "encounter_id",
-                    "Encounter does not belong to this patient.",
-                ));
-            }
-        }
-        let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
-        let body = normalize_text(payload.body, "body", MAX_NOTE_BODY_LEN)?;
-        let note = hms_db::clinical::create_note(
-            self.pool(),
-            NewClinicalNote {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                encounter_id: payload.encounter_id,
-                note_type: payload.note_type,
-                title,
-                body,
-                actor_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_note_create_failed",
-                "Clinical note could not be created.",
-            )
-        })?;
-
-        self.state.invalidate_patient_chronicle_cache();
-        Ok(object(note))
-    }
-
-    pub async fn get_note(
-        &self,
-        ctx: &hms_access::RequestContext,
-        note_id: Uuid,
-    ) -> Result<ObjectResponse<ClinicalNoteDetail>, ApiError> {
-        visibility::full(ctx)?;
-        let _note_context = load_note_for_access(
-            &self.state,
-            ctx,
-            note_id,
-            PermissionCode::ClinicalDocumentationView,
-        )
-        .await?;
-        let note = hms_db::clinical::get_note_detail(self.pool(), self.facility_id(), note_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinical_note_load_failed",
-                    "Clinical note could not be loaded.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("clinical_note_not_found", "Clinical note was not found.")
-            })?;
-
-        Ok(object(note))
+        let _ = load_patient_for_access(&self.state, ctx, patient_id).await?;
+        let _ = payload;
+        Err(note_records::legacy_command_required())
     }
 
     pub async fn list_note_versions(
@@ -387,23 +191,14 @@ impl ClinicalService {
         note_id: Uuid,
     ) -> Result<ListResponse<ClinicalNoteVersion>, ApiError> {
         visibility::full(ctx)?;
-        let note = load_note_for_access(
+        let _ = load_note_for_access(
             &self.state,
             ctx,
             note_id,
             PermissionCode::ClinicalDocumentationView,
         )
         .await?;
-        let versions = hms_db::clinical::list_note_versions(self.pool(), note.id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinical_note_version_list_failed",
-                    "Clinical note versions could not be loaded.",
-                )
-            })?;
-
-        Ok(cursor_list::static_list(versions, MAX_LIMIT))
+        Err(note_records::legacy_command_required())
     }
 
     pub async fn create_note_version(
@@ -412,26 +207,16 @@ impl ClinicalService {
         note_id: Uuid,
         payload: CreateClinicalNoteVersionRequest,
     ) -> Result<ObjectResponse<ClinicalNoteVersion>, ApiError> {
-        let note = load_note_for_access(
+        visibility::full(ctx)?;
+        let _ = load_note_for_access(
             &self.state,
             ctx,
             note_id,
             PermissionCode::ClinicalDocumentationManage,
         )
         .await?;
-        let body = normalize_text(payload.body, "body", MAX_NOTE_BODY_LEN)?;
-        let version =
-            hms_db::clinical::create_note_version(self.pool(), note.id, body, ctx.user_id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "clinical_note_version_create_failed",
-                        "Clinical note version could not be created.",
-                    )
-                })?;
-
-        self.state.invalidate_patient_chronicle_cache();
-        Ok(object(version))
+        let _ = payload;
+        Err(note_records::legacy_command_required())
     }
 
     pub async fn list_problems(

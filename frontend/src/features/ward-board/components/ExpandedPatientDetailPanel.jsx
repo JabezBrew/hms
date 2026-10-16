@@ -1,6 +1,13 @@
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
+import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { AuthContext } from '@/lib/auth/AuthContext';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { userHasCapability } from '@/shared/lib/access';
+import { useChronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
+import { useReadOnlyMode } from '@/contexts/ReadOnlyModeContext';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useWardBoardPatient } from '@/features/ward-board/hooks';
@@ -56,18 +63,22 @@ function patientChronicleActionHref(patient, action) {
   return `${pathname}?${params.toString()}`;
 }
 
-function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
+function TaskTable({ tasks, patientId, currentWardId, onTaskAction, pendingAction }) {
+  const [requestedPage, setPage] = useState(1);
+  const rust = isRustV2ApiMode();
+  const pages = Math.max(1, Math.ceil(tasks.length / 8));
+  const page = Math.min(requestedPage, pages);
   if (tasks.length === 0) {
     return (
-      <p className="px-1 py-3 font-mono text-xs text-muted-foreground">No active operational tasks</p>
+      <p className="px-1 py-3 font-mono text-xs text-muted-foreground">{rust ? 'No nursing tasks in your authorized admission scope' : 'No active operational tasks'}</p>
     );
   }
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-3"><div className="overflow-x-auto">
       <table className="w-full min-w-[600px] border-collapse text-left text-xs">
         <thead>
           <tr className="border-b border-border bg-muted/30">
-            {['Category', 'Task / Action', 'Priority', 'Owner', 'Due', 'Status', 'Ack', 'Actions'].map((h) => (
+            {(rust ? ['Category', 'Task / Action', 'Owner', 'Due', 'Status', 'Actions'] : ['Category', 'Task / Action', 'Priority', 'Owner', 'Due', 'Status', 'Ack', 'Actions']).map((h) => (
               <th key={h} className="px-3 py-1.5 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {h}
               </th>
@@ -75,12 +86,13 @@ function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
           </tr>
         </thead>
         <tbody>
-          {tasks.slice(0, 8).map((task, index) => {
+          {tasks.slice((page - 1) * 8, page * 8).map((task, index) => {
             const status = getTaskStatus(task);
             const priority = getTaskPriority(task);
             const acked = isAcknowledged(task);
             const terminal = isTerminalTask(task);
             const isOverdue = status === 'overdue' || Boolean(task?.is_overdue);
+            const earlierWard = rust && currentWardId && task.ward_id && task.ward_id !== currentWardId;
             return (
               <tr
                 key={task?.id ?? task?.task_id ?? index}
@@ -94,15 +106,16 @@ function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
                 </td>
                 <td className="px-3 py-2">
                   <span className="text-sm font-medium text-foreground">{getTaskTitle(task)}</span>
+                  {earlierWard && <p className="mt-1 text-xs text-muted-foreground">Recorded for an earlier ward</p>}
                 </td>
-                <td className="px-3 py-2">
+                {!rust && <td className="px-3 py-2">
                   <Badge
                     variant="outline"
                     className={cn('font-mono text-[10px] capitalize', URGENCY_STYLES[priority] ?? URGENCY_STYLES.pending)}
                   >
                     {priority}
                   </Badge>
-                </td>
+                </td>}
                 <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
                   {getTaskOwner(task) ?? '—'}
                 </td>
@@ -120,19 +133,20 @@ function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
                     {status}
                   </Badge>
                 </td>
-                <td className="px-3 py-2">
+                {!rust && <td className="px-3 py-2">
                   {terminal ? null : (
                     <span className={cn(acked ? ACK_STYLES.acked : ACK_STYLES.unacked)}>
                       {acked ? '● Acked' : '● Unacked'}
                     </span>
                   )}
-                </td>
+                </td>}
                 <td className="px-3 py-2">
                   <TaskActionControls
                     task={task}
                     patientId={patientId}
                     onAction={onTaskAction}
                     pendingAction={pendingAction}
+                    canComplete={!earlierWard}
                   />
                 </td>
               </tr>
@@ -140,7 +154,7 @@ function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
           })}
         </tbody>
       </table>
-    </div>
+    </div>{pages > 1 && <nav aria-label="Nursing task pages" className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">{(page - 1) * 8 + 1}–{Math.min(page * 8, tasks.length)} of {tasks.length} visible tasks</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous tasks</Button><Button variant="outline" size="sm" disabled={page === pages} onClick={() => setPage(page + 1)}>Next tasks</Button></div></nav>}</div>
   );
 }
 
@@ -213,9 +227,16 @@ function BoardSignals({ patient }) {
 
 export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingAction }) {
   const patientId = getPatientId(patient);
-  const { data, isLoading, isError, error } = useWardBoardPatient(patientId);
-  const detail = data && typeof data === 'object' ? { ...patient, ...data } : patient;
-  const tasks = getPatientTasks(detail);
+  const admissionId = patient?.admission_id || patient?.admission_case_id || patient?.current_admission_id;
+  const user = useContext(AuthContext)?.user;
+  const permissions = useChronicleClinicalPermissions();
+  const access = useReadOnlyMode({ optional: true });
+  const canReadTasks = !isRustV2ApiMode() || Boolean(permissions.can_view_full_clinical
+    && userHasCapability(user, 'nursing.task.manage') && user?.accessContext?.features?.includes('nursing') === true);
+  const canDecideTasks = !isRustV2ApiMode() || (canReadTasks && access?.canWrite() === true);
+  const { data, isLoading, isError, error } = useWardBoardPatient(patientId, { admissionId, enabled: canReadTasks });
+  const detail = canReadTasks && !isError && data && typeof data === 'object' ? { ...patient, ...data } : patient;
+  const tasks = canReadTasks && !isError ? getPatientTasks(detail) : [];
 
   return (
     <div className="bg-background">
@@ -260,12 +281,14 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
                   </Link>
                 ))}
               </div>
-              <TaskTable
+              {!canReadTasks ? <p className="text-sm text-muted-foreground">Task details require full clinical access and nursing permission.</p> : !isError && <TaskTable
+                key={`${patientId}:${admissionId}`}
                 tasks={tasks}
                 patientId={patientId}
-                onTaskAction={onTaskAction}
+                currentWardId={patient?.ward_id}
+                onTaskAction={canDecideTasks ? onTaskAction : undefined}
                 pendingAction={pendingAction}
-              />
+              />}
             </div>
 
             <div>

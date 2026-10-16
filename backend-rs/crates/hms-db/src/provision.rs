@@ -842,6 +842,13 @@ pub async fn provision_demo_seed(
     let journeys = build_chronicle_demo_patients(config);
 
     let mut tx = pool.begin().await?;
+    // Demo reseeding deletes a graph, including encounter links. Once notes
+    // carry immutable evidence it must use a fresh isolated fixture database.
+    let retained:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM clinical_notes n JOIN patients p ON p.id=n.patient_id AND p.facility_id=n.facility_id JOIN clinical_note_versions v ON v.note_id=n.id AND v.facility_id=n.facility_id WHERE n.facility_id=$1 AND p.patient_code ~ '^DEMO-[0-9]+$')")
+        .bind(baseline.facility_id).fetch_one(&mut *tx).await?;
+    if retained {
+        anyhow::bail!("demo_seed_existing_clinical_evidence");
+    }
     delete_demo_seed_graph(&mut tx, baseline.facility_id).await?;
     let hospital = seed_demo_hospital_context(&mut tx, baseline).await?;
     seed_chronicle_demo_ward_resources(&mut tx, &hospital, &journeys).await?;
@@ -7270,11 +7277,7 @@ async fn seed_clinical_templates(
                 body_template
             )
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (id) DO UPDATE
-            SET title = EXCLUDED.title,
-                note_type = EXCLUDED.note_type,
-                body_template = EXCLUDED.body_template,
-                is_active = TRUE
+            ON CONFLICT (id) DO NOTHING
             "#,
         )
         .bind(Uuid::from_u128(id))

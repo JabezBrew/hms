@@ -15,6 +15,12 @@ async fn get(app: TestApp, token: &str, path: String) -> axum::response::Respons
 #[tokio::test]
 async fn alert_acknowledgment_http_replay_by_another_actor_preserves_first_provenance() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
     let owner = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
@@ -23,6 +29,7 @@ async fn alert_acknowledgment_http_replay_by_another_actor_preserves_first_prove
     grant_test_permission(&app, limited, PermissionCode::PatientDemographicsView).await;
     grant_test_feature(&app, limited, FeatureKey::Nursing).await;
     grant_test_patient_visibility(&app, limited, PatientDataVisibility::Demographics).await;
+    grant_test_patient_visibility(&app, limited, PatientDataVisibility::FullClinical).await;
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let patient: Uuid = sqlx::query_scalar("SELECT id FROM patients WHERE facility_id=$1 LIMIT 1")
@@ -35,6 +42,7 @@ async fn alert_acknowledgment_http_replay_by_another_actor_preserves_first_prove
         .fetch_one(&pool)
         .await
         .unwrap();
+    assign_nursing_actor(&app, limited, ward).await;
     let admission: Uuid = sqlx::query_scalar("INSERT INTO admission_cases(id,facility_id,patient_id,ward_id,status) VALUES(gen_random_uuid(),$1,$2,$3,'admitted') RETURNING id").bind(facility).bind(patient).bind(ward).fetch_one(&pool).await.unwrap();
     let alert: Uuid = sqlx::query_scalar("INSERT INTO nursing_alerts(id,facility_id,admission_case_id,patient_id,severity,title,status) VALUES(gen_random_uuid(),$1,$2,$3,'critical','Synthetic acknowledgment provenance','open') RETURNING id").bind(facility).bind(admission).bind(patient).fetch_one(&pool).await.unwrap();
     let mut receipts = vec![];
@@ -71,6 +79,12 @@ async fn alert_acknowledgment_http_replay_by_another_actor_preserves_first_prove
 #[tokio::test]
 async fn nursing_scopes_filter_before_pages_and_reject_inconsistent_or_foreign_contexts() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
@@ -221,6 +235,12 @@ async fn nursing_scopes_filter_before_pages_and_reject_inconsistent_or_foreign_c
 #[tokio::test]
 async fn active_critical_http_page_is_not_hidden_by_old_acknowledged_or_low_alerts() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
@@ -559,4 +579,12 @@ async fn unsupported_clinical_fields_are_generic_typed_rejections_without_side_e
     }
     let after:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM handoffs),(SELECT count(*) FROM nursing_alerts),(SELECT count(*) FROM treatment_sheets)").fetch_one(&pool).await.unwrap();
     assert_eq!(before, after);
+}
+
+async fn assign_nursing_actor(app: &TestApp, user: Uuid, ward: Uuid) {
+    let pool = app.db_pool().await;
+    let facility = app.state().facility_id();
+    let staff:Uuid=sqlx::query_scalar("INSERT INTO staff_profiles(id,facility_id,user_id,employee_id,department,position,hire_date) VALUES(gen_random_uuid(),$1,$2,$3,'Synthetic nursing','Nurse',CURRENT_DATE) ON CONFLICT(user_id) DO UPDATE SET position=staff_profiles.position RETURNING id").bind(facility).bind(user).bind(format!("H-{user}")).fetch_one(&pool).await.unwrap();
+    let practitioner:Uuid=sqlx::query_scalar("INSERT INTO practitioner_profiles(id,facility_id,staff_id,license_number,specialization,qualification) VALUES(gen_random_uuid(),$1,$2,$3,'Nursing','Synthetic') ON CONFLICT(staff_id) DO UPDATE SET qualification=practitioner_profiles.qualification RETURNING id").bind(facility).bind(staff).bind(format!("L-{user}")).fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO ward_staff_assignments(id,facility_id,ward_id,practitioner_profile_id,role_code,role_name,role_category) VALUES(gen_random_uuid(),$1,$2,$3,'staff_nurse','Nurse','nursing') ON CONFLICT DO NOTHING").bind(facility).bind(ward).bind(practitioner).execute(&pool).await.unwrap();
 }

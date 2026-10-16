@@ -77,3 +77,12 @@ replacement courses provide the supported recovery. See
 Focused tests are `scheduled_stock_basis`, `medication_lifecycle`, `prn_doses`,
 `mar_outcomes`, and `prescription_courses`; inventory/standing suites cover shared
 stock writers.
+
+## Clinical note evidence
+
+`clinical/note_records.rs` and `clinical/note_templates.rs` own guarded UUID
+commands, immutable note/template revisions and lean paged history/catalog reads.
+Migration017 preserves unknown legacy authors and owners instead of inferring
+provenance. Public API writers use these proof-bearing repositories; older plain
+helpers are limited to trusted fixture/provisioning compatibility. See the
+[note evidence scope](../../../docs/v2/2026-10-16-clinical-note-evidence-scope.md).

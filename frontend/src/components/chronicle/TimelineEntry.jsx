@@ -1,5 +1,6 @@
 import { useChronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
 import { useEffect, useRef, useState } from 'react';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import {
   LabResultContent,
@@ -50,17 +51,18 @@ const TimelineEntry = ({
   useEffect(() => { hasAnimatedRef.current = true; }, []);
 
   const config = getTimelineEntryConfig(entry.type);
+  const rustNote = isRustV2ApiMode() && (entry.entry_type === 'note' || ['doctor_note', 'nursing_note', 'allied_health_note'].includes(entry.type));
   const entryTimestamp = getTimelineEntryTimestamp(entry);
-  const hasDetailContent = permissions.can_view_full_clinical && hasEntryDetailContent(entry);
-  const canInlineExpand = isInlineExpandableNoteEntry(entry);
+  const hasDetailContent = permissions.can_view_full_clinical && (rustNote || hasEntryDetailContent(entry));
+  const canInlineExpand = !rustNote && isInlineExpandableNoteEntry(entry);
   const noteBodyId = normalizeExpansionId(entry?.id)
     ? `chronicle-note-body-${normalizeExpansionId(entry.id)}`
     : undefined;
   const noteExpanded = typeof isNoteExpanded === 'boolean'
     ? isNoteExpanded
     : isFallbackNoteExpanded;
-  const canCopyNote = permissions.can_add_note && isCopyableTimelineNote(entry);
-  const canEditNote = permissions.can_add_note && Boolean(onEditNote) && isEditableTimelineNote(entry, currentUserId);
+  const canCopyNote = !rustNote && permissions.can_add_note && isCopyableTimelineNote(entry);
+  const canEditNote = !rustNote && permissions.can_add_note && Boolean(onEditNote) && isEditableTimelineNote(entry, currentUserId);
   const actionCapabilities = {
     canCopyNote,
     canEditNote,
@@ -114,12 +116,12 @@ const TimelineEntry = ({
       onNoteUpdated={onNoteUpdated}
       onToggleNoteExpanded={handleToggleNoteExpanded}
     >
-      <TimelineEntryContent
+      {rustNote ? <div className="flex flex-col gap-2"><p className="font-medium">{entry.title || config.label}</p><p className="text-sm text-muted-foreground">Recorded version {entry.version || 1}. Open details to load the protected note and its history.</p></div> : <TimelineEntryContent
         canInlineExpand={canInlineExpand}
         entry={entry}
         noteBodyId={noteBodyId}
         noteExpanded={noteExpanded}
-      />
+      />}
     </TimelineEntryFrame>
   );
 };

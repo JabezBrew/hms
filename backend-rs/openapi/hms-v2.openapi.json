@@ -498,6 +498,32 @@
         ],
         "type": "string"
       },
+      "AmendClinicalNoteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "reason",
+          "body"
+        ],
+        "type": "object"
+      },
       "AmendPatientHandoverRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2902,6 +2928,44 @@
         ],
         "type": "string"
       },
+      "ChangeNoteTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body_template": {
+            "type": "string"
+          },
+          "change_summary": {
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "note_type": {
+            "$ref": "#/components/schemas/ClinicalNoteType"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "title",
+          "note_type",
+          "body_template",
+          "is_active",
+          "change_summary"
+        ],
+        "type": "object"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "current_password": {
@@ -3390,6 +3454,43 @@
         ],
         "type": "string"
       },
+      "ClinicalNoteCommandAction": {
+        "enum": [
+          "recorded",
+          "amended"
+        ],
+        "type": "string"
+      },
+      "ClinicalNoteCommandReceipt": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ClinicalNoteCommandAction"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "$ref": "#/components/schemas/ClinicalNoteRecordDetail"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "action",
+          "note",
+          "replayed"
+        ],
+        "type": "object"
+      },
       "ClinicalNoteDetail": {
         "properties": {
           "body": {
@@ -3438,6 +3539,72 @@
           "version",
           "updated_at"
         ],
+        "type": "object"
+      },
+      "ClinicalNoteHistoryItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "edit_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recorded_by_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "note_id",
+          "version",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ClinicalNoteHistoryQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "ClinicalNoteListItem": {
@@ -3510,6 +3677,88 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "ClinicalNoteRecordDetail": {
+        "properties": {
+          "author_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "author_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "can_amend": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note_type": {
+            "$ref": "#/components/schemas/ClinicalNoteType"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ClinicalNoteStatus"
+          },
+          "template_revision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PinnedNoteTemplateRevision"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "note_type",
+          "title",
+          "body",
+          "status",
+          "version",
+          "created_at",
+          "updated_at",
+          "can_amend"
+        ],
         "type": "object"
       },
       "ClinicalNoteStatus": {
@@ -3599,6 +3848,24 @@
           "created_at"
         ],
         "type": "object"
+      },
+      "ClinicalNoteVersionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClinicalNoteHistoryItem"
+          },
+          {
+            "properties": {
+              "body": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "body"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "ClinicalPatientAccessSource": {
         "enum": [
@@ -5129,6 +5396,7 @@
         "type": "object"
       },
       "CreateMonitoringEventRequest": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -5225,6 +5493,7 @@
         "type": "object"
       },
       "CreateNursingTaskRequest": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -5242,6 +5511,14 @@
             "type": "string"
           },
           "instruction": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "description": "When known, bind the reviewed patient to the selected admission before persistence.",
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -5368,6 +5645,7 @@
         "type": "object"
       },
       "CreatePatientVitalsRequest": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -5384,6 +5662,14 @@
             "format": "int32",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "description": "When known, bind the reviewed patient to the selected admission before persistence.",
+            "format": "uuid",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -8064,6 +8350,126 @@
           "rejected"
         ],
         "type": "string"
+      },
+      "GovernedNoteTemplateDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/GovernedNoteTemplateItem"
+          },
+          {
+            "properties": {
+              "body_template": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "body_template"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "GovernedNoteTemplateItem": {
+        "properties": {
+          "can_manage": {
+            "type": "boolean"
+          },
+          "current_revision_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "note_type": {
+            "$ref": "#/components/schemas/ClinicalNoteType"
+          },
+          "owner_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "note_type",
+          "is_active",
+          "version",
+          "current_revision_id",
+          "can_manage",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "GovernedNoteTemplateQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TemplateActivity"
+              }
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "note_type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClinicalNoteType"
+              }
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "HandoffListItem": {
         "properties": {
@@ -11240,6 +11646,69 @@
         ],
         "type": "object"
       },
+      "ListResponse_ClinicalNoteHistoryItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "edit_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "note_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "recorded_by_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "recorded_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "note_id",
+                "version",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_ClinicalNoteListItem": {
         "properties": {
           "data": {
@@ -11286,99 +11755,6 @@
                 "status",
                 "version",
                 "updated_at"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "meta": {},
-          "page": {
-            "$ref": "#/components/schemas/PageInfo"
-          }
-        },
-        "required": [
-          "data",
-          "page",
-          "meta"
-        ],
-        "type": "object"
-      },
-      "ListResponse_ClinicalNoteTemplate": {
-        "properties": {
-          "data": {
-            "items": {
-              "properties": {
-                "body_template": {
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "is_active": {
-                  "type": "boolean"
-                },
-                "note_type": {
-                  "$ref": "#/components/schemas/ClinicalNoteType"
-                },
-                "title": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "title",
-                "note_type",
-                "body_template",
-                "is_active"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "meta": {},
-          "page": {
-            "$ref": "#/components/schemas/PageInfo"
-          }
-        },
-        "required": [
-          "data",
-          "page",
-          "meta"
-        ],
-        "type": "object"
-      },
-      "ListResponse_ClinicalNoteVersion": {
-        "properties": {
-          "data": {
-            "items": {
-              "properties": {
-                "body": {
-                  "type": "string"
-                },
-                "created_at": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "note_id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "version": {
-                  "format": "int64",
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "id",
-                "note_id",
-                "version",
-                "body",
-                "created_at"
               ],
               "type": "object"
             },
@@ -12331,6 +12707,79 @@
                 "supplier_name",
                 "status",
                 "received_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_GovernedNoteTemplateItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "can_manage": {
+                  "type": "boolean"
+                },
+                "current_revision_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "note_type": {
+                  "$ref": "#/components/schemas/ClinicalNoteType"
+                },
+                "owner_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "owner_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "note_type",
+                "is_active",
+                "version",
+                "current_revision_id",
+                "can_manage",
+                "updated_at"
               ],
               "type": "object"
             },
@@ -13781,6 +14230,41 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "assigned_to_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cancelled_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cancelled_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "completed_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "completed_by_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "due_at": {
                   "format": "date-time",
                   "type": "string"
@@ -13816,6 +14300,10 @@
                     "string",
                     "null"
                   ]
+                },
+                "ward_id": {
+                  "format": "uuid",
+                  "type": "string"
                 }
               },
               "required": [
@@ -13826,7 +14314,8 @@
                 "patient_display_name",
                 "task_type",
                 "status",
-                "due_at"
+                "due_at",
+                "ward_id"
               ],
               "type": "object"
             },
@@ -18381,6 +18870,78 @@
         ],
         "type": "object"
       },
+      "MonitoringEventListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "descending": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "event_kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MonitoringEventKind"
+              }
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_before": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_from": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward_id": {
+            "description": "Current admission ward; monitoring events have no historical ward snapshot.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "MyWardBoardAssignment": {
         "properties": {
           "assignment_id": {
@@ -19239,6 +19800,37 @@
         },
         "type": "object"
       },
+      "NoteTemplateCommandAction": {
+        "enum": [
+          "created",
+          "changed"
+        ],
+        "type": "string"
+      },
+      "NoteTemplateCommandReceipt": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/NoteTemplateCommandAction"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "template": {
+            "$ref": "#/components/schemas/GovernedNoteTemplateDetail"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "action",
+          "template",
+          "replayed"
+        ],
+        "type": "object"
+      },
       "NotificationCounts": {
         "properties": {
           "action_required": {
@@ -19498,6 +20090,41 @@
             "format": "uuid",
             "type": "string"
           },
+          "assigned_to_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelled_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "due_at": {
             "format": "date-time",
             "type": "string"
@@ -19533,6 +20160,10 @@
               "string",
               "null"
             ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
@@ -19543,7 +20174,8 @@
           "patient_display_name",
           "task_type",
           "status",
-          "due_at"
+          "due_at",
+          "ward_id"
         ],
         "type": "object"
       },
@@ -21380,149 +22012,35 @@
         ],
         "type": "object"
       },
-      "ObjectResponse_ClinicalNoteDetail": {
+      "ObjectResponse_ClinicalNoteCommandReceipt": {
         "properties": {
           "data": {
             "properties": {
-              "body": {
+              "action": {
+                "$ref": "#/components/schemas/ClinicalNoteCommandAction"
+              },
+              "client_request_id": {
+                "format": "uuid",
                 "type": "string"
               },
-              "encounter_id": {
-                "format": "uuid",
+              "note": {
+                "$ref": "#/components/schemas/ClinicalNoteRecordDetail"
+              },
+              "reason": {
                 "type": [
                   "string",
                   "null"
                 ]
               },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "note_type": {
-                "$ref": "#/components/schemas/ClinicalNoteType"
-              },
-              "patient_id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "status": {
-                "$ref": "#/components/schemas/ClinicalNoteStatus"
-              },
-              "title": {
-                "type": "string"
-              },
-              "updated_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "version": {
-                "format": "int64",
-                "type": "integer"
-              }
-            },
-            "required": [
-              "id",
-              "patient_id",
-              "note_type",
-              "title",
-              "body",
-              "status",
-              "version",
-              "updated_at"
-            ],
-            "type": "object"
-          },
-          "meta": {}
-        },
-        "required": [
-          "data",
-          "meta"
-        ],
-        "type": "object"
-      },
-      "ObjectResponse_ClinicalNoteListItem": {
-        "properties": {
-          "data": {
-            "properties": {
-              "encounter_id": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "note_type": {
-                "$ref": "#/components/schemas/ClinicalNoteType"
-              },
-              "patient_id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "status": {
-                "$ref": "#/components/schemas/ClinicalNoteStatus"
-              },
-              "title": {
-                "type": "string"
-              },
-              "updated_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "version": {
-                "format": "int64",
-                "type": "integer"
-              }
-            },
-            "required": [
-              "id",
-              "patient_id",
-              "note_type",
-              "title",
-              "status",
-              "version",
-              "updated_at"
-            ],
-            "type": "object"
-          },
-          "meta": {}
-        },
-        "required": [
-          "data",
-          "meta"
-        ],
-        "type": "object"
-      },
-      "ObjectResponse_ClinicalNoteTemplate": {
-        "properties": {
-          "data": {
-            "properties": {
-              "body_template": {
-                "type": "string"
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "is_active": {
+              "replayed": {
                 "type": "boolean"
-              },
-              "note_type": {
-                "$ref": "#/components/schemas/ClinicalNoteType"
-              },
-              "title": {
-                "type": "string"
               }
             },
             "required": [
-              "id",
-              "title",
-              "note_type",
-              "body_template",
-              "is_active"
+              "client_request_id",
+              "action",
+              "note",
+              "replayed"
             ],
             "type": "object"
           },
@@ -21534,23 +22052,69 @@
         ],
         "type": "object"
       },
-      "ObjectResponse_ClinicalNoteVersion": {
+      "ObjectResponse_ClinicalNoteRecordDetail": {
         "properties": {
           "data": {
             "properties": {
+              "author_display_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "author_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "body": {
                 "type": "string"
+              },
+              "can_amend": {
+                "type": "boolean"
               },
               "created_at": {
                 "format": "date-time",
                 "type": "string"
               },
+              "encounter_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
               },
-              "note_id": {
+              "note_type": {
+                "$ref": "#/components/schemas/ClinicalNoteType"
+              },
+              "patient_id": {
                 "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/ClinicalNoteStatus"
+              },
+              "template_revision": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PinnedNoteTemplateRevision"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
                 "type": "string"
               },
               "version": {
@@ -21560,12 +22124,45 @@
             },
             "required": [
               "id",
-              "note_id",
-              "version",
+              "patient_id",
+              "note_type",
+              "title",
               "body",
-              "created_at"
+              "status",
+              "version",
+              "created_at",
+              "updated_at",
+              "can_amend"
             ],
             "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ClinicalNoteVersionDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ClinicalNoteHistoryItem"
+              },
+              {
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "body"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "meta": {}
         },
@@ -22896,6 +23493,34 @@
               "received_at"
             ],
             "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_GovernedNoteTemplateDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GovernedNoteTemplateItem"
+              },
+              {
+                "properties": {
+                  "body_template": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "body_template"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "meta": {}
         },
@@ -24460,6 +25085,40 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_NoteTemplateCommandReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "action": {
+                "$ref": "#/components/schemas/NoteTemplateCommandAction"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "template": {
+                "$ref": "#/components/schemas/GovernedNoteTemplateDetail"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "action",
+              "template",
+              "replayed"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_NotificationCounts": {
         "properties": {
           "data": {
@@ -24614,6 +25273,41 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "assigned_to_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cancelled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cancelled_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "completed_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "completed_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "due_at": {
                 "format": "date-time",
                 "type": "string"
@@ -24649,6 +25343,10 @@
                   "string",
                   "null"
                 ]
+              },
+              "ward_id": {
+                "format": "uuid",
+                "type": "string"
               }
             },
             "required": [
@@ -24659,7 +25357,8 @@
               "patient_display_name",
               "task_type",
               "status",
-              "due_at"
+              "due_at",
+              "ward_id"
             ],
             "type": "object"
           },
@@ -33129,6 +33828,40 @@
         },
         "type": "object"
       },
+      "PinnedNoteTemplateRevision": {
+        "properties": {
+          "body_template": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note_type": {
+            "$ref": "#/components/schemas/ClinicalNoteType"
+          },
+          "template_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "template_id",
+          "id",
+          "version",
+          "title",
+          "note_type",
+          "body_template"
+        ],
+        "type": "object"
+      },
       "PositionListItem": {
         "properties": {
           "code": {
@@ -34431,6 +35164,45 @@
         ],
         "type": "object"
       },
+      "RecordClinicalNoteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note_type": {
+            "$ref": "#/components/schemas/ClinicalNoteType"
+          },
+          "template_revision_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "note_type",
+          "title",
+          "body"
+        ],
+        "type": "object"
+      },
       "RecordMedicationOutcomeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -34479,6 +35251,35 @@
           "adjustment_kind",
           "amount_minor",
           "reason"
+        ],
+        "type": "object"
+      },
+      "RecordNoteTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body_template": {
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "note_type": {
+            "$ref": "#/components/schemas/ClinicalNoteType"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "title",
+          "note_type",
+          "body_template",
+          "is_active"
         ],
         "type": "object"
       },
@@ -36861,6 +37662,14 @@
           "dispensed_at"
         ],
         "type": "object"
+      },
+      "TemplateActivity": {
+        "enum": [
+          "active",
+          "inactive",
+          "all"
+        ],
+        "type": "string"
       },
       "TemplateFrequency": {
         "enum": [
@@ -47516,15 +48325,67 @@
         "operationId": "getClinicalNoteTemplates",
         "parameters": [
           {
-            "in": "query",
+            "in": "path",
+            "name": "cursor",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
             "name": "limit",
-            "required": false,
+            "required": true,
             "schema": {
               "format": "int32",
               "minimum": 0,
               "type": [
                 "integer",
                 "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "search",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "activity",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/TemplateActivity"
+                }
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_type",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/ClinicalNoteType"
+                }
               ]
             }
           }
@@ -47534,7 +48395,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ListResponse_ClinicalNoteTemplate"
+                  "$ref": "#/components/schemas/ListResponse_GovernedNoteTemplateItem"
                 }
               }
             },
@@ -47583,16 +48444,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplate"
-                }
-              }
-            },
-            "description": "Clinical note template created"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -47622,6 +48473,147 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired shape: use strict reviewed commands or bounded history"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/note-templates/record": {
+      "post": {
+        "operationId": "postClinicalNoteTemplateRecord",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordNoteTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NoteTemplateCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/note-templates/requests/{request_id}": {
+      "get": {
+        "operationId": "getClinicalNoteTemplateRequestReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NoteTemplateCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -47650,16 +48642,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplate"
-                }
-              }
-            },
-            "description": "Clinical note template deactivated"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -47689,6 +48671,16 @@
               }
             },
             "description": "Clinical note template not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired shape: use strict reviewed commands or bounded history"
           }
         },
         "security": [
@@ -47719,7 +48711,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplate"
+                  "$ref": "#/components/schemas/ObjectResponse_GovernedNoteTemplateDetail"
                 }
               }
             },
@@ -47790,16 +48782,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplate"
-                }
-              }
-            },
-            "description": "Clinical note template updated"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -47839,6 +48821,92 @@
               }
             },
             "description": "Clinical note template not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired shape: use strict reviewed commands or bounded history"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/note-templates/{id}/changes": {
+      "post": {
+        "operationId": "postClinicalNoteTemplateChange",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeNoteTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NoteTemplateCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -47871,7 +48939,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteDetail"
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteRecordDetail"
                 }
               }
             },
@@ -47918,6 +48986,172 @@
         ]
       }
     },
+    "/api/v2/clinical/notes/{note_id}/amendments": {
+      "post": {
+        "operationId": "postClinicalNoteAmendment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendClinicalNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/notes/{note_id}/history": {
+      "get": {
+        "operationId": "getClinicalNoteHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cursor",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "limit",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_ClinicalNoteHistoryItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
     "/api/v2/clinical/notes/{note_id}/versions": {
       "get": {
         "operationId": "getClinicalNoteVersions",
@@ -47934,16 +49168,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListResponse_ClinicalNoteVersion"
-                }
-              }
-            },
-            "description": "Clinical note versions"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -47973,6 +49197,16 @@
               }
             },
             "description": "Clinical note not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired shape: use strict reviewed commands or bounded history"
           }
         },
         "security": [
@@ -48009,16 +49243,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteVersion"
-                }
-              }
-            },
-            "description": "Clinical note version created"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -48058,6 +49282,91 @@
               }
             },
             "description": "Clinical note not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired shape: use strict reviewed commands or bounded history"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/notes/{note_id}/versions/{version_id}": {
+      "get": {
+        "operationId": "getClinicalNoteVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteVersionDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -58912,6 +60221,16 @@
             },
             "description": "Nursing alerts"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -58973,7 +60292,7 @@
                 }
               }
             },
-            "description": "Invalid alert request"
+            "description": "Invalid or unsupported request fields"
           },
           "401": {
             "content": {
@@ -59052,6 +60371,16 @@
             },
             "description": "Nursing alert acknowledged"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -59081,6 +60410,16 @@
               }
             },
             "description": "Alert not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Nursing decision denied or write unconfirmed"
           }
         },
         "security": [
@@ -60960,10 +62299,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -60973,10 +62309,69 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Current admission ward; monitoring events have no historical ward snapshot.",
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/MonitoringEventKind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recorded_from",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recorded_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "descending",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -60990,6 +62385,16 @@
               }
             },
             "description": "Monitoring events"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
           },
           "401": {
             "content": {
@@ -61083,6 +62488,16 @@
               }
             },
             "description": "Admission not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Nursing decision denied or write unconfirmed"
           }
         },
         "security": [
@@ -61920,6 +63335,58 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "description": "The original ward captured on the task.",
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_type",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/NursingTaskType"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/NursingTaskStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_from",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "descending",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -61932,6 +63399,16 @@
               }
             },
             "description": "Nursing tasks"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
           },
           "401": {
             "content": {
@@ -61986,6 +63463,16 @@
             },
             "description": "Nursing task created"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -62015,6 +63502,16 @@
               }
             },
             "description": "Admission not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Nursing decision denied or write unconfirmed"
           }
         },
         "security": [
@@ -62052,6 +63549,16 @@
               }
             },
             "description": "Nursing task cancelled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
           },
           "401": {
             "content": {
@@ -62130,6 +63637,16 @@
             },
             "description": "Nursing task completed"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -62159,6 +63676,16 @@
               }
             },
             "description": "Nursing task not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Nursing decision denied or write unconfirmed"
           }
         },
         "security": [
@@ -62429,6 +63956,42 @@
               "minimum": 0,
               "type": "integer"
             }
+          },
+          {
+            "description": "Current admission ward; these historical records have no ward snapshot.",
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recorded_from",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recorded_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "descending",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -62441,6 +64004,16 @@
               }
             },
             "description": "Patient vitals"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported nursing request or filters"
           },
           "401": {
             "content": {
@@ -62534,6 +64107,16 @@
               }
             },
             "description": "Admission not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Nursing decision denied or write unconfirmed"
           }
         },
         "security": [
@@ -66984,6 +68567,81 @@
         ]
       }
     },
+    "/api/v2/patients/{patient_id}/clinical/note-requests/{request_id}": {
+      "get": {
+        "operationId": "getClinicalNoteRequestReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
     "/api/v2/patients/{patient_id}/clinical/notes": {
       "get": {
         "operationId": "getPatientClinicalNotes",
@@ -67111,16 +68769,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteListItem"
-                }
-              }
-            },
-            "description": "Clinical note created"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -67160,6 +68808,92 @@
               }
             },
             "description": "Patient not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired shape: use strict reviewed commands or bounded history"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/clinical/notes/record": {
+      "post": {
+        "operationId": "postClinicalNoteRecord",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordClinicalNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteCommandReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [

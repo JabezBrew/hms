@@ -1,4 +1,6 @@
 import { ChronicleClinicalPermissionsContext, chronicleClinicalPermissions } from './clinicalPermissions';
+import { NotePatientContext } from '@/features/clinical-notes/NotePatientContext';
+import { patientContext as notePatientContext } from '@/features/clinical-notes/model';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 
@@ -297,6 +299,7 @@ export function PatientChroniclePageContent({
   } = timelineExpansion;
   const clinicalPermissions = useMemo(() => chronicleClinicalPermissions(chronicleContext, rustV2Mode), [chronicleContext, rustV2Mode]);
   const fullClinical = clinicalPermissions.can_view_full_clinical;
+  const notePatient = useMemo(() => ({ ...notePatientContext(patientForChronicle), id: patientLocalId || patientId, encounterId: rustV2Mode ? workspaceContext.selectedEncounterId || null : selectedEncounter?.id || activeEncounter?.id || null, encounterStatus: workspaceContext.selectedEncounter?.v2_status || workspaceContext.selectedEncounter?.status || null, admissionId: workspaceContext.selectedAdmissionId || null }), [patientForChronicle, patientLocalId, patientId, rustV2Mode, workspaceContext.selectedEncounterId, workspaceContext.selectedAdmissionId, workspaceContext.selectedEncounter?.v2_status, workspaceContext.selectedEncounter?.status, selectedEncounter?.id, activeEncounter?.id]);
   const nursing = !rustV2Mode || (userHasCapability(user, 'nursing.task.manage') && user?.accessContext?.features?.includes('nursing'));
   const contentMeasure = useMeasuredElementHeight();
   const showChronicleBody = useAfterInitialPaint({
@@ -306,6 +309,7 @@ export function PatientChroniclePageContent({
 
   return (
     <ChronicleClinicalPermissionsContext.Provider value={clinicalPermissions}>
+    <NotePatientContext.Provider value={notePatient}>
       {pageMeta}
       <div className="min-h-screen max-w-full overflow-x-clip bg-background">
         {emergencyAccess && <div className="px-4 pt-4 sm:px-6"><ChronicleEmergencyAccess {...emergencyAccess} /></div>}
@@ -444,6 +448,7 @@ export function PatientChroniclePageContent({
           <ChronicleDeferredBodyPlaceholder />
         )}
       </div>
+    </NotePatientContext.Provider>
     </ChronicleClinicalPermissionsContext.Provider>
   );
 }

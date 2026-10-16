@@ -1158,11 +1158,20 @@ pub async fn update_feature_entitlement(
     actor_user_id: Uuid,
     request_id: Option<String>,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
-    let Some(profile) = facility_profile(pool, facility_id).await? else {
-        return Ok(None);
-    };
     let feature_key = codec::encode(feature)?;
     let mut tx = pool.begin().await?;
+    // Serialize effective-feature publication with protected nursing transactions,
+    // including creation/removal of a previously absent override row.
+    let profile: Option<String> = sqlx::query_scalar(
+        "SELECT deployment_profile FROM facilities WHERE id=$1 AND is_active FOR UPDATE",
+    )
+    .bind(facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(profile) = profile else {
+        return Ok(None);
+    };
+    let profile = codec::decode(&profile)?;
     sqlx::query(
         r#"
         INSERT INTO facility_feature_entitlements (
@@ -1217,11 +1226,20 @@ pub async fn delete_feature_entitlement(
     actor_user_id: Uuid,
     request_id: Option<String>,
 ) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
-    let Some(profile) = facility_profile(pool, facility_id).await? else {
-        return Ok(None);
-    };
     let feature_key = codec::encode(feature)?;
     let mut tx = pool.begin().await?;
+    // Serialize effective-feature publication with protected nursing transactions,
+    // including creation/removal of a previously absent override row.
+    let profile: Option<String> = sqlx::query_scalar(
+        "SELECT deployment_profile FROM facilities WHERE id=$1 AND is_active FOR UPDATE",
+    )
+    .bind(facility_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(profile) = profile else {
+        return Ok(None);
+    };
+    let profile = codec::decode(&profile)?;
     sqlx::query(
         r#"
         DELETE FROM facility_feature_entitlements

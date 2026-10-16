@@ -32,6 +32,12 @@ pub struct NursingTaskFilters {
 
 #[derive(Clone, Debug, FromRow)]
 struct NursingTaskRow {
+    assigned_to_user_id: Option<Uuid>,
+    ward_id: Uuid,
+    completed_at: Option<DateTime<Utc>>,
+    completed_by_user_id: Option<Uuid>,
+    cancelled_at: Option<DateTime<Utc>>,
+    cancelled_by_user_id: Option<Uuid>,
     id: Uuid,
     admission_case_id: Uuid,
     patient_id: Uuid,
@@ -137,7 +143,7 @@ pub async fn complete_nursing_task(
         SET status = $1,
             completed_at = COALESCE(completed_at, now()),
             updated_at = now()
-        WHERE facility_id = $2 AND id = $3
+        WHERE facility_id = $2 AND id = $3 AND status='open'
         "#,
         )
         .bind(codec::encode(NursingTaskStatus::Completed)?)
@@ -161,9 +167,8 @@ pub async fn cancel_nursing_task(
             r#"
         UPDATE nursing_tasks
         SET status = $1,
-            completed_at = NULL,
             updated_at = now()
-        WHERE facility_id = $2 AND id = $3
+        WHERE facility_id = $2 AND id = $3 AND status='open'
         "#,
         )
         .bind(codec::encode(NursingTaskStatus::Cancelled)?)
@@ -184,10 +189,199 @@ pub async fn get_nursing_task(
     optional_nursing_task_by_id(pool, facility_id, task_id).await
 }
 
+/// Production list: current authority plus captured task ward are applied before paging.
+pub async fn list_nursing_tasks_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    filters: &hms_domain::ward::NursingTaskListQuery,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<NursingTaskListItem>> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    if let Some(id) = filters.ward_id {
+        access::ward(&wards, id)?;
+    }
+    let mut q = nursing_task_query();
+    q.push(" WHERE nursing_tasks.facility_id=")
+        .push_bind(actor.facility_id);
+    if let Some(ids) = wards {
+        q.push(" AND nursing_tasks.ward_id=ANY(")
+            .push_bind(ids)
+            .push(")");
+    }
+    if let Some(id) = filters.ward_id {
+        q.push(" AND nursing_tasks.ward_id=").push_bind(id);
+    }
+    if let Some(id) = filters.patient_id {
+        q.push(" AND nursing_tasks.patient_id=").push_bind(id);
+    }
+    if let Some(id) = filters.admission_case_id {
+        q.push(" AND nursing_tasks.admission_case_id=")
+            .push_bind(id);
+    }
+    if let Some(kind) = filters.task_type {
+        q.push(" AND nursing_tasks.task_type=")
+            .push_bind(codec::encode(kind)?);
+    }
+    if let Some(status) = filters.status {
+        q.push(" AND nursing_tasks.status=")
+            .push_bind(codec::encode(status)?);
+    }
+    if let Some(from) = filters.due_from {
+        q.push(" AND nursing_tasks.due_at>=").push_bind(from);
+    }
+    if let Some(before) = filters.due_before {
+        q.push(" AND nursing_tasks.due_at<").push_bind(before);
+    }
+    let desc = filters.descending.unwrap_or(false);
+    if let Some(c) = cursor {
+        q.push(if desc {
+            " AND (nursing_tasks.due_at,nursing_tasks.id)<("
+        } else {
+            " AND (nursing_tasks.due_at,nursing_tasks.id)>("
+        })
+        .push_bind(c.occurred_at)
+        .push(",")
+        .push_bind(c.id)
+        .push(")");
+    }
+    q.push(if desc {
+        " ORDER BY nursing_tasks.due_at DESC,nursing_tasks.id DESC LIMIT "
+    } else {
+        " ORDER BY nursing_tasks.due_at,nursing_tasks.id LIMIT "
+    })
+    .push_bind(limit.clamp(1, 101));
+    let rows = observe_db_query(
+        "ward.nursing_tasks.list",
+        q.build_query_as::<NursingTaskRow>().fetch_all(&mut *tx),
+    )
+    .await?;
+    let result = rows
+        .into_iter()
+        .map(nursing_task_from_row)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub async fn create_nursing_task_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    task: NewNursingTask,
+) -> anyhow::Result<NursingTaskListItem> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    access::admission(
+        &mut tx,
+        &actor,
+        &wards,
+        task.admission_case_id,
+        task.patient_id,
+        Some(task.ward_id),
+        true,
+    )
+    .await?;
+    if let Some(user) = task.assigned_to_user_id {
+        access::assignee(&mut tx, actor.facility_id, task.ward_id, user).await?;
+    }
+    sqlx::query("INSERT INTO nursing_tasks(id,facility_id,admission_case_id,patient_id,ward_id,task_type,title,instruction,status,due_at,assigned_to_user_id,created_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10,$11)")
+        .bind(task.id).bind(actor.facility_id).bind(task.admission_case_id).bind(task.patient_id).bind(task.ward_id).bind(codec::encode(task.task_type)?).bind(task.title).bind(task.instruction).bind(task.due_at).bind(task.assigned_to_user_id).bind(actor.user_id).execute(&mut *tx).await?;
+    access::audit(
+        &mut tx,
+        &actor,
+        task.id,
+        "nursing.task.created",
+        "nursing_task",
+    )
+    .await?;
+    let result = task_tx(&mut tx, actor.facility_id, task.id).await?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+/// One source lock serializes competing terminal decisions. Same-state reads never rewrite provenance.
+pub async fn decide_nursing_task_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    id: Uuid,
+    target: NursingTaskStatus,
+) -> anyhow::Result<NursingTaskListItem> {
+    use super::nursing_access::{self as access, NursingError};
+    let mut tx = pool.begin().await?;
+    let row:Option<(Uuid,Uuid,Uuid,String)>=sqlx::query_as("SELECT patient_id,admission_case_id,ward_id,status FROM nursing_tasks WHERE facility_id=$1 AND id=$2 FOR UPDATE")
+        .bind(actor.facility_id).bind(id).fetch_optional(&mut *tx).await?;
+    let (patient, admission, ward, status) = row.ok_or(NursingError::NotFound)?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    access::ward(&wards, ward)?;
+    let requested = codec::encode(target)?;
+    if status != requested {
+        if status != "open" || target == NursingTaskStatus::Open {
+            return Err(NursingError::TerminalConflict.into());
+        }
+        if target == NursingTaskStatus::Completed {
+            access::admission(
+                &mut tx,
+                &actor,
+                &wards,
+                admission,
+                patient,
+                Some(ward),
+                true,
+            )
+            .await?;
+            sqlx::query("UPDATE nursing_tasks SET status='completed',completed_at=clock_timestamp(),completed_by_user_id=$3,updated_at=clock_timestamp() WHERE facility_id=$1 AND id=$2 AND status='open'")
+                .bind(actor.facility_id).bind(id).bind(actor.user_id).execute(&mut *tx).await?;
+        } else {
+            // Cancellation retires the captured task; it does not claim care was performed.
+            sqlx::query("UPDATE nursing_tasks SET status='cancelled',cancelled_at=clock_timestamp(),cancelled_by_user_id=$3,updated_at=clock_timestamp() WHERE facility_id=$1 AND id=$2 AND status='open'")
+                .bind(actor.facility_id).bind(id).bind(actor.user_id).execute(&mut *tx).await?;
+        }
+        access::audit(
+            &mut tx,
+            &actor,
+            id,
+            if target == NursingTaskStatus::Completed {
+                "nursing.task.completed"
+            } else {
+                "nursing.task.cancelled"
+            },
+            "nursing_task",
+        )
+        .await?;
+    }
+    let result = task_tx(&mut tx, actor.facility_id, id).await?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+async fn task_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility: Uuid,
+    id: Uuid,
+) -> anyhow::Result<NursingTaskListItem> {
+    let mut q = nursing_task_query();
+    q.push(" WHERE nursing_tasks.facility_id=")
+        .push_bind(facility)
+        .push(" AND nursing_tasks.id=")
+        .push_bind(id);
+    nursing_task_from_row(
+        q.build_query_as::<NursingTaskRow>()
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or(super::nursing_access::NursingError::NotFound)?,
+    )
+}
+
 fn nursing_task_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::<Postgres>::new(
         r#"
-        SELECT nursing_tasks.id,
+        SELECT nursing_tasks.assigned_to_user_id, nursing_tasks.ward_id, nursing_tasks.completed_at, nursing_tasks.completed_by_user_id,
+               nursing_tasks.cancelled_at, nursing_tasks.cancelled_by_user_id, nursing_tasks.id,
                nursing_tasks.admission_case_id,
                nursing_tasks.patient_id,
                patients.patient_code,
@@ -198,7 +392,9 @@ fn nursing_task_query() -> QueryBuilder<'static, Postgres> {
                nursing_tasks.status,
                nursing_tasks.due_at
         FROM nursing_tasks
-        JOIN patients ON patients.id = nursing_tasks.patient_id
+        JOIN patients ON patients.id = nursing_tasks.patient_id AND patients.facility_id=nursing_tasks.facility_id
+        JOIN admission_cases task_admission ON task_admission.id=nursing_tasks.admission_case_id AND task_admission.facility_id=nursing_tasks.facility_id AND task_admission.patient_id=nursing_tasks.patient_id
+        JOIN wards task_ward ON task_ward.id=nursing_tasks.ward_id AND task_ward.facility_id=nursing_tasks.facility_id
         "#,
     )
 }
@@ -235,6 +431,12 @@ async fn optional_nursing_task_by_id(
 
 fn nursing_task_from_row(row: NursingTaskRow) -> anyhow::Result<NursingTaskListItem> {
     Ok(NursingTaskListItem {
+        assigned_to_user_id: row.assigned_to_user_id,
+        ward_id: row.ward_id,
+        completed_at: row.completed_at,
+        completed_by_user_id: row.completed_by_user_id,
+        cancelled_at: row.cancelled_at,
+        cancelled_by_user_id: row.cancelled_by_user_id,
         id: row.id,
         admission_case_id: row.admission_case_id,
         patient_id: row.patient_id,

@@ -1,3 +1,5 @@
+pub mod note_records;
+pub mod note_templates;
 pub mod prescription_courses;
 pub mod stock_basis;
 
@@ -449,59 +451,33 @@ pub async fn get_note_template(
     row.map(template_from_row).transpose()
 }
 
+/// Trusted provisioning helper. Public writes use note_templates commands.
 pub async fn create_note_template(
     pool: &PgPool,
     template: NewClinicalNoteTemplate,
 ) -> anyhow::Result<ClinicalNoteTemplate> {
-    let row = sqlx::query_as::<_, TemplateRow>(
-        r#"
-        INSERT INTO clinical_note_templates (
-            id,
-            facility_id,
-            title,
-            note_type,
-            body_template
-        )
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, title, note_type, body_template, is_active
-        "#,
-    )
-    .bind(template.id)
-    .bind(template.facility_id)
-    .bind(template.title)
-    .bind(codec::encode(template.note_type)?)
-    .bind(template.body_template)
-    .fetch_one(pool)
-    .await?;
+    let mut tx = pool.begin().await?;
+    let revision = Uuid::new_v4();
+    let row=sqlx::query_as::<_,TemplateRow>("INSERT INTO clinical_note_templates(id,facility_id,title,note_type,body_template,current_revision_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,title,note_type,body_template,is_active")
+        .bind(template.id).bind(template.facility_id).bind(template.title).bind(codec::encode(template.note_type)?).bind(template.body_template).bind(revision).fetch_one(&mut *tx).await?;
+    sqlx::query("INSERT INTO clinical_note_template_revisions(id,facility_id,template_id,version,title,note_type,body_template,is_active,imported_legacy) SELECT $3,facility_id,id,current_revision,title,note_type,body_template,is_active,true FROM clinical_note_templates WHERE facility_id=$1 AND id=$2 ON CONFLICT DO NOTHING").bind(template.facility_id).bind(template.id).bind(revision).execute(&mut *tx).await?;
+    tx.commit().await?;
     template_from_row(row)
 }
-
+/// Trusted import/provisioning compatibility; does not invent an owner or author.
 pub async fn update_note_template(
     pool: &PgPool,
     facility_id: Uuid,
     template_id: Uuid,
     update: UpdateClinicalNoteTemplate,
 ) -> anyhow::Result<Option<ClinicalNoteTemplate>> {
-    let row = sqlx::query_as::<_, TemplateRow>(
-        r#"
-        UPDATE clinical_note_templates
-        SET title = COALESCE($3, title),
-            note_type = COALESCE($4, note_type),
-            body_template = COALESCE($5, body_template),
-            is_active = COALESCE($6, is_active),
-            updated_at = now()
-        WHERE facility_id = $1 AND id = $2
-        RETURNING id, title, note_type, body_template, is_active
-        "#,
-    )
-    .bind(facility_id)
-    .bind(template_id)
-    .bind(update.title)
-    .bind(update.note_type.map(codec::encode).transpose()?)
-    .bind(update.body_template)
-    .bind(update.is_active)
-    .fetch_optional(pool)
-    .await?;
+    let mut tx = pool.begin().await?;
+    let revision = Uuid::new_v4();
+    let row=sqlx::query_as::<_,TemplateRow>("UPDATE clinical_note_templates SET title=COALESCE($3,title),note_type=COALESCE($4,note_type),body_template=COALESCE($5,body_template),is_active=COALESCE($6,is_active),updated_at=clock_timestamp(),current_revision=current_revision+1,current_revision_id=$7 WHERE facility_id=$1 AND id=$2 RETURNING id,title,note_type,body_template,is_active").bind(facility_id).bind(template_id).bind(update.title).bind(update.note_type.map(codec::encode).transpose()?).bind(update.body_template).bind(update.is_active).bind(revision).fetch_optional(&mut *tx).await?;
+    if row.is_some() {
+        sqlx::query("INSERT INTO clinical_note_template_revisions(id,facility_id,template_id,version,title,note_type,body_template,is_active,imported_legacy) SELECT $3,facility_id,id,current_revision,title,note_type,body_template,is_active,true FROM clinical_note_templates WHERE facility_id=$1 AND id=$2").bind(facility_id).bind(template_id).bind(revision).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
     row.map(template_from_row).transpose()
 }
 

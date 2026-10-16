@@ -686,6 +686,392 @@ pub async fn create_fluid_balance_entry(
     Ok(fluid_balance_from_row(row))
 }
 
+fn authorized_scope(
+    q: &mut QueryBuilder<'static, Postgres>,
+    actor: &super::nursing_access::NursingActor,
+    wards: Option<Vec<Uuid>>,
+    table: &str,
+    admission_alias: &str,
+    patient: Option<Uuid>,
+    admission: Option<Uuid>,
+    ward: Option<Uuid>,
+) {
+    q.push(format!(" WHERE {table}.facility_id="))
+        .push_bind(actor.facility_id);
+    if let Some(ids) = wards {
+        q.push(format!(" AND {admission_alias}.ward_id=ANY("))
+            .push_bind(ids)
+            .push(")");
+    }
+    if let Some(id) = patient {
+        q.push(format!(" AND {table}.patient_id=")).push_bind(id);
+    }
+    if let Some(id) = admission {
+        q.push(format!(" AND {table}.admission_case_id="))
+            .push_bind(id);
+    }
+    if let Some(id) = ward {
+        q.push(format!(" AND {admission_alias}.ward_id="))
+            .push_bind(id);
+    }
+}
+fn observation_page(
+    q: &mut QueryBuilder<'static, Postgres>,
+    table: &str,
+    time: &str,
+    from: Option<DateTime<Utc>>,
+    before: Option<DateTime<Utc>>,
+    desc: bool,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) {
+    if let Some(value) = from {
+        q.push(format!(" AND {table}.{time}>=")).push_bind(value);
+    }
+    if let Some(value) = before {
+        q.push(format!(" AND {table}.{time}<")).push_bind(value);
+    }
+    if let Some(c) = cursor {
+        q.push(format!(
+            " AND ({table}.{time},{table}.id){}(",
+            if desc { "<" } else { ">" }
+        ))
+        .push_bind(c.occurred_at)
+        .push(",")
+        .push_bind(c.id)
+        .push(")");
+    }
+    q.push(format!(
+        " ORDER BY {table}.{time} {},{table}.id {} LIMIT ",
+        if desc { "DESC" } else { "ASC" },
+        if desc { "DESC" } else { "ASC" }
+    ))
+    .push_bind(limit.clamp(1, 101));
+}
+pub async fn list_patient_vitals_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    f: &hms_domain::ward::PatientVitalsListQuery,
+    from: Option<DateTime<Utc>>,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<PatientVitalsListItem>> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    if let Some(id) = f.ward_id {
+        access::ward(&wards, id)?;
+    }
+    let mut q = patient_vitals_query();
+    authorized_scope(
+        &mut q,
+        &actor,
+        wards,
+        "patient_vitals",
+        "observation_admission",
+        f.patient_id,
+        f.admission_case_id,
+        f.ward_id,
+    );
+    observation_page(
+        &mut q,
+        "patient_vitals",
+        "recorded_at",
+        from,
+        f.recorded_before,
+        f.descending.unwrap_or(false),
+        cursor,
+        limit,
+    );
+    let rows = observe_db_query(
+        "ward.observations.patient_vitals.list",
+        q.build_query_as::<PatientVitalsRow>().fetch_all(&mut *tx),
+    )
+    .await?;
+    let result = rows.into_iter().map(patient_vitals_from_row).collect();
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn list_monitoring_events_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    f: &hms_domain::ward::MonitoringEventListQuery,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<MonitoringEventListItem>> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    if let Some(id) = f.ward_id {
+        access::ward(&wards, id)?;
+    }
+    let mut q = monitoring_event_query();
+    authorized_scope(
+        &mut q,
+        &actor,
+        wards,
+        "monitoring_events",
+        "observation_admission",
+        f.patient_id,
+        f.admission_case_id,
+        f.ward_id,
+    );
+    if let Some(kind) = f.event_kind {
+        q.push(" AND monitoring_events.event_kind=")
+            .push_bind(codec::encode(kind)?);
+    }
+    observation_page(
+        &mut q,
+        "monitoring_events",
+        "recorded_at",
+        f.recorded_from,
+        f.recorded_before,
+        f.descending.unwrap_or(false),
+        cursor,
+        limit,
+    );
+    let rows = observe_db_query(
+        "ward.observations.monitoring_events.list",
+        q.build_query_as::<MonitoringEventRow>().fetch_all(&mut *tx),
+    )
+    .await?;
+    let result = rows
+        .into_iter()
+        .map(monitoring_event_from_row)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn list_nursing_alerts_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    f: &hms_domain::ward::NursingAlertListQuery,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<NursingAlertListItem>> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    if let Some(id) = f.ward_id {
+        access::ward(&wards, id)?;
+    }
+    let mut q = nursing_alert_query();
+    authorized_scope(
+        &mut q,
+        &actor,
+        wards,
+        "nursing_alerts",
+        "alert_admission",
+        f.patient_id,
+        f.admission_case_id,
+        f.ward_id,
+    );
+    if f.critical_only.unwrap_or(false) {
+        q.push(" AND nursing_alerts.severity IN ('high','critical')");
+    }
+    // Keep the fixed Open enum literal so PostgreSQL generic plans can use the
+    // open/high-critical partial index for the actual critical monitor request.
+    if f.status == Some(NursingAlertStatus::Open)
+        || (f.critical_only.unwrap_or(false) && f.status.is_none())
+    {
+        q.push(" AND nursing_alerts.status='open'");
+    } else if let Some(status) = f.status {
+        q.push(" AND nursing_alerts.status=")
+            .push_bind(codec::encode(status)?);
+    }
+    if let Some(severity) = f.severity {
+        q.push(" AND nursing_alerts.severity=")
+            .push_bind(codec::encode(severity)?);
+    }
+    observation_page(
+        &mut q,
+        "nursing_alerts",
+        "created_at",
+        f.created_from,
+        f.created_before,
+        f.descending.unwrap_or(false),
+        cursor,
+        limit,
+    );
+    let rows = observe_db_query(
+        "ward.observations.nursing_alerts.list",
+        q.build_query_as::<NursingAlertRow>().fetch_all(&mut *tx),
+    )
+    .await?;
+    let result = rows
+        .into_iter()
+        .map(nursing_alert_from_row)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn create_patient_vitals_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    v: NewPatientVitals,
+) -> anyhow::Result<PatientVitalsListItem> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    access::admission(
+        &mut tx,
+        &actor,
+        &wards,
+        v.admission_case_id,
+        v.patient_id,
+        None,
+        true,
+    )
+    .await?;
+    sqlx::query("INSERT INTO patient_vitals(id,facility_id,admission_case_id,patient_id,recorded_at,temperature_c,systolic_bp,diastolic_bp,pulse,respiratory_rate,oxygen_saturation,recorded_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
+        .bind(v.id).bind(actor.facility_id).bind(v.admission_case_id).bind(v.patient_id).bind(v.recorded_at).bind(v.temperature_c).bind(v.systolic_bp).bind(v.diastolic_bp).bind(v.pulse).bind(v.respiratory_rate).bind(v.oxygen_saturation).bind(actor.user_id).execute(&mut *tx).await?;
+    access::audit(
+        &mut tx,
+        &actor,
+        v.id,
+        "nursing.vitals.recorded",
+        "patient_vitals",
+    )
+    .await?;
+    let mut q = patient_vitals_query();
+    q.push(" WHERE patient_vitals.facility_id=")
+        .push_bind(actor.facility_id)
+        .push(" AND patient_vitals.id=")
+        .push_bind(v.id);
+    let result = patient_vitals_from_row(
+        q.build_query_as::<PatientVitalsRow>()
+            .fetch_one(&mut *tx)
+            .await?,
+    );
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn create_monitoring_event_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    v: NewMonitoringEvent,
+) -> anyhow::Result<MonitoringEventListItem> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    access::admission(
+        &mut tx,
+        &actor,
+        &wards,
+        v.admission_case_id,
+        v.patient_id,
+        None,
+        true,
+    )
+    .await?;
+    sqlx::query("INSERT INTO monitoring_events(id,facility_id,admission_case_id,patient_id,event_kind,summary,recorded_at,recorded_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+        .bind(v.id).bind(actor.facility_id).bind(v.admission_case_id).bind(v.patient_id).bind(codec::encode(v.event_kind)?).bind(v.summary).bind(v.recorded_at).bind(actor.user_id).execute(&mut *tx).await?;
+    access::audit(
+        &mut tx,
+        &actor,
+        v.id,
+        "nursing.monitoring.recorded",
+        "monitoring_event",
+    )
+    .await?;
+    let mut q = monitoring_event_query();
+    q.push(" WHERE monitoring_events.facility_id=")
+        .push_bind(actor.facility_id)
+        .push(" AND monitoring_events.id=")
+        .push_bind(v.id);
+    let result = monitoring_event_from_row(
+        q.build_query_as::<MonitoringEventRow>()
+            .fetch_one(&mut *tx)
+            .await?,
+    )?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn create_nursing_alert_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    v: NewNursingAlert,
+) -> anyhow::Result<NursingAlertListItem> {
+    use super::nursing_access as access;
+    let mut tx = pool.begin().await?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    access::admission(
+        &mut tx,
+        &actor,
+        &wards,
+        v.admission_case_id,
+        v.patient_id,
+        None,
+        true,
+    )
+    .await?;
+    sqlx::query("INSERT INTO nursing_alerts(id,facility_id,admission_case_id,patient_id,severity,title,status,created_by_user_id) VALUES($1,$2,$3,$4,$5,$6,'open',$7)")
+        .bind(v.id).bind(actor.facility_id).bind(v.admission_case_id).bind(v.patient_id).bind(codec::encode(v.severity)?).bind(v.title).bind(actor.user_id).execute(&mut *tx).await?;
+    access::audit(
+        &mut tx,
+        &actor,
+        v.id,
+        "nursing.alert.created",
+        "nursing_alert",
+    )
+    .await?;
+    let result = alert_tx(&mut tx, actor.facility_id, v.id).await?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn acknowledge_nursing_alert_for_actor(
+    pool: &PgPool,
+    mut actor: super::nursing_access::NursingActor,
+    id: Uuid,
+) -> anyhow::Result<NursingAlertListItem> {
+    use super::nursing_access::{self as access, NursingError};
+    let mut tx = pool.begin().await?;
+    let source:Option<(Uuid,Uuid,String)>=sqlx::query_as("SELECT patient_id,admission_case_id,status FROM nursing_alerts WHERE facility_id=$1 AND id=$2 FOR UPDATE").bind(actor.facility_id).bind(id).fetch_optional(&mut *tx).await?;
+    let (patient, admission, status) = source.ok_or(NursingError::NotFound)?;
+    let wards = access::verify(&mut tx, &mut actor).await?;
+    access::admission(&mut tx, &actor, &wards, admission, patient, None, false).await?;
+    if status == "open" {
+        sqlx::query("UPDATE nursing_alerts SET status='acknowledged',acknowledged_by_user_id=$3,acknowledged_at=clock_timestamp(),updated_at=clock_timestamp() WHERE facility_id=$1 AND id=$2 AND status='open'").bind(actor.facility_id).bind(id).bind(actor.user_id).execute(&mut *tx).await?;
+        access::audit(
+            &mut tx,
+            &actor,
+            id,
+            "nursing.alert.acknowledged",
+            "nursing_alert",
+        )
+        .await?;
+    } else if status != "acknowledged" {
+        return Err(NursingError::TerminalConflict.into());
+    }
+    let result = alert_tx(&mut tx, actor.facility_id, id).await?;
+    access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+async fn alert_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    facility: Uuid,
+    id: Uuid,
+) -> anyhow::Result<NursingAlertListItem> {
+    let mut q = nursing_alert_query();
+    q.push(" WHERE nursing_alerts.facility_id=")
+        .push_bind(facility)
+        .push(" AND nursing_alerts.id=")
+        .push_bind(id);
+    nursing_alert_from_row(
+        q.build_query_as::<NursingAlertRow>()
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or(super::nursing_access::NursingError::NotFound)?,
+    )
+}
+
 fn patient_vitals_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::<Postgres>::new(
         r#"
@@ -702,6 +1088,8 @@ fn patient_vitals_query() -> QueryBuilder<'static, Postgres> {
                patient_vitals.respiratory_rate,
                patient_vitals.oxygen_saturation
         FROM patient_vitals
+        JOIN admission_cases observation_admission ON observation_admission.id=patient_vitals.admission_case_id AND observation_admission.facility_id=patient_vitals.facility_id AND observation_admission.patient_id=patient_vitals.patient_id
+        JOIN wards observation_ward ON observation_ward.id=observation_admission.ward_id AND observation_ward.facility_id=observation_admission.facility_id
         JOIN patients
           ON patients.id = patient_vitals.patient_id
          AND patients.facility_id = patient_vitals.facility_id
@@ -727,6 +1115,7 @@ fn nursing_alert_query() -> QueryBuilder<'static, Postgres> {
           ON alert_admission.id = nursing_alerts.admission_case_id
          AND alert_admission.facility_id = nursing_alerts.facility_id
          AND alert_admission.patient_id = nursing_alerts.patient_id
+        JOIN wards alert_ward ON alert_ward.id=alert_admission.ward_id AND alert_ward.facility_id=alert_admission.facility_id
         JOIN patients
           ON patients.id = nursing_alerts.patient_id
          AND patients.facility_id = nursing_alerts.facility_id
@@ -746,6 +1135,8 @@ fn monitoring_event_query() -> QueryBuilder<'static, Postgres> {
                monitoring_events.summary,
                monitoring_events.recorded_at
         FROM monitoring_events
+        JOIN admission_cases observation_admission ON observation_admission.id=monitoring_events.admission_case_id AND observation_admission.facility_id=monitoring_events.facility_id AND observation_admission.patient_id=monitoring_events.patient_id
+        JOIN wards observation_ward ON observation_ward.id=observation_admission.ward_id AND observation_ward.facility_id=observation_admission.facility_id
         JOIN patients
           ON patients.id = monitoring_events.patient_id
          AND patients.facility_id = monitoring_events.facility_id

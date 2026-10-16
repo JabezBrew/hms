@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useEncounter } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import ClinicalNoteHandoff from './ClinicalNoteHandoff';
 import { 
   useNoteEntriesForEncounter, 
   useActiveNoteTemplates,
@@ -355,7 +356,7 @@ function ClinicalNoteHistoryCard({ note }) {
   );
 }
 
-export default function CreateClinicalNotePage() {
+function LegacyCreateClinicalNotePage() {
   const { id: encounterId } = useParams();
   const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -551,3 +552,5 @@ export default function CreateClinicalNotePage() {
     </PageShell>
   );
 }
+
+export default function CreateClinicalNotePage() { return isRustV2ApiMode() ? <ClinicalNoteHandoff /> : <LegacyCreateClinicalNotePage />; }

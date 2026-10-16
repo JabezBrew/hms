@@ -6,6 +6,7 @@ import Clock3 from 'lucide-react/dist/esm/icons/clock-3.js';
 import CircleAlert from 'lucide-react/dist/esm/icons/circle-alert.js';
 
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -86,7 +87,7 @@ function TrendReviewHeader({
               <Badge variant="secondary" className="font-mono text-[11px]">Vitals follow the selected visit</Badge>
             ) : null}
             {admissionId && !allHistory ? (
-              <Badge variant="secondary" className="font-mono text-[11px]">Fluid balance follows the admission</Badge>
+              <Badge variant="secondary" className="font-mono text-[11px]">{isRustV2ApiMode() ? 'Vital signs follow the admission' : 'Fluid balance follows the admission'}</Badge>
             ) : null}
           </div>
         </div>
@@ -220,7 +221,9 @@ function VitalsTrendTab({
   latestVitals,
   scopeLabel,
   vitalsLoading,
+  vitalsError,
 }) {
+  if (vitalsError) return <div role="alert" className="rounded-xl border border-destructive/30 p-4 text-sm text-destructive">Vital-sign trends could not be fully loaded. {vitalsError.message || 'Reopen this view to try again.'}</div>;
   if (vitalsLoading) {
     return <LoadingState label="Loading vital-sign trends..." />;
   }
@@ -337,6 +340,7 @@ export function TrendReviewSlideOverPanel({
   scopeLabel,
   showFluidTab,
   vitalsLoading,
+  vitalsError,
 }) {
   return (
     <div
@@ -377,6 +381,7 @@ export function TrendReviewSlideOverPanel({
                 latestVitals={latestVitals}
                 scopeLabel={scopeLabel}
                 vitalsLoading={vitalsLoading}
+                vitalsError={vitalsError}
               />
             </TabsContent>
 

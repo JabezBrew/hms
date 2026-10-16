@@ -6,6 +6,7 @@ pub mod billing;
 pub mod capabilities;
 pub mod care;
 pub mod clinical;
+pub mod clinical_notes;
 pub mod consent;
 pub mod dashboard;
 pub mod deployment;

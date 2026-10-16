@@ -116,3 +116,5 @@ original-ward assignment/all-ward authority. Every HTTP path carries a locked
 actor/session/deadline proof through the protected transaction. Lists remain lean;
 history expands one immutable revision. Intended recipient is documentation only.
 See `docs/v2/2026-10-16-patient-handover-scope.md`.
+
+General nursing task, vital, alert and monitoring APIs apply actual ward relationships before paging, explicit clinical data classes and mandatory live authority proofs. Terminal task decisions preserve first actor/time. See `docs/v2/2026-10-16-nursing-scope-and-decisions.md` for captured/current ward semantics and compatibility limits.

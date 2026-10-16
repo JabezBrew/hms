@@ -36,7 +36,7 @@ struct DemoCounts {
 }
 
 #[tokio::test]
-async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
+async fn smoke_demo_seed_covers_archetypes_and_refuses_to_replace_clinical_evidence() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");
     let pool = hms_db::connect(database.database_url())
@@ -54,9 +54,15 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
         .expect("demo seed provisions");
     let first_counts = demo_counts(&pool, baseline.facility_id).await;
 
-    provision_demo_seed(&pool, &baseline, DemoSeedProfile::Smoke)
+    let before_evidence = note_evidence_digest(&pool, baseline.facility_id).await;
+    let denied = provision_demo_seed(&pool, &baseline, DemoSeedProfile::Smoke)
         .await
-        .expect("demo seed reruns");
+        .expect_err("retained clinical evidence requires an isolated fixture reset");
+    assert_eq!(denied.to_string(), "demo_seed_existing_clinical_evidence");
+    assert_eq!(
+        note_evidence_digest(&pool, baseline.facility_id).await,
+        before_evidence
+    );
     let second_counts = demo_counts(&pool, baseline.facility_id).await;
 
     assert_eq!(first_counts, second_counts);
@@ -332,7 +338,7 @@ async fn smoke_demo_seed_is_idempotent_and_covers_all_archetypes() {
 }
 
 #[tokio::test]
-async fn staging_demo_seed_is_idempotent_and_bounded() {
+async fn staging_demo_seed_is_bounded_and_refuses_to_replace_clinical_evidence() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");
     let pool = hms_db::connect(database.database_url())
@@ -429,9 +435,15 @@ async fn staging_demo_seed_is_idempotent_and_bounded() {
         .await
         .expect("staging demo seed provisions");
     let first_counts = demo_counts(&pool, baseline.facility_id).await;
-    provision_demo_seed(&pool, &baseline, DemoSeedProfile::Staging)
+    let before_evidence = note_evidence_digest(&pool, baseline.facility_id).await;
+    let denied = provision_demo_seed(&pool, &baseline, DemoSeedProfile::Staging)
         .await
-        .expect("staging demo seed reruns");
+        .expect_err("retained clinical evidence requires an isolated fixture reset");
+    assert_eq!(denied.to_string(), "demo_seed_existing_clinical_evidence");
+    assert_eq!(
+        note_evidence_digest(&pool, baseline.facility_id).await,
+        before_evidence
+    );
     let second_counts = demo_counts(&pool, baseline.facility_id).await;
 
     assert_eq!(first_counts, second_counts);
@@ -739,4 +751,8 @@ async fn unsupported_appointment_status_count(
     .fetch_one(pool)
     .await
     .expect("appointment status compatibility query succeeds")
+}
+
+async fn note_evidence_digest(pool: &hms_db::PgPool, facility: uuid::Uuid) -> String {
+    sqlx::query_scalar("SELECT md5(concat((SELECT COALESCE(jsonb_agg(to_jsonb(n) ORDER BY n.id),'[]'::jsonb)::text FROM clinical_notes n WHERE n.facility_id=$1),(SELECT COALESCE(jsonb_agg(to_jsonb(v) ORDER BY v.id),'[]'::jsonb)::text FROM clinical_note_versions v WHERE v.facility_id=$1)))").bind(facility).fetch_one(pool).await.unwrap()
 }

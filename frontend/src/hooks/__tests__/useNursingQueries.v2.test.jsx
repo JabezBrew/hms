@@ -424,6 +424,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
           data: [
             {
               id: 'task-1',
+              ward_id: 'ward-1',
               admission_case_id: 'admission-1',
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
@@ -431,16 +432,6 @@ describe('Rust V2 nursing dashboard hooks', () => {
               task_type: 'observation',
               status: 'open',
               due_at: '2026-05-12T11:00:00Z',
-            },
-            {
-              id: 'task-2',
-              admission_case_id: 'admission-2',
-              patient_id: 'patient-2',
-              patient_code: 'MRN-002',
-              patient_display_name: 'Kojo Mensah',
-              task_type: 'medication',
-              status: 'completed',
-              due_at: '2026-05-12T12:00:00Z',
             },
           ],
           page: { limit: 50, has_next: false, next_cursor: null },
@@ -463,7 +454,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/tasks?limit=50&patient_id=patient-1',
+      'http://localhost:8080/api/v2/nursing/tasks?limit=50&patient_id=patient-1&descending=false&status=open',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual([
@@ -490,6 +481,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
           data: [
             {
               id: 'task-1',
+              ward_id: 'ward-1',
               admission_case_id: 'admission-1',
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
@@ -497,16 +489,6 @@ describe('Rust V2 nursing dashboard hooks', () => {
               task_type: 'observation',
               status: 'open',
               due_at: `${today}T11:00:00Z`,
-            },
-            {
-              id: 'task-2',
-              admission_case_id: 'admission-2',
-              patient_id: 'patient-2',
-              patient_code: 'MRN-002',
-              patient_display_name: 'Kojo Mensah',
-              task_type: 'medication',
-              status: 'open',
-              due_at: `${tomorrow}T12:00:00Z`,
             },
           ],
           page: { limit: 50, has_next: false, next_cursor: null },
@@ -526,7 +508,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/tasks?limit=50',
+      `http://localhost:8080/api/v2/nursing/tasks?${new URLSearchParams({ limit: '50', descending: 'false', due_from: `${today}T00:00:00.000Z`, due_before: `${tomorrow}T00:00:00.000Z` })}`,
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data[0]).toEqual(expect.objectContaining({ id: 'task-1' }));
@@ -538,6 +520,10 @@ describe('Rust V2 nursing dashboard hooks', () => {
         JSON.stringify({
           data: {
             id: 'task-1',
+            ward_id: 'ward-1',
+            assigned_to_user_id: 'user-1',
+            title: 'Check post-op observations',
+            instruction: 'Check post-op observations',
             admission_case_id: 'admission-1',
             patient_id: 'patient-1',
             patient_code: 'MRN-001',
@@ -605,6 +591,12 @@ describe('Rust V2 nursing dashboard hooks', () => {
         JSON.stringify({
           data: {
             id: 'task-1',
+            ward_id: 'ward-1',
+            completed_at: '2026-05-12T11:05:00Z',
+            completed_by_user_id: 'user-1',
+            cancelled_at: null,
+            cancelled_by_user_id: null,
+
             admission_case_id: 'admission-1',
             patient_id: 'patient-1',
             patient_code: 'MRN-001',
@@ -627,7 +619,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     });
 
     await act(async () => {
-      await result.current.mutateAsync({ taskId: 'task-1', data: { completion_notes: 'Done' } });
+      await result.current.mutateAsync({ taskId: 'task-1' });
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -642,6 +634,12 @@ describe('Rust V2 nursing dashboard hooks', () => {
         JSON.stringify({
           data: {
             id: 'task-1',
+            ward_id: 'ward-1',
+            completed_at: null,
+            completed_by_user_id: null,
+            cancelled_at: '2026-05-12T11:05:00Z',
+            cancelled_by_user_id: 'user-1',
+
             admission_case_id: 'admission-1',
             patient_id: 'patient-1',
             patient_code: 'MRN-001',
@@ -1761,7 +1759,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/vitals?limit=25&patient_id=patient-1&hours=48',
+      'http://localhost:8080/api/v2/nursing/vitals?limit=25&patient_id=patient-1&descending=true&hours=48',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',
@@ -1815,6 +1813,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await act(async () => {
       created = await result.current.mutateAsync({
         patient: 'patient-1',
+        recorded_at: '2026-05-12T09:00:00Z',
         admission_case_id: 'admission-1',
         temperature: 37.5,
         heart_rate: 88,
@@ -1834,6 +1833,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
       }),
     );
     expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({
+      patient_id: 'patient-1',
       admission_case_id: 'admission-1',
       recorded_at: expect.any(String),
       temperature_c: 37.5,
@@ -1890,7 +1890,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/vitals?limit=50&patient_id=patient-1&admission_case_id=admission-1&hours=168',
+      'http://localhost:8080/api/v2/nursing/vitals?limit=50&patient_id=patient-1&admission_case_id=admission-1&descending=true&hours=168',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

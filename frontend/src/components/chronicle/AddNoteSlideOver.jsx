@@ -2,6 +2,8 @@ import { cn } from "@/lib/utils";
 
 import { AddNoteWorkflowPanel } from "./AddNoteSlideOverSections";
 import { useAddNoteSlideOverController } from "./useAddNoteSlideOverController";
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import ClinicalNoteWorkspace from '@/features/clinical-notes/components/ClinicalNoteWorkspace';
 
 function buildContentKey({ open, patientId, editNoteId, initialTemplate }) {
   if (!open) {
@@ -30,7 +32,9 @@ const AddNoteSlideOver = ({
   initialData = null,
   noteDraftOverrides = null,
   editNoteId = null,
+  admissionId = null,
 }) => {
+  if (isRustV2ApiMode()) return <ClinicalNoteWorkspace {...{ open, onClose, patient, encounter, onNoteCreated, noteDraftOverrides, admissionId }} />;
   const patientId = patient?.local_data?.id || patient?.id;
   const contentKey = buildContentKey({ open, patientId, editNoteId, initialTemplate });
 

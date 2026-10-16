@@ -3,6 +3,12 @@ use super::*;
 #[tokio::test]
 async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
     let owner_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
@@ -745,7 +751,7 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
                         "admission_case_id": admission_id,
                         "task_type": "observation",
                         "due_at": "2026-05-10T11:00:00Z",
-                        "assigned_to_user_id": owner_id
+                        "assigned_to_user_id": null
                     })
                     .to_string(),
                 ))
@@ -787,7 +793,7 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
                         "admission_case_id": admission_id,
                         "task_type": "observation",
                         "due_at": "2026-05-10T11:30:00Z",
-                        "assigned_to_user_id": owner_id
+                        "assigned_to_user_id": null
                     })
                     .to_string(),
                 ))

@@ -78,3 +78,5 @@ Patient narratives use migration015 separate from shift headers. Root→actor/se
 DB-clock deadline. Root/revision/hashed command/PHI-free audit persist atomically.
 Selected-patient and recipient pages use one shaped data query plus a constant
 proof cost. See `docs/v2/2026-10-16-patient-handover-scope.md`.
+
+General nursing task, vital, alert and monitoring APIs apply actual ward relationships before paging, explicit clinical data classes and mandatory live authority proofs. Terminal task decisions preserve first actor/time. See `docs/v2/2026-10-16-nursing-scope-and-decisions.md` for captured/current ward semantics and compatibility limits.

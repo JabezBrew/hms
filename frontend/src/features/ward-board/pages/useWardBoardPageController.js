@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { toast } from 'sonner';
+import { useScopedNotifications } from '@/shared/hooks/useScopedNotifications';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
@@ -67,7 +68,7 @@ export function useWardBoardPageController() {
   const locationSearch = location.search;
   const locationHash = location.hash;
   const locationStateRef = useRef(location.state);
-  locationStateRef.current = location.state;
+  useLayoutEffect(() => { locationStateRef.current = location.state; }, [location.state]);
   const [selectedPatientId, setSelectedPatientId] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
@@ -254,28 +255,37 @@ export function useWardBoardPageController() {
     timeoutMs: 400,
   });
   const taskMutation = useWardBoardTaskAction();
+  const taskContext = hashQueryValue(JSON.stringify([effectiveWard, selectedPatientId, selectedPatient?.admission_id || selectedPatient?.admission_case_id, selectedPatient?.ward_id]));
+  const captureTaskNotifications = useScopedNotifications(taskContext);
+  const taskRequest = useRef(null);
   const { isConnected: isLiveConnected } = useWardBoardLiveUpdates({
     enabled: shouldLoadBoard && !isLoading,
     wardScope: allWardScope ? 'all' : (effectiveWard || 'all'),
   });
 
-  const handleTaskAction = useCallback(({ taskId, action, patientId }) => {
-    setPendingAction({ taskId, action });
+  const handleTaskAction = useCallback(({ taskId, action, patientId, admissionId }) => {
+    if (taskRequest.current?.context === taskContext) return;
+    const origin = { context: taskContext };
+    taskRequest.current = origin;
+    const notifications = captureTaskNotifications();
+    setPendingAction({ taskId, action, context: taskContext });
     taskMutation.mutate(
-      { taskId, action, patientId, payload: {} },
+      { taskId, action, patientId, admissionId, payload: {} },
       {
         onSuccess: () => {
-          toast.success('Ward board task updated');
+          notifications.success('Ward board task updated');
         },
         onError: (mutationError) => {
-          toast.error(mutationError?.message || 'Unable to update ward board task');
+          notifications.error(mutationError?.message || 'Unable to update ward board task');
         },
         onSettled: () => {
+          if (taskRequest.current !== origin) return;
+          taskRequest.current = null;
           setPendingAction(null);
         },
       }
     );
-  }, [taskMutation]);
+  }, [taskMutation, taskContext, captureTaskNotifications]);
 
   const handleSearchChange = useCallback((nextSearch) => {
     setPrivateFilters((current) => ({
@@ -426,7 +436,7 @@ export function useWardBoardPageController() {
       isLiveConnected,
       orderedPatients: patients,
       pageSize,
-      pendingAction,
+      pendingAction: pendingAction?.context === taskContext ? pendingAction : null,
       queryPatient,
       resolvedPage,
       rustV2Mode,

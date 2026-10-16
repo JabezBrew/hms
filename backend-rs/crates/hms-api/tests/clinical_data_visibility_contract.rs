@@ -76,7 +76,7 @@ async fn fixture() -> Fixture {
         .unwrap();
     let prefix = format!("/api/v2/patients/{patient}/clinical");
     let prescription=saved(&app,&token,format!("{prefix}/prescriptions"),json!({"medication_name":"SYNTHETIC-PROTECTED-MEDICATION","dose":"1 tablet","route":"oral","frequency":"daily","instructions":"SYNTHETIC-PROTECTED-INSTRUCTIONS","reason":"SYNTHETIC-PROTECTED-REASON"})).await;
-    let note=saved(&app,&token,format!("{prefix}/notes"),json!({"note_type":"doctor_note","title":"Synthetic review","body":"SYNTHETIC-PROTECTED-NARRATIVE"})).await;
+    let note=saved(&app,&token,format!("{prefix}/notes/record"),json!({"client_request_id":Uuid::new_v4(),"note_type":"doctor_note","title":"Synthetic review","body":"SYNTHETIC-PROTECTED-NARRATIVE"})).await;
     let allergy=saved(&app,&token,format!("{prefix}/allergies"),json!({"substance":"SYNTHETIC-PROTECTED-ALLERGY","reaction":"Synthetic reaction","severity":"mild"})).await;
     let problem = saved(
         &app,
@@ -96,7 +96,7 @@ async fn fixture() -> Fixture {
         app,
         patient,
         prescription: Uuid::parse_str(prescription["id"].as_str().unwrap()).unwrap(),
-        note: Uuid::parse_str(note["id"].as_str().unwrap()).unwrap(),
+        note: Uuid::parse_str(note["note"]["id"].as_str().unwrap()).unwrap(),
         allergy: Uuid::parse_str(allergy["id"].as_str().unwrap()).unwrap(),
         problem: Uuid::parse_str(problem["id"].as_str().unwrap()).unwrap(),
     }
@@ -436,15 +436,15 @@ async fn chronicle_vitals_action_uses_nursing_authority_independently_of_note_au
 async fn patient_visibility_is_not_required_to_manage_nonpatient_template_configuration() {
     let app = app().await;
     let token = set_visibility(&app, None).await;
-    let payload = json!({"title":"Synthetic configuration","note_type":"doctor_note","body_template":"Synthetic configurable template"});
+    let payload = json!({"client_request_id":Uuid::new_v4(),"title":"Synthetic configuration","note_type":"doctor_note","body_template":"Synthetic configurable template","is_active":true});
     let template = saved(
         &app,
         &token,
-        "/api/v2/clinical/note-templates".into(),
+        "/api/v2/clinical/note-templates/record".into(),
         payload,
     )
     .await;
-    let id = template["id"].as_str().unwrap();
+    let id = template["template"]["id"].as_str().unwrap();
     let response = call(
         &app,
         &token,
@@ -454,22 +454,8 @@ async fn patient_visibility_is_not_required_to_manage_nonpatient_template_config
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-    let response = call(
-        &app,
-        &token,
-        Method::PATCH,
-        format!("/api/v2/clinical/note-templates/{id}"),
-        json!({"title":"Synthetic reviewed configuration"}),
-    )
-    .await;
+    let response=call(&app,&token,Method::POST,format!("/api/v2/clinical/note-templates/{id}/changes"),json!({"client_request_id":Uuid::new_v4(),"expected_version":1,"title":"Synthetic reviewed configuration","note_type":"doctor_note","body_template":"Synthetic configurable template","is_active":true,"change_summary":"Synthetic change"})).await;
     assert_eq!(response.status(), StatusCode::OK);
-    let response = call(
-        &app,
-        &token,
-        Method::DELETE,
-        format!("/api/v2/clinical/note-templates/{id}"),
-        Value::Null,
-    )
-    .await;
+    let response=call(&app,&token,Method::POST,format!("/api/v2/clinical/note-templates/{id}/changes"),json!({"client_request_id":Uuid::new_v4(),"expected_version":2,"title":"Synthetic reviewed configuration","note_type":"doctor_note","body_template":"Synthetic configurable template","is_active":false,"change_summary":"Synthetic retirement"})).await;
     assert_eq!(response.status(), StatusCode::OK);
 }

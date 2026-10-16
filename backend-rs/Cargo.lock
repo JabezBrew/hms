@@ -868,6 +868,7 @@ dependencies = [
  "hms-observability",
  "password-hash",
  "rand_core 0.6.4",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

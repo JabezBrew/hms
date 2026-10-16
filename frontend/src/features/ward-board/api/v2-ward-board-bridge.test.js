@@ -281,11 +281,12 @@ describe('Rust V2 ward-board bridge', () => {
           data: [
             {
               id: 'task-1',
+              ward_id: 'ward-1',
               admission_case_id: 'admission-1',
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
               patient_display_name: 'Ama Mensah',
-              task_type: 'vitals',
+              task_type: 'observation',
               title: 'Record vitals',
               instruction: 'Repeat observations',
               status: 'open',
@@ -305,18 +306,19 @@ describe('Rust V2 ward-board bridge', () => {
     const response = await wardBoardApi.getPatient('patient-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/tasks?limit=50&patient_id=patient-1',
+      'http://localhost:8080/api/v2/nursing/tasks?limit=50&patient_id=patient-1&descending=true',
       expect.objectContaining({ method: 'GET', credentials: 'include', signal }),
     );
     expect(response).toEqual(
       expect.objectContaining({
         patient_id: 'patient-1',
-        open_task_count: 1,
+        tasks_complete: true,
+        task_scope: 'authorized_captured_wards',
         tasks: [
           expect.objectContaining({
             id: 'task-1',
             patient_id: 'patient-1',
-            category: 'Vitals',
+            category: 'Observation',
             title: 'Record vitals',
             status: 'open',
           }),
@@ -333,6 +335,12 @@ describe('Rust V2 ward-board bridge', () => {
             id: 'task-1',
             patient_id: 'patient-1',
             status: 'completed',
+            ward_id: 'ward-1',
+            admission_case_id: 'admission-1',
+            completed_at: '2026-05-12T10:05:00Z',
+            completed_by_user_id: 'user-1',
+            cancelled_at: null,
+            cancelled_by_user_id: null,
           },
           meta: {},
         }),

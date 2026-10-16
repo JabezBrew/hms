@@ -454,7 +454,7 @@ pub(crate) async fn lock_prn_safety_group(
         .bind(facility).bind(source).fetch_optional(&mut **tx).await?)
 }
 
-async fn validate_care_context_tx(
+pub(crate) async fn validate_care_context_tx(
     tx: &mut Transaction<'_, Postgres>,
     facility: Uuid,
     patient: Uuid,

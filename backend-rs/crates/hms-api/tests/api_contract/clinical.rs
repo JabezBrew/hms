@@ -791,12 +791,13 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
             Request::builder()
                 .method(Method::POST)
                 .uri(format!(
-                    "/api/v2/patients/{other_patient_id}/clinical/notes"
+                    "/api/v2/patients/{other_patient_id}/clinical/notes/record"
                 ))
                 .header(AUTHORIZATION, auth_header.clone())
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id":Uuid::new_v4(),
                         "note_type": "doctor_note",
                         "title": "Wrong encounter",
                         "body": "Should not attach to another patient's encounter.",
@@ -808,7 +809,7 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         )
         .await
         .expect("wrong-patient note request completes");
-    assert_eq!(wrong_patient_note.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(wrong_patient_note.status(), StatusCode::CONFLICT);
 
     let templates = app
         .clone()
@@ -825,19 +826,22 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(templates.status(), StatusCode::OK);
     let templates_body = json_body(templates).await;
     assert_eq!(templates_body["page"]["limit"], 1);
-    assert_eq!(templates_body["data"][0]["title"], "Allied Health Note");
-    assert_eq!(templates_body["data"][0]["note_type"], "allied_health_note");
+    assert!(templates_body["data"][0]["current_revision_id"].is_string());
+    assert!(templates_body["data"][0].get("body_template").is_none());
+    assert_eq!(templates_body["page"]["has_next"], true);
 
     let template_create = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/v2/clinical/note-templates")
+                .uri("/api/v2/clinical/note-templates/record")
                 .header(AUTHORIZATION, auth_header.clone())
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id":Uuid::new_v4(),
+                        "is_active":true,
                         "title": "Ward Round Note",
                         "note_type": "doctor_note",
                         "body_template": "Subjective\\nObjective\\nAssessment\\nPlan"
@@ -850,11 +854,14 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .expect("template create succeeds");
     assert_eq!(template_create.status(), StatusCode::OK);
     let template_create_body = json_body(template_create).await;
-    let template_id = template_create_body["data"]["id"]
+    let template_id = template_create_body["data"]["template"]["id"]
         .as_str()
         .expect("template id exists");
-    assert_eq!(template_create_body["data"]["title"], "Ward Round Note");
-    assert_eq!(template_create_body["data"]["is_active"], true);
+    assert_eq!(
+        template_create_body["data"]["template"]["title"],
+        "Ward Round Note"
+    );
+    assert_eq!(template_create_body["data"]["template"]["is_active"], true);
 
     let template_detail = app
         .clone()
@@ -877,12 +884,19 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .clone()
         .oneshot(
             Request::builder()
-                .method(Method::PATCH)
-                .uri(format!("/api/v2/clinical/note-templates/{template_id}"))
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/clinical/note-templates/{template_id}/changes"
+                ))
                 .header(AUTHORIZATION, auth_header.clone())
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id":Uuid::new_v4(),
+                        "expected_version":1,
+                        "is_active":true,
+                        "note_type":"doctor_note",
+                        "change_summary":"Synthetic template correction",
                         "title": "Updated Ward Round Note",
                         "body_template": "Updated SOAP structure"
                     })
@@ -895,11 +909,11 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(template_update.status(), StatusCode::OK);
     let template_update_body = json_body(template_update).await;
     assert_eq!(
-        template_update_body["data"]["title"],
+        template_update_body["data"]["template"]["title"],
         "Updated Ward Round Note"
     );
     assert_eq!(
-        template_update_body["data"]["body_template"],
+        template_update_body["data"]["template"]["body_template"],
         "Updated SOAP structure"
     );
 
@@ -907,17 +921,18 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .clone()
         .oneshot(
             Request::builder()
-                .method(Method::DELETE)
-                .uri(format!("/api/v2/clinical/note-templates/{template_id}"))
+                .method(Method::POST)
+                .uri(format!("/api/v2/clinical/note-templates/{template_id}/changes"))
                 .header(AUTHORIZATION, auth_header.clone())
-                .body(Body::empty())
+                .header("content-type","application/json")
+                .body(Body::from(json!({"client_request_id":Uuid::new_v4(),"expected_version":2,"title":"Updated Ward Round Note","note_type":"doctor_note","body_template":"Updated SOAP structure","is_active":false,"change_summary":"Synthetic retirement"}).to_string()))
                 .expect("request builds"),
         )
         .await
         .expect("template delete succeeds");
     assert_eq!(template_delete.status(), StatusCode::OK);
     let template_delete_body = json_body(template_delete).await;
-    assert_eq!(template_delete_body["data"]["is_active"], false);
+    assert_eq!(template_delete_body["data"]["template"]["is_active"], false);
 
     let templates_after_delete = app
         .clone()
@@ -944,11 +959,14 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri(format!("/api/v2/patients/{patient_id}/clinical/notes"))
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/clinical/notes/record"
+                ))
                 .header(AUTHORIZATION, auth_header.clone())
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
+                        "client_request_id":Uuid::new_v4(),
                         "note_type": "nursing_note",
                         "title": "Review note",
                         "body": "History recorded. Assessment and plan captured.",
@@ -962,12 +980,12 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .expect("clinical note create succeeds");
     assert_eq!(note_response.status(), StatusCode::OK);
     let note_body = json_body(note_response).await;
-    let note_id = note_body["data"]["id"]
+    let note_id = note_body["data"]["note"]["id"]
         .as_str()
         .expect("clinical note id exists");
-    assert_eq!(note_body["data"]["status"], "draft");
-    assert_eq!(note_body["data"]["note_type"], "nursing_note");
-    assert_eq!(note_body["data"]["encounter_id"], encounter_id);
+    assert_eq!(note_body["data"]["note"]["status"], "draft");
+    assert_eq!(note_body["data"]["note"]["note_type"], "nursing_note");
+    assert_eq!(note_body["data"]["note"]["encounter_id"], encounter_id);
 
     let note_detail = app
         .clone()
@@ -1062,11 +1080,11 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri(format!("/api/v2/clinical/notes/{note_id}/versions"))
+                .uri(format!("/api/v2/clinical/notes/{note_id}/amendments"))
                 .header(AUTHORIZATION, auth_header.clone())
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    json!({ "body": "Updated assessment and plan." }).to_string(),
+                    json!({"client_request_id":Uuid::new_v4(),"expected_version":1,"reason":"Synthetic explicit correction", "body": "Updated assessment and plan." }).to_string(),
                 ))
                 .expect("request builds"),
         )
@@ -1074,14 +1092,14 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .expect("clinical note version create succeeds");
     assert_eq!(version_response.status(), StatusCode::OK);
     let version_body = json_body(version_response).await;
-    assert_eq!(version_body["data"]["version"], 2);
+    assert_eq!(version_body["data"]["note"]["version"], 2);
 
     let versions = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri(format!("/api/v2/clinical/notes/{note_id}/versions"))
+                .uri(format!("/api/v2/clinical/notes/{note_id}/history"))
                 .header(AUTHORIZATION, auth_header.clone())
                 .body(Body::empty())
                 .expect("request builds"),

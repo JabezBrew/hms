@@ -5,6 +5,8 @@ import { wardBoardApi } from '@/features/ward-board/api';
 import { useAuth } from '@/lib/auth';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { WardBoardWebSocket } from '@/lib/websocket';
+import { getV2ClientScopeKey } from '@/lib/api/v2/client';
+import { authorizationScope } from '@/shared/lib/authorizationScope';
 import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 const baseKeys = createKeyFactory('ward-board');
@@ -24,6 +26,7 @@ export const wardBoardKeys = {
   context: () => [...baseKeys.all, 'context'],
   board: (filters) => [...baseKeys.lists(), { filters: sanitizeBoardFiltersForKey(filters) }],
   patients: () => [...baseKeys.all, 'patients'],
+  patientScoped: (patientId, admissionId, scope) => [...baseKeys.all, 'patients', scope, hashQueryValue(JSON.stringify([patientId, admissionId]))],
   patient: (patientId) => [...baseKeys.all, 'patients', hashQueryValue(patientId)],
 };
 
@@ -369,12 +372,14 @@ export function useWardBoardContext(options = {}) {
 }
 
 export function useWardBoardPatient(patientId, options = {}) {
+  const { user } = useAuth();
+  const { admissionId, ...queryOptions } = options;
   return useQuery({
-    queryKey: wardBoardKeys.patient(patientId),
-    queryFn: ({ signal }) => wardBoardApi.getPatient(patientId, { signal }),
+    queryKey: isRustV2ApiMode() ? wardBoardKeys.patientScoped(patientId, admissionId, authorizationScope(user, getV2ClientScopeKey())) : wardBoardKeys.patient(patientId),
+    queryFn: ({ signal }) => wardBoardApi.getPatient(patientId, { signal, admissionId }),
     enabled: Boolean(patientId),
     staleTime: 15 * 1000,
-    ...options,
+    ...queryOptions,
   });
 }
 
@@ -382,10 +387,11 @@ export function useWardBoardTaskAction() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, action, payload }) =>
-      wardBoardApi.runTaskAction({ taskId, action, payload }),
+    retry: false,
+    mutationFn: ({ taskId, action, payload, patientId, admissionId }) =>
+      wardBoardApi.runTaskAction({ taskId, action, payload, patientId, admissionId }),
     onMutate: async (variables) => {
-      if (variables?.action !== 'complete') {
+      if (isRustV2ApiMode() || variables?.action !== 'complete') {
         return null;
       }
       await queryClient.cancelQueries({ queryKey: wardBoardKeys.lists() });
@@ -412,7 +418,11 @@ export function useWardBoardTaskAction() {
         queryClient.setQueryData(wardBoardKeys.patient(context.patientId), context.previousPatient);
       }
     },
+    onSettled: () => {
+      if (isRustV2ApiMode()) queryClient.invalidateQueries({ queryKey: wardBoardKeys.all });
+    },
     onSuccess: (_data, variables) => {
+      if (isRustV2ApiMode()) return;
       const patched = patchWardBoardTaskDelta(
         queryClient,
         buildTaskDeltaFromAction(_data, variables, variables?.action === 'complete' ? 'completed' : null),

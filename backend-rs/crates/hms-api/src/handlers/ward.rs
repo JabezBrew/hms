@@ -11,11 +11,11 @@ use hms_domain::ward::{
     DischargeCaseListItem, FluidBalanceListItem, FluidBalanceListQuery, FluidBalanceSummary,
     FluidBalanceSummaryQuery, FluidBalanceTrendPoint, HandoffListItem, HandoffListQuery,
     MedicationAdministrationListItem, MedicationAdministrationListQuery, MonitoringEventListItem,
-    MyWardBoardContextResponse, NursingAlertListItem, NursingAlertListQuery, NursingTaskListItem,
-    NursingTaskListQuery, PatientVitalsListItem, PatientVitalsListQuery,
-    RecordMedicationOutcomeRequest, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
-    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, TreatmentSheetListQuery,
-    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
+    MonitoringEventListQuery, MyWardBoardContextResponse, NursingAlertListItem,
+    NursingAlertListQuery, NursingTaskListItem, NursingTaskListQuery, PatientVitalsListItem,
+    PatientVitalsListQuery, RecordMedicationOutcomeRequest, RecordNursingReleaseRequest,
+    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
+    TreatmentSheetListQuery, UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
     UpdateWardStaffAssignmentRequest, WardAnalyticsQuery, WardAnalyticsResponse,
     WardBedMapResponse, WardBoardGetQuery, WardBoardItem, WardBoardQuery, WardListItem,
     WardListQuery, WardSectionListItem, WardStaffAssignmentByPractitionerQuery,
@@ -25,9 +25,38 @@ use hms_domain::ward::{
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::RequestContext;
+use crate::extractors::{NetworkContext, RequestContext};
 use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
+
+/// Bodyless nursing decisions reject silently discarded clinical fields.
+pub struct EmptyNursingDecisionBody;
+#[async_trait::async_trait]
+impl axum::extract::FromRequest<AppState> for EmptyNursingDecisionBody {
+    type Rejection = ApiError;
+    async fn from_request(
+        request: axum::extract::Request,
+        state: &AppState,
+    ) -> Result<Self, ApiError> {
+        let body = <axum::body::Bytes as axum::extract::FromRequest<AppState>>::from_request(
+            request, state,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::bad_request(
+                "invalid_nursing_request",
+                "This nursing decision accepts no additional fields.",
+            )
+        })?;
+        if !body.is_empty() {
+            return Err(ApiError::bad_request(
+                "invalid_nursing_request",
+                "This nursing decision accepts no additional fields.",
+            ));
+        }
+        Ok(Self)
+    }
+}
 
 #[utoipa::path(
     get,
@@ -1249,6 +1278,7 @@ pub async fn complete_discharge(
     security(("bearerAuth" = [])),
     params(NursingTaskListQuery),
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
         (status = 200, description = "Nursing tasks", body = ListResponse<NursingTaskListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -1256,14 +1286,20 @@ pub async fn complete_discharge(
 )]
 pub async fn list_nursing_tasks(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Query(query): Query<NursingTaskListQuery>,
+    network: NetworkContext,
+    query: Result<Query<NursingTaskListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<NursingTaskListItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_list_query",
+            "Use supported nursing filters with valid values.",
+        )
+    })?;
     Ok(Json(
         state
             .ward_services()
             .nursing_task_board()
-            .list_nursing_tasks(&user, query)
+            .list_nursing_tasks(&network.context, query, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1276,6 +1312,8 @@ pub async fn list_nursing_tasks(
     security(("bearerAuth" = [])),
     request_body = CreateNursingTaskRequest,
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
+        (status = 409, description = "Nursing decision denied or write unconfirmed", body = ApiErrorResponse),
         (status = 200, description = "Nursing task created", body = ObjectResponse<NursingTaskListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -1284,14 +1322,20 @@ pub async fn list_nursing_tasks(
 )]
 pub async fn create_nursing_task(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<CreateNursingTaskRequest>,
+    network: NetworkContext,
+    payload: Result<Json<CreateNursingTaskRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_request",
+            "Provide supported nursing fields with valid values.",
+        )
+    })?;
     Ok(Json(
         state
             .ward_services()
             .nursing_task_board()
-            .create_nursing_task(&user, payload)
+            .create_nursing_task(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1304,6 +1348,8 @@ pub async fn create_nursing_task(
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Nursing task id")),
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
+        (status = 409, description = "Nursing decision denied or write unconfirmed", body = ApiErrorResponse),
         (status = 200, description = "Nursing task completed", body = ObjectResponse<NursingTaskListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -1312,14 +1358,15 @@ pub async fn create_nursing_task(
 )]
 pub async fn complete_nursing_task(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: NetworkContext,
     Path(id): Path<Uuid>,
+    _body: EmptyNursingDecisionBody,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .nursing_task_board()
-            .complete_nursing_task(&user, id)
+            .complete_nursing_task(&network.context, id, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1332,6 +1379,7 @@ pub async fn complete_nursing_task(
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Nursing task id")),
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
         (status = 200, description = "Nursing task cancelled", body = ObjectResponse<NursingTaskListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -1341,14 +1389,15 @@ pub async fn complete_nursing_task(
 )]
 pub async fn cancel_nursing_task(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: NetworkContext,
     Path(id): Path<Uuid>,
+    _body: EmptyNursingDecisionBody,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .nursing_task_board()
-            .cancel_nursing_task(&user, id)
+            .cancel_nursing_task(&network.context, id, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1661,6 +1710,7 @@ pub async fn create_treatment_sheet(
     security(("bearerAuth" = [])),
     params(PatientVitalsListQuery),
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
         (status = 200, description = "Patient vitals", body = ListResponse<PatientVitalsListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -1668,14 +1718,20 @@ pub async fn create_treatment_sheet(
 )]
 pub async fn list_patient_vitals(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Query(query): Query<PatientVitalsListQuery>,
+    network: NetworkContext,
+    query: Result<Query<PatientVitalsListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<PatientVitalsListItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_list_query",
+            "Use supported nursing filters with valid values.",
+        )
+    })?;
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .list_patient_vitals(&user, query)
+            .list_patient_vitals(&network.context, query, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1688,6 +1744,7 @@ pub async fn list_patient_vitals(
     security(("bearerAuth" = [])),
     request_body = CreatePatientVitalsRequest,
     responses(
+        (status = 409, description = "Nursing decision denied or write unconfirmed", body = ApiErrorResponse),
         (status = 200, description = "Patient vitals recorded", body = ObjectResponse<PatientVitalsListItem>),
         (status = 400, description = "Invalid vitals request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1697,14 +1754,20 @@ pub async fn list_patient_vitals(
 )]
 pub async fn create_patient_vitals(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<CreatePatientVitalsRequest>,
+    network: NetworkContext,
+    payload: Result<Json<CreatePatientVitalsRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<PatientVitalsListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_request",
+            "Provide supported nursing fields with valid values.",
+        )
+    })?;
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .create_patient_vitals(&user, payload)
+            .create_patient_vitals(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1717,6 +1780,7 @@ pub async fn create_patient_vitals(
     security(("bearerAuth" = [])),
     params(NursingAlertListQuery),
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
         (status = 200, description = "Nursing alerts", body = ListResponse<NursingAlertListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -1724,7 +1788,7 @@ pub async fn create_patient_vitals(
 )]
 pub async fn list_nursing_alerts(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: NetworkContext,
     query: Result<Query<NursingAlertListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<NursingAlertListItem>>, ApiError> {
     let Query(query) = query.map_err(|_| {
@@ -1738,7 +1802,7 @@ pub async fn list_nursing_alerts(
         state
             .ward_services()
             .observations_monitoring()
-            .list_nursing_alerts(&user, query)
+            .list_nursing_alerts(&network.context, query, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1754,7 +1818,6 @@ pub async fn list_nursing_alerts(
         (status = 400, description = "Invalid or unsupported request fields", body = ApiErrorResponse),
         (status = 409, description = "Write could not be confirmed", body = ApiErrorResponse),
         (status = 200, description = "Nursing alert created", body = ObjectResponse<NursingAlertListItem>),
-        (status = 400, description = "Invalid alert request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Admission not found", body = ApiErrorResponse)
@@ -1762,7 +1825,7 @@ pub async fn list_nursing_alerts(
 )]
 pub async fn create_nursing_alert(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: NetworkContext,
     payload: Result<Json<CreateNursingAlertRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<NursingAlertListItem>>, ApiError> {
     let Json(payload) = payload.map_err(|_| {
@@ -1776,7 +1839,7 @@ pub async fn create_nursing_alert(
         state
             .ward_services()
             .observations_monitoring()
-            .create_nursing_alert(&user, payload)
+            .create_nursing_alert(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1789,6 +1852,8 @@ pub async fn create_nursing_alert(
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Nursing alert id")),
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
+        (status = 409, description = "Nursing decision denied or write unconfirmed", body = ApiErrorResponse),
         (status = 200, description = "Nursing alert acknowledged", body = ObjectResponse<NursingAlertListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -1797,14 +1862,14 @@ pub async fn create_nursing_alert(
 )]
 pub async fn acknowledge_nursing_alert(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: NetworkContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NursingAlertListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .acknowledge_nursing_alert(&user, id)
+            .acknowledge_nursing_alert(&network.context, id, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1815,8 +1880,9 @@ pub async fn acknowledge_nursing_alert(
     operation_id = "getMonitoringEvents",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(MonitoringEventListQuery),
     responses(
+        (status = 400, description = "Invalid supported nursing request or filters", body = ApiErrorResponse),
         (status = 200, description = "Monitoring events", body = ListResponse<MonitoringEventListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -1824,14 +1890,20 @@ pub async fn acknowledge_nursing_alert(
 )]
 pub async fn list_monitoring_events(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Query(query): Query<CursorListQuery>,
+    network: NetworkContext,
+    query: Result<Query<MonitoringEventListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<MonitoringEventListItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_list_query",
+            "Use supported nursing filters with valid values.",
+        )
+    })?;
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .list_monitoring_events(&user, query)
+            .list_monitoring_events(&network.context, query, network.authorization_deadline)
             .await?,
     ))
 }
@@ -1844,6 +1916,7 @@ pub async fn list_monitoring_events(
     security(("bearerAuth" = [])),
     request_body = CreateMonitoringEventRequest,
     responses(
+        (status = 409, description = "Nursing decision denied or write unconfirmed", body = ApiErrorResponse),
         (status = 200, description = "Monitoring event created", body = ObjectResponse<MonitoringEventListItem>),
         (status = 400, description = "Invalid monitoring event", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1853,14 +1926,20 @@ pub async fn list_monitoring_events(
 )]
 pub async fn create_monitoring_event(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<CreateMonitoringEventRequest>,
+    network: NetworkContext,
+    payload: Result<Json<CreateMonitoringEventRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<MonitoringEventListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_request",
+            "Provide supported nursing fields with valid values.",
+        )
+    })?;
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .create_monitoring_event(&user, payload)
+            .create_monitoring_event(&network.context, payload, network.authorization_deadline)
             .await?,
     ))
 }

@@ -2,9 +2,8 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
-    AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
-    ClinicalNoteListItem, ClinicalNoteListQuery, ClinicalNoteTemplate,
-    ClinicalNoteTemplateListQuery, ClinicalNoteVersion, CreateAllergyRequest,
+    AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteListItem,
+    ClinicalNoteListQuery, ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest,
     CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
     CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
     GenerateMedicationAdministrationRequest, GenerateMedicationAdministrationResponse,
@@ -12,6 +11,10 @@ use hms_domain::clinical::{
     ProblemArtifactLinkItem, ProblemArtifactLinkQuery, ProblemArtifactLinkRequest, ProblemListItem,
     UpdateAllergyRequest, UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest,
     UpdateProblemRequest,
+};
+use hms_domain::clinical_notes::{
+    ClinicalNoteRecordDetail, GovernedNoteTemplateDetail, GovernedNoteTemplateItem,
+    GovernedNoteTemplateQuery,
 };
 use uuid::Uuid;
 
@@ -53,22 +56,26 @@ pub async fn list_medication_catalog(
     operation_id = "getClinicalNoteTemplates",
     tag = "clinical",
     security(("bearerAuth" = [])),
-    params(ClinicalNoteTemplateListQuery),
+    params(GovernedNoteTemplateQuery),
     responses(
-        (status = 200, description = "Clinical note templates", body = ListResponse<ClinicalNoteTemplate>),
+        (status = 200, description = "Clinical note templates", body = ListResponse<GovernedNoteTemplateItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
 )]
 pub async fn list_note_templates(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Query(query): Query<ClinicalNoteTemplateListQuery>,
-) -> Result<Json<ListResponse<ClinicalNoteTemplate>>, ApiError> {
+    network: crate::extractors::NetworkContext,
+    query: Result<Query<GovernedNoteTemplateQuery>, axum::extract::rejection::QueryRejection>,
+) -> Result<Json<ListResponse<GovernedNoteTemplateItem>>, ApiError> {
     Ok(Json(
         state
             .clinical_service()
-            .list_note_templates(&user, query)
+            .governed_templates(
+                &network.context,
+                super::clinical_notes::query(query)?,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }
@@ -81,7 +88,7 @@ pub async fn list_note_templates(
     security(("bearerAuth" = [])),
     request_body = CreateClinicalNoteTemplateRequest,
     responses(
-        (status = 200, description = "Clinical note template created", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 409, description = "Retired shape: use strict reviewed commands or bounded history", body = ApiErrorResponse),
         (status = 400, description = "Invalid clinical note template", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -108,7 +115,7 @@ pub async fn create_note_template(
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Clinical note template id")),
     responses(
-        (status = 200, description = "Clinical note template detail", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 200, description = "Clinical note template detail", body = ObjectResponse<GovernedNoteTemplateDetail>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Clinical note template not found", body = ApiErrorResponse)
@@ -116,13 +123,13 @@ pub async fn create_note_template(
 )]
 pub async fn get_note_template(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(id): Path<Uuid>,
-) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
+) -> Result<Json<ObjectResponse<GovernedNoteTemplateDetail>>, ApiError> {
     Ok(Json(
         state
             .clinical_service()
-            .get_note_template(&user, id)
+            .governed_template(&network.context, id, network.authorization_deadline)
             .await?,
     ))
 }
@@ -136,7 +143,7 @@ pub async fn get_note_template(
     params(("id" = Uuid, Path, description = "Clinical note template id")),
     request_body = UpdateClinicalNoteTemplateRequest,
     responses(
-        (status = 200, description = "Clinical note template updated", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 409, description = "Retired shape: use strict reviewed commands or bounded history", body = ApiErrorResponse),
         (status = 400, description = "Invalid clinical note template", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -165,7 +172,7 @@ pub async fn update_note_template(
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Clinical note template id")),
     responses(
-        (status = 200, description = "Clinical note template deactivated", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 409, description = "Retired shape: use strict reviewed commands or bounded history", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Clinical note template not found", body = ApiErrorResponse)
@@ -224,7 +231,7 @@ pub async fn list_notes(
     params(("patient_id" = Uuid, Path, description = "Patient id")),
     request_body = CreateClinicalNoteRequest,
     responses(
-        (status = 200, description = "Clinical note created", body = ObjectResponse<ClinicalNoteListItem>),
+        (status = 409, description = "Retired shape: use strict reviewed commands or bounded history", body = ApiErrorResponse),
         (status = 400, description = "Invalid clinical note", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
@@ -253,7 +260,7 @@ pub async fn create_note(
     security(("bearerAuth" = [])),
     params(("note_id" = Uuid, Path, description = "Clinical note id")),
     responses(
-        (status = 200, description = "Clinical note detail", body = ObjectResponse<ClinicalNoteDetail>),
+        (status = 200, description = "Clinical note detail", body = ObjectResponse<ClinicalNoteRecordDetail>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
         (status = 404, description = "Clinical note not found", body = ApiErrorResponse)
@@ -261,11 +268,14 @@ pub async fn create_note(
 )]
 pub async fn get_note(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(note_id): Path<Uuid>,
-) -> Result<Json<ObjectResponse<ClinicalNoteDetail>>, ApiError> {
+) -> Result<Json<ObjectResponse<ClinicalNoteRecordDetail>>, ApiError> {
     Ok(Json(
-        state.clinical_service().get_note(&user, note_id).await?,
+        state
+            .clinical_service()
+            .note_detail(&network.context, note_id, network.authorization_deadline)
+            .await?,
     ))
 }
 
@@ -277,7 +287,7 @@ pub async fn get_note(
     security(("bearerAuth" = [])),
     params(("note_id" = Uuid, Path, description = "Clinical note id")),
     responses(
-        (status = 200, description = "Clinical note versions", body = ListResponse<ClinicalNoteVersion>),
+        (status = 409, description = "Retired shape: use strict reviewed commands or bounded history", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
         (status = 404, description = "Clinical note not found", body = ApiErrorResponse)
@@ -305,7 +315,7 @@ pub async fn list_note_versions(
     params(("note_id" = Uuid, Path, description = "Clinical note id")),
     request_body = CreateClinicalNoteVersionRequest,
     responses(
-        (status = 200, description = "Clinical note version created", body = ObjectResponse<ClinicalNoteVersion>),
+        (status = 409, description = "Retired shape: use strict reviewed commands or bounded history", body = ApiErrorResponse),
         (status = 400, description = "Invalid clinical note version", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),

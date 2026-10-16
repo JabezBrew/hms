@@ -1,4 +1,5 @@
 import { useChronicleClinicalPermissions } from '@/features/patients/chronicle/clinicalPermissions';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 
@@ -17,6 +18,12 @@ function getPatientName(patient) {
 }
 
 function formatScopeLabel({ allHistory, encounterId, admissionId }) {
+  if (isRustV2ApiMode()) {
+    if (allHistory) return 'All authorized patient history';
+    if (admissionId) return 'Admission scoped';
+    if (encounterId) return 'Visit scope unavailable';
+    return 'Authorized patient history';
+  }
   if (allHistory) {
     return 'All history';
   }
@@ -88,6 +95,9 @@ function TrendReviewSlideOverContent({
     if (allHistory) {
       return {};
     }
+    if (admissionId && isRustV2ApiMode()) {
+      return { admission_id: admissionId };
+    }
     if (encounterId) {
       return { encounter_id: encounterId };
     }
@@ -107,6 +117,7 @@ function TrendReviewSlideOverContent({
   const {
     data: vitalsData = [],
     isLoading: vitalsLoading,
+    error: vitalsError,
   } = useVitalSignsTrends(patientId, vitalsFilters, {
     enabled: !!patientId,
   });
@@ -183,7 +194,7 @@ function TrendReviewSlideOverContent({
       activeTab={activeTab}
       admissionId={admissionId}
       allHistory={allHistory}
-      encounterId={encounterId}
+      encounterId={isRustV2ApiMode() ? null : encounterId}
       fluidLoading={fluidLoading}
       fluidError={fluidError}
       fluidSummary={fluidSummary}
@@ -197,6 +208,7 @@ function TrendReviewSlideOverContent({
       scopeLabel={scopeLabel}
       showFluidTab={showFluidTab}
       vitalsLoading={vitalsLoading}
+      vitalsError={vitalsError}
     />
   );
 }

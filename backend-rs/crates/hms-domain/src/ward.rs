@@ -650,11 +650,19 @@ pub struct DischargeCaseListItem {
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
 pub struct NursingTaskListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub patient_id: Option<Uuid>,
     pub admission_case_id: Option<Uuid>,
+    /// The original ward captured on the task.
+    pub ward_id: Option<Uuid>,
+    pub task_type: Option<NursingTaskType>,
+    pub status: Option<NursingTaskStatus>,
+    pub due_from: Option<DateTime<Utc>>,
+    pub due_before: Option<DateTime<Utc>>,
+    pub descending: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -669,10 +677,19 @@ pub struct NursingTaskListItem {
     pub instruction: Option<String>,
     pub status: NursingTaskStatus,
     pub due_at: DateTime<Utc>,
+    pub assigned_to_user_id: Option<Uuid>,
+    pub ward_id: Uuid,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub completed_by_user_id: Option<Uuid>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub cancelled_by_user_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateNursingTaskRequest {
+    /// When known, bind the reviewed patient to the selected admission before persistence.
+    pub patient_id: Option<Uuid>,
     pub admission_case_id: Uuid,
     pub task_type: NursingTaskType,
     pub due_at: DateTime<Utc>,
@@ -841,16 +858,25 @@ pub struct PatientVitalsListItem {
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
 pub struct PatientVitalsListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub patient_id: Option<Uuid>,
     pub admission_case_id: Option<Uuid>,
     pub hours: Option<u16>,
+    /// Current admission ward; these historical records have no ward snapshot.
+    pub ward_id: Option<Uuid>,
+    pub recorded_from: Option<DateTime<Utc>>,
+    pub recorded_before: Option<DateTime<Utc>>,
+    pub descending: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreatePatientVitalsRequest {
+    /// When known, bind the reviewed patient to the selected admission before persistence.
+    pub patient_id: Option<Uuid>,
     pub admission_case_id: Uuid,
     pub recorded_at: DateTime<Utc>,
     pub temperature_c: Option<f32>,
@@ -913,7 +939,24 @@ pub struct MonitoringEventListItem {
     pub recorded_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct MonitoringEventListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    /// Current admission ward; monitoring events have no historical ward snapshot.
+    pub ward_id: Option<Uuid>,
+    pub event_kind: Option<MonitoringEventKind>,
+    pub recorded_from: Option<DateTime<Utc>>,
+    pub recorded_before: Option<DateTime<Utc>>,
+    pub descending: Option<bool>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateMonitoringEventRequest {
     pub admission_case_id: Uuid,
     pub event_kind: MonitoringEventKind,

@@ -1,4 +1,5 @@
 import X from 'lucide-react/dist/esm/icons/x.js';
+import { useId } from 'react';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import Thermometer from 'lucide-react/dist/esm/icons/thermometer.js';
 import Heart from 'lucide-react/dist/esm/icons/heart.js';
@@ -33,14 +34,18 @@ function VitalNumberField({
   unit,
   step,
 }) {
+  const inputId = useId();
   return (
     <div className="space-y-2">
-      <Label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+      <Label htmlFor={inputId} className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
         <Icon className="size-4" />
         {label}
       </Label>
       <div className="relative">
         <Input
+          id={inputId}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${inputId}-error` : undefined}
           type="number"
           step={step}
           placeholder={placeholder}
@@ -57,7 +62,7 @@ function VitalNumberField({
           </span>
         )}
       </div>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p id={`${inputId}-error`} className="text-xs text-red-500">{error}</p>}
     </div>
   );
 }
@@ -76,6 +81,7 @@ function BloodPressureField({ formData, errors, onChange }) {
           <Input
             type="number"
             placeholder="120"
+            aria-label="Systolic blood pressure"
             value={formData.blood_pressure_systolic}
             onChange={(event) => onChange('blood_pressure_systolic', event.target.value)}
             className={cn(
@@ -92,6 +98,7 @@ function BloodPressureField({ formData, errors, onChange }) {
           <Input
             type="number"
             placeholder="80"
+            aria-label="Diastolic blood pressure"
             value={formData.blood_pressure_diastolic}
             onChange={(event) => onChange('blood_pressure_diastolic', event.target.value)}
             className={cn(
@@ -142,7 +149,7 @@ function PainScaleField({ value, error, onChange }) {
   );
 }
 
-export function VitalsSlideOverHeader({ patientName, onClose }) {
+export function VitalsSlideOverHeader({ patientName, patientCode, onClose, isPending }) {
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
       <div className="flex items-center gap-3">
@@ -154,7 +161,7 @@ export function VitalsSlideOverHeader({ patientName, onClose }) {
             Record Vital Signs
           </h2>
           <p className="font-mono text-xs text-muted-foreground mt-0.5">
-            {patientName}
+            {patientName}{patientCode ? ` · ${patientCode}` : null}
           </p>
         </div>
       </div>
@@ -163,6 +170,7 @@ export function VitalsSlideOverHeader({ patientName, onClose }) {
         variant="destructive"
         size="sm"
         onClick={onClose}
+        disabled={isPending}
         className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
       >
         <X className="size-4 mr-1.5" />
@@ -203,10 +211,10 @@ export function VitalsAlerts({ criticalWarnings, generalError }) {
   );
 }
 
-export function VitalsFormContent({ formData, errors, onChange }) {
+export function VitalsFormContent({ formData, errors, onChange, supportsPainLevel = true, disabled = false }) {
   return (
     <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <fieldset disabled={disabled} className="grid min-w-0 grid-cols-1 md:grid-cols-2 gap-6">
         <VitalNumberField
           icon={Thermometer}
           label="Temperature"
@@ -231,6 +239,7 @@ export function VitalsFormContent({ formData, errors, onChange }) {
           icon={Wind}
           label="Respiratory Rate"
           value={formData.respiratory_rate}
+          error={errors.respiratory_rate}
           onChange={(value) => onChange('respiratory_rate', value)}
           placeholder="16"
           unit="/min"
@@ -244,22 +253,22 @@ export function VitalsFormContent({ formData, errors, onChange }) {
           placeholder="98"
           unit="%"
         />
-        <PainScaleField value={formData.pain_level} error={errors.pain_level} onChange={onChange} />
-      </div>
+        {supportsPainLevel ? <PainScaleField value={formData.pain_level} error={errors.pain_level} onChange={onChange} /> : null}
+      </fieldset>
 
-      <VitalsNormalRanges />
+      <VitalsNormalRanges supportsPainLevel={supportsPainLevel} />
     </div>
   );
 }
 
-function VitalsNormalRanges() {
+function VitalsNormalRanges({ supportsPainLevel }) {
   return (
     <div className="mt-8 p-4 bg-muted/50 rounded-lg">
       <h3 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">
         Normal Ranges
       </h3>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs font-mono">
-        {NORMAL_RANGES.map(([label, value]) => (
+        {NORMAL_RANGES.filter(([label]) => supportsPainLevel || label !== 'Pain:').map(([label, value]) => (
           <div key={label}>
             <span className="text-muted-foreground">{label}</span> {value}
           </div>
@@ -269,7 +278,7 @@ function VitalsNormalRanges() {
   );
 }
 
-export function VitalsSlideOverFooter({ isPending, onCancel, onSubmit }) {
+export function VitalsSlideOverFooter({ isPending, isUnconfirmed, onCancel, onSubmit }) {
   return (
     <footer className="px-6 py-4 border-t border-border bg-card">
       <div className="flex items-center justify-end gap-2">
@@ -277,6 +286,7 @@ export function VitalsSlideOverFooter({ isPending, onCancel, onSubmit }) {
           variant="outline"
           size="sm"
           onClick={onCancel}
+          disabled={isPending}
           className="font-mono text-xs"
         >
           Cancel
@@ -284,7 +294,7 @@ export function VitalsSlideOverFooter({ isPending, onCancel, onSubmit }) {
         <Button
           size="sm"
           onClick={onSubmit}
-          disabled={isPending}
+          disabled={isPending || isUnconfirmed}
           className="font-mono text-xs"
         >
           {isPending ? (

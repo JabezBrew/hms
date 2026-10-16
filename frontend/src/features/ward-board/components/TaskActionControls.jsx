@@ -25,6 +25,7 @@ export function TaskActionControls({
   onAction,
   pendingAction,
   className,
+  canComplete = true,
 }) {
   const taskId = getTaskId(task);
   const status = getTaskStatus(task);
@@ -40,7 +41,7 @@ export function TaskActionControls({
       {actions.map((item) => {
         const Icon = item.icon;
         const isPending = pendingAction?.taskId === taskId && pendingAction?.action === item.action;
-        const disabled = isPending;
+        const disabled = Boolean(pendingAction) || typeof onAction !== 'function' || (!canComplete && item.action === 'complete');
         return (
           <Button
             key={item.action}
@@ -48,9 +49,9 @@ export function TaskActionControls({
             variant="outline"
             size="sm"
             disabled={disabled}
-            onClick={() => onAction({ taskId, action: item.action, patientId })}
+            onClick={() => onAction({ taskId, action: item.action, patientId, admissionId: task.admission_case_id || task.admission_id })}
             className={cn(
-              'h-6 px-2 font-mono text-[10px]',
+              'min-h-11 px-3 text-xs sm:min-h-8',
               item.action === 'escalate' && 'border-rose-200 text-rose-700 hover:bg-rose-50',
               item.action === 'cancel' && 'border-rose-200 text-rose-700 hover:bg-rose-50',
               item.action === 'complete' && 'border-emerald-200 text-emerald-700 hover:bg-emerald-50',

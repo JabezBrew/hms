@@ -1,5 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AuthContext } from '@/lib/auth/AuthContext'
+import { ChronicleClinicalPermissionsContext } from '@/features/patients/chronicle/clinicalPermissions'
 
 import AddNoteSlideOver from '../AddNoteSlideOver'
 
@@ -53,12 +56,16 @@ vi.mock('@/features/clinical-notes/hooks', () => ({
 }))
 
 function renderSlideOver() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const user = { id: '90000000-0000-4000-8000-000000000003', adminAccess: { capabilities: ['clinical_documentation.view', 'clinical_documentation.manage'] }, accessContext: { facility_id: '90000000-0000-4000-8000-000000000010', active_profile: 'hospital', features: ['encounters'], patient_visibility: ['full_clinical'] } }
   return render(
+    <QueryClientProvider client={client}><AuthContext.Provider value={{ user }}><ChronicleClinicalPermissionsContext.Provider value={{ can_view_full_clinical: true, can_add_note: true }}>
     <AddNoteSlideOver
       open
       onClose={vi.fn()}
-      patient={{ id: 'patient-1', name: 'Ama Mensah' }}
+      patient={{ id: '90000000-0000-4000-8000-000000000001', name: 'Synthetic Patient' }}
     />
+    </ChronicleClinicalPermissionsContext.Provider></AuthContext.Provider></QueryClientProvider>
   )
 }
 
@@ -76,6 +83,7 @@ describe('AddNoteSlideOver Rust V2 AI guard', () => {
 
     renderSlideOver()
 
+    expect(screen.getByLabelText('Note title')).toBeInTheDocument()
     expect(screen.queryByText('AI Note Assistant')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /generate draft/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /run quality check/i })).not.toBeInTheDocument()

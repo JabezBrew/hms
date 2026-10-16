@@ -84,6 +84,29 @@ acknowledgment or a saved patient narrative. Non-keyed header creates and
 finalization hooks never retry automatically. Server reference/feature guards
 and atomic audit must confirm writes before any saved status is displayed.
 
+`records/` owns Rust task/vital query normalization and confirmed write receipts.
+Patient, selected admission, ward, status/type and UTC time bounds go to the
+server before pagination. Array consumers follow a complete bounded window;
+failed, duplicate, malformed or oversized pages fail the view rather than draw
+partial trends or report complete task counts. Cache keys hash the normalized
+query and current authorization scope. Visit-only vital history is explicitly
+unavailable; no admission is guessed from a selected encounter.
+
+Vital entry uses the explicitly selected admission, accessible numeric fields
+and exact integer validation without truncation. Unsupported pain scoring is not
+offered in Rust mode. Closed form DOM and copied observations are removed on
+patient/admission changes. Writes never inherit automatic retries. Malformed or
+lost receipts remain uncertain in the central interrupted-write guard; a fresh
+read alone does not prove whether the original write occurred.
+
+The ward board loads all tasks in its authorized captured-ward window, paginates
+them visibly and omits unsupported priority/acknowledgment claims. Full clinical
+and nursing authority gate narrative tasks. Decisions refresh authoritative
+state, validate patient/admission/terminal evidence and never optimistically mark
+a Rust task complete. Earlier-ward tasks are labelled; completion is unavailable
+after a known transfer while authorized cancellation can retire the old task.
+Pending decisions and notifications are fenced to the originating context.
+
 `handover/` owns separately scoped patient narratives, append-only correction/void
 and actor-bound original receipt recovery. It launches from Chronicle with current
 authoritative FullClinical proof and requires original-ward assignment or existing

@@ -7,6 +7,7 @@ import { lazy, Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   formatRelativeTimelineTime,
   formatTimelineTime,
@@ -128,6 +129,7 @@ const TimelineEntryModals = ({
   entry,
   isCopyModalOpen,
   isModalOpen,
+  retainDetail,
   onCopyNote,
   onEditNote,
   onNoteUpdated,
@@ -135,7 +137,7 @@ const TimelineEntryModals = ({
   setIsModalOpen,
 }) => (
   <>
-    {isModalOpen && (
+    {(isModalOpen || retainDetail) && (
       <Suspense fallback={null}>
         <NoteDetailModal
           open={isModalOpen}
@@ -183,6 +185,8 @@ const TimelineEntryFrame = ({
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [detailVisited, setDetailVisited] = useState(false);
+  const rustNote = isRustV2ApiMode() && (entry.entry_type === 'note' || ['doctor_note', 'nursing_note', 'allied_health_note'].includes(entry.type));
 
   return (
     <article
@@ -216,7 +220,7 @@ const TimelineEntryFrame = ({
           noteExpanded={noteExpanded}
           onEditClick={onEditClick}
           onOpenCopyModal={() => setIsCopyModalOpen(true)}
-          onOpenDetailModal={() => setIsModalOpen(true)}
+          onOpenDetailModal={() => { setDetailVisited(true); setIsModalOpen(true); }}
           onToggleNoteExpanded={onToggleNoteExpanded}
         />
       </div>
@@ -228,6 +232,7 @@ const TimelineEntryFrame = ({
         entry={entry}
         isCopyModalOpen={isCopyModalOpen}
         isModalOpen={isModalOpen}
+        retainDetail={rustNote && detailVisited && capabilities.hasDetailContent}
         onCopyNote={onCopyNote}
         onEditNote={onEditNote}
         onNoteUpdated={onNoteUpdated}

@@ -145,3 +145,12 @@ catalog correction carry server-derived current authority proofs into their
 transactions. `tests/medication_stock_contract.rs` exercises real routes and
 lock-wait expiry/revocation. See the
 [scope and compatibility contract](../../../docs/v2/2026-10-16-scheduled-stock-basis-scope.md).
+
+## Clinical note evidence
+
+`handlers/clinical_notes.rs`, `routes/clinical_notes.rs` and
+`services/clinical/note_records.rs` expose strict note/template command receipts,
+protected exact detail/version reads and bounded history/catalogs. Existing note
+and template GET entrypoints delegate to the same current-proof workflows; retired
+mutation shapes return typed migration guidance. See the
+[note evidence scope](../../../docs/v2/2026-10-16-clinical-note-evidence-scope.md).

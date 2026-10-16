@@ -11,9 +11,14 @@ export const nursingKeys = {
   vitalSigns: (patient, admission, encounter, date, startDate, endDate) =>
     keyWith('vital-signs', patient, admission, encounter, date, startDate, endDate),
   vitalSignsWindow: (patientId, window) => keyWith('vital-signs', patientId, window),
+  vitalSignsScoped: (scope, query) => keyWith('vital-signs', 'scoped', scope, query),
+  vitalSignsTrendsScoped: (scope, query) => keyWith('vital-signs-trends', 'scoped', scope, query),
+  nursingTasksScoped: (scope, query) => keyWith('nursing-tasks', 'scoped', scope, query),
+  nursingTasksTodayScoped: (scope, query) => keyWith('nursing-tasks-today', 'scoped', scope, query),
   vitalSignsAll: () => keyWith('vital-signs'),
   vitalSignsTrends: (patientId, days, encounterId, admissionId, startDate, endDate) =>
     keyWith('vital-signs-trends', patientId, days, encounterId, admissionId, startDate, endDate),
+  vitalSignsTrendsAll: () => keyWith('vital-signs-trends'),
   vitalSignsTrendsByPatient: (patientId) => keyWith('vital-signs-trends', patientId),
   nursingTasks: (patient, admission, status, ward, date, taskType, priority) =>
     keyWith('nursing-tasks', patient, admission, status, ward, date, taskType, priority),

@@ -144,9 +144,10 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
     case 'note':
       return {
         open: true,
+        admissionId: selectedAdmissionId || null,
         onClose,
         patient,
-        encounter: activeEncounter,
+        encounter: isRustV2ApiMode() ? context.selectedEncounter || null : activeEncounter,
         onNoteCreated,
         initialTemplate: editNoteData?.template || copyForwardData?.template,
         initialData: editNoteData?.data || copyForwardData?.data,
@@ -159,6 +160,7 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         onClose,
         patient,
         encounter: activeEncounter,
+        admissionId: getChronicleAdmissionReference(patient, selectedAdmissionId)?.id || null,
         onVitalsRecorded,
       };
     case 'prescription':

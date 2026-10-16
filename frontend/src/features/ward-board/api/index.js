@@ -1,3 +1,5 @@
+import { decideNursingTask } from '@/features/nursing/records/api';
+import { loadNursingRecordWindow, nursingTaskQuery } from '@/features/nursing/records/queries';
 import { apiClient, handleApiError } from '@/lib/api-client';
 import { v2Api, v2Request } from '@/lib/api/v2/client';
 import {
@@ -5,6 +7,7 @@ import {
   resolveCursorPage as resolveScopedCursorPage,
 } from '@/lib/api/v2/cursorCache';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
+import { copyWriteResponseMetadata } from '@/lib/api/v2/writeUncertainty';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
@@ -185,9 +188,6 @@ function humanize(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function isTerminalTaskStatus(status) {
-  return ['completed', 'cancelled', 'done', 'closed'].includes(String(status || '').toLowerCase());
-}
 
 function adaptV2NursingTask(task = {}) {
   const taskType = task.task_type || task.type || 'nursing_task';
@@ -212,21 +212,11 @@ function adaptV2NursingTask(task = {}) {
 }
 
 async function getV2PatientBoardDetail(patientId, options = {}) {
-  const taskResponse = await v2Api.getNursingTasks({
-    query: { limit: 50, patient_id: patientId },
-    signal: options.signal,
-  });
-  const tasks = (Array.isArray(taskResponse?.data) ? taskResponse.data : [])
-    .map(adaptV2NursingTask);
-
-  return {
-    id: patientId,
-    patient_id: patientId,
-    tasks,
-    ...(tasks.length > 0
-      ? { open_task_count: tasks.filter((task) => !isTerminalTaskStatus(task.status)).length }
-      : {}),
-  };
+  const rows = await loadNursingRecordWindow(v2Api.getNursingTasks,
+    nursingTaskQuery({ patient_id: patientId, admission_case_id: options.admissionId, descending: true }),
+    'tasks', { signal: options.signal });
+  return { id: patientId, patient_id: patientId, tasks: rows.map(adaptV2NursingTask),
+    tasks_complete: true, task_scope: 'authorized_captured_wards' };
 }
 
 function normalizeV2BoardResponse(response, params = {}) {
@@ -278,7 +268,7 @@ function wrapApiError(error, message) {
 
 function wrapV2ApiError(error, message) {
   rethrowAbortError(error);
-  throw new Error(handleV2ApiError(error, message));
+  throw copyWriteResponseMetadata(new Error(handleV2ApiError(error, message)), error);
 }
 
 export const wardBoardApi = {
@@ -351,7 +341,7 @@ export const wardBoardApi = {
     }
   },
 
-  runTaskAction: async ({ taskId, action, payload = {} }) => {
+  runTaskAction: async ({ taskId, action, patientId, admissionId, payload = {} }) => {
     if (!taskId) {
       throw new Error('Task id is required');
     }
@@ -364,14 +354,8 @@ export const wardBoardApi = {
         throw new Error('Unsupported task action in Rust V2 mode');
       }
 
-      try {
-        const response = action === 'complete'
-          ? await v2Api.postNursingTaskComplete({ id: taskId }, { signal: payload?.signal })
-          : await v2Api.postNursingTaskCancel({ id: taskId }, { signal: payload?.signal });
-        return response?.data || response;
-      } catch (error) {
-        wrapV2ApiError(error, `Failed to ${action} ward board task`);
-      }
+      if (payload.completion_notes || payload.notes || payload.reason) throw new Error('Task decision notes are unavailable. No decision was submitted.');
+      return decideNursingTask(taskId, action === 'complete' ? 'completed' : 'cancelled', { signal: payload.signal, patientId: patientId || payload.patient_id, admissionId: admissionId || payload.admission_case_id });
     }
 
     try {

@@ -2,7 +2,7 @@ import { ChronicleClinicalPermissionsContext } from '@/features/patients/chronic
 import { render, screen } from '@testing-library/react';
 
 import TrendReviewSlideOver from '@/components/chronicle/TrendReviewSlideOver';
-import { useFluidBalanceTrends } from '@/features/nursing/hooks';
+import { useFluidBalanceTrends, useVitalSignsTrends } from '@/features/nursing/hooks';
 
 vi.mock('@/features/nursing/hooks', () => ({
   useVitalSignsTrends: vi.fn(() => ({
@@ -67,6 +67,14 @@ describe('TrendReviewSlideOver', () => {
     render(<TrendReviewSlideOver open onClose={vi.fn()} patient={patient} allHistory initialTab="fluids" />);
     expect(screen.getByRole('alert')).toHaveTextContent('could not be fully loaded');
     expect(screen.queryByText('No fluid-balance data in this scope')).not.toBeInTheDocument();
+  });
+
+  it('hides cached vital charts after a failed refresh instead of showing partial history', () => {
+    useVitalSignsTrends.mockReturnValueOnce({ data: [{ recorded_at: '2026-10-16T04:00:00Z', temperature: 37 }], isLoading: false, error: new Error('Synthetic page failed') });
+    render(<TrendReviewSlideOver open onClose={vi.fn()} patient={patient} allHistory initialTab="vitals" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Vital-sign trends could not be fully loaded');
+    expect(screen.queryByTestId('clinical-trend-chart')).not.toBeInTheDocument();
+    expect(screen.queryByText('No vital-sign data in this scope')).not.toBeInTheDocument();
   });
 });
 

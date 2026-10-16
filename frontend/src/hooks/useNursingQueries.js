@@ -1,3 +1,6 @@
+export { useCreateVitalSigns, useCreateNursingTask, useCompleteTask, useUpdateTask } from '@/features/nursing/records/mutations';
+import { nursingRecordsCacheScope } from '@/features/nursing/records/queries';
+import { useFluidBalanceDay } from '@/features/nursing/hooks/useFluidBalanceDay';
 import { physicalStockBasis } from '@/features/pharmacy/prescribing/scheduledStockPolicy';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
@@ -11,13 +14,9 @@ import {
   rethrowV2Error,
   adaptV2WardBoardMonitoringItem,
   adaptV2NursingAlert,
-  adaptV2NursingTask,
   adaptV2MedicationAdministration,
-  adaptV2PatientVitals,
   normalizeV2MedicationAdministrationPayload,
   recordV2MedicationOutcome,
-  normalizeV2TaskPayload,
-  normalizeV2CreateVitalsPayload,
   buildPatientMAR,
   isDueMedicationAdministration,
   getV2MedicationAdministrations,
@@ -289,7 +288,7 @@ export const useVitalSigns = (filters = {}, options = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.vitalSigns(
+    queryKey: isRustV2ApiMode() ? nursingKeys.vitalSignsScoped(getV2ClientScopeKey(), nursingRecordsCacheScope('vitals', filters)) : nursingKeys.vitalSigns(
       patient,
       admission,
       encounter_id || encounter,
@@ -328,7 +327,7 @@ export const useVitalSignsTrends = (patientId, filters = {}, options = {}) => {
   } = filters;
 
   return useQuery({
-    queryKey: nursingKeys.vitalSignsTrends(
+    queryKey: isRustV2ApiMode() ? nursingKeys.vitalSignsTrendsScoped(getV2ClientScopeKey(), nursingRecordsCacheScope('vitals', { ...filters, patient_id: patientId, limit: MAX_VITALS_PAGE_SIZE, descending: true })) : nursingKeys.vitalSignsTrends(
       patientId,
       days,
       encounter_id,
@@ -338,13 +337,8 @@ export const useVitalSignsTrends = (patientId, filters = {}, options = {}) => {
     ),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const daysAsHours = Math.max(1, Number.parseInt(days, 10) || 7) * 24;
         return getV2PatientVitals({
-          patient: patientId,
-          admission_case_id: admission_id,
-          hours: daysAsHours,
-          ordering: '-recorded_at',
-          limit: MAX_VITALS_PAGE_SIZE,
+          ...filters, patient_id: patientId, descending: true, limit: MAX_VITALS_PAGE_SIZE,
         }, { signal });
       }
       const params = new URLSearchParams();
@@ -364,35 +358,6 @@ export const useVitalSignsTrends = (patientId, filters = {}, options = {}) => {
   });
 };
 
-export const useCreateVitalSigns = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data) => {
-      if (isRustV2ApiMode()) {
-        try {
-          const response = await v2Api.postPatientVitals(
-            normalizeV2CreateVitalsPayload(data),
-            { signal: data?.signal },
-          );
-          return adaptV2PatientVitals(response?.data);
-        } catch (error) {
-          rethrowV2Error(error, 'Failed to record vital signs');
-        }
-      }
-      // apiClient.post returns data directly, not wrapped in response.data
-      const result = await apiClient.post('/nursing/vital-signs/', data);
-      return result;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: nursingKeys.vitalSignsAll() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.vitalSignsTrendsByPatient(data?.patient) });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.patientDetail(data?.patient) });
-    },
-  });
-};
-
 // ========== Nursing Tasks ==========
 
 export const useNursingTasks = (filters = {}) => {
@@ -403,7 +368,7 @@ export const useNursingTasks = (filters = {}) => {
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.nursingTasks(patient, admission, status, ward, date, task_type, priority),
+    queryKey: isRustV2ApiMode() ? nursingKeys.nursingTasksScoped(getV2ClientScopeKey(), nursingRecordsCacheScope('tasks', filters)) : nursingKeys.nursingTasks(patient, admission, status, ward, date, task_type, priority),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         return getV2NursingTasks(filters, { signal });
@@ -422,11 +387,12 @@ export const useNursingTasks = (filters = {}) => {
 };
 
 export const useTodayTasks = () => {
+  const today = useFluidBalanceDay({ utc: isRustV2ApiMode() });
   return useQuery({
-    queryKey: nursingKeys.nursingTasksToday(),
+    queryKey: isRustV2ApiMode() ? nursingKeys.nursingTasksTodayScoped(getV2ClientScopeKey(), nursingRecordsCacheScope('tasks', { date: today })) : nursingKeys.nursingTasksToday(),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        return getV2NursingTasks({ date: new Date().toISOString().slice(0, 10) }, { signal });
+        return getV2NursingTasks({ date: today }, { signal });
       }
 
       const response = await apiClient.get('/nursing/tasks/today/');
@@ -436,101 +402,6 @@ export const useTodayTasks = () => {
     },
     placeholderData: [],
     refetchInterval: 60000, // Refetch every minute
-  });
-};
-
-export const useCreateNursingTask = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data) => {
-      if (isRustV2ApiMode()) {
-        try {
-          const response = await v2Api.postNursingTasks(
-            normalizeV2TaskPayload(data),
-            { signal: data?.signal },
-          );
-          return adaptV2NursingTask(response?.data);
-        } catch (error) {
-          rethrowV2Error(error, 'Failed to create nursing task');
-        }
-      }
-
-      const response = await apiClient.post('/nursing/tasks/', data);
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksAll() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksToday() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
-    },
-  });
-};
-
-export const useCompleteTask = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ taskId, data, signal }) => {
-      if (isRustV2ApiMode()) {
-        try {
-          const response = await v2Api.postNursingTaskComplete({ id: taskId }, {
-            signal: signal || data?.signal,
-          });
-          return adaptV2NursingTask(response?.data);
-        } catch (error) {
-          rethrowV2Error(error, 'Failed to complete nursing task');
-        }
-      }
-
-      const response = await apiClient.post(`/nursing/tasks/${taskId}/complete/`, data);
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksAll() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksToday() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });
-    },
-  });
-};
-
-export const useUpdateTask = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ taskId, data, status, signal }) => {
-      if (isRustV2ApiMode()) {
-        const requestedStatus = data?.status || status;
-        if (requestedStatus === 'completed' || data?.complete === true) {
-          try {
-            const response = await v2Api.postNursingTaskComplete({ id: taskId }, {
-              signal: signal || data?.signal,
-            });
-            return adaptV2NursingTask(response?.data);
-          } catch (error) {
-            rethrowV2Error(error, 'Failed to complete nursing task');
-          }
-        }
-        if (requestedStatus === 'cancelled') {
-          try {
-            const response = await v2Api.postNursingTaskCancel({ id: taskId }, {
-              signal: signal || data?.signal,
-            });
-            return adaptV2NursingTask(response?.data);
-          } catch (error) {
-            rethrowV2Error(error, 'Failed to cancel nursing task');
-          }
-        }
-        throw new Error('Rust V2 does not expose general nursing task edits yet.');
-      }
-
-      const response = await apiClient.patch(`/nursing/tasks/${taskId}/`, data);
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksAll() });
-      queryClient.invalidateQueries({ queryKey: nursingKeys.nursingTasksToday() });
-    },
   });
 };
 

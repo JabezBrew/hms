@@ -1,3 +1,4 @@
+import { loadNursingRecordWindow, nursingTaskQuery, patientVitalsQuery } from '@/features/nursing/records/queries';
 import { v2Api, v2Request } from '@/lib/api/v2/client';
 import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
@@ -5,7 +6,6 @@ import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 export const MAX_MONITORING_PAGE_SIZE = 50;
 export const MAX_VITALS_PAGE_SIZE = 50;
-const MAX_TASK_PAGE_SIZE = 50;
 const MAX_MEDICATION_ADMIN_PAGE_SIZE = 50;
 const MAX_MEDICATION_ADMIN_WINDOW_PAGES = 100;
 const MAX_FLUID_BALANCE_PAGE_SIZE = 50;
@@ -157,10 +157,6 @@ function legacyTaskStatus(status) {
   return status || 'pending';
 }
 
-function rustTaskStatus(status) {
-  if (status === 'pending' || status === 'in_progress' || status === 'overdue') return 'open';
-  return status;
-}
 
 function rustTaskType(taskType) {
   if (RUST_V2_NURSING_TASK_TYPES.has(taskType)) {
@@ -489,32 +485,6 @@ export function normalizeV2HandoffPayload(data = {}) {
   };
 }
 
-
-function taskMatchesFilters(task, filters = {}) {
-  const patient = filters.patient || filters.patient_id;
-  if (patient && task.patient_id !== patient) {
-    return false;
-  }
-  const status = filters.status;
-  if (status && status !== 'all' && rustTaskStatus(status) !== rustTaskStatus(task.status)) {
-    return false;
-  }
-  const taskType = filters.task_type;
-  if (taskType && taskType !== 'all') {
-    const normalizedTaskType = rustTaskType(taskType);
-    if (!normalizedTaskType || normalizedTaskType !== task.task_type) {
-      return false;
-    }
-  }
-  const priority = filters.priority;
-  if (priority && priority !== 'all' && task.priority !== priority) {
-    return false;
-  }
-  if (filters.date && task.scheduled_time?.slice(0, 10) !== filters.date) {
-    return false;
-  }
-  return true;
-}
 
 
 function medicationAdministrationMatchesFilters(item, filters = {}) {
@@ -1076,24 +1046,9 @@ export async function getV2NursingAlerts(filters = {}, { signal } = {}) {
 
 export async function getV2NursingTasks(filters = {}, { signal } = {}) {
   try {
-    const patientId = filters.patient || filters.patient_id;
-    const admissionCaseId = filters.admission || filters.admission_id || filters.admission_case_id;
-    const response = await v2Api.getNursingTasks({
-      query: {
-        limit: MAX_TASK_PAGE_SIZE,
-        ...(patientId ? { patient_id: patientId } : {}),
-        ...(admissionCaseId ? { admission_case_id: admissionCaseId } : {}),
-      },
-      signal,
-    });
-    return adaptMatchingV2Items(
-      response?.data,
-      adaptV2NursingTask,
-      (task) => taskMatchesFilters(task, filters)
-    );
-  } catch (error) {
-    rethrowV2Error(error, 'Failed to load nursing tasks');
-  }
+    const rows = await loadNursingRecordWindow(v2Api.getNursingTasks, nursingTaskQuery(filters), 'tasks', { signal });
+    return rows.map(adaptV2NursingTask);
+  } catch (error) { rethrowV2Error(error, 'Failed to load nursing tasks'); }
 }
 
 export async function getV2Handoffs(filters = {}, { signal } = {}) {
@@ -1104,20 +1059,14 @@ export async function getV2Handoffs(filters = {}, { signal } = {}) {
   } catch (error) { rethrowV2Error(error, 'Failed to load shift handoffs'); }
 }
 
-function normalizeVitalSignsLimit(value) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 25;
-  }
-  return Math.min(parsed, MAX_VITALS_PAGE_SIZE);
-}
 
 function normalizeOptionalNumber(value) {
   if (value === undefined || value === null || value === '') {
     return null;
   }
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(parsed)) throw new Error('Enter valid numbers for the recorded vital signs.');
+  return parsed;
 }
 
 function getAdmissionCaseId(data = {}) {
@@ -1129,12 +1078,13 @@ function getAdmissionCaseId(data = {}) {
 }
 
 export function normalizeV2CreateVitalsPayload(data = {}) {
+  if (data.pain_level !== undefined && data.pain_level !== null && data.pain_level !== '') throw new Error('Pain score is not supported by this vital-sign record.');
   const admissionCaseId = getAdmissionCaseId(data);
   if (!admissionCaseId) {
     throw new Error('Active admission is required to record vital signs in Rust V2');
   }
 
-  return {
+  const payload = {
     admission_case_id: admissionCaseId,
     recorded_at: data.recorded_at || new Date().toISOString(),
     temperature_c: normalizeOptionalNumber(data.temperature_c ?? data.temperature),
@@ -1144,36 +1094,16 @@ export function normalizeV2CreateVitalsPayload(data = {}) {
     respiratory_rate: normalizeOptionalNumber(data.respiratory_rate),
     oxygen_saturation: normalizeOptionalNumber(data.oxygen_saturation ?? data.spo2),
   };
+  if (['systolic_bp', 'diastolic_bp', 'pulse', 'respiratory_rate', 'oxygen_saturation'].some((field) => payload[field] !== null && !Number.isInteger(payload[field]))) throw new Error('Enter whole numbers for pulse, blood pressure, respiration and oxygen saturation.');
+  if (!['temperature_c', 'systolic_bp', 'diastolic_bp', 'pulse', 'respiratory_rate', 'oxygen_saturation'].some((field) => payload[field] !== null)) throw new Error('Record at least one supported vital sign.');
+  return payload;
 }
 
 export async function getV2PatientVitals(filters = {}, { signal } = {}) {
-  const patientId = filters.patient_id || filters.patient;
-  const query = {
-    limit: normalizeVitalSignsLimit(filters.limit),
-  };
-  if (patientId) {
-    query.patient_id = patientId;
-  }
-  const admissionCaseId = filters.admission_case_id || filters.admission_id || filters.admission;
-  if (admissionCaseId) {
-    query.admission_case_id = admissionCaseId;
-  }
-  if (filters.hours !== undefined && filters.hours !== null && filters.hours !== '') {
-    query.hours = filters.hours;
-  }
   try {
-    const response = await v2Api.getPatientVitals({
-      query,
-      signal,
-    });
-    const rows = (response?.data ?? []).map(adaptV2PatientVitals);
-    if (filters.ordering === '-recorded_at') {
-      return rows.sort((left, right) => new Date(right.recorded_at) - new Date(left.recorded_at));
-    }
-    return rows;
-  } catch (error) {
-    rethrowV2Error(error, 'Failed to load patient vital signs');
-  }
+    const rows = await loadNursingRecordWindow(v2Api.getPatientVitals, patientVitalsQuery(filters), 'vitals', { signal });
+    return rows.map(adaptV2PatientVitals);
+  } catch (error) { rethrowV2Error(error, 'Failed to load patient vital signs'); }
 }
 
 function adaptV2PharmacyQueueItem(item = {}) {
