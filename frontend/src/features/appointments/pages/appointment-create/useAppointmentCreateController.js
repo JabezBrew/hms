@@ -379,5 +379,6 @@ export function useAppointmentCreateController() {
     watchAppointmentTypeId,
     watchClinicId,
     watchPractitionerId,
+    watchPatientId,
   };
 }

@@ -88,8 +88,8 @@ export function getBoardSummary(boardData, patients) {
   patients.forEach((patient) => {
     openTasks += getPatientTaskCount(patient);
     overdueTasks += getPatientOverdueTaskCount(patient);
-    safety += asCount(patient?.active_alert_count);
-    criticalSafety += asCount(patient?.critical_alert_count);
+    safety += asCount(patient?.active_alert_count) + asCount(patient?.fluid_condition_count);
+    criticalSafety += asCount(patient?.critical_alert_count) + asCount(patient?.fluid_critical_count);
     dueMedications += getPatientDueMedicationCount(patient);
     pendingResults += getPatientResultCount(patient);
     criticalResults += asCount(patient?.critical_unverified_result_count);
@@ -146,10 +146,10 @@ export function getPatientStatus(patient) {
 }
 
 export function getPatientUrgency(patient) {
-  if (asCount(patient?.critical_alert_count) > 0 || asCount(patient?.critical_unverified_result_count) > 0) {
+  if (asCount(patient?.critical_alert_count) > 0 || asCount(patient?.fluid_critical_count) > 0 || asCount(patient?.critical_unverified_result_count) > 0) {
     return 'critical';
   }
-  if (asCount(patient?.active_alert_count) > 0 || getPatientOverdueTaskCount(patient) > 0) {
+  if (asCount(patient?.active_alert_count) > 0 || asCount(patient?.fluid_condition_count) > 0 || getPatientOverdueTaskCount(patient) > 0) {
     return 'urgent';
   }
   if (getPatientDueMedicationCount(patient) > 0) {
@@ -166,6 +166,7 @@ export function getPatientUrgency(patient) {
 
 export function patientNeedsAttention(patient) {
   return asCount(patient?.active_alert_count) > 0
+    || asCount(patient?.fluid_condition_count) > 0
     || getPatientTaskCount(patient) > 0
     || getPatientDueMedicationCount(patient) > 0
     || getPatientResultCount(patient) > 0
@@ -247,6 +248,8 @@ export function getPatientNextAction(patient) {
     };
   }
 
+  if (asCount(patient?.fluid_critical_count) > 0) return { label: 'Review fluid balance', meta: 'Recorded daily balance threshold crossed', tone: 'critical' };
+
   if (asCount(patient?.critical_alert_count) > 0) {
     return {
       label: 'Review safety alert',
@@ -312,7 +315,7 @@ export function getWatchlist(boardData, patients) {
     return supplied;
   }
   return patients
-    .filter((patient) => asCount(patient?.critical_alert_count) > 0 || asCount(patient?.critical_unverified_result_count) > 0)
+    .filter((patient) => asCount(patient?.critical_alert_count) > 0 || asCount(patient?.fluid_critical_count) > 0 || asCount(patient?.critical_unverified_result_count) > 0)
     .slice(0, 6);
 }
 

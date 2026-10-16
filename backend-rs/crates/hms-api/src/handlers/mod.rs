@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod admin_access;
+pub mod appointment_series;
 pub mod auth;
 pub mod billing;
 pub mod care;
@@ -20,3 +21,5 @@ pub mod search;
 pub mod system;
 pub mod ward;
 pub mod ward_rounds;
+
+pub mod fluid;

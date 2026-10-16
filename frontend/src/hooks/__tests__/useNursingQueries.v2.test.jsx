@@ -1653,31 +1653,16 @@ describe('Rust V2 nursing dashboard hooks', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('uses local fluid balance settings defaults in Rust V2 mode', async () => {
-    const { result } = renderHook(() => useFluidBalanceSettings(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.data?.min_daily_intake_target).toBe(1500));
-
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(result.current.data).toEqual(expect.objectContaining({
-      max_daily_output_threshold: 3000,
-      negative_balance_alert_threshold: -500,
-      positive_balance_alert_threshold: 2000,
-    }));
+  it('uses persisted facility rule versions instead of client defaults in Rust V2 mode', async () => {
+    const values = { min_daily_intake_target: 1600, max_daily_output_threshold: 3200, negative_balance_alert_threshold: -600, positive_balance_alert_threshold: 2100, enable_intake_alerts: false, enable_output_alerts: true, enable_balance_alerts: true };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { version: 3, configured: true, values } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const { result } = renderHook(() => useFluidBalanceSettings(), { wrapper: createWrapper() }); await waitFor(() => expect(result.current.data?.version).toBe(3)); expect(result.current.data).toMatchObject(values); expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('derives fluid balance alerts from complete Rust totals and local thresholds', async () => {
-    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
-      entry_count: 2, total_intake_ml: 100, total_output_ml: 900, net_ml: -800,
-    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const { result } = renderHook(() => useFluidBalanceAlerts('patient-1', '2026-05-12'), { wrapper: createWrapper() });
-    await waitFor(() => expect(result.current.data?.alerts?.length).toBeGreaterThan(0));
-    expect(result.current.data).toMatchObject({
-      alerts: expect.arrayContaining([expect.objectContaining({ type: 'negative_balance' })]),
-      summary: expect.objectContaining({ total_intake: 100, total_output: 900, balance: -800 }),
-    });
+  it('reads admission-scoped server fluid conditions with severity and rule provenance', async () => {
+    const values = { min_daily_intake_target: 1500, max_daily_output_threshold: 3000, negative_balance_alert_threshold: -500, positive_balance_alert_threshold: 2000, enable_intake_alerts: true, enable_output_alerts: true, enable_balance_alerts: true };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { admission_case_id: 'admission-1', date: '2026-05-12', status: 'assessed', settings: { version: 2, configured: true, values }, entry_count: 2, total_intake_ml: 100, total_output_ml: 900, net_ml: -800, conditions: [{ kind: 'negative_balance', severity: 'critical', value_ml: -800, threshold_ml: -500 }] } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const { result } = renderHook(() => useFluidBalanceAlerts('patient-1', '2026-05-12', { admission_id: 'admission-1' }), { wrapper: createWrapper() }); await waitFor(() => expect(result.current.data?.alerts?.length).toBe(1)); expect(result.current.data).toMatchObject({ status: 'assessed', alerts: [expect.objectContaining({ kind: 'negative_balance', severity: 'critical' })], summary: expect.objectContaining({ net_ml: -800 }) });
   });
 
   it('loads the Rust V2 pharmacy dispensing queue as pending fulfillment work', async () => {

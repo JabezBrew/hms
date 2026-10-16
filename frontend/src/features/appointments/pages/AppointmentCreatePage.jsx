@@ -8,6 +8,7 @@ import { AppointmentCreateLoadingState } from './appointment-create/AppointmentC
 import { AppointmentCreateSidebar } from './appointment-create/AppointmentCreateSidebar';
 import { AppointmentCreateTimePanel } from './appointment-create/AppointmentCreateTimePanel';
 import { useAppointmentCreateController } from './appointment-create/useAppointmentCreateController';
+import { SeriesBookingEntry } from '../series/SeriesBookingEntry';
 
 const AppointmentCreatePage = () => {
   const controller = useAppointmentCreateController();
@@ -67,6 +68,7 @@ const AppointmentCreatePage = () => {
               />
 
               <AppointmentCreateTimePanel
+                seriesEntry={<SeriesBookingEntry disabled={controller.isWaitlistPromotion || controller.submitting} context={{ patientId: controller.watchPatientId, clinicId: controller.watchClinicId, serviceId: controller.watchAppointmentTypeId, practitionerId: controller.requiresPractitioner ? controller.watchPractitionerId : undefined, patientName: controller.selectedPatientName, clinicName: controller.selectedClinic?.name, serviceName: controller.selectedTypeName }} />}
                 form={controller.form}
                 handleSlotSelect={controller.handleSlotSelect}
                 isPoolClinic={controller.isPoolClinic}

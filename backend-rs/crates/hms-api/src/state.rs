@@ -516,6 +516,7 @@ impl PharmacyDispenseCacheKey {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct WardBoardCacheKey {
+    utc_day: chrono::NaiveDate,
     facility_id: Uuid,
     user_id: Uuid,
     session_version: i64,
@@ -534,6 +535,7 @@ impl WardBoardCacheKey {
         page_size: u8,
     ) -> Self {
         Self {
+            utc_day: ward_board_cache_day(Utc::now()),
             facility_id,
             user_id: ctx.user_id,
             session_version: ctx.session_version,
@@ -2582,4 +2584,42 @@ fn password_meets_policy(password: &str) -> bool {
 
 pub(crate) fn csrf_compare_hash(token: &str) -> String {
     hash_refresh_token(token)
+}
+
+// Day-sensitive fluid assessments must never reuse the previous UTC day's board.
+fn ward_board_cache_day(at: DateTime<Utc>) -> chrono::NaiveDate {
+    at.date_naive()
+}
+#[cfg(test)]
+mod fluid_cache_tests {
+    use super::*;
+    #[test]
+    fn ward_board_cache_rolls_at_utc_midnight_without_fragmenting_same_day_reads() {
+        let before = DateTime::parse_from_rfc3339("2026-10-15T23:59:59Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let base = WardBoardCacheKey {
+            utc_day: ward_board_cache_day(before),
+            facility_id: Uuid::nil(),
+            user_id: Uuid::nil(),
+            session_version: 1,
+            permission_version: 1,
+            active_profile: DeploymentProfile::Hospital,
+            permission_codes: vec![],
+            ward_id: None,
+            page_size: 25,
+        };
+        let same = WardBoardCacheKey {
+            utc_day: ward_board_cache_day(before - chrono::Duration::hours(1)),
+            ..base.clone()
+        };
+        let next = WardBoardCacheKey {
+            utc_day: ward_board_cache_day(before + chrono::Duration::seconds(1)),
+            ..base.clone()
+        };
+        let mut cached = HashMap::new();
+        cached.insert(base, "yesterday's derived conditions");
+        assert_eq!(cached.get(&same), Some(&"yesterday's derived conditions"));
+        assert_eq!(cached.get(&next), None);
+    }
 }

@@ -1,6 +1,6 @@
 # Python to Rust and UI feature parity
 
-Updated: 2026-10-15. Scope: the user's expanded request for all phases after the
+Updated: 2026-10-16. Scope: the user's expanded request for all phases after the
 phase-one release. This ledger extends `v2-cutover-scope.md`; its old baseline
 labels are historical evidence, not a claim that all Python workflows work in
 the Rust UI. Python is a behavior reference; Rust access and PHI contracts win
@@ -32,7 +32,7 @@ also need configured sandbox validation before they can be described as working.
 | --- | --- | --- | --- |
 | MAR nonadministration / PRN | `nursing/models.py` medication outcomes; `nursing/views.py` | Missed/refused/held actor/reason/notes and single-dose PRN provenance; retain source prescription locking and immutable administration history. Compatibility dialog drops outcome fields; active grid lacks these choices. | outcomes and source-linked PRN implemented; third/fourth checkpoint acceptance |
 | Patient treatment / supply | `nursing/models.py` treatment entries; `pharmacy/services.py` | Regimen, ordered/dispensed/administered balances, discontinue, repeat supply. Ward stock requisitions are a separate existing workflow. | queued |
-| Fluid corrections and facility thresholds | `nursing/models.py`; `core/views.py` fluid settings | Audited corrections, categories/notes, effective facility thresholds and monitoring integration; server complete totals. | queued |
+| Fluid corrections and facility thresholds | `nursing/models.py`; `core/views.py` fluid settings | Audited corrections, categories/notes, effective facility thresholds and monitoring integration; server complete totals. | implemented; fifth checkpoint local regression/HTTP acceptance passed; browser/staging pending |
 | Clinical handover | `nursing/models.py` shift handoff | Patient narrative/context and governed delivery/acknowledgment; Rust ward/recipient/shift header alone is partial. | queued |
 | Prescribing documentation and renewal | `clinical_notes/models.py`, `views.py` renewal action | Persist supported instructions/reason, explicit replacement/renewal provenance with no source-course resurrection. | queued |
 | Note/template governance | `clinical_notes/views.py` revision/review/publish/render/duplicate | Versioned schema and visibility, review/publish lifecycle, safe render and historical preservation. Basic notes/version history/template CRUD already exist. | queued |
@@ -48,7 +48,7 @@ also need configured sandbox validation before they can be described as working.
 | Organization lifecycle/membership | Python clinical units/members/coverage; UI `organization.js` | Audited unit updates/activation and hierarchy constraints, scoped membership/coverage; replace empty-array placeholders only when real contracts exist. | queued |
 | Account setup/reset delivery | Rust `state.rs` delivery interfaces / reset request | Trusted reset adapter, bounded asynchronous delivery, no raw-token persistence/logging, account-locked all-link invalidation and stale-proof fencing. Durable retries and actual configured provider delivery still require work. | adapter/lifecycle implemented; external sandbox and durable delivery queued |
 | Strong authentication | Python MFA flow; Rust enrollment primitives | Verified second-factor login/recovery and fresh privileged proof; enrollment alone is insufficient. | queued |
-| Offsite network policy | Python `core/models.py`; Rust extractor header facts | Trusted-proxy-derived client provenance, CIDR policy, deny/read-only decisions and facility administration. Never trust caller-supplied location headers. A confirmed existing header bypass is being replaced with trusted connection facts and policy enforcement. | security implementation underway; not accepted | |
+| Offsite network policy | Python `core/models.py`; Rust extractor header facts | Trusted-proxy-derived client provenance, CIDR policy, deny/read-only decisions and facility administration. Never trust caller-supplied location headers. A confirmed existing header bypass is being replaced with trusted connection facts and policy enforcement. | security implementation underway; not accepted |
 | Continuous realtime | Python Channels; Rust dashboard upgrade sends initial delta then ends | Persistent bounded fanout, channel visibility, reauthorization/version changes, disconnect/backpressure/reconnect tests; polling remains fallback. | queued |
 | Audit investigation | Python `audit/views.py`; Rust admin bounded list | Filter/statistics parity; export only through governed minimal async/download contract, never historical broad PHI CSV. | queued |
 
@@ -68,7 +68,7 @@ also need configured sandbox validation before they can be described as working.
 
 | Workflow | Evidence | Required work | Status |
 | --- | --- | --- | --- |
-| Appointment recurrence | Python appointment generation; Rust `create_appointment_series` repository exists without API | Expose audited series contract/UI with atomic capacity, conflicts, cancellation and exceptions. Normal booking/session templates already work. | queued |
+| Appointment recurrence | Python appointment generation; Rust `create_appointment_series` repository exists without API | Expose audited series contract/UI with atomic capacity, conflicts, cancellation and exceptions. Normal booking/session templates already work. | explicit real-slot series implemented; fifth checkpoint local regression/HTTP acceptance passed; browser/staging pending; rule expansion and automatic scheduling queued |
 | Appointment type/availability administration | Legacy UI guards versus current scheduling contracts | Complete genuine missing administration without duplicating implemented scheduling sessions/exceptions. | queued |
 | Department rosters | Python `organization/views.py` roster generation/import/publish | Staff source, shifts/coverage, publish/override and bounded on-duty projections. Scheduling session templates are not roster parity. | queued |
 | Lab catalog management | Python `laboratory/views.py` customize/reset/CRUD | Facility-owned test/panel versioning and safe order/result historical snapshots. Normal lab order through verification already exists. | queued |

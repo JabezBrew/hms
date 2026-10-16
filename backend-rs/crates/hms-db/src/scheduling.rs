@@ -757,6 +757,30 @@ pub async fn create_exception(
         _ => anyhow::bail!("exception must target exactly one session or practitioner"),
     };
 
+    let mut transaction = pool.begin().await?;
+    match (exception.session_id, exception.practitioner_user_id) {
+        (Some(session), None) => {
+            crate::care::load_clinic_session_for_update(
+                &mut transaction,
+                exception.facility_id,
+                session,
+            )
+            .await?;
+        }
+        (None, Some(practitioner)) => {
+            let active: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM users WHERE facility_id=$1 AND id=$2 AND is_active FOR UPDATE",
+            )
+            .bind(exception.facility_id)
+            .bind(practitioner)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if active.is_none() {
+                anyhow::bail!("exception practitioner is not active in facility");
+            }
+        }
+        _ => unreachable!("exception target validated above"),
+    }
     let row = sqlx::query_as::<_, ExceptionWindowRow>(
         r#"
         INSERT INTO appointment_blocked_times (
@@ -789,9 +813,10 @@ pub async fn create_exception(
     .bind(exception.ends_at)
     .bind(reason)
     .bind(exception.created_by_user_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await?;
 
+    transaction.commit().await?;
     Ok(exception_from_row(row))
 }
 

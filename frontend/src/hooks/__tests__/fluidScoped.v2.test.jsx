@@ -115,15 +115,13 @@ describe('complete scoped Rust fluid balance', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('derives alerts from complete server totals and rejects unconfirmed aggregate shapes', async () => {
-    globalThis.fetch.mockResolvedValueOnce(response(totals(1000)));
-    const { result } = renderHook(() => useFluidBalanceAlerts('selected-patient', '2026-05-12'), { wrapper: wrapper() });
-    await waitFor(() => expect(result.current.data?.summary.total_intake).toBe(10000));
-    expect(result.current.data.alerts).toContainEqual(expect.objectContaining({ type: 'positive_balance' }));
-    globalThis.fetch.mockResolvedValueOnce(response([]));
-    const invalid = renderHook(() => useFluidBalanceSummary('other-patient', '2026-05-12'), { wrapper: wrapper() });
-    await waitFor(() => expect(invalid.result.current.isError).toBe(true));
-    expect(invalid.result.current.data).toBeUndefined();
+  it('reads admission-scoped server assessments instead of inventing facility defaults or inferring no-data alarms', async () => {
+    const policy = { version: 2, configured: true, values: { min_daily_intake_target: 1500, max_daily_output_threshold: 3000, negative_balance_alert_threshold: -500, positive_balance_alert_threshold: 2000, enable_intake_alerts: true, enable_output_alerts: true, enable_balance_alerts: true } };
+    globalThis.fetch.mockImplementation(async (url) => { const parsed = new URL(url); expect(parsed.pathname.endsWith('/fluid-monitoring/assessment')).toBe(true); expect(parsed.searchParams.get('admission_case_id')).toBe('selected-admission'); return response({ admission_case_id: 'selected-admission', date: '2026-05-12', status: 'assessed', settings: policy, entry_count: 1000, total_intake_ml: 10000, total_output_ml: 4000, net_ml: 6000, conditions: [{ kind: 'positive_balance', severity: 'warning', value_ml: 6000, threshold_ml: 2000 }] }); });
+    const { result } = renderHook(() => useFluidBalanceAlerts('selected-patient', '2026-05-12', { admission_id: 'selected-admission' }), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.data?.summary.total_intake_ml).toBe(10000)); expect(result.current.data.alerts).toContainEqual(expect.objectContaining({ kind: 'positive_balance' }));
+    const noAdmission = renderHook(() => useFluidBalanceAlerts('other-patient', '2026-05-12'), { wrapper: wrapper() }); await waitFor(() => expect(noAdmission.result.current.data?.status).toBe('admission_required')); expect(noAdmission.result.current.data.alerts).toEqual([]); expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    globalThis.fetch.mockResolvedValueOnce(response([])); const invalid = renderHook(() => useFluidBalanceSummary('other-patient', '2026-05-12'), { wrapper: wrapper() }); await waitFor(() => expect(invalid.result.current.isError).toBe(true)); expect(invalid.result.current.data).toBeUndefined();
   });
 
   it('does not share entry cache data across canonical filters or authorization scope', async () => {

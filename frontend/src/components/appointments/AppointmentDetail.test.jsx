@@ -4,6 +4,7 @@ import AppointmentDetail from './AppointmentDetail';
 import { renderWithProviders } from '../../../tests/utils/test-utils';
 
 let appointmentStatus = 'booked';
+let seriesId = null;
 
 vi.mock('@/features/appointments/hooks/useAppointmentQueries', () => {
   return {
@@ -11,6 +12,7 @@ vi.mock('@/features/appointments/hooks/useAppointmentQueries', () => {
       data: {
         id: 'appt-1',
         status: appointmentStatus,
+        series_id: seriesId,
         start_time: '2026-02-08T22:10:00Z',
         end_time: '2026-02-08T22:40:00Z',
         patient: 'patient-1',
@@ -56,6 +58,7 @@ vi.mock('@/features/appointments/hooks/useAppointmentQueries', () => {
 describe('AppointmentDetail', () => {
   beforeEach(() => {
     appointmentStatus = 'booked';
+    seriesId = null;
   });
 
   afterEach(() => {
@@ -85,6 +88,11 @@ describe('AppointmentDetail', () => {
     expect(queryByRole('button', { name: /change status/i })).not.toBeInTheDocument();
     expect(getByRole('button', { name: /check in/i })).toBeInTheDocument();
     expect(getByRole('button', { name: /cancel appointment/i })).toBeInTheDocument();
+  });
+  it('opens the real appointment group from an existing series member', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }; seriesId = 'series-opaque';
+    const { getByRole } = renderWithProviders(<AppointmentDetail appointmentId="appt-1" />, { useMemoryRouter: true, route: '/appointments/appt-1' });
+    expect(getByRole('link', { name: 'Review appointment group' })).toHaveAttribute('href', '/appointments/series/series-opaque');
   });
 
   it('hides Rust V2 appointment edit and cancellation after check-in', () => {

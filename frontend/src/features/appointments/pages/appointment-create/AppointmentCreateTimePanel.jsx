@@ -49,12 +49,14 @@ export function AppointmentCreateTimePanel({
   watchAppointmentTypeId,
   watchClinicId,
   watchPractitionerId,
+  seriesEntry,
 }) {
   return (
     <div className="p-6 overflow-y-auto bg-background">
-      <div className="flex items-center gap-2 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         <Clock className="size-5 text-rose-500" />
         <h2 className="font-display text-lg text-foreground">Select Date & Time</h2>
+        {seriesEntry && <div className="ml-auto">{seriesEntry}</div>}
       </div>
 
       <div className="grid gap-4 mb-6 sm:grid-cols-2 xl:grid-cols-4">

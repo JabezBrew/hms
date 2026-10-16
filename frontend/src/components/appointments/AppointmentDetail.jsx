@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import {
@@ -146,6 +146,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
         practitioner={practitioner}
         timeRange={timeRange}
       />
+      {isRustV2ApiMode() && appointment.series_id && <Link to={`/appointments/series/${appointment.series_id}`} className="inline-flex rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted">Review appointment group</Link>}
     </div>
   );
 };

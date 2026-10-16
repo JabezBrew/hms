@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from "react";
+import { FluidPanel } from "@/features/nursing/fluid/FluidPanel";
 import { cn } from "@/lib/utils";
 
 import format from "date-fns/format";
@@ -109,6 +110,7 @@ const AddFluidBalanceSlideOver = ({
   onFluidRecorded,
   allowEntry = true,
 }) => {
+  if (isRustV2ApiMode()) return <FluidPanel open={open} onClose={onClose} patient={patient} admission={admission} onFluidRecorded={onFluidRecorded} allowEntry={allowEntry} />;
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
   const admissionId = admission?.id || 'no-admission';

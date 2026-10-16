@@ -97,3 +97,9 @@ source, stable UUID and actual indication. Typed clinical denials are definite;
 generic storage/commit failures use `prn_request_unconfirmed` for refresh/review.
 PRN administration uses the existing explicit outcome workflow and recorded supply.
 See `docs/v2/2026-10-15-prn-scope.md` for lifecycle and compatibility boundaries.
+
+`fluid.rs` owns rich fluid observations, source/history authorization,
+correction/void commands, complete category summaries, server assessments, and
+versioned facility rules. Patient operations require the nursing workflow gate;
+facility rule publication requires `AdminAuthorityManage`. Generic write errors
+have an explicit unconfirmed code so clients retain their exact command.

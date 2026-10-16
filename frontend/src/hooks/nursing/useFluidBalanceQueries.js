@@ -6,7 +6,6 @@ import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   DEFAULT_FLUID_BALANCE_SETTINGS,
   adaptV2FluidBalanceItem,
-  deriveFluidBalanceAlerts,
   fluidBalanceCacheScope,
   getV2FluidBalanceEntries,
   getV2FluidBalanceSummary,
@@ -15,6 +14,7 @@ import {
   rethrowV2Error,
 } from '../nursingQueriesV2Bridge';
 import { nursingKeys } from './nursingQueryKeys';
+import { fluidApi } from '@/features/nursing/fluid/api';
 import { useFluidBalanceDay } from '@/features/nursing/hooks/useFluidBalanceDay';
 
 /**
@@ -186,7 +186,7 @@ export const useCreateFluidBalance = () => {
           if (!response?.data?.id) throw new Error('Unconfirmed fluid entry response');
           return adaptV2FluidBalanceItem(response?.data)[0];
         } catch (error) {
-          if (!(error?.status >= 400 && error?.status < 500)) {
+          if (!(error?.status >= 400 && error?.status < 500) || (error?.data?.error?.code || '').endsWith('_unconfirmed')) {
             const uncertain = new Error('The fluid entry may have been saved. Refresh and review the entries before recording it again.');
             uncertain.name = 'FluidBalanceWriteUnconfirmedError';
             throw uncertain;
@@ -239,10 +239,11 @@ export const useDeleteFluidBalance = () => {
  */
 export const useFluidBalanceSettings = () => {
   return useQuery({
-    queryKey: nursingKeys.fluidBalanceSettings(),
-    queryFn: async () => {
+    queryKey: isRustV2ApiMode() ? [...nursingKeys.fluidBalanceSettings(), getV2ClientScopeKey()] : nursingKeys.fluidBalanceSettings(),
+    queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        return DEFAULT_FLUID_BALANCE_SETTINGS;
+        const rules = await fluidApi.rules({ signal });
+        return { ...rules.values, version: rules.version, configured: rules.configured };
       }
 
       const response = await apiClient.get('/settings/fluid-balance/');
@@ -259,18 +260,16 @@ export const useFluidBalanceSettings = () => {
  * @param {string} patientId - Patient ID
  * @param {string} date - Optional date (YYYY-MM-DD format, defaults to today)
  */
-export const useFluidBalanceAlerts = (patientId, date = null) => {
+export const useFluidBalanceAlerts = (patientId, date = null, options = {}) => {
+  const admissionId = options.admission_case_id || options.admission_id;
   const resolvedDate = date || new Date().toISOString().slice(0, 10);
   return useQuery({
-    queryKey: nursingKeys.fluidBalanceAlerts(patientId, resolvedDate, isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
+    queryKey: [...nursingKeys.fluidBalanceAlerts(patientId, resolvedDate, isRustV2ApiMode() ? getV2ClientScopeKey() : undefined), admissionId || null],
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const summary = await getV2FluidBalanceSummary(patientId, { date: resolvedDate }, { signal });
-        return {
-          alerts: deriveFluidBalanceAlerts(summary),
-          thresholds: DEFAULT_FLUID_BALANCE_SETTINGS,
-          summary,
-        };
+        if (!admissionId) return { alerts: [], status: 'admission_required', thresholds: null, summary: null };
+        const assessment = await fluidApi.assessment({ admission_case_id: admissionId, date: resolvedDate }, { signal });
+        return { alerts: assessment.conditions, status: assessment.status, thresholds: assessment.settings.values, summary: assessment };
       }
 
       const params = new URLSearchParams();

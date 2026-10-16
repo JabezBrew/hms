@@ -962,6 +962,82 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getFluidMonitoringAssessment": {
+    "operationId": "getFluidMonitoringAssessment",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-monitoring/assessment",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "admission_case_id",
+      "date"
+    ],
+    "hasBody": false
+  },
+  "getFluidMonitoringRules": {
+    "operationId": "getFluidMonitoringRules",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-monitoring/rules",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getFluidObservationById": {
+    "operationId": "getFluidObservationById",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-observations/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getFluidObservationHistory": {
+    "operationId": "getFluidObservationHistory",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-observations/{id}/history",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getFluidObservations": {
+    "operationId": "getFluidObservations",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-observations",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "recorded_from",
+      "recorded_before",
+      "cursor",
+      "limit",
+      "descending",
+      "include_closed"
+    ],
+    "hasBody": false
+  },
+  "getFluidObservationSummary": {
+    "operationId": "getFluidObservationSummary",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-observations/summary",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "patient_id",
+      "admission_case_id",
+      "recorded_from",
+      "recorded_before",
+      "cursor",
+      "limit",
+      "descending",
+      "include_closed"
+    ],
+    "hasBody": false
+  },
   "getGoodsReceivedNoteById": {
     "operationId": "getGoodsReceivedNoteById",
     "method": "GET",
@@ -2064,6 +2140,38 @@ export const operations = {
     "path": "/api/v2/referrals/{id}/sla-state",
     "pathParamNames": [
       "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getSchedulingAppointmentSeries": {
+    "operationId": "getSchedulingAppointmentSeries",
+    "method": "GET",
+    "path": "/api/v2/scheduling/appointment-series",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "patient_id",
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getSchedulingAppointmentSeriesById": {
+    "operationId": "getSchedulingAppointmentSeriesById",
+    "method": "GET",
+    "path": "/api/v2/scheduling/appointment-series/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getSchedulingAppointmentSeriesByRequest": {
+    "operationId": "getSchedulingAppointmentSeriesByRequest",
+    "method": "GET",
+    "path": "/api/v2/scheduling/appointment-series/requests/{client_request_id}",
+    "pathParamNames": [
+      "client_request_id"
     ],
     "queryParamNames": [],
     "hasBody": false
@@ -3322,6 +3430,42 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postFluidMonitoringRules": {
+    "operationId": "postFluidMonitoringRules",
+    "method": "POST",
+    "path": "/api/v2/nursing/fluid-monitoring/rules",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postFluidObservation": {
+    "operationId": "postFluidObservation",
+    "method": "POST",
+    "path": "/api/v2/nursing/fluid-observations",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postFluidObservationCorrection": {
+    "operationId": "postFluidObservationCorrection",
+    "method": "POST",
+    "path": "/api/v2/nursing/fluid-observations/{id}/corrections",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postFluidObservationVoid": {
+    "operationId": "postFluidObservationVoid",
+    "method": "POST",
+    "path": "/api/v2/nursing/fluid-observations/{id}/void",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postGoodsReceivedNoteAccept": {
     "operationId": "postGoodsReceivedNoteAccept",
     "method": "POST",
@@ -4016,6 +4160,24 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postSchedulingAppointmentSeries": {
+    "operationId": "postSchedulingAppointmentSeries",
+    "method": "POST",
+    "path": "/api/v2/scheduling/appointment-series",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postSchedulingAppointmentSeriesCancelFuture": {
+    "operationId": "postSchedulingAppointmentSeriesCancelFuture",
+    "method": "POST",
+    "path": "/api/v2/scheduling/appointment-series/{id}/cancel-future",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postSchedulingExceptions": {
     "operationId": "postSchedulingExceptions",
     "method": "POST",
@@ -4443,6 +4605,12 @@ export function createGeneratedClient(request) {
     getFluidBalanceEntries: createOperation(request, operations.getFluidBalanceEntries),
     getFluidBalanceSummary: createOperation(request, operations.getFluidBalanceSummary),
     getFluidBalanceTrends: createOperation(request, operations.getFluidBalanceTrends),
+    getFluidMonitoringAssessment: createOperation(request, operations.getFluidMonitoringAssessment),
+    getFluidMonitoringRules: createOperation(request, operations.getFluidMonitoringRules),
+    getFluidObservationById: createOperation(request, operations.getFluidObservationById),
+    getFluidObservationHistory: createOperation(request, operations.getFluidObservationHistory),
+    getFluidObservations: createOperation(request, operations.getFluidObservations),
+    getFluidObservationSummary: createOperation(request, operations.getFluidObservationSummary),
     getGoodsReceivedNoteById: createOperation(request, operations.getGoodsReceivedNoteById),
     getGoodsReceivedNotes: createOperation(request, operations.getGoodsReceivedNotes),
     getHandoffs: createOperation(request, operations.getHandoffs),
@@ -4532,6 +4700,9 @@ export function createGeneratedClient(request) {
     getReferrals: createOperation(request, operations.getReferrals),
     getReferralSlaDashboard: createOperation(request, operations.getReferralSlaDashboard),
     getReferralSlaState: createOperation(request, operations.getReferralSlaState),
+    getSchedulingAppointmentSeries: createOperation(request, operations.getSchedulingAppointmentSeries),
+    getSchedulingAppointmentSeriesById: createOperation(request, operations.getSchedulingAppointmentSeriesById),
+    getSchedulingAppointmentSeriesByRequest: createOperation(request, operations.getSchedulingAppointmentSeriesByRequest),
     getSchedulingAvailability: createOperation(request, operations.getSchedulingAvailability),
     getSchedulingExceptions: createOperation(request, operations.getSchedulingExceptions),
     getSchedulingServices: createOperation(request, operations.getSchedulingServices),
@@ -4658,6 +4829,10 @@ export function createGeneratedClient(request) {
     postEncounters: createOperation(request, operations.postEncounters),
     postEncountersSearch: createOperation(request, operations.postEncountersSearch),
     postFluidBalanceEntries: createOperation(request, operations.postFluidBalanceEntries),
+    postFluidMonitoringRules: createOperation(request, operations.postFluidMonitoringRules),
+    postFluidObservation: createOperation(request, operations.postFluidObservation),
+    postFluidObservationCorrection: createOperation(request, operations.postFluidObservationCorrection),
+    postFluidObservationVoid: createOperation(request, operations.postFluidObservationVoid),
     postGoodsReceivedNoteAccept: createOperation(request, operations.postGoodsReceivedNoteAccept),
     postGoodsReceivedNoteInspect: createOperation(request, operations.postGoodsReceivedNoteInspect),
     postGoodsReceivedNotes: createOperation(request, operations.postGoodsReceivedNotes),
@@ -4734,6 +4909,8 @@ export function createGeneratedClient(request) {
     postReferralSchedule: createOperation(request, operations.postReferralSchedule),
     postSchedulingAppointmentArrive: createOperation(request, operations.postSchedulingAppointmentArrive),
     postSchedulingAppointmentBook: createOperation(request, operations.postSchedulingAppointmentBook),
+    postSchedulingAppointmentSeries: createOperation(request, operations.postSchedulingAppointmentSeries),
+    postSchedulingAppointmentSeriesCancelFuture: createOperation(request, operations.postSchedulingAppointmentSeriesCancelFuture),
     postSchedulingExceptions: createOperation(request, operations.postSchedulingExceptions),
     postSchedulingServices: createOperation(request, operations.postSchedulingServices),
     postSchedulingSessionCancel: createOperation(request, operations.postSchedulingSessionCancel),

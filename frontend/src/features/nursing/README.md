@@ -63,3 +63,10 @@ owns the patient context:
   follow bounded server cursors, and fail on incomplete pages. Supply success must
   confirm the exact fulfillment and issued/remaining counts; uncertain issues
   block another stock write while the user reviews the refreshed records.
+
+`fluid/` owns the Rust Chronicle fluid panel and facility rule page. Patient and
+admission scopes are sent to bounded server lists; totals and conditions come
+from complete server projections. Controllers retain exact uncertain commands
+above dialog portals, and voided source history remains reachable through the
+explicit review toggle. Rule publication has an independent admin permission,
+reason, expected version and review step.

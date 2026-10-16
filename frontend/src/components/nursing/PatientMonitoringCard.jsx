@@ -98,6 +98,7 @@ export function PatientMonitoringCard({ patientData }) {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {Number(patientData.fluid_condition_count) > 0 && <div className="rounded-lg border p-3 text-sm"><p className={Number(patientData.fluid_critical_count) > 0 ? 'font-medium text-destructive' : 'font-medium'}>{patientData.fluid_condition_count} fluid monitoring {Number(patientData.fluid_condition_count) === 1 ? 'condition' : 'conditions'}</p><p className="text-xs text-muted-foreground">Calculated from effective entries for the current UTC day.</p><Button type="button" variant="link" size="sm" onClick={() => navigate(`/patients/${patient.id}?action=fluids`)}>Review fluid balance in Chronicle</Button></div>}
         {/* Vital Signs */}
         {latest_vitals ? (
           <div className="grid grid-cols-2 gap-2">

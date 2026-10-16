@@ -11,6 +11,7 @@ Scope: SQLx repositories and database infrastructure.
 | --- | --- |
 | `admin.rs`, `auth.rs`, `facilities.rs` | admin, auth/session, and facility persistence. |
 | `patients.rs`, `care.rs`, `clinical.rs`, `consent.rs`, `referrals.rs`, `scheduling.rs` | patient, care, clinical, consent, referral, and scheduling repositories. |
+| `appointment_series.rs` | atomic explicit-slot series, scoped replay, member snapshots and future-cancellation receipts. |
 | `ward/`, `ward.rs`, `ward_rounds.rs` | inpatient/ward repository modules. |
 | `inventory/`, `inventory.rs`, `laboratory.rs`, `billing.rs` | fulfillment and back-office repositories. |
 | `dashboard.rs`, `events.rs`, `ops.rs`, `search.rs` | projections, events/jobs, ops, and search repositories. |

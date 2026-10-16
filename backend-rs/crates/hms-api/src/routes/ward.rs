@@ -6,6 +6,38 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v2/nursing/fluid-observations",
+            get(crate::handlers::fluid::list).post(crate::handlers::fluid::create),
+        )
+        .route(
+            "/api/v2/nursing/fluid-observations/summary",
+            get(crate::handlers::fluid::summary),
+        )
+        .route(
+            "/api/v2/nursing/fluid-observations/:id",
+            get(crate::handlers::fluid::get),
+        )
+        .route(
+            "/api/v2/nursing/fluid-observations/:id/history",
+            get(crate::handlers::fluid::history),
+        )
+        .route(
+            "/api/v2/nursing/fluid-observations/:id/corrections",
+            post(crate::handlers::fluid::correct),
+        )
+        .route(
+            "/api/v2/nursing/fluid-observations/:id/void",
+            post(crate::handlers::fluid::void),
+        )
+        .route(
+            "/api/v2/nursing/fluid-monitoring/rules",
+            get(crate::handlers::fluid::rules).post(crate::handlers::fluid::update_rules),
+        )
+        .route(
+            "/api/v2/nursing/fluid-monitoring/assessment",
+            get(crate::handlers::fluid::assessment),
+        )
         .route("/api/v2/nursing/prn-orders", get(ward::list_prn_orders))
         .route(
             "/api/v2/nursing/prn-dose-requests",

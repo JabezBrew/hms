@@ -53,6 +53,7 @@ impl AdmissionCasesService {
         if let Some(patient_id) = query.patient_id {
             common::load_patient_for_access(&self.state, ctx, patient_id).await?;
         }
+        let cache_utc_day = Utc::now().date_naive();
         let cacheable_hot_page = page.cursor.is_none()
             && query.patient_id.is_none()
             && query.monitoring_filter.is_none()
@@ -79,7 +80,7 @@ impl AdmissionCasesService {
 
         let response =
             common::page_response(rows, page_size, |item| ward_board_cursor_for(item, sort));
-        if cacheable_hot_page {
+        if cacheable_hot_page && cache_utc_day == Utc::now().date_naive() {
             self.state
                 .put_cached_ward_board(ctx, query.ward_id, page_size, response.clone());
         }

@@ -12,6 +12,7 @@ Scope: API-layer workflow services.
 | `admin.rs` | admin, organization, authority, staff, and audit workflow. |
 | `patients.rs`, `ward_rounds.rs` | patient registry, Chronicle, break-glass, and ward-round workflow. |
 | `care.rs`, `clinical.rs`, `consent.rs`, `referrals.rs`, `scheduling.rs` | care, clinical, consent, referral, and scheduling workflow. |
+| `appointment_series.rs` | patient-authorized explicit multi-appointment booking, result recovery and future-member cancellation. |
 | `ward/` | ward, bed, admission, discharge, nursing, MAR, handoff, monitoring, stock workflow. |
 | `billing/`, `inventory/`, `laboratory/` | billing, inventory/pharmacy, and lab workflow. |
 | `dashboard.rs`, `ops.rs`, `ops/` | dashboard, notification/projection, ops, and metrics workflow. |

@@ -173,11 +173,12 @@ function BoardSignals({ patient }) {
   return (
     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
       <SignalCard
-        label="Safety"
+        label="Nursing alerts"
         value={activeAlerts}
         meta={criticalAlerts > 0 ? `${criticalAlerts} critical` : null}
         tone={criticalAlerts > 0 ? 'critical' : 'moderate'}
       />
+      <SignalCard label="Fluid conditions" value={Number(patient?.fluid_condition_count ?? 0)} meta={Number(patient?.fluid_critical_count ?? 0) > 0 ? 'Critical daily balance' : 'Effective UTC day'} tone={Number(patient?.fluid_critical_count ?? 0) > 0 ? 'critical' : 'moderate'} />
       <SignalCard
         label="Due Meds"
         value={dueMeds}

@@ -1,9 +1,10 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
 import {
   buildChronicleWorkspaceProps,
   chronicleWorkspaceLoaders,
 } from '@/features/patients/chronicle/workspaceRegistry';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import MobileWorkspaceContextDock from '@/features/patients/components/MobileWorkspaceContextDock';
 
 const chronicleWorkspaceComponents = Object.freeze(
@@ -16,28 +17,21 @@ const chronicleWorkspaceComponents = Object.freeze(
 );
 
 const ChronicleWorkspaceHost = ({ activeWorkspace, workspaceContext }) => {
-  if (!activeWorkspace) {
-    return null;
-  }
-
-  const WorkspaceComponent = chronicleWorkspaceComponents[activeWorkspace];
-  if (!WorkspaceComponent) {
-    return null;
-  }
-
-  const workspaceProps = buildChronicleWorkspaceProps(activeWorkspace, workspaceContext);
-  if (!workspaceProps) {
-    return null;
-  }
-
+  const [fluidVisited, setFluidVisited] = useState(false);
+  useEffect(() => { if (activeWorkspace === 'fluids') setFluidVisited(true); }, [activeWorkspace]);
+  // Keep an uncertain fluid command in memory across a normal workspace close.
+  // Its own patient/admission/auth boundary still removes stale copied forms.
+  const keepFluid = isRustV2ApiMode() && (fluidVisited || activeWorkspace === 'fluids');
+  const FluidWorkspace = chronicleWorkspaceComponents.fluids;
+  const fluidProps = keepFluid ? buildChronicleWorkspaceProps('fluids', workspaceContext) : null;
+  const WorkspaceComponent = activeWorkspace ? chronicleWorkspaceComponents[activeWorkspace] : null;
+  const workspaceProps = WorkspaceComponent ? buildChronicleWorkspaceProps(activeWorkspace, workspaceContext) : null;
+  if (!keepFluid && !workspaceProps) return null;
   return (
     <Suspense fallback={null}>
-      <WorkspaceComponent {...workspaceProps} />
-      <MobileWorkspaceContextDock
-        key={activeWorkspace}
-        activeWorkspace={activeWorkspace}
-        context={workspaceContext.mobileContext}
-      />
+      {fluidProps && <FluidWorkspace {...fluidProps} open={activeWorkspace === 'fluids'} />}
+      {WorkspaceComponent && workspaceProps && !(keepFluid && activeWorkspace === 'fluids') && <WorkspaceComponent {...workspaceProps} />}
+      {activeWorkspace && <MobileWorkspaceContextDock key={activeWorkspace} activeWorkspace={activeWorkspace} context={workspaceContext.mobileContext} />}
     </Suspense>
   );
 };

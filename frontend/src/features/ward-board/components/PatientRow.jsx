@@ -30,11 +30,14 @@ const DISCHARGE_STATUS_STYLES = {
 function SafetyCell({ patient }) {
   const active = Number(patient?.active_alert_count ?? 0);
   const critical = Number(patient?.critical_alert_count ?? 0);
-  if (active === 0 && critical === 0) {
+  const fluidCount = Number(patient?.fluid_condition_count ?? 0);
+  const fluidCritical = Number(patient?.fluid_critical_count ?? 0);
+  if (active === 0 && critical === 0 && fluidCount === 0) {
     return <span className="font-mono text-[11px] text-muted-foreground">-</span>;
   }
   return (
     <div className="space-y-0.5">
+      {fluidCount > 0 && <Badge variant={fluidCritical > 0 ? 'destructive' : 'outline'}>{fluidCount} fluid {fluidCount === 1 ? 'condition' : 'conditions'}{fluidCritical > 0 ? ' · critical balance' : ''}</Badge>}
       {critical > 0 ? (
         <Badge variant="outline" className="border-rose-200 bg-rose-50 font-mono text-[10px] text-rose-700">
           {critical} critical

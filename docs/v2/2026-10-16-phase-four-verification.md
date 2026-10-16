@@ -90,3 +90,10 @@ Evidence: `/tmp/hms-phase4-index-{rust,frontend}-acceptance.log`,
 `/tmp/hms-phase4-context-db-test.log`, `/tmp/hms-phase4-final-copy-test.log`,
 `/tmp/hms-pharmacy-locations-api.log`, `/tmp/hms-pharmacy-picker-independent.log`.
 Exact staged blobs are compared with accepted snapshot files before commit.
+
+Commit `a0362138a873255d902fd3c6ffd49e360bd9432b` was pushed to `main`.
+The existing synthetic host's private source/environment/database/image rollback
+backup completed. Automatic approval review then blocked uploading the tested
+archive to that host because destination ownership was not established from
+trusted user instructions. Approval was requested; no indirect upload or live
+replacement followed. The previous verified staging release remains `67b9dc9dc`.

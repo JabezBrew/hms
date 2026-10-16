@@ -58,3 +58,10 @@ prescription-before-dose lock order with generation, pharmacy supply and outcome
 one unresolved dose, actual rolling limits, active admission, immutable policy and
 captured inventory units are enforced transactionally. No legacy four-dose limit
 or phantom supply is inferred. Request audits contain identifiers/event types only.
+
+Fluid evidence revisions and monitoring live in `fluid.rs` and `fluid/`. New
+commands append immutable paired observations/actions, reserve exact client
+requests, lock the source root, and update effective daily projections with the
+audit in one transaction. `include_closed` is a bounded review mode for voided
+roots; aggregates always use effective rows. See
+`docs/v2/2026-10-16-fluid-observation-scope.md` for policy and acceptance boundaries.

@@ -6,6 +6,7 @@ mod admission_cases;
 mod analytics;
 mod bed_management;
 mod discharge_cases;
+pub mod fluid;
 mod handoff;
 mod mar;
 mod nursing_task_board;
@@ -33,6 +34,7 @@ pub use discharge_cases::{
     cancel_discharge, complete_discharge, get_discharge_case, hold_discharge_blocker,
     list_discharge_cases, override_discharge_blocker, record_nursing_release, request_discharge,
 };
+pub use fluid::*;
 pub use handoff::{complete_handoff, create_handoff, get_handoff, list_handoffs, NewHandoff};
 pub use mar::{
     administer_medication, create_treatment_sheet, get_medication_administration,

@@ -8,9 +8,12 @@ const SecuritySettingsPage = lazy(() => import('./pages/SecuritySettingsPage'))
 const PreferencesSettingsPage = lazy(() => import('./pages/PreferencesSettingsPage'))
 const FeatureEntitlementsPage = lazy(() => import('./pages/FeatureEntitlementsPage'))
 
+const FluidRulesPage = lazy(() => import('@/features/nursing/fluid/FluidRulesPage'))
+
 const SETTINGS_BREADCRUMB = { label: 'Settings', path: '/settings' }
 
 export const settingsRoutes = [
+  { path: '/settings/fluid-monitoring', component: FluidRulesPage, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: ['admin.authority.manage'], layout: ROUTE_LAYOUTS.APP, sidebar: SIDEBARS.SETTINGS, title: 'Fluid monitoring rules | HMS', breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Fluid monitoring' }] },
   {
     path: '/settings',
     component: SettingsHubPage,

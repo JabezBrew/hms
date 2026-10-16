@@ -449,15 +449,21 @@ impl ObservationsMonitoringService {
         ctx: &hms_access::RequestContext,
         payload: CreateFluidBalanceEntryRequest,
     ) -> Result<ObjectResponse<FluidBalanceListItem>, ApiError> {
-        common::require_facility_permission(
+        common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        if payload.intake_ml < 0 || payload.output_ml < 0 {
+        if payload.intake_ml < 0
+            || payload.output_ml < 0
+            || payload.intake_ml > 10000
+            || payload.output_ml > 10000
+            || (payload.intake_ml == 0 && payload.output_ml == 0)
+            || payload.recorded_at > Utc::now()
+        {
             return Err(ApiError::bad_request(
                 "invalid_fluid_balance",
-                "Fluid intake and output must be non-negative.",
+                "Record positive whole measured volumes up to 10000 ml per direction at or before now.",
             ));
         }
         let admission =
@@ -478,8 +484,8 @@ impl ObservationsMonitoringService {
         .await
         .map_err(|_| {
             ApiError::conflict(
-                "fluid_balance_create_failed",
-                "Fluid balance entry could not be created.",
+                "fluid_write_unconfirmed",
+                "This entry could not be confirmed. Refresh and review recent entries before recording another.",
             )
         })?;
 

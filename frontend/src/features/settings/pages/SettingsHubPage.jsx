@@ -37,6 +37,7 @@ const SettingsHubPage = () => {
 
   // Define all settings categories with role visibility
   const categories = [
+    { id: 'fluid-monitoring', title: 'Fluid monitoring', description: 'Review facility thresholds for effective daily intake, output and balance', icon: Stethoscope, color: 'sky', route: '/settings/fluid-monitoring', roles: ['admin'], capabilities: ['admin.authority.manage'] },
     {
       id: 'profile',
       title: 'Profile',

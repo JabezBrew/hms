@@ -62,6 +62,9 @@ struct WardBoardRow {
     next_due_medication_at: Option<DateTime<Utc>>,
     active_alert_count: i64,
     critical_alert_count: i64,
+    fluid_condition_count: i64,
+    fluid_critical_count: i64,
+    fluid_assessment_status: String,
     last_vitals_recorded_at: Option<DateTime<Utc>>,
     unverified_result_count: i64,
     critical_unverified_result_count: i64,
@@ -713,6 +716,9 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
                med_counts.next_due_medication_at,
                COALESCE(alert_counts.active_alert_count, 0) AS active_alert_count,
                COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count,
+               COALESCE(fluid_monitor.condition_count,0) AS fluid_condition_count,
+               COALESCE(fluid_monitor.critical_count,0) AS fluid_critical_count,
+               COALESCE(fluid_monitor.assessment_status,'no_data') AS fluid_assessment_status,
                vitals.last_vitals_recorded_at,
                COALESCE(result_counts.unverified_result_count, 0) AS unverified_result_count,
                COALESCE(result_counts.critical_unverified_result_count, 0) AS critical_unverified_result_count,
@@ -722,6 +728,7 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
                COALESCE(discharge_counts.open_discharge_blocker_count, 0) AS open_discharge_blocker_count,
                GREATEST(
                    admission_cases.updated_at,
+                   COALESCE(fluid_monitor.last_activity_at,admission_cases.updated_at),
                    COALESCE(task_counts.last_task_activity_at, admission_cases.updated_at),
                    COALESCE(med_counts.last_medication_activity_at, admission_cases.updated_at),
                    COALESCE(alert_counts.last_alert_activity_at, admission_cases.updated_at),
@@ -737,6 +744,7 @@ fn ward_board_query() -> QueryBuilder<'static, Postgres> {
         JOIN wards
           ON wards.id = admission_cases.ward_id
          AND wards.facility_id = admission_cases.facility_id
+        LEFT JOIN fluid_admission_monitoring fluid_monitor ON fluid_monitor.facility_id=admission_cases.facility_id AND fluid_monitor.admission_case_id=admission_cases.id
         LEFT JOIN beds
           ON beds.id = admission_cases.bed_id
          AND beds.facility_id = admission_cases.facility_id
@@ -1018,6 +1026,7 @@ fn ward_board_list_query() -> QueryBuilder<'static, Postgres> {
                                  )
                              )
                        )
+                       OR EXISTS (SELECT 1 FROM fluid_admission_monitoring f WHERE f.facility_id=admission_cases.facility_id AND f.admission_case_id=admission_cases.id AND f.critical_count>0)
                        THEN 0
                        WHEN EXISTS (
                            SELECT 1
@@ -1042,6 +1051,7 @@ fn ward_board_list_query() -> QueryBuilder<'static, Postgres> {
                              AND medication_administrations.status = 'scheduled'
                              AND medication_administrations.scheduled_at <= now()
                        )
+                       OR EXISTS (SELECT 1 FROM fluid_admission_monitoring f WHERE f.facility_id=admission_cases.facility_id AND f.admission_case_id=admission_cases.id AND f.condition_count>0)
                        THEN 1
                        WHEN EXISTS (
                            SELECT 1
@@ -1163,6 +1173,9 @@ fn ward_board_list_select() -> &'static str {
                med_counts.next_due_medication_at,
                COALESCE(alert_counts.active_alert_count, 0) AS active_alert_count,
                COALESCE(alert_counts.critical_alert_count, 0) AS critical_alert_count,
+               COALESCE(fluid_monitor.condition_count,0) AS fluid_condition_count,
+               COALESCE(fluid_monitor.critical_count,0) AS fluid_critical_count,
+               COALESCE(fluid_monitor.assessment_status,'no_data') AS fluid_assessment_status,
                vitals.last_vitals_recorded_at,
                COALESCE(result_counts.unverified_result_count, 0) AS unverified_result_count,
                COALESCE(result_counts.critical_unverified_result_count, 0) AS critical_unverified_result_count,
@@ -1172,6 +1185,7 @@ fn ward_board_list_select() -> &'static str {
                COALESCE(discharge_counts.open_discharge_blocker_count, 0) AS open_discharge_blocker_count,
                GREATEST(
                    admission_cases.updated_at,
+                   COALESCE(fluid_monitor.last_activity_at,admission_cases.updated_at),
                    COALESCE(task_counts.last_task_activity_at, admission_cases.updated_at),
                    COALESCE(med_counts.last_medication_activity_at, admission_cases.updated_at),
                    COALESCE(alert_counts.last_alert_activity_at, admission_cases.updated_at),
@@ -1187,6 +1201,7 @@ fn ward_board_list_select() -> &'static str {
         JOIN wards
           ON wards.id = admission_cases.ward_id
          AND wards.facility_id = admission_cases.facility_id
+        LEFT JOIN fluid_admission_monitoring fluid_monitor ON fluid_monitor.facility_id=admission_cases.facility_id AND fluid_monitor.admission_case_id=admission_cases.id
         LEFT JOIN beds
           ON beds.id = admission_cases.bed_id
          AND beds.facility_id = admission_cases.facility_id
@@ -1490,6 +1505,7 @@ fn admission_case_query() -> QueryBuilder<'static, Postgres> {
         JOIN wards
           ON wards.id = admission_cases.ward_id
          AND wards.facility_id = admission_cases.facility_id
+        LEFT JOIN fluid_admission_monitoring fluid_monitor ON fluid_monitor.facility_id=admission_cases.facility_id AND fluid_monitor.admission_case_id=admission_cases.id
         LEFT JOIN beds
           ON beds.id = admission_cases.bed_id
          AND beds.facility_id = admission_cases.facility_id
@@ -1625,6 +1641,9 @@ fn ward_board_from_row(row: WardBoardRow) -> anyhow::Result<WardBoardItem> {
         due_medication_count: row.due_medication_count,
         next_due_medication_at: row.next_due_medication_at,
         active_alert_count: row.active_alert_count,
+        fluid_condition_count: row.fluid_condition_count,
+        fluid_critical_count: row.fluid_critical_count,
+        fluid_assessment_status: codec::decode(&row.fluid_assessment_status)?,
         critical_alert_count: row.critical_alert_count,
         last_vitals_recorded_at: row.last_vitals_recorded_at,
         unverified_result_count: row.unverified_result_count,
@@ -1664,7 +1683,7 @@ fn push_monitoring_filter(
         WardBoardMonitoringFilter::Critical => {
             query.push(
                 r#" AND (
-                    EXISTS (
+                    EXISTS (SELECT 1 FROM fluid_admission_monitoring f WHERE f.facility_id=admission_cases.facility_id AND f.admission_case_id=admission_cases.id AND f.critical_count>0) OR EXISTS (
                         SELECT 1
                         FROM nursing_alerts
                         WHERE nursing_alerts.facility_id = admission_cases.facility_id
@@ -1712,13 +1731,13 @@ fn push_monitoring_filter(
         }
         WardBoardMonitoringFilter::Alerts => {
             query.push(
-                r#" AND EXISTS (
+                r#" AND (EXISTS (SELECT 1 FROM fluid_admission_monitoring f WHERE f.facility_id=admission_cases.facility_id AND f.admission_case_id=admission_cases.id AND f.condition_count>0) OR EXISTS (
                     SELECT 1
                     FROM nursing_alerts
                     WHERE nursing_alerts.facility_id = admission_cases.facility_id
                       AND nursing_alerts.admission_case_id = admission_cases.id
                       AND nursing_alerts.status = 'open'
-                )"#,
+                ))"#,
             );
         }
         WardBoardMonitoringFilter::Tasks => {

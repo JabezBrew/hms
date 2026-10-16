@@ -8,6 +8,7 @@ const AppointmentDetailPage = lazy(() => import('./pages/AppointmentDetailPage')
 const AppointmentEditPage = lazy(() => import('./pages/AppointmentEditPage'))
 const PractitionerAvailabilityPage = lazy(() => import('./pages/PractitionerAvailabilityPage'))
 const ScheduleSlotsPage = lazy(() => import('./pages/ScheduleSlotsPage'))
+const AppointmentSeriesPage = lazy(() => import('./series/AppointmentSeriesPage'))
 
 export const appointmentRoutes = [
   {
@@ -39,6 +40,14 @@ export const appointmentRoutes = [
       { label: 'Schedule', path: '/appointments' },
       { label: 'New Appointment', path: '/appointments/new' },
     ],
+  },
+  {
+    path: '/appointments/series/:id',
+    component: AppointmentSeriesPage,
+    roles: ROLE_GROUPS.APPOINTMENTS,
+    layout: ROUTE_LAYOUTS.APP,
+    title: 'Appointment Group | Hospital Management System',
+    breadcrumbs: [{ label: 'Schedule', path: '/appointments' }, { label: 'Appointment group' }],
   },
   {
     path: '/appointments/:id',

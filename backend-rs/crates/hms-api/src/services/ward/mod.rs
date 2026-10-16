@@ -4,6 +4,7 @@ mod analytics;
 mod bed_management;
 mod common;
 mod discharge_cases;
+mod fluid;
 mod handoff;
 mod mar;
 mod nursing_task_board;
@@ -16,6 +17,7 @@ pub use admission_cases::AdmissionCasesService;
 pub use analytics::WardAnalyticsService;
 pub use bed_management::BedManagementService;
 pub use discharge_cases::DischargeCasesService;
+pub use fluid::FluidService;
 pub use handoff::HandoffService;
 pub use mar::MarService;
 pub use nursing_task_board::NursingTaskBoardService;
@@ -65,6 +67,10 @@ impl WardServices {
 
     pub fn observations_monitoring(&self) -> ObservationsMonitoringService {
         ObservationsMonitoringService::new(self.state.clone())
+    }
+
+    pub fn fluid(&self) -> FluidService {
+        FluidService::new(self.state.clone())
     }
 
     pub fn handoff(&self) -> HandoffService {

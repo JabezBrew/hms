@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod admin_access;
+pub mod appointment_series;
 pub mod billing;
 pub mod care;
 pub mod clinical;

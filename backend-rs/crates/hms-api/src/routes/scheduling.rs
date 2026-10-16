@@ -6,6 +6,7 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .merge(super::appointment_series::routes())
         .route(
             "/api/v2/scheduling/services",
             get(scheduling::list_services).post(scheduling::create_service),

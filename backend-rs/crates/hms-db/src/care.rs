@@ -1059,13 +1059,24 @@ pub async fn create_booked_appointment(
     pool: &PgPool,
     appointment: NewBookedAppointment,
 ) -> anyhow::Result<AppointmentListItem> {
+    let mut transaction = pool.begin().await?;
+    let saved =
+        create_booked_appointment_in_transaction(pool, &mut transaction, appointment).await?;
+    transaction.commit().await?;
+    Ok(saved)
+}
+
+pub(crate) async fn create_booked_appointment_in_transaction(
+    pool: &PgPool,
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    appointment: NewBookedAppointment,
+) -> anyhow::Result<AppointmentListItem> {
     if appointment.ends_at <= appointment.starts_at {
         anyhow::bail!("appointment end time must be after start time");
     }
-    let mut transaction = pool.begin().await?;
     let session = if let Some(session_id) = appointment.clinic_session_id {
         Some(
-            load_clinic_session_for_update(&mut transaction, appointment.facility_id, session_id)
+            load_clinic_session_for_update(transaction, appointment.facility_id, session_id)
                 .await?,
         )
     } else {
@@ -1085,7 +1096,7 @@ pub async fn create_booked_appointment(
     });
 
     if let Some(session) = &session {
-        validate_session_booking(&mut transaction, session, &appointment).await?;
+        validate_session_booking(transaction, session, &appointment).await?;
     }
 
     let row = sqlx::query_as::<_, AppointmentRow>(
@@ -1161,12 +1172,12 @@ pub async fn create_booked_appointment(
     .bind(codec::encode(AppointmentStatus::Scheduled)?)
     .bind(appointment.overbook_reason.as_deref())
     .bind(appointment.created_by_user_id)
-    .fetch_one(&mut *transaction)
+    .fetch_one(&mut **transaction)
     .await?;
 
     if appointment.overbook_reason.is_some() {
         insert_appointment_history(
-            &mut transaction,
+            transaction,
             appointment.facility_id,
             appointment.id,
             "overbooked",
@@ -1180,7 +1191,6 @@ pub async fn create_booked_appointment(
         .await?;
     }
 
-    transaction.commit().await?;
     appointment_from_row(row)
 }
 
@@ -1229,6 +1239,20 @@ pub async fn update_appointment(
     appointment: AppointmentUpdate,
 ) -> anyhow::Result<Option<AppointmentListItem>> {
     let mut transaction = pool.begin().await?;
+    let parent: Option<Option<Uuid>> = sqlx::query_scalar(
+        "SELECT clinic_session_id FROM appointments WHERE facility_id=$1 AND id=$2 AND status='scheduled'",
+    ).bind(appointment.facility_id).bind(appointment.id).fetch_optional(&mut *transaction).await?;
+    let Some(parent) = parent else {
+        return Ok(None);
+    };
+    let locked_session = if let Some(session_id) = parent {
+        Some(
+            load_clinic_session_for_update(&mut transaction, appointment.facility_id, session_id)
+                .await?,
+        )
+    } else {
+        None
+    };
     let existing = sqlx::query_as::<_, AppointmentRow>(
         r#"
         SELECT appointments.id,
@@ -1272,10 +1296,10 @@ pub async fn update_appointment(
         anyhow::bail!("appointment end time must be after start time");
     }
 
-    if let Some(session_id) = existing.clinic_session_id {
-        let session =
-            load_clinic_session_for_update(&mut transaction, appointment.facility_id, session_id)
-                .await?;
+    if existing.clinic_session_id != parent {
+        anyhow::bail!("appointment session changed; reload before rescheduling");
+    }
+    if let Some(session) = locked_session {
         let validation_appointment = NewBookedAppointment {
             id: appointment.id,
             facility_id: appointment.facility_id,
@@ -1582,7 +1606,7 @@ pub async fn create_appointment_series(
     pool: &PgPool,
     series: NewAppointmentSeries,
 ) -> anyhow::Result<AppointmentSeriesCreated> {
-    if series.starts_at.is_empty() {
+    if series.starts_at.is_empty() || series.starts_at.len() > 50 {
         anyhow::bail!("appointment series requires at least one date");
     }
     if series.duration_minutes <= 0 {
@@ -1611,13 +1635,18 @@ pub async fn create_appointment_series(
     .bind(series.created_by_user_id)
     .execute(&mut *transaction)
     .await?;
-    transaction.commit().await?;
 
     let mut appointments = Vec::with_capacity(series.starts_at.len());
     for starts_at in &series.starts_at {
-        let ends_at = *starts_at + chrono::Duration::minutes(series.duration_minutes);
-        let appointment = create_booked_appointment(
+        let ends_at = starts_at
+            .checked_add_signed(
+                chrono::Duration::try_minutes(series.duration_minutes)
+                    .ok_or_else(|| anyhow::anyhow!("invalid appointment duration"))?,
+            )
+            .ok_or_else(|| anyhow::anyhow!("invalid appointment duration"))?;
+        let appointment = create_booked_appointment_in_transaction(
             pool,
+            &mut transaction,
             NewBookedAppointment {
                 id: Uuid::new_v4(),
                 facility_id: series.facility_id,
@@ -1637,6 +1666,7 @@ pub async fn create_appointment_series(
         appointments.push(appointment);
     }
 
+    transaction.commit().await?;
     Ok(AppointmentSeriesCreated {
         series_id: series.id,
         appointments,
@@ -1685,6 +1715,17 @@ pub async fn get_visit(
 pub async fn check_in_visit(pool: &PgPool, visit: NewVisit) -> anyhow::Result<VisitListItem> {
     let clinic_id = resolve_visit_clinic_id(pool, visit.facility_id, visit.clinic_id).await?;
     let mut transaction = pool.begin().await?;
+    // Arrival and cancellation must decide against the same locked parent. A
+    // service-layer precheck cannot prevent a cancelled booking being revived.
+    if let Some(appointment_id) = visit.appointment_id {
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM appointments WHERE facility_id=$1 AND id=$2 AND patient_id=$3 FOR UPDATE",
+        ).bind(visit.facility_id).bind(appointment_id).bind(visit.patient_id)
+            .fetch_optional(&mut *transaction).await?;
+        if !matches!(status.as_deref(), Some("scheduled" | "checked_in")) {
+            anyhow::bail!("appointment is no longer available for arrival");
+        }
+    }
     let row = sqlx::query_as::<_, VisitRow>(
         r#"
         WITH inserted AS (
@@ -2746,7 +2787,7 @@ pub async fn create_care_team_assignment(
     care_team_assignment_from_row(row)
 }
 
-async fn load_clinic_session_for_update(
+pub(crate) async fn load_clinic_session_for_update(
     transaction: &mut sqlx::Transaction<'_, Postgres>,
     facility_id: Uuid,
     clinic_session_id: Uuid,
@@ -2807,6 +2848,21 @@ async fn validate_session_booking_excluding(
             if appointment_practitioner_id != session_practitioner_id {
                 anyhow::bail!("appointment practitioner does not match session practitioner");
             }
+        }
+    }
+    if let Some(practitioner) = appointment
+        .practitioner_user_id
+        .or(session.practitioner_user_id)
+    {
+        let active: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM users WHERE facility_id=$1 AND id=$2 AND is_active FOR SHARE",
+        )
+        .bind(appointment.facility_id)
+        .bind(practitioner)
+        .fetch_optional(&mut **transaction)
+        .await?;
+        if active.is_none() {
+            anyhow::bail!("session practitioner is not active in facility");
         }
     }
     let constrained_count: i64 = sqlx::query_scalar(

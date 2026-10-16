@@ -500,7 +500,7 @@ fn append_fluid_scope(
     filters: &FluidBalanceFilters,
 ) {
     query
-        .push(" WHERE fluid_balance_entries.facility_id = ")
+        .push(" WHERE EXISTS (SELECT 1 FROM admission_cases a WHERE a.id=fluid_balance_entries.admission_case_id AND a.facility_id=fluid_balance_entries.facility_id AND a.patient_id=fluid_balance_entries.patient_id) AND EXISTS (SELECT 1 FROM fluid_observation_roots r WHERE r.facility_id=fluid_balance_entries.facility_id AND r.current_entry_id=fluid_balance_entries.id) AND fluid_balance_entries.facility_id = ")
         .push_bind(facility_id);
     if let Some(id) = filters.patient_id {
         query
@@ -528,6 +528,7 @@ pub async fn create_fluid_balance_entry(
     pool: &PgPool,
     entry: NewFluidBalanceEntry,
 ) -> anyhow::Result<FluidBalanceListItem> {
+    let mut tx = pool.begin().await?;
     observe_db_query(
         "ward.observations.fluid_balance.create",
         sqlx::query(
@@ -554,10 +555,22 @@ pub async fn create_fluid_balance_entry(
         .bind(entry.intake_ml)
         .bind(entry.output_ml)
         .bind(entry.recorded_by_user_id)
-        .execute(pool),
+        .execute(&mut *tx),
     )
     .await?;
-    fluid_balance_by_id(pool, entry.facility_id, entry.id).await
+    sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,event_type,resource_type,resource_id,metadata) VALUES($1,$2,$3,'fluid.observation.created','fluid_observation',$4,jsonb_build_object('revision',1))").bind(Uuid::new_v4()).bind(entry.facility_id).bind(entry.recorded_by_user_id).bind(entry.id).execute(&mut *tx).await?;
+    let mut query = fluid_balance_query();
+    query
+        .push(" WHERE fluid_balance_entries.facility_id=")
+        .push_bind(entry.facility_id)
+        .push(" AND fluid_balance_entries.id=")
+        .push_bind(entry.id);
+    let row = query
+        .build_query_as::<FluidBalanceRow>()
+        .fetch_one(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(fluid_balance_from_row(row))
 }
 
 fn patient_vitals_query() -> QueryBuilder<'static, Postgres> {
@@ -707,24 +720,6 @@ async fn monitoring_event_by_id(
     )
     .await?;
     monitoring_event_from_row(row)
-}
-
-async fn fluid_balance_by_id(
-    pool: &PgPool,
-    facility_id: Uuid,
-    entry_id: Uuid,
-) -> anyhow::Result<FluidBalanceListItem> {
-    let mut query = fluid_balance_query();
-    query.push(" WHERE fluid_balance_entries.facility_id = ");
-    query.push_bind(facility_id);
-    query.push(" AND fluid_balance_entries.id = ");
-    query.push_bind(entry_id);
-    let row = observe_db_query(
-        "ward.observations.fluid_balance.get",
-        query.build_query_as::<FluidBalanceRow>().fetch_one(pool),
-    )
-    .await?;
-    Ok(fluid_balance_from_row(row))
 }
 
 fn patient_vitals_from_row(row: PatientVitalsRow) -> PatientVitalsListItem {

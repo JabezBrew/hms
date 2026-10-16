@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod admin_access;
+pub mod appointment_series;
 pub mod auth;
 pub mod billing;
 pub mod capabilities;
@@ -8,6 +9,7 @@ pub mod clinical;
 pub mod consent;
 pub mod dashboard;
 pub mod deployment;
+pub mod fluid;
 pub mod inventory;
 pub mod inventory_standing;
 pub mod laboratory;
