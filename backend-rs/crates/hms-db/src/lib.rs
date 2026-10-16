@@ -13,6 +13,7 @@ pub mod facilities;
 pub mod inventory;
 pub mod laboratory;
 pub mod migrate;
+pub mod network;
 pub mod ops;
 pub mod patients;
 pub mod pharmacy;

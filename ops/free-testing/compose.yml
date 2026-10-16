@@ -2,11 +2,19 @@
 # Cloudflare provides browser TLS and optional Access; the origin has no public ports.
 services:
   caddy:
+    environment:
+      HMS_TUNNEL_PROXY_IPV4: ${HMS_TUNNEL_PROXY_IPV4:-172.30.242.3}
     ports: !override
       - "127.0.0.1:${HMS_TEST_HTTP_PORT:-8088}:80"
     volumes: !override
       - ../free-testing/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_config:/config
+    networks: !override
+      edge: {}
+      api_proxy:
+        ipv4_address: ${HMS_API_PROXY_CADDY_IPV4:-172.30.241.2}
+      tunnel_proxy:
+        ipv4_address: ${HMS_TUNNEL_PROXY_CADDY_IPV4:-172.30.242.2}
 
   hms-api:
     build:
@@ -14,10 +22,18 @@ services:
         CARGO_BUILD_JOBS: "2"
     environment:
       HMS_ENV: staging
+      # Caddy's actual API-side peer and the connector hop it appends to XFF.
+      HMS_TRUSTED_PROXY_CIDRS: ${HMS_API_PROXY_CADDY_IPV4:-172.30.241.2}/32,${HMS_TUNNEL_PROXY_IPV4:-172.30.242.3}/32
       HMS_ACCOUNT_SETUP_DELIVERY_MODE: disabled
       HMS_PUBLIC_APP_URL: https://${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
       HMS_WEBAUTHN_RP_ID: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
       HMS_WEBAUTHN_RP_ORIGIN: https://${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
+    networks: !override
+      api_proxy:
+        aliases: [hms-api]
+        ipv4_address: ${HMS_API_PROXY_API_IPV4:-172.30.241.3}
+      internal:
+        aliases: [hms-api]
 
   hms-worker:
     environment:
@@ -66,7 +82,9 @@ services:
     depends_on:
       caddy:
         condition: service_healthy
-    networks: [edge]
+    networks: !override
+      tunnel_proxy:
+        ipv4_address: ${HMS_TUNNEL_PROXY_IPV4:-172.30.242.3}
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
     mem_limit: 128m
@@ -76,3 +94,17 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+# Keep the connector and API on separate links. Trust neither the shared frontend
+# network nor an entire RFC1918 range. Choose non-overlapping subnets per host.
+networks:
+  api_proxy:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${HMS_API_PROXY_SUBNET:-172.30.241.0/29}
+  tunnel_proxy:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${HMS_TUNNEL_PROXY_SUBNET:-172.30.242.0/29}

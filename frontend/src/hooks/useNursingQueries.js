@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { getV2ClientScopeKey, v2Api, v2Request } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import {
@@ -993,7 +994,8 @@ export const useDispenseMedication = () => {
         if (!fulfillmentId || !itemId || !locationId || !Number.isSafeInteger(quantity) || quantity <= 0) {
           throw new Error('Stock item, location, and positive quantity are required to dispense in Rust V2.');
         }
-        try { const response = await v2Request({
+        let response;
+        try { response = await v2Request({
           method: 'POST',
           path: `/api/v2/pharmacy/dispensing-queue/${fulfillmentId}/dispense`,
           body: {
@@ -1007,9 +1009,11 @@ export const useDispenseMedication = () => {
           if (saved?.id !== fulfillmentId || !Number.isSafeInteger(result?.dispensed_dose_count) || result.dispensed_dose_count !== quantity || !Number.isSafeInteger(result?.remaining_dose_count) || result.remaining_dose_count < 0 || !Number.isSafeInteger(saved?.dispensed_dose_count) || !Number.isSafeInteger(saved?.requested_dose_count) || saved.dispensed_dose_count < quantity || saved.requested_dose_count < saved.dispensed_dose_count || saved.requested_dose_count - saved.dispensed_dose_count !== result.remaining_dose_count) {
             throw new Error('The supply response did not confirm the requested stock issue.');
           }
+          acknowledgeWriteResponse(response);
           return response;
         } catch (error) {
           if (error?.status >= 400 && error.status < 500 && error?.data?.error?.code !== 'pharmacy_dispense_unconfirmed') throw error;
+          markWriteResponseUncertain(response || error);
           const uncertain = new Error('Supply may have been recorded. Reload and review the dispensing record before issuing more stock.');
           uncertain.name = 'PharmacyDispenseUnconfirmedError';
           throw uncertain;

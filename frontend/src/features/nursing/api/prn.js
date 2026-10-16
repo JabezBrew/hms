@@ -1,4 +1,5 @@
 import { v2Api } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 
 export async function getPrnOrdersPage(admissionId, cursor, { signal } = {}) {
   if (!admissionId) throw new Error('An active admission is required.');
@@ -15,15 +16,18 @@ export async function requestPrnDose(payload, { signal } = {}) {
   if (!payload.prescription_id || !payload.admission_case_id || !payload.client_request_id || !indication || [...indication].length > 500) {
     throw new Error('Select the source order and record why this dose is needed (at most 500 characters).');
   }
+  let response;
   try {
-    const response = await v2Api.postPrnDoseRequest({ prescription_id: payload.prescription_id, admission_case_id: payload.admission_case_id, client_request_id: payload.client_request_id, indication }, { signal });
+    response = await v2Api.postPrnDoseRequest({ prescription_id: payload.prescription_id, admission_case_id: payload.admission_case_id, client_request_id: payload.client_request_id, indication }, { signal });
     const result = response?.data;
     if (!result?.medication_administration_id || !result?.pharmacy_fulfillment_id || result.prescription_id !== payload.prescription_id || result.admission_case_id !== payload.admission_case_id || result.client_request_id !== payload.client_request_id) {
       throw new Error('Unconfirmed PRN response');
     }
+    acknowledgeWriteResponse(response);
     return result;
   } catch (error) {
     if (error?.status >= 400 && error.status < 500 && error?.data?.error?.code !== 'prn_request_unconfirmed') throw error;
+    markWriteResponseUncertain(response || error);
     const uncertain = new Error('The dose request may have been saved. Review the refreshed medication record before making another request.');
     uncertain.name = 'PrnRequestUnconfirmedError';
     throw uncertain;

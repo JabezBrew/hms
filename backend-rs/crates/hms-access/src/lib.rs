@@ -194,16 +194,10 @@ impl AccessSubject for AuthUser {
 pub enum OffsiteState {
     Onsite,
     OffsiteReadOnly,
+    OffsiteFreshReauth,
 }
 
 impl OffsiteState {
-    pub fn from_header(value: Option<&str>) -> Self {
-        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
-            Some("1" | "true" | "yes" | "offsite") => Self::OffsiteReadOnly,
-            _ => Self::Onsite,
-        }
-    }
-
     pub fn is_read_only(self) -> bool {
         matches!(self, Self::OffsiteReadOnly)
     }
@@ -807,6 +801,8 @@ pub fn require_high_risk_facility_permission(
 pub fn require_offsite_write_allowed(ctx: &RequestContext) -> Result<(), AccessError> {
     if ctx.offsite.is_read_only() {
         Err(AccessError::OffsiteReadOnly)
+    } else if ctx.offsite == OffsiteState::OffsiteFreshReauth {
+        require_high_risk_reauth(ctx, Utc::now())
     } else {
         Ok(())
     }

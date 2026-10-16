@@ -1,4 +1,12 @@
 {
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request delete
+			}
+		}
+	}
 	servers {
 		protocols h1 h2
 	}

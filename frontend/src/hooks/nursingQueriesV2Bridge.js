@@ -1,4 +1,5 @@
 import { v2Api, v2Request } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
 
 export const MAX_MONITORING_PAGE_SIZE = 50;
@@ -427,14 +428,18 @@ export function normalizeV2MedicationAdministerPayload(data = {}) {
 
 export async function recordV2MedicationOutcome(medicationId, data, { signal } = {}) {
   const payload = normalizeV2MedicationAdministerPayload(data);
+  let response;
   try {
-    const response = await v2Api.postMedicationAdministrationOutcome({ id: medicationId }, payload, { signal });
+    response = await v2Api.postMedicationAdministrationOutcome({ id: medicationId }, payload, { signal });
     if (response?.data?.id !== medicationId || response?.data?.status !== payload.status) {
       throw new Error('The response did not confirm the requested dose outcome.');
     }
-    return adaptV2MedicationAdministration(response.data);
+    const saved = adaptV2MedicationAdministration(response.data);
+    acknowledgeWriteResponse(response);
+    return saved;
   } catch (error) {
     if (!(error?.status >= 400 && error?.status < 500) || error?.data?.error?.code === 'medication_outcome_unconfirmed') {
+      markWriteResponseUncertain(response || error);
       const uncertain = new Error('The dose outcome may have been saved. Review the refreshed record before trying again.');
       uncertain.name = 'MedicationOutcomeUnconfirmedError';
       throw uncertain;

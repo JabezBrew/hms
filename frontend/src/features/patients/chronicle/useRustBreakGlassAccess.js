@@ -4,6 +4,7 @@ import { patientsApi } from '@/features/patients/api';
 import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { userHasCapability } from '@/shared/lib/access';
 import { getV2ClientScopeKey } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 
 const initialState = { grant: null, busy: false, error: null, refreshError: false, blocked: false, unconfirmed: false };
 function reducer(state, patch) { return { ...state, ...patch }; }
@@ -102,19 +103,22 @@ export function useRustBreakGlassAccess({ enabled, patientId, user, reauthentica
     operationRef.current = controller;
     dispatch({ busy: true, error: null });
     let grantAttempted = false;
+    let grantReceipt;
     try {
       const authenticated = await reauthenticate(user.email, password, user.facilityCode);
       if (controller.signal.aborted) return false;
       assertSameScope(user, authenticated);
       grantAttempted = true;
-      const grant = await patientsApi.requestBreakGlass(patientId, {
+      grantReceipt = await patientsApi.requestBreakGlass(patientId, {
         category, reason_text: reason?.trim() || undefined,
       }, { signal: controller.signal });
-      if (controller.signal.aborted) return false;
+      const grant = grantReceipt;
       if (!grant?.id || grant.patient_id !== patientId || grant.user_id !== user.id
         || grant.facility_id !== user.accessContext?.facility_id || !Number.isFinite(Date.parse(grant.expires_at))) {
         throw new Error('Emergency access could not be confirmed. Refresh this record before requesting another grant.');
       }
+      acknowledgeWriteResponse(grantReceipt);
+      if (controller.signal.aborted) return false;
       const summary = { id: grant.id, expires_at: grant.expires_at };
       queryClient.setQueryData(statusKey, { grant: summary });
       dispatch({ grant: summary, blocked: false, unconfirmed: false });
@@ -122,8 +126,9 @@ export function useRustBreakGlassAccess({ enabled, patientId, user, reauthentica
       if (controller.signal.aborted) return false;
       return true;
     } catch (error) {
+      const unconfirmed = grantAttempted && !(error?.status >= 400 && error?.status < 500);
+      if (unconfirmed) markWriteResponseUncertain(grantReceipt || error);
       if (!controller.signal.aborted) {
-        const unconfirmed = grantAttempted && !(error?.status >= 400 && error?.status < 500);
         dispatch({ unconfirmed, error: unconfirmed
           ? 'The emergency access request could not be confirmed. A grant may already exist. End any grant before requesting access again.'
           : error?.message || 'Emergency access could not be granted.' });
@@ -141,16 +146,19 @@ export function useRustBreakGlassAccess({ enabled, patientId, user, reauthentica
     operationRef.current = controller;
     refreshRevisionRef.current += 1;
     dispatch({ busy: true, error: null, blocked: true });
+    let response;
     try {
-      const response = await patientsApi.endBreakGlass(patientId, { signal: controller.signal });
+      response = await patientsApi.endBreakGlass(patientId, { signal: controller.signal });
+      if (!Number.isSafeInteger(response?.ended_count) || response.ended_count < 0) throw new Error('Ending emergency access could not be confirmed. Refresh and try ending access again.');
+      acknowledgeWriteResponse(response);
       if (controller.signal.aborted) return;
-      if (!Number.isInteger(response?.ended_count)) throw new Error('Ending emergency access could not be confirmed. Refresh and try ending access again.');
       queryClient.setQueryData(statusKey, { grant: null });
       dispatch({ grant: null, blocked: true, unconfirmed: false });
       await refreshAccess();
     } catch (error) {
+      const unconfirmed = !(error?.status >= 400 && error?.status < 500);
+      if (unconfirmed) markWriteResponseUncertain(response || error);
       if (!controller.signal.aborted) {
-        const unconfirmed = !(error?.status >= 400 && error?.status < 500);
         dispatch({ unconfirmed, error: unconfirmed
           ? 'Ending emergency access could not be confirmed. The grant may already have ended. Refresh authorization or try ending access again.'
           : error?.message || 'Emergency access could not be ended.' });

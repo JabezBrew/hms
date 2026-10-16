@@ -42,6 +42,12 @@ describe('catalog correction Rust contract', () => {
     await expect(applyCatalogCorrection('item-1', payload())).rejects.toMatchObject({ status: 403, message: 'You do not have permission for this action.' });
   });
 
+  it('does not accept a catalog receipt for another item', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'version-2', item_id: 'other-item', code: 'NEW-1', name: 'Corrected item', unit: 'tablet', effective_from: catalogToday() } }), { headers: { 'content-type': 'application/json' } }));
+    await expect(applyCatalogCorrection('item-1', payload())).rejects.toMatchObject({ code: 'catalog_correction_unconfirmed' });
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
   it('marks a lost response as unconfirmed and never retries the write', async () => {
     globalThis.fetch.mockRejectedValueOnce(new TypeError('Connection lost'));
     await expect(applyCatalogCorrection('item-1', payload())).rejects.toMatchObject({ code: 'catalog_correction_unconfirmed' });

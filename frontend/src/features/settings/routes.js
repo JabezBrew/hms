@@ -7,12 +7,14 @@ const ProfileSettingsPage = lazy(() => import('./pages/ProfileSettingsPage'))
 const SecuritySettingsPage = lazy(() => import('./pages/SecuritySettingsPage'))
 const PreferencesSettingsPage = lazy(() => import('./pages/PreferencesSettingsPage'))
 const FeatureEntitlementsPage = lazy(() => import('./pages/FeatureEntitlementsPage'))
+const NetworkPolicyPage = lazy(() => import('./network/NetworkPolicyPage'))
 
 const FluidRulesPage = lazy(() => import('@/features/nursing/fluid/FluidRulesPage'))
 
 const SETTINGS_BREADCRUMB = { label: 'Settings', path: '/settings' }
 
 export const settingsRoutes = [
+  { path: '/settings/network-access', component: NetworkPolicyPage, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: ['admin.authority.manage'], layout: ROUTE_LAYOUTS.APP, sidebar: SIDEBARS.SETTINGS, title: 'Network access | HMS', breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Network access' }] },
   { path: '/settings/fluid-monitoring', component: FluidRulesPage, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: ['admin.authority.manage'], layout: ROUTE_LAYOUTS.APP, sidebar: SIDEBARS.SETTINGS, title: 'Fluid monitoring rules | HMS', breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Fluid monitoring' }] },
   {
     path: '/settings',

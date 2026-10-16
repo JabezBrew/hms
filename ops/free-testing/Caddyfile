@@ -1,7 +1,20 @@
 {
 	auto_https off
+	# Proxy failures must not write clinical URLs, headers or client IPs.
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request delete
+			}
+		}
+	}
 	servers {
 		protocols h1 h2
+		# Only the connector's dedicated peer may supply a forwarded chain.
+		trusted_proxies static {$HMS_TUNNEL_PROXY_IPV4:172.30.242.3}/32
+		trusted_proxies_strict
+		client_ip_headers X-Forwarded-For
 	}
 }
 
@@ -18,6 +31,13 @@
 	@private path /api/v2/metrics /metrics /prometheus /prometheus/* /api/v2/ops /api/v2/ops/* /system/ops /system/ops/*
 	respond @private 404
 	@api path /api/v2/*
-	reverse_proxy @api hms-api:8080
+	reverse_proxy @api hms-api:8080 {
+		# Caddy preserves a trusted full XFF chain and appends its actual peer.
+		# The API validates the bounded chain and resolves it right-to-left.
+		header_up -X-HMS-Offsite
+		header_up -CF-Connecting-IP
+		header_up -X-Real-IP
+		header_up -Forwarded
+	}
 	reverse_proxy frontend:80
 }

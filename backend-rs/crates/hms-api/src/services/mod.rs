@@ -8,6 +8,7 @@ pub mod consent;
 pub mod dashboard;
 pub mod inventory;
 pub mod laboratory;
+pub mod network;
 pub mod ops;
 pub mod patients;
 pub mod pharmacy;

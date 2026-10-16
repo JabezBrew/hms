@@ -92,7 +92,18 @@ impl Service<Request<Body>> for TestApp {
         <axum::Router as Service<Request<Body>>>::poll_ready(&mut self.router, cx)
     }
 
-    fn call(&mut self, request: Request<Body>) -> Self::Future {
+    fn call(&mut self, mut request: Request<Body>) -> Self::Future {
+        // Explicit synthetic transport fixture; production obtains this only
+        // from into_make_service_with_connect_info, never a request header.
+        if request
+            .extensions()
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .is_none()
+        {
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                "127.0.0.1:44000".parse::<std::net::SocketAddr>().unwrap(),
+            ));
+        }
         TestAppFuture {
             inner: Box::pin(<axum::Router as Service<Request<Body>>>::call(
                 &mut self.router,
@@ -125,11 +136,24 @@ pub(crate) async fn app() -> TestApp {
     .await
 }
 
+/// Fresh migrated/provisioned instance with no facility network policy at all.
+pub(crate) async fn app_without_network_policy() -> TestApp {
+    let database = Arc::new(hms_db::test_support::TestDatabase::create().unwrap());
+    let config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    let state = AppState::new(config).await.unwrap();
+    TestApp {
+        router: build_app(state.clone()),
+        state,
+        _database: database,
+    }
+}
+
 pub(crate) async fn app_with_config(
     config: Config,
     database: Arc<hms_db::test_support::TestDatabase>,
 ) -> TestApp {
     let state = AppState::new(config).await.expect("test state initializes");
+    setup_test_network_policy(&state, database.database_url()).await;
     TestApp {
         router: build_app(state.clone()),
         state,
@@ -152,6 +176,7 @@ pub(crate) async fn app_with_config_and_request_context_probe(
     database: Arc<hms_db::test_support::TestDatabase>,
 ) -> TestApp {
     let state = AppState::new(config).await.expect("test state initializes");
+    setup_test_network_policy(&state, database.database_url()).await;
     let probe = Router::new()
         .route("/__test/request-context", get(request_context_probe))
         .with_state(state.clone());
@@ -164,6 +189,45 @@ pub(crate) async fn app_with_config_and_request_context_probe(
             )),
         state: state.clone(),
         _database: database,
+    }
+}
+
+async fn setup_test_network_policy(state: &AppState, database_url: &str) {
+    let pool = hms_db::connect(database_url).await.unwrap();
+    if hms_db::network::get_policy(&pool, state.facility_id())
+        .await
+        .unwrap()
+        .configured
+    {
+        return;
+    }
+    let result = hms_db::network::update_policy(
+        &pool,
+        hms_db::network::NetworkPolicyActor {
+            facility_id: state.facility_id(),
+            user_id: None,
+            request_id: None,
+            reauth_deadline: None,
+            auth_versions: None,
+            session_id: None,
+            active_profile: None,
+            resolved_policy_version: None,
+        },
+        hms_domain::network::UpdateNetworkPolicyRequest {
+            client_request_id: Uuid::new_v4(),
+            expected_version: 0,
+            onsite_cidrs: vec!["127.0.0.1/32".into(), "::1/128".into()],
+            offsite_mode: hms_domain::network::NetworkOffsiteMode::Readonly,
+            reason: "Explicit synthetic loopback transport fixture".into(),
+        },
+        None,
+    )
+    .await;
+    if let Err(error) = result {
+        assert_eq!(
+            error.downcast_ref::<hms_db::network::NetworkPolicyError>(),
+            Some(&hms_db::network::NetworkPolicyError::VersionChanged)
+        );
     }
 }
 

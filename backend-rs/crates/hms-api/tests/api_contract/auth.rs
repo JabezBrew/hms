@@ -494,7 +494,10 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
                     .uri("/__test/request-context")
                     .header(AUTHORIZATION, auth_header.clone())
                     .header("x-request-id", "request-context-test")
-                    .header("x-hms-offsite", "true")
+                    .header("x-hms-offsite", "false")
+                    .extension(axum::extract::ConnectInfo(
+                        "192.0.2.23:44000".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .body(Body::empty())
                     .expect("request builds"),
             )
@@ -504,8 +507,8 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
     let response = response.expect("request context probe succeeds");
 
     assert_eq!(response.status(), StatusCode::OK);
-    // One indexed durable version read; the policy projection stays warm.
-    assert_eq!(observed_queries, 1);
+    // One indexed durable auth-version read and one current network-policy read.
+    assert_eq!(observed_queries, 2);
     let body = json_body(response).await;
     assert_eq!(body["request_id"], "request-context-test");
     assert_eq!(body["facility_code"], "HMS");
@@ -550,8 +553,8 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
         .await;
     let cached_response = cached_response.expect("cached request context probe succeeds");
     assert_eq!(cached_response.status(), StatusCode::OK);
-    // A warm policy cache still requires exactly one durable version read.
-    assert_eq!(cached_observed_queries, 1);
+    // Auth facts stay warm; network policy is read for every protected request.
+    assert_eq!(cached_observed_queries, 2);
 
     let metrics = hms_observability::prometheus_metrics();
     assert!(metrics.contains("hms_request_context_cache_hits_total"));
@@ -920,8 +923,8 @@ async fn session_issue_warms_request_context_for_parallel_requests() {
             StatusCode::OK
         );
     }
-    // Eight requests each check durable versions; none rehydrates policy.
-    assert_eq!(observed_queries, 8);
+    // Each request checks durable auth versions and current network policy.
+    assert_eq!(observed_queries, 16);
 }
 
 #[tokio::test]

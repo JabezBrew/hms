@@ -19,3 +19,6 @@ Scope: shared React context providers.
 - Do not store PHI or secrets in durable browser storage through these contexts.
 - Prefer feature-local state unless multiple areas genuinely share the same
   product state.
+- Rust read-only state is supplied by the authoritative network feature boundary;
+  the context does not infer onsite access from a cached login response or fetch
+  network policy itself.

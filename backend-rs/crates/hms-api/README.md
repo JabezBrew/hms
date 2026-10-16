@@ -52,6 +52,7 @@ IDs.
 | `routes/observability.rs` | browser RUM ingestion | `handlers/observability.rs` | observability helpers |
 | `routes/health.rs` | alive/ready health | `handlers/health.rs` | pool/runtime checks |
 | `routes/system.rs` | deployment capabilities | `handlers/system.rs` | state/deployment capability helpers |
+| `routes/network.rs` | current connection decision and reviewed facility network policy | `handlers/network.rs` | `services/network.rs` |
 
 ## Handler Rules
 
@@ -86,6 +87,17 @@ Apply migration `202610150001_auth_login_attempt_budgets.sql` before starting
 this API version. It preserves active audited failure budgets and adds a table
 without changing existing tables, so an older API binary can still run against
 the migrated schema during code rollback.
+
+## Trusted Network Access
+
+Apply migration `202610160012_facility_network_policy.sql`. Unconfigured
+facilities are read-only until an operator explicitly bootstraps reviewed onsite
+CIDRs. Runtime `HMS_TRUSTED_PROXY_CIDRS` defaults to empty; forwarding headers
+never establish trust without a matching real socket peer. The central route
+guard shares its resolved context with handlers and reads the current facility
+policy once per protected request. Credential freshness does not imply strong
+MFA. See `docs/v2/2026-10-16-trusted-network-policy-scope.md` at the repository
+root for exact operations, exceptions, deadlines, bootstrap, and verification.
 
 ## Staff Onboarding Delivery
 

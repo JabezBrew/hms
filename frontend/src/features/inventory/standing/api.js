@@ -1,4 +1,5 @@
 import { v2Api } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 
 function safeLines(items, quantityKey = 'quantity') {
   return Array.isArray(items) && items.length > 0 && items.length <= 100
@@ -27,11 +28,13 @@ function review(envelope, id, occurrence) {
   }
   return value;
 }
-async function write(operation) {
-  try { return await operation(); }
+async function write(operation, validate) {
+  let response;
+  try { response = await operation(); const saved = validate(response); acknowledgeWriteResponse(response); return saved; }
   catch (error) {
     const code = error.data?.error?.code || error.code || '';
     if (!error.status || error.status >= 500 || code.endsWith('_unconfirmed')) {
+      markWriteResponseUncertain(response || error);
       const unknown = new Error('This change may already be saved. Close and review the refreshed templates and requests before making another change.');
       unknown.code = 'standing_write_unconfirmed'; unknown.status = error.status;
       throw unknown;
@@ -47,50 +50,50 @@ export const standingApi = {
   },
   async get(id, { signal } = {}) { return detail(await v2Api.getInventoryStandingTemplateById({ id }, { signal }), id); },
   async create(payload) {
-    return write(async () => {
-      const value = detail(await v2Api.postInventoryStandingTemplates(payload));
+    return write(() => v2Api.postInventoryStandingTemplates(payload), (response) => {
+      const value = detail(response);
       if (value.status !== 'active' || !matchingConfiguration(value, payload)) throw new Error('The saved template did not confirm the requested configuration.');
       return value;
     });
   },
   async update(id, payload) {
-    return write(async () => {
-      const value = detail(await v2Api.patchInventoryStandingTemplate({ id }, payload), id);
+    return write(() => v2Api.patchInventoryStandingTemplate({ id }, payload), (response) => {
+      const value = detail(response, id);
       if (value.version !== payload.expected_version + 1 || !matchingConfiguration(value, payload.template)) throw new Error('The updated template did not confirm the requested configuration.');
       return value;
     });
   },
   async status(id, payload) {
-    return write(async () => {
-      const value = detail(await v2Api.postInventoryStandingTemplateStatus({ id }, payload), id);
+    return write(() => v2Api.postInventoryStandingTemplateStatus({ id }, payload), (response) => {
+      const value = detail(response, id);
       if (value.status !== payload.status) throw new Error('The requested template status was not confirmed.');
       return value;
     });
   },
   async run(id, payload) {
-    return write(async () => {
-      const value = review(await v2Api.postInventoryStandingTemplateRun({ id }, payload), id, payload.scheduled_for);
+    return write(() => v2Api.postInventoryStandingTemplateRun({ id }, payload), (response) => {
+      const value = review(response, id, payload.scheduled_for);
       if (value.template_version !== payload.expected_version) throw new Error('The source template version was not confirmed.');
       return value;
     });
   },
   async approve(id, payload) {
-    return write(async () => {
-      const value = review(await v2Api.postInventoryRequisitionApprove({ id }, payload));
+    return write(() => v2Api.postInventoryRequisitionApprove({ id }, payload), (response) => {
+      const value = review(response);
       if (value.id !== id || value.template_version !== payload.expected_source_version || value.status !== 'approved' || !value.approved_at || value.items.some((item) => item.quantity_issued !== 0)) throw new Error('Request approval was not confirmed.');
       return value;
     });
   },
   async issue(id, payload) {
-    return write(async () => {
-      const value = review(await v2Api.postInventoryRequisitionIssue({ id }, payload));
+    return write(() => v2Api.postInventoryRequisitionIssue({ id }, payload), (response) => {
+      const value = review(response);
       if (value.id !== id || value.template_version !== payload.expected_source_version || value.status !== 'fulfilled' || !value.fulfilled_at || value.items.some((item) => item.quantity_issued !== item.quantity_requested)) throw new Error('The stock issue was not confirmed.');
       return value;
     });
   },
   async cancel(id, payload) {
-    return write(async () => {
-      const value = review(await v2Api.postInventoryRequisitionCancel({ id }, payload));
+    return write(() => v2Api.postInventoryRequisitionCancel({ id }, payload), (response) => {
+      const value = review(response);
       if (value.id !== id || value.template_version !== payload.expected_source_version || value.status !== 'cancelled' || !value.cancelled_at || value.items.some((item) => item.quantity_issued !== 0)) throw new Error('Request cancellation was not confirmed.');
       return value;
     });

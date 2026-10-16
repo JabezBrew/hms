@@ -13,6 +13,7 @@ pub mod fluid;
 pub mod inventory;
 pub mod inventory_standing;
 pub mod laboratory;
+pub mod network;
 pub mod patients;
 pub mod pharmacy;
 pub mod referrals;

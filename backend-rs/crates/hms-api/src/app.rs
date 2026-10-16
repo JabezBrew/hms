@@ -30,6 +30,11 @@ pub fn build_app(state: AppState) -> Router {
         .merge(routes::ops::routes())
         .route("/api/v2/metrics", get(crate::handlers::health::metrics))
         .route("/api/v2/openapi.json", get(openapi_handler))
+        .merge(routes::network::routes())
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::middleware::network::layer,
+        ))
         .route_layer(middleware::from_fn(telemetry::layer))
         .layer(middleware::from_fn_with_state(
             state.clone(),

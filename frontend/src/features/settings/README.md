@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Frontend/User Settings
-Last reviewed: 2026-06-01
+Last reviewed: 2026-10-16
 Scope: profile, security, preferences, session, password, MFA, and feature entitlement settings.
 
 ## Routes
@@ -12,6 +12,7 @@ Scope: profile, security, preferences, session, password, MFA, and feature entit
 - `/settings/security`
 - `/settings/preferences`
 - `/settings/feature-entitlements`
+- `/settings/network-access`
 
 ## Backend Contracts
 
@@ -20,6 +21,8 @@ Scope: profile, security, preferences, session, password, MFA, and feature entit
 - `/api/v2/auth/sessions/*`
 - `/api/v2/auth/mfa/*`
 - `/api/v2/admin/features/*`
+- `/api/v2/auth/network-access`
+- `/api/v2/admin/network-policy` and `/preview`
 
 ## Invariants
 
@@ -30,3 +33,7 @@ Scope: profile, security, preferences, session, password, MFA, and feature entit
   and responds to device changes while the device option is selected.
 - The hub links clinical templates to their existing feature-gated manager;
   it must not advertise unimplemented clinical or notification preferences.
+- Rust network policy uses a fresh authoritative current-request decision,
+  explicit canonical network review, current-connection lockout protection and
+  versioned idempotent publication. Operator bootstrap and trusted proxies stay
+  outside the browser. Credential reauthentication does not assert fresh MFA.

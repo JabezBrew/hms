@@ -28,6 +28,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
+    "test:proxy-privacy": "node --test scripts/__tests__/private-proxy-logger.test.mjs",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
     "doctor": "react-doctor",

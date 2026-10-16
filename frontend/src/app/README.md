@@ -27,6 +27,10 @@ Scope: application shells, boot flow, route rendering, startup guards, and route
 - Route metadata carries layout, title, roles, breadcrumbs, and feature gates.
 - App shell readiness should not wait for heavy route bodies when a shell can be
   safely shown first.
+- The Rust shell first checks the authoritative network decision. Clinical
+  routes, search and startup services stay unmounted while access is unconfirmed
+  or denied. Network-policy administration has a stable nonclinical recovery
+  workspace so normal credential rotation cannot discard a pending policy.
 - Runtime errors should fail to controlled states without leaking PHI.
 
 ## Tests

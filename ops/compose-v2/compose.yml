@@ -11,6 +11,8 @@ x-rust-image: &rust-image
     HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/compose-v2/.env}@pgbouncer:6432/${DB_NAME:-hms}
     HMS_DATABASE_MAX_CONNECTIONS: ${HMS_DATABASE_MAX_CONNECTIONS:-10}
     HMS_PASSWORD_WORK_MAX_CONCURRENCY: ${HMS_PASSWORD_WORK_MAX_CONCURRENCY:-4}
+    # Explicit proxy peers only. Empty means forwarded headers confer no trust.
+    HMS_TRUSTED_PROXY_CIDRS: ${HMS_TRUSTED_PROXY_CIDRS:-}
     HMS_REDIS_ADDR: ${HMS_REDIS_ADDR:-redis:6379}
     HMS_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/compose-v2/.env}
     HMS_FACILITY_NAME: ${HMS_FACILITY_NAME:?set HMS_FACILITY_NAME in ops/compose-v2/.env}

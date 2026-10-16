@@ -881,6 +881,7 @@ name = "hms-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ipnet",
  "serde",
  "serde_json",
  "utoipa",

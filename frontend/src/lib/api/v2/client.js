@@ -4,6 +4,7 @@ export {
   __resetV2ApiClientForTests,
   configureV2ApiClient,
   getV2ClientScopeKey,
+  subscribeV2ClientScope,
   hasV2RefreshSessionHint,
   performV2TokenRefresh,
   v2Request,

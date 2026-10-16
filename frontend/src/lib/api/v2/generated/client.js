@@ -153,6 +153,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getAdminNetworkPolicy": {
+    "operationId": "getAdminNetworkPolicy",
+    "method": "GET",
+    "path": "/api/v2/admin/network-policy",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAdminOrgUnitAncestors": {
     "operationId": "getAdminOrgUnitAncestors",
     "method": "GET",
@@ -386,6 +394,14 @@ export const operations = {
     "operationId": "getAuthMfaStatus",
     "method": "GET",
     "path": "/api/v2/auth/mfa/status",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAuthNetworkAccess": {
+    "operationId": "getAuthNetworkAccess",
+    "method": "GET",
+    "path": "/api/v2/auth/network-access",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": false
@@ -2848,6 +2864,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAdminNetworkPolicyPreview": {
+    "operationId": "postAdminNetworkPolicyPreview",
+    "method": "POST",
+    "path": "/api/v2/admin/network-policy/preview",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAdminOrgUnits": {
     "operationId": "postAdminOrgUnits",
     "method": "POST",
@@ -4506,6 +4530,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "putAdminNetworkPolicy": {
+    "operationId": "putAdminNetworkPolicy",
+    "method": "PUT",
+    "path": "/api/v2/admin/network-policy",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "putAdminStaffPractitionerProfile": {
     "operationId": "putAdminStaffPractitionerProfile",
     "method": "PUT",
@@ -4534,6 +4566,7 @@ export function createGeneratedClient(request) {
     getAdminDashboardV2Capacity: createOperation(request, operations.getAdminDashboardV2Capacity),
     getAdminDelegations: createOperation(request, operations.getAdminDelegations),
     getAdminFeatures: createOperation(request, operations.getAdminFeatures),
+    getAdminNetworkPolicy: createOperation(request, operations.getAdminNetworkPolicy),
     getAdminOrgUnitAncestors: createOperation(request, operations.getAdminOrgUnitAncestors),
     getAdminOrgUnitById: createOperation(request, operations.getAdminOrgUnitById),
     getAdminOrgUnitChildren: createOperation(request, operations.getAdminOrgUnitChildren),
@@ -4555,6 +4588,7 @@ export function createGeneratedClient(request) {
     getAppointmentTypes: createOperation(request, operations.getAppointmentTypes),
     getAuthMe: createOperation(request, operations.getAuthMe),
     getAuthMfaStatus: createOperation(request, operations.getAuthMfaStatus),
+    getAuthNetworkAccess: createOperation(request, operations.getAuthNetworkAccess),
     getAuthSessions: createOperation(request, operations.getAuthSessions),
     getBillingDashboardSummary: createOperation(request, operations.getBillingDashboardSummary),
     getBillingInsurancePlans: createOperation(request, operations.getBillingInsurancePlans),
@@ -4763,6 +4797,7 @@ export function createGeneratedClient(request) {
     postAdminAuthorityAppointments: createOperation(request, operations.postAdminAuthorityAppointments),
     postAdminCommittees: createOperation(request, operations.postAdminCommittees),
     postAdminDelegations: createOperation(request, operations.postAdminDelegations),
+    postAdminNetworkPolicyPreview: createOperation(request, operations.postAdminNetworkPolicyPreview),
     postAdminOrgUnits: createOperation(request, operations.postAdminOrgUnits),
     postAdminPermissionAssignments: createOperation(request, operations.postAdminPermissionAssignments),
     postAdminPositions: createOperation(request, operations.postAdminPositions),
@@ -4947,6 +4982,7 @@ export function createGeneratedClient(request) {
     postWardStockRequestApprove: createOperation(request, operations.postWardStockRequestApprove),
     postWardStockRequestFulfill: createOperation(request, operations.postWardStockRequestFulfill),
     postWardStockRequests: createOperation(request, operations.postWardStockRequests),
+    putAdminNetworkPolicy: createOperation(request, operations.putAdminNetworkPolicy),
     putAdminStaffPractitionerProfile: createOperation(request, operations.putAdminStaffPractitionerProfile),
   };
 }

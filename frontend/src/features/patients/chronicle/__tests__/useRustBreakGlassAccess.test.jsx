@@ -39,6 +39,26 @@ beforeEach(() => {
 afterEach(() => { queryClient?.clear(); vi.useRealTimers(); });
 
 describe('Rust emergency access lifecycle', () => {
+  it('keeps a malformed grant receipt unconfirmed and prevents another create', async () => {
+    patientsApi.requestBreakGlass.mockResolvedValueOnce({ id: 'grant-1', patient_id: 'different-patient' });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.statusLoading).toBe(false));
+    await act(async () => { expect(await result.current.submit(payload)).toBe(false); });
+    expect(result.current.unconfirmed).toBe(true);
+    await act(async () => { await result.current.submit(payload); });
+    expect(patientsApi.requestBreakGlass).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1])('does not confirm an invalid ended_count %s', async (endedCount) => {
+    currentGrant = { id: 'existing-grant', expires_at: new Date(Date.now() + 300000).toISOString() };
+    patientsApi.endBreakGlass.mockResolvedValueOnce({ ended_count: endedCount });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.grant?.id).toBe('existing-grant'));
+    await act(async () => { await result.current.end(); });
+    expect(result.current.unconfirmed).toBe(true);
+    expect(result.current.error).toMatch(/may already have ended/);
+  });
+
   it('requires dedicated permission and known current status before requesting a grant', async () => {
     const view = setup({ user: { ...user, adminAccess: { capabilities: [] } } });
     await act(async () => { expect(await view.result.current.submit(payload)).toBe(false); });

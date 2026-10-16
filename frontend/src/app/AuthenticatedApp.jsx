@@ -3,8 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Layout } from '@/components/layout/layout'
-import { ReadOnlyBanner } from '@/components/readonly'
-import { ReadOnlyModeProvider } from '@/contexts/ReadOnlyModeContext'
+import { NetworkAccessBoundary } from '@/features/settings/network/NetworkAccessBoundary'
 import { PageLoader } from '@/shared/components/page/PageState'
 import { OmniSearchProvider } from '@/shared/components/omni-search/OmniSearchProvider'
 import AppStartupServices from './AppStartupServices'
@@ -17,9 +16,8 @@ const FeatureUnavailablePage = lazy(() => import('@/pages/FeatureUnavailablePage
 export default function AuthenticatedApp() {
   return (
     <ErrorBoundary>
-      <ReadOnlyModeProvider>
+      <NetworkAccessBoundary>
         <OmniSearchProvider>
-          <ReadOnlyBanner />
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route
@@ -47,7 +45,7 @@ export default function AuthenticatedApp() {
           </Suspense>
           <AppStartupServices />
         </OmniSearchProvider>
-      </ReadOnlyModeProvider>
+      </NetworkAccessBoundary>
     </ErrorBoundary>
   )
 }

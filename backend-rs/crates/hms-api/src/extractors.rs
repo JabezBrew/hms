@@ -6,7 +6,7 @@ use axum::extract::{FromRequestParts, MatchedPath};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use chrono::{DateTime, Utc};
-use hms_access::{OffsiteState, ReauthState};
+use hms_access::ReauthState;
 use hms_domain::auth::AuthUser;
 use hms_domain::deployment::FeatureKey;
 use tracing::warn;
@@ -22,6 +22,30 @@ use crate::state::AppState;
 const SLOW_REQUEST_CONTEXT_THRESHOLD: Duration = Duration::from_millis(75);
 
 pub struct RequestContext(pub hms_access::RequestContext);
+
+#[derive(Clone)]
+pub(crate) struct ResolvedRequest {
+    pub context: hms_access::RequestContext,
+    pub network: crate::network_access::RequestNetworkFacts,
+    pub authorization_deadline: DateTime<Utc>,
+}
+pub struct NetworkContext {
+    pub context: hms_access::RequestContext,
+    pub(crate) network: crate::network_access::RequestNetworkFacts,
+    pub(crate) authorization_deadline: DateTime<Utc>,
+}
+#[async_trait]
+impl FromRequestParts<AppState> for NetworkContext {
+    type Rejection = ApiError;
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
+        let resolved = resolve_request(parts, state).await?;
+        Ok(Self {
+            context: resolved.context,
+            network: resolved.network,
+            authorization_deadline: resolved.authorization_deadline,
+        })
+    }
+}
 
 pub struct AuthenticatedUser(pub AuthUser);
 
@@ -136,6 +160,16 @@ async fn resolve_request_context(
     parts: &Parts,
     state: &AppState,
 ) -> Result<hms_access::RequestContext, ApiError> {
+    Ok(resolve_request(parts, state).await?.context)
+}
+
+pub(crate) async fn resolve_request(
+    parts: &Parts,
+    state: &AppState,
+) -> Result<ResolvedRequest, ApiError> {
+    if let Some(resolved) = parts.extensions.get::<ResolvedRequest>() {
+        return Ok(resolved.clone());
+    }
     let total_started_at = Instant::now();
     let request_id = parts
         .extensions
@@ -157,18 +191,43 @@ async fn resolve_request_context(
     let facts_elapsed = facts_started_at.elapsed();
 
     let assemble_started_at = Instant::now();
+    let authorization_deadline = context_facts.session_expires_at.min(
+        DateTime::<Utc>::from_timestamp(claims.exp as i64, 0).ok_or_else(ApiError::unauthorized)?,
+    );
     let user = context_facts.user;
 
     reject_stale_claims(&user, &claims)?;
 
     let enabled_features = enabled_features(&context_facts.feature_flags, &user);
-    let offsite = OffsiteState::from_header(
-        parts
-            .headers
-            .get("x-hms-offsite")
-            .and_then(|value| value.to_str().ok()),
-    );
     let reauth = access_token_reauth(&claims);
+    let network = match crate::network_access::facts(parts, state, &reauth).await {
+        Ok(value) => value,
+        Err(_)
+            if route_pattern != "/api/v2/auth/network-access"
+                && crate::middleware::network::lifecycle_exception(
+                    &parts.method,
+                    &route_pattern,
+                ) =>
+        {
+            // Network-policy storage cannot prevent a caller from securing or
+            // ending their own authenticated session. It grants no data access.
+            let client = crate::network_access::client_from_parts(parts, state);
+            let policy = hms_db::network::unconfigured_policy();
+            let mut decision =
+                crate::network_access::evaluate(client, &policy, &reauth, Utc::now());
+            decision.access_allowed = false;
+            crate::network_access::RequestNetworkFacts {
+                client,
+                policy,
+                decision,
+            }
+        }
+        Err(error) => return Err(error),
+    };
+    let offsite = crate::network_access::offsite_state(&network.decision);
+    if Utc::now() >= authorization_deadline {
+        return Err(ApiError::unauthorized());
+    }
     let context = hms_access::RequestContext::new(
         request_id.clone(),
         claims.session_id,
@@ -192,10 +251,17 @@ async fn resolve_request_context(
         );
     }
 
-    Ok(context)
+    Ok(ResolvedRequest {
+        context,
+        network,
+        authorization_deadline,
+    })
 }
 
 async fn resolve_authenticated_user(parts: &Parts, state: &AppState) -> Result<AuthUser, ApiError> {
+    if let Some(resolved) = parts.extensions.get::<ResolvedRequest>() {
+        return Ok(resolved.context.user.clone());
+    }
     let claims = access_claims(parts, state)?;
     let user = state
         .auth_user_for_claims(&claims)

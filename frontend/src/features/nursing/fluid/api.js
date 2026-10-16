@@ -1,4 +1,5 @@
 import { v2Api } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 const validId = (value) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const integer = (value) => Number.isSafeInteger(value) && value >= 0;
 export function observation(value) {
@@ -18,7 +19,19 @@ export class FluidWriteUnconfirmedError extends Error {
 }
 function uncertain(error) { return !error?.status || error.status >= 500 || (error?.data?.error?.code || error?.code || '').endsWith('_unconfirmed'); }
 async function write(operation, validate) {
-  try { return validate((await operation())?.data); } catch (error) { if (uncertain(error)) throw new FluidWriteUnconfirmedError(); throw error; }
+  let response;
+  try {
+    response = await operation();
+    const saved = validate(response?.data);
+    acknowledgeWriteResponse(response);
+    return saved;
+  } catch (error) {
+    if (uncertain(error)) {
+      markWriteResponseUncertain(response);
+      throw new FluidWriteUnconfirmedError();
+    }
+    throw error;
+  }
 }
 function receipt(value, key, action, root) {
   if (value?.client_request_id !== key || value.action !== action || !validId(value.root_entry_id) || !validId(value.entry_id)

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { v2Api } from '@/lib/api/v2/client';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 
 export const catalogToday = () => new Date().toISOString().slice(0, 10);
 
@@ -31,17 +32,25 @@ export async function applyCatalogCorrection(itemId, data, options = {}) {
   const parsed = catalogCorrectionSchema.safeParse(data);
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
 
+  let response;
   try {
-    const response = await v2Api.postInventoryCatalogEdit(
+    response = await v2Api.postInventoryCatalogEdit(
       { item_id: itemId, ...parsed.data },
       { signal: options.signal },
     );
-    if (!response?.data?.id) throw new Error('Saved catalog version was not returned.');
+    const saved = response?.data;
+    if (typeof saved?.id !== 'string' || !saved.id.trim() || saved.item_id !== itemId
+      || !['code', 'name', 'unit'].every((field) => typeof saved[field] === 'string' && saved[field].trim())
+      || typeof saved.effective_from !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(saved.effective_from)) {
+      throw new Error('Saved catalog version was not returned.');
+    }
+    acknowledgeWriteResponse(response);
     return response?.data;
   } catch (error) {
     const failure = new Error(handleV2ApiError(error, 'The catalog correction could not be saved.'));
     failure.status = error?.status;
     if (!error?.status || error.status >= 500) {
+      markWriteResponseUncertain(response || error);
       failure.code = 'catalog_correction_unconfirmed';
       failure.message = 'The save could not be confirmed. Close this dialog and refresh the item before trying again.';
     }

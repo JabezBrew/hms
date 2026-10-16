@@ -82,6 +82,67 @@ runs the existing database/migration/application deploy, and checks Caddy
 readiness at `127.0.0.1:8088`. The loopback listener is HTTP for local checks;
 the eventual browser URL is HTTPS through Cloudflare.
 
+### Trusted client provenance
+
+The synthetic profile separates the Caddy-to-API link from the
+connector-to-Caddy link. Each proxy has one explicit static peer; the API trusts
+only those two `/32` addresses. It does not trust the shared frontend network,
+all private addresses, or caller-supplied offsite/client-IP flags. The API port
+remains unpublished. Select non-overlapping private Docker subnets before the
+first deployment, using the six `HMS_*_PROXY_*` settings in the private file.
+Existing private files use the documented defaults. Changing subnets requires
+recreating the affected containers/networks during a planned update; preserve
+database volumes and rollback config. Do not use `down -v`.
+
+Caddy trusts only the dedicated connector peer and preserves the complete
+`X-Forwarded-For` chain. Cloudflare appends its observed connecting address at
+the right; the API validates the entire bounded chain and resolves from the
+right through explicit proxy hops. Missing, malformed and entirely trusted
+chains cannot establish an onsite client. Direct Caddy connections ignore
+caller-supplied forwarding headers. `CF-Connecting-IP`, `X-Real-IP`, `Forwarded`
+and `X-HMS-Offsite` are stripped before the API. This follows the
+[Caddy proxy trust contract](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults),
+[strict right-to-left parsing](https://caddyserver.com/docs/caddyfile/options#trusted_proxies_strict)
+and [Cloudflare forwarding behavior](https://developers.cloudflare.com/fundamentals/reference/http-headers/#x-forwarded-for).
+Do not add a Worker/CDN/alternate ingress that changes this chain without
+reviewing and retesting provenance. An SSH local forward exposes the forwarding
+endpoint, not the operator's original Tailscale address.
+
+Facility onsite CIDRs are a separate, explicitly bootstrapped policy. Container
+proxy addresses are never facility onsite defaults. An unconfigured policy or
+unknown connection permits no clinical writes, even with fresh credentials.
+Publish the initial policy through the reviewed operator CLI before expecting
+write access; do not widen onsite ranges to make a smoke test pass.
+
+For bootstrap or an operator recovery, prepare a private review-reason file and
+retain one UUID with the exact original options. Read the current policy version
+first; a new facility uses version zero. Supply reviewed facility onsite CIDRs
+and the chosen offsite mode explicitly, then run the migrator command inside the
+existing merged Compose kit:
+
+```bash
+docker compose --env-file ops/free-testing/.env \
+  -f ops/compose-v2/compose.yml -f ops/free-testing/compose.yml \
+  run --rm -T hms-migrator hms-migrator configure-network \
+  --facility-code FACILITY_CODE \
+  --onsite-cidr REVIEWED_ONSITE_CIDR \
+  --offsite-mode readonly \
+  --expected-version CURRENT_VERSION --request-id RETAINED_UUID \
+  --reason-stdin < /private/path/network-policy-reason.txt
+```
+
+Replace every uppercase argument deliberately; add `--onsite-cidr` for each
+reviewed range. `readonly`, `deny` and `fresh_reauth` are supported offsite modes;
+fresh credential confirmation is not strong MFA. Universal ranges, implicit
+facility defaults and new UUIDs for uncertain retries are not accepted. The CLI
+uses the same transactional version/replay/history/audit contract as the API.
+It prints only version, range count and replay status. It does not mark the
+operator's observed connection onsite or establish original Tailscale provenance.
+
+Gateway failure logs retain status/error diagnostics and remove the request
+object, including clinical URI, headers and client address. Local frontend
+proxy failures are similarly redacted; verify with `npm run test:proxy-privacy`.
+
 ## 3. Protect the domain, then connect the tunnel
 
 ### Public login page (explicit opt-in)

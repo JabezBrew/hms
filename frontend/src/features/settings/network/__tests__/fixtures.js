@@ -1,0 +1,4 @@
+export const networkUser = { id: 'actor-1', email: 'synthetic@example.test', facilityCode: 'HMS', accessContext: { facility_id: 'facility-1', active_profile: 'hospital', permission_version: 3 }, adminAccess: { capabilities: ['admin.authority.manage'] } };
+export const networkDecision = { classification: 'onsite', provenance: 'trusted_proxy', policy_version: 3, mode: 'readonly', access_allowed: true, read_only: false, reauth_required: false, reauth_expires_at: '2099-10-16T00:15:00Z', evaluated_at: '2026-10-16T00:00:00Z', reason: 'onsite' };
+export const networkPolicy = { configured: true, version: 3, onsite_cidrs: ['10.10.0.0/16'], offsite_mode: 'readonly', updated_at: '2026-10-16T00:00:00Z', updated_by_user_id: 'actor-1' };
+export const candidatePreview = { candidate: { onsite_cidrs: ['10.10.4.0/24'], offsite_mode: 'readonly' }, current_connection_retained_onsite: true, candidate_access: { ...networkDecision, policy_version: null } };

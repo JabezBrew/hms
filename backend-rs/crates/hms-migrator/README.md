@@ -20,6 +20,13 @@ for local development, staging, demo data, and performance data.
 - `hms-migrator check-db`: connect with `HMS_DATABASE_URL`, run `SELECT 1`, and
   print only a redacted target summary. Deploy scripts use this before
   migrations.
+- `hms-migrator configure-network`: explicitly bootstrap/recover a facility
+  network policy after migrations. Requires `--facility-code`, repeated
+  `--onsite-cidr`, `--offsite-mode`, `--expected-version`, `--request-id`, and
+  `--reason-stdin`; none has an implicit access-granting default. Output contains
+  only version, range count, and replay status. See
+  `docs/v2/2026-10-16-trusted-network-policy-scope.md` at the repository root for
+  the full reviewed operator contract.
 
 ## Related Code
 

@@ -18,6 +18,7 @@ import { ADMIN_CAPABILITIES } from '@/shared/constants/roles';
 import { userCanAccess } from '@/shared/lib/access';
 import { useSystemCapabilities } from '@/hooks/useSystemQueries';
 import { areFeaturesEnabled } from '@/shared/lib/features';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 /**
  * SettingsHubPage - Central hub for user settings with role-based category cards
@@ -37,6 +38,7 @@ const SettingsHubPage = () => {
 
   // Define all settings categories with role visibility
   const categories = [
+    { id: 'network-access', title: 'Network Access', description: 'Review approved facility networks and offsite workflow access', icon: Shield, color: 'sky', route: '/settings/network-access', roles: null, capabilities: ['admin.authority.manage'], rustV2Only: true },
     { id: 'fluid-monitoring', title: 'Fluid monitoring', description: 'Review facility thresholds for effective daily intake, output and balance', icon: Stethoscope, color: 'sky', route: '/settings/fluid-monitoring', roles: ['admin'], capabilities: ['admin.authority.manage'] },
     {
       id: 'profile',
@@ -109,6 +111,7 @@ const SettingsHubPage = () => {
 
   // Filter categories based on user role
   const visibleCategories = categories.filter(category => {
+    if (category.rustV2Only && !isRustV2ApiMode()) return false;
     if (!areFeaturesEnabled(category.features, deploymentCapabilities?.features)) return false;
     if (!category.roles && !category.capabilities) return true; // Visible to all
     return userCanAccess(user, {

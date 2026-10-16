@@ -106,6 +106,7 @@ pub struct Config {
     pub cloudflare_access: CloudflareAccessConfig,
     pub ops_prometheus: OpsPrometheusConfig,
     pub account_setup_delivery: AccountSetupDeliveryConfig,
+    pub trusted_proxy_cidrs: hms_domain::network::NetworkRanges,
 }
 
 impl Config {
@@ -217,6 +218,14 @@ impl Config {
             },
         };
         let account_setup_delivery = account_setup_delivery_config(&environment)?;
+        let proxy_ranges: Vec<String> = env::var("HMS_TRUSTED_PROXY_CIDRS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let trusted_proxy_cidrs=hms_domain::network::NetworkRanges::parse(&proxy_ranges,true).map_err(|_|anyhow::anyhow!("HMS_TRUSTED_PROXY_CIDRS must contain at most 64 valid, non-universal explicit CIDRs"))?;
 
         Ok(Self {
             environment,
@@ -242,6 +251,7 @@ impl Config {
             cloudflare_access,
             ops_prometheus,
             account_setup_delivery,
+            trusted_proxy_cidrs,
         })
     }
 
@@ -274,6 +284,7 @@ impl Config {
                 public_app_url: Some("http://localhost".to_owned()),
                 ..AccountSetupDeliveryConfig::default()
             },
+            trusted_proxy_cidrs: Default::default(),
         }
     }
 }

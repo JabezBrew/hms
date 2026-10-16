@@ -30,7 +30,7 @@ pub async fn layer(
     let facility_safe = facility_safe_from_headers(request.headers());
     let started_at = Instant::now();
 
-    let (response, request_metrics) =
+    let (mut response, request_metrics) =
         hms_observability::with_request_metrics_recorder(next.run(request)).await;
     let status = response.status().as_u16();
     let status_bucket = hms_observability::status_bucket_from_code(status);
@@ -84,6 +84,9 @@ pub async fn layer(
         );
     }
 
+    // Keep the recorder's PHI-free snapshot available to internal middleware and
+    // contract tests without exposing diagnostics in the HTTP payload or headers.
+    response.extensions_mut().insert(request_metrics);
     response
 }
 

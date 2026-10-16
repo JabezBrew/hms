@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api-client';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { v2Api } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
@@ -146,22 +147,25 @@ export async function createPrescription(data, options = {}) {
       throw new Error('MAR generation must cover between 1 and 30 whole days.');
     }
     let prescription;
+    let prescriptionResponse;
     const payload = normalizeCreatePrescriptionPayload(data);
     try {
-      const response = await v2Api.postPatientPrescriptions(
+      prescriptionResponse = await v2Api.postPatientPrescriptions(
         { patient_id: patientId },
         payload,
         { signal: options.signal },
       );
-      prescription = normalizePrescriptionResponse(response?.data);
+      prescription = normalizePrescriptionResponse(prescriptionResponse?.data);
       if (typeof prescription?.id !== 'string' || !prescription.id.trim()) throw new Error('The saved prescription was not confirmed.');
       if (payload.prn_policy && JSON.stringify(normalizePrnPolicy({
         ...prescription.prn_policy,
         expected_stock_unit: prescription.prn_policy?.stock_unit,
       })) !== JSON.stringify(payload.prn_policy)) throw new Error('The saved as-needed limits and stock unit were not confirmed.');
+      acknowledgeWriteResponse(prescriptionResponse);
     } catch (error) {
       rethrowAbortError(error);
       if (!error?.status || error.status < 400 || error.status >= 500 || error.data?.error?.code === 'prescription_create_failed') {
+        markWriteResponseUncertain(prescriptionResponse || error);
         const unconfirmed = new Error('The prescription may have been saved. Review the medication list before prescribing it again.');
         unconfirmed.name = 'PrescriptionWriteUnconfirmedError';
         throw unconfirmed;
@@ -174,8 +178,9 @@ export async function createPrescription(data, options = {}) {
 
     // The prescription has committed. A later scheduling failure must never turn
     // this into a failed create that the caller retries as a second prescription.
+    let marResponse;
     try {
-      const marResponse = await v2Api.postClinicalPrescriptionGenerateMar(
+      marResponse = await v2Api.postClinicalPrescriptionGenerateMar(
         { id: prescription.id },
         {
           admission_case_id: admissionCaseId,
@@ -185,6 +190,11 @@ export async function createPrescription(data, options = {}) {
         { signal: options.signal },
       );
       const marGeneration = marResponse?.data;
+      if (marGeneration?.prescription_id !== prescription.id
+        || !['created_count', 'existing_count', 'requested_dose_count'].every((field) => Number.isSafeInteger(marGeneration?.[field]) && marGeneration[field] >= 0)) {
+        throw new Error('The saved medication schedule was not confirmed.');
+      }
+      acknowledgeWriteResponse(marResponse);
       return {
         ...prescription,
         mar_generated: !marGeneration?.skipped_reason,
@@ -192,6 +202,7 @@ export async function createPrescription(data, options = {}) {
         ...(marGeneration?.skipped_reason ? { mar_generation_status: 'skipped' } : {}),
       };
     } catch (error) {
+      if (!(error?.status >= 400 && error.status < 500)) markWriteResponseUncertain(marResponse || error);
       return {
         ...prescription,
         mar_generated: false,

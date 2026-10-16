@@ -2,6 +2,7 @@ import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 import { v2Api, v2Request } from './v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from './v2/writeUncertainty';
 import {
   cacheCursorForNextPage as cacheScopedCursorForNextPage,
   resolveCursorPage as resolveScopedCursorPage,
@@ -1329,14 +1330,17 @@ export const billingApi = {
       || new Set(data.claim_ids).size !== data.claim_ids.length)) {
       throw new Error('Select between 1 and 100 distinct claims.');
     }
+    let receipt;
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postNhisBatches(
+        receipt = await v2Api.postNhisBatches(
           { claim_ids: data.claim_ids },
           { signal: options.signal },
         );
-        if (!response?.data?.id) throw new Error('Saved batch was not returned.');
-        return adaptV2NhisBatch(response?.data);
+        if (!receipt?.data?.id) throw new Error('Saved batch was not returned.');
+        const saved = adaptV2NhisBatch(receipt?.data);
+        acknowledgeWriteResponse(receipt);
+        return saved;
       }
 
       return await apiClient.post('/billing/nhis/batches/', data, {
@@ -1347,6 +1351,7 @@ export const billingApi = {
         const failure = new Error(handleV2ApiError(error, 'Failed to create NHIS claim batch'));
         failure.status = error?.status;
         if (!error?.status || error.status >= 500 || error.data?.error?.code === 'nhis_batch_create_failed') {
+          markWriteResponseUncertain(receipt || error);
           failure.code = 'nhis_batch_unconfirmed';
           failure.message = 'The save could not be confirmed. Close this dialog and review refreshed batches and claims before creating another batch.';
         }
@@ -1369,13 +1374,14 @@ export const billingApi = {
   },
 
   exportNhisClaimBatch: async (batchId, data = {}, options = {}) => {
+    let receipt;
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postNhisBatchExport(
+        receipt = await v2Api.postNhisBatchExport(
           { id: batchId },
           { signal: options.signal },
         );
-        const saved = response?.data;
+        const saved = receipt?.data;
         if (saved?.batch_id !== batchId || typeof saved.batch_number !== 'string' || !saved.batch_number.trim()
           || typeof saved.checksum !== 'string' || !saved.checksum.trim()
           || saved.export_format !== 'nhis_export_record_v1'
@@ -1383,7 +1389,8 @@ export const billingApi = {
           || !Number.isSafeInteger(saved.total_amount_minor) || saved.total_amount_minor < 0) {
           throw new Error('Saved export record was not returned.');
         }
-        return response?.data;
+        acknowledgeWriteResponse(receipt);
+        return receipt?.data;
       }
 
       return await apiClient.post(`/billing/nhis/batches/${batchId}/export/`, data, {
@@ -1394,6 +1401,7 @@ export const billingApi = {
         const failure = new Error(handleV2ApiError(error, 'The export record could not be saved.'));
         failure.status = error?.status;
         if (!error?.status || error.status >= 500 || error.data?.error?.code === 'nhis_batch_export_failed') {
+          markWriteResponseUncertain(receipt || error);
           failure.code = 'nhis_export_unconfirmed';
           failure.message = 'The export record could not be confirmed. Close this dialog and review refreshed batches and export records before continuing.';
         }
@@ -1821,9 +1829,10 @@ export const billingApi = {
   },
 
   createPayerServiceCode: async (data) => {
+    let receipt;
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postNhisServiceMappings(
+        receipt = await v2Api.postNhisServiceMappings(
           {
             payer_id: data.payer_id || data.payer || null,
             service_id: data.service_id || data.service,
@@ -1833,8 +1842,10 @@ export const billingApi = {
           },
           { signal: data.signal },
         );
-        if (!response?.data?.id) throw new Error('Saved mapping was not returned.');
-        return adaptV2PayerServiceCode(response?.data);
+        if (!receipt?.data?.id) throw new Error('Saved mapping was not returned.');
+        const saved = adaptV2PayerServiceCode(receipt?.data);
+        acknowledgeWriteResponse(receipt);
+        return saved;
       }
 
       return await apiClient.post('/billing/payer-service-codes/', data, {
@@ -1845,6 +1856,7 @@ export const billingApi = {
         const failure = new Error(handleV2ApiError(error, 'Failed to create payer service code'));
         failure.status = error?.status;
         if (!error?.status || error.status >= 500 || error.data?.error?.code === 'nhis_mapping_create_failed') {
+          markWriteResponseUncertain(receipt || error);
           failure.code = 'nhis_mapping_unconfirmed';
           failure.message = 'The save could not be confirmed. Close this dialog and refresh mappings before trying again.';
         }

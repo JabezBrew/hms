@@ -17941,6 +17941,225 @@
         ],
         "type": "object"
       },
+      "NetworkAccessDecision": {
+        "description": "Contains no address, network ranges, proxy configuration, or raw headers.",
+        "properties": {
+          "access_allowed": {
+            "type": "boolean"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/NetworkClassification"
+          },
+          "evaluated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NetworkOffsiteMode"
+              }
+            ]
+          },
+          "policy_version": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/NetworkProvenance"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/NetworkDecisionReason"
+          },
+          "reauth_expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reauth_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "classification",
+          "provenance",
+          "access_allowed",
+          "read_only",
+          "reauth_required",
+          "evaluated_at",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "NetworkClassification": {
+        "enum": [
+          "onsite",
+          "offsite",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "NetworkDecisionReason": {
+        "enum": [
+          "onsite",
+          "offsite_readonly",
+          "offsite_denied",
+          "offsite_fresh_reauth",
+          "reauth_required",
+          "policy_unconfigured",
+          "client_unknown"
+        ],
+        "type": "string"
+      },
+      "NetworkOffsiteMode": {
+        "enum": [
+          "readonly",
+          "deny",
+          "fresh_reauth"
+        ],
+        "type": "string"
+      },
+      "NetworkPolicy": {
+        "description": "Administrative projection; never include this in ordinary auth decisions.",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "offsite_mode": {
+            "$ref": "#/components/schemas/NetworkOffsiteMode"
+          },
+          "onsite_cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "version",
+          "onsite_cidrs",
+          "offsite_mode"
+        ],
+        "type": "object"
+      },
+      "NetworkPolicyCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "offsite_mode": {
+            "$ref": "#/components/schemas/NetworkOffsiteMode"
+          },
+          "onsite_cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "onsite_cidrs",
+          "offsite_mode"
+        ],
+        "type": "object"
+      },
+      "NetworkPolicyPreview": {
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/NetworkPolicyCandidate"
+          },
+          "candidate_access": {
+            "$ref": "#/components/schemas/NetworkAccessDecision",
+            "description": "An unpersisted candidate has no published policy version."
+          },
+          "current_connection_retained_onsite": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "candidate",
+          "current_connection_retained_onsite",
+          "candidate_access"
+        ],
+        "type": "object"
+      },
+      "NetworkPolicySettings": {
+        "properties": {
+          "can_update": {
+            "description": "Eligible to begin the editor; Preview/PUT still require fresh credentials.\nA known offsite `fresh_reauth` caller can begin reauthentication here.",
+            "type": "boolean"
+          },
+          "current_access": {
+            "$ref": "#/components/schemas/NetworkAccessDecision"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/NetworkPolicy"
+          }
+        },
+        "required": [
+          "policy",
+          "current_access",
+          "can_update"
+        ],
+        "type": "object"
+      },
+      "NetworkPolicyWriteResult": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/NetworkPolicy",
+            "description": "Exact immutable saved snapshot, including on a later idempotent replay."
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "policy",
+          "replayed"
+        ],
+        "type": "object"
+      },
+      "NetworkProvenance": {
+        "enum": [
+          "direct",
+          "trusted_proxy",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "NhisArAdjustmentEntry": {
         "properties": {
           "adjustment_kind": {
@@ -22898,6 +23117,168 @@
               "assigned_wards",
               "can_view_all_wards",
               "default_route"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NetworkAccessDecision": {
+        "properties": {
+          "data": {
+            "description": "Contains no address, network ranges, proxy configuration, or raw headers.",
+            "properties": {
+              "access_allowed": {
+                "type": "boolean"
+              },
+              "classification": {
+                "$ref": "#/components/schemas/NetworkClassification"
+              },
+              "evaluated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "mode": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NetworkOffsiteMode"
+                  }
+                ]
+              },
+              "policy_version": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "provenance": {
+                "$ref": "#/components/schemas/NetworkProvenance"
+              },
+              "read_only": {
+                "type": "boolean"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/NetworkDecisionReason"
+              },
+              "reauth_expires_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reauth_required": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "classification",
+              "provenance",
+              "access_allowed",
+              "read_only",
+              "reauth_required",
+              "evaluated_at",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NetworkPolicyPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "candidate": {
+                "$ref": "#/components/schemas/NetworkPolicyCandidate"
+              },
+              "candidate_access": {
+                "$ref": "#/components/schemas/NetworkAccessDecision",
+                "description": "An unpersisted candidate has no published policy version."
+              },
+              "current_connection_retained_onsite": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "candidate",
+              "current_connection_retained_onsite",
+              "candidate_access"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NetworkPolicySettings": {
+        "properties": {
+          "data": {
+            "properties": {
+              "can_update": {
+                "description": "Eligible to begin the editor; Preview/PUT still require fresh credentials.\nA known offsite `fresh_reauth` caller can begin reauthentication here.",
+                "type": "boolean"
+              },
+              "current_access": {
+                "$ref": "#/components/schemas/NetworkAccessDecision"
+              },
+              "policy": {
+                "$ref": "#/components/schemas/NetworkPolicy"
+              }
+            },
+            "required": [
+              "policy",
+              "current_access",
+              "can_update"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NetworkPolicyWriteResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "policy": {
+                "$ref": "#/components/schemas/NetworkPolicy",
+                "description": "Exact immutable saved snapshot, including on a later idempotent replay."
+              },
+              "replayed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "policy",
+              "replayed"
             ],
             "type": "object"
           },
@@ -35232,6 +35613,39 @@
         ],
         "type": "object"
       },
+      "UpdateNetworkPolicyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "offsite_mode": {
+            "$ref": "#/components/schemas/NetworkOffsiteMode"
+          },
+          "onsite_cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "onsite_cidrs",
+          "offsite_mode",
+          "reason"
+        ],
+        "type": "object"
+      },
       "UpdatePatientRequest": {
         "properties": {
           "date_of_birth": {
@@ -38244,6 +38658,189 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/network-policy": {
+      "get": {
+        "operationId": "getAdminNetworkPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NetworkPolicySettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "putAdminNetworkPolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNetworkPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NetworkPolicyWriteResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/network-policy/preview": {
+      "post": {
+        "operationId": "postAdminNetworkPolicyPreview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkPolicyCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NetworkPolicyPreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -41644,6 +42241,51 @@
               }
             },
             "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/network-access": {
+      "get": {
+        "operationId": "getAuthNetworkAccess",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NetworkAccessDecision"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [

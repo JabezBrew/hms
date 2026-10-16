@@ -911,6 +911,10 @@ impl AppState {
         self.inner.config.ops_auth_mode
     }
 
+    pub(crate) fn trusted_proxy_cidrs(&self) -> &hms_domain::network::NetworkRanges {
+        &self.inner.config.trusted_proxy_cidrs
+    }
+
     pub fn ops_prometheus_config(&self) -> &OpsPrometheusConfig {
         &self.inner.config.ops_prometheus
     }

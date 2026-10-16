@@ -260,6 +260,114 @@ async fn cloudflare_access_get(
     .expect("request succeeds")
 }
 
+#[tokio::test]
+async fn cloudflare_ops_provider_keeps_precedence_over_unrelated_bearer_and_cannot_bypass_network_deny_with_head(
+) {
+    for mode in [
+        hms_api::config::OpsAuthMode::CloudflareAccess,
+        hms_api::config::OpsAuthMode::Hybrid,
+    ] {
+        let database = Arc::new(hms_db::test_support::TestDatabase::create().unwrap());
+        let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+        config.ops_auth_mode = mode;
+        config.cloudflare_access.team_domain = Some(CF_TEST_ISSUER.to_owned());
+        config.cloudflare_access.audience = Some(CF_TEST_AUD.to_owned());
+        config.cloudflare_access.allowed_emails = vec!["ops-operator-1@example.com".into()];
+        config.cloudflare_access.test_secret = Some(CF_TEST_SECRET.to_owned());
+        let app = app_with_config(config, database).await;
+        let token = cloudflare_access_test_token("ops-operator-1@example.com");
+        for method in [Method::GET, Method::HEAD] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri("/api/v2/ops/overview")
+                        .header(AUTHORIZATION, "Bearer synthetic-unrelated-token")
+                        .header("Cf-Access-Jwt-Assertion", &token)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "the selected Cloudflare provider must retain its existing precedence"
+            );
+        }
+        let pool = app.db_pool().await;
+        hms_db::network::update_policy(
+            &pool,
+            hms_db::network::NetworkPolicyActor {
+                facility_id: app.state().facility_id(),
+                user_id: None,
+                request_id: None,
+                reauth_deadline: None,
+                auth_versions: None,
+                session_id: None,
+                active_profile: None,
+                resolved_policy_version: None,
+            },
+            hms_domain::network::UpdateNetworkPolicyRequest {
+                client_request_id: Uuid::new_v4(),
+                expected_version: 1,
+                onsite_cidrs: vec!["127.0.0.1/32".into()],
+                offsite_mode: hms_domain::network::NetworkOffsiteMode::Deny,
+                reason: "Synthetic reviewed Ops network restriction".into(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        for method in [Method::GET, Method::HEAD] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri("/api/v2/ops/overview")
+                        .extension(axum::extract::ConnectInfo(
+                            "192.0.2.23:44000".parse::<std::net::SocketAddr>().unwrap(),
+                        ))
+                        .header("Cf-Access-Jwt-Assertion", &token)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::FORBIDDEN,
+                "Cloudflare-authenticated GET and HEAD must obey network Deny"
+            );
+        }
+        grant_test_permission(
+            &app,
+            Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+            PermissionCode::SystemOpsView,
+        )
+        .await;
+        let owner = Actor::login(&app, "owner@hms.local").await;
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v2/ops/overview")
+                    .header(AUTHORIZATION, owner.bearer())
+                    .header("Cf-Access-Jwt-Assertion", "synthetic-invalid-assertion")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "invalid selected provider cannot fall back to HMS"
+        );
+    }
+}
+
 fn cloudflare_access_test_token(email: &str) -> String {
     #[derive(serde::Serialize)]
     struct TestClaims<'a> {

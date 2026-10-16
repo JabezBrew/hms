@@ -1,5 +1,14 @@
 {
 	email {$ACME_EMAIL}
+	# Keep failure diagnostics without clinical URLs, headers or client IPs.
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request delete
+			}
+		}
+	}
 	servers {
 		protocols h1 h2
 	}

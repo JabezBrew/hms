@@ -1,4 +1,5 @@
 import { v2Api } from '@/lib/api/v2/client';
+import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 const occurrenceTuples = (rows, saved = false) => rows.map((row) => JSON.stringify([saved ? row.clinic_session_id : row.session_id, Date.parse(row.starts_at), Date.parse(row.ends_at)])).sort();
 function confirmedSeries(response, expected = {}) {
   const value = response?.data;
@@ -17,10 +18,12 @@ function uncertain(error) {
   const code = error?.data?.error?.code || error?.code || '';
   return !error?.status || error.status >= 500 || code.endsWith('_unconfirmed');
 }
-async function write(operation) {
-  try { return await operation(); }
+async function write(operation, validate) {
+  let response;
+  try { response = await operation(); const saved = validate(response); acknowledgeWriteResponse(response); return saved; }
   catch (error) {
     if (!uncertain(error)) throw error;
+    markWriteResponseUncertain(response || error);
     const result = new Error('The change may already be saved. Review the saved result or explicitly retry this same request.');
     result.name = 'AppointmentSeriesUnconfirmedError'; throw result;
   }
@@ -28,12 +31,11 @@ async function write(operation) {
 export const seriesApi = {
   // A first create must confirm the selected slots. Explicit original-key
   // recovery can return later reschedules while preserving immutable membership.
-  async create(payload, { signal, currentMembership = false } = {}) { return write(async () => confirmedSeries(await v2Api.postSchedulingAppointmentSeries(payload, { signal }), { ...payload, verifyTimes: !currentMembership })); },
+  async create(payload, { signal, currentMembership = false } = {}) { return write(() => v2Api.postSchedulingAppointmentSeries(payload, { signal }), (response) => confirmedSeries(response, { ...payload, verifyTimes: !currentMembership })); },
   async get(id, { signal } = {}) { return confirmedSeries(await v2Api.getSchedulingAppointmentSeriesById({ id }, { signal }), { id }); },
   async recover(clientRequestId, { signal, expected } = {}) { return confirmedSeries(await v2Api.getSchedulingAppointmentSeriesByRequest({ client_request_id: clientRequestId }, { signal }), expected); },
   async cancel(id, payload, { signal } = {}) {
-    return write(async () => {
-      const response = await v2Api.postSchedulingAppointmentSeriesCancelFuture({ id }, payload, { signal });
+    return write(() => v2Api.postSchedulingAppointmentSeriesCancelFuture({ id }, payload, { signal }), (response) => {
       const value = response?.data;
       const series = confirmedSeries({ data: value?.series }, { id });
       const changed = value.cancelled_appointment_ids; const retained = value.retained_appointment_ids;

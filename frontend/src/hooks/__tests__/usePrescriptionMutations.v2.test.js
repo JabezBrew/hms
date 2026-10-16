@@ -273,6 +273,26 @@ describe('Rust V2 prescription mutations bridge', () => {
     expect(globalThis.fetch.mock.calls.filter(([url]) => url.endsWith('/clinical/prescriptions'))).toHaveLength(1);
   });
 
+  it.each([
+    undefined,
+    {},
+    { prescription_id: 'another-prescription', created_count: 2, existing_count: 0, requested_dose_count: 2 },
+    { prescription_id: 'rx-saved', created_count: -1, existing_count: 0, requested_dose_count: 2 },
+  ])('keeps the saved prescription but never claims MAR generation from a malformed receipt', async (data) => {
+    globalThis.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-saved', patient_id: 'patient-1' } }), {
+        status: 201, headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }));
+    await expect(createPrescription({
+      patient: 'patient-1', medication_name: 'Medication', dose: '5 mg', frequency: 'daily',
+      generate_mar: true, admission_case_id: 'admission-1',
+    })).resolves.toMatchObject({ id: 'rx-saved', mar_generated: false, mar_generation_status: 'unconfirmed' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves supported duration and regimen fields on update', async () => {
     globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-1', patient_id: 'patient-1', duration_days: 14 } }), {
       status: 200, headers: { 'content-type': 'application/json' },

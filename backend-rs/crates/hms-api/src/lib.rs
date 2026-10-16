@@ -6,6 +6,8 @@ pub mod error;
 pub mod extractors;
 pub mod handlers;
 pub mod middleware;
+pub(crate) mod network_access;
+pub(crate) mod network_provenance;
 pub mod openapi;
 pub mod ops_auth;
 pub(crate) mod passwords;

@@ -1,6 +1,7 @@
 import { OmniBar } from "./OmniBar"
 import { AppSidebar } from "./sidebar"
 import { PageBreadcrumb } from "./PageBreadcrumb"
+import { ReadOnlyBanner } from '@/components/readonly'
 import {
   Sidebar,
   SidebarProvider,
@@ -35,6 +36,7 @@ export function Layout({ children, sidebar }) {
           </Sidebar>
           <SidebarInset className="p-3 sm:p-5 lg:p-6 flex-1 min-w-0 flex flex-col">
             <main id="main-content" tabIndex={-1} data-perf-ready="app-shell" className="w-full min-w-0 flex-1">
+              <ReadOnlyBanner />
               <PageBreadcrumb />
               {children}
             </main>

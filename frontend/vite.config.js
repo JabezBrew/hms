@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { visualizer } from "rollup-plugin-visualizer"
+import { createPrivateProxyLogger } from "./scripts/private-proxy-logger.mjs"
 
 function readGitValue(command, fallback = null) {
   try {
@@ -31,6 +32,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    customLogger: createPrivateProxyLogger(),
     define: {
       "globalThis.__HMS_STATIC_BUILD_INFO__": JSON.stringify(buildInfo),
     },

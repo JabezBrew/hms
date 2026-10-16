@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -11,6 +12,31 @@ import stat
 
 KIT = Path(__file__).resolve().parent
 DOMAIN = re.compile(r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]*\Z")
+
+
+def validate_proxy_links(values: dict[str, str]) -> None:
+    """Validate the two isolated links without echoing operator settings."""
+    try:
+        api = ipaddress.IPv4Network(values.get("HMS_API_PROXY_SUBNET", "172.30.241.0/29"))
+        tunnel = ipaddress.IPv4Network(values.get("HMS_TUNNEL_PROXY_SUBNET", "172.30.242.0/29"))
+        private = [ipaddress.IPv4Network(value) for value in
+                   ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
+        if (not any(api.subnet_of(block) for block in private)
+                or not any(tunnel.subnet_of(block) for block in private)
+                or not 24 <= api.prefixlen <= 29 or not 24 <= tunnel.prefixlen <= 29
+                or api.overlaps(tunnel)):
+            raise ValueError
+        for network, fields in [
+            (api, [("HMS_API_PROXY_CADDY_IPV4", "172.30.241.2"),
+                   ("HMS_API_PROXY_API_IPV4", "172.30.241.3")]),
+            (tunnel, [("HMS_TUNNEL_PROXY_CADDY_IPV4", "172.30.242.2"),
+                      ("HMS_TUNNEL_PROXY_IPV4", "172.30.242.3")]),
+        ]:
+            addresses = [ipaddress.IPv4Address(values.get(key, default)) for key, default in fields]
+            if len(set(addresses)) != 2 or any(address not in network.hosts() for address in addresses):
+                raise ValueError
+    except ValueError:
+        raise ValueError("Proxy links require distinct private IPv4 subnets /24 through /29 and distinct usable static peers") from None
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -30,6 +56,7 @@ def validate(path: Path, require_tunnel: bool, public: bool = False) -> None:
     if path.is_symlink() or not stat.S_ISREG(file_mode) or stat.S_IMODE(file_mode) & 0o077:
         raise ValueError("Private env must be a regular file with mode 600")
     values = read_env(path)
+    validate_proxy_links(values)
     if not DOMAIN.fullmatch(values.get("CLIENT_DOMAIN", "")):
         raise ValueError("CLIENT_DOMAIN must be a DNS hostname")
     for key, expected in {
@@ -98,6 +125,13 @@ def main() -> int:
         lines.extend(["", "# Synthetic private tunnel; keep credentials in this ignored file.",
                       "HMS_DEMO_SEED_PROFILE=smoke", "HMS_TEST_HTTP_PORT=8088",
                       "CLOUDFLARE_TUNNEL_TOKEN=", "HMS_TEST_ACCESS_TEAM_DOMAIN="])
+        lines.extend(["", "# Dedicated proxy links; change all related peers if these conflict with host networks.",
+                      "HMS_API_PROXY_SUBNET=172.30.241.0/29",
+                      "HMS_API_PROXY_CADDY_IPV4=172.30.241.2",
+                      "HMS_API_PROXY_API_IPV4=172.30.241.3",
+                      "HMS_TUNNEL_PROXY_SUBNET=172.30.242.0/29",
+                      "HMS_TUNNEL_PROXY_CADDY_IPV4=172.30.242.2",
+                      "HMS_TUNNEL_PROXY_IPV4=172.30.242.3"])
         fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as output:
             output.write("\n".join(lines) + "\n")
