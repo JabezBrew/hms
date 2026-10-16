@@ -2400,8 +2400,12 @@ pub async fn list_encounters(
     }
 
     if let Some(status) = filters.status {
-        query.push(" AND encounters.status = ");
-        query.push_bind(codec::encode(status)?);
+        if status == EncounterStatus::Completed {
+            query.push(" AND encounters.status IN ('completed', 'finished')");
+        } else {
+            query.push(" AND encounters.status = ");
+            query.push_bind(codec::encode(status)?);
+        }
     }
 
     if let Some(encounter_type) = filters.encounter_type {

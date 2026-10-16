@@ -1,6 +1,7 @@
 use hms_domain::deployment::PermissionCode;
 use hms_domain::pharmacy::{
-    DispensePharmacyFulfillmentRequest, PharmacyFulfillmentDispenseResult, PharmacyQueueItem,
+    DispensePharmacyFulfillmentRequest, PharmacyDispensingLocation,
+    PharmacyDispensingLocationsQuery, PharmacyFulfillmentDispenseResult, PharmacyQueueItem,
     PharmacyQueueQuery,
 };
 use uuid::Uuid;
@@ -21,6 +22,68 @@ pub struct PharmacyService {
 impl PharmacyService {
     pub fn new(state: AppState) -> Self {
         Self { state }
+    }
+
+    pub async fn list_locations(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: PharmacyDispensingLocationsQuery,
+    ) -> Result<ListResponse<PharmacyDispensingLocation>, ApiError> {
+        require_pharmacy_access(ctx, self.state.facility_id())?;
+        if query
+            .search
+            .as_ref()
+            .is_some_and(|value| value.chars().count() > 160)
+        {
+            return Err(ApiError::bad_request(
+                "invalid_location_search",
+                "Shorten the dispensing location search.",
+            ));
+        }
+        let page = cursor_list::page_request(
+            query.cursor.as_deref(),
+            query.limit,
+            DEFAULT_LIMIT,
+            MAX_LIMIT,
+            |occurred_at, id| hms_db::pharmacy::PharmacyCursor { occurred_at, id },
+        )
+        .map_err(|_| {
+            ApiError::bad_request(
+                "invalid_cursor",
+                "The dispensing location cursor is invalid.",
+            )
+        })?;
+        let limit = page.fetch_limit();
+        let rows = hms_db::pharmacy::list_dispensing_locations(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            limit,
+            query.search.as_deref(),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "pharmacy_locations_unavailable",
+                "Dispensing locations could not be loaded.",
+            )
+        })?;
+        let response = cursor_list::page_response(rows, page.limit, |row| {
+            cursor_list::encode_cursor(row.created_at, row.id)
+        });
+        Ok(ListResponse {
+            data: response
+                .data
+                .into_iter()
+                .map(|row| PharmacyDispensingLocation {
+                    id: row.id,
+                    code: row.code,
+                    name: row.name,
+                })
+                .collect(),
+            page: response.page,
+            meta: response.meta,
+        })
     }
 
     pub async fn list_queue(
@@ -114,6 +177,9 @@ impl PharmacyService {
         )
         .await
         .map_err(|error| {
+            if let Some(reason)=error.downcast_ref::<hms_db::ward::PrnError>() {
+                return ApiError::conflict("prescription_not_actionable",reason.message());
+            }
             let message = error.to_string();
             if matches!(message.as_str(), "prescription_not_active" | "prescription_regimen_stale") {
                 ApiError::conflict("prescription_not_actionable", "This prescription can no longer be dispensed. Reload the queue and check the current medication plan.")
@@ -141,8 +207,8 @@ impl PharmacyService {
                 validation_error("quantity", "Quantity exceeds pending doses.")
             } else {
                 ApiError::conflict(
-                    "pharmacy_dispense_failed",
-                    "Medication could not be dispensed.",
+                    "pharmacy_dispense_unconfirmed",
+                    "The stock issue could not be confirmed. Reload the queue and review the saved supply before issuing more stock.",
                 )
             }
         })?;

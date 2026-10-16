@@ -8,6 +8,7 @@ pub mod consent;
 pub mod dashboard;
 pub mod health;
 pub mod inventory;
+pub mod inventory_standing;
 pub mod laboratory;
 pub mod observability;
 pub mod ops;

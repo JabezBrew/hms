@@ -2024,3 +2024,32 @@ pub async fn fulfill_ward_stock_request(
             .await?,
     ))
 }
+
+#[utoipa::path(get,path="/api/v2/nursing/prn-orders",operation_id="getPrnOrders",tag="nursing",security(("bearerAuth"=[])),params(hms_domain::ward::PrnOrdersQuery),responses((status=200,body=ListResponse<hms_domain::ward::PrnOrderListItem>),(status=403,body=ApiErrorResponse)))]
+pub async fn list_prn_orders(
+    State(state): State<AppState>,
+    RequestContext(ctx): RequestContext,
+    Query(query): Query<hms_domain::ward::PrnOrdersQuery>,
+) -> Result<Json<ListResponse<hms_domain::ward::PrnOrderListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .list_prn_orders(&ctx, query)
+            .await?,
+    ))
+}
+#[utoipa::path(post,path="/api/v2/nursing/prn-dose-requests",operation_id="postPrnDoseRequest",tag="nursing",security(("bearerAuth"=[])),request_body=hms_domain::ward::RequestPrnDoseRequest,responses((status=200,body=ObjectResponse<hms_domain::ward::PrnDoseRequestResult>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn request_prn_dose(
+    State(state): State<AppState>,
+    RequestContext(ctx): RequestContext,
+    Json(payload): Json<hms_domain::ward::RequestPrnDoseRequest>,
+) -> Result<Json<ObjectResponse<hms_domain::ward::PrnDoseRequestResult>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .request_prn_dose(&ctx, payload)
+            .await?,
+    ))
+}

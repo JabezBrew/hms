@@ -752,14 +752,28 @@ async fn standing_orders_supply_dispense_and_stock_check_queue_have_explicit_sta
     .await
     .expect("standing order creates");
 
-    let draft = hms_db::inventory::generate_draft_requisition_from_standing_order(
+    assert!(
+        hms_db::inventory::generate_draft_requisition_from_standing_order(
+            pool,
+            facility_id,
+            standing_order.id,
+            owner_id,
+        )
+        .await
+        .is_err(),
+        "metadata-only orders cannot generate an empty stock request"
+    );
+    let draft = hms_db::inventory::create_requisition(
         pool,
-        facility_id,
-        standing_order.id,
-        owner_id,
+        hms_db::inventory::NewStockRequisition {
+            id: Uuid::new_v4(),
+            facility_id,
+            requesting_location_id: location_id,
+            actor_user_id: owner_id,
+        },
     )
     .await
-    .expect("standing order generates draft requisition");
+    .expect("explicit legacy manual request creates");
     assert_eq!(draft.status, RequisitionStatus::Requested);
     assert_eq!(draft.requesting_location_id, location_id);
 

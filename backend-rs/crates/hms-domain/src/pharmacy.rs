@@ -22,8 +22,24 @@ pub struct PharmacyQueueQuery {
     pub status: Option<PharmacyFulfillmentStatus>,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct PharmacyDispensingLocationsQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PharmacyDispensingLocation {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PharmacyQueueItem {
+    pub prn_policy: Option<crate::clinical::PrnPolicy>,
     pub id: Uuid,
     pub patient_id: Uuid,
     pub patient_code: String,
@@ -43,6 +59,9 @@ pub struct PharmacyQueueItem {
     pub requested_dose_count: i64,
     pub dispensed_dose_count: i64,
     pub inventory_item_id: Option<Uuid>,
+    pub inventory_item_name: Option<String>,
+    pub inventory_item_code: Option<String>,
+    pub inventory_item_unit: Option<String>,
     pub dispensing_location_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }

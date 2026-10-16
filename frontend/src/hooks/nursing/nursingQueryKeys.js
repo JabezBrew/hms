@@ -1,6 +1,8 @@
 import { keyWith } from '@/shared/lib/queryKeys';
 
 export const nursingKeys = {
+  prnOrdersAll: () => keyWith('prn-orders'),
+  prnOrders: (admissionId, scope) => keyWith('prn-orders', admissionId, scope),
   patientMonitoring: (wardId, page, pageSize, monitoringFilter = 'all') => (
     keyWith('patient-monitoring', wardId, page, pageSize, monitoringFilter)
   ),
@@ -34,9 +36,9 @@ export const nursingKeys = {
   patientMarAll: () => keyWith('patient-mar'),
   marGrid: (admissionId, startDate, days, scope) => keyWith('mar-grid', admissionId, startDate, days, scope),
   marGridAll: () => keyWith('mar-grid'),
-  pendingDispensing: (patientId) => keyWith('pending-dispensing', patientId),
+  pendingDispensing: (patientId, scope) => keyWith('pending-dispensing', patientId, scope),
   pendingDispensingAll: () => keyWith('pending-dispensing'),
-  pendingDispensingGrouped: (patientId) => keyWith('pending-dispensing', 'grouped', patientId),
+  pendingDispensingGrouped: (patientId, scope) => keyWith('pending-dispensing', 'grouped', patientId, scope),
   readyForAdmin: (patientId) => keyWith('ready-for-admin', patientId),
   readyForAdminAll: () => keyWith('ready-for-admin'),
   shiftHandoffs: (ward, date, shift) => keyWith('shift-handoffs', ward, date, shift),

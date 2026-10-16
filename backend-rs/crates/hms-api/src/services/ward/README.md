@@ -90,3 +90,10 @@ Run from `backend-rs/`:
 cargo test -p hms-api --test ward_contract
 cargo test -p hms-db ward -- --nocapture
 ```
+
+The MAR service exposes admission-scoped `prn-orders` and `prn-dose-requests`.
+Patient access is checked before repository reads/writes; DTOs require an explicit
+source, stable UUID and actual indication. Typed clinical denials are definite;
+generic storage/commit failures use `prn_request_unconfirmed` for refresh/review.
+PRN administration uses the existing explicit outcome workflow and recorded supply.
+See `docs/v2/2026-10-15-prn-scope.md` for lifecycle and compatibility boundaries.

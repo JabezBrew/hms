@@ -851,6 +851,16 @@ impl ClinicalService {
         let route = normalize_optional_text(payload.route, "route", MAX_SHORT_TEXT_LEN)?
             .unwrap_or_else(|| "oral".to_owned());
         let frequency = normalize_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
+        let prn_policy = payload.prn_policy.map(|policy| policy.normalized()
+            .map_err(|_| validation_error("prn_policy", "Provide explicit PRN interval, daily limit, indication and positive whole stock units per dose."))).transpose()?;
+        if prn_policy.is_some()
+            && (!frequency.eq_ignore_ascii_case("prn") || payload.inventory_item_id.is_none())
+        {
+            return Err(validation_error(
+                "prn_policy",
+                "PRN limits require an as-needed order linked to facility stock.",
+            ));
+        }
         let mut care_context = validate_care_context(
             self.pool(),
             self.facility_id(),
@@ -897,7 +907,7 @@ impl ClinicalService {
         } else {
             None
         };
-        let prescription = hms_db::clinical::create_prescription(
+        let prescription = hms_db::clinical::create_prescription_with_prn_policy(
             self.pool(),
             NewPrescription {
                 id: Uuid::new_v4(),
@@ -916,10 +926,13 @@ impl ClinicalService {
                 first_dose_at: payload.first_dose_at,
                 actor_user_id: ctx.user_id,
             },
+            prn_policy,
         )
         .await
         .map_err(|error| {
-            if error.to_string() == "prescription_inventory_item_invalid" {
+            if error.to_string()=="prn_stock_unit_changed" {
+                ApiError::conflict("prn_stock_unit_changed","The linked stock unit changed. Reload the prescribing catalog and review the units per dose before saving.")
+            } else if error.to_string() == "prescription_inventory_item_invalid" {
                 validation_error(
                     "inventory_item_id",
                     "Select an inventory item from this facility.",
@@ -989,7 +1002,7 @@ impl ClinicalService {
                     if error.to_string() == "prescription_inventory_item_invalid" {
                         validation_error("inventory_item_id", "Select an inventory item from this facility.")
                     } else if error.to_string() == "prescription_regimen_locked" {
-                        ApiError::conflict("prescription_regimen_locked", "This prescription already has a medication schedule. Stop it and create a replacement prescription to change the regimen.")
+                        ApiError::conflict("prescription_regimen_locked", "This prescription has a locked medication regimen. Stop it and create a replacement prescription to change the dose, stock item or prescribing limits.")
                     } else if error.to_string() == "prescription_course_closed" {
                         ApiError::conflict("prescription_course_closed", "A stopped or completed medication schedule cannot be resumed. Create a replacement prescription.")
                     } else {

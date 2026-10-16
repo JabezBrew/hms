@@ -8,6 +8,7 @@ import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 import { invalidatePatientTimelineQueries } from './useTimelineQueries';
 import { nursingKeys } from './nursing/nursingQueryKeys';
+import { normalizePrnPolicy } from '@/features/pharmacy/prescribing/prnPolicy';
 
 /**
  * Prescription mutation hooks for managing prescription lifecycle
@@ -74,6 +75,11 @@ function normalizeCreatePrescriptionPayload(data = {}) {
   if (data.inventory_item_id !== undefined) {
     payload.inventory_item_id = data.inventory_item_id;
   }
+  const policy = normalizePrnPolicy(data.prn_policy);
+  if (policy) {
+    if (data.frequency !== 'prn' || !data.inventory_item_id) throw new Error('As-needed limits require a linked facility medication and as-needed frequency.');
+    payload.prn_policy = policy;
+  }
   if (data.start_date !== undefined) {
     payload.start_date = data.start_date;
   }
@@ -130,7 +136,7 @@ export async function createPrescription(data, options = {}) {
     if (!patientId) {
       throw new Error('Patient is required to create a prescription');
     }
-    const generateMar = data.generate_mar === 'yes' || data.generate_mar === true;
+    const generateMar = data.frequency !== 'prn' && (data.generate_mar === 'yes' || data.generate_mar === true);
     const admissionCaseId = normalizeIdentifier(data.admission_case_id || data.admissionCaseId || data.admission);
     const marDays = Number(data.mar_days ?? data.days ?? 7);
     if (generateMar && !admissionCaseId) {
@@ -140,16 +146,29 @@ export async function createPrescription(data, options = {}) {
       throw new Error('MAR generation must cover between 1 and 30 whole days.');
     }
     let prescription;
+    const payload = normalizeCreatePrescriptionPayload(data);
     try {
       const response = await v2Api.postPatientPrescriptions(
         { patient_id: patientId },
-        normalizeCreatePrescriptionPayload(data),
+        payload,
         { signal: options.signal },
       );
       prescription = normalizePrescriptionResponse(response?.data);
+      if (typeof prescription?.id !== 'string' || !prescription.id.trim()) throw new Error('The saved prescription was not confirmed.');
+      if (payload.prn_policy && JSON.stringify(normalizePrnPolicy({
+        ...prescription.prn_policy,
+        expected_stock_unit: prescription.prn_policy?.stock_unit,
+      })) !== JSON.stringify(payload.prn_policy)) throw new Error('The saved as-needed limits and stock unit were not confirmed.');
     } catch (error) {
       rethrowAbortError(error);
-      throw new Error(handleV2ApiError(error, 'Failed to create prescription'));
+      if (!error?.status || error.status < 400 || error.status >= 500 || error.data?.error?.code === 'prescription_create_failed') {
+        const unconfirmed = new Error('The prescription may have been saved. Review the medication list before prescribing it again.');
+        unconfirmed.name = 'PrescriptionWriteUnconfirmedError';
+        throw unconfirmed;
+      }
+      const rejected = new Error(handleV2ApiError(error, 'Failed to create prescription'));
+      if (error.data?.error?.code === 'prn_stock_unit_changed') rejected.name = 'PrescriptionStockUnitChangedError';
+      throw rejected;
     }
     if (!generateMar) return prescription;
 

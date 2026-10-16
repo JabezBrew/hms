@@ -876,6 +876,35 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
             .expect("cross-facility lookup succeeds")
             .is_none()
     );
+    // Existing inpatient seeds use this historical spelling. Both detail reads
+    // and the canonical completed filter must preserve that encounter.
+    sqlx::query("UPDATE encounters SET encounter_type='inpatient',status='finished' WHERE id=$1")
+        .bind(encounter.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let historical = hms_db::care::get_encounter(&pool, facility_id, encounter.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(historical.encounter_type, EncounterType::Inpatient);
+    assert_eq!(historical.status, EncounterStatus::Completed);
+    let history = hms_db::care::list_encounters(
+        &pool,
+        facility_id,
+        EncounterFilters {
+            patient_id: Some(patient_id),
+            status: Some(EncounterStatus::Completed),
+            encounter_type: Some(EncounterType::Inpatient),
+            ..EncounterFilters::default()
+        },
+        None,
+        10,
+    )
+    .await
+    .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].id, encounter.id);
 }
 
 #[tokio::test]

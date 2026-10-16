@@ -1,7 +1,8 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::pharmacy::{
-    DispensePharmacyFulfillmentRequest, PharmacyFulfillmentDispenseResult, PharmacyQueueItem,
+    DispensePharmacyFulfillmentRequest, PharmacyDispensingLocation,
+    PharmacyDispensingLocationsQuery, PharmacyFulfillmentDispenseResult, PharmacyQueueItem,
     PharmacyQueueQuery,
 };
 use uuid::Uuid;
@@ -10,6 +11,17 @@ use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
 use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
+
+#[utoipa::path(get,path="/api/v2/pharmacy/dispensing-locations",operation_id="getPharmacyDispensingLocations",tag="pharmacy",security(("bearerAuth"=[])),params(PharmacyDispensingLocationsQuery),responses((status=200,body=ListResponse<PharmacyDispensingLocation>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse)))]
+pub async fn list_locations(
+    State(state): State<AppState>,
+    RequestContext(ctx): RequestContext,
+    Query(query): Query<PharmacyDispensingLocationsQuery>,
+) -> Result<Json<ListResponse<PharmacyDispensingLocation>>, ApiError> {
+    Ok(Json(
+        state.pharmacy_service().list_locations(&ctx, query).await?,
+    ))
+}
 
 #[utoipa::path(
     get,

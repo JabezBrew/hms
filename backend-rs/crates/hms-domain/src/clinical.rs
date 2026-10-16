@@ -272,6 +272,7 @@ pub struct UpdateAllergyRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PrescriptionListItem {
+    pub prn_policy: Option<PrnPolicy>,
     pub id: Uuid,
     pub patient_id: Uuid,
     pub encounter_id: Option<Uuid>,
@@ -289,8 +290,70 @@ pub struct PrescriptionListItem {
     pub prescribed_at: DateTime<Utc>,
 }
 
+/// Explicit prescriber safety limits. No defaults are inferred from free-text dosage.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PrnPolicyRequest {
+    pub expected_stock_unit: String,
+    pub minimum_interval_hours: u8,
+    pub maximum_doses_per_24_hours: u8,
+    pub indication: String,
+    pub stock_units_per_dose: i64,
+}
+
+impl PrnPolicyRequest {
+    pub fn normalized(mut self) -> Result<Self, &'static str> {
+        self.indication = self.indication.trim().to_owned();
+        if ![4, 6, 8, 12, 24].contains(&self.minimum_interval_hours)
+            || self.maximum_doses_per_24_hours == 0
+            || self.maximum_doses_per_24_hours > 24 / self.minimum_interval_hours
+            || self.indication.is_empty()
+            || self.indication.chars().count() > 500
+            || self.expected_stock_unit.trim().is_empty()
+            || self.expected_stock_unit.chars().count() > 100
+            || self.stock_units_per_dose <= 0
+            || self.stock_units_per_dose > 9_007_199_254_740_991
+        {
+            return Err("invalid_prn_policy");
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct PrnPolicy {
+    pub minimum_interval_hours: u8,
+    pub maximum_doses_per_24_hours: u8,
+    pub indication: String,
+    pub stock_units_per_dose: i64,
+    /// Inventory unit captured when prescribing, never supplied by the client.
+    pub stock_unit: String,
+}
+
+impl PrnPolicy {
+    pub fn from_request(limits: PrnPolicyRequest, stock_unit: String) -> Self {
+        Self {
+            minimum_interval_hours: limits.minimum_interval_hours,
+            maximum_doses_per_24_hours: limits.maximum_doses_per_24_hours,
+            indication: limits.indication,
+            stock_units_per_dose: limits.stock_units_per_dose,
+            stock_unit,
+        }
+    }
+    pub fn as_request(&self) -> PrnPolicyRequest {
+        PrnPolicyRequest {
+            expected_stock_unit: self.stock_unit.clone(),
+            minimum_interval_hours: self.minimum_interval_hours,
+            maximum_doses_per_24_hours: self.maximum_doses_per_24_hours,
+            indication: self.indication.clone(),
+            stock_units_per_dose: self.stock_units_per_dose,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreatePrescriptionRequest {
+    pub prn_policy: Option<PrnPolicyRequest>,
     pub medication_name: String,
     pub dose: String,
     pub route: Option<String>,

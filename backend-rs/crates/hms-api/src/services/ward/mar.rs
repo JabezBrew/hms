@@ -28,6 +28,95 @@ impl MarService {
         Self { state }
     }
 
+    pub async fn list_prn_orders(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: hms_domain::ward::PrnOrdersQuery,
+    ) -> Result<ListResponse<hms_domain::ward::PrnOrderListItem>, ApiError> {
+        common::require_patient_workflow_access(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let admission =
+            common::load_admission_case_for_access(&self.state, ctx, query.admission_case_id)
+                .await?;
+        let page = common::page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let fetch_limit = page.fetch_limit();
+        let mut rows = hms_db::ward::list_prn_orders(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            admission.patient_id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("prn_orders_failed", "As-needed orders could not be loaded.")
+        })?;
+        if !matches!(
+            admission.status,
+            hms_domain::ward::AdmissionStatus::Admitted
+                | hms_domain::ward::AdmissionStatus::DischargePending
+        ) {
+            for row in &mut rows {
+                row.unavailable_reason = Some("admission_inactive".to_owned());
+            }
+        }
+        Ok(common::page_response(rows, page.limit, |item| {
+            common::encode_cursor(item.prescribed_at, item.prescription_id)
+        }))
+    }
+
+    pub async fn request_prn_dose(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: hms_domain::ward::RequestPrnDoseRequest,
+    ) -> Result<ObjectResponse<hms_domain::ward::PrnDoseRequestResult>, ApiError> {
+        common::require_facility_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let admission =
+            common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
+        let source = hms_db::clinical::get_prescription(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            payload.prescription_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "prn_order_load_failed",
+                "The as-needed order could not be loaded.",
+            )
+        })?
+        .filter(|source| source.patient_id == admission.patient_id)
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "prescription_not_found",
+                "Prescription was not found for this admission.",
+            )
+        })?;
+        let _patient = common::load_patient_for_access(&self.state, ctx, source.patient_id).await?;
+        let result=hms_db::ward::request_prn_dose(self.state.db_pool(),hms_db::ward::RequestPrnDose{
+            facility_id:self.state.facility_id(),prescription_id:source.id,admission_case_id:admission.id,
+            client_request_id:payload.client_request_id,indication:payload.indication,actor_user_id:ctx.user_id,request_id:Some(ctx.request_id.clone()),
+        }).await.map_err(|error|{
+            if let Some(reason)=error.downcast_ref::<hms_db::ward::PrnError>() {
+                return if *reason==hms_db::ward::PrnError::InvalidIndication {ApiError::bad_request("invalid_prn_request",reason.message())}
+                    else {ApiError::conflict("prn_request_not_actionable",reason.message())};
+            }
+            ApiError::conflict("prn_request_unconfirmed","The dose request could not be confirmed. Reload the medication schedule before making another request.")
+        })?;
+        self.state.invalidate_ward_board_cache();
+        Ok(object(result))
+    }
+
     pub async fn list_medication_administrations(
         &self,
         ctx: &hms_access::RequestContext,
@@ -106,6 +195,13 @@ impl MarService {
         )?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
+        if payload
+            .frequency
+            .as_deref()
+            .is_some_and(|frequency| frequency.trim().eq_ignore_ascii_case("prn"))
+        {
+            return Err(ApiError::bad_request("prn_source_required","As-needed doses require a source prescription with explicit limits. Request one dose from the as-needed medication panel."));
+        }
         let medication_name = required_text(payload.medication_name, "medication_name")?;
         let medication = hms_db::ward::schedule_medication_administration(
             self.state.db_pool(),
@@ -205,6 +301,9 @@ impl MarService {
                         ApiError::bad_request("invalid_medication_outcome", reason.message()),
                     _ => ApiError::conflict("med_admin_not_actionable", reason.message()),
                 };
+            }
+            if let Some(reason)=error.downcast_ref::<hms_db::ward::PrnError>() {
+                return ApiError::conflict("med_admin_not_actionable",reason.message());
             }
             ApiError::conflict(
                 "medication_outcome_unconfirmed",

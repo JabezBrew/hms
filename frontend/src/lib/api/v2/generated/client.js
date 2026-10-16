@@ -1093,6 +1093,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getInventoryRequisitionReview": {
+    "operationId": "getInventoryRequisitionReview",
+    "method": "GET",
+    "path": "/api/v2/inventory/requisitions/{id}/review",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getInventoryStandingOrders": {
     "operationId": "getInventoryStandingOrders",
     "method": "GET",
@@ -1104,6 +1114,30 @@ export const operations = {
       "search",
       "status",
       "is_active"
+    ],
+    "hasBody": false
+  },
+  "getInventoryStandingTemplateById": {
+    "operationId": "getInventoryStandingTemplateById",
+    "method": "GET",
+    "path": "/api/v2/inventory/standing-order-templates/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getInventoryStandingTemplates": {
+    "operationId": "getInventoryStandingTemplates",
+    "method": "GET",
+    "path": "/api/v2/inventory/standing-order-templates",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "status",
+      "due_only"
     ],
     "hasBody": false
   },
@@ -1915,6 +1949,18 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getPharmacyDispensingLocations": {
+    "operationId": "getPharmacyDispensingLocations",
+    "method": "GET",
+    "path": "/api/v2/pharmacy/dispensing-locations",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search"
+    ],
+    "hasBody": false
+  },
   "getPharmacyDispensingQueue": {
     "operationId": "getPharmacyDispensingQueue",
     "method": "GET",
@@ -1936,6 +1982,18 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPrnOrders": {
+    "operationId": "getPrnOrders",
+    "method": "GET",
+    "path": "/api/v2/nursing/prn-orders",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "admission_case_id",
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getPurchaseOrderById": {
@@ -2558,6 +2616,16 @@ export const operations = {
     "operationId": "patchEncounterById",
     "method": "PATCH",
     "path": "/api/v2/encounters/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "patchInventoryStandingTemplate": {
+    "operationId": "patchInventoryStandingTemplate",
+    "method": "PATCH",
+    "path": "/api/v2/inventory/standing-order-templates/{id}",
     "pathParamNames": [
       "id"
     ],
@@ -3316,6 +3384,36 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postInventoryRequisitionApprove": {
+    "operationId": "postInventoryRequisitionApprove",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/review/approve",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryRequisitionCancel": {
+    "operationId": "postInventoryRequisitionCancel",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/review/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryRequisitionIssue": {
+    "operationId": "postInventoryRequisitionIssue",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/issue",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postInventoryStandingOrderGenerateRequisition": {
     "operationId": "postInventoryStandingOrderGenerateRequisition",
     "method": "POST",
@@ -3331,6 +3429,34 @@ export const operations = {
     "method": "POST",
     "path": "/api/v2/inventory/standing-orders",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryStandingTemplateRun": {
+    "operationId": "postInventoryStandingTemplateRun",
+    "method": "POST",
+    "path": "/api/v2/inventory/standing-order-templates/{id}/runs",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryStandingTemplates": {
+    "operationId": "postInventoryStandingTemplates",
+    "method": "POST",
+    "path": "/api/v2/inventory/standing-order-templates",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryStandingTemplateStatus": {
+    "operationId": "postInventoryStandingTemplateStatus",
+    "method": "POST",
+    "path": "/api/v2/inventory/standing-order-templates/{id}/status",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -3785,6 +3911,14 @@ export const operations = {
     "pathParamNames": [
       "id"
     ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPrnDoseRequest": {
+    "operationId": "postPrnDoseRequest",
+    "method": "POST",
+    "path": "/api/v2/nursing/prn-dose-requests",
+    "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -4321,7 +4455,10 @@ export function createGeneratedClient(request) {
     getInventoryItemStockBatches: createOperation(request, operations.getInventoryItemStockBatches),
     getInventoryItemStockByLocation: createOperation(request, operations.getInventoryItemStockByLocation),
     getInventoryItemStockMovements: createOperation(request, operations.getInventoryItemStockMovements),
+    getInventoryRequisitionReview: createOperation(request, operations.getInventoryRequisitionReview),
     getInventoryStandingOrders: createOperation(request, operations.getInventoryStandingOrders),
+    getInventoryStandingTemplateById: createOperation(request, operations.getInventoryStandingTemplateById),
+    getInventoryStandingTemplates: createOperation(request, operations.getInventoryStandingTemplates),
     getInventorySuppliers: createOperation(request, operations.getInventorySuppliers),
     getLaboratoryOrderById: createOperation(request, operations.getLaboratoryOrderById),
     getLaboratoryOrderClinicalContext: createOperation(request, operations.getLaboratoryOrderClinicalContext),
@@ -4384,8 +4521,10 @@ export function createGeneratedClient(request) {
     getPatientValidationRules: createOperation(request, operations.getPatientValidationRules),
     getPatientVitals: createOperation(request, operations.getPatientVitals),
     getPharmacyDispenses: createOperation(request, operations.getPharmacyDispenses),
+    getPharmacyDispensingLocations: createOperation(request, operations.getPharmacyDispensingLocations),
     getPharmacyDispensingQueue: createOperation(request, operations.getPharmacyDispensingQueue),
     getPharmacyDispensingQueueItem: createOperation(request, operations.getPharmacyDispensingQueueItem),
+    getPrnOrders: createOperation(request, operations.getPrnOrders),
     getPurchaseOrderById: createOperation(request, operations.getPurchaseOrderById),
     getPurchaseOrders: createOperation(request, operations.getPurchaseOrders),
     getRealtimeSubscriptions: createOperation(request, operations.getRealtimeSubscriptions),
@@ -4441,6 +4580,7 @@ export function createGeneratedClient(request) {
     patchClinicalProblemById: createOperation(request, operations.patchClinicalProblemById),
     patchClinicById: createOperation(request, operations.patchClinicById),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
+    patchInventoryStandingTemplate: createOperation(request, operations.patchInventoryStandingTemplate),
     patchPatientById: createOperation(request, operations.patchPatientById),
     patchPatientChronicleWardRound: createOperation(request, operations.patchPatientChronicleWardRound),
     patchPatientChronicleWardRoundAction: createOperation(request, operations.patchPatientChronicleWardRoundAction),
@@ -4525,8 +4665,14 @@ export function createGeneratedClient(request) {
     postHandoffs: createOperation(request, operations.postHandoffs),
     postInpatientIntake: createOperation(request, operations.postInpatientIntake),
     postInventoryCatalogEdit: createOperation(request, operations.postInventoryCatalogEdit),
+    postInventoryRequisitionApprove: createOperation(request, operations.postInventoryRequisitionApprove),
+    postInventoryRequisitionCancel: createOperation(request, operations.postInventoryRequisitionCancel),
+    postInventoryRequisitionIssue: createOperation(request, operations.postInventoryRequisitionIssue),
     postInventoryStandingOrderGenerateRequisition: createOperation(request, operations.postInventoryStandingOrderGenerateRequisition),
     postInventoryStandingOrders: createOperation(request, operations.postInventoryStandingOrders),
+    postInventoryStandingTemplateRun: createOperation(request, operations.postInventoryStandingTemplateRun),
+    postInventoryStandingTemplates: createOperation(request, operations.postInventoryStandingTemplates),
+    postInventoryStandingTemplateStatus: createOperation(request, operations.postInventoryStandingTemplateStatus),
     postInventoryStockChecks: createOperation(request, operations.postInventoryStockChecks),
     postInventoryStockCheckStatus: createOperation(request, operations.postInventoryStockCheckStatus),
     postLaboratoryOrderCancel: createOperation(request, operations.postLaboratoryOrderCancel),
@@ -4577,6 +4723,7 @@ export function createGeneratedClient(request) {
     postPatientVitals: createOperation(request, operations.postPatientVitals),
     postPharmacyDispenses: createOperation(request, operations.postPharmacyDispenses),
     postPharmacyDispensingQueueDispense: createOperation(request, operations.postPharmacyDispensingQueueDispense),
+    postPrnDoseRequest: createOperation(request, operations.postPrnDoseRequest),
     postPurchaseOrderApprove: createOperation(request, operations.postPurchaseOrderApprove),
     postPurchaseOrders: createOperation(request, operations.postPurchaseOrders),
     postPurchaseOrderSend: createOperation(request, operations.postPurchaseOrderSend),

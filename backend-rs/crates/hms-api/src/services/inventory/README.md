@@ -19,6 +19,7 @@ not coordinate multi-step stock or procurement behavior directly.
 | `common.rs` | shared scope, DTO, and workflow helper code. |
 | `catalog.rs` | inventory item catalog, categories, units, and location-facing metadata. |
 | `stock_control.rs` | stock levels, movements, adjustments, transfers, and low-stock views. |
+| `standing_orders.rs` | explicit line-backed template configuration, due generation, request review and governed approval/cancel/issue actions. |
 | `procurement.rs` | requisitions, purchase orders, goods receipt, suppliers, and approval paths. |
 | `pharmacy.rs` | dispensing and pharmacy queue integration with inventory stock. |
 | `controlled_substances.rs` | controlled-substance registers, movement audit, and restricted workflows. |
@@ -33,6 +34,20 @@ not coordinate multi-step stock or procurement behavior directly.
   on hot paths.
 - Patient-linked dispensing must enforce patient access before returning patient
   context.
+- `/inventory/standing-order-templates` is the governed contract. Historical
+  `/inventory/standing-orders` metadata cannot generate empty stock requests.
+  Distinct operations prevent an older backend from silently dropping item lines.
+- Template and request writes require `inventory.manage`. Lists and detail reads
+  use inventory read authorization and facility scope. List payloads omit lines;
+  details contain at most 100 lines.
+- Run requests carry the reviewed template version and scheduled occurrence.
+  One catch-up request is generated for a due occurrence, then the next date
+  advances beyond the UTC current day. Monthly anchors survive shorter months.
+  There is no automatic generation worker in this slice.
+- Request approval and cancellation preserve history; issue transfers only the
+  persisted quantities between the saved locations. No submitted arbitrary item
+  or stock quantity can override the request. Generic persistence errors return
+  distinct `*_unconfirmed` codes so clients do not claim a definite failed save.
 
 ## Verification
 

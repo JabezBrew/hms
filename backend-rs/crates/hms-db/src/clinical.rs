@@ -4,9 +4,9 @@ use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
     ClinicalNoteDetail, ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate,
     ClinicalNoteType, ClinicalNoteVersion, LaboratoryClinicalContext, PatientChronicleSummary,
-    PharmacyClinicalContext, PrescriptionListItem, PrescriptionStatus, ProblemArtifactKind,
-    ProblemArtifactLinkItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
-    UpdatePrescriptionRequest, UpdateProblemRequest,
+    PharmacyClinicalContext, PrescriptionListItem, PrescriptionStatus, PrnPolicy, PrnPolicyRequest,
+    ProblemArtifactKind, ProblemArtifactLinkItem, ProblemListItem, ProblemStatus,
+    UpdateAllergyRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::patients::{PatientDetail, PatientRecord};
 use hms_observability::observe_db_query;
@@ -261,6 +261,7 @@ struct AllergyRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct PrescriptionRow {
+    prn_policy: Option<sqlx::types::Json<PrnPolicy>>,
     id: Uuid,
     patient_id: Uuid,
     encounter_id: Option<Uuid>,
@@ -1130,7 +1131,7 @@ pub async fn list_prescriptions(
 ) -> anyhow::Result<Vec<PrescriptionListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
-        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
         FROM prescriptions
         WHERE facility_id =
         "#,
@@ -1158,25 +1159,50 @@ pub async fn create_prescription(
     pool: &PgPool,
     prescription: NewPrescription,
 ) -> anyhow::Result<PrescriptionListItem> {
+    create_prescription_with_prn_policy(pool, prescription, None).await
+}
+
+pub async fn create_prescription_with_prn_policy(
+    pool: &PgPool,
+    prescription: NewPrescription,
+    policy: Option<PrnPolicyRequest>,
+) -> anyhow::Result<PrescriptionListItem> {
+    let policy = policy
+        .map(|p| p.normalized().map_err(anyhow::Error::msg))
+        .transpose()?;
+    if policy.is_some() && !prescription.frequency.eq_ignore_ascii_case("prn") {
+        anyhow::bail!("invalid_prn_policy");
+    }
+    let mut transaction = pool.begin().await?;
+    let mut stock_unit = None;
     if let Some(item_id) = prescription.inventory_item_id {
-        let local_item = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM inventory_items WHERE facility_id = $1 AND id = $2 AND is_active AND item_type IN ('medication', 'controlled_substance'))",
-        )
-        .bind(prescription.facility_id)
-        .bind(item_id)
-        .fetch_one(pool)
-        .await?;
-        if !local_item {
+        stock_unit = sqlx::query_scalar::<_, String>(
+            "SELECT unit FROM inventory_items WHERE facility_id = $1 AND id = $2 AND is_active AND item_type IN ('medication', 'controlled_substance') AND (NOT $3 OR (NOT controlled AND item_type='medication')) FOR SHARE",
+        ).bind(prescription.facility_id).bind(item_id).bind(policy.is_some()).fetch_optional(&mut *transaction).await?;
+        if stock_unit.is_none() {
             anyhow::bail!("prescription_inventory_item_invalid");
         }
     }
+    if policy
+        .as_ref()
+        .is_some_and(|policy| stock_unit.as_deref() != Some(policy.expected_stock_unit.as_str()))
+    {
+        anyhow::bail!("prn_stock_unit_changed");
+    }
+    let policy = policy
+        .map(|limits| {
+            stock_unit
+                .map(|stock_unit| sqlx::types::Json(PrnPolicy::from_request(limits, stock_unit)))
+                .ok_or_else(|| anyhow::anyhow!("invalid_prn_policy"))
+        })
+        .transpose()?;
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
         INSERT INTO prescriptions (
-            id, facility_id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id
+            id, facility_id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id, prn_policy
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
         "#,
     )
     .bind(prescription.id)
@@ -1195,8 +1221,10 @@ pub async fn create_prescription(
     .bind(prescription.first_dose_at)
     .bind(codec::encode(PrescriptionStatus::Active)?)
     .bind(prescription.actor_user_id)
-    .fetch_one(pool)
+    .bind(policy)
+    .fetch_one(&mut *transaction)
     .await?;
+    transaction.commit().await?;
     prescription_from_row(row)
 }
 
@@ -1207,7 +1235,7 @@ pub async fn get_prescription(
 ) -> anyhow::Result<Option<PrescriptionListItem>> {
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
-        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
         FROM prescriptions
         WHERE facility_id = $1 AND id = $2
         "#,
@@ -1249,7 +1277,7 @@ pub(crate) async fn lock_prescription(
         r#"
         SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name,
                dose, route, frequency, inventory_item_id, start_date, duration_days,
-               first_dose_at, status, prescribed_at
+               first_dose_at, prn_policy, status, prescribed_at
         FROM prescriptions WHERE facility_id = $1 AND id = $2 FOR UPDATE
         "#,
     )
@@ -1298,7 +1326,7 @@ pub(crate) async fn update_prescription_in_transaction(
         || update
             .first_dose_at
             .is_some_and(|v| Some(v) != current.first_dose_at);
-    if has_course && regimen_changed {
+    if (has_course || current.prn_policy.is_some()) && regimen_changed {
         anyhow::bail!("prescription_regimen_locked");
     }
     if let Some(item_id) = update
@@ -1339,9 +1367,10 @@ pub(crate) async fn update_prescription_in_transaction(
             duration_days = COALESCE($9, duration_days),
             first_dose_at = COALESCE($10, first_dose_at),
             status = COALESCE($11, status),
+            prn_policy = CASE WHEN $6 IS NOT NULL AND lower(trim($6)) <> 'prn' THEN NULL ELSE prn_policy END,
             updated_at = now()
         WHERE facility_id = $1 AND id = $2
-        RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
         "#,
     )
     .bind(facility_id)
@@ -1643,7 +1672,7 @@ async fn patient_chronicle_sections(
               COALESCE((
                 SELECT jsonb_agg(to_jsonb(prescriptions) ORDER BY prescriptions.prescribed_at DESC, prescriptions.id DESC)
                 FROM (
-                  SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+                  SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
                   FROM prescriptions
                   WHERE facility_id = $1 AND patient_id = $2
                   ORDER BY prescribed_at DESC, id DESC
@@ -1999,7 +2028,7 @@ SELECT
   COALESCE((
     SELECT jsonb_agg(to_jsonb(prescriptions) ORDER BY prescriptions.prescribed_at DESC, prescriptions.id DESC)
     FROM (
-      SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+      SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
       FROM prescriptions
       WHERE facility_id = $1 AND patient_id = $2
       ORDER BY prescribed_at DESC, id DESC
@@ -2013,7 +2042,7 @@ SELECT
     FROM (
       SELECT id, patient_id, encounter_id, visit_id, discharge_case_id,
              medication_name, dose, route, frequency, inventory_item_id,
-             start_date, duration_days, first_dose_at, status, prescribed_at
+             start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
       FROM prescriptions
       WHERE facility_id = $1 AND patient_id = $2 AND status = 'active'
       ORDER BY prescribed_at DESC, id ASC
@@ -2435,7 +2464,7 @@ async fn list_active_prescriptions(
 ) -> anyhow::Result<Vec<PrescriptionListItem>> {
     let rows = sqlx::query_as::<_, PrescriptionRow>(
         r#"
-        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, prescribed_at
+        SELECT id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
         FROM prescriptions
         WHERE facility_id = $1
           AND patient_id = $2
@@ -2572,6 +2601,7 @@ fn allergy_from_row(row: AllergyRow) -> anyhow::Result<AllergyListItem> {
 
 fn prescription_from_row(row: PrescriptionRow) -> anyhow::Result<PrescriptionListItem> {
     Ok(PrescriptionListItem {
+        prn_policy: row.prn_policy.map(|policy| policy.0),
         id: row.id,
         patient_id: row.patient_id,
         encounter_id: row.encounter_id,

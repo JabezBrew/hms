@@ -677,6 +677,8 @@ export function buildMARGrid(records = [], admissionId, startDate = null, days =
     const day = row.days[date];
     const dose = {
       id: record.id,
+      prn_indication: record.prn_indication,
+      prn_request_id: record.prn_request_id,
       dose_number: day.doses.length + 1,
       status: normalizeDoseStatus(record),
       scheduled_time: record.scheduled_time,
@@ -1171,6 +1173,7 @@ function adaptV2PharmacyQueueItem(item = {}) {
   const isOverdue = Number(item.overdue_count || 0) > 0;
 
   return {
+    prn_policy: item.prn_policy || null,
     id: item.id,
     fulfillment_id: item.id,
     mar_entry_id: item.id,
@@ -1200,23 +1203,30 @@ function adaptV2PharmacyQueueItem(item = {}) {
     overdue_count: item.overdue_count,
     is_overdue: isOverdue,
     inventory_item_id: item.inventory_item_id,
+    inventory_item_name: item.inventory_item_name,
+    inventory_item_code: item.inventory_item_code,
+    inventory_item_unit: item.inventory_item_unit,
     dispensing_location_id: item.dispensing_location_id,
   };
 }
 
 export async function getV2PendingPharmacyQueue({ patientId = null, signal } = {}) {
   try {
-    const query = { limit: 50, status: 'pending' };
-    if (patientId) {
-      query.patient_id = patientId;
+    const items = [];
+    const cursors = new Set();
+    let cursor;
+    for (let page = 0; page < 100; page += 1) {
+      // Omitting status uses the server's pending + partially-dispensed queue.
+      const query = { limit: 50, ...(patientId ? { patient_id: patientId } : {}), ...(cursor ? { cursor } : {}) };
+      const response = await v2Request({ method: 'GET', path: '/api/v2/pharmacy/dispensing-queue', query, signal });
+      items.push(...(response?.data || []).map(adaptV2PharmacyQueueItem));
+      if (!response?.page?.has_next) return items;
+      const next = response.page.next_cursor;
+      if (!next || cursors.has(next)) throw new Error('The dispensing queue could not be completely loaded. Reload before issuing stock.');
+      cursors.add(next);
+      cursor = next;
     }
-    const response = await v2Request({
-      method: 'GET',
-      path: '/api/v2/pharmacy/dispensing-queue',
-      query,
-      signal,
-    });
-    return (response?.data || []).map(adaptV2PharmacyQueueItem);
+    throw new Error('The dispensing queue is too large to load safely. Narrow the queue before issuing stock.');
   } catch (error) {
     rethrowV2Error(error, 'Failed to load pharmacy dispensing queue');
   }

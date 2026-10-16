@@ -1111,7 +1111,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
         new Response(
           JSON.stringify({
             data: {
-              fulfillment: { id: 'fulfillment-1' },
+              fulfillment: { id: 'fulfillment-1', requested_dose_count: 14, dispensed_dose_count: 14 },
               dispensed_dose_count: 14,
               remaining_dose_count: 0,
             },
@@ -1737,7 +1737,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     ]));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/pharmacy/dispensing-queue?limit=50&status=pending',
+      'http://localhost:8080/api/v2/pharmacy/dispensing-queue?limit=50',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

@@ -283,18 +283,64 @@ describe('Rust V2 prescription mutations bridge', () => {
     });
   });
 
-  it('reports a skipped as-needed schedule without claiming MAR doses were generated', async () => {
-    globalThis.fetch
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-prn', patient_id: 'patient-1' } }), {
-        status: 201, headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { skipped_reason: 'prn', created_count: 0 } }), {
-        status: 200, headers: { 'content-type': 'application/json' },
-      }));
+  it('does not generate a fixed MAR schedule for an as-needed order', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-prn', patient_id: 'patient-1' } }), {
+      status: 201, headers: { 'content-type': 'application/json' },
+    }));
     await expect(createPrescription({
       patient: 'patient-1', medication_name: 'Medication', dose: '5 mg', frequency: 'prn',
       generate_mar: true, admission_case_id: 'admission-1',
-    })).resolves.toMatchObject({ id: 'rx-prn', mar_generated: false, mar_generation_status: 'skipped' });
+    })).resolves.toMatchObject({ id: 'rx-prn' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch.mock.calls[0][0]).toMatch(/clinical\/prescriptions$/);
+  });
+
+  const prnPolicy = { minimum_interval_hours: 6, maximum_doses_per_24_hours: 3,
+    indication: 'Synthetic indication', stock_units_per_dose: 2, expected_stock_unit: 'tablet' };
+  const prnCreate = { patient: 'patient-1', medication_name: 'Synthetic', dose: '2 tablets',
+    frequency: 'prn', inventory_item_id: 'item-1', prn_policy: prnPolicy };
+  const savedPrnPolicy = { minimum_interval_hours: 6, maximum_doses_per_24_hours: 3,
+    indication: 'Synthetic indication', stock_units_per_dose: 2, stock_unit: 'tablet' };
+
+  it('sends explicit PRN limits with the selected unit through the real generated contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+      id: 'rx-prn', patient_id: 'patient-1', prn_policy: savedPrnPolicy,
+    } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(createPrescription(prnCreate)).resolves.toMatchObject({ id: 'rx-prn', prn_policy: savedPrnPolicy });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toMatchObject({ prn_policy: prnPolicy });
+  });
+
+  it.each([undefined, { ...savedPrnPolicy, stock_unit: 'pack' }, { ...savedPrnPolicy, maximum_doses_per_24_hours: 4 }])(
+    'blocks a retry if the server does not confirm the same PRN order and stock basis', async (saved) => {
+      globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-prn', prn_policy: saved } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }));
+      await expect(createPrescription(prnCreate)).rejects.toMatchObject({ name: 'PrescriptionWriteUnconfirmedError' });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+  it.each([
+    { ...prnPolicy, maximum_doses_per_24_hours: 5 }, { ...prnPolicy, expected_stock_unit: '' },
+    { ...prnPolicy, stock_units_per_dose: Number.MAX_SAFE_INTEGER + 1 },
+    { ...prnPolicy, indication: ' ' }, { ...prnPolicy, minimum_interval_hours: 3 },
+  ])('rejects incomplete or unsafe PRN policies before the write', async (policy) => {
+    await expect(createPrescription({ ...prnCreate, prn_policy: policy })).rejects.toThrow('dose limits');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([409, 503])('keeps a generic %s prescription write unconfirmed', async (status) => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'prescription_create_failed', message: 'Write failed' } }), {
+      status, headers: { 'content-type': 'application/json' },
+    }));
+    await expect(createPrescription(prnCreate)).rejects.toMatchObject({ name: 'PrescriptionWriteUnconfirmedError' });
+  });
+
+  it('allows review after an explicit stale stock unit refusal without claiming a saved prescription', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'prn_stock_unit_changed', message: 'Review the stock unit' } }), {
+      status: 409, headers: { 'content-type': 'application/json' },
+    }));
+    await expect(createPrescription(prnCreate)).rejects.toThrow('Review the stock unit');
   });
 
   it('rejects invalid duration before a write', async () => {

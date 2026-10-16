@@ -59,6 +59,9 @@ struct RequisitionRow {
     id: Uuid,
     requesting_location_id: Uuid,
     requesting_location_name: String,
+    line_count: i32,
+    source_type: Option<String>,
+    source_id: Option<Uuid>,
     status: String,
     priority: String,
     rejection_reason: Option<String>,
@@ -587,6 +590,11 @@ pub async fn approve_requisition(
     facility_id: Uuid,
     requisition_id: Uuid,
 ) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    let governed=sqlx::query_scalar::<_,bool>("SELECT line_count>0 OR COALESCE(source_type='standing_order_template',false) FROM stock_requisitions WHERE facility_id=$1 AND id=$2")
+        .bind(facility_id).bind(requisition_id).fetch_optional(pool).await?;
+    if governed == Some(true) {
+        anyhow::bail!("line_backed_review_approval_required");
+    }
     transition_requisition_status(
         pool,
         facility_id,
@@ -606,6 +614,11 @@ pub async fn fulfill_requisition(
     facility_id: Uuid,
     requisition_id: Uuid,
 ) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    let governed = sqlx::query_scalar::<_, bool>("SELECT line_count > 0 OR COALESCE(source_type = 'standing_order_template',false) FROM stock_requisitions WHERE facility_id=$1 AND id=$2")
+        .bind(facility_id).bind(requisition_id).fetch_optional(pool).await?;
+    if governed == Some(true) {
+        anyhow::bail!("line_backed_stock_issue_required");
+    }
     transition_requisition_status(
         pool,
         facility_id,
@@ -652,6 +665,11 @@ pub async fn cancel_requisition(
     facility_id: Uuid,
     requisition_id: Uuid,
 ) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    let governed=sqlx::query_scalar::<_,bool>("SELECT line_count>0 OR COALESCE(source_type='standing_order_template',false) FROM stock_requisitions WHERE facility_id=$1 AND id=$2")
+        .bind(facility_id).bind(requisition_id).fetch_optional(pool).await?;
+    if governed == Some(true) {
+        anyhow::bail!("line_backed_review_cancellation_required");
+    }
     sqlx::query(
         r#"
         UPDATE stock_requisitions
@@ -703,52 +721,32 @@ pub async fn create_standing_order(
 }
 
 pub async fn generate_draft_requisition_from_standing_order(
-    pool: &PgPool,
-    facility_id: Uuid,
-    standing_order_id: Uuid,
-    actor_user_id: Uuid,
+    _pool: &PgPool,
+    _facility_id: Uuid,
+    _standing_order_id: Uuid,
+    _actor_user_id: Uuid,
 ) -> anyhow::Result<StockRequisitionListItem> {
-    let standing_order = fetch_standing_order_by_id(pool, facility_id, standing_order_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("standing order was not found"))?;
-    if standing_order.status != StandingOrderStatus::Active {
-        anyhow::bail!("standing order must be active");
-    }
-    let id = Uuid::new_v4();
-    sqlx::query(
-        r#"
-        INSERT INTO stock_requisitions (
-            id, facility_id, requesting_location_id, status, created_by_user_id, source_type, source_id
-        )
-        VALUES ($1, $2, $3, $4, $5, 'standing_order', $6)
-        "#,
+    anyhow::bail!(
+        "metadata-only standing orders cannot generate stock requests; use governed line-backed templates"
     )
-    .bind(id)
-    .bind(facility_id)
-    .bind(standing_order.requesting_location_id)
-    .bind(codec::encode(RequisitionStatus::Requested)?)
-    .bind(actor_user_id)
-    .bind(standing_order_id)
-    .execute(pool)
-    .await?;
-    fetch_requisition_by_id(pool, facility_id, id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("generated requisition was not found"))
 }
 
 pub async fn dispense_supply_request(
     pool: &PgPool,
     facility_id: Uuid,
     requisition_id: Uuid,
-    lines: Vec<SupplyDispenseLine>,
+    mut lines: Vec<SupplyDispenseLine>,
     actor_user_id: Uuid,
 ) -> anyhow::Result<SupplyRequestDispenseResult> {
     if lines.is_empty() {
         anyhow::bail!("at least one supply dispense line is required");
     }
+    // Match governed issue's item/location order to avoid opposite multi-item
+    // manual requests locking the same stock batches in reverse order.
+    lines.sort_by_key(|line| (line.item_id, line.location_id));
     let mut tx = pool.begin().await?;
-    let status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM stock_requisitions WHERE facility_id = $1 AND id = $2 FOR UPDATE",
+    let (status, line_count, source_type) = sqlx::query_as::<_, (String,i32,Option<String>)>(
+        "SELECT status,line_count,source_type FROM stock_requisitions WHERE facility_id = $1 AND id = $2 FOR UPDATE",
     )
     .bind(facility_id)
     .bind(requisition_id)
@@ -756,12 +754,12 @@ pub async fn dispense_supply_request(
     .await?
     .ok_or_else(|| anyhow::anyhow!("requisition was not found"))?;
     let status: RequisitionStatus = codec::decode(&status)?;
+    if line_count > 0 || source_type.as_deref() == Some("standing_order_template") {
+        anyhow::bail!("line_backed_stock_issue_required");
+    }
     if !matches!(
         status,
-        RequisitionStatus::Requested
-            | RequisitionStatus::Pending
-            | RequisitionStatus::Approved
-            | RequisitionStatus::Fulfilled
+        RequisitionStatus::Requested | RequisitionStatus::Pending | RequisitionStatus::Approved
     ) {
         anyhow::bail!("requisition cannot be dispensed from its current state");
     }
@@ -1125,6 +1123,9 @@ fn requisition_query() -> QueryBuilder<'static, Postgres> {
         SELECT stock_requisitions.id,
                stock_requisitions.requesting_location_id,
                storage_locations.name AS requesting_location_name,
+               stock_requisitions.line_count,
+               stock_requisitions.source_type,
+               stock_requisitions.source_id,
                stock_requisitions.status,
                stock_requisitions.priority,
                stock_requisitions.rejection_reason,
@@ -1250,6 +1251,9 @@ fn requisition_from_row(row: RequisitionRow) -> anyhow::Result<StockRequisitionL
         id: row.id,
         requesting_location_id: row.requesting_location_id,
         requesting_location_name: row.requesting_location_name,
+        line_count: row.line_count,
+        source_type: row.source_type,
+        source_id: row.source_id,
         status: codec::decode(&row.status)?,
         priority: row.priority,
         rejection_reason: row.rejection_reason,

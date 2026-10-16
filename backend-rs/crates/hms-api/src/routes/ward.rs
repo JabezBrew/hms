@@ -6,6 +6,11 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/v2/nursing/prn-orders", get(ward::list_prn_orders))
+        .route(
+            "/api/v2/nursing/prn-dose-requests",
+            post(ward::request_prn_dose),
+        )
         .route(
             "/api/v2/wards",
             get(ward::list_wards).post(ward::create_ward),

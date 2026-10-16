@@ -7,6 +7,10 @@ use crate::state::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/api/v2/pharmacy/dispensing-locations",
+            get(pharmacy::list_locations),
+        )
+        .route(
             "/api/v2/pharmacy/dispensing-queue",
             get(pharmacy::list_queue),
         )

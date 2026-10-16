@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Frontend/Inventory Workflow
-Last reviewed: 2026-06-01
+Last reviewed: 2026-10-15
 Scope: inventory catalog, locations, stock, requisitions, procurement, transfers, controlled substances.
 
 ## Routes
@@ -49,3 +49,11 @@ The UI permits today or earlier dates in UTC. Future-dated versions currently
 have no activation worker/current-read projection, and the API has no version
 history list. Those remain separate parity work. An unconfirmed save disables a
 repeat submission until the user closes and reviews the refreshed item.
+
+## Standing stock requests
+
+Rust standing orders now use line-backed templates, explicit due-occurrence
+generation and immutable request review. Approval, full-request FEFO stock issue
+and cancellation are separate server-confirmed actions. Historical requests
+without item details remain read-only; automatic recurrence is not enabled.
+See [standing/README.md](standing/README.md) for contracts and acceptance coverage.

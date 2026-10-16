@@ -14,7 +14,18 @@ mod catalog;
 mod controlled_substances;
 mod pharmacy;
 mod procurement;
+mod standing_fulfillment;
+mod standing_orders;
+pub use standing_fulfillment::{
+    approve_standing_request, cancel_standing_request, issue_standing_request, StandingRequestError,
+};
 mod stock_control;
+pub use standing_orders::{
+    change_standing_template_status, create_standing_template, generate_standing_template_run,
+    get_requisition_review, get_standing_template, list_standing_templates,
+    next_standing_occurrence, update_standing_template, validate_standing_template,
+    StandingTemplateError, TemplateActor,
+};
 
 pub use catalog::{
     apply_catalog_edit, get_item, get_location, inventory_dashboard_summary, list_categories,

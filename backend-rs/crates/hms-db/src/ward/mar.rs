@@ -38,6 +38,8 @@ pub struct NewTreatmentSheet {
 
 #[derive(Clone, Debug, FromRow)]
 struct MedicationAdministrationRow {
+    prn_indication: Option<String>,
+    prn_request_id: Option<Uuid>,
     id: Uuid,
     admission_case_id: Uuid,
     patient_id: Uuid,
@@ -107,6 +109,7 @@ impl std::error::Error for MedicationOutcomeError {}
 
 #[derive(FromRow)]
 struct LockedMedicationOutcomeRow {
+    frequency: Option<String>,
     prescription_id: Option<Uuid>,
     medication_course_id: Option<Uuid>,
     pharmacy_fulfillment_id: Option<Uuid>,
@@ -223,6 +226,13 @@ pub async fn schedule_medication_administration(
     pool: &PgPool,
     medication: NewMedicationAdministration,
 ) -> anyhow::Result<MedicationAdministrationListItem> {
+    if medication
+        .frequency
+        .as_deref()
+        .is_some_and(|frequency| frequency.trim().eq_ignore_ascii_case("prn"))
+    {
+        return Err(super::prn::PrnError::Unconfigured.into());
+    }
     observe_db_query(
         "ward.mar.medication_administrations.schedule",
         sqlx::query(
@@ -339,7 +349,7 @@ pub async fn record_medication_outcome(
     // All source-based writers lock prescription before child rows. Competing
     // dose outcomes then serialize on this row; a terminal decision is immutable.
     let existing = sqlx::query_as::<_, LockedMedicationOutcomeRow>(
-        r#"SELECT prescription_id, medication_course_id, pharmacy_fulfillment_id,
+        r#"SELECT frequency, prescription_id, medication_course_id, pharmacy_fulfillment_id,
             status, is_dispensed, scheduled_at <= clock_timestamp() AS is_due,
             administered_at, administered_by_user_id, witness_user_id,
             outcome_recorded_at, outcome_recorded_by_user_id,
@@ -366,6 +376,14 @@ pub async fn record_medication_outcome(
         transaction.commit().await?;
         return optional_medication_by_id(pool, command.facility_id, command.medication_id).await;
     }
+    if prescription_id.is_none()
+        && existing
+            .frequency
+            .as_deref()
+            .is_some_and(|frequency| frequency.trim().eq_ignore_ascii_case("prn"))
+    {
+        return Err(super::prn::PrnError::Unconfigured.into());
+    }
     if existing.status != "scheduled"
         || existing.outcome_recorded_at.is_some()
         || existing.administered_at.is_some()
@@ -384,6 +402,35 @@ pub async fn record_medication_outcome(
     }
     if administered && prescription_id.is_some() && !existing.is_dispensed {
         return Err(MedicationOutcomeError::NotDispensed.into());
+    }
+    if let Some(source) = prescription
+        .as_ref()
+        .filter(|p| p.frequency.eq_ignore_ascii_case("prn"))
+    {
+        let requested_admission: Option<Uuid> = sqlx::query_scalar("SELECT admission_case_id FROM medication_administrations WHERE facility_id=$1 AND id=$2 AND prn_request_id IS NOT NULL")
+            .bind(command.facility_id).bind(command.medication_id).fetch_optional(&mut *transaction).await?;
+        let admission = requested_admission.ok_or(super::prn::PrnError::NotActionable)?;
+        let at = sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&mut *transaction)
+            .await?;
+        let policy = super::prn::validate_prn_source(
+            &mut transaction,
+            command.facility_id,
+            admission,
+            source,
+            at,
+        )
+        .await?;
+        if administered {
+            super::prn::enforce_prn_limits(
+                &mut transaction,
+                command.facility_id,
+                source.id,
+                &policy,
+                at,
+            )
+            .await?;
+        }
     }
     if command.status == MedicationAdministrationOutcome::Missed && !existing.is_due {
         return Err(MedicationOutcomeError::FutureMissed.into());
@@ -422,6 +469,7 @@ pub async fn record_medication_outcome(
                 AND c.prescription_start_date IS NOT DISTINCT FROM p.start_date
                 AND c.prescription_duration_days IS NOT DISTINCT FROM p.duration_days
                 AND c.prescription_first_dose_at IS NOT DISTINCT FROM p.first_dose_at
+                AND c.prescription_prn_policy IS NOT DISTINCT FROM p.prn_policy
           ))
         "#,
         )
@@ -545,7 +593,7 @@ pub async fn create_treatment_sheet(
 fn medication_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::<Postgres>::new(
         r#"
-        SELECT medication_administrations.id,
+        SELECT medication_administrations.prn_indication, medication_administrations.prn_request_id, medication_administrations.id,
                medication_administrations.admission_case_id,
                medication_administrations.patient_id,
                medication_administrations.prescription_id,
@@ -583,7 +631,8 @@ fn medication_query() -> QueryBuilder<'static, Postgres> {
                         OR medication_courses.inventory_item_id IS DISTINCT FROM prescriptions.inventory_item_id
                         OR medication_courses.prescription_start_date IS DISTINCT FROM prescriptions.start_date
                         OR medication_courses.prescription_duration_days IS DISTINCT FROM prescriptions.duration_days
-                        OR medication_courses.prescription_first_dose_at IS DISTINCT FROM prescriptions.first_dose_at)
+                        OR medication_courses.prescription_first_dose_at IS DISTINCT FROM prescriptions.first_dose_at
+                        OR medication_courses.prescription_prn_policy IS DISTINCT FROM prescriptions.prn_policy)
                     THEN 'held' ELSE medication_administrations.status END AS status
         FROM medication_administrations
         JOIN patients ON patients.id = medication_administrations.patient_id
@@ -674,6 +723,8 @@ fn medication_from_row(
     row: MedicationAdministrationRow,
 ) -> anyhow::Result<MedicationAdministrationListItem> {
     Ok(MedicationAdministrationListItem {
+        prn_indication: row.prn_indication,
+        prn_request_id: row.prn_request_id,
         id: row.id,
         admission_case_id: row.admission_case_id,
         patient_id: row.patient_id,

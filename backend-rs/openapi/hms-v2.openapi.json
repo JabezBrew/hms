@@ -5210,6 +5210,16 @@
           "medication_name": {
             "type": "string"
           },
+          "prn_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrnPolicyRequest"
+              }
+            ]
+          },
           "route": {
             "type": [
               "string",
@@ -5386,6 +5396,58 @@
           "requesting_location_id",
           "frequency",
           "next_run_on"
+        ],
+        "type": "object"
+      },
+      "CreateStandingTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "frequency": {
+            "$ref": "#/components/schemas/TemplateFrequency"
+          },
+          "fulfilling_location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StandingTemplateItemInput"
+            },
+            "type": "array"
+          },
+          "monthly_day": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "next_run_on": {
+            "format": "date",
+            "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requesting_location_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "requesting_location_id",
+          "fulfilling_location_id",
+          "frequency",
+          "next_run_on",
+          "items"
         ],
         "type": "object"
       },
@@ -6458,6 +6520,7 @@
       "EncounterType": {
         "enum": [
           "outpatient",
+          "inpatient",
           "emergency",
           "triage"
         ],
@@ -6874,6 +6937,24 @@
           "requested_dose_count",
           "window_start",
           "window_end"
+        ],
+        "type": "object"
+      },
+      "GenerateStandingTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scheduled_for": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduled_for",
+          "expected_version"
         ],
         "type": "object"
       },
@@ -11706,6 +11787,19 @@
                     "null"
                   ]
                 },
+                "prn_indication": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "prn_request_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "reason_not_given": {
                   "type": [
                     "string",
@@ -13035,6 +13129,43 @@
         ],
         "type": "object"
       },
+      "ListResponse_PharmacyDispensingLocation": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_PharmacyQueueItem": {
         "properties": {
           "data": {
@@ -13077,8 +13208,26 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "inventory_item_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "inventory_item_id": {
                   "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "inventory_item_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "inventory_item_unit": {
                   "type": [
                     "string",
                     "null"
@@ -13115,6 +13264,16 @@
                 "prescription_id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "prn_policy": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrnPolicy"
+                    }
+                  ]
                 },
                 "requested_dose_count": {
                   "format": "int64",
@@ -13413,6 +13572,16 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "prn_policy": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrnPolicy"
+                    }
+                  ]
+                },
                 "route": {
                   "type": "string"
                 },
@@ -13443,6 +13612,105 @@
                 "frequency",
                 "status",
                 "prescribed_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_PrnOrderListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "administered_in_last_24_hours": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "dose": {
+                  "type": "string"
+                },
+                "last_administered_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "medication_name": {
+                  "type": "string"
+                },
+                "next_eligible_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "patient_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "pending_is_dispensed": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "pending_medication_administration_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "prescribed_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "prescription_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "prn_policy": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrnPolicy"
+                    }
+                  ]
+                },
+                "route": {
+                  "type": "string"
+                },
+                "unavailable_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "prescription_id",
+                "patient_id",
+                "medication_name",
+                "dose",
+                "route",
+                "prescribed_at",
+                "administered_in_last_24_hours"
               ],
               "type": "object"
             },
@@ -14634,6 +14902,106 @@
         ],
         "type": "object"
       },
+      "ListResponse_StandingTemplateListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "frequency": {
+                  "$ref": "#/components/schemas/TemplateFrequency"
+                },
+                "fulfilling_location_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "fulfilling_location_name": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "last_generated_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_requisition_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "line_count": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "monthly_day": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "next_run_on": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "requesting_location_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "requesting_location_name": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/StandingOrderStatus"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "requesting_location_id",
+                "requesting_location_name",
+                "fulfilling_location_id",
+                "fulfilling_location_name",
+                "frequency",
+                "status",
+                "next_run_on",
+                "version",
+                "line_count",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_StockBatchListItem": {
         "properties": {
           "data": {
@@ -14788,6 +15156,10 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "line_count": {
+                  "format": "int32",
+                  "type": "integer"
+                },
                 "priority": {
                   "type": "string"
                 },
@@ -14811,6 +15183,19 @@
                 "requesting_location_name": {
                   "type": "string"
                 },
+                "source_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "status": {
                   "$ref": "#/components/schemas/RequisitionStatus"
                 }
@@ -14819,6 +15204,7 @@
                 "id",
                 "requesting_location_id",
                 "requesting_location_name",
+                "line_count",
                 "status",
                 "priority",
                 "created_at"
@@ -16025,6 +16411,19 @@
             "type": "boolean"
           },
           "prescription_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prn_indication": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prn_request_id": {
             "format": "uuid",
             "type": [
               "string",
@@ -20757,6 +21156,19 @@
                   "null"
                 ]
               },
+              "prn_indication": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "prn_request_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "reason_not_given": {
                 "type": [
                   "string",
@@ -22851,8 +23263,26 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "inventory_item_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "inventory_item_id": {
                 "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "inventory_item_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "inventory_item_unit": {
                 "type": [
                   "string",
                   "null"
@@ -22889,6 +23319,16 @@
               "prescription_id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "prn_policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PrnPolicy"
+                  }
+                ]
               },
               "requested_dose_count": {
                 "format": "int64",
@@ -23159,6 +23599,16 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "prn_policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PrnPolicy"
+                  }
+                ]
+              },
               "route": {
                 "type": "string"
               },
@@ -23189,6 +23639,52 @@
               "frequency",
               "status",
               "prescribed_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PrnDoseRequestResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "admission_case_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "created": {
+                "type": "boolean"
+              },
+              "medication_administration_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "pharmacy_fulfillment_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "prescription_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "prescription_id",
+              "admission_case_id",
+              "medication_administration_id",
+              "pharmacy_fulfillment_id",
+              "client_request_id",
+              "created"
             ],
             "type": "object"
           },
@@ -23636,6 +24132,112 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_RequisitionReview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "approved_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "approved_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cancelled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "fulfilled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fulfilled_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fulfilling_location_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "fulfilling_location_name": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/RequisitionReviewItem"
+                },
+                "type": "array"
+              },
+              "requesting_location_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "requesting_location_name": {
+                "type": "string"
+              },
+              "scheduled_for": {
+                "format": "date",
+                "type": "string"
+              },
+              "source_template_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/RequisitionStatus"
+              },
+              "template_version": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "requesting_location_id",
+              "requesting_location_name",
+              "fulfilling_location_id",
+              "fulfilling_location_name",
+              "status",
+              "source_template_id",
+              "template_version",
+              "scheduled_for",
+              "created_at",
+              "items"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_RevokeAllSessionsResponse": {
         "properties": {
           "data": {
@@ -23949,6 +24551,43 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_StandingTemplateDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StandingTemplateListItem"
+              },
+              {
+                "properties": {
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/StandingTemplateItem"
+                    },
+                    "type": "array"
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "items"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_StockBatchListItem": {
         "properties": {
           "data": {
@@ -24069,6 +24708,10 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "line_count": {
+                "format": "int32",
+                "type": "integer"
+              },
               "priority": {
                 "type": "string"
               },
@@ -24092,6 +24735,19 @@
               "requesting_location_name": {
                 "type": "string"
               },
+              "source_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "status": {
                 "$ref": "#/components/schemas/RequisitionStatus"
               }
@@ -24100,6 +24756,7 @@
               "id",
               "requesting_location_id",
               "requesting_location_name",
+              "line_count",
               "status",
               "priority",
               "created_at"
@@ -28757,6 +29414,51 @@
         ],
         "type": "object"
       },
+      "PharmacyDispensingLocation": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PharmacyDispensingLocationsQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PharmacyFulfillmentDispenseResult": {
         "properties": {
           "dispensed_dose_count": {
@@ -28827,8 +29529,26 @@
             "format": "uuid",
             "type": "string"
           },
+          "inventory_item_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "inventory_item_id": {
             "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory_item_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory_item_unit": {
             "type": [
               "string",
               "null"
@@ -28865,6 +29585,16 @@
           "prescription_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "prn_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrnPolicy"
+              }
+            ]
           },
           "requested_dose_count": {
             "format": "int64",
@@ -29168,6 +29898,16 @@
             "format": "date-time",
             "type": "string"
           },
+          "prn_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrnPolicy"
+              }
+            ]
+          },
           "route": {
             "type": "string"
           },
@@ -29209,6 +29949,217 @@
           "completed"
         ],
         "type": "string"
+      },
+      "PrnDoseRequestResult": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "medication_administration_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "pharmacy_fulfillment_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prescription_id",
+          "admission_case_id",
+          "medication_administration_id",
+          "pharmacy_fulfillment_id",
+          "client_request_id",
+          "created"
+        ],
+        "type": "object"
+      },
+      "PrnOrderListItem": {
+        "properties": {
+          "administered_in_last_24_hours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dose": {
+            "type": "string"
+          },
+          "last_administered_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "medication_name": {
+            "type": "string"
+          },
+          "next_eligible_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "pending_is_dispensed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "pending_medication_administration_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prescribed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prn_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrnPolicy"
+              }
+            ]
+          },
+          "route": {
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "prescription_id",
+          "patient_id",
+          "medication_name",
+          "dose",
+          "route",
+          "prescribed_at",
+          "administered_in_last_24_hours"
+        ],
+        "type": "object"
+      },
+      "PrnOrdersQuery": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "admission_case_id"
+        ],
+        "type": "object"
+      },
+      "PrnPolicy": {
+        "properties": {
+          "indication": {
+            "type": "string"
+          },
+          "maximum_doses_per_24_hours": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minimum_interval_hours": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stock_unit": {
+            "description": "Inventory unit captured when prescribing, never supplied by the client.",
+            "type": "string"
+          },
+          "stock_units_per_dose": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minimum_interval_hours",
+          "maximum_doses_per_24_hours",
+          "indication",
+          "stock_units_per_dose",
+          "stock_unit"
+        ],
+        "type": "object"
+      },
+      "PrnPolicyRequest": {
+        "additionalProperties": false,
+        "description": "Explicit prescriber safety limits. No defaults are inferred from free-text dosage.",
+        "properties": {
+          "expected_stock_unit": {
+            "type": "string"
+          },
+          "indication": {
+            "type": "string"
+          },
+          "maximum_doses_per_24_hours": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minimum_interval_hours": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stock_units_per_dose": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_stock_unit",
+          "minimum_interval_hours",
+          "maximum_doses_per_24_hours",
+          "indication",
+          "stock_units_per_dose"
+        ],
+        "type": "object"
       },
       "ProblemArtifactKind": {
         "enum": [
@@ -30347,6 +31298,169 @@
         },
         "type": "object"
       },
+      "RequestPrnDoseRequest": {
+        "additionalProperties": false,
+        "description": "One source-linked, explicitly indicated PRN dose, using a stable retry key.",
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "indication": {
+            "type": "string"
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prescription_id",
+          "admission_case_id",
+          "client_request_id",
+          "indication"
+        ],
+        "type": "object"
+      },
+      "RequisitionReview": {
+        "properties": {
+          "approved_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approved_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fulfilled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fulfilled_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fulfilling_location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fulfilling_location_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RequisitionReviewItem"
+            },
+            "type": "array"
+          },
+          "requesting_location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requesting_location_name": {
+            "type": "string"
+          },
+          "scheduled_for": {
+            "format": "date",
+            "type": "string"
+          },
+          "source_template_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequisitionStatus"
+          },
+          "template_version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "requesting_location_id",
+          "requesting_location_name",
+          "fulfilling_location_id",
+          "fulfilling_location_name",
+          "status",
+          "source_template_id",
+          "template_version",
+          "scheduled_for",
+          "created_at",
+          "items"
+        ],
+        "type": "object"
+      },
+      "RequisitionReviewItem": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "item_code": {
+            "type": "string"
+          },
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "item_name": {
+            "type": "string"
+          },
+          "quantity_issued": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "quantity_requested": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "item_id",
+          "item_code",
+          "item_name",
+          "unit",
+          "quantity_requested",
+          "quantity_issued"
+        ],
+        "type": "object"
+      },
       "RequisitionStatus": {
         "enum": [
           "requested",
@@ -31244,6 +32358,251 @@
         ],
         "type": "string"
       },
+      "StandingRequestAction": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_source_version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_source_version"
+        ],
+        "type": "object"
+      },
+      "StandingTemplateDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandingTemplateListItem"
+          },
+          {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/StandingTemplateItem"
+                },
+                "type": "array"
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "StandingTemplateItem": {
+        "properties": {
+          "current_unit": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "item_code": {
+            "type": "string"
+          },
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "item_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requires_unit_review": {
+            "type": "boolean"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "item_id",
+          "item_code",
+          "item_name",
+          "unit",
+          "quantity",
+          "current_unit",
+          "requires_unit_review"
+        ],
+        "type": "object"
+      },
+      "StandingTemplateItemInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_unit": {
+            "type": "string"
+          },
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "quantity",
+          "expected_unit"
+        ],
+        "type": "object"
+      },
+      "StandingTemplateListItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/TemplateFrequency"
+          },
+          "fulfilling_location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fulfilling_location_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_generated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_requisition_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "monthly_day": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "next_run_on": {
+            "format": "date",
+            "type": "string"
+          },
+          "requesting_location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requesting_location_name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StandingOrderStatus"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "requesting_location_id",
+          "requesting_location_name",
+          "fulfilling_location_id",
+          "fulfilling_location_name",
+          "frequency",
+          "status",
+          "next_run_on",
+          "version",
+          "line_count",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "StandingTemplateListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_only": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StandingOrderStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "StandingTemplateStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StandingOrderStatus"
+          }
+        },
+        "required": [
+          "expected_version",
+          "status"
+        ],
+        "type": "object"
+      },
       "StartBreakGlassGrantRequest": {
         "properties": {
           "category": {
@@ -31427,6 +32786,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "line_count": {
+            "format": "int32",
+            "type": "integer"
+          },
           "priority": {
             "type": "string"
           },
@@ -31450,6 +32813,19 @@
           "requesting_location_name": {
             "type": "string"
           },
+          "source_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/RequisitionStatus"
           }
@@ -31458,6 +32834,7 @@
           "id",
           "requesting_location_id",
           "requesting_location_name",
+          "line_count",
           "status",
           "priority",
           "created_at"
@@ -31853,6 +33230,15 @@
           "dispensed_at"
         ],
         "type": "object"
+      },
+      "TemplateFrequency": {
+        "enum": [
+          "daily",
+          "weekly",
+          "biweekly",
+          "monthly"
+        ],
+        "type": "string"
       },
       "TransferStatus": {
         "enum": [
@@ -32449,6 +33835,23 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "UpdateStandingTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "template": {
+            "$ref": "#/components/schemas/CreateStandingTemplateRequest"
+          }
+        },
+        "required": [
+          "expected_version",
+          "template"
+        ],
         "type": "object"
       },
       "UpdateStockCheckStatusRequest": {
@@ -47375,6 +48778,92 @@
         ]
       }
     },
+    "/api/v2/inventory/requisitions/{id}/issue": {
+      "post": {
+        "operationId": "postInventoryRequisitionIssue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandingRequestAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RequisitionReview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/api/v2/inventory/requisitions/{id}/reject": {
       "post": {
         "operationId": "postStockRequisitionReject",
@@ -47462,6 +48951,234 @@
         ]
       }
     },
+    "/api/v2/inventory/requisitions/{id}/review": {
+      "get": {
+        "operationId": "getInventoryRequisitionReview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RequisitionReview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/requisitions/{id}/review/approve": {
+      "post": {
+        "operationId": "postInventoryRequisitionApprove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandingRequestAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RequisitionReview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/requisitions/{id}/review/cancel": {
+      "post": {
+        "operationId": "postInventoryRequisitionCancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandingRequestAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RequisitionReview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/api/v2/inventory/requisitions/{id}/submit": {
       "post": {
         "operationId": "postStockRequisitionSubmit",
@@ -47509,6 +49226,489 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/standing-order-templates": {
+      "get": {
+        "operationId": "getInventoryStandingTemplates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/StandingOrderStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_only",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_StandingTemplateListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      },
+      "post": {
+        "operationId": "postInventoryStandingTemplates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStandingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StandingTemplateDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/standing-order-templates/{id}": {
+      "get": {
+        "operationId": "getInventoryStandingTemplateById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StandingTemplateDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      },
+      "patch": {
+        "operationId": "patchInventoryStandingTemplate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStandingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StandingTemplateDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/standing-order-templates/{id}/runs": {
+      "post": {
+        "operationId": "postInventoryStandingTemplateRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateStandingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RequisitionReview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/standing-order-templates/{id}/status": {
+      "post": {
+        "operationId": "postInventoryStandingTemplateStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandingTemplateStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StandingTemplateDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -53512,6 +55712,135 @@
               }
             },
             "description": "Admission not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/prn-dose-requests": {
+      "post": {
+        "operationId": "postPrnDoseRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestPrnDoseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PrnDoseRequestResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
+    "/api/v2/nursing/prn-orders": {
+      "get": {
+        "operationId": "getPrnOrders",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PrnOrderListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -59845,6 +62174,89 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "pharmacy"
+        ]
+      }
+    },
+    "/api/v2/pharmacy/dispensing-locations": {
+      "get": {
+        "operationId": "getPharmacyDispensingLocations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PharmacyDispensingLocation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {

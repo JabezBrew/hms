@@ -32,6 +32,7 @@ import { useMARGrid, useAdministerMedication, useCreateAndAdminister } from '@/f
 import { cn } from '@/lib/utils';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { MedicationOutcomeDialog } from './MedicationOutcomeDialog';
+import { PrnOrders } from './PrnOrders';
 
 // Status colors for dose indicators
 const DOSE_STATUS = {
@@ -398,6 +399,8 @@ function TreatmentSheetWorkspace({
 
       <div className="p-6 space-y-4">
 
+      {rustV2Mode && <PrnOrders admissionId={admissionId} />}
+
       {/* Legend */}
       <div className="flex items-center gap-4 text-sm flex-wrap">
         <span className="text-muted-foreground font-medium">Legend:</span>
@@ -491,9 +494,9 @@ function TreatmentSheetWorkspace({
               ) : (
                 <div className="p-12 text-center text-muted-foreground">
                   <CircleDot className="size-12 mx-auto mb-4 opacity-20" />
-                  <p className="text-lg font-medium">No medications prescribed</p>
+                  <p className="text-lg font-medium">No doses in this period</p>
                   <p className="text-sm mt-2">
-                    This patient has no active medications for the selected date range.
+                    Scheduled and recorded doses will appear here. As-needed orders are listed separately.
                   </p>
                 </div>
               )}

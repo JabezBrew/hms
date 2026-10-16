@@ -1,9 +1,14 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthContext } from '@/lib/auth/AuthContext';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import StandingOrdersPage from '../StandingOrdersPage';
+import { standingApi } from '../../standing/api';
 
+vi.mock('../../standing/api', () => ({ standingApi: { list: vi.fn().mockResolvedValue({ data: [{ id: 'template-1', name: 'Weekly ward stock', requesting_location_name: 'Ward Store', fulfilling_location_name: 'Main Store', frequency: 'weekly', next_run_on: '2026-10-15', status: 'active', line_count: 4, version: 1 }], page: { limit: 25, has_next: false, next_cursor: null } }) } }));
+let client;
 vi.mock('@/features/inventory/hooks', () => ({
   useStandingOrders: () => ({
     data: {
@@ -41,35 +46,43 @@ vi.mock('@/components/ui/VirtualizedTable', () => ({
   ),
 }));
 
-function renderPage() {
+function renderPage(canManage = false) {
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={['/inventory/standing-orders']}>
+    <AuthContext.Provider value={{ user: { adminAccess: { capabilities: canManage ? ['inventory.manage'] : [] } } }}><QueryClientProvider client={client}><MemoryRouter initialEntries={['/inventory/standing-orders']}>
       <StandingOrdersPage />
-    </MemoryRouter>,
+    </MemoryRouter></QueryClientProvider></AuthContext.Provider>,
   );
 }
 
 describe('StandingOrdersPage Rust V2 guards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    standingApi.list.mockResolvedValue({ data: [{ id: 'template-1', name: 'Weekly ward stock', requesting_location_name: 'Ward Store', fulfilling_location_name: 'Main Store', frequency: 'weekly', next_run_on: '2026-10-15', status: 'active', line_count: 4, version: 1 }], page: { limit: 25, has_next: false, next_cursor: null } });
   });
 
   afterEach(() => {
+    client?.clear();
     delete window.__HMS_RUNTIME_CONFIG__;
   });
 
-  it('renders standing orders as read-only in Rust V2 mode because no generated contract exists', () => {
+  it('uses line-backed Rust templates and hides writes without inventory.manage', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
 
     renderPage();
 
-    expect(screen.getByText('Weekly ward stock')).toBeInTheDocument();
+    expect(await screen.findByText('Weekly ward stock')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /new template/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /generate/i })).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/standing order template management is not available in rust v2/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review Weekly ward stock' })).toBeInTheDocument();
+  });
+
+  it('exposes real template creation to an explicitly authorized Rust manager', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
+    renderPage(true);
+    await screen.findByText('Weekly ward stock');
+    expect(screen.getByRole('button', { name: /new template/i })).toBeInTheDocument();
   });
 
   it('keeps standing order management controls available outside Rust V2 mode', () => {

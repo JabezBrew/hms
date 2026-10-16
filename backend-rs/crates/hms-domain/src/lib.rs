@@ -9,6 +9,7 @@ pub mod consent;
 pub mod dashboard;
 pub mod deployment;
 pub mod inventory;
+pub mod inventory_standing;
 pub mod laboratory;
 pub mod patients;
 pub mod pharmacy;

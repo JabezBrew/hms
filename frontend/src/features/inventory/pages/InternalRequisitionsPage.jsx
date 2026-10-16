@@ -27,6 +27,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { useInternalRequisitions, useStorageLocations } from '@/features/inventory/hooks';
+import { StandingRequestReviewDialog } from '../standing/StandingRequestReviewDialog';
+import { HistoricalRequestDialog } from '../standing/HistoricalRequestDialog';
 import { InternalRequisitionDetailDialog } from '@/components/inventory/InternalRequisitionDetailDialog';
 import { useDebounce } from '@/hooks/use-debounce';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
@@ -364,11 +366,11 @@ function useInternalRequisitionFilters({ statusTabs = LEGACY_STATUS_TABS } = {})
   };
 }
 
-function InternalRequisitionsHeader({ totalCount, isLoading, onRefresh }) {
+function InternalRequisitionsHeader({ totalCount, isLoading, onRefresh, rustV2Mode }) {
   return (
     <PageHeader
       title="Internal Requisitions"
-      description={`${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
+      description={rustV2Mode ? 'Review item-backed stock requests and their saved issue records.' : `${totalCount} requisition${totalCount !== 1 ? 's' : ''}`}
       actions={(
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={onRefresh}>
@@ -431,13 +433,15 @@ function InternalRequisitionFilters({
   onSearchChange,
   onLocationChange,
   onClearFilters,
+  rustV2Mode,
 }) {
   return (
     <div className="flex flex-col lg:flex-row gap-3">
       <div className="relative flex-1 max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
-          placeholder="Search by number..."
+          aria-label="Find stock requests"
+          placeholder={rustV2Mode ? 'Search by location or full request ID…' : 'Search by number...'}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           className="pl-9 font-mono text-sm"
@@ -467,13 +471,13 @@ function InternalRequisitionFilters({
   );
 }
 
-function createRequisitionColumns({ onOpen, onApprove, onFulfill }) {
+function createRequisitionColumns({ onOpen, onApprove, onFulfill, rustV2Mode }) {
   return [
     {
       key: 'number',
       header: 'Requisition #',
       width: '180px',
-      render: (req) => <span className="font-mono text-sm font-medium text-primary">{req.requisition_number || req.number}</span>,
+      render: (req) => <span className="font-mono text-sm font-medium text-primary">{req.requisition_number || req.number || (rustV2Mode ? `Request ${String(req.id).slice(0, 8)}` : '—')}</span>,
     },
     {
       key: 'location',
@@ -518,7 +522,7 @@ function createRequisitionColumns({ onOpen, onApprove, onFulfill }) {
       key: 'items',
       header: 'Items',
       width: '100px',
-      render: (req) => <span className="font-mono text-sm text-muted-foreground">{req.items_count || 0}</span>,
+      render: (req) => <span className="font-mono text-sm text-muted-foreground">{rustV2Mode ? req.line_count ?? 'Unavailable' : req.items_count || 0}</span>,
     },
     {
       key: 'actions',
@@ -532,12 +536,13 @@ function createRequisitionColumns({ onOpen, onApprove, onFulfill }) {
             className="h-8 px-2 text-xs"
             onClick={(event) => {
               event.stopPropagation();
-              if (req.status === 'pending_approval') onApprove(req.id);
+              if (rustV2Mode) onOpen(req.id);
+              else if (req.status === 'pending_approval') onApprove(req.id);
               else if (['approved', 'in_progress'].includes(req.status)) onFulfill(req.id);
               else onOpen(req.id);
             }}
           >
-            {req.status === 'pending_approval'
+            {rustV2Mode ? 'Review' : req.status === 'pending_approval'
               ? 'Review'
               : ['approved', 'in_progress'].includes(req.status)
               ? 'Issue'
@@ -587,7 +592,8 @@ function InternalRequisitionsTable({
  * InternalRequisitionsPage - Internal department requisitions page
  */
 export default function InternalRequisitionsPage() {
-  const [selectedRequisitionId, setSelectedRequisitionId] = useState(null);
+  const [selectedRequisition, setSelectedRequisition] = useState(null);
+  const selectedRequisitionId = selectedRequisition?.id;
   const rustV2Mode = isRustV2ApiMode();
   const statusTabs = rustV2Mode ? RUST_V2_STATUS_TABS : LEGACY_STATUS_TABS;
   const {
@@ -611,20 +617,21 @@ export default function InternalRequisitionsPage() {
   const totalCount = requisitionsData?.count || 0;
   const locations = locationsData?.results || locationsData || [];
 
-  const handleClick = (id) => setSelectedRequisitionId(id);
-  const handleApprove = (id) => setSelectedRequisitionId(id);
-  const handleFulfill = (id) => setSelectedRequisitionId(id);
+  const handleClick = (id) => setSelectedRequisition(requisitions.find((request) => request.id === id) || { id });
+  const handleApprove = handleClick;
+  const handleFulfill = handleClick;
   const requisitionColumns = createRequisitionColumns({
     onOpen: handleClick,
     onApprove: handleApprove,
     onFulfill: handleFulfill,
+    rustV2Mode,
   });
 
-  if (isLoading) {
+  if (isLoading && !selectedRequisition) {
     return <InternalRequisitionsLoadingState />;
   }
 
-  if (error) {
+  if (error && !selectedRequisition) {
     return (
       <PageState
         variant="error"
@@ -641,6 +648,7 @@ export default function InternalRequisitionsPage() {
         totalCount={totalCount}
         isLoading={isLoading}
         onRefresh={refetch}
+        rustV2Mode={rustV2Mode}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
@@ -659,6 +667,7 @@ export default function InternalRequisitionsPage() {
             onSearchChange={handleSearchChange}
             onLocationChange={handleLocationChange}
             onClearFilters={clearFilters}
+            rustV2Mode={rustV2Mode}
           />
         </>
 
@@ -678,14 +687,16 @@ export default function InternalRequisitionsPage() {
         />
       </div>
 
-      <InternalRequisitionDetailDialog
+      {rustV2Mode && selectedRequisition ? (selectedRequisition.line_count > 0 && selectedRequisition.source_type === 'standing_order_template'
+        ? <StandingRequestReviewDialog id={selectedRequisitionId} onClose={() => setSelectedRequisition(null)} />
+        : <HistoricalRequestDialog request={selectedRequisition} onClose={() => setSelectedRequisition(null)} />) : !rustV2Mode ? <InternalRequisitionDetailDialog
         requisitionId={selectedRequisitionId}
         open={!!selectedRequisitionId}
         onOpenChange={(open) => {
-          if (!open) setSelectedRequisitionId(null);
+          if (!open) setSelectedRequisition(null);
         }}
         mode="inventory"
-      />
+      /> : null}
     </PageShell>
   );
 }

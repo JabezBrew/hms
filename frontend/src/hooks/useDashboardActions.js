@@ -89,7 +89,7 @@ export function useDashboardActions() {
       toast.success('Medication dose outcome recorded');
     },
     onSettled: () => {
-      for (const queryKey of [dashboardKeys.inpatient(), nursingKeys.medicationAdministrationsAll(), nursingKeys.medicationAdministrationHistoryAll(), nursingKeys.patientMarAll(), nursingKeys.marGridAll(), nursingKeys.pendingDispensingAll(), nursingKeys.patientMonitoringAll()]) {
+      for (const queryKey of [dashboardKeys.inpatient(), nursingKeys.medicationAdministrationsAll(), nursingKeys.medicationAdministrationHistoryAll(), nursingKeys.patientMarAll(), nursingKeys.marGridAll(), nursingKeys.prnOrdersAll(), nursingKeys.pendingDispensingAll(), nursingKeys.patientMonitoringAll()]) {
         queryClient.invalidateQueries({ queryKey });
       }
     },

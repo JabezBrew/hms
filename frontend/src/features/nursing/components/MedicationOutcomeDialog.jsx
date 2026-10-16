@@ -44,6 +44,7 @@ export function MedicationOutcomeDialog({ medication, onClose, onRecorded }) {
       </DialogHeader>
       <div className="space-y-4">
         <p className="text-sm text-foreground">Scheduled: {new Date(medication.scheduled_time || medication.scheduled_at).toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
+        {medication.prn_indication && <p className="text-sm">As-needed indication: {medication.prn_indication}</p>}
         {unsupplied && <p className="text-sm text-muted-foreground">This prescribed dose is awaiting pharmacy supply. You can record why it was not given.</p>}
         {unconfirmed && <p role="alert" className="text-sm text-destructive">The outcome may have been saved. Review the refreshed MAR before trying again. Close this dialog to continue.</p>}
         <div className="space-y-2">

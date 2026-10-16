@@ -52,3 +52,9 @@ Run from `backend-rs/`:
 ```bash
 cargo test -p hms-db ward -- --nocapture
 ```
+
+`prn.rs` owns explicitly indicated source-linked PRN requests. It shares the
+prescription-before-dose lock order with generation, pharmacy supply and outcomes;
+one unresolved dose, actual rolling limits, active admission, immutable policy and
+captured inventory units are enforced transactionally. No legacy four-dose limit
+or phantom supply is inferred. Request audits contain identifiers/event types only.

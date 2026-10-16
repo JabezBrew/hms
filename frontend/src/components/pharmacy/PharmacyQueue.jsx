@@ -8,9 +8,12 @@ import User from 'lucide-react/dist/esm/icons/user.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { useAuth } from '@/lib/auth';
+import { dispensingScope } from '@/features/pharmacy/api/dispensingLocations';
+import { DispensingConfirmationDialog } from '@/features/pharmacy/components/DispensingConfirmationDialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +27,6 @@ import { toast } from 'sonner';
 import PatientContextPanel from '@/components/patients/PatientContextPanel';
 import {
   usePendingDispensingGrouped,
-  useDispenseMedication,
   useBulkDispense
 } from '@/features/nursing/hooks';
 
@@ -212,7 +214,7 @@ function PharmacyQueueControls({
               All Medications
             </button>
           </div>
-          <Button variant="ghost" size="icon" onClick={onRefresh} className="shrink-0">
+          <Button variant="ghost" size="icon" aria-label="Refresh dispensing queue" onClick={onRefresh} className="shrink-0">
             <RefreshCw className="size-4" />
           </Button>
         </div>
@@ -240,15 +242,16 @@ function PharmacyQueueControls({
 }
 
 export function PharmacyQueue() {
+  const { user } = useAuth();
+  return <PharmacyQueueWorkspace key={dispensingScope(user)} />;
+}
+function PharmacyQueueWorkspace() {
+  const issueInFlight = useRef(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMeds, setSelectedMeds] = useState([]);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmMedication, setConfirmMedication] = useState(null);
-  const [dispenseStock, setDispenseStock] = useState({
-    itemId: '',
-    locationId: '',
-    quantity: '1',
-  });
+  const [unconfirmedIssues, setUnconfirmedIssues] = useState(() => new Set());
   const [viewMode, setViewMode] = useState('by-patient');
   const [contextOpen, setContextOpen] = useState(false);
   const [contextPatient, setContextPatient] = useState(null);
@@ -268,8 +271,7 @@ export function PharmacyQueue() {
   // All dispenses (single or bulk) flow through bulk-dispense, since dispensing a
   // group means flipping every MAR entry it contains.
   const bulkDispenseMutation = useBulkDispense();
-  const singleDispenseMutation = useDispenseMedication();
-  const dispenseMutation = rustV2Mode ? singleDispenseMutation : bulkDispenseMutation;
+  const dispenseMutation = bulkDispenseMutation;
 
   const filteredMeds = filterPendingMedications(pendingMeds, searchTerm);
   const groupedByPatient = groupMedicationsByPatient(filteredMeds);
@@ -300,28 +302,22 @@ export function PharmacyQueue() {
   // Single dispense (a "row" is now a prescription group, so dispense flips every
   // MAR entry it represents — one supply issued covers all scheduled doses).
   const handleDispense = async (medication) => {
+    if (issueInFlight.current || bulkDispenseMutation.isPending || unconfirmedIssues.has(medication?.id)) return;
     if (!dispensingActionsAvailable) {
       toast.error('Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.');
       return;
     }
+    issueInFlight.current = true;
     try {
-      if (rustV2Mode) {
-        await singleDispenseMutation.mutateAsync({
-          fulfillmentId: medication.fulfillment_id || medication.id,
-          itemId: dispenseStock.itemId.trim(),
-          locationId: dispenseStock.locationId.trim(),
-          quantity: dispenseStock.quantity,
-        });
-      } else {
-        const ids = getMedicationDispenseIds(medication);
-        await bulkDispenseMutation.mutateAsync(ids);
-      }
+      const ids = getMedicationDispenseIds(medication);
+      await bulkDispenseMutation.mutateAsync(ids);
       toast.success(`${medication.medication_name} dispensed successfully`);
       setConfirmMedication(null);
       setShowConfirmDialog(false);
     } catch (error) {
+      if (error?.name === 'PharmacyDispenseUnconfirmedError') setUnconfirmedIssues((current) => new Set([...current, medication.id]));
       toast.error(error.message || 'Failed to dispense medication');
-    }
+    } finally { issueInFlight.current = false; }
   };
 
   // Bulk dispense — selectedMeds holds group ids; expand to the union of their
@@ -349,13 +345,8 @@ export function PharmacyQueue() {
 
   // Open confirm dialog
   const openConfirmDialog = (medication) => {
-    if (!dispensingActionsAvailable) return;
+    if (!dispensingActionsAvailable || issueInFlight.current) return;
     setConfirmMedication(medication);
-    setDispenseStock({
-      itemId: medication.inventory_item_id || '',
-      locationId: medication.dispensing_location_id || '',
-      quantity: String(Math.max(1, Number(medication.dose_count || 1))),
-    });
     setShowConfirmDialog(true);
   };
 
@@ -371,11 +362,11 @@ export function PharmacyQueue() {
     setContextOpen(true);
   };
 
-  if (isLoading) {
+  if (isLoading && !confirmMedication) {
     return <PharmacyQueueLoadingState />;
   }
 
-  if (error) {
+  if (error && !confirmMedication) {
     return <PharmacyQueueErrorState error={error} onRetry={() => refetch()} />;
   }
 
@@ -435,7 +426,8 @@ export function PharmacyQueue() {
       )}
 
       {/* Confirm Dispense Dialog */}
-      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+      {rustV2Mode && showConfirmDialog && confirmMedication && <DispensingConfirmationDialog key={confirmMedication.id} medication={confirmMedication} unconfirmed={unconfirmedIssues.has(confirmMedication.id)} onBusy={(busy) => { issueInFlight.current = busy; }} onUnconfirmed={(id) => setUnconfirmedIssues((current) => new Set([...current, id]))} onClose={() => { setShowConfirmDialog(false); setConfirmMedication(null); }} />}
+      {!rustV2Mode && <Dialog open={showConfirmDialog} onOpenChange={(open) => { setShowConfirmDialog(open); if (!open) setConfirmMedication(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Confirm Dispensing</DialogTitle>
@@ -479,82 +471,23 @@ export function PharmacyQueue() {
                 <hr className="border-border" />
                 <DetailRow label="Prescribed by" value={getQueuePrescriberName(confirmMedication)} />
               </div>
-              {rustV2Mode && (
-                <div className="grid gap-3">
-                  <div>
-                    <label
-                      className="mb-1 block text-xs font-mono uppercase tracking-wider text-muted-foreground"
-                      htmlFor="pharmacy-dispense-item-id"
-                    >
-                      Linked stock item ID
-                    </label>
-                    <Input
-                      id="pharmacy-dispense-item-id"
-                      readOnly
-                      value={dispenseStock.itemId}
-                      onChange={(event) => setDispenseStock((current) => ({
-                        ...current,
-                        itemId: event.target.value,
-                      }))}
-                      placeholder="No linked inventory item"
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className="mb-1 block text-xs font-mono uppercase tracking-wider text-muted-foreground"
-                      htmlFor="pharmacy-dispense-location-id"
-                    >
-                      Location ID
-                    </label>
-                    <Input
-                      id="pharmacy-dispense-location-id"
-                      value={dispenseStock.locationId}
-                      onChange={(event) => setDispenseStock((current) => ({
-                        ...current,
-                        locationId: event.target.value,
-                      }))}
-                      placeholder="Dispensing location UUID"
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className="mb-1 block text-xs font-mono uppercase tracking-wider text-muted-foreground"
-                      htmlFor="pharmacy-dispense-quantity"
-                    >
-                      Quantity
-                    </label>
-                    <Input
-                      id="pharmacy-dispense-quantity"
-                      min="1"
-                      type="number"
-                      value={dispenseStock.quantity}
-                      onChange={(event) => setDispenseStock((current) => ({
-                        ...current,
-                        quantity: event.target.value,
-                      }))}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
+          {unconfirmedIssues.has(confirmMedication?.id) && <p role="alert" className="text-sm text-destructive">Supply may have been recorded. Close and review the refreshed queue and stock issue history before issuing more stock.</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
               Cancel
             </Button>
             <Button
               onClick={() => handleDispense(confirmMedication)}
-              disabled={dispenseMutation.isPending || (rustV2Mode && !confirmMedication?.inventory_item_id)}
+              disabled={dispenseMutation.isPending || unconfirmedIssues.has(confirmMedication?.id) || (rustV2Mode && !confirmMedication?.inventory_item_id)}
             >
               {dispenseMutation.isPending ? 'Dispensing...' : 'Confirm Dispense'}
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       <PatientContextPanel
         open={contextOpen}

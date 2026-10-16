@@ -819,6 +819,7 @@ export const useAdministerMedication = () => {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationHistoryAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.prnOrdersAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.patientMarAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsDueNow() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationsOverdue() });
@@ -929,7 +930,7 @@ export const useGenerateMAR = () => {
 
 export const usePendingDispensing = (patientId = null) => {
   return useQuery({
-    queryKey: nursingKeys.pendingDispensing(patientId),
+    queryKey: nursingKeys.pendingDispensing(patientId, isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         return getV2PendingPharmacyQueue({ patientId, signal });
@@ -945,7 +946,7 @@ export const usePendingDispensing = (patientId = null) => {
 
 export const usePendingDispensingGrouped = (patientId = null) => {
   return useQuery({
-    queryKey: nursingKeys.pendingDispensingGrouped(patientId),
+    queryKey: nursingKeys.pendingDispensingGrouped(patientId, isRustV2ApiMode() ? getV2ClientScopeKey() : undefined),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
         return getV2PendingPharmacyQueue({ patientId, signal });
@@ -979,6 +980,7 @@ export const useDispenseMedication = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async (medication) => {
       if (isRustV2ApiMode()) {
         const request = typeof medication === 'object' && medication !== null
@@ -988,10 +990,10 @@ export const useDispenseMedication = () => {
         const itemId = request.itemId || request.item_id || request.inventory_item_id;
         const locationId = request.locationId || request.location_id || request.dispensing_location_id;
         const quantity = Number(request.quantity || request.dose_count || 1);
-        if (!fulfillmentId || !itemId || !locationId || !Number.isFinite(quantity) || quantity <= 0) {
+        if (!fulfillmentId || !itemId || !locationId || !Number.isSafeInteger(quantity) || quantity <= 0) {
           throw new Error('Stock item, location, and positive quantity are required to dispense in Rust V2.');
         }
-        return v2Request({
+        try { const response = await v2Request({
           method: 'POST',
           path: `/api/v2/pharmacy/dispensing-queue/${fulfillmentId}/dispense`,
           body: {
@@ -1000,13 +1002,27 @@ export const useDispenseMedication = () => {
             quantity,
           },
         });
+          const result = response?.data;
+          const saved = result?.fulfillment;
+          if (saved?.id !== fulfillmentId || !Number.isSafeInteger(result?.dispensed_dose_count) || result.dispensed_dose_count !== quantity || !Number.isSafeInteger(result?.remaining_dose_count) || result.remaining_dose_count < 0 || !Number.isSafeInteger(saved?.dispensed_dose_count) || !Number.isSafeInteger(saved?.requested_dose_count) || saved.dispensed_dose_count < quantity || saved.requested_dose_count < saved.dispensed_dose_count || saved.requested_dose_count - saved.dispensed_dose_count !== result.remaining_dose_count) {
+            throw new Error('The supply response did not confirm the requested stock issue.');
+          }
+          return response;
+        } catch (error) {
+          if (error?.status >= 400 && error.status < 500 && error?.data?.error?.code !== 'pharmacy_dispense_unconfirmed') throw error;
+          const uncertain = new Error('Supply may have been recorded. Reload and review the dispensing record before issuing more stock.');
+          uncertain.name = 'PharmacyDispenseUnconfirmedError';
+          throw uncertain;
+        }
       }
 
       const medicationId = medication;
       const response = await apiClient.post(`/pharmacy/dispensing/${medicationId}/dispense/`, {});
       return response;
     },
-    onSuccess: () => {
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: nursingKeys.prnOrdersAll() });
+      queryClient.invalidateQueries({ queryKey: nursingKeys.marGridAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.pendingDispensingAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.readyForAdminAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });

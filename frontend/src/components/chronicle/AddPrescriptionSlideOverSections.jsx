@@ -24,6 +24,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { MedicationAutocomplete } from '@/components/drug-safety/MedicationAutocomplete';
 import { MedicationStockPicker } from '@/features/pharmacy/components/MedicationStockPicker';
+import { PrnPolicyFields } from '@/features/pharmacy/components/PrnPolicyFields';
 
 const ROUTE_OPTIONS = [
   { value: 'oral', label: 'Oral (PO)' },
@@ -83,10 +84,10 @@ export function PrescriptionSlideOverHeader({ patientName, onClose }) {
       </div>
 
       <Button
-        variant="destructive"
+        variant="outline"
         size="sm"
         onClick={onClose}
-        className="font-mono text-xs bg-red-500 hover:bg-red-600 text-white"
+        className="font-mono text-xs"
       >
         <X className="size-4 mr-1.5" />
         Close
@@ -458,6 +459,11 @@ function PrescriptionSummary({ formData }) {
           Instructions: {formData.instructions}
         </p>
       )}
+      {formData.frequency === 'prn' && formData.prn_indication ? <p className="mt-2 text-sm">
+        For {formData.prn_indication}. Minimum {formData.prn_minimum_interval_hours || '—'} hours between doses;
+        maximum {formData.prn_maximum_doses_per_24_hours || '—'} doses in any 24 hours.
+        One dose uses {formData.prn_stock_units_per_dose || '—'} {formData.inventory_item_unit || 'stock units'}.
+      </p> : null}
     </div>
   );
 }
@@ -471,6 +477,7 @@ export function PrescriptionFormContent({
   drugSafetyEnhancementsAvailable,
   clinicalTextFieldsAvailable = true,
   medicationCatalogAvailable = false,
+  prnPolicyAvailable = false,
   onStockSelect,
   marGenerationAvailable,
   generateMAR,
@@ -500,7 +507,7 @@ export function PrescriptionFormContent({
           onDrugFormSelect={onDrugFormSelect}
         />
         {medicationCatalogAvailable ? (
-          <MedicationStockPicker itemId={formData.inventory_item_id} itemName={formData.inventory_item_name} onSelect={onStockSelect} />
+          <MedicationStockPicker itemId={formData.inventory_item_id} itemName={formData.inventory_item_name} onSelect={onStockSelect} required={prnPolicyAvailable && formData.frequency === 'prn'} />
         ) : null}
         <DosageField
           value={formData.dosage}
@@ -508,16 +515,17 @@ export function PrescriptionFormContent({
           onFieldChange={onFieldChange}
         />
         <RouteFrequencyFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
+        {prnPolicyAvailable && formData.frequency === 'prn' ? <PrnPolicyFields formData={formData} errors={errors} onFieldChange={onFieldChange} /> : null}
         <DurationStartDateFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
         {clinicalTextFieldsAvailable ? <ReasonInstructionsFields formData={formData} onFieldChange={onFieldChange} /> : null}
-        <MarGenerationPanel
+        {prnPolicyAvailable && formData.frequency === 'prn' ? <Alert><AlertDescription>As-needed doses are requested individually from the treatment sheet. No doses are automatically scheduled.</AlertDescription></Alert> : <MarGenerationPanel
           available={marGenerationAvailable}
           generateMAR={generateMAR}
           marDays={marDays}
           isPatientAdmitted={isPatientAdmitted}
           onGenerateMARChange={onGenerateMARChange}
           onMarDaysChange={onMarDaysChange}
-        />
+        />}
         <PrescriptionSummary formData={formData} />
       </div>
     </div>
@@ -527,6 +535,7 @@ export function PrescriptionFormContent({
 export function PrescriptionSlideOverFooter({
   isCreating,
   safetyCheckPending,
+  submitBlocked = false,
   onCancel,
   onSubmit,
 }) {
@@ -544,7 +553,7 @@ export function PrescriptionSlideOverFooter({
         <Button
           size="sm"
           onClick={onSubmit}
-          disabled={isCreating || safetyCheckPending}
+          disabled={isCreating || safetyCheckPending || submitBlocked}
           className="font-mono text-xs"
         >
           {safetyCheckPending ? (

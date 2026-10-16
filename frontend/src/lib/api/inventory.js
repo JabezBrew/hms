@@ -239,8 +239,8 @@ function adaptV2Requisition(requisition) {
   return {
     ...requisition,
     status,
-    requested_by_name: requisition?.requested_by_name || requisition?.created_by_name || 'HMS V2',
-    items_count: toNumber(requisition?.items_count),
+    requested_by_name: requisition?.requested_by_name || requisition?.created_by_name || 'Not recorded',
+    items_count: toNumber(requisition?.line_count ?? requisition?.items_count),
   };
 }
 
@@ -1945,7 +1945,7 @@ export const inventoryApi = {
           query: buildV2CursorQuery(params, 20, INVENTORY_LIST_SCOPES.internalRequisitions),
           signal: options.signal,
         });
-        return adaptV2PaginatedList(response, params, adaptV2InternalRequisition, INVENTORY_LIST_SCOPES.internalRequisitions);
+        return adaptV2PaginatedList(response, params, (request) => ({ ...adaptV2Requisition(request), status: request.status }), INVENTORY_LIST_SCOPES.internalRequisitions);
       }
 
       const queryString = new URLSearchParams(params).toString();

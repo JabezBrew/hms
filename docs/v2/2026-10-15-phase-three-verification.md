@@ -65,4 +65,26 @@ Evidence logs: `/tmp/hms-phase3-index-{rust,frontend}-acceptance.log`,
 `/tmp/hms-phase3-index-{lint,client,build,bundle}.log`,
 `/tmp/hms-phase3-ops-acceptance.log`. The exact staged blobs were compared with
 accepted snapshot files and SHA-256 fingerprints retained before committing.
-Deployment evidence will be recorded after independent live verification.
+
+## Synthetic staging release
+
+Commit `67b9dc9dc07082ecadb3a81d26a651a476f374d8` was pushed and deployed.
+Archive SHA-256:
+`4e2da25213779a673cf773c40cb980815e79bc985d1af1aa852c90b7d4629745`.
+All 38 independent origin release checks passed, including runtime contract/build
+identity, migrations 001–007, native ARM64 healthy containers, managed grant
+read/anonymous denial and synthetic prescription persistence. Public HTTPS
+readiness returned 200 and anonymous identity returned 401.
+
+The immediate post-release mixed read smoke (100 requests, concurrency five)
+measured p50 7.51 ms and p99 332.98 ms. A separate warm, route-specific check
+used 100 requests per route at concurrency five: identity p50 5.85/p99 9.97 ms,
+bounded registry p50 6.03/p99 23.13 ms, all 200. The cold tail is retained as a
+release limitation; these small origin checks do not establish clinical hot-path,
+edge or production-capacity p99 acceptance.
+
+Source/private configuration, validated database backup and rollback image tags
+are preserved under `/home/ubuntu/hms-phase-three-rollback`; prior source is
+`/home/ubuntu/hms-source-before-67b9dc9dc`. The new Dockerfile built all four
+runtime binaries successfully. Its first dependency cache fill took several
+minutes; a future warm release is needed to measure reuse rather than infer it.

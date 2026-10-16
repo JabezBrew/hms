@@ -14,6 +14,7 @@ import { PageState } from '@/shared/components/page/PageState';
 import { InventoryPagination } from '@/features/inventory/components/InventoryPagination';
 import { useStandingOrders } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import StandingTemplatesPage from '../standing/StandingTemplatesPage';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { format, parseISO } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
@@ -380,7 +381,7 @@ function StandingOrdersDisplay({
 /**
  * StandingOrdersPage - Recurring order templates page
  */
-export default function StandingOrdersPage() {
+function LegacyStandingOrdersPage() {
   const navigate = useNavigate();
   const rustV2Mode = isRustV2ApiMode();
   const standingOrderManagementAvailable = !rustV2Mode;
@@ -479,4 +480,8 @@ export default function StandingOrdersPage() {
       </div>
     </PageShell>
   );
+}
+
+export default function StandingOrdersPage() {
+  return isRustV2ApiMode() ? <StandingTemplatesPage /> : <LegacyStandingOrdersPage />;
 }

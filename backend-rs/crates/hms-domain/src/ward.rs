@@ -680,6 +680,8 @@ pub struct CreateNursingTaskRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct MedicationAdministrationListItem {
+    pub prn_indication: Option<String>,
+    pub prn_request_id: Option<Uuid>,
     pub id: Uuid,
     pub admission_case_id: Uuid,
     pub patient_id: Uuid,
@@ -968,4 +970,49 @@ mod tests {
         ));
         assert_eq!(query.sort, Some(WardBoardSort::Attention));
     }
+}
+
+/// One source-linked, explicitly indicated PRN dose, using a stable retry key.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RequestPrnDoseRequest {
+    pub prescription_id: Uuid,
+    pub admission_case_id: Uuid,
+    pub client_request_id: Uuid,
+    pub indication: String,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct PrnOrdersQuery {
+    pub admission_case_id: Uuid,
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PrnOrderListItem {
+    pub prescription_id: Uuid,
+    pub patient_id: Uuid,
+    pub medication_name: String,
+    pub dose: String,
+    pub route: String,
+    pub prescribed_at: DateTime<Utc>,
+    pub prn_policy: Option<crate::clinical::PrnPolicy>,
+    pub pending_medication_administration_id: Option<Uuid>,
+    pub pending_is_dispensed: Option<bool>,
+    pub administered_in_last_24_hours: i64,
+    pub last_administered_at: Option<DateTime<Utc>>,
+    pub next_eligible_at: Option<DateTime<Utc>>,
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PrnDoseRequestResult {
+    pub prescription_id: Uuid,
+    pub admission_case_id: Uuid,
+    pub medication_administration_id: Uuid,
+    pub pharmacy_fulfillment_id: Uuid,
+    pub client_request_id: Uuid,
+    pub created: bool,
 }

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useDebounce } from '@/hooks/use-debounce';
 import { getMedicationCatalog, medicationCatalogKeys } from '../api/medicationCatalog';
 
-function CatalogResults({ onSelect }) {
+function CatalogResults({ onSelect, required }) {
   const inputId = useId();
   // Cache keys contain an opaque request nonce, never the entered clinical text.
   const [search, setSearch] = useState(() => ({ text: '', nonce: crypto.randomUUID() }));
@@ -40,13 +40,13 @@ function CatalogResults({ onSelect }) {
         {query.isError ? (
           <Alert variant="destructive">
             <AlertDescription>
-              Medication choices could not be loaded. You can retry or continue without a stock link.
+              {required ? 'Medication choices could not be loaded. Reload the catalog to select the stock basis for this as-needed order.' : 'Medication choices could not be loaded. You can retry or continue without a stock link.'}
               <Button type="button" variant="outline" size="sm" onClick={() => query.refetch()}>Retry catalog</Button>
             </AlertDescription>
           </Alert>
         ) : null}
         {!query.isPending && !query.isError && !searching && items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matching facility medications. You can prescribe without linking stock.</p>
+          <p className="text-sm text-muted-foreground">{required ? 'No matching facility medications. Choose another catalog search to link the exact stock item.' : 'No matching facility medications. You can prescribe without linking stock.'}</p>
         ) : null}
       </div>
       {!searching && items.length > 0 ? (
@@ -73,13 +73,13 @@ function CatalogResults({ onSelect }) {
   );
 }
 
-export function MedicationStockPicker({ itemId, itemName, onSelect }) {
+export function MedicationStockPicker({ itemId, itemName, onSelect, required = false }) {
   const [expanded, setExpanded] = useState(false);
   const regionId = useId();
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border p-4" aria-label="Prescription stock link">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">Facility stock link <span className="text-muted-foreground">(optional)</span></p>
+        <p className="text-sm font-medium">Facility stock link <span className="text-muted-foreground">{required ? '(required for as-needed doses)' : '(optional)'}</span></p>
         <Button type="button" variant="outline" size="sm" aria-expanded={expanded} aria-controls={regionId} onClick={() => setExpanded(!expanded)}>
           {expanded ? 'Close catalog' : itemId ? 'Change stock link' : 'Choose facility medication'}
         </Button>
@@ -92,7 +92,7 @@ export function MedicationStockPicker({ itemId, itemName, onSelect }) {
         </div>
       ) : null}
       <div id={regionId}>
-        {expanded ? <CatalogResults onSelect={(item) => { onSelect(item); setExpanded(false); }} /> : null}
+        {expanded ? <CatalogResults required={required} onSelect={(item) => { onSelect(item); setExpanded(false); }} /> : null}
       </div>
     </section>
   );

@@ -1,4 +1,4 @@
-import { useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +13,8 @@ import {
 import { nursingKeys } from "@/hooks/useNursingQueries";
 import { emitOnboardingEvent } from "@/features/onboarding";
 import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { emptyPrnPolicyForm, prnPolicyPayload, validatePrnPolicyForm } from '@/features/pharmacy/prescribing/prnPolicy';
 import {
   PatientAllergyWarning,
   PrescriptionFormContent,
@@ -34,6 +36,9 @@ const createPrescriptionFormData = () => ({
   medication_name: '',
   inventory_item_id: null,
   inventory_item_name: '',
+  inventory_item_unit: '',
+  inventory_item_controlled: false,
+  ...emptyPrnPolicyForm(),
   dosage: '',
   route: 'oral',
   frequency: 'daily',
@@ -53,6 +58,7 @@ const createPrescriptionState = (marGenerationAvailable) => ({
   safetyDialogOpen: false,
   safetyAlerts: [],
   hasCriticalAlerts: false,
+  writeUnconfirmed: false,
 });
 
 const withoutFieldError = (errors, field) => {
@@ -75,7 +81,8 @@ const prescriptionReducer = (state, action) => {
         formData: {
           ...state.formData,
           [action.field]: action.value,
-          ...(action.field === 'medication_name' ? { inventory_item_id: null, inventory_item_name: '' } : {}),
+          ...(action.field === 'medication_name' ? { inventory_item_id: null, inventory_item_name: '', inventory_item_unit: '', inventory_item_controlled: false, ...emptyPrnPolicyForm() } : {}),
+          ...(action.field === 'frequency' && action.value !== 'prn' ? emptyPrnPolicyForm() : {}),
         },
         errors: withoutFieldError(state.errors, action.field),
       };
@@ -87,6 +94,9 @@ const prescriptionReducer = (state, action) => {
           medication_name: action.name,
           inventory_item_id: null,
           inventory_item_name: '',
+          inventory_item_unit: '',
+          inventory_item_controlled: false,
+          ...emptyPrnPolicyForm(),
         },
         selectedRxcui: action.rxcui,
         errors: withoutFieldError(state.errors, 'medication_name'),
@@ -98,9 +108,14 @@ const prescriptionReducer = (state, action) => {
           ...state.formData,
           inventory_item_id: action.item?.id || null,
           inventory_item_name: action.item ? `${action.item.code} · ${action.item.name}` : '',
+          inventory_item_unit: action.item?.unit || '',
+          inventory_item_controlled: Boolean(action.item?.controlled),
+          ...(action.item?.id !== state.formData.inventory_item_id
+            || action.item?.unit !== state.formData.inventory_item_unit
+            || Boolean(action.item?.controlled) !== state.formData.inventory_item_controlled ? emptyPrnPolicyForm() : {}),
           ...(action.item ? { medication_name: action.item.name } : {}),
         },
-        errors: withoutFieldError(state.errors, 'medication_name'),
+        errors: withoutFieldError(withoutFieldError(state.errors, 'medication_name'), 'inventory_item_id'),
       };
     case 'drugFormSelected':
       return {
@@ -117,6 +132,8 @@ const prescriptionReducer = (state, action) => {
         ...state,
         errors: action.errors,
       };
+    case 'writeUnconfirmed':
+      return { ...state, writeUnconfirmed: true };
     case 'setGenerateMAR':
       return {
         ...state,
@@ -159,6 +176,7 @@ const buildPrescriptionPayload = ({
   generateMAR,
   marDays,
   overrideReason,
+  prnPolicyAvailable,
 }) => {
   const data = {
     patient: patientId,
@@ -181,7 +199,9 @@ const buildPrescriptionPayload = ({
     data.admission_case_id = admissionCaseId;
   }
 
-  if (marGenerationAvailable) {
+  if (prnPolicyAvailable && formData.frequency === 'prn') {
+    data.prn_policy = prnPolicyPayload(formData);
+  } else if (marGenerationAvailable) {
     data.generate_mar = generateMAR ? 'yes' : 'no';
     data.mar_days = marDays;
   }
@@ -207,7 +227,10 @@ const buildPrescriptionPayload = ({
 
 const AddPrescriptionSlideOver = (props) => (
   <AddPrescriptionSlideOverContent
-    key={props.open ? 'open' : 'closed'}
+    key={JSON.stringify([props.open, props.patient?.local_data?.id || props.patient?.id,
+      props.encounter?.id || props.encounter?.encounter_id,
+      props.encounter?.admission_id || props.encounter?.admission_case_id
+        || props.patient?.local_data?.current_admission_id || props.patient?.current_admission_id])}
     {...props}
   />
 );
@@ -232,6 +255,11 @@ const AddPrescriptionSlideOverContent = ({
   const drugSafetyEnhancementsAvailable = !rustV2Mode;
   const creationInFlightRef = useRef(false);
   const savedPrescriptionRef = useRef(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const queryClient = useQueryClient();
 
@@ -250,6 +278,7 @@ const AddPrescriptionSlideOverContent = ({
     safetyDialogOpen,
     safetyAlerts,
     hasCriticalAlerts,
+    writeUnconfirmed,
   } = state;
 
   // Check if patient is admitted (for MAR generation hint)
@@ -329,6 +358,7 @@ const AddPrescriptionSlideOverContent = ({
     if (formData.duration_days && (!Number.isInteger(Number(formData.duration_days)) || Number(formData.duration_days) < 1)) {
       newErrors.duration_days = 'Enter a whole number of at least one day.';
     }
+    if (rustV2Mode && formData.frequency === 'prn') Object.assign(newErrors, validatePrnPolicyForm(formData));
 
     dispatch({ type: 'validationFailed', errors: newErrors });
     return Object.keys(newErrors).length === 0;
@@ -384,7 +414,7 @@ const AddPrescriptionSlideOverContent = ({
 
   // Handle submit
   const handleSubmit = async () => {
-    if (creationInFlightRef.current || savedPrescriptionRef.current) return;
+    if (creationInFlightRef.current || savedPrescriptionRef.current || writeUnconfirmed) return;
     // Perform safety check first
     const canProceed = await performSafetyCheck();
     if (!canProceed) return;
@@ -394,7 +424,7 @@ const AddPrescriptionSlideOverContent = ({
 
   // Create prescription (called after safety check passes)
   const createPrescription = async (overrideReason = '') => {
-    if (creationInFlightRef.current || savedPrescriptionRef.current) return;
+    if (creationInFlightRef.current || savedPrescriptionRef.current || writeUnconfirmed) return;
     creationInFlightRef.current = true;
     const data = buildPrescriptionPayload({
       patientId,
@@ -405,11 +435,13 @@ const AddPrescriptionSlideOverContent = ({
       generateMAR,
       marDays,
       overrideReason,
+      prnPolicyAvailable: rustV2Mode,
     });
 
     try {
       const result = await createPrescriptionMutation.mutateAsync(data);
       savedPrescriptionRef.current = result;
+      if (!mountedRef.current) return;
       emitOnboardingEvent('chronicle.prescription_created', {
         success: true,
         prescription_id: result?.id || null,
@@ -439,7 +471,17 @@ const AddPrescriptionSlideOverContent = ({
       queryClient.invalidateQueries({ queryKey: nursingKeys.medicationAdministrationsAll() });
       onPrescriptionCreated?.();
     } catch (err) {
-      if (savedPrescriptionRef.current) return;
+      if (savedPrescriptionRef.current || !mountedRef.current) return;
+      if (rustV2Mode && (err?.name === 'PrescriptionWriteUnconfirmedError' || err?.name === 'AbortError')) {
+        dispatch({ type: 'writeUnconfirmed' });
+        void invalidatePrescriptionMutationQueries(queryClient, { patientId });
+        return;
+      }
+      if (err?.name === 'PrescriptionStockUnitChangedError') {
+        dispatch({ type: 'stockSelected', item: null });
+        toast.error('The stock unit changed. Choose the medication again and review the dose limits.');
+        return;
+      }
       const errorMsg = err.message?.toLowerCase() || '';
       if (errorMsg.includes('practitioner') || errorMsg.includes('doctor') || errorMsg.includes('permission')) {
         toast.error('Only doctors can prescribe medications');
@@ -448,7 +490,7 @@ const AddPrescriptionSlideOverContent = ({
       }
     } finally {
       creationInFlightRef.current = false;
-      if (savedPrescriptionRef.current) onClose();
+      if (savedPrescriptionRef.current && mountedRef.current) onClose();
     }
   };
 
@@ -486,6 +528,7 @@ const AddPrescriptionSlideOverContent = ({
     >
       <PrescriptionSlideOverHeader patientName={patientName} onClose={handleClose} />
       <PatientAllergyWarning allergiesData={allergiesData} />
+      {writeUnconfirmed ? <Alert role="alert" variant="destructive" className="mx-6 mt-4 w-auto"><AlertDescription>The prescription may have been saved. Close this panel and review the medication list before prescribing it again.</AlertDescription></Alert> : null}
       <PrescriptionFormContent
         formData={formData}
         errors={errors}
@@ -495,6 +538,7 @@ const AddPrescriptionSlideOverContent = ({
         drugSafetyEnhancementsAvailable={drugSafetyEnhancementsAvailable}
         clinicalTextFieldsAvailable={!rustV2Mode}
         medicationCatalogAvailable={rustV2Mode && open}
+        prnPolicyAvailable={rustV2Mode}
         onStockSelect={(item) => dispatch({ type: 'stockSelected', item })}
         marGenerationAvailable={marGenerationAvailable}
         generateMAR={generateMAR}
@@ -515,6 +559,7 @@ const AddPrescriptionSlideOverContent = ({
       <PrescriptionSlideOverFooter
         isCreating={createPrescriptionMutation.isPending}
         safetyCheckPending={safetyCheckPending}
+        submitBlocked={writeUnconfirmed}
         onCancel={handleClose}
         onSubmit={handleSubmit}
       />

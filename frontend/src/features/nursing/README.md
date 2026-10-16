@@ -53,3 +53,13 @@ owns the patient context:
   colour, notes, amendment and deletion remain unsupported and must not be
   presented as saved clinical facts.
 - Realtime/task updates must use authorized facility/ward/patient subscriptions.
+- The Rust MAR includes source-linked as-needed orders with explicit prescriber
+  interval/daily limits, indication and whole stock units per dose. One request
+  creates a pending dose and normal pharmacy supply; it never invents an actual
+  administration. Legacy unconfigured PRN orders remain visible but unavailable.
+  Request forms use stable UUIDs, no automatic retries and uncertain-save locks.
+  Admission-keyed state prevents an old patient's form surviving a context change.
+- Pending pharmacy reads include both pending and partially supplied fulfillments,
+  follow bounded server cursors, and fail on incomplete pages. Supply success must
+  confirm the exact fulfillment and issued/remaining counts; uncertain issues
+  block another stock write while the user reviews the refreshed records.

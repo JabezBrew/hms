@@ -68,6 +68,7 @@ pub enum TriageStatus {
 #[serde(rename_all = "snake_case")]
 pub enum EncounterStatus {
     InProgress,
+    #[serde(alias = "finished")]
     Completed,
     Cancelled,
 }
@@ -76,6 +77,7 @@ pub enum EncounterStatus {
 #[serde(rename_all = "snake_case")]
 pub enum EncounterType {
     Outpatient,
+    Inpatient,
     Emergency,
     Triage,
 }
@@ -516,5 +518,20 @@ mod tests {
             query.encounter_type,
             Some(EncounterType::Outpatient)
         ));
+    }
+    #[test]
+    fn inpatient_and_historical_finished_encounters_remain_readable() {
+        assert_eq!(
+            serde_json::from_str::<EncounterType>(r#""inpatient""#).unwrap(),
+            EncounterType::Inpatient
+        );
+        assert_eq!(
+            serde_json::from_str::<EncounterStatus>(r#""finished""#).unwrap(),
+            EncounterStatus::Completed
+        );
+        assert_eq!(
+            serde_json::to_string(&EncounterStatus::Completed).unwrap(),
+            r#""completed""#
+        );
     }
 }

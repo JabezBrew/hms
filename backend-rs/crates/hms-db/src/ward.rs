@@ -10,6 +10,7 @@ mod handoff;
 mod mar;
 mod nursing_task_board;
 mod observations_monitoring;
+pub(crate) mod prn;
 mod staff_assignments;
 mod ward_stock;
 
@@ -51,6 +52,7 @@ pub use observations_monitoring::{
     list_monitoring_events, list_nursing_alerts, list_patient_vitals, FluidBalanceFilters,
     NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert, NewPatientVitals,
 };
+pub use prn::{list_prn_orders, request_prn_dose, PrnError, RequestPrnDose};
 pub use staff_assignments::{
     create_ward_staff_assignment, deactivate_ward_staff_assignment, get_ward_staff_assignment,
     list_user_ward_board_assignments, list_ward_staff, list_ward_staff_assignments,

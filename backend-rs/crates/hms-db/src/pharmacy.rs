@@ -1,6 +1,8 @@
 use anyhow::Context;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-use hms_domain::clinical::{GenerateMedicationAdministrationResponse, PrescriptionStatus};
+use hms_domain::clinical::{
+    GenerateMedicationAdministrationResponse, PrescriptionStatus, PrnPolicy,
+};
 use hms_domain::inventory::DispenseStatus;
 use hms_domain::pharmacy::{
     PharmacyFulfillmentDispenseResult, PharmacyFulfillmentStatus, PharmacyQueueItem,
@@ -16,6 +18,58 @@ use crate::PgPool;
 pub struct PharmacyCursor {
     pub occurred_at: DateTime<Utc>,
     pub id: Uuid,
+}
+
+#[derive(Debug, FromRow)]
+pub struct DispensingLocationRow {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn list_dispensing_locations(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<PharmacyCursor>,
+    limit: i64,
+    search: Option<&str>,
+) -> anyhow::Result<Vec<DispensingLocationRow>> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT id,code,name,created_at FROM storage_locations WHERE is_active AND facility_id=",
+    );
+    query.push_bind(facility_id);
+    if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
+        let literal = search
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{literal}%");
+        query
+            .push(" AND (code ILIKE ")
+            .push_bind(pattern.clone())
+            .push(" ESCAPE '\\' OR name ILIKE ")
+            .push_bind(pattern)
+            .push(" ESCAPE '\\')");
+    }
+    if let Some(cursor) = cursor {
+        query
+            .push(" AND (created_at,id)>(")
+            .push_bind(cursor.occurred_at)
+            .push(",")
+            .push_bind(cursor.id)
+            .push(")");
+    }
+    query
+        .push(" ORDER BY created_at,id LIMIT ")
+        .push_bind(limit.clamp(1, 101));
+    Ok(observe_db_query(
+        "pharmacy.dispensing_locations.list",
+        query
+            .build_query_as::<DispensingLocationRow>()
+            .fetch_all(pool),
+    )
+    .await?)
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +94,7 @@ pub struct DispenseFulfillmentCommand {
 
 #[derive(Clone, Debug, FromRow)]
 struct PrescriptionGenerationRow {
+    prn_policy: Option<sqlx::types::Json<PrnPolicy>>,
     id: Uuid,
     patient_id: Uuid,
     medication_name: String,
@@ -61,6 +116,10 @@ struct AdmissionGenerationRow {
 
 #[derive(Clone, Debug, FromRow)]
 struct QueueRow {
+    inventory_item_name: Option<String>,
+    inventory_item_code: Option<String>,
+    inventory_item_unit: Option<String>,
+    prn_policy: Option<sqlx::types::Json<PrnPolicy>>,
     id: Uuid,
     patient_id: Uuid,
     patient_code: String,
@@ -88,6 +147,7 @@ struct QueueRow {
 struct FulfillmentForUpdate {
     id: Uuid,
     patient_id: Uuid,
+    admission_case_id: Uuid,
     status: String,
     inventory_item_id: Option<Uuid>,
     dispensed_dose_count: i32,
@@ -96,6 +156,7 @@ struct FulfillmentForUpdate {
 
 #[derive(Clone, Debug, FromRow)]
 struct MedicationCourseForUpdate {
+    prescription_prn_policy: Option<sqlx::types::Json<PrnPolicy>>,
     id: Uuid,
     medication_name: String,
     dose: String,
@@ -118,7 +179,7 @@ pub async fn generate_mar_for_prescription(
     let mut transaction = pool.begin().await?;
     let prescription = sqlx::query_as::<_, PrescriptionGenerationRow>(
         r#"
-        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, duration_days, start_date, first_dose_at, status
+        SELECT id, patient_id, medication_name, dose, route, frequency, inventory_item_id, duration_days, start_date, first_dose_at, prn_policy, status
         FROM prescriptions
         WHERE facility_id = $1 AND id = $2
         FOR UPDATE
@@ -171,7 +232,7 @@ pub async fn generate_mar_for_prescription(
         r#"
         SELECT id, medication_name, dose, route, frequency, inventory_item_id, first_dose_at,
                interval_minutes, generation_window_start, generation_window_end,
-               prescription_start_date, prescription_duration_days, prescription_first_dose_at
+               prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy
         FROM medication_courses
         WHERE facility_id = $1 AND prescription_id = $2 AND admission_case_id = $3
         FOR UPDATE
@@ -245,6 +306,7 @@ pub async fn generate_mar_for_prescription(
             || course.generation_window_end != window_end
             || course.prescription_start_date != prescription.start_date
             || course.prescription_duration_days != prescription.duration_days
+            || course.prescription_prn_policy != prescription.prn_policy
             || course.prescription_first_dose_at != prescription.first_dose_at
         {
             anyhow::bail!("mar_generation_parameters_locked");
@@ -258,9 +320,9 @@ pub async fn generate_mar_for_prescription(
             id, facility_id, patient_id, admission_case_id, prescription_id,
             medication_name, dose, route, frequency, inventory_item_id, first_dose_at, interval_minutes,
             generation_window_start, generation_window_end, status, created_by_user_id,
-            prescription_start_date, prescription_duration_days, prescription_first_dose_at
+            prescription_start_date, prescription_duration_days, prescription_first_dose_at, prescription_prn_policy
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17, $18, $19)
         RETURNING id
         "#,
         )
@@ -279,7 +341,7 @@ pub async fn generate_mar_for_prescription(
         .bind(window_start)
         .bind(window_end)
         .bind(command.actor_user_id)
-        .bind(prescription.start_date).bind(prescription.duration_days).bind(prescription.first_dose_at)
+        .bind(prescription.start_date).bind(prescription.duration_days).bind(prescription.first_dose_at).bind(prescription.prn_policy.as_ref())
         .fetch_one(&mut *transaction)
         .await?
     };
@@ -461,6 +523,7 @@ pub async fn list_fulfillment_queue(
                   AND c.prescription_start_date IS NOT DISTINCT FROM p.start_date
                   AND c.prescription_duration_days IS NOT DISTINCT FROM p.duration_days
                   AND c.prescription_first_dose_at IS NOT DISTINCT FROM p.first_dose_at
+                AND c.prescription_prn_policy IS NOT DISTINCT FROM p.prn_policy
                   AND c.medication_name = p.medication_name AND c.dose = p.dose
                   AND c.route = p.route AND c.frequency = p.frequency
                   AND c.inventory_item_id IS NOT DISTINCT FROM p.inventory_item_id
@@ -550,6 +613,7 @@ pub async fn dispense_fulfillment(
                 AND c.prescription_start_date IS NOT DISTINCT FROM p.start_date
                 AND c.prescription_duration_days IS NOT DISTINCT FROM p.duration_days
                 AND c.prescription_first_dose_at IS NOT DISTINCT FROM p.first_dose_at
+                AND c.prescription_prn_policy IS NOT DISTINCT FROM p.prn_policy
         )
         "#,
     )
@@ -562,7 +626,7 @@ pub async fn dispense_fulfillment(
     }
     let fulfillment = sqlx::query_as::<_, FulfillmentForUpdate>(
         r#"
-        SELECT id, patient_id, status, inventory_item_id, dispensed_dose_count, requested_dose_count
+        SELECT id, patient_id, admission_case_id, status, inventory_item_id, dispensed_dose_count, requested_dose_count
         FROM pharmacy_fulfillments
         WHERE facility_id = $1 AND id = $2
         FOR UPDATE
@@ -589,6 +653,27 @@ pub async fn dispense_fulfillment(
         None => anyhow::bail!("inventory_item_not_bound"),
     }
 
+    let stock_quantity = if prescription.frequency.eq_ignore_ascii_case("prn") {
+        let at = sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&mut *transaction)
+            .await?;
+        let policy = crate::ward::prn::validate_prn_source(
+            &mut transaction,
+            command.facility_id,
+            fulfillment.admission_case_id,
+            &prescription,
+            at,
+        )
+        .await?;
+        // Supply is measured in doses; stock and dispensing evidence use the
+        // explicit inventory units captured by the prescriber.
+        command
+            .quantity
+            .checked_mul(policy.stock_units_per_dose)
+            .context("prn_stock_quantity_overflow")?
+    } else {
+        command.quantity
+    };
     let item = sqlx::query_as::<_, (bool,)>(
         "SELECT controlled FROM inventory_items WHERE facility_id = $1 AND id = $2",
     )
@@ -609,6 +694,8 @@ pub async fn dispense_fulfillment(
           AND item_id = $2
           AND location_id = $3
           AND quantity_on_hand >= $4
+          AND (expires_on IS NULL OR expires_on >= (clock_timestamp() AT TIME ZONE 'UTC')::date)
+          AND EXISTS (SELECT 1 FROM storage_locations l WHERE l.id=$3 AND l.facility_id=$1 AND l.is_active)
         ORDER BY expires_on ASC NULLS LAST, received_at ASC, id ASC
         LIMIT 1
         FOR UPDATE
@@ -617,11 +704,11 @@ pub async fn dispense_fulfillment(
     .bind(command.facility_id)
     .bind(command.item_id)
     .bind(command.location_id)
-    .bind(command.quantity)
+    .bind(stock_quantity)
     .fetch_optional(&mut *transaction)
     .await?
     .context("insufficient_stock")?;
-    let balance_after = quantity_on_hand - command.quantity;
+    let balance_after = quantity_on_hand - stock_quantity;
     sqlx::query("UPDATE stock_batches SET quantity_on_hand = $1, updated_at = now() WHERE id = $2")
         .bind(balance_after)
         .bind(batch_id)
@@ -642,7 +729,7 @@ pub async fn dispense_fulfillment(
     .bind(command.item_id)
     .bind(batch_id)
     .bind(command.location_id)
-    .bind(-command.quantity)
+    .bind(-stock_quantity)
     .bind(balance_after)
     .bind(command.actor_user_id)
     .execute(&mut *transaction)
@@ -661,7 +748,7 @@ pub async fn dispense_fulfillment(
     .bind(fulfillment.patient_id)
     .bind(command.item_id)
     .bind(command.location_id)
-    .bind(command.quantity)
+    .bind(stock_quantity)
     .bind(codec::encode(DispenseStatus::Dispensed)?)
     .bind(command.actor_user_id)
     .execute(&mut *transaction)
@@ -750,7 +837,8 @@ pub async fn dispense_fulfillment(
 fn queue_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::new(
         r#"
-        SELECT pharmacy_fulfillments.id,
+        SELECT stock.name AS inventory_item_name,stock.code AS inventory_item_code,stock.unit AS inventory_item_unit,
+               courses.prescription_prn_policy AS prn_policy, pharmacy_fulfillments.id,
                pharmacy_fulfillments.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
@@ -787,13 +875,16 @@ fn queue_query() -> QueryBuilder<'static, Postgres> {
                pharmacy_fulfillments.dispensing_location_id,
                pharmacy_fulfillments.created_at
         FROM pharmacy_fulfillments
-        INNER JOIN patients ON patients.id = pharmacy_fulfillments.patient_id
+        INNER JOIN patients ON patients.id = pharmacy_fulfillments.patient_id AND patients.facility_id = pharmacy_fulfillments.facility_id
+        INNER JOIN medication_courses courses ON courses.id = pharmacy_fulfillments.medication_course_id AND courses.facility_id = pharmacy_fulfillments.facility_id
+        LEFT JOIN inventory_items stock ON stock.id=pharmacy_fulfillments.inventory_item_id AND stock.facility_id=pharmacy_fulfillments.facility_id
         "#,
     )
 }
 
 fn queue_item_from_row(row: QueueRow) -> anyhow::Result<PharmacyQueueItem> {
     Ok(PharmacyQueueItem {
+        prn_policy: row.prn_policy.map(|p| p.0),
         id: row.id,
         patient_id: row.patient_id,
         patient_code: row.patient_code,
@@ -813,6 +904,9 @@ fn queue_item_from_row(row: QueueRow) -> anyhow::Result<PharmacyQueueItem> {
         requested_dose_count: i64::from(row.requested_dose_count),
         dispensed_dose_count: i64::from(row.dispensed_dose_count),
         inventory_item_id: row.inventory_item_id,
+        inventory_item_name: row.inventory_item_name,
+        inventory_item_code: row.inventory_item_code,
+        inventory_item_unit: row.inventory_item_unit,
         dispensing_location_id: row.dispensing_location_id,
         created_at: row.created_at,
     })

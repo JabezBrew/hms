@@ -6,6 +6,7 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .merge(super::inventory_standing::routes())
         .route(
             "/api/v2/inventory/categories",
             get(inventory::list_categories),

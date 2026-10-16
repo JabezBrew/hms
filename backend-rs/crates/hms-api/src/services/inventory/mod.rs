@@ -3,7 +3,9 @@ mod common;
 mod controlled_substances;
 mod pharmacy;
 mod procurement;
+mod standing_orders;
 mod stock_control;
+pub use standing_orders::StandingOrderTemplateService;
 
 pub use catalog::InventoryCatalogService;
 pub use controlled_substances::ControlledSubstancesService;
@@ -41,6 +43,9 @@ impl InventoryServices {
 
     pub fn stock_control(&self) -> StockControlService {
         StockControlService::new(self.state.clone())
+    }
+    pub fn standing_orders(&self) -> StandingOrderTemplateService {
+        StandingOrderTemplateService::new(self.state.clone())
     }
 }
 
