@@ -49,9 +49,9 @@ owns the patient context:
   at midnight for the open panel's entries and totals; selected history stays
   on its chosen date. Fluid creation never automatically retries. An uncertain
   response refreshes the entries and blocks another submission from that form.
-- Current Rust fluid entry capture persists volume and time. Category, subtype,
-  colour, notes, amendment and deletion remain unsupported and must not be
-  presented as saved clinical facts.
+- Current Rust fluid observations persist paired volumes, UTC time and validated
+  metadata. Audited correction/void preserves original evidence and effective
+  totals; physical deletion remains unavailable.
 - Realtime/task updates must use authorized facility/ward/patient subscriptions.
 - The Rust MAR includes source-linked as-needed orders with explicit prescriber
   interval/daily limits, indication and whole stock units per dose. One request
@@ -70,3 +70,17 @@ from complete server projections. Controllers retain exact uncertain commands
 above dialog portals, and voided source history remains reachable through the
 explicit review toggle. Rule publication has an independent admin permission,
 reason, expected version and review step.
+
+Treatment-header, alert and handoff bridge methods return explicit server pages.
+New list keys hash the complete normalized query and include sanitized client
+scope. Patient/admission/ward/date/status filters go to Rust before pagination;
+invalid or out-of-scope rows fail the page instead of becoming an empty list.
+The urgent notification monitor is a newest-page preview, reports overflow or
+refresh failure and links to the ward-board urgency view. Treatment/supply lines
+and patient-narrative handoff remain separate parity gaps; see
+`docs/v2/2026-10-16-scoped-nursing-lists.md`.
+
+Handoff completion finalizes the sender's header only; it is not recipient
+acknowledgment or a saved patient narrative. Non-keyed header creates and
+finalization hooks never retry automatically. Server reference/feature guards
+and atomic audit must confirm writes before any saved status is displayed.

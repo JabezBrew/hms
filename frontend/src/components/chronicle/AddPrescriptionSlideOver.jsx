@@ -359,6 +359,8 @@ const AddPrescriptionSlideOverContent = ({
       newErrors.duration_days = 'Enter a whole number of at least one day.';
     }
     if (rustV2Mode && formData.frequency === 'prn') Object.assign(newErrors, validatePrnPolicyForm(formData));
+    if ([...formData.instructions.trim()].length > 4000) newErrors.instructions = 'Use 4000 characters or fewer.';
+    if ([...formData.reason.trim()].length > 2000) newErrors.reason = 'Use 2000 characters or fewer.';
 
     dispatch({ type: 'validationFailed', errors: newErrors });
     return Object.keys(newErrors).length === 0;
@@ -536,7 +538,7 @@ const AddPrescriptionSlideOverContent = ({
         drugForms={drugForms}
         isLoadingForms={isLoadingForms}
         drugSafetyEnhancementsAvailable={drugSafetyEnhancementsAvailable}
-        clinicalTextFieldsAvailable={!rustV2Mode}
+        clinicalTextFieldsAvailable
         medicationCatalogAvailable={rustV2Mode && open}
         prnPolicyAvailable={rustV2Mode}
         onStockSelect={(item) => dispatch({ type: 'stockSelected', item })}

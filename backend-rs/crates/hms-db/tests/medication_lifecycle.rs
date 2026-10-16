@@ -891,3 +891,114 @@ async fn medication_stock_binding_rejects_foreign_facility_items_on_create_and_u
         "prescription_inventory_item_invalid"
     );
 }
+
+#[tokio::test]
+async fn reviewed_replacement_preserves_given_and_supplied_evidence_and_does_not_move_stock() {
+    use hms_db::clinical::prescription_courses::*;
+    use hms_domain::clinical::{
+        NewPrescriptionCourseRequest, PrescriptionCourseRelation,
+        UpdatePrescriptionDocumentationRequest,
+    };
+    let f = Fixture::new().await;
+    let generated = f.generate().await;
+    let ids = f.dose_ids().await;
+    hms_db::pharmacy::dispense_fulfillment(
+        f.db.pool(),
+        f.dispense(generated.pharmacy_fulfillment_id.unwrap(), 2),
+    )
+    .await
+    .unwrap();
+    hms_db::ward::administer_medication(
+        f.db.pool(),
+        f.db.facility_id(),
+        ids[0],
+        f.db.owner_user_id(),
+        None,
+    )
+    .await
+    .unwrap();
+    let given: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(m) FROM medication_administrations m WHERE id=$1")
+            .bind(ids[0])
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    let supplied:(bool,Option<DateTime<Utc>>,Option<Uuid>)=sqlx::query_as("SELECT is_dispensed,dispensed_at,dispensed_by_user_id FROM medication_administrations WHERE id=$1").bind(ids[1]).fetch_one(f.db.pool()).await.unwrap();
+    let stock:i64=sqlx::query_scalar("SELECT sum(quantity_on_hand)::bigint FROM stock_batches WHERE facility_id=$1 AND item_id=$2").bind(f.db.facility_id()).bind(f.item_id).fetch_one(f.db.pool()).await.unwrap();
+    assert_eq!(stock, 98);
+    let source = get_detail(f.db.pool(), f.db.facility_id(), f.prescription_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let actor = PrescriptionActor {
+        facility_id: f.db.facility_id(),
+        user_id: f.db.owner_user_id(),
+        request_id: None,
+        authorization: None,
+    };
+    assert!(source.has_generated_course);
+    assert_eq!(
+        update_documentation(
+            f.db.pool(),
+            actor.clone(),
+            f.prescription_id,
+            UpdatePrescriptionDocumentationRequest {
+                client_request_id: Uuid::new_v4(),
+                expected_snapshot_token: source.snapshot_token.clone(),
+                instructions: "Synthetic late instructions".into(),
+                reason: "Synthetic late indication".into()
+            }
+        )
+        .await
+        .unwrap_err()
+        .downcast_ref(),
+        Some(&PrescriptionCourseError::DocumentationLocked)
+    );
+    let receipt = create_new_course(
+        f.db.pool(),
+        actor,
+        f.prescription_id,
+        NewPrescriptionCourseRequest {
+            client_request_id: Uuid::new_v4(),
+            expected_snapshot_token: source.snapshot_token,
+            relation: PrescriptionCourseRelation::Replacement,
+            change_reason: "Synthetic reviewed replacement".into(),
+            medication_name: "Synthetic replacement medication".into(),
+            dose: "2 tablets".into(),
+            route: "oral".into(),
+            frequency: "daily".into(),
+            instructions: "Synthetic reviewed instructions".into(),
+            reason: "Synthetic reviewed indication".into(),
+            start_date: Utc::now().date_naive(),
+            duration_days: Some(4),
+            first_dose_at: None,
+            encounter_id: None,
+            visit_id: None,
+            inventory_item_id: Some(f.item_id),
+            expected_stock_unit: source.stock_unit,
+            prn_policy: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(receipt.source_status_after, PrescriptionStatus::Stopped);
+    let after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(m) FROM medication_administrations m WHERE id=$1")
+            .bind(ids[0])
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    assert_eq!(after, given);
+    let (status,is_dispensed,dispensed_at,dispensed_by):(String,bool,Option<DateTime<Utc>>,Option<Uuid>)=sqlx::query_as("SELECT status,is_dispensed,dispensed_at,dispensed_by_user_id FROM medication_administrations WHERE id=$1").bind(ids[1]).fetch_one(f.db.pool()).await.unwrap();
+    assert_eq!(status, "held");
+    assert_eq!((is_dispensed, dispensed_at, dispensed_by), supplied);
+    let current_stock:i64=sqlx::query_scalar("SELECT sum(quantity_on_hand)::bigint FROM stock_batches WHERE facility_id=$1 AND item_id=$2").bind(f.db.facility_id()).bind(f.item_id).fetch_one(f.db.pool()).await.unwrap();
+    assert_eq!(current_stock, stock);
+    let child = receipt.prescription.prescription.id;
+    let new_work:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM medication_administrations WHERE prescription_id=$1),(SELECT count(*) FROM medication_courses WHERE prescription_id=$1),(SELECT count(*) FROM pharmacy_fulfillments WHERE prescription_id=$1)").bind(child).fetch_one(f.db.pool()).await.unwrap();
+    assert_eq!(new_work, (0, 0, 0));
+    assert_eq!(
+        receipt.prescription.prescription.status,
+        PrescriptionStatus::Active
+    );
+}

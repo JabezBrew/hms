@@ -303,7 +303,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/alerts?limit=50',
+      'http://localhost:8080/api/v2/nursing/alerts?limit=50&descending=true&status=open',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',
@@ -340,18 +340,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
               created_at: '2026-05-12T09:00:00Z',
               acknowledged_at: null,
             },
-            {
-              id: 'alert-2',
-              admission_case_id: 'admission-2',
-              patient_id: 'patient-2',
-              patient_code: 'MRN-002',
-              patient_display_name: 'Kojo Mensah',
-              severity: 'low',
-              title: 'Routine review',
-              status: 'acknowledged',
-              created_at: '2026-05-12T10:00:00Z',
-              acknowledged_at: '2026-05-12T10:10:00Z',
-            },
+
           ],
           page: { limit: 50, has_next: false, next_cursor: null },
           meta: {},
@@ -373,7 +362,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/alerts?limit=50',
+      'http://localhost:8080/api/v2/nursing/alerts?limit=50&descending=false&patient_id=patient-1&status=open&severity=high',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual([
@@ -1264,7 +1253,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
-      'http://localhost:8080/api/v2/nursing/treatment-sheets?limit=50',
+      'http://localhost:8080/api/v2/nursing/treatment-sheets?limit=50&descending=false&admission_case_id=admission-1',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
@@ -1915,7 +1904,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     ]);
   });
 
-  it('loads shift handoffs from Rust V2 and filters the bounded page for the current ward UI', async () => {
+  it('loads shift handoffs from Rust V2 and uses server filters for the current ward page', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -1930,16 +1919,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
               status: 'draft',
               created_at: '2026-05-12T08:00:00Z',
             },
-            {
-              id: 'handoff-2',
-              ward_id: 'ward-2',
-              ward_name: 'Maternity Ward',
-              from_user_id: 'user-3',
-              to_user_id: 'user-4',
-              shift_label: 'day',
-              status: 'completed',
-              created_at: '2026-05-12T09:00:00Z',
-            },
+
           ],
           page: { limit: 50, has_next: false, next_cursor: null },
           meta: {},
@@ -1961,7 +1941,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/nursing/handoffs?limit=50',
+      'http://localhost:8080/api/v2/nursing/handoffs?limit=50&descending=false&ward_id=ward-1&shift_label=night',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual([

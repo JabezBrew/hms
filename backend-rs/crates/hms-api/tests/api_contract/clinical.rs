@@ -3,6 +3,12 @@ use super::*;
 #[tokio::test]
 async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
 
@@ -715,6 +721,12 @@ async fn prescription_mar_generation_creates_interval_doses_and_pharmacy_queue()
 #[tokio::test]
 async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
 
@@ -1487,9 +1499,12 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         )
         .await
         .expect("prescription hold succeeds");
-    assert_eq!(prescription_hold.status(), StatusCode::OK);
+    assert_eq!(prescription_hold.status(), StatusCode::CONFLICT);
     let prescription_hold_body = json_body(prescription_hold).await;
-    assert_eq!(prescription_hold_body["data"]["status"], "on_hold");
+    assert_eq!(
+        prescription_hold_body["error"]["code"],
+        "prescription_course_closed"
+    );
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app

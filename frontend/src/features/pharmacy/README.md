@@ -3,7 +3,7 @@
 Status: active
 Owner: Frontend/Pharmacy Workflow
 Last reviewed: 2026-10-16
-Scope: pharmacy dispensing UI.
+Scope: pharmacy dispensing and Chronicle prescribing UI.
 
 ## Routes
 
@@ -39,3 +39,11 @@ The confirmation resets when its medication or authorization scope changes.
 Pending requests block dismissal and duplicate submission. Unknown issue outcomes
 remain locked across reopening; confirmed server receipts remain visible through
 queue refreshes. API, paging/error and real queue regressions accompany the picker.
+
+## Prescribing documentation and new courses
+
+The Chronicle medication menu exposes fresh prescription detail, governed
+instruction/reason editing, and explicitly reviewed renewal/replacement courses.
+See [prescribing/README.md](prescribing/README.md) for eligibility, source continuity,
+PRN linked-dose limits and uncertain-save handling. These actions do not schedule
+nursing doses or move stock automatically.

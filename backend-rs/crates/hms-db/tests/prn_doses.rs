@@ -729,3 +729,565 @@ async fn prn_prescribing_denies_a_unit_change_after_catalog_selection_without_sa
             .is_none()
     );
 }
+
+async fn reviewed_prn_successor(
+    f: &Fixture,
+    relation: hms_domain::clinical::PrescriptionCourseRelation,
+) -> hms_domain::clinical::NewPrescriptionCourseRequest {
+    use hms_domain::clinical::NewPrescriptionCourseRequest;
+    let detail = hms_db::clinical::prescription_courses::get_detail(
+        f.db.pool(),
+        f.db.facility_id(),
+        f.source,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    NewPrescriptionCourseRequest {
+        client_request_id: Uuid::new_v4(),
+        expected_snapshot_token: detail.snapshot_token,
+        relation,
+        change_reason: "Synthetic reviewed PRN continuation".into(),
+        medication_name: "Synthetic reviewed as-needed successor".into(),
+        dose: "2 tablets".into(),
+        route: "oral".into(),
+        frequency: "prn".into(),
+        instructions: "Synthetic successor instructions".into(),
+        reason: "Synthetic successor indication".into(),
+        start_date: (Utc::now() - Duration::days(1)).date_naive(),
+        duration_days: Some(30),
+        first_dose_at: None,
+        encounter_id: None,
+        visit_id: None,
+        inventory_item_id: Some(f.item),
+        expected_stock_unit: detail.stock_unit,
+        prn_policy: detail
+            .prescription
+            .prn_policy
+            .map(|policy| policy.as_request()),
+    }
+}
+fn prescribing_actor(f: &Fixture) -> hms_db::clinical::prescription_courses::PrescriptionActor {
+    hms_db::clinical::prescription_courses::PrescriptionActor {
+        facility_id: f.db.facility_id(),
+        user_id: f.db.owner_user_id(),
+        request_id: None,
+        authorization: None,
+    }
+}
+
+#[tokio::test]
+async fn prn_successor_preserves_root_last_given_and_rolling_cap_without_resurrecting_source() {
+    use hms_domain::clinical::PrescriptionCourseRelation;
+    let mut f = Fixture::new(Some(policy())).await;
+    let dose = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(dose.pharmacy_fulfillment_id, 1).await.unwrap();
+    f.outcome(dose.medication_administration_id, Outcome::Administered)
+        .await
+        .unwrap();
+    let history: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(m) FROM medication_administrations m WHERE id=$1")
+            .bind(dose.medication_administration_id)
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    let root = f.source;
+    let request = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
+    let receipt = hms_db::clinical::prescription_courses::create_new_course(
+        f.db.pool(),
+        prescribing_actor(&f),
+        root,
+        request,
+    )
+    .await
+    .unwrap();
+    f.source = receipt.prescription.prescription.id;
+    let groups: Vec<Uuid> =
+        sqlx::query_scalar("SELECT prn_safety_group_id FROM prescriptions ORDER BY id")
+            .fetch_all(f.db.pool())
+            .await
+            .unwrap();
+    assert_eq!(groups, vec![root, root]);
+    assert_eq!(
+        hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+            .await
+            .unwrap_err()
+            .downcast_ref(),
+        Some(&hms_db::ward::PrnError::Interval)
+    );
+    let listed =
+        hms_db::ward::list_prn_orders(f.db.pool(), f.db.facility_id(), f.patient, None, 100)
+            .await
+            .unwrap();
+    let listed = listed
+        .iter()
+        .find(|row| row.prescription_id == f.source)
+        .unwrap();
+    assert_eq!(listed.administered_in_last_24_hours, 1);
+    assert!(listed.last_administered_at.is_some());
+    assert!(listed.next_eligible_at.is_some_and(|at| at > Utc::now()));
+    assert_eq!(listed.unavailable_reason.as_deref(), Some("dose_limit"));
+    // A second fully reviewed course with a stricter daily cap must count the
+    // prior actual dose even when the old interval has elapsed.
+    sqlx::query("UPDATE medication_administrations SET administered_at=clock_timestamp()-interval '5 hours' WHERE id=$1").bind(dose.medication_administration_id).execute(f.db.pool()).await.unwrap();
+    let mut request = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
+    request
+        .prn_policy
+        .as_mut()
+        .unwrap()
+        .maximum_doses_per_24_hours = 1;
+    let next = hms_db::clinical::prescription_courses::create_new_course(
+        f.db.pool(),
+        prescribing_actor(&f),
+        f.source,
+        request,
+    )
+    .await
+    .unwrap();
+    f.source = next.prescription.prescription.id;
+    assert_eq!(
+        hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+            .await
+            .unwrap_err()
+            .downcast_ref(),
+        Some(&hms_db::ward::PrnError::DailyLimit)
+    );
+    let mut after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(m) FROM medication_administrations m WHERE id=$1")
+            .bind(dose.medication_administration_id)
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    after["administered_at"] = history["administered_at"].clone();
+    assert_eq!(after, history);
+    assert_eq!(f.stock().await, 98);
+}
+
+#[tokio::test]
+async fn prn_group_scopes_pending_doses_and_serializes_cross_source_requests() {
+    use hms_domain::clinical::PrescriptionCourseRelation;
+    let mut f = Fixture::new(Some(policy())).await;
+    let root = f.source;
+    let request = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
+    let receipt = hms_db::clinical::prescription_courses::create_new_course(
+        f.db.pool(),
+        prescribing_actor(&f),
+        root,
+        request,
+    )
+    .await
+    .unwrap();
+    f.source = receipt.prescription.prescription.id;
+    // Simulate an imported historical active ancestor. Even inconsistent legacy
+    // state cannot reserve one pending dose per row inside the same safety group.
+    sqlx::query("UPDATE prescriptions SET status='active' WHERE id=$1")
+        .bind(root)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+    let a = f.request(Uuid::new_v4());
+    let mut b = f.request(Uuid::new_v4());
+    b.prescription_id = root;
+    let (a, b) = tokio::join!(
+        hms_db::ward::request_prn_dose(f.db.pool(), a),
+        hms_db::ward::request_prn_dose(f.db.pool(), b)
+    );
+    assert_ne!(a.is_ok(), b.is_ok());
+    assert_eq!(
+        a.err().or(b.err()).unwrap().downcast_ref(),
+        Some(&hms_db::ward::PrnError::PendingDose)
+    );
+    let count:i64=sqlx::query_scalar("SELECT count(*) FROM medication_administrations WHERE status='scheduled' AND prn_safety_group_id=$1").bind(root).fetch_one(f.db.pool()).await.unwrap();
+    let listed =
+        hms_db::ward::list_prn_orders(f.db.pool(), f.db.facility_id(), f.patient, None, 100)
+            .await
+            .unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed
+        .iter()
+        .all(|row| row.pending_medication_administration_id.is_some()
+            && row.unavailable_reason.as_deref() == Some("pending_dose")));
+    assert_eq!(count, 1);
+    assert_eq!(f.stock().await, 100);
+}
+
+#[tokio::test]
+async fn prn_group_cannot_be_reset_or_cross_patient_and_mixed_successor_is_explicitly_refused() {
+    use hms_domain::clinical::PrescriptionCourseRelation;
+    let f = Fixture::new(Some(policy())).await;
+    let root = f.source;
+    assert!(
+        sqlx::query("UPDATE prescriptions SET prn_safety_group_id=NULL WHERE id=$1")
+            .bind(root)
+            .execute(f.db.pool())
+            .await
+            .is_err()
+    );
+    let other =
+        f.db.scenario("synthetic-other-prn-patient")
+            .registered_patient()
+            .await
+            .unwrap();
+    assert!(
+        sqlx::query("UPDATE prescriptions SET patient_id=$2 WHERE id=$1")
+            .bind(root)
+            .bind(other.id)
+            .execute(f.db.pool())
+            .await
+            .is_err()
+    );
+    let mut mixed = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
+    mixed.frequency = "daily".into();
+    mixed.prn_policy = None;
+    assert_eq!(
+        hms_db::clinical::prescription_courses::create_new_course(
+            f.db.pool(),
+            prescribing_actor(&f),
+            root,
+            mixed
+        )
+        .await
+        .unwrap_err()
+        .downcast_ref(),
+        Some(&hms_db::clinical::prescription_courses::PrescriptionCourseError::MixedRegimen)
+    );
+    assert_eq!(
+        hms_db::clinical::get_prescription(f.db.pool(), f.db.facility_id(), root)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        PrescriptionStatus::Active
+    );
+}
+
+#[tokio::test]
+async fn prn_ancestor_admin_and_successor_request_serialize_on_group_history() {
+    use hms_domain::clinical::PrescriptionCourseRelation;
+    let mut f = Fixture::new(Some(policy())).await;
+    let ancestor = f.source;
+    let request = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
+    let successor = hms_db::clinical::prescription_courses::create_new_course(
+        f.db.pool(),
+        prescribing_actor(&f),
+        ancestor,
+        request,
+    )
+    .await
+    .unwrap()
+    .prescription
+    .prescription
+    .id;
+    sqlx::query("UPDATE prescriptions SET status='active' WHERE id=$1")
+        .bind(ancestor)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+    let dose = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(dose.pharmacy_fulfillment_id, 1).await.unwrap();
+    let mut held = f.db.pool().begin().await.unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *held)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM prescription_prn_safety_groups WHERE id=$1 FOR UPDATE")
+        .bind(ancestor)
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    f.source = successor;
+    let pool = f.db.pool().clone();
+    let next = f.request(Uuid::new_v4());
+    let pending = tokio::spawn(async move { hms_db::ward::request_prn_dose(&pool, next).await });
+    let pool = f.db.pool().clone();
+    let outcome = RecordMedicationOutcome {
+        facility_id: f.db.facility_id(),
+        medication_id: dose.medication_administration_id,
+        actor_user_id: f.db.owner_user_id(),
+        status: Outcome::Administered,
+        witness_user_id: None,
+        reason_not_given: None,
+        administration_notes: None,
+        request_id: None,
+    };
+    let admin =
+        tokio::spawn(async move { hms_db::ward::record_medication_outcome(&pool, outcome).await });
+    tokio::time::timeout(std::time::Duration::from_secs(2),async {loop {let count:i64=sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>$1 AND wait_event_type='Lock' AND query LIKE 'SELECT g.id FROM prescription_prn_safety_groups%' AND cardinality(pg_blocking_pids(pid))>0").bind(pid).fetch_one(f.db.pool()).await.unwrap();if count==2{break;}tokio::time::sleep(std::time::Duration::from_millis(10)).await;}}).await.expect("both sources must reach the real group lock");
+    held.commit().await.unwrap();
+    let rejected = pending.await.unwrap().unwrap_err();
+    assert!(matches!(
+        rejected.downcast_ref(),
+        Some(&hms_db::ward::PrnError::PendingDose) | Some(&hms_db::ward::PrnError::Interval)
+    ));
+    assert!(admin
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .administered_at
+        .is_some());
+    assert_eq!(
+        hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+            .await
+            .unwrap_err()
+            .downcast_ref(),
+        Some(&hms_db::ward::PrnError::Interval)
+    );
+    assert_eq!(f.stock().await, 98);
+}
+
+#[tokio::test]
+async fn legacy_pending_doses_from_two_linked_sources_cannot_be_given_concurrently() {
+    use hms_domain::clinical::PrescriptionCourseRelation;
+    let mut f = Fixture::new(Some(policy())).await;
+    let ancestor = f.source;
+    let request = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
+    let successor = hms_db::clinical::prescription_courses::create_new_course(
+        f.db.pool(),
+        prescribing_actor(&f),
+        ancestor,
+        request,
+    )
+    .await
+    .unwrap()
+    .prescription
+    .prescription
+    .id;
+    sqlx::query("UPDATE prescriptions SET status='active' WHERE id=$1")
+        .bind(ancestor)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+    let a = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(a.pharmacy_fulfillment_id, 1).await.unwrap();
+    // Imported duplicate-pending fixture; production reservations cannot create it.
+    sqlx::query("UPDATE medication_administrations SET status='refused' WHERE id=$1")
+        .bind(a.medication_administration_id)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+    f.source = successor;
+    let b = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(b.pharmacy_fulfillment_id, 1).await.unwrap();
+    sqlx::query("UPDATE medication_administrations SET status='scheduled' WHERE id=$1")
+        .bind(a.medication_administration_id)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+    let (a, b) = tokio::join!(
+        f.outcome(a.medication_administration_id, Outcome::Administered),
+        f.outcome(b.medication_administration_id, Outcome::Administered)
+    );
+    assert_ne!(a.is_ok(), b.is_ok());
+    assert_eq!(
+        a.err().or(b.err()).unwrap().downcast_ref(),
+        Some(&hms_db::ward::PrnError::Interval)
+    );
+    let given:i64=sqlx::query_scalar("SELECT count(*) FROM medication_administrations WHERE prn_safety_group_id=$1 AND status='administered'").bind(ancestor).fetch_one(f.db.pool()).await.unwrap();
+    assert_eq!(given, 1);
+    assert_eq!(f.stock().await, 96);
+}
+
+#[tokio::test]
+async fn successor_stricter_cap_reports_the_actual_release_time_after_multiple_prior_doses() {
+    use hms_domain::clinical::PrescriptionCourseRelation;
+    let mut f = Fixture::new(Some(policy())).await;
+    let first = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(first.pharmacy_fulfillment_id, 1).await.unwrap();
+    f.outcome(first.medication_administration_id, Outcome::Administered)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE medication_administrations SET administered_at=clock_timestamp()-interval '10 hours' WHERE id=$1").bind(first.medication_administration_id).execute(f.db.pool()).await.unwrap();
+    let second = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(second.pharmacy_fulfillment_id, 1).await.unwrap();
+    f.outcome(second.medication_administration_id, Outcome::Administered)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE medication_administrations SET administered_at=clock_timestamp()-interval '5 hours' WHERE id=$1").bind(second.medication_administration_id).execute(f.db.pool()).await.unwrap();
+    let mut request = reviewed_prn_successor(&f, PrescriptionCourseRelation::Replacement).await;
+    request
+        .prn_policy
+        .as_mut()
+        .unwrap()
+        .maximum_doses_per_24_hours = 1;
+    f.source = hms_db::clinical::prescription_courses::create_new_course(
+        f.db.pool(),
+        prescribing_actor(&f),
+        f.source,
+        request,
+    )
+    .await
+    .unwrap()
+    .prescription
+    .prescription
+    .id;
+    let rows = hms_db::ward::list_prn_orders(f.db.pool(), f.db.facility_id(), f.patient, None, 100)
+        .await
+        .unwrap();
+    let row = rows
+        .iter()
+        .find(|row| row.prescription_id == f.source)
+        .unwrap();
+    assert_eq!(row.administered_in_last_24_hours, 2);
+    assert_eq!(
+        row.next_eligible_at,
+        Some(row.last_administered_at.unwrap() + Duration::hours(24))
+    );
+    assert_eq!(row.unavailable_reason.as_deref(), Some("dose_limit"));
+}
+
+#[tokio::test]
+async fn populated_prn_group_migration_retains_actual_history_without_inventing_legacy_limits() {
+    let f = Fixture::new(Some(policy())).await;
+    let dose = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(dose.pharmacy_fulfillment_id, 1).await.unwrap();
+    f.outcome(dose.medication_administration_id, Outcome::Administered)
+        .await
+        .unwrap();
+    let mut before: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(m) FROM medication_administrations m WHERE id=$1")
+            .bind(dose.medication_administration_id)
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    before
+        .as_object_mut()
+        .unwrap()
+        .remove("prn_safety_group_id");
+    let prior_policy: serde_json::Value =
+        sqlx::query_scalar("SELECT prn_policy FROM prescriptions WHERE id=$1")
+            .bind(f.source)
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    // Reconstruct the immediate previous schema using populated production
+    // repository fixtures, then execute the exact migration shipped to users.
+    sqlx::raw_sql("DROP TRIGGER prescription_prn_safety_group_guard ON prescriptions; DROP FUNCTION maintain_prescription_prn_safety_group(); ALTER TABLE prescriptions DROP COLUMN prn_safety_group_id CASCADE, DROP COLUMN instructions, DROP COLUMN reason; ALTER TABLE medication_administrations DROP COLUMN prn_safety_group_id; DROP TABLE prescription_prn_safety_groups; DROP TABLE prescription_commands; DROP TABLE prescription_course_provenance;").execute(f.db.pool()).await.unwrap();
+    let legacy = Uuid::new_v4();
+    sqlx::query("INSERT INTO prescriptions(id,facility_id,patient_id,medication_name,dose,route,frequency,status,created_by_user_id) VALUES($1,$2,$3,'Synthetic historical unconfigured PRN','1 tablet','oral','prn','active',$4)").bind(legacy).bind(f.db.facility_id()).bind(f.patient).bind(f.db.owner_user_id()).execute(f.db.pool()).await.unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/202610160013_prescription_course_provenance.sql"
+    ))
+    .execute(f.db.pool())
+    .await
+    .unwrap();
+    let roots: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(
+        "SELECT id,root_prescription_id,patient_id FROM prescription_prn_safety_groups ORDER BY id",
+    )
+    .fetch_all(f.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(roots.len(), 2);
+    assert!(roots
+        .iter()
+        .all(|(id, root, patient)| id == root && *patient == f.patient));
+    let mut after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(m) FROM medication_administrations m WHERE id=$1")
+            .bind(dose.medication_administration_id)
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    assert_eq!(after["prn_safety_group_id"], serde_json::json!(f.source));
+    after.as_object_mut().unwrap().remove("prn_safety_group_id");
+    assert_eq!(before, after);
+    let current: serde_json::Value =
+        sqlx::query_scalar("SELECT prn_policy FROM prescriptions WHERE id=$1")
+            .bind(f.source)
+            .fetch_one(f.db.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, prior_policy);
+    let detail =
+        hms_db::clinical::prescription_courses::get_detail(f.db.pool(), f.db.facility_id(), legacy)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(detail.prescription.prn_policy.is_none());
+    assert!(
+        detail.instructions.is_empty() && detail.reason.is_empty() && detail.provenance.is_none()
+    );
+    let mut request = f.request(Uuid::new_v4());
+    request.prescription_id = legacy;
+    assert_eq!(
+        hms_db::ward::request_prn_dose(f.db.pool(), request)
+            .await
+            .unwrap_err()
+            .downcast_ref(),
+        Some(&hms_db::ward::PrnError::Unconfigured)
+    );
+    assert_eq!(f.stock().await, 98);
+}
+
+#[tokio::test]
+async fn imported_trimmed_prn_keeps_explicit_policy_stock_multiplier_and_actual_interval_guard() {
+    let f = Fixture::new(Some(policy())).await;
+    sqlx::query("UPDATE prescriptions SET frequency=' PRN ' WHERE id=$1")
+        .bind(f.source)
+        .execute(f.db.pool())
+        .await
+        .unwrap();
+    let first = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(first.pharmacy_fulfillment_id, 1).await.unwrap();
+    assert_eq!(
+        f.stock().await,
+        98,
+        "one reviewed PRN dose uses its saved two stock units"
+    );
+    f.outcome(first.medication_administration_id, Outcome::Administered)
+        .await
+        .unwrap();
+    assert_eq!(
+        hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+            .await
+            .unwrap_err()
+            .downcast_ref(),
+        Some(&hms_db::ward::PrnError::Interval)
+    );
+    sqlx::query("UPDATE medication_administrations SET administered_at=clock_timestamp()-interval '5 hours' WHERE id=$1").bind(first.medication_administration_id).execute(f.db.pool()).await.unwrap();
+    let second = hms_db::ward::request_prn_dose(f.db.pool(), f.request(Uuid::new_v4()))
+        .await
+        .unwrap();
+    f.supply(second.pharmacy_fulfillment_id, 1).await.unwrap();
+    assert_eq!(f.stock().await, 96);
+    // Imported/corrected recent history must be checked again at actual Given,
+    // even when a reservation was valid at its original request time.
+    sqlx::query(
+        "UPDATE medication_administrations SET administered_at=clock_timestamp() WHERE id=$1",
+    )
+    .bind(first.medication_administration_id)
+    .execute(f.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        f.outcome(second.medication_administration_id, Outcome::Administered)
+            .await
+            .unwrap_err()
+            .downcast_ref(),
+        Some(&hms_db::ward::PrnError::Interval)
+    );
+    let state: (String, bool, Option<chrono::DateTime<Utc>>) = sqlx::query_as(
+        "SELECT status,is_dispensed,administered_at FROM medication_administrations WHERE id=$1",
+    )
+    .bind(second.medication_administration_id)
+    .fetch_one(f.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(state, ("scheduled".into(), true, None));
+    assert_eq!(f.stock().await, 96);
+}

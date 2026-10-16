@@ -65,3 +65,9 @@ requests, lock the source root, and update effective daily projections with the
 audit in one transaction. `include_closed` is a bounded review mode for voided
 roots; aggregates always use effective rows. See
 `docs/v2/2026-10-16-fluid-observation-scope.md` for policy and acceptance boundaries.
+
+Scoped treatment-header, nursing-alert and handoff queries apply typed predicates
+before deterministic timestamp/ID cursors. Patient-bearing source joins require
+same-facility patient/admission consistency. Priority alert status/severity is a
+SQL predicate, never a filter of a truncated facility preview. One repository
+query supplies each page; migration014 adds matching scoped cursor indexes.

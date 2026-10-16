@@ -745,6 +745,28 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalPrescriptionDocumentationReceipt": {
+    "operationId": "getClinicalPrescriptionDocumentationReceipt",
+    "method": "GET",
+    "path": "/api/v2/clinical/prescriptions/{id}/documentation/requests/{request_id}",
+    "pathParamNames": [
+      "id",
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getClinicalPrescriptionNewCourseReceipt": {
+    "operationId": "getClinicalPrescriptionNewCourseReceipt",
+    "method": "GET",
+    "path": "/api/v2/clinical/prescriptions/{id}/new-course/requests/{request_id}",
+    "pathParamNames": [
+      "id",
+      "request_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinicalProblemById": {
     "operationId": "getClinicalProblemById",
     "method": "GET",
@@ -1084,7 +1106,13 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "ward_id",
+      "shift_label",
+      "status",
+      "created_from",
+      "created_before",
+      "descending"
     ],
     "hasBody": false
   },
@@ -1550,7 +1578,16 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id",
+      "admission_case_id",
+      "ward_id",
+      "status",
+      "severity",
+      "critical_only",
+      "created_from",
+      "created_before",
+      "descending"
     ],
     "hasBody": false
   },
@@ -2399,7 +2436,14 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "id",
+      "patient_id",
+      "admission_case_id",
+      "ward_id",
+      "sheet_date",
+      "status",
+      "descending"
     ],
     "hasBody": false
   },
@@ -2710,6 +2754,16 @@ export const operations = {
     "operationId": "patchClinicalPrescription",
     "method": "PATCH",
     "path": "/api/v2/clinical/prescriptions/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "patchClinicalPrescriptionDocumentation": {
+    "operationId": "patchClinicalPrescriptionDocumentation",
+    "method": "PATCH",
+    "path": "/api/v2/clinical/prescriptions/{id}/documentation",
     "pathParamNames": [
       "id"
     ],
@@ -3230,6 +3284,16 @@ export const operations = {
     "operationId": "postClinicalPrescriptionGenerateMar",
     "method": "POST",
     "path": "/api/v2/clinical/prescriptions/{id}/generate-mar",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postClinicalPrescriptionNewCourse": {
+    "operationId": "postClinicalPrescriptionNewCourse",
+    "method": "POST",
+    "path": "/api/v2/clinical/prescriptions/{id}/new-course",
     "pathParamNames": [
       "id"
     ],
@@ -4619,6 +4683,8 @@ export function createGeneratedClient(request) {
     getClinicalNoteTemplates: createOperation(request, operations.getClinicalNoteTemplates),
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
     getClinicalPrescriptionById: createOperation(request, operations.getClinicalPrescriptionById),
+    getClinicalPrescriptionDocumentationReceipt: createOperation(request, operations.getClinicalPrescriptionDocumentationReceipt),
+    getClinicalPrescriptionNewCourseReceipt: createOperation(request, operations.getClinicalPrescriptionNewCourseReceipt),
     getClinicalProblemById: createOperation(request, operations.getClinicalProblemById),
     getClinicalProblemLinks: createOperation(request, operations.getClinicalProblemLinks),
     getClinicById: createOperation(request, operations.getClinicById),
@@ -4782,6 +4848,7 @@ export function createGeneratedClient(request) {
     patchClinicalAllergy: createOperation(request, operations.patchClinicalAllergy),
     patchClinicalNoteTemplate: createOperation(request, operations.patchClinicalNoteTemplate),
     patchClinicalPrescription: createOperation(request, operations.patchClinicalPrescription),
+    patchClinicalPrescriptionDocumentation: createOperation(request, operations.patchClinicalPrescriptionDocumentation),
     patchClinicalProblemById: createOperation(request, operations.patchClinicalProblemById),
     patchClinicById: createOperation(request, operations.patchClinicById),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
@@ -4840,6 +4907,7 @@ export function createGeneratedClient(request) {
     postClinicalNoteTemplates: createOperation(request, operations.postClinicalNoteTemplates),
     postClinicalNoteVersions: createOperation(request, operations.postClinicalNoteVersions),
     postClinicalPrescriptionGenerateMar: createOperation(request, operations.postClinicalPrescriptionGenerateMar),
+    postClinicalPrescriptionNewCourse: createOperation(request, operations.postClinicalPrescriptionNewCourse),
     postClinicalProblemLinks: createOperation(request, operations.postClinicalProblemLinks),
     postClinicalProblemStatus: createOperation(request, operations.postClinicalProblemStatus),
     postClinics: createOperation(request, operations.postClinics),

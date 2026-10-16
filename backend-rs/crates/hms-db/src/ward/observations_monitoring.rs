@@ -226,23 +226,105 @@ pub async fn create_patient_vitals(
     patient_vitals_by_id(pool, vitals.facility_id, vitals.id).await
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct NursingAlertFilters {
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub ward_id: Option<Uuid>,
+    pub status: Option<NursingAlertStatus>,
+    pub severity: Option<NursingAlertSeverity>,
+    pub critical_only: bool,
+    pub created_from: Option<DateTime<Utc>>,
+    pub created_before: Option<DateTime<Utc>>,
+    pub descending: bool,
+}
+
 pub async fn list_nursing_alerts(
     pool: &PgPool,
     facility_id: Uuid,
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<NursingAlertListItem>> {
-    let mut query = nursing_alert_query();
-    query.push(" WHERE nursing_alerts.facility_id = ");
-    query.push_bind(facility_id);
-    append_forward_cursor(
-        &mut query,
-        "nursing_alerts.created_at",
-        "nursing_alerts.id",
+    list_nursing_alerts_scoped(
+        pool,
+        facility_id,
         cursor,
-    );
-    query.push(" ORDER BY nursing_alerts.created_at ASC, nursing_alerts.id ASC LIMIT ");
-    query.push_bind(limit);
+        limit,
+        NursingAlertFilters::default(),
+    )
+    .await
+}
+
+pub async fn list_nursing_alerts_scoped(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<WardCursor>,
+    limit: i64,
+    filters: NursingAlertFilters,
+) -> anyhow::Result<Vec<NursingAlertListItem>> {
+    let mut query = nursing_alert_query();
+    query
+        .push(" WHERE nursing_alerts.facility_id = ")
+        .push_bind(facility_id);
+    if let Some(id) = filters.patient_id {
+        query
+            .push(" AND nursing_alerts.patient_id = ")
+            .push_bind(id);
+    }
+    if let Some(id) = filters.admission_case_id {
+        query
+            .push(" AND nursing_alerts.admission_case_id = ")
+            .push_bind(id);
+    }
+    if let Some(id) = filters.ward_id {
+        query.push(" AND alert_admission.ward_id = ").push_bind(id);
+    }
+    if filters.critical_only && filters.status == Some(NursingAlertStatus::Open) {
+        // Fixed typed hot path: a generic prepared plan can prove the partial
+        // priority-index predicate without inspecting a bound status value.
+        query.push(" AND nursing_alerts.status = 'open'");
+    } else if let Some(status) = filters.status {
+        query
+            .push(" AND nursing_alerts.status = ")
+            .push_bind(codec::encode(status)?);
+    }
+    if let Some(severity) = filters.severity {
+        query
+            .push(" AND nursing_alerts.severity = ")
+            .push_bind(codec::encode(severity)?);
+    }
+    if filters.critical_only {
+        query.push(" AND nursing_alerts.severity IN ('high', 'critical')");
+    }
+    if let Some(from) = filters.created_from {
+        query
+            .push(" AND nursing_alerts.created_at >= ")
+            .push_bind(from);
+    }
+    if let Some(before) = filters.created_before {
+        query
+            .push(" AND nursing_alerts.created_at < ")
+            .push_bind(before);
+    }
+    if let Some(cursor) = cursor {
+        query.push(if filters.descending {
+            " AND (nursing_alerts.created_at, nursing_alerts.id) < ("
+        } else {
+            " AND (nursing_alerts.created_at, nursing_alerts.id) > ("
+        });
+        query
+            .push_bind(cursor.occurred_at)
+            .push(", ")
+            .push_bind(cursor.id)
+            .push(")");
+    }
+    query
+        .push(if filters.descending {
+            " ORDER BY nursing_alerts.created_at DESC, nursing_alerts.id DESC LIMIT "
+        } else {
+            " ORDER BY nursing_alerts.created_at ASC, nursing_alerts.id ASC LIMIT "
+        })
+        .push_bind(limit);
     let rows = observe_db_query(
         "ward.observations.nursing_alerts.list",
         query.build_query_as::<NursingAlertRow>().fetch_all(pool),
@@ -293,26 +375,57 @@ pub async fn acknowledge_nursing_alert(
     alert_id: Uuid,
     actor_user_id: Uuid,
 ) -> anyhow::Result<Option<NursingAlertListItem>> {
-    observe_db_query(
+    acknowledge_nursing_alert_with_request(pool, facility_id, alert_id, actor_user_id, None).await
+}
+
+pub async fn acknowledge_nursing_alert_with_request(
+    pool: &PgPool,
+    facility_id: Uuid,
+    alert_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+) -> anyhow::Result<Option<NursingAlertListItem>> {
+    let mut transaction = pool.begin().await?;
+    // PostgreSQL rechecks this predicate after waiting for a concurrent update.
+    // Only the winning open -> acknowledged transition records provenance.
+    let changed = observe_db_query(
         "ward.observations.nursing_alerts.acknowledge",
         sqlx::query(
             r#"
         UPDATE nursing_alerts
         SET status = $1,
             acknowledged_by_user_id = $2,
-            acknowledged_at = COALESCE(acknowledged_at, now()),
-            updated_at = now()
-        WHERE facility_id = $3 AND id = $4
+            acknowledged_at = clock_timestamp(),
+            updated_at = clock_timestamp()
+        WHERE facility_id = $3 AND id = $4 AND status = 'open'
         "#,
         )
         .bind(codec::encode(NursingAlertStatus::Acknowledged)?)
         .bind(actor_user_id)
         .bind(facility_id)
         .bind(alert_id)
-        .execute(pool),
+        .execute(&mut *transaction),
     )
     .await?;
-    optional_nursing_alert_by_id(pool, facility_id, alert_id).await
+    if changed.rows_affected() == 1 {
+        sqlx::query("INSERT INTO audit_events(id,facility_id,actor_user_id,request_id,event_type,resource_type,resource_id,metadata) VALUES($1,$2,$3,$4,'nursing.alert.acknowledged','nursing_alert',$5,'{}'::jsonb)")
+            .bind(Uuid::new_v4()).bind(facility_id).bind(actor_user_id).bind(request_id).bind(alert_id).execute(&mut *transaction).await?;
+    }
+    let mut query = nursing_alert_query();
+    query
+        .push(" WHERE nursing_alerts.facility_id = ")
+        .push_bind(facility_id);
+    query.push(" AND nursing_alerts.id = ").push_bind(alert_id);
+    let row = observe_db_query(
+        "ward.observations.nursing_alerts.receipt",
+        query
+            .build_query_as::<NursingAlertRow>()
+            .fetch_optional(&mut *transaction),
+    )
+    .await?;
+    let receipt = row.map(nursing_alert_from_row).transpose()?;
+    transaction.commit().await?;
+    Ok(receipt)
 }
 
 pub async fn get_nursing_alert(
@@ -610,6 +723,10 @@ fn nursing_alert_query() -> QueryBuilder<'static, Postgres> {
                nursing_alerts.created_at,
                nursing_alerts.acknowledged_at
         FROM nursing_alerts
+        JOIN admission_cases alert_admission
+          ON alert_admission.id = nursing_alerts.admission_case_id
+         AND alert_admission.facility_id = nursing_alerts.facility_id
+         AND alert_admission.patient_id = nursing_alerts.patient_id
         JOIN patients
           ON patients.id = nursing_alerts.patient_id
          AND patients.facility_id = nursing_alerts.facility_id

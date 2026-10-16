@@ -9,18 +9,18 @@ use hms_domain::ward::{
     CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
     CreateWardStaffAssignmentRequest, CreateWardStockRequestRequest, DischargeBlockerActionRequest,
     DischargeCaseListItem, FluidBalanceListItem, FluidBalanceListQuery, FluidBalanceSummary,
-    FluidBalanceSummaryQuery, FluidBalanceTrendPoint, HandoffListItem,
+    FluidBalanceSummaryQuery, FluidBalanceTrendPoint, HandoffListItem, HandoffListQuery,
     MedicationAdministrationListItem, MedicationAdministrationListQuery, MonitoringEventListItem,
-    MyWardBoardContextResponse, NursingAlertListItem, NursingTaskListItem, NursingTaskListQuery,
-    PatientVitalsListItem, PatientVitalsListQuery, RecordMedicationOutcomeRequest,
-    RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
-    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
-    UpdateWardRequest, UpdateWardSectionRequest, UpdateWardStaffAssignmentRequest,
-    WardAnalyticsQuery, WardAnalyticsResponse, WardBedMapResponse, WardBoardGetQuery,
-    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
-    WardStaffAssignmentByPractitionerQuery, WardStaffAssignmentListItem,
-    WardStaffAssignmentListQuery, WardStaffListItem, WardStaffListQuery, WardStaffRoleItem,
-    WardStaffRoleListQuery, WardStockRequestListItem,
+    MyWardBoardContextResponse, NursingAlertListItem, NursingAlertListQuery, NursingTaskListItem,
+    NursingTaskListQuery, PatientVitalsListItem, PatientVitalsListQuery,
+    RecordMedicationOutcomeRequest, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
+    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, TreatmentSheetListQuery,
+    UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
+    UpdateWardStaffAssignmentRequest, WardAnalyticsQuery, WardAnalyticsResponse,
+    WardBedMapResponse, WardBoardGetQuery, WardBoardItem, WardBoardQuery, WardListItem,
+    WardListQuery, WardSectionListItem, WardStaffAssignmentByPractitionerQuery,
+    WardStaffAssignmentListItem, WardStaffAssignmentListQuery, WardStaffListItem,
+    WardStaffListQuery, WardStaffRoleItem, WardStaffRoleListQuery, WardStockRequestListItem,
 };
 use uuid::Uuid;
 
@@ -1479,7 +1479,7 @@ pub async fn record_medication_outcome(
     operation_id = "getHandoffs",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(HandoffListQuery),
     responses(
         (status = 200, description = "Handoffs", body = ListResponse<HandoffListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1489,8 +1489,15 @@ pub async fn record_medication_outcome(
 pub async fn list_handoffs(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<CursorListQuery>,
+    query: Result<Query<HandoffListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<HandoffListItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_list_query",
+            "Use supported filters with valid values for this list.",
+        )
+    })?;
+
     Ok(Json(
         state
             .ward_services()
@@ -1508,6 +1515,8 @@ pub async fn list_handoffs(
     security(("bearerAuth" = [])),
     request_body = CreateHandoffRequest,
     responses(
+        (status = 400, description = "Invalid or unsupported request fields", body = ApiErrorResponse),
+        (status = 409, description = "Write could not be confirmed", body = ApiErrorResponse),
         (status = 200, description = "Handoff created", body = ObjectResponse<HandoffListItem>),
         (status = 400, description = "Invalid handoff request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1517,8 +1526,15 @@ pub async fn list_handoffs(
 pub async fn create_handoff(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Json(payload): Json<CreateHandoffRequest>,
+    payload: Result<Json<CreateHandoffRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<HandoffListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_request",
+            "Use only the supported fields with valid values for this operation.",
+        )
+    })?;
+
     Ok(Json(
         state
             .ward_services()
@@ -1562,7 +1578,7 @@ pub async fn complete_handoff(
     operation_id = "getTreatmentSheets",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(TreatmentSheetListQuery),
     responses(
         (status = 200, description = "Treatment sheets", body = ListResponse<TreatmentSheetListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1572,8 +1588,15 @@ pub async fn complete_handoff(
 pub async fn list_treatment_sheets(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<CursorListQuery>,
+    query: Result<Query<TreatmentSheetListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<TreatmentSheetListItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_list_query",
+            "Use supported filters with valid values for this list.",
+        )
+    })?;
+
     Ok(Json(
         state
             .ward_services()
@@ -1591,6 +1614,8 @@ pub async fn list_treatment_sheets(
     security(("bearerAuth" = [])),
     request_body = CreateTreatmentSheetRequest,
     responses(
+        (status = 400, description = "Invalid or unsupported request fields", body = ApiErrorResponse),
+        (status = 409, description = "Write could not be confirmed", body = ApiErrorResponse),
         (status = 200, description = "Treatment sheet created", body = ObjectResponse<TreatmentSheetListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -1600,8 +1625,15 @@ pub async fn list_treatment_sheets(
 pub async fn create_treatment_sheet(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Json(payload): Json<CreateTreatmentSheetRequest>,
+    payload: Result<Json<CreateTreatmentSheetRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<TreatmentSheetListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_request",
+            "Use only the supported fields with valid values for this operation.",
+        )
+    })?;
+
     Ok(Json(
         state
             .ward_services()
@@ -1673,7 +1705,7 @@ pub async fn create_patient_vitals(
     operation_id = "getNursingAlerts",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(NursingAlertListQuery),
     responses(
         (status = 200, description = "Nursing alerts", body = ListResponse<NursingAlertListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1683,8 +1715,15 @@ pub async fn create_patient_vitals(
 pub async fn list_nursing_alerts(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Query(query): Query<CursorListQuery>,
+    query: Result<Query<NursingAlertListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<NursingAlertListItem>>, ApiError> {
+    let Query(query) = query.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_list_query",
+            "Use supported filters with valid values for this list.",
+        )
+    })?;
+
     Ok(Json(
         state
             .ward_services()
@@ -1702,6 +1741,8 @@ pub async fn list_nursing_alerts(
     security(("bearerAuth" = [])),
     request_body = CreateNursingAlertRequest,
     responses(
+        (status = 400, description = "Invalid or unsupported request fields", body = ApiErrorResponse),
+        (status = 409, description = "Write could not be confirmed", body = ApiErrorResponse),
         (status = 200, description = "Nursing alert created", body = ObjectResponse<NursingAlertListItem>),
         (status = 400, description = "Invalid alert request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1712,8 +1753,15 @@ pub async fn list_nursing_alerts(
 pub async fn create_nursing_alert(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
-    Json(payload): Json<CreateNursingAlertRequest>,
+    payload: Result<Json<CreateNursingAlertRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<NursingAlertListItem>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| {
+        ApiError::bad_request(
+            "invalid_nursing_request",
+            "Use only the supported fields with valid values for this operation.",
+        )
+    })?;
+
     Ok(Json(
         state
             .ward_services()

@@ -35,24 +35,28 @@ pub use discharge_cases::{
     list_discharge_cases, override_discharge_blocker, record_nursing_release, request_discharge,
 };
 pub use fluid::*;
-pub use handoff::{complete_handoff, create_handoff, get_handoff, list_handoffs, NewHandoff};
+pub use handoff::{
+    complete_handoff, create_handoff, get_handoff, list_handoffs, list_handoffs_scoped,
+    HandoffError, HandoffFilters, NewHandoff,
+};
 pub use mar::{
     administer_medication, create_treatment_sheet, get_medication_administration,
     list_medication_administrations, list_medication_administrations_scoped, list_treatment_sheets,
-    record_medication_outcome, schedule_medication_administration, MedicationAdministrationFilters,
-    MedicationOutcomeError, NewMedicationAdministration, NewTreatmentSheet,
-    RecordMedicationOutcome,
+    list_treatment_sheets_scoped, record_medication_outcome, schedule_medication_administration,
+    treatment_sheet_access_context, MedicationAdministrationFilters, MedicationOutcomeError,
+    NewMedicationAdministration, NewTreatmentSheet, RecordMedicationOutcome, TreatmentSheetFilters,
 };
 pub use nursing_task_board::{
     cancel_nursing_task, complete_nursing_task, create_nursing_task, get_nursing_task,
     list_nursing_tasks, NewNursingTask, NursingTaskFilters,
 };
 pub use observations_monitoring::{
-    acknowledge_nursing_alert, create_fluid_balance_entry, create_monitoring_event,
-    create_nursing_alert, create_patient_vitals, fluid_balance_summary, fluid_balance_trends,
-    get_nursing_alert, list_fluid_balance_entries, list_fluid_balance_entries_scoped,
-    list_monitoring_events, list_nursing_alerts, list_patient_vitals, FluidBalanceFilters,
-    NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert, NewPatientVitals,
+    acknowledge_nursing_alert, acknowledge_nursing_alert_with_request, create_fluid_balance_entry,
+    create_monitoring_event, create_nursing_alert, create_patient_vitals, fluid_balance_summary,
+    fluid_balance_trends, get_nursing_alert, list_fluid_balance_entries,
+    list_fluid_balance_entries_scoped, list_monitoring_events, list_nursing_alerts,
+    list_nursing_alerts_scoped, list_patient_vitals, FluidBalanceFilters, NewFluidBalanceEntry,
+    NewMonitoringEvent, NewNursingAlert, NewPatientVitals, NursingAlertFilters,
 };
 pub use prn::{list_prn_orders, request_prn_dose, PrnError, RequestPrnDose};
 pub use staff_assignments::{

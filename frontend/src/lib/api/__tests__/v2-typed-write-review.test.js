@@ -1,8 +1,8 @@
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey } from '@/lib/api/v2/client';
+import { __resetV2ApiClientForTests, configureV2ApiClient, getV2ClientScopeKey, v2Request } from '@/lib/api/v2/client';
 import { bindNetworkAccessGuard } from '@/lib/api/v2/networkAccessGuard';
-import { acknowledgeWriteReview, activateWriteUncertainty, getWriteUncertaintySnapshot, resetWriteUncertaintyForTests, WRITE_UNCERTAINTY_KEY } from '@/lib/api/v2/writeUncertainty';
+import { acknowledgeWriteReview, acknowledgeWriteResponse, copyWriteResponseMetadata, activateWriteUncertainty, getWriteUncertaintySnapshot, resetWriteUncertaintyForTests, WRITE_UNCERTAINTY_KEY } from '@/lib/api/v2/writeUncertainty';
 import { requestPrnDose } from '@/features/nursing/api/prn';
 import { standingApi } from '@/features/inventory/standing/api';
 import { createPrescription } from '@/hooks/usePrescriptionMutations';
@@ -30,6 +30,48 @@ beforeEach(() => {
 afterEach(() => { __resetV2ApiClientForTests(); vi.unstubAllGlobals(); globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = originalRuntime; });
 
 describe('typed success validation and durable opaque write review', () => {
+  it.each(['network', 'dispatched-abort', 'invalid-json', 'malformed-envelope'])('retains opaque attempt metadata for recoverable %s errors', async (kind) => {
+    if (kind === 'network') globalThis.fetch.mockRejectedValueOnce(new TypeError('Synthetic connection lost'));
+    if (kind === 'dispatched-abort') globalThis.fetch.mockRejectedValueOnce(new DOMException('Synthetic dispatched abort', 'AbortError'));
+    if (kind === 'invalid-json') globalThis.fetch.mockResolvedValueOnce(new Response('{', { headers: { 'content-type': 'application/json' } }));
+    if (kind === 'malformed-envelope') globalThis.fetch.mockResolvedValueOnce(json({ unexpected: true }));
+    const original = await v2Request({ method: 'PATCH', path: `/api/v2/clinical/prescriptions/${prescription}/documentation`, body: { client_request_id: key, expected_snapshot_token: 'a'.repeat(64), instructions: 'SYNTHETIC-PRIVATE-TEXT', reason: 'SYNTHETIC-PRIVATE-REASON' } }).catch((error) => error);
+    expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
+    const wrapped = copyWriteResponseMetadata(new Error('Typed uncertainty'), original);
+    expect(wrapped.data).toBeUndefined();
+    acknowledgeWriteResponse(wrapped);
+    expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
+  });
+
+  it('forwards opaque attempt metadata through a typed error without copying server or request data', async () => {
+    const body = { client_request_id: key, expected_snapshot_token: 'a'.repeat(64), instructions: 'SYNTHETIC-PRIVATE-TEXT', reason: 'SYNTHETIC-PRIVATE-REASON' };
+    globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'prescription_action_unconfirmed', message: 'SYNTHETIC-PRIVATE-SERVER-CONTENT' } }), { status: 409, headers: { 'content-type': 'application/json' } }));
+    const original = await v2Request({ method: 'PATCH', path: `/api/v2/clinical/prescriptions/${prescription}/documentation`, body }).catch((error) => error);
+    expect(getWriteUncertaintySnapshot().entries).toHaveLength(1);
+    const wrapped = copyWriteResponseMetadata(new Error('Typed change could not be confirmed'), original);
+    expect(wrapped.data).toBeUndefined();
+    expect(JSON.stringify(wrapped)).not.toContain('SYNTHETIC-PRIVATE');
+    acknowledgeWriteResponse(wrapped);
+    expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
+  });
+
+  it.each([['PATCH', 'documentation'], ['POST', 'new-course']])('permits only the exact explicitly retried prescription %s %s command', async (method, action) => {
+    const path = `/api/v2/clinical/prescriptions/${prescription}/${action}`;
+    const payload = { client_request_id: key, expected_snapshot_token: 'a'.repeat(64), instructions: 'SYNTHETIC-PRIVATE-INSTRUCTIONS', reason: 'SYNTHETIC-PRIVATE-REASON' };
+    const write = (body) => v2Request({ method, path, body });
+    globalThis.fetch.mockRejectedValueOnce(new TypeError('Synthetic response lost'));
+    await expect(write(payload)).rejects.toMatchObject({ status: 0 });
+    resetWriteUncertaintyForTests({ preserveStorage: true }); activate();
+    await expect(write({ ...payload, client_request_id: crypto.randomUUID() })).rejects.toMatchObject({ status: 409 });
+    await expect(write({ ...payload, instructions: 'Changed clinical text' })).rejects.toMatchObject({ status: 409 });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    globalThis.fetch.mockResolvedValueOnce(json({ data: { client_request_id: key } }));
+    await expect(write(payload)).resolves.toMatchObject({ data: { client_request_id: key } });
+    expect(getWriteUncertaintySnapshot().entries).toHaveLength(0);
+    const stored = sessionStorage.getItem(WRITE_UNCERTAINTY_KEY);
+    for (const secret of [payload.instructions, payload.reason, prescription]) expect(stored).not.toContain(secret);
+  });
+
   it.each([
     ['prescription_create_failed', () => createPrescription({ patient_id: admission, medication_name: 'SYNTHETIC-PRIVATE-MEDICATION', dose: '1 tablet', frequency: 'daily' })],
     ['nhis_batch_create_failed', () => billingApi.createNhisClaimBatch({ claim_ids: [admission] })],

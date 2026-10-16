@@ -71,6 +71,12 @@ fn request(source: Uuid, admission: Uuid, key: Uuid) -> Value {
 async fn configured_prn_is_source_linked_visible_scoped_and_idempotent_without_anonymous_administration(
 ) {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (patient, admission, source) = setup(&app, &token).await;
     let list = get(
@@ -134,6 +140,12 @@ async fn configured_prn_is_source_linked_visible_scoped_and_idempotent_without_a
 #[tokio::test]
 async fn prn_validates_typed_payload_and_patient_permissions_before_writes() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (_patient, admission, source) = setup(&app, &token).await;
     let (limited, _, _) = login(app.clone(), "limited@hms.local").await;
@@ -220,6 +232,12 @@ async fn prn_validates_typed_payload_and_patient_permissions_before_writes() {
 #[tokio::test]
 async fn prn_generic_storage_failure_is_truthfully_unconfirmed_and_rolls_back() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (_, admission, source) = setup(&app, &token).await;
     sqlx::query("ALTER TABLE audit_events ADD CONSTRAINT synthetic_prn_audit_failure CHECK(event_type<>'medication.prn_requested')").execute(&app.db_pool().await).await.unwrap();
@@ -240,6 +258,12 @@ async fn prn_generic_storage_failure_is_truthfully_unconfirmed_and_rolls_back() 
 #[tokio::test]
 async fn prn_prescriber_stock_unit_is_checked_under_lock_and_stale_unit_does_not_save() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (patient, _, source) = setup(&app, &token).await;
     let pool = app.db_pool().await;

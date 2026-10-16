@@ -1,7 +1,7 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import React, { useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   useAdminDashboard,
   useInpatientDashboard,
@@ -22,6 +22,8 @@ export default function CriticalAlertsMonitor() {
   const { user } = useAuth();
   const { isPageActive } = usePageVisibility();
   const location = useLocation();
+  const navigate = useNavigate();
+  const alertPreviewNotice = useRef(null);
   const previousAlertIdsRef = useRef(null);
   const previousMedicationIdsRef = useRef(null);
   if (previousAlertIdsRef.current === null) {
@@ -44,8 +46,9 @@ export default function CriticalAlertsMonitor() {
   const isAdmin = userRole === 'admin';
   const isAdminDashboardRoute = location.pathname === '/dashboards/admin';
 
-  const { data: nurseAlerts = [] } = useActiveAlerts({
+  const { data: nurseAlerts = [], hasNextPage: moreNursingAlerts = false, isError: nursingAlertsFailed = false } = useActiveAlerts({
     enabled: shouldMonitor && isNurse,
+    criticalOnly: true,
   });
 
   const { data: nurseOverdueMedications = [] } = useOverdueMedications({
@@ -71,7 +74,21 @@ export default function CriticalAlertsMonitor() {
     : null;
 
   useEffect(() => {
-    if (!shouldMonitor) return;
+    const notice = shouldMonitor && isNurse ? (nursingAlertsFailed ? 'unavailable' : moreNursingAlerts ? 'partial' : null) : null;
+    if (notice && alertPreviewNotice.current !== notice) {
+      toast.warning(notice === 'partial'
+        ? 'More urgent nursing alerts are available. This preview shows the newest page only.'
+        : 'The urgent nursing alert preview could not be refreshed. Review the ward board.', {
+        id: 'nursing-alert-preview-status',
+        duration: 12000,
+        action: { label: 'Review ward board', onClick: () => navigate('/ward-board?view=by-urgency') },
+      });
+    }
+    alertPreviewNotice.current = notice;
+  }, [shouldMonitor, isNurse, nursingAlertsFailed, moreNursingAlerts, navigate]);
+
+  useEffect(() => {
+    if (!shouldMonitor || (isNurse && nursingAlertsFailed)) return;
 
     const currentAlerts = isNurse
       ? nurseAlerts.filter((alert) => ['critical', 'high'].includes(String(alert.severity || '').toLowerCase()))
@@ -105,7 +122,7 @@ export default function CriticalAlertsMonitor() {
             label: 'View',
             onClick: () => {
               // Navigate to patient or alert detail
-              window.location.href = `/patients/${alert.patient_id}`;
+              navigate(`/patients/${alert.patient_id}`);
             },
           },
         }
@@ -115,7 +132,7 @@ export default function CriticalAlertsMonitor() {
     // Update the set of seen alerts
     const alertIds = new Set(currentAlerts.map((a) => a.id));
     previousAlertIdsRef.current = alertIds;
-  }, [dashboardData, isNurse, nurseAlerts, shouldMonitor]);
+  }, [dashboardData, isNurse, nurseAlerts, shouldMonitor, nursingAlertsFailed, navigate]);
 
   useEffect(() => {
     if (!shouldMonitor) return;
@@ -151,7 +168,7 @@ export default function CriticalAlertsMonitor() {
           action: {
             label: 'Administer',
             onClick: () => {
-              window.location.href = `/patients/${med.patient_id}`;
+              navigate(`/patients/${med.patient_id}`);
             },
           },
         }
@@ -160,7 +177,7 @@ export default function CriticalAlertsMonitor() {
       // Add to seen set
       previousMedicationIdsRef.current.add(med.id);
     });
-  }, [dashboardData, isNurse, nurseOverdueMedications, shouldMonitor]);
+  }, [dashboardData, isNurse, nurseOverdueMedications, shouldMonitor, navigate]);
 
   // This component doesn't render anything
   return null;

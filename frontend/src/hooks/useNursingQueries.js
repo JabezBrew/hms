@@ -23,6 +23,7 @@ import {
   getV2MedicationAdministrationPage,
   medicationAdministrationCacheScope,
   getV2NursingAlerts,
+  nursingListCacheScope,
   getV2NursingTasks,
   getV2PatientVitals,
   getV2PendingPharmacyQueue,
@@ -534,39 +535,36 @@ export const useUpdateTask = () => {
 
 // ========== Nursing Alerts ==========
 
-export const useNursingAlerts = (filters = {}) => {
-  // Extract filter values to use as stable primitives in query key
-  const { patient, ward, severity, status } = filters;
-
-  return useQuery({
-    // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.nursingAlerts(patient, ward, severity, status),
+export const useNursingAlerts = (filters = {}, options = {}) => {
+  const rust = isRustV2ApiMode();
+  const query = rust ? nursingListCacheScope('alerts', filters) : null;
+  const result = useQuery({
+    queryKey: rust ? nursingKeys.nursingAlertList(getV2ClientScopeKey(), query) : nursingKeys.nursingAlerts(filters.patient, filters.ward, filters.severity, filters.status),
     queryFn: async ({ signal }) => {
-      if (isRustV2ApiMode()) {
-        return getV2NursingAlerts(filters, { signal });
-      }
-
+      if (rust) return getV2NursingAlerts(filters, { signal });
       const params = new URLSearchParams(filters);
-      const response = await apiClient.get(`/nursing/alerts/?${params.toString()}`);
-      // Ensure we always return an array
+      const response = await apiClient.get(`/nursing/alerts/?${params.toString()}`, { signal });
       const data = response?.data ?? response;
       return Array.isArray(data) ? data : [];
     },
-    placeholderData: [],
-    refetchInterval: false, // Disable automatic polling - manually refresh when needed
+    enabled: options.enabled !== false,
+    refetchInterval: false,
     refetchOnWindowFocus: false,
     staleTime: 20000,
   });
+  return rust ? { ...result, data: result.data?.results, hasNextPage: result.data?.has_next ?? false, nextCursor: result.data?.next_cursor ?? null } : result;
 };
 
 export const useActiveAlerts = (options = {}) => {
   const { enabled = true } = options;
-  return useQuery({
-    queryKey: nursingKeys.nursingAlertsActive(),
+  const rust = isRustV2ApiMode();
+  const filters = { status: 'open', critical_only: options.criticalOnly === true, descending: true, cursor: options.cursor, limit: options.limit };
+  const query = rust ? nursingListCacheScope('alerts', filters) : null;
+  const result = useQuery({
+    queryKey: rust ? nursingKeys.nursingAlertList(getV2ClientScopeKey(), query) : nursingKeys.nursingAlertsActive(),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        const alerts = await getV2NursingAlerts({}, { signal });
-        return alerts.filter((alert) => !alert.acknowledged && alert.status !== 'resolved');
+        return getV2NursingAlerts(filters, { signal });
       }
 
       // Use getWithPagination to avoid auto-extraction of results
@@ -582,28 +580,42 @@ export const useActiveAlerts = (options = {}) => {
     },
     enabled,
     // Provide placeholder data while loading to prevent undefined
-    placeholderData: [],
+    placeholderData: rust ? undefined : [],
     refetchInterval: () => !document.hidden ? 45000 : false, // 45 seconds when focused
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
     staleTime: 20000,
     retry: 1,
   });
+  return rust ? { ...result, data: result.data?.results, hasNextPage: result.data?.has_next ?? false, nextCursor: result.data?.next_cursor ?? null } : result;
 };
 
 export const useAcknowledgeAlert = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async ({ alertId, notes, signal }) => {
       if (isRustV2ApiMode()) {
+        let response;
         try {
-          const response = await v2Api.postNursingAlertAcknowledge({ id: alertId }, {
+          response = await v2Api.postNursingAlertAcknowledge({ id: alertId }, {
             signal,
           });
+          const receipt = response?.data;
+          if (receipt?.id !== alertId || receipt?.status !== 'acknowledged' || !receipt?.acknowledged_at || !Number.isFinite(Date.parse(receipt.acknowledged_at))) {
+            throw new Error('The response did not confirm the alert acknowledgment.');
+          }
+          acknowledgeWriteResponse(response);
           return adaptV2NursingAlert(response?.data);
         } catch (error) {
-          rethrowV2Error(error, 'Failed to acknowledge nursing alert');
+          if (error?.status >= 400 && error.status < 500 && error?.data?.error?.code !== 'alert_acknowledge_unconfirmed') {
+            rethrowV2Error(error, 'Failed to acknowledge nursing alert');
+          }
+          markWriteResponseUncertain(response || error);
+          const uncertain = new Error('Acknowledgment may have been recorded. Refresh and review the alert before taking another action.');
+          uncertain.name = 'NursingAlertAcknowledgmentUnconfirmedError';
+          throw uncertain;
         }
       }
 
@@ -612,7 +624,7 @@ export const useAcknowledgeAlert = () => {
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: nursingKeys.nursingAlertsAll() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.nursingAlertsActive() });
       queryClient.invalidateQueries({ queryKey: nursingKeys.patientMonitoringAll() });

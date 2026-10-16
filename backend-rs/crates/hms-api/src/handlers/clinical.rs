@@ -781,7 +781,7 @@ pub async fn list_prescriptions(
     params(("patient_id" = Uuid, Path, description = "Patient id")),
     request_body = CreatePrescriptionRequest,
     responses(
-        (status = 200, description = "Prescription created", body = ObjectResponse<PrescriptionListItem>),
+        (status = 200, description = "Prescription created", body = ObjectResponse<hms_domain::clinical::PrescriptionDetail>),
         (status = 400, description = "Invalid prescription", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
@@ -790,14 +790,19 @@ pub async fn list_prescriptions(
 )]
 pub async fn create_prescription(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    network: crate::extractors::NetworkContext,
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreatePrescriptionRequest>,
-) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
+) -> Result<Json<ObjectResponse<hms_domain::clinical::PrescriptionDetail>>, ApiError> {
     Ok(Json(
         state
             .clinical_service()
-            .create_prescription(&user, patient_id, payload)
+            .create_prescription(
+                &network.context,
+                patient_id,
+                payload,
+                network.authorization_deadline,
+            )
             .await?,
     ))
 }
@@ -810,7 +815,7 @@ pub async fn create_prescription(
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Prescription id")),
     responses(
-        (status = 200, description = "Prescription detail", body = ObjectResponse<PrescriptionListItem>),
+        (status = 200, description = "Prescription detail", body = ObjectResponse<hms_domain::clinical::PrescriptionDetail>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
         (status = 404, description = "Prescription not found", body = ApiErrorResponse)
@@ -820,7 +825,7 @@ pub async fn get_prescription(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
-) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
+) -> Result<Json<ObjectResponse<hms_domain::clinical::PrescriptionDetail>>, ApiError> {
     Ok(Json(
         state.clinical_service().get_prescription(&user, id).await?,
     ))
@@ -944,6 +949,89 @@ pub async fn create_chart_entry(
         state
             .clinical_service()
             .create_chart_entry(&user, patient_id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(patch,path="/api/v2/clinical/prescriptions/{id}/documentation",operation_id="patchClinicalPrescriptionDocumentation",tag="clinical",security(("bearerAuth"=[])),
+ params(("id"=Uuid,Path)),request_body=hms_domain::clinical::UpdatePrescriptionDocumentationRequest,
+ responses((status=200,body=ObjectResponse<hms_domain::clinical::PrescriptionDocumentationReceipt>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn update_prescription_documentation(
+    State(state): State<AppState>,
+    network: crate::extractors::NetworkContext,
+    Path(id): Path<Uuid>,
+    payload: Result<
+        Json<hms_domain::clinical::UpdatePrescriptionDocumentationRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Result<Json<ObjectResponse<hms_domain::clinical::PrescriptionDocumentationReceipt>>, ApiError>
+{
+    let Json(payload)=payload.map_err(|_|ApiError::bad_request("invalid_prescription_request","Provide every required reviewed field using the supported prescription request format."))?;
+    Ok(Json(
+        state
+            .clinical_service()
+            .update_prescription_documentation(
+                &network.context,
+                id,
+                payload,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+#[utoipa::path(post,path="/api/v2/clinical/prescriptions/{id}/new-course",operation_id="postClinicalPrescriptionNewCourse",tag="clinical",security(("bearerAuth"=[])),
+ params(("id"=Uuid,Path)),request_body=hms_domain::clinical::NewPrescriptionCourseRequest,
+ responses((status=200,body=ObjectResponse<hms_domain::clinical::NewPrescriptionCourseReceipt>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn create_prescription_course(
+    State(state): State<AppState>,
+    network: crate::extractors::NetworkContext,
+    Path(id): Path<Uuid>,
+    payload: Result<
+        Json<hms_domain::clinical::NewPrescriptionCourseRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Result<Json<ObjectResponse<hms_domain::clinical::NewPrescriptionCourseReceipt>>, ApiError> {
+    let Json(payload)=payload.map_err(|_|ApiError::bad_request("invalid_prescription_request","Provide every required reviewed field using the supported prescription request format."))?;
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_prescription_course(
+                &network.context,
+                id,
+                payload,
+                network.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+#[utoipa::path(get,path="/api/v2/clinical/prescriptions/{id}/new-course/requests/{request_id}",operation_id="getClinicalPrescriptionNewCourseReceipt",tag="clinical",security(("bearerAuth"=[])),
+ params(("id"=Uuid,Path),("request_id"=Uuid,Path)),
+ responses((status=200,body=ObjectResponse<hms_domain::clinical::NewPrescriptionCourseReceipt>),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+pub async fn get_prescription_course_receipt(
+    State(state): State<AppState>,
+    RequestContext(ctx): RequestContext,
+    Path((id, key)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ObjectResponse<hms_domain::clinical::NewPrescriptionCourseReceipt>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .get_prescription_course_receipt(&ctx, id, key)
+            .await?,
+    ))
+}
+#[utoipa::path(get,path="/api/v2/clinical/prescriptions/{id}/documentation/requests/{request_id}",operation_id="getClinicalPrescriptionDocumentationReceipt",tag="clinical",security(("bearerAuth"=[])),
+ params(("id"=Uuid,Path),("request_id"=Uuid,Path)),
+ responses((status=200,body=ObjectResponse<hms_domain::clinical::PrescriptionDocumentationReceipt>),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+pub async fn get_prescription_documentation_receipt(
+    State(state): State<AppState>,
+    RequestContext(ctx): RequestContext,
+    Path((id, key)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ObjectResponse<hms_domain::clinical::PrescriptionDocumentationReceipt>>, ApiError>
+{
+    Ok(Json(
+        state
+            .clinical_service()
+            .get_prescription_documentation_receipt(&ctx, id, key)
             .await?,
     ))
 }

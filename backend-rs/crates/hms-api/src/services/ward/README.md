@@ -103,3 +103,9 @@ correction/void commands, complete category summaries, server assessments, and
 versioned facility rules. Patient operations require the nursing workflow gate;
 facility rule publication requires `AdminAuthorityManage`. Generic write errors
 have an explicit unconfirmed code so clients retain their exact command.
+
+Treatment-header and nursing-alert reads use typed patient/admission/ward scope
+before bounded cursor pages. Handoff-header queries support only actual ward,
+shift, status and creation-time fields; no patient association is inferred.
+The critical alert preview filters open high/critical state in SQL before LIMIT.
+See `docs/v2/2026-10-16-scoped-nursing-lists.md` for access and paging semantics.

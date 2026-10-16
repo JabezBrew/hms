@@ -13,6 +13,7 @@ Scope: API contract and telemetry tests for Rust V2.
 | `admin*_contract.rs` | admin, organization, authority, and permission behavior. |
 | `patients_contract.rs` | patient registry, Chronicle, and patient access behavior. |
 | `care_contract.rs`, `scheduling_contract.rs` | care and scheduling workflows. |
+| `prescription_courses_contract.rs` | detailed prescribing persistence, strict review commands, immutable recovery and lock-wait authorization fences. |
 | `clinical_contract.rs`, `consent_contract.rs` | clinical and consent APIs. |
 | `ward_contract.rs`, `nursing_contract.rs` | inpatient, ward, nursing, and monitoring APIs. |
 | `billing_contract.rs`, `inventory_contract.rs`, `laboratory_contract.rs` | fulfillment and back-office APIs. |

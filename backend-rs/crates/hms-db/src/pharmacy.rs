@@ -653,7 +653,7 @@ pub async fn dispense_fulfillment(
         None => anyhow::bail!("inventory_item_not_bound"),
     }
 
-    let stock_quantity = if prescription.frequency.eq_ignore_ascii_case("prn") {
+    let stock_quantity = if prescription.frequency.trim().eq_ignore_ascii_case("prn") {
         let at = sqlx::query_scalar("SELECT clock_timestamp()")
             .fetch_one(&mut *transaction)
             .await?;

@@ -9,6 +9,7 @@ import {
 } from "@/hooks/usePrescriptionMutations";
 import { PrescriptionActionDialogFrame } from './PrescriptionActionsDialogSections';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { PrescriptionCourseDialog } from '@/features/pharmacy/prescribing/PrescriptionCourseDialog';
 
 /**
  * PrescriptionActionsDialog - Unified dialog for prescription lifecycle actions
@@ -81,7 +82,7 @@ const actionDialogReducer = (state, action) => {
   }
 };
 
-const PrescriptionActionsDialog = (props) => (
+const PrescriptionActionsDialog = (props) => isRustV2ApiMode() && ['view', 'edit', 'documentation', 'renew', 'replace'].includes(props.action) ? <PrescriptionCourseDialog {...props} /> : (
   <PrescriptionActionsDialogContent
     key={[
       props.open ? 'open' : 'closed',

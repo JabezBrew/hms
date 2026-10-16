@@ -16,6 +16,12 @@ async fn catalog_get(app: &TestApp, bearer: Option<&str>, path: &str) -> Respons
 #[tokio::test]
 async fn prescribing_catalog_is_minimal_scoped_searchable_and_cursor_bounded() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let path = "/api/v2/clinical/medication-catalog";
     assert_eq!(
         catalog_get(&app, None, path).await.status(),

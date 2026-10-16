@@ -8,7 +8,7 @@ use hms_domain::ward::{
     AdministerMedicationRequest, CreateTreatmentSheetRequest, MedicationAdministrationListItem,
     MedicationAdministrationListQuery, MedicationAdministrationOutcome,
     RecordMedicationOutcomeRequest, ScheduleMedicationAdministrationRequest,
-    TreatmentSheetListItem,
+    TreatmentSheetListItem, TreatmentSheetListQuery,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -324,21 +324,77 @@ impl MarService {
     pub async fn list_treatment_sheets(
         &self,
         ctx: &hms_access::RequestContext,
-        query: CursorListQuery,
+        query: TreatmentSheetListQuery,
     ) -> Result<ListResponse<TreatmentSheetListItem>, ApiError> {
         common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let page = common::page_request(query)?;
+        common::authorize_nursing_list_scope(
+            &self.state,
+            ctx,
+            query.patient_id,
+            query.admission_case_id,
+            query.ward_id,
+        )
+        .await?;
+        if let Some(id) = query.id {
+            if let Some((patient_id, admission_case_id)) =
+                hms_db::ward::treatment_sheet_access_context(
+                    self.state.db_pool(),
+                    self.state.facility_id(),
+                    id,
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "treatment_sheet_load_failed",
+                        "Treatment sheet could not be loaded.",
+                    )
+                })?
+            {
+                if query.patient_id.is_some_and(|id| id != patient_id)
+                    || query
+                        .admission_case_id
+                        .is_some_and(|id| id != admission_case_id)
+                {
+                    return Err(ApiError::bad_request(
+                        "invalid_nursing_list_scope",
+                        "Treatment sheet does not belong to the requested patient or admission.",
+                    ));
+                }
+                common::authorize_nursing_list_scope(
+                    &self.state,
+                    ctx,
+                    Some(patient_id),
+                    Some(admission_case_id),
+                    query.ward_id,
+                )
+                .await?;
+            }
+        }
+        let filters = hms_db::ward::TreatmentSheetFilters {
+            id: query.id,
+            patient_id: query.patient_id,
+            admission_case_id: query.admission_case_id,
+            ward_id: query.ward_id,
+            sheet_date: query.sheet_date,
+            status: query.status,
+            descending: query.descending.unwrap_or(false),
+        };
+        let page = common::page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::list_treatment_sheets(
+        let rows = hms_db::ward::list_treatment_sheets_scoped(
             self.state.db_pool(),
             self.state.facility_id(),
             page.cursor,
             fetch_limit,
+            filters,
         )
         .await
         .map_err(|_| {
@@ -347,7 +403,6 @@ impl MarService {
                 "Treatment sheets could not be loaded.",
             )
         })?;
-
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.updated_at, item.id)
         }))
@@ -358,7 +413,7 @@ impl MarService {
         ctx: &hms_access::RequestContext,
         payload: CreateTreatmentSheetRequest,
     ) -> Result<ObjectResponse<TreatmentSheetListItem>, ApiError> {
-        common::require_facility_permission(
+        common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
@@ -379,7 +434,7 @@ impl MarService {
         .await
         .map_err(|_| {
             ApiError::conflict(
-                "treatment_sheet_create_failed",
+                "treatment_sheet_create_unconfirmed",
                 "Treatment sheet could not be created.",
             )
         })?;

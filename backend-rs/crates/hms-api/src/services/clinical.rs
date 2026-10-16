@@ -1,3 +1,5 @@
+pub mod prescription_courses;
+
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
@@ -842,9 +844,17 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         patient_id: Uuid,
         payload: CreatePrescriptionRequest,
-    ) -> Result<ObjectResponse<PrescriptionListItem>, ApiError> {
+        authorization_deadline: DateTime<Utc>,
+    ) -> Result<ObjectResponse<hms_domain::clinical::PrescriptionDetail>, ApiError> {
         require_clinical_write_access(ctx, self.facility_id())?;
+        prescription_courses::require_full_clinical_detail(ctx)?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
+        let documentation = hms_db::clinical::prescription_courses::PrescriptionDocumentation {
+            instructions: payload.instructions.unwrap_or_default(),
+            reason: payload.reason.unwrap_or_default(),
+        }
+        .normalized()
+        .map_err(prescription_courses::write_error)?;
         let medication_name =
             normalize_text(payload.medication_name, "medication_name", MAX_TITLE_LEN)?;
         let dose = normalize_text(payload.dose, "dose", MAX_SHORT_TEXT_LEN)?;
@@ -907,7 +917,7 @@ impl ClinicalService {
         } else {
             None
         };
-        let prescription = hms_db::clinical::create_prescription_with_prn_policy(
+        let prescription = hms_db::clinical::prescription_courses::create_with_documentation(
             self.pool(),
             NewPrescription {
                 id: Uuid::new_v4(),
@@ -927,6 +937,9 @@ impl ClinicalService {
                 actor_user_id: ctx.user_id,
             },
             prn_policy,
+            documentation,
+            Some(ctx.request_id.clone()),
+            Some(prescription_courses::authorization(ctx,authorization_deadline)),
         )
         .await
         .map_err(|error| {
@@ -938,10 +951,7 @@ impl ClinicalService {
                     "Select an inventory item from this facility.",
                 )
             } else {
-                ApiError::conflict(
-                    "prescription_create_failed",
-                    "Prescription could not be saved.",
-                )
+                prescription_courses::write_error(error)
             }
         })?;
 
@@ -953,15 +963,27 @@ impl ClinicalService {
         &self,
         ctx: &hms_access::RequestContext,
         id: Uuid,
-    ) -> Result<ObjectResponse<PrescriptionListItem>, ApiError> {
+    ) -> Result<ObjectResponse<hms_domain::clinical::PrescriptionDetail>, ApiError> {
         require_action_permission(
             ctx,
             self.facility_id(),
             PermissionCode::ClinicalDocumentationView,
         )?;
-        Ok(object(
-            load_prescription_for_access(&self.state, ctx, id).await?,
-        ))
+        prescription_courses::require_full_clinical_detail(ctx)?;
+        let _source = load_prescription_for_access(&self.state, ctx, id).await?;
+        let detail =
+            hms_db::clinical::prescription_courses::get_detail(self.pool(), self.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "prescription_load_failed",
+                        "Prescription details could not be loaded.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("prescription_not_found", "Prescription was not found.")
+                })?;
+        Ok(object(detail))
     }
 
     pub async fn update_prescription(

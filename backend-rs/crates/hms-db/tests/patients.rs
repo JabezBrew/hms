@@ -1285,7 +1285,7 @@ async fn prescription_detail_updates_are_facility_scoped() {
     assert_eq!(updated.frequency, "twice daily");
     assert!(matches!(updated.status, PrescriptionStatus::Stopped));
 
-    let held = hms_db::clinical::update_prescription(
+    let terminal_change = hms_db::clinical::update_prescription(
         &pool,
         facility_id,
         prescription.id,
@@ -1302,9 +1302,13 @@ async fn prescription_detail_updates_are_facility_scoped() {
         },
     )
     .await
-    .expect("prescription hold succeeds")
-    .expect("prescription exists");
-    assert!(matches!(held.status, PrescriptionStatus::OnHold));
+    .expect_err("a stopped source cannot be reopened as a held course");
+    assert_eq!(terminal_change.to_string(), "prescription_course_closed");
+    let terminal = hms_db::clinical::get_prescription(&pool, facility_id, prescription.id)
+        .await
+        .expect("terminal detail query succeeds")
+        .expect("terminal prescription remains");
+    assert!(matches!(terminal.status, PrescriptionStatus::Stopped));
 
     assert!(hms_db::clinical::update_prescription(
         &pool,

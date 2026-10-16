@@ -12,6 +12,7 @@ import {
   getV2TreatmentSheets,
   getV2WardStockRequests,
   normalizeV2TreatmentSheetPayload,
+  nursingListCacheScope,
   normalizeV2WardStockRequestPayload,
   rethrowV2Error,
 } from '../nursingQueriesV2Bridge';
@@ -47,39 +48,35 @@ export const useMARGrid = (admissionId, startDate = null, days = 7) => {
   });
 };
 
-export const useTreatmentSheetByAdmission = (admissionId) => {
-  return useQuery({
-    queryKey: nursingKeys.treatmentSheet(admissionId),
+export const useTreatmentSheetByAdmission = (admissionId, options = {}) => {
+  const rust = isRustV2ApiMode();
+  const filters = { ...options, admission_case_id: admissionId };
+  const query = rust ? nursingListCacheScope('treatment', filters) : null;
+  const result = useQuery({
+    queryKey: rust ? nursingKeys.treatmentSheetList(getV2ClientScopeKey(), query) : nursingKeys.treatmentSheet(admissionId),
     queryFn: async ({ signal }) => {
-      if (isRustV2ApiMode()) {
-        return getV2TreatmentSheets({ admission: admissionId }, { signal });
-      }
-
-      const response = await apiClient.get(`/nursing/treatment-sheet/by-admission/?admission_id=${admissionId}`);
+      if (rust) return getV2TreatmentSheets(filters, { signal });
+      const response = await apiClient.get(`/nursing/treatment-sheet/by-admission/?admission_id=${admissionId}`, { signal });
       return response.data || response || [];
     },
-    enabled: !!admissionId,
+    enabled: !!admissionId && options.enabled !== false,
     refetchInterval: () => !document.hidden ? 120000 : false,
     refetchOnWindowFocus: true,
     staleTime: 60000,
   });
+  return rust ? { ...result, data: result.data?.results, hasNextPage: result.data?.has_next ?? false, nextCursor: result.data?.next_cursor ?? null } : result;
 };
 
 export const useTreatmentSheetEntry = (entryId) => {
+  const rust = isRustV2ApiMode();
   return useQuery({
-    queryKey: nursingKeys.treatmentSheetEntry(entryId),
+    queryKey: rust ? nursingKeys.treatmentSheetList(getV2ClientScopeKey(), nursingListCacheScope('treatment', { id: entryId, limit: 1 })) : nursingKeys.treatmentSheetEntry(entryId),
     queryFn: async ({ signal }) => {
-      if (isRustV2ApiMode()) {
-        const entries = await getV2TreatmentSheets({ id: entryId }, { signal });
-        return entries[0] || {};
-      }
-
-      const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/`);
-      const data = response?.data ?? response;
-      return data ?? {};
+      if (rust) { const page = await getV2TreatmentSheets({ id: entryId, limit: 1 }, { signal }); return page.results[0] || null; }
+      const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/`, { signal });
+      return response?.data ?? response ?? null;
     },
     enabled: !!entryId,
-    placeholderData: {},
   });
 };
 
@@ -124,6 +121,7 @@ export const useCreateTreatmentEntry = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
         try {

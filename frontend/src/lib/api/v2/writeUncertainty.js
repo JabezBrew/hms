@@ -5,7 +5,7 @@ const MAX_ENTRIES = 24; const MAX_BYTES = 24000; const UUID = /^[0-9a-f]{8}-[0-9
 const HEX = /^[0-9a-f]{64}$/; const receiptKey = Symbol('write-review');
 const ROOTS = new Set(['admin', 'auth', 'billing', 'clinical', 'encounters', 'inventory', 'laboratory', 'nhis', 'nursing', 'patients', 'pharmacy', 'scheduling', 'visits', 'wards', 'appointments']);
 const FAMILY_ALIASES = { 'nursing/prn-dose-requests': 'nursing/medication-administrations', 'nursing/prn-orders': 'nursing/medication-administrations', 'nhis/batches': 'nhis/claims', 'nhis/exports': 'nhis/claims', 'inventory/catalog-edits': 'inventory/items' };
-const IDEMPOTENT = new Set(['POST /api/v2/nursing/fluid-observations', 'POST /api/v2/nursing/fluid-observations/:id/corrections', 'POST /api/v2/nursing/fluid-observations/:id/void', 'POST /api/v2/nursing/fluid-monitoring/rules', 'POST /api/v2/scheduling/appointment-series', 'POST /api/v2/scheduling/appointment-series/:id/cancel-future', 'POST /api/v2/nursing/prn-dose-requests', 'PUT /api/v2/admin/network-policy']);
+const IDEMPOTENT = new Set(['POST /api/v2/nursing/fluid-observations', 'POST /api/v2/nursing/fluid-observations/:id/corrections', 'POST /api/v2/nursing/fluid-observations/:id/void', 'POST /api/v2/nursing/fluid-monitoring/rules', 'POST /api/v2/scheduling/appointment-series', 'POST /api/v2/scheduling/appointment-series/:id/cancel-future', 'POST /api/v2/nursing/prn-dose-requests', 'PUT /api/v2/admin/network-policy', 'PATCH /api/v2/clinical/prescriptions/:id/documentation', 'POST /api/v2/clinical/prescriptions/:id/new-course']);
 let store; let fault = false; let currentScope = null; let currentContext = null; let activation = 0; let serial = Promise.resolve();
 const active = new Map(); const subscribers = new Set();
 let snapshot = { entries: [], unavailable: false };
@@ -94,6 +94,9 @@ function finish(handle) { if (!handle) return; const remaining = (active.get(han
 function remove(handle) { if (!handle) return; load(); store.entries = store.entries.filter((entry) => entry.id !== handle.entry.id || entry.fingerprint !== handle.entry.fingerprint); persist(); }
 function attach(response, handle) { if (!response || typeof response !== 'object' || !handle) return; for (const value of [response, response.data]) if (value && typeof value === 'object' && Object.isExtensible(value)) Object.defineProperty(value, receiptKey, { value: handle, configurable: true }); }
 export const attachWriteResponseMetadata = attach;
+// Preserve only the opaque attempt handle when a typed adapter wraps an error.
+// A validated immutable receipt can then acknowledge that exact original write.
+export function copyWriteResponseMetadata(target, source) { attach(target, source?.[receiptKey]); return target; }
 export function confirmWriteAttempt(handle, response) { if (!handle) return; finish(handle); attach(response, handle); remove(handle); }
 export function rejectWriteAttempt(handle) { if (!handle) return; finish(handle); if (!handle.previous) remove(handle); else publish(); }
 export function markWriteAttemptUncertain(handle) {

@@ -4895,6 +4895,7 @@
         "type": "object"
       },
       "CreateHandoffRequest": {
+        "additionalProperties": false,
         "properties": {
           "shift_label": {
             "type": "string"
@@ -5161,6 +5162,7 @@
         "type": "object"
       },
       "CreateNursingAlertRequest": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -5541,6 +5543,12 @@
               "null"
             ]
           },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "inventory_item_id": {
             "format": "uuid",
             "type": [
@@ -5567,6 +5575,12 @@
               {
                 "$ref": "#/components/schemas/PrnPolicyRequest"
               }
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "route": {
@@ -5889,6 +5903,7 @@
         "type": "object"
       },
       "CreateTreatmentSheetRequest": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -7951,6 +7966,13 @@
       },
       "HandoffListItem": {
         "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -7991,6 +8013,69 @@
           "status",
           "created_at"
         ],
+        "type": "object"
+      },
+      "HandoffListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "created_before": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_from": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "descending": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shift_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HandoffStatus"
+              }
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "HandoffStatus": {
@@ -12046,6 +12131,13 @@
           "data": {
             "items": {
               "properties": {
+                "completed_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "created_at": {
                   "format": "date-time",
                   "type": "string"
@@ -18160,6 +18252,154 @@
         ],
         "type": "string"
       },
+      "NewPrescriptionCourseReceipt": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prescription": {
+            "$ref": "#/components/schemas/PrescriptionDetail"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "relation": {
+            "$ref": "#/components/schemas/PrescriptionCourseRelation"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "source_prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_status_after": {
+            "$ref": "#/components/schemas/PrescriptionStatus"
+          },
+          "source_status_before": {
+            "$ref": "#/components/schemas/PrescriptionStatus"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "source_prescription_id",
+          "source_status_before",
+          "source_status_after",
+          "relation",
+          "prescription",
+          "recorded_at",
+          "replayed"
+        ],
+        "type": "object"
+      },
+      "NewPrescriptionCourseRequest": {
+        "additionalProperties": false,
+        "description": "A new course is a fully reviewed prescription, never a copy with defaults.",
+        "properties": {
+          "change_reason": {
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "dose": {
+            "type": "string"
+          },
+          "duration_days": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_snapshot_token": {
+            "type": "string"
+          },
+          "expected_stock_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_dose_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "frequency": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "inventory_item_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "medication_name": {
+            "type": "string"
+          },
+          "prn_policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrnPolicyRequest"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "relation": {
+            "$ref": "#/components/schemas/PrescriptionCourseRelation"
+          },
+          "route": {
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "visit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_snapshot_token",
+          "relation",
+          "change_reason",
+          "medication_name",
+          "dose",
+          "route",
+          "frequency",
+          "instructions",
+          "reason",
+          "start_date"
+        ],
+        "type": "object"
+      },
       "NhisArAdjustmentEntry": {
         "properties": {
           "adjustment_kind": {
@@ -18656,6 +18896,94 @@
           "status",
           "created_at"
         ],
+        "type": "object"
+      },
+      "NursingAlertListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_before": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_from": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "critical_only": {
+            "description": "Restrict the bounded page to high or critical alerts.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "descending": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NursingAlertSeverity"
+              }
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NursingAlertStatus"
+              }
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "NursingAlertSeverity": {
@@ -22091,6 +22419,13 @@
         "properties": {
           "data": {
             "properties": {
+              "completed_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "created_at": {
                 "format": "date-time",
                 "type": "string"
@@ -23278,6 +23613,58 @@
             "required": [
               "client_request_id",
               "policy",
+              "replayed"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NewPrescriptionCourseReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "prescription": {
+                "$ref": "#/components/schemas/PrescriptionDetail"
+              },
+              "recorded_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "relation": {
+                "$ref": "#/components/schemas/PrescriptionCourseRelation"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "source_prescription_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "source_status_after": {
+                "$ref": "#/components/schemas/PrescriptionStatus"
+              },
+              "source_status_before": {
+                "$ref": "#/components/schemas/PrescriptionStatus"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "source_prescription_id",
+              "source_status_before",
+              "source_status_after",
+              "relation",
+              "prescription",
+              "recorded_at",
               "replayed"
             ],
             "type": "object"
@@ -25466,6 +25853,112 @@
               "qualification",
               "is_active",
               "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PrescriptionDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PrescriptionListItem"
+              },
+              {
+                "properties": {
+                  "has_generated_course": {
+                    "type": "boolean"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "prescribed_by_user_id": {
+                    "format": "uuid",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "provenance": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/PrescriptionCourseProvenance"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "snapshot_token": {
+                    "type": "string"
+                  },
+                  "stock_unit": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "successor_prescription_id": {
+                    "format": "uuid",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "updated_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "instructions",
+                  "reason",
+                  "updated_at",
+                  "snapshot_token",
+                  "has_generated_course"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "Full clinical detail; deliberately excluded from medication list/summary DTOs."
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PrescriptionDocumentationReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "prescription": {
+                "$ref": "#/components/schemas/PrescriptionDetail"
+              },
+              "replayed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "prescription",
+              "replayed"
             ],
             "type": "object"
           },
@@ -31792,6 +32285,129 @@
         ],
         "type": "object"
       },
+      "PrescriptionCourseProvenance": {
+        "properties": {
+          "change_reason": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "relation": {
+            "$ref": "#/components/schemas/PrescriptionCourseRelation"
+          },
+          "source_prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_prescription_id",
+          "relation",
+          "change_reason",
+          "recorded_at",
+          "recorded_by_user_id"
+        ],
+        "type": "object"
+      },
+      "PrescriptionCourseRelation": {
+        "enum": [
+          "renewal",
+          "replacement"
+        ],
+        "type": "string"
+      },
+      "PrescriptionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PrescriptionListItem"
+          },
+          {
+            "properties": {
+              "has_generated_course": {
+                "type": "boolean"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "prescribed_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provenance": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PrescriptionCourseProvenance"
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "snapshot_token": {
+                "type": "string"
+              },
+              "stock_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "successor_prescription_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "instructions",
+              "reason",
+              "updated_at",
+              "snapshot_token",
+              "has_generated_course"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "Full clinical detail; deliberately excluded from medication list/summary DTOs."
+      },
+      "PrescriptionDocumentationReceipt": {
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prescription": {
+            "$ref": "#/components/schemas/PrescriptionDetail"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "prescription",
+          "replayed"
+        ],
+        "type": "object"
+      },
       "PrescriptionListItem": {
         "properties": {
           "discharge_case_id": {
@@ -35243,6 +35859,77 @@
         ],
         "type": "object"
       },
+      "TreatmentSheetListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "descending": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sheet_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TreatmentSheetStatus"
+              }
+            ]
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "TreatmentSheetStatus": {
         "enum": [
           "active",
@@ -35728,6 +36415,31 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "UpdatePrescriptionDocumentationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_snapshot_token": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_snapshot_token",
+          "instructions",
+          "reason"
+        ],
         "type": "object"
       },
       "UpdatePrescriptionRequest": {
@@ -46292,7 +47004,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionListItem"
+                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionDetail"
                 }
               }
             },
@@ -46424,6 +47136,177 @@
         ]
       }
     },
+    "/api/v2/clinical/prescriptions/{id}/documentation": {
+      "patch": {
+        "operationId": "patchClinicalPrescriptionDocumentation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePrescriptionDocumentationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionDocumentationReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/prescriptions/{id}/documentation/requests/{request_id}": {
+      "get": {
+        "operationId": "getClinicalPrescriptionDocumentationReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionDocumentationReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
     "/api/v2/clinical/prescriptions/{id}/generate-mar": {
       "post": {
         "operationId": "postClinicalPrescriptionGenerateMar",
@@ -46509,6 +47392,177 @@
               }
             },
             "description": "MAR generation conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/prescriptions/{id}/new-course": {
+      "post": {
+        "operationId": "postClinicalPrescriptionNewCourse",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPrescriptionCourseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NewPrescriptionCourseReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/prescriptions/{id}/new-course/requests/{request_id}": {
+      "get": {
+        "operationId": "getClinicalPrescriptionNewCourseReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NewPrescriptionCourseReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -56669,10 +57723,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -56682,10 +57733,85 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/NursingAlertStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/NursingAlertSeverity"
+            }
+          },
+          {
+            "description": "Restrict the bounded page to high or critical alerts.",
+            "in": "query",
+            "name": "critical_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "descending",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -56792,6 +57918,16 @@
               }
             },
             "description": "Admission not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Write could not be confirmed"
           }
         },
         "security": [
@@ -58098,10 +59234,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -58111,10 +59244,58 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_label",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HandoffStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "descending",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -58211,6 +59392,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Write could not be confirmed"
           }
         },
         "security": [
@@ -59246,10 +60437,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -59259,10 +60447,68 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sheet_date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TreatmentSheetStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "descending",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -59330,6 +60576,16 @@
             },
             "description": "Treatment sheet created"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or unsupported request fields"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -59359,6 +60615,16 @@
               }
             },
             "description": "Admission not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Write could not be confirmed"
           }
         },
         "security": [
@@ -64349,7 +65615,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionListItem"
+                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionDetail"
                 }
               }
             },

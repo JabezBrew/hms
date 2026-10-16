@@ -346,7 +346,23 @@ pub async fn record_medication_outcome(
     } else {
         None
     };
-    // All source-based writers lock prescription before child rows. Competing
+    let prn_safety_group = if let Some(source) = prescription
+        .as_ref()
+        .filter(|source| source.frequency.trim().eq_ignore_ascii_case("prn"))
+    {
+        Some(
+            crate::clinical::prescription_courses::lock_prn_safety_group(
+                &mut transaction,
+                command.facility_id,
+                source.id,
+            )
+            .await?
+            .ok_or(super::prn::PrnError::Unconfigured)?,
+        )
+    } else {
+        None
+    };
+    // All source-based writers lock prescription and PRN group before child rows. Competing
     // dose outcomes then serialize on this row; a terminal decision is immutable.
     let existing = sqlx::query_as::<_, LockedMedicationOutcomeRow>(
         r#"SELECT frequency, prescription_id, medication_course_id, pharmacy_fulfillment_id,
@@ -405,10 +421,10 @@ pub async fn record_medication_outcome(
     }
     if let Some(source) = prescription
         .as_ref()
-        .filter(|p| p.frequency.eq_ignore_ascii_case("prn"))
+        .filter(|p| p.frequency.trim().eq_ignore_ascii_case("prn"))
     {
-        let requested_admission: Option<Uuid> = sqlx::query_scalar("SELECT admission_case_id FROM medication_administrations WHERE facility_id=$1 AND id=$2 AND prn_request_id IS NOT NULL")
-            .bind(command.facility_id).bind(command.medication_id).fetch_optional(&mut *transaction).await?;
+        let requested_admission: Option<Uuid> = sqlx::query_scalar("SELECT admission_case_id FROM medication_administrations WHERE facility_id=$1 AND id=$2 AND prn_request_id IS NOT NULL AND prn_safety_group_id=$3")
+            .bind(command.facility_id).bind(command.medication_id).bind(prn_safety_group).fetch_optional(&mut *transaction).await?;
         let admission = requested_admission.ok_or(super::prn::PrnError::NotActionable)?;
         let at = sqlx::query_scalar("SELECT clock_timestamp()")
             .fetch_one(&mut *transaction)
@@ -425,7 +441,7 @@ pub async fn record_medication_outcome(
             super::prn::enforce_prn_limits(
                 &mut transaction,
                 command.facility_id,
-                source.id,
+                prn_safety_group.ok_or(super::prn::PrnError::Unconfigured)?,
                 &policy,
                 at,
             )
@@ -521,25 +537,100 @@ pub async fn get_medication_administration(
     optional_medication_by_id(pool, facility_id, medication_id).await
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct TreatmentSheetFilters {
+    pub id: Option<Uuid>,
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub ward_id: Option<Uuid>,
+    pub sheet_date: Option<NaiveDate>,
+    pub status: Option<TreatmentSheetStatus>,
+    pub descending: bool,
+}
+
 pub async fn list_treatment_sheets(
     pool: &PgPool,
     facility_id: Uuid,
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<TreatmentSheetListItem>> {
-    let mut query = treatment_sheet_query();
-    query.push(" WHERE treatment_sheets.facility_id = ");
-    query.push_bind(facility_id);
-    if let Some(cursor) = cursor {
-        query.push(" AND (treatment_sheets.updated_at, treatment_sheets.id) > (");
-        query.push_bind(cursor.occurred_at);
-        query.push(", ");
-        query.push_bind(cursor.id);
-        query.push(")");
-    }
-    query.push(" ORDER BY treatment_sheets.updated_at ASC, treatment_sheets.id ASC LIMIT ");
-    query.push_bind(limit);
+    list_treatment_sheets_scoped(
+        pool,
+        facility_id,
+        cursor,
+        limit,
+        TreatmentSheetFilters::default(),
+    )
+    .await
+}
 
+/// Minimal coherent target context; authorization precedes the clinical projection.
+pub async fn treatment_sheet_access_context(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<(Uuid, Uuid)>> {
+    Ok(observe_db_query("ward.mar.treatment_sheets.context", sqlx::query_as::<_, (Uuid, Uuid)>(
+        "SELECT sheet.patient_id, sheet.admission_case_id FROM treatment_sheets sheet JOIN admission_cases admission ON admission.id = sheet.admission_case_id AND admission.facility_id = sheet.facility_id AND admission.patient_id = sheet.patient_id WHERE sheet.facility_id = $1 AND sheet.id = $2"
+    ).bind(facility_id).bind(id).fetch_optional(pool)).await?)
+}
+
+pub async fn list_treatment_sheets_scoped(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<WardCursor>,
+    limit: i64,
+    filters: TreatmentSheetFilters,
+) -> anyhow::Result<Vec<TreatmentSheetListItem>> {
+    let mut query = treatment_sheet_query();
+    query
+        .push(" WHERE treatment_sheets.facility_id = ")
+        .push_bind(facility_id);
+    if let Some(id) = filters.id {
+        query.push(" AND treatment_sheets.id = ").push_bind(id);
+    }
+    if let Some(id) = filters.patient_id {
+        query
+            .push(" AND treatment_sheets.patient_id = ")
+            .push_bind(id);
+    }
+    if let Some(id) = filters.admission_case_id {
+        query
+            .push(" AND treatment_sheets.admission_case_id = ")
+            .push_bind(id);
+    }
+    if let Some(id) = filters.ward_id {
+        query.push(" AND sheet_admission.ward_id = ").push_bind(id);
+    }
+    if let Some(date) = filters.sheet_date {
+        query
+            .push(" AND treatment_sheets.sheet_date = ")
+            .push_bind(date);
+    }
+    if let Some(status) = filters.status {
+        query
+            .push(" AND treatment_sheets.status = ")
+            .push_bind(codec::encode(status)?);
+    }
+    if let Some(cursor) = cursor {
+        query.push(if filters.descending {
+            " AND (treatment_sheets.updated_at, treatment_sheets.id) < ("
+        } else {
+            " AND (treatment_sheets.updated_at, treatment_sheets.id) > ("
+        });
+        query
+            .push_bind(cursor.occurred_at)
+            .push(", ")
+            .push_bind(cursor.id)
+            .push(")");
+    }
+    query
+        .push(if filters.descending {
+            " ORDER BY treatment_sheets.updated_at DESC, treatment_sheets.id DESC LIMIT "
+        } else {
+            " ORDER BY treatment_sheets.updated_at ASC, treatment_sheets.id ASC LIMIT "
+        })
+        .push_bind(limit);
     let rows = observe_db_query(
         "ward.mar.treatment_sheets.list",
         query.build_query_as::<TreatmentSheetRow>().fetch_all(pool),
@@ -663,7 +754,12 @@ fn treatment_sheet_query() -> QueryBuilder<'static, Postgres> {
                treatment_sheets.status,
                treatment_sheets.updated_at
         FROM treatment_sheets
+        JOIN admission_cases sheet_admission
+          ON sheet_admission.id = treatment_sheets.admission_case_id
+         AND sheet_admission.facility_id = treatment_sheets.facility_id
+         AND sheet_admission.patient_id = treatment_sheets.patient_id
         JOIN patients ON patients.id = treatment_sheets.patient_id
+            AND patients.facility_id = treatment_sheets.facility_id
         "#,
     )
 }

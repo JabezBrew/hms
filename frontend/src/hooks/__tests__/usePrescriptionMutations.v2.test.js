@@ -78,6 +78,8 @@ describe('Rust V2 prescription mutations bridge', () => {
       dosage: '5 mg',
       frequency: 'daily',
       route: 'oral',
+      instructions: '  Synthetic saved instructions  ',
+      reason: '  Synthetic saved reason  ',
     }, { signal: new AbortController().signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -97,6 +99,8 @@ describe('Rust V2 prescription mutations bridge', () => {
       dose: '5 mg',
       frequency: 'daily',
       route: 'oral',
+      instructions: 'Synthetic saved instructions',
+      reason: 'Synthetic saved reason',
     });
     expect(response).toEqual(
       expect.objectContaining({
@@ -392,6 +396,7 @@ describe('Rust V2 prescription mutations bridge', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: prescriptionKeys.list('patient-1') });
     expect(invalidate).not.toHaveBeenCalledWith({ queryKey: prescriptionKeys.list('rx-1') });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: nursingKeys.patientMarAll() });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: nursingKeys.prnOrdersAll() });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: nursingKeys.pendingDispensingAll() });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: nursingKeys.medicationAdministrationHistoryAll() });
   });
@@ -659,4 +664,10 @@ describe('Rust V2 prescription mutations bridge', () => {
     );
     expect(apiClient.post).not.toHaveBeenCalled();
   });
+
+it('invalidates actual scoped PRN-order caches after a persisted lifecycle change without invalidating unrelated patient detail', async () => {
+  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }); const key = nursingKeys.prnOrders('synthetic-admission', 'synthetic-authority'); const other = ['synthetic-unrelated-patient-detail']; client.setQueryData(key, { pages: [{ items: [{ prescription_id: 'rx-1', status: 'active' }] }] }); client.setQueryData(other, { unchanged: true });
+  globalThis.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'rx-1', patient_id: 'patient-1', status: 'on_hold' } }), { status: 200, headers: { 'content-type': 'application/json' } })); const wrapper = ({ children }) => createElement(QueryClientProvider, { client }, children); const { result } = renderHook(() => useUpdatePrescription(), { wrapper }); await act(async () => { await result.current.mutateAsync({ prescriptionId: 'rx-1', data: { status: 'on_hold' } }); }); expect(client.getQueryState(key).isInvalidated).toBe(true); expect(client.getQueryState(other).isInvalidated).toBe(false); client.clear();
+});
+
 });

@@ -1,3 +1,5 @@
+pub mod prescription_courses;
+
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::clinical::{
@@ -1167,18 +1169,38 @@ pub async fn create_prescription_with_prn_policy(
     prescription: NewPrescription,
     policy: Option<PrnPolicyRequest>,
 ) -> anyhow::Result<PrescriptionListItem> {
+    let mut transaction = pool.begin().await?;
+    let result = insert_prescription_in_transaction(
+        &mut transaction,
+        prescription,
+        policy,
+        prescription_courses::PrescriptionDocumentation::default(),
+        None,
+    )
+    .await?;
+    transaction.commit().await?;
+    Ok(result)
+}
+
+pub(crate) async fn insert_prescription_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    prescription: NewPrescription,
+    policy: Option<PrnPolicyRequest>,
+    documentation: prescription_courses::PrescriptionDocumentation,
+    inherited_prn_group: Option<Uuid>,
+) -> anyhow::Result<PrescriptionListItem> {
+    let documentation = documentation.normalized()?;
     let policy = policy
         .map(|p| p.normalized().map_err(anyhow::Error::msg))
         .transpose()?;
     if policy.is_some() && !prescription.frequency.eq_ignore_ascii_case("prn") {
         anyhow::bail!("invalid_prn_policy");
     }
-    let mut transaction = pool.begin().await?;
     let mut stock_unit = None;
     if let Some(item_id) = prescription.inventory_item_id {
         stock_unit = sqlx::query_scalar::<_, String>(
             "SELECT unit FROM inventory_items WHERE facility_id = $1 AND id = $2 AND is_active AND item_type IN ('medication', 'controlled_substance') AND (NOT $3 OR (NOT controlled AND item_type='medication')) FOR SHARE",
-        ).bind(prescription.facility_id).bind(item_id).bind(policy.is_some()).fetch_optional(&mut *transaction).await?;
+        ).bind(prescription.facility_id).bind(item_id).bind(policy.is_some()).fetch_optional(&mut **transaction).await?;
         if stock_unit.is_none() {
             anyhow::bail!("prescription_inventory_item_invalid");
         }
@@ -1196,12 +1218,23 @@ pub async fn create_prescription_with_prn_policy(
                 .ok_or_else(|| anyhow::anyhow!("invalid_prn_policy"))
         })
         .transpose()?;
+    let prn_group = if prescription.frequency.trim().eq_ignore_ascii_case("prn") {
+        if let Some(group) = inherited_prn_group {
+            Some(group)
+        } else {
+            sqlx::query("INSERT INTO prescription_prn_safety_groups(id,facility_id,patient_id,root_prescription_id) VALUES($1,$2,$3,$1)")
+                .bind(prescription.id).bind(prescription.facility_id).bind(prescription.patient_id).execute(&mut **transaction).await?;
+            Some(prescription.id)
+        }
+    } else {
+        inherited_prn_group
+    };
     let row = sqlx::query_as::<_, PrescriptionRow>(
         r#"
         INSERT INTO prescriptions (
-            id, facility_id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id, prn_policy
+            id, facility_id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, status, created_by_user_id, prn_policy, instructions, reason, prn_safety_group_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         RETURNING id, patient_id, encounter_id, visit_id, discharge_case_id, medication_name, dose, route, frequency, inventory_item_id, start_date, duration_days, first_dose_at, prn_policy, status, prescribed_at
         "#,
     )
@@ -1222,9 +1255,11 @@ pub async fn create_prescription_with_prn_policy(
     .bind(codec::encode(PrescriptionStatus::Active)?)
     .bind(prescription.actor_user_id)
     .bind(policy)
-    .fetch_one(&mut *transaction)
+    .bind(documentation.instructions)
+    .bind(documentation.reason)
+    .bind(prn_group)
+    .fetch_one(&mut **transaction)
     .await?;
-    transaction.commit().await?;
     prescription_from_row(row)
 }
 
@@ -1301,6 +1336,9 @@ pub(crate) async fn update_prescription_in_transaction(
     if patient_id.is_some_and(|patient_id| patient_id != current.patient_id) {
         return Ok(None);
     }
+    let _prn_group =
+        prescription_courses::lock_prn_safety_group(transaction, facility_id, prescription_id)
+            .await?;
     let has_course = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM medication_courses WHERE facility_id = $1 AND prescription_id = $2)",
     ).bind(facility_id).bind(prescription_id).fetch_one(&mut **transaction).await?;
@@ -1345,12 +1383,10 @@ pub(crate) async fn update_prescription_in_transaction(
         }
     }
     let next_status = update.status.unwrap_or(current.status);
-    if has_course
-        && matches!(
-            current.status,
-            PrescriptionStatus::Stopped | PrescriptionStatus::Completed
-        )
-        && next_status != current.status
+    if matches!(
+        current.status,
+        PrescriptionStatus::Stopped | PrescriptionStatus::Completed
+    ) && (next_status != current.status || regimen_changed)
     {
         anyhow::bail!("prescription_course_closed");
     }

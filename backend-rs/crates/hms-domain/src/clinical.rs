@@ -353,6 +353,8 @@ impl PrnPolicy {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreatePrescriptionRequest {
+    pub instructions: Option<String>,
+    pub reason: Option<String>,
     pub prn_policy: Option<PrnPolicyRequest>,
     pub medication_name: String,
     pub dose: String,
@@ -381,6 +383,148 @@ pub struct UpdatePrescriptionRequest {
     pub duration_days: Option<i32>,
     pub first_dose_at: Option<DateTime<Utc>>,
     pub status: Option<PrescriptionStatus>,
+}
+
+/// Full clinical detail; deliberately excluded from medication list/summary DTOs.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PrescriptionDetail {
+    #[serde(flatten)]
+    pub prescription: PrescriptionListItem,
+    pub instructions: String,
+    pub reason: String,
+    pub updated_at: DateTime<Utc>,
+    pub prescribed_by_user_id: Option<Uuid>,
+    pub snapshot_token: String,
+    pub stock_unit: Option<String>,
+    pub has_generated_course: bool,
+    pub provenance: Option<PrescriptionCourseProvenance>,
+    pub successor_prescription_id: Option<Uuid>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PrescriptionCourseRelation {
+    Renewal,
+    Replacement,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PrescriptionCourseProvenance {
+    pub source_prescription_id: Uuid,
+    pub relation: PrescriptionCourseRelation,
+    pub change_reason: String,
+    pub recorded_at: DateTime<Utc>,
+    pub recorded_by_user_id: Uuid,
+}
+
+/// A new course is a fully reviewed prescription, never a copy with defaults.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NewPrescriptionCourseRequest {
+    pub client_request_id: Uuid,
+    pub expected_snapshot_token: String,
+    pub relation: PrescriptionCourseRelation,
+    pub change_reason: String,
+    pub medication_name: String,
+    pub dose: String,
+    pub route: String,
+    pub frequency: String,
+    pub instructions: String,
+    pub reason: String,
+    pub start_date: NaiveDate,
+    pub duration_days: Option<i32>,
+    pub first_dose_at: Option<DateTime<Utc>>,
+    pub encounter_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub inventory_item_id: Option<Uuid>,
+    pub expected_stock_unit: Option<String>,
+    pub prn_policy: Option<PrnPolicyRequest>,
+}
+
+impl NewPrescriptionCourseRequest {
+    pub fn normalized(mut self) -> Result<Self, &'static str> {
+        self.medication_name = self.medication_name.trim().to_owned();
+        self.dose = self.dose.trim().to_owned();
+        self.route = self.route.trim().to_owned();
+        self.frequency = self.frequency.trim().to_owned();
+        self.instructions = self.instructions.trim().to_owned();
+        self.reason = self.reason.trim().to_owned();
+        self.change_reason = self.change_reason.trim().to_owned();
+        self.expected_stock_unit = self.expected_stock_unit.map(|v| v.trim().to_owned());
+        self.prn_policy = self
+            .prn_policy
+            .map(PrnPolicyRequest::normalized)
+            .transpose()?;
+        if self.client_request_id.is_nil()
+            || self.expected_snapshot_token.len() != 64
+            || !self
+                .expected_snapshot_token
+                .bytes()
+                .all(|v| v.is_ascii_hexdigit())
+            || [
+                (&self.medication_name, 160),
+                (&self.dose, 120),
+                (&self.route, 120),
+                (&self.frequency, 120),
+                (&self.change_reason, 2000),
+            ]
+            .into_iter()
+            .any(|(value, max)| value.is_empty() || value.chars().count() > max)
+            || self.instructions.chars().count() > 4000
+            || self.reason.chars().count() > 2000
+            || self.duration_days.is_some_and(|days| days <= 0)
+            || self.first_dose_at.is_some_and(|first| {
+                first < self.start_date.and_hms_opt(0, 0, 0).unwrap().and_utc()
+            })
+            || self.inventory_item_id.is_some() != self.expected_stock_unit.is_some()
+            || self
+                .expected_stock_unit
+                .as_ref()
+                .is_some_and(|unit| unit.is_empty() || unit.chars().count() > 100)
+            || self.frequency.eq_ignore_ascii_case("prn") != self.prn_policy.is_some()
+            || self.prn_policy.as_ref().is_some_and(|policy| {
+                self.inventory_item_id.is_none()
+                    || Some(policy.expected_stock_unit.as_str())
+                        != self.expected_stock_unit.as_deref()
+            })
+        {
+            return Err("invalid_prescription_course");
+        }
+        if let Some(days) = self.duration_days {
+            self.start_date
+                .checked_add_days(chrono::Days::new(days as u64))
+                .ok_or("invalid_prescription_course")?;
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct NewPrescriptionCourseReceipt {
+    pub client_request_id: Uuid,
+    pub source_prescription_id: Uuid,
+    pub source_status_before: PrescriptionStatus,
+    pub source_status_after: PrescriptionStatus,
+    pub relation: PrescriptionCourseRelation,
+    pub prescription: PrescriptionDetail,
+    pub recorded_at: DateTime<Utc>,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdatePrescriptionDocumentationRequest {
+    pub client_request_id: Uuid,
+    pub expected_snapshot_token: String,
+    pub instructions: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PrescriptionDocumentationReceipt {
+    pub client_request_id: Uuid,
+    pub prescription: PrescriptionDetail,
+    pub replayed: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

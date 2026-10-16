@@ -205,18 +205,19 @@ async function rawV2Request(requestConfig, retryWithRefresh = true) {
     });
   } catch (error) {
     markWriteAttemptUncertain(attempt);
-    if (error?.name === 'AbortError') {
-      throw error;
-    }
-    throw apiErrorFromEnvelope(0, { message: error?.message || 'Network error' });
+    const failure = error?.name === 'AbortError' ? error : apiErrorFromEnvelope(0, { message: error?.message || 'Network error' });
+    attachWriteResponseMetadata(failure, attempt);
+    throw failure;
   }
 
   let data;
-  try { data = await parseResponseBody(response); } catch (error) { markWriteAttemptUncertain(attempt); throw error; }
+  try { data = await parseResponseBody(response); } catch (error) { markWriteAttemptUncertain(attempt); attachWriteResponseMetadata(error, attempt); throw error; }
   if (response.ok) {
     if (attempt && (!data || typeof data !== 'object' || !('data' in data))) {
       markWriteAttemptUncertain(attempt);
-      throw apiErrorFromEnvelope(0, { error: { code: 'write_response_unconfirmed', message: 'The change may already be saved, but its response could not be confirmed. Review the affected workflow before making another change.' } });
+      const failure = apiErrorFromEnvelope(0, { error: { code: 'write_response_unconfirmed', message: 'The change may already be saved, but its response could not be confirmed. Review the affected workflow before making another change.' } });
+      attachWriteResponseMetadata(failure, attempt);
+      throw failure;
     }
     confirmWriteAttempt(attempt, data);
     if (!tracked) { try { await recordWriteRecoveryRead({ resolvedPath, pathParams: pathSnapshot, query: querySnapshot, body: bodySnapshot }, data, { principal: originPrincipal, readEvidence }); } catch { /* Recovery storage failures must not prevent authorized reads. */ } }

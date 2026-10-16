@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAfterInitialPaint } from '@/shared/hooks/useAfterInitialPaint';
 import { ChronicleEmergencyAccess } from './ChronicleEmergencyAccess';
+import { PrescriptionPatientProvider } from '@/features/pharmacy/prescribing/PrescriptionPatientProvider';
 
 const ClinicalSummarySidebar = lazy(() => import('@/components/chronicle/ClinicalSummarySidebar'));
 const ChronicleTimelinePanel = lazy(() => import('@/features/patients/chronicle/ChronicleTimelinePanel'));
@@ -380,7 +381,7 @@ export function PatientChroniclePageContent({
                         <Skeleton className="h-32 w-full rounded-lg" />
                       </div>
                     )}>
-                      <ChronicleTimelinePanel
+                      <PrescriptionPatientProvider patient={patientForChronicle} patientId={patientLocalId || patientId}><ChronicleTimelinePanel
                         activeEncounter={activeEncounter}
                         activeFilter={activeFilter}
                         encounterCount={encounters?.length || 0}
@@ -413,7 +414,7 @@ export function PatientChroniclePageContent({
                         onViewCurrentVisit={handleViewCurrentVisit}
                         onViewMedicationHistory={handleViewMedicationHistory}
                         onVisitScopeChange={handleVisitScopeChange}
-                      />
+                      /></PrescriptionPatientProvider>
                     </Suspense>
                   )}
                 </div>

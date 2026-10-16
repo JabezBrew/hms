@@ -87,8 +87,8 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     expect(
       screen.queryByText(/mar generation is not available in rust v2/i),
     ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Special Instructions')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Reason for Prescription')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Special Instructions')).toBeInTheDocument();
+    expect(screen.getByLabelText('Reason for Prescription')).toBeInTheDocument();
   });
 
   it('keeps MAR generation controls available outside Rust V2 mode', () => {
@@ -117,6 +117,8 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
     fireEvent.change(screen.getByPlaceholderText(/500 mg/i), {
       target: { value: '500 mg' },
     });
+    fireEvent.change(screen.getByLabelText('Special Instructions'), { target: { value: 'Synthetic administration instruction' } });
+    fireEvent.change(screen.getByLabelText('Reason for Prescription'), { target: { value: 'Synthetic prescribing reason' } });
     fireEvent.click(screen.getByRole('button', { name: /create prescription/i }));
 
     await waitFor(() => expect(createPrescription).toHaveBeenCalledTimes(1));
@@ -126,6 +128,8 @@ describe('AddPrescriptionSlideOver Rust V2 MAR guard', () => {
       patient: 'patient-1',
       medication_name: 'Amoxicillin',
       dosage: '500 mg',
+      instructions: 'Synthetic administration instruction',
+      reason: 'Synthetic prescribing reason',
       route: 'oral',
       frequency: 'daily',
       start_date: expect.any(String),

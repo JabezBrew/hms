@@ -13,7 +13,7 @@ const REASONS = {
   unconfigured: 'Ask the prescriber to replace this order with explicit PRN limits.',
   stock_changed: 'The stock item or unit has changed. Prescriber review is required.',
   prescription_on_hold: 'This prescription is on hold.',
-  pending_dose: 'Review the outstanding dose in the MAR before requesting another.',
+  pending_dose: 'Review the outstanding linked-course dose in the MAR before requesting another.',
   not_started: 'The prescribed start time has not been reached.',
   course_ended: 'The prescribed duration has ended.',
   dose_limit: 'The minimum interval or rolling 24-hour limit has not yet cleared.',
@@ -55,7 +55,7 @@ function PrnOrdersWorkspace({ admissionId }) {
   const [selected, setSelected] = useState(null);
   const orders = query.data?.pages.flatMap((page) => page.items) || [];
   return <Card>
-    <CardHeader><CardTitle className="text-base">As-needed medications</CardTitle><CardDescription>Request one indicated dose, arrange pharmacy supply, then record what happened in the MAR. Limits use actual administered doses across the preceding 24 hours.</CardDescription></CardHeader>
+    <CardHeader><CardTitle className="text-base">As-needed medications</CardTitle><CardDescription>Request one indicated dose, arrange pharmacy supply, then record what happened in the MAR. Earlier recorded and pending doses in linked courses count toward the reviewed limits, including when medication changes.</CardDescription></CardHeader>
     <CardContent className="space-y-4">
       {selected && <PrnRequestDialog order={selected} admissionId={admissionId} onClose={() => setSelected(null)} />}
       {query.isPending && <p role="status" className="text-sm text-muted-foreground">Loading as-needed orders…</p>}
@@ -63,9 +63,9 @@ function PrnOrdersWorkspace({ admissionId }) {
       {!query.isPending && !query.isError && orders.length === 0 && <p className="text-sm text-muted-foreground">No active as-needed orders for this patient.</p>}
       {orders.map((order) => <div key={order.prescription_id} className="flex flex-col gap-3 border-b border-border pb-4 last:border-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1"><p className="text-sm font-medium">{order.medication_name}</p><p className="text-sm text-muted-foreground">{order.dose} · {order.route}</p>
-          {order.prn_policy && <><p className="text-sm">{order.prn_policy.indication}</p><p className="text-xs text-muted-foreground">At least {order.prn_policy.minimum_interval_hours} hours apart · maximum {order.prn_policy.maximum_doses_per_24_hours} {order.prn_policy.maximum_doses_per_24_hours === 1 ? 'dose' : 'doses'} in 24 hours · {order.prn_policy.stock_units_per_dose} {order.prn_policy.stock_unit} per dose</p><p className="text-xs text-muted-foreground">{order.administered_in_last_24_hours} {order.administered_in_last_24_hours === 1 ? 'dose' : 'doses'} administered in the preceding 24 hours</p></>}
+          {order.prn_policy && <><p className="text-sm">{order.prn_policy.indication}</p><p className="text-xs text-muted-foreground">At least {order.prn_policy.minimum_interval_hours} hours apart · maximum {order.prn_policy.maximum_doses_per_24_hours} {order.prn_policy.maximum_doses_per_24_hours === 1 ? 'dose' : 'doses'} in 24 hours · {order.prn_policy.stock_units_per_dose} {order.prn_policy.stock_unit} per dose</p><p className="text-xs text-muted-foreground">Linked-course doses in past 24 hours: {order.administered_in_last_24_hours}</p></>}
           {order.unavailable_reason && <p className="text-xs text-muted-foreground">{REASONS[order.unavailable_reason] || 'Review this order before requesting a dose.'}</p>}
-          {order.pending_medication_administration_id && <p className="text-xs font-medium">{order.pending_is_dispensed ? 'Outstanding dose supplied — record its outcome in the MAR.' : 'Outstanding dose awaiting pharmacy supply.'}</p>}
+          {order.pending_medication_administration_id && <p className="text-xs font-medium">{order.pending_is_dispensed ? 'Outstanding linked-course dose supplied — record its outcome in the MAR.' : 'Outstanding linked-course dose awaiting pharmacy supply.'}</p>}
           {order.next_eligible_at && <p className="text-xs text-muted-foreground">Next eligibility check: {new Date(order.next_eligible_at).toISOString().slice(0,16).replace('T',' ')} UTC</p>}
         </div><Button size="sm" variant="outline" onClick={() => setSelected(order)} disabled={query.isError || query.isFetching || Boolean(order.unavailable_reason) || !order.prn_policy}>Request one dose</Button>
       </div>)}

@@ -1,17 +1,15 @@
 import { v2Api, v2Request } from '@/lib/api/v2/client';
 import { acknowledgeWriteResponse, markWriteResponseUncertain } from '@/lib/api/v2/writeUncertainty';
 import { handleV2ApiError } from '@/lib/api/v2/errors';
+import { hashQueryValue } from '@/shared/lib/privateQueryKey';
 
 export const MAX_MONITORING_PAGE_SIZE = 50;
 export const MAX_VITALS_PAGE_SIZE = 50;
 const MAX_TASK_PAGE_SIZE = 50;
-const MAX_ALERT_PAGE_SIZE = 50;
 const MAX_MEDICATION_ADMIN_PAGE_SIZE = 50;
 const MAX_MEDICATION_ADMIN_WINDOW_PAGES = 100;
 const MAX_FLUID_BALANCE_PAGE_SIZE = 50;
-const MAX_TREATMENT_SHEET_PAGE_SIZE = 50;
 const MAX_WARD_STOCK_REQUEST_PAGE_SIZE = 50;
-const MAX_HANDOFF_PAGE_SIZE = 50;
 export const DEFAULT_FLUID_BALANCE_SETTINGS = {
   min_daily_intake_target: 1500,
   max_daily_output_threshold: 3000,
@@ -491,20 +489,6 @@ export function normalizeV2HandoffPayload(data = {}) {
   };
 }
 
-function handoffMatchesFilters(handoff, filters = {}) {
-  const ward = filters.ward || filters.ward_id;
-  if (ward && handoff.ward_id !== ward) {
-    return false;
-  }
-  const shift = filters.shift || filters.shift_type || filters.shift_label;
-  if (shift && handoff.shift_label !== shift) {
-    return false;
-  }
-  if (filters.date && handoff.shift_date !== filters.date) {
-    return false;
-  }
-  return true;
-}
 
 function taskMatchesFilters(task, filters = {}) {
   const patient = filters.patient || filters.patient_id;
@@ -532,21 +516,6 @@ function taskMatchesFilters(task, filters = {}) {
   return true;
 }
 
-function alertMatchesFilters(alert, filters = {}) {
-  const patient = filters.patient || filters.patient_id;
-  if (patient && alert.patient_id !== patient) {
-    return false;
-  }
-  const severity = filters.severity;
-  if (severity && severity !== 'all' && alert.severity !== severity) {
-    return false;
-  }
-  const status = filters.status;
-  if (status && status !== 'all' && alert.status !== status) {
-    return false;
-  }
-  return true;
-}
 
 function medicationAdministrationMatchesFilters(item, filters = {}) {
   const patient = filters.patient || filters.patient_id;
@@ -573,20 +542,6 @@ function medicationAdministrationMatchesFilters(item, filters = {}) {
   return true;
 }
 
-function treatmentSheetMatchesFilters(item, filters = {}) {
-  const id = filters.id || filters.entry_id;
-  if (id && item.id !== id) {
-    return false;
-  }
-  const admission = filters.admission || filters.admission_id || filters.admission_case_id;
-  if (admission && item.admission_case_id !== admission) {
-    return false;
-  }
-  if (filters.date && item.sheet_date !== filters.date) {
-    return false;
-  }
-  return true;
-}
 
 function wardStockRequestMatchesFilters(item, filters = {}) {
   const id = filters.id || filters.request_id;
@@ -835,20 +790,81 @@ export async function getV2MedicationAdministrations(filters = {}, { signal } = 
   throw new Error('Too many medication doses for this view. Choose a shorter date range.');
 }
 
+function nursingListDirection(filters) {
+  if (filters.descending !== undefined && typeof filters.descending !== 'boolean') throw new Error('Choose a valid list direction.');
+  return filters.descending ?? String(filters.ordering || '').startsWith('-');
+}
+function nursingListBase(filters) {
+  const limit = Number(filters.limit ?? filters.page_size ?? 50);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('Choose a page size between 1 and 100.');
+  if (Number(filters.page || 1) > 1 && !filters.cursor) throw new Error('Use the server cursor to open the next page.');
+  return { limit, descending: nursingListDirection(filters), ...(filters.cursor ? { cursor: filters.cursor } : {}) };
+}
+function nursingListScope(filters) {
+  const alias = (...keys) => {
+    const values = [...new Set(keys.map((key) => filters[key]).filter(Boolean))];
+    if (values.length > 1) throw new Error('The requested nursing scope is inconsistent.');
+    return values[0];
+  };
+  const patient = alias('patient_id', 'patient');
+  const admission = alias('admission_case_id', 'admission_id', 'admission');
+  const ward = alias('ward_id', 'ward');
+  return { ...(patient ? { patient_id: patient } : {}), ...(admission ? { admission_case_id: admission } : {}), ...(ward ? { ward_id: ward } : {}) };
+}
+function nursingListTimeRange(filters) {
+  const from = filters.created_from || (filters.date ? marDateBoundary(filters.date) : undefined);
+  const before = filters.created_before || (filters.date ? marDateBoundary(filters.date, true) : undefined);
+  if ((from && !Number.isFinite(Date.parse(from))) || (before && !Number.isFinite(Date.parse(before))) || (from && before && Date.parse(from) >= Date.parse(before))) throw new Error('Choose a valid time range.');
+  return { ...(from ? { created_from: new Date(from).toISOString() } : {}), ...(before ? { created_before: new Date(before).toISOString() } : {}) };
+}
+export function normalizeV2TreatmentSheetListQuery(filters = {}) {
+  const id = filters.id || filters.entry_id;
+  const date = filters.sheet_date || filters.date;
+  if (date) marDateBoundary(date);
+  return { ...nursingListBase(filters), ...nursingListScope(filters), ...(id ? { id } : {}), ...(date ? { sheet_date: date } : {}), ...(filters.status && filters.status !== 'all' ? { status: filters.status } : {}) };
+}
+export function normalizeV2NursingAlertListQuery(filters = {}) {
+  const criticalOnly = filters.critical_only ?? false;
+  if (typeof criticalOnly !== 'boolean') throw new Error('Choose a valid alert severity filter.');
+  if (filters.status && !['all', 'open', 'acknowledged'].includes(filters.status)) throw new Error('Choose an available alert status.');
+  if (filters.severity && !['all', 'low', 'medium', 'high', 'critical'].includes(filters.severity)) throw new Error('Choose an available alert severity.');
+  return { ...nursingListBase(filters), ...nursingListScope(filters), ...nursingListTimeRange(filters), ...(filters.status && filters.status !== 'all' ? { status: filters.status } : {}), ...(filters.severity && filters.severity !== 'all' ? { severity: filters.severity } : {}), ...(criticalOnly ? { critical_only: true } : {}) };
+}
+export function normalizeV2HandoffListQuery(filters = {}) {
+  if (filters.patient || filters.patient_id || filters.admission || filters.admission_id || filters.admission_case_id) throw new Error('Shift handoffs support ward scope; patient handover is not available.');
+  const ward = filters.ward_id || filters.ward;
+  const shift = filters.shift_label || filters.shift_type || filters.shift;
+  if (filters.status && !['all', 'draft', 'completed'].includes(filters.status)) throw new Error('Choose an available handoff status.');
+  return { ...nursingListBase(filters), ...nursingListTimeRange(filters), ...(ward ? { ward_id: ward } : {}), ...(shift ? { shift_label: shift } : {}), ...(filters.status && filters.status !== 'all' ? { status: filters.status } : {}) };
+}
+export function nursingListCacheScope(kind, filters) {
+  try {
+    const query = ({ alerts: normalizeV2NursingAlertListQuery, treatment: normalizeV2TreatmentSheetListQuery, handoffs: normalizeV2HandoffListQuery })[kind](filters);
+    return hashQueryValue(JSON.stringify(query));
+  } catch { return { invalid: true }; }
+}
+function nursingListPage(response, query, adapt, matches) {
+  if (!Array.isArray(response?.data) || response.data.length > query.limit || typeof response?.page?.has_next !== 'boolean' || (response.page.has_next && (!response.data.length || typeof response.page.next_cursor !== 'string' || !response.page.next_cursor || response.page.next_cursor === query.cursor))) throw new Error('The nursing page could not be confirmed. Refresh this view.');
+  const seen = new Set();
+  for (const item of response.data) {
+    if (!item?.id || seen.has(item.id) || !matches(item)) throw new Error('The requested nursing scope could not be confirmed. Refresh this view.');
+    seen.add(item.id);
+  }
+  return { results: response.data.map(adapt), has_next: response.page.has_next, next_cursor: response.page.has_next ? response.page.next_cursor : null, limit: query.limit };
+}
+function nursingPatientRowMatches(item, query) {
+  return (!query.patient_id || item.patient_id === query.patient_id) && (!query.admission_case_id || item.admission_case_id === query.admission_case_id) && (!query.status || item.status === query.status);
+}
+function nursingTimeRowMatches(item, query) {
+  const time = Date.parse(item.created_at);
+  return Number.isFinite(time) && (!query.created_from || time >= Date.parse(query.created_from)) && (!query.created_before || time < Date.parse(query.created_before));
+}
 export async function getV2TreatmentSheets(filters = {}, { signal } = {}) {
   try {
-    const response = await v2Api.getTreatmentSheets({
-      query: { limit: MAX_TREATMENT_SHEET_PAGE_SIZE },
-      signal,
-    });
-    return adaptMatchingV2Items(
-      response?.data,
-      adaptV2TreatmentSheet,
-      (item) => treatmentSheetMatchesFilters(item, filters)
-    );
-  } catch (error) {
-    rethrowV2Error(error, 'Failed to load treatment sheets');
-  }
+    const query = normalizeV2TreatmentSheetListQuery(filters);
+    const response = await v2Api.getTreatmentSheets({ query, signal });
+    return nursingListPage(response, query, adaptV2TreatmentSheet, (item) => nursingPatientRowMatches(item, query) && (!query.id || item.id === query.id) && (!query.sheet_date || item.sheet_date === query.sheet_date));
+  } catch (error) { rethrowV2Error(error, 'Failed to load treatment sheets'); }
 }
 
 export async function getV2WardStockRequests(filters = {}, { signal } = {}) {
@@ -1048,18 +1064,10 @@ export async function getV2FluidBalanceTrends(patientId, filters = {}, { signal 
 
 export async function getV2NursingAlerts(filters = {}, { signal } = {}) {
   try {
-    const response = await v2Api.getNursingAlerts({
-      query: { limit: MAX_ALERT_PAGE_SIZE },
-      signal,
-    });
-    return adaptMatchingV2Items(
-      response?.data,
-      adaptV2NursingAlert,
-      (alert) => alertMatchesFilters(alert, filters)
-    );
-  } catch (error) {
-    rethrowV2Error(error, 'Failed to load nursing alerts');
-  }
+    const query = normalizeV2NursingAlertListQuery(filters);
+    const response = await v2Api.getNursingAlerts({ query, signal });
+    return nursingListPage(response, query, adaptV2NursingAlert, (item) => nursingPatientRowMatches(item, query) && nursingTimeRowMatches(item, query) && (!query.severity || item.severity === query.severity) && (!query.critical_only || ['high', 'critical'].includes(item.severity)));
+  } catch (error) { rethrowV2Error(error, 'Failed to load nursing alerts'); }
 }
 
 export async function getV2NursingTasks(filters = {}, { signal } = {}) {
@@ -1086,18 +1094,10 @@ export async function getV2NursingTasks(filters = {}, { signal } = {}) {
 
 export async function getV2Handoffs(filters = {}, { signal } = {}) {
   try {
-    const response = await v2Api.getHandoffs({
-      query: { limit: MAX_HANDOFF_PAGE_SIZE },
-      signal,
-    });
-    return adaptMatchingV2Items(
-      response?.data,
-      adaptV2Handoff,
-      (handoff) => handoffMatchesFilters(handoff, filters)
-    );
-  } catch (error) {
-    rethrowV2Error(error, 'Failed to load shift handoffs');
-  }
+    const query = normalizeV2HandoffListQuery(filters);
+    const response = await v2Api.getHandoffs({ query, signal });
+    return nursingListPage(response, query, adaptV2Handoff, (item) => nursingTimeRowMatches(item, query) && (!query.ward_id || item.ward_id === query.ward_id) && (!query.shift_label || item.shift_label === query.shift_label) && (!query.status || item.status === query.status));
+  } catch (error) { rethrowV2Error(error, 'Failed to load shift handoffs'); }
 }
 
 function normalizeVitalSignsLimit(value) {

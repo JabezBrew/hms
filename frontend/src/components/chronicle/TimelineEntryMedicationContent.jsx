@@ -4,7 +4,9 @@ import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import PauseCircle from 'lucide-react/dist/esm/icons/circle-pause.js';
 import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useContext, useMemo, useState } from 'react';
+import { AuthContext } from '@/lib/auth/AuthContext';
+import { userHasCapability } from '@/shared/lib/access';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -50,6 +52,9 @@ const getStatusBadge = (status) => {
 };
 
 export const MedicationContent = ({ medication, entry }) => {
+  const auth = useContext(AuthContext); const rustV2 = isRustV2ApiMode();
+  const manage = !rustV2 || userHasCapability(auth?.user, 'clinical_documentation.manage');
+  const view = manage || userHasCapability(auth?.user, 'clinical_documentation.view');
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState(null);
   const prescriptionId = medication?.id || entry?.data?.id || entry?.id;
@@ -67,12 +72,12 @@ export const MedicationContent = ({ medication, entry }) => {
     setActionDialogOpen(true);
   };
 
-  const canEdit = status === 'active' || status === 'on_hold';
-  const canDiscontinue = status === 'active' || status === 'on_hold';
-  const canHold = status === 'active';
-  const canResume = status === 'on_hold';
-  const canRenew = !isRustV2ApiMode() && (status === 'active' || status === 'completed');
-  const hasAnyAction = canEdit || canDiscontinue || canHold || canResume || canRenew;
+  const canEdit = manage && (status === 'active' || status === 'on_hold');
+  const canDiscontinue = canEdit;
+  const canHold = manage && status === 'active';
+  const canResume = manage && status === 'on_hold';
+  const canRenew = manage && (rustV2 ? ['stopped', 'completed'].includes(status) : ['active', 'completed'].includes(status));
+  const hasAnyAction = view || canEdit || canDiscontinue || canHold || canResume || canRenew;
 
   return (
     <div className="space-y-2">
@@ -100,16 +105,18 @@ export const MedicationContent = ({ medication, entry }) => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                {rustV2 && view && <DropdownMenuItem onClick={() => handleAction('view')}>View prescription</DropdownMenuItem>}
                 {canEdit && (
                   <DropdownMenuItem onClick={() => handleAction('edit')}>
                     <Edit className="size-4 mr-2" />
-                    Edit Prescription
+                    {rustV2 ? 'Edit documentation' : 'Edit Prescription'}
                   </DropdownMenuItem>
                 )}
+                {rustV2 && canEdit && <DropdownMenuItem onClick={() => handleAction('replace')}>Review replacement course</DropdownMenuItem>}
                 {canRenew && (
                   <DropdownMenuItem onClick={() => handleAction('renew')}>
                     <RefreshCw className="size-4 mr-2" />
-                    Renew
+                    {rustV2 ? 'Review renewal course' : 'Renew'}
                   </DropdownMenuItem>
                 )}
                 {(canEdit || canRenew) && (canHold || canResume || canDiscontinue) && (
@@ -170,7 +177,7 @@ export const MedicationContent = ({ medication, entry }) => {
         </p>
       )}
 
-      {actionDialogOpen && (
+      {selectedAction && (
         <Suspense fallback={null}>
           <PrescriptionActionsDialog
             open={actionDialogOpen}

@@ -1,4 +1,4 @@
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 
 use crate::handlers::clinical;
@@ -74,6 +74,22 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/clinical/prescriptions/:id",
             get(clinical::get_prescription).patch(clinical::update_prescription),
+        )
+        .route(
+            "/api/v2/clinical/prescriptions/:id/documentation",
+            patch(clinical::update_prescription_documentation),
+        )
+        .route(
+            "/api/v2/clinical/prescriptions/:id/documentation/requests/:request_id",
+            get(clinical::get_prescription_documentation_receipt),
+        )
+        .route(
+            "/api/v2/clinical/prescriptions/:id/new-course",
+            post(clinical::create_prescription_course),
+        )
+        .route(
+            "/api/v2/clinical/prescriptions/:id/new-course/requests/:request_id",
+            get(clinical::get_prescription_course_receipt),
         )
         .route(
             "/api/v2/clinical/prescriptions/:id/generate-mar",

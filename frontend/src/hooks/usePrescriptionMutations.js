@@ -69,6 +69,7 @@ function normalizeCreatePrescriptionPayload(data = {}) {
     dose: data.dose || data.dosage,
     frequency: data.frequency,
   };
+  for (const field of ['instructions', 'reason']) if (data[field] !== undefined) payload[field] = String(data[field]).trim();
 
   if (data.route !== undefined) {
     payload.route = data.route;
@@ -307,6 +308,7 @@ export function invalidatePrescriptionMutationQueries(
     nursingKeys.medicationAdministrationsAll(),
     nursingKeys.medicationAdministrationHistoryAll(),
     nursingKeys.patientMarAll(),
+    nursingKeys.prnOrdersAll(),
     nursingKeys.marGridAll(),
     nursingKeys.pendingDispensingAll(),
     nursingKeys.readyForAdminAll(),

@@ -137,6 +137,49 @@ pub(super) async fn load_patient_for_access(
     Ok(patient)
 }
 
+/// Authorize explicit list scope before any patient-bearing list query runs.
+pub(super) async fn authorize_nursing_list_scope(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    patient_id: Option<Uuid>,
+    admission_case_id: Option<Uuid>,
+    ward_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    if let Some(ward_id) = ward_id {
+        let _ward = load_ward(state, ward_id).await?;
+    }
+    if let Some(admission_case_id) = admission_case_id {
+        let admission = load_admission_for_access(state, ctx, admission_case_id).await?;
+        if patient_id.is_some_and(|id| id != admission.patient_id)
+            || ward_id.is_some_and(|id| id != admission.ward_id)
+        {
+            return Err(ApiError::bad_request(
+                "invalid_nursing_list_scope",
+                "Admission does not belong to the requested patient or ward.",
+            ));
+        }
+    } else if let Some(patient_id) = patient_id {
+        let _patient = load_patient_for_access(state, ctx, patient_id).await?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_nursing_list_range(
+    from: Option<DateTime<Utc>>,
+    before: Option<DateTime<Utc>>,
+) -> Result<(), ApiError> {
+    if from
+        .zip(before)
+        .is_some_and(|(from, before)| from >= before)
+    {
+        return Err(ApiError::bad_request(
+            "invalid_nursing_list_range",
+            "The end of the time range must be after its start.",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) async fn validate_care_context(
     state: &AppState,
     patient_id: Uuid,

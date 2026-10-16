@@ -333,7 +333,7 @@ function DurationStartDateFields({ formData, errors, onFieldChange }) {
   );
 }
 
-function ReasonInstructionsFields({ formData, onFieldChange }) {
+function ReasonInstructionsFields({ formData, onFieldChange, errors }) {
   return (
     <>
       <div className="space-y-2">
@@ -344,9 +344,13 @@ function ReasonInstructionsFields({ formData, onFieldChange }) {
           id="prescription-reason"
           placeholder="e.g., Bacterial infection, Hypertension management"
           value={formData.reason}
+          maxLength={2000}
+          aria-invalid={Boolean(errors?.reason)}
+          aria-describedby={errors?.reason ? 'prescription-reason-error' : undefined}
           onChange={(event) => onFieldChange('reason', event.target.value)}
           className="font-mono"
         />
+        {errors?.reason && <p id="prescription-reason-error" className="text-sm text-destructive">{errors.reason}</p>}
       </div>
 
       <div className="space-y-2">
@@ -357,9 +361,13 @@ function ReasonInstructionsFields({ formData, onFieldChange }) {
           id="prescription-instructions"
           placeholder="e.g., Take with food, Avoid alcohol, Take 30 minutes before meals"
           value={formData.instructions}
+          maxLength={4000}
+          aria-invalid={Boolean(errors?.instructions)}
+          aria-describedby={errors?.instructions ? 'prescription-instructions-error' : undefined}
           onChange={(event) => onFieldChange('instructions', event.target.value)}
           className="font-mono min-h-[80px]"
         />
+        {errors?.instructions && <p id="prescription-instructions-error" className="text-sm text-destructive">{errors.instructions}</p>}
       </div>
     </>
   );
@@ -517,7 +525,7 @@ export function PrescriptionFormContent({
         <RouteFrequencyFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
         {prnPolicyAvailable && formData.frequency === 'prn' ? <PrnPolicyFields formData={formData} errors={errors} onFieldChange={onFieldChange} /> : null}
         <DurationStartDateFields formData={formData} errors={errors} onFieldChange={onFieldChange} />
-        {clinicalTextFieldsAvailable ? <ReasonInstructionsFields formData={formData} onFieldChange={onFieldChange} /> : null}
+        {clinicalTextFieldsAvailable ? <ReasonInstructionsFields formData={formData} onFieldChange={onFieldChange} errors={errors} /> : null}
         {prnPolicyAvailable && formData.frequency === 'prn' ? <Alert><AlertDescription>As-needed doses are requested individually from the treatment sheet. No doses are automatically scheduled.</AlertDescription></Alert> : <MarGenerationPanel
           available={marGenerationAvailable}
           generateMAR={generateMAR}

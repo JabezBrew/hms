@@ -23,6 +23,7 @@ backend.
 | `202606040001` to `202606060004` | care-context provenance, ward-board/discharge hot-path indexes, medication fulfillment, ward staffing, and patient identity status hardening |
 | `202606080001` | staff onboarding identifier sequence allocation |
 | `202610150001` | atomic login admission budgets shared by API instances; additive table, compatible with older API code during rollback |
+| `202610160013` | protected prescription documentation, single-successor provenance, immutable command receipts and patient/facility-bound PRN safety groups |
 
 ## Invariants
 

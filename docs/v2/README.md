@@ -17,6 +17,10 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `2026-10-15-parity-ledger.md` | expanded Python-to-Rust and UI parity phases, concrete gaps, acceptance rules, and implementation state. |
 | `2026-10-15-phase-two-verification.md` | first parity increment and exact staged-source local acceptance. |
 | `2026-10-15-phase-two-b-verification.md` | scoped fluid/emergency access, NHIS UI, reset lifecycle and exact-source acceptance. |
+| `2026-10-16-phase-seven-verification.md` | prescription documentation/new courses, PRN continuity, scoped nursing and exact-source acceptance. |
+| `2026-10-16-prescribing-course-scope.md` | explicit prescription documentation and renewal/replacement contracts, provenance and safety boundaries. |
+| `2026-10-16-scoped-nursing-lists.md` | bounded treatment/alert/shift lists, critical preview and guarded immutable acknowledgments/finalization. |
+| `2026-10-16-dependency-audit.md` | current npm/OSV advisory scan and active Linux dependency-tree evidence. |
 | `2026-10-16-phase-six-verification.md` | trusted-network policy, interrupted-write recovery, proxy privacy and exact-source acceptance. |
 | `2026-10-16-trusted-network-policy-scope.md` | trusted socket/proxy provenance, fail-closed facility policy, reviewed writes, and explicit operator bootstrap. |
 | `archive/` | historical V2 material kept out of the active path. |

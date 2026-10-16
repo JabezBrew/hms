@@ -761,9 +761,25 @@ pub struct HandoffListItem {
     pub shift_label: String,
     pub status: HandoffStatus,
     pub created_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct HandoffListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub ward_id: Option<Uuid>,
+    pub shift_label: Option<String>,
+    pub status: Option<HandoffStatus>,
+    pub created_from: Option<DateTime<Utc>>,
+    pub created_before: Option<DateTime<Utc>>,
+    pub descending: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateHandoffRequest {
     pub ward_id: Uuid,
     pub to_user_id: Uuid,
@@ -782,7 +798,23 @@ pub struct TreatmentSheetListItem {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct TreatmentSheetListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub id: Option<Uuid>,
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub ward_id: Option<Uuid>,
+    pub sheet_date: Option<NaiveDate>,
+    pub status: Option<TreatmentSheetStatus>,
+    pub descending: Option<bool>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTreatmentSheetRequest {
     pub admission_case_id: Uuid,
     pub sheet_date: NaiveDate,
@@ -840,7 +872,26 @@ pub struct NursingAlertListItem {
     pub acknowledged_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct NursingAlertListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
+    pub ward_id: Option<Uuid>,
+    pub status: Option<NursingAlertStatus>,
+    pub severity: Option<NursingAlertSeverity>,
+    /// Restrict the bounded page to high or critical alerts.
+    pub critical_only: Option<bool>,
+    pub created_from: Option<DateTime<Utc>>,
+    pub created_before: Option<DateTime<Utc>>,
+    pub descending: Option<bool>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateNursingAlertRequest {
     pub admission_case_id: Uuid,
     pub severity: NursingAlertSeverity,

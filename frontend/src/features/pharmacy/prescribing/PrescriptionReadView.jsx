@@ -1,0 +1,13 @@
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+export function PrescriptionReadView({ source, title = 'Current prescription', recorded = false }) {
+  return <section aria-label={title} className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4"><h3 className="font-medium">{title}</h3><p>{source.medication_name} · {source.dose}</p><p className="text-sm">{source.route} · {source.frequency} · {source.status.replaceAll('_', ' ')}</p><p className="text-sm">Start: {source.start_date || 'Not recorded'} · Duration: {source.duration_days ? `${source.duration_days} days` : 'No fixed duration'}</p>
+    {source.first_dose_at && <p className="text-sm">First dose time: {new Date(source.first_dose_at).toISOString().slice(0, 16).replace('T', ' ')} UTC</p>}{source.stock_unit && <p className="text-sm">{recorded ? 'Stock unit in saved receipt' : 'Current catalog stock unit'}: {source.stock_unit}</p>}
+    <dl className="grid gap-3 text-sm"><div><dt className="font-medium">Saved instructions</dt><dd className="whitespace-pre-wrap break-words">{source.instructions || 'None recorded'}</dd></div><div><dt className="font-medium">Saved prescribing reason</dt><dd className="whitespace-pre-wrap break-words">{source.reason || 'None recorded'}</dd></div></dl>
+    {source.prn_policy && <p className="text-sm">As needed for {source.prn_policy.indication}; minimum {source.prn_policy.minimum_interval_hours} hours between doses; maximum {source.prn_policy.maximum_doses_per_24_hours} in any 24 hours. One dose uses {source.prn_policy.stock_units_per_dose} {source.prn_policy.stock_unit}.</p>}
+    {source.provenance && <p className="text-sm">Recorded as a {source.provenance.relation} on {new Date(source.provenance.recorded_at).toLocaleString()}. Reason: {source.provenance.change_reason}</p>}
+  </section>;
+}
+export function PrescriptionSavedReceipt({ receipt, documentation, refreshFailed }) {
+  return <div className="flex flex-col gap-4"><Alert><AlertDescription><span className="font-medium">{documentation ? 'Documentation saved' : 'New course saved'}</span>{!documentation && <span className="block">{receipt.relation === 'replacement' ? 'The source course was stopped as part of this saved change.' : 'The source course remains terminal.'} No doses were automatically scheduled and no stock was moved.</span>}</AlertDescription></Alert><PrescriptionReadView source={receipt.prescription} title="Saved result" recorded /><p className="text-sm text-muted-foreground">This is the saved receipt. Current course status may change later.</p>{refreshFailed && <Alert variant="destructive"><AlertDescription>The change is saved, but the medication list could not refresh. Refresh the list before making another change.</AlertDescription></Alert>}</div>;
+}

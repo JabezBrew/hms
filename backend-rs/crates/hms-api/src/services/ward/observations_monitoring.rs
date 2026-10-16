@@ -9,7 +9,7 @@ use hms_domain::ward::{
     CreateFluidBalanceEntryRequest, CreateMonitoringEventRequest, CreateNursingAlertRequest,
     CreatePatientVitalsRequest, FluidBalanceListItem, FluidBalanceListQuery, FluidBalanceSummary,
     FluidBalanceSummaryQuery, FluidBalanceTrendPoint, MonitoringEventListItem,
-    NursingAlertListItem, PatientVitalsListItem, PatientVitalsListQuery,
+    NursingAlertListItem, NursingAlertListQuery, PatientVitalsListItem, PatientVitalsListQuery,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -121,25 +121,48 @@ impl ObservationsMonitoringService {
     pub async fn list_nursing_alerts(
         &self,
         ctx: &hms_access::RequestContext,
-        query: CursorListQuery,
+        query: NursingAlertListQuery,
     ) -> Result<ListResponse<NursingAlertListItem>, ApiError> {
         common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let page = common::page_request(query)?;
+        common::validate_nursing_list_range(query.created_from, query.created_before)?;
+        common::authorize_nursing_list_scope(
+            &self.state,
+            ctx,
+            query.patient_id,
+            query.admission_case_id,
+            query.ward_id,
+        )
+        .await?;
+        let filters = hms_db::ward::NursingAlertFilters {
+            patient_id: query.patient_id,
+            admission_case_id: query.admission_case_id,
+            ward_id: query.ward_id,
+            status: query.status,
+            severity: query.severity,
+            critical_only: query.critical_only.unwrap_or(false),
+            created_from: query.created_from,
+            created_before: query.created_before,
+            descending: query.descending.unwrap_or(false),
+        };
+        let page = common::page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::list_nursing_alerts(
+        let rows = hms_db::ward::list_nursing_alerts_scoped(
             self.state.db_pool(),
             self.state.facility_id(),
             page.cursor,
             fetch_limit,
+            filters,
         )
         .await
         .map_err(|_| ApiError::conflict("alert_list_failed", "Alerts could not be loaded."))?;
-
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
         }))
@@ -150,7 +173,7 @@ impl ObservationsMonitoringService {
         ctx: &hms_access::RequestContext,
         payload: CreateNursingAlertRequest,
     ) -> Result<ObjectResponse<NursingAlertListItem>, ApiError> {
-        common::require_facility_permission(
+        common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
@@ -171,7 +194,9 @@ impl ObservationsMonitoringService {
             },
         )
         .await
-        .map_err(|_| ApiError::conflict("alert_create_failed", "Alert could not be created."))?;
+        .map_err(|_| {
+            ApiError::conflict("alert_create_unconfirmed", "Alert could not be created.")
+        })?;
 
         Ok(object(alert))
     }
@@ -181,7 +206,7 @@ impl ObservationsMonitoringService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<NursingAlertListItem>, ApiError> {
-        common::require_facility_permission(
+        common::require_patient_workflow_access(
             ctx,
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
@@ -193,16 +218,17 @@ impl ObservationsMonitoringService {
                 .ok_or_else(|| ApiError::not_found("alert_not_found", "Alert was not found."))?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let alert = hms_db::ward::acknowledge_nursing_alert(
+        let alert = hms_db::ward::acknowledge_nursing_alert_with_request(
             self.state.db_pool(),
             self.state.facility_id(),
             id,
             ctx.user_id,
+            Some(ctx.request_id.clone()),
         )
         .await
         .map_err(|_| {
             ApiError::conflict(
-                "alert_acknowledge_failed",
+                "alert_acknowledge_unconfirmed",
                 "Alert could not be acknowledged.",
             )
         })?
