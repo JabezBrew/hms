@@ -4,7 +4,6 @@ use hms_db::ward::{
     NewPatientVitals,
 };
 use hms_domain::care::CursorListQuery;
-use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
     CreateFluidBalanceEntryRequest, CreateMonitoringEventRequest, CreateNursingAlertRequest,
     CreatePatientVitalsRequest, FluidBalanceListItem, FluidBalanceListQuery, FluidBalanceSummary,
@@ -289,10 +288,12 @@ impl ObservationsMonitoringService {
     pub async fn list_fluid_balance_entries(
         &self,
         ctx: &hms_access::RequestContext,
+        deadline: chrono::DateTime<Utc>,
         query: FluidBalanceListQuery,
     ) -> Result<ListResponse<FluidBalanceListItem>, ApiError> {
         self.validate_fluid_scope(
             ctx,
+            true,
             query.patient_id,
             query.admission_case_id,
             query.recorded_from,
@@ -305,9 +306,9 @@ impl ObservationsMonitoringService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::list_fluid_balance_entries_scoped(
+        let rows = hms_db::ward::list_fluid_balance_for_actor(
             self.state.db_pool(),
-            self.state.facility_id(),
+            super::nursing_access::actor(ctx, deadline),
             FluidBalanceFilters {
                 patient_id: query.patient_id,
                 admission_case_id: query.admission_case_id,
@@ -319,12 +320,7 @@ impl ObservationsMonitoringService {
             fetch_limit,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "fluid_balance_list_failed",
-                "Fluid balance entries could not be loaded.",
-            )
-        })?;
+        .map_err(|e| super::fluid::fluid_error(e, false))?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.recorded_at, item.id)
@@ -334,10 +330,12 @@ impl ObservationsMonitoringService {
     pub async fn get_fluid_balance_summary(
         &self,
         ctx: &hms_access::RequestContext,
+        deadline: chrono::DateTime<Utc>,
         query: FluidBalanceSummaryQuery,
     ) -> Result<ObjectResponse<FluidBalanceSummary>, ApiError> {
         self.validate_fluid_scope(
             ctx,
+            false,
             query.patient_id,
             query.admission_case_id,
             query.recorded_from,
@@ -345,9 +343,9 @@ impl ObservationsMonitoringService {
         )
         .await?;
         require_fluid_aggregate_scope(query.patient_id, query.admission_case_id)?;
-        let summary = hms_db::ward::fluid_balance_summary(
+        let summary = hms_db::ward::fluid_scalar_summary_for_actor(
             self.state.db_pool(),
-            self.state.facility_id(),
+            super::nursing_access::actor(ctx, deadline),
             FluidBalanceFilters {
                 patient_id: query.patient_id,
                 admission_case_id: query.admission_case_id,
@@ -357,22 +355,19 @@ impl ObservationsMonitoringService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "fluid_balance_summary_failed",
-                "Fluid balance totals could not be loaded.",
-            )
-        })?;
+        .map_err(|e| super::fluid::fluid_error(e, false))?;
         Ok(object(summary))
     }
 
     pub async fn get_fluid_balance_trends(
         &self,
         ctx: &hms_access::RequestContext,
+        deadline: chrono::DateTime<Utc>,
         query: FluidBalanceListQuery,
     ) -> Result<ListResponse<FluidBalanceTrendPoint>, ApiError> {
         self.validate_fluid_scope(
             ctx,
+            false,
             query.patient_id,
             query.admission_case_id,
             query.recorded_from,
@@ -385,9 +380,9 @@ impl ObservationsMonitoringService {
             limit: query.limit,
         })?;
         let fetch_limit = page.fetch_limit();
-        let rows = hms_db::ward::fluid_balance_trends(
+        let rows = hms_db::ward::fluid_scalar_trends_for_actor(
             self.state.db_pool(),
-            self.state.facility_id(),
+            super::nursing_access::actor(ctx, deadline),
             FluidBalanceFilters {
                 patient_id: query.patient_id,
                 admission_case_id: query.admission_case_id,
@@ -399,12 +394,7 @@ impl ObservationsMonitoringService {
             fetch_limit,
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "fluid_balance_trends_failed",
-                "Fluid balance trends could not be loaded.",
-            )
-        })?;
+        .map_err(|e| super::fluid::fluid_error(e, false))?;
         Ok(common::page_response(rows, page.limit, |item| {
             common::encode_cursor(
                 item.date.and_time(chrono::NaiveTime::MIN).and_utc(),
@@ -416,16 +406,22 @@ impl ObservationsMonitoringService {
     async fn validate_fluid_scope(
         &self,
         ctx: &hms_access::RequestContext,
+        full: bool,
         patient_id: Option<Uuid>,
         admission_case_id: Option<Uuid>,
         from: Option<chrono::DateTime<Utc>>,
         before: Option<chrono::DateTime<Utc>>,
     ) -> Result<(), ApiError> {
-        common::require_patient_workflow_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        super::nursing_access::require(ctx, self.state.facility_id(), full).map_err(|e| {
+            if !full && e.code == "nursing_visibility_denied" {
+                ApiError::forbidden(
+                    "nursing_visibility_denied",
+                    "Clinical summary access is required to review fluid measurements.",
+                )
+            } else {
+                e
+            }
+        })?;
         if let Some(admission_id) = admission_case_id {
             let admission =
                 common::load_admission_for_access(&self.state, ctx, admission_id).await?;
@@ -453,13 +449,10 @@ impl ObservationsMonitoringService {
     pub async fn create_fluid_balance_entry(
         &self,
         ctx: &hms_access::RequestContext,
+        deadline: chrono::DateTime<Utc>,
         payload: CreateFluidBalanceEntryRequest,
     ) -> Result<ObjectResponse<FluidBalanceListItem>, ApiError> {
-        common::require_patient_workflow_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        super::nursing_access::require(ctx, self.state.facility_id(), true)?;
         if payload.intake_ml < 0
             || payload.output_ml < 0
             || payload.intake_ml > 10000
@@ -474,8 +467,18 @@ impl ObservationsMonitoringService {
         }
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
-        let entry = hms_db::ward::create_fluid_balance_entry(
+        if payload
+            .patient_id
+            .is_some_and(|id| id != admission.patient_id)
+        {
+            return Err(ApiError::bad_request(
+                "invalid_fluid_scope",
+                "The selected patient and admission do not match.",
+            ));
+        }
+        let entry = hms_db::ward::create_fluid_balance_for_actor(
             self.state.db_pool(),
+            super::nursing_access::actor(ctx, deadline),
             NewFluidBalanceEntry {
                 id: Uuid::new_v4(),
                 facility_id: self.state.facility_id(),
@@ -488,12 +491,8 @@ impl ObservationsMonitoringService {
             },
         )
         .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "fluid_write_unconfirmed",
-                "This entry could not be confirmed. Refresh and review recent entries before recording another.",
-            )
-        })?;
+        .map_err(|e| super::fluid::fluid_error(e, true))?;
+        self.state.invalidate_ward_board_cache();
 
         Ok(object(entry))
     }

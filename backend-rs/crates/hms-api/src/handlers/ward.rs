@@ -1959,14 +1959,25 @@ pub async fn create_monitoring_event(
 )]
 pub async fn list_fluid_balance_entries(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Query(query): Query<FluidBalanceListQuery>,
+    n: NetworkContext,
+    query: Result<Query<FluidBalanceListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<FluidBalanceListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .list_fluid_balance_entries(&user, query)
+            .list_fluid_balance_entries(
+                &n.context,
+                n.authorization_deadline,
+                query
+                    .map_err(|_| {
+                        ApiError::bad_request(
+                            "invalid_fluid_query",
+                            "Review the supported fluid scope and range.",
+                        )
+                    })?
+                    .0,
+            )
             .await?,
     ))
 }
@@ -1983,14 +1994,25 @@ pub async fn list_fluid_balance_entries(
 )]
 pub async fn fluid_balance_summary(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Query(query): Query<FluidBalanceSummaryQuery>,
+    n: NetworkContext,
+    query: Result<Query<FluidBalanceSummaryQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ObjectResponse<FluidBalanceSummary>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .get_fluid_balance_summary(&user, query)
+            .get_fluid_balance_summary(
+                &n.context,
+                n.authorization_deadline,
+                query
+                    .map_err(|_| {
+                        ApiError::bad_request(
+                            "invalid_fluid_query",
+                            "Review the supported fluid scope and range.",
+                        )
+                    })?
+                    .0,
+            )
             .await?,
     ))
 }
@@ -2007,14 +2029,25 @@ pub async fn fluid_balance_summary(
 )]
 pub async fn fluid_balance_trends(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Query(query): Query<FluidBalanceListQuery>,
+    n: NetworkContext,
+    query: Result<Query<FluidBalanceListQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<ListResponse<FluidBalanceTrendPoint>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .get_fluid_balance_trends(&user, query)
+            .get_fluid_balance_trends(
+                &n.context,
+                n.authorization_deadline,
+                query
+                    .map_err(|_| {
+                        ApiError::bad_request(
+                            "invalid_fluid_query",
+                            "Review the supported fluid scope and range.",
+                        )
+                    })?
+                    .0,
+            )
             .await?,
     ))
 }
@@ -2036,14 +2069,25 @@ pub async fn fluid_balance_trends(
 )]
 pub async fn create_fluid_balance_entry(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
-    Json(payload): Json<CreateFluidBalanceEntryRequest>,
+    n: NetworkContext,
+    payload: Result<Json<CreateFluidBalanceEntryRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ObjectResponse<FluidBalanceListItem>>, ApiError> {
     Ok(Json(
         state
             .ward_services()
             .observations_monitoring()
-            .create_fluid_balance_entry(&user, payload)
+            .create_fluid_balance_entry(
+                &n.context,
+                n.authorization_deadline,
+                payload
+                    .map_err(|_| {
+                        ApiError::bad_request(
+                            "invalid_fluid_request",
+                            "Review the supported fluid fields and value types.",
+                        )
+                    })?
+                    .0,
+            )
             .await?,
     ))
 }

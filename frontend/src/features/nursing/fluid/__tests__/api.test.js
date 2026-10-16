@@ -12,6 +12,19 @@ const originalFetch = globalThis.fetch; const originalRuntime = window.__HMS_RUN
 beforeEach(() => { window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2', v2ApiBaseUrl: 'http://localhost:8080/api/v2' }; __resetV2ApiClientForTests(); configureV2ApiClient({ getAccessToken: () => 'synthetic-token', getFacilityCode: () => 'HMS', canRefreshSession: () => false }); globalThis.fetch = vi.fn(); });
 afterEach(() => { globalThis.fetch = originalFetch; window.__HMS_RUNTIME_CONFIG__ = originalRuntime; __resetV2ApiClientForTests(); });
 describe('fluid immutable generated contracts', () => {
+  it('loads only the reviewed patient/admission context with the original AbortSignal', async () => {
+    const signal = new AbortController().signal; const query = { patient_id: patient, admission_case_id: admission }; const context = { ...query, status: 'admitted', can_record_observation: true };
+    globalThis.fetch.mockResolvedValueOnce(json({ data: context })); await expect(fluidApi.context(query, { signal })).resolves.toEqual(context);
+    const [url, options] = globalThis.fetch.mock.calls[0]; expect(new URL(url).pathname).toBe('/api/v2/nursing/fluid-observations/context'); expect(new URL(url).searchParams.get('patient_id')).toBe(patient); expect(new URL(url).searchParams.get('admission_case_id')).toBe(admission); expect(options.signal).toBe(signal);
+  });
+  it.each([{ patient_id: ids[5], admission_case_id: admission, status: 'admitted', can_record_observation: true }, { patient_id: patient, admission_case_id: ids[5], status: 'admitted', can_record_observation: true }, { patient_id: patient, admission_case_id: admission, status: 'discharged', can_record_observation: true }, { patient_id: patient, admission_case_id: admission, status: 'admitted' }])('rejects a mismatched or contradictory context receipt', async (context) => {
+    globalThis.fetch.mockResolvedValueOnce(json({ data: context })); await expect(fluidApi.context({ patient_id: patient, admission_case_id: admission })).rejects.toThrow(/could not be confirmed/);
+  });
+  it('keeps closed-admission review truthful and preserves denied/aborted context reads', async () => {
+    const query = { patient_id: patient, admission_case_id: admission }; globalThis.fetch.mockResolvedValueOnce(json({ data: { ...query, status: 'discharged', can_record_observation: false } })); await expect(fluidApi.context(query)).resolves.toMatchObject({ can_record_observation: false });
+    globalThis.fetch.mockResolvedValueOnce(json({ error: { code: 'patient_access_denied' } }, 403)); await expect(fluidApi.context(query)).rejects.toMatchObject({ status: 403 });
+    globalThis.fetch.mockRejectedValueOnce(new DOMException('Aborted', 'AbortError')); await expect(fluidApi.context(query)).rejects.toMatchObject({ name: 'AbortError' });
+  });
   it('posts flat UUID-bound create/correct/void payloads and checks receipt identity', async () => {
     const signal = new AbortController().signal; const payload = { client_request_id: key, admission_case_id: admission, values: row.values };
     globalThis.fetch.mockResolvedValueOnce(json({ data: saved })); await fluidApi.create(payload, { signal }); expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual(payload); expect(globalThis.fetch.mock.calls[0][1].signal).toBe(signal);
@@ -43,5 +56,9 @@ describe('fluid immutable generated contracts', () => {
   it('preserves unedited paired measurements and original sub-minute observation time on correction', () => {
     const form = formFromObservation(row); form.metadata.notes = 'A corrected note'; const payload = valuesPayload(form, row); expect(payload.intake_ml).toBe(300); expect(payload.output_ml).toBe(100); expect(payload.recorded_at).toBe(row.values.recorded_at);
     expect(() => valuesPayload({ ...form, intake_ml: '1.5' }, row)).toThrow(/whole/);
+  });
+  it('rejects a different valid patient/admission in a source or historical revision read', async () => {
+    globalThis.fetch.mockResolvedValueOnce(json({ data: { ...row, admission_case_id: ids[5] } })); await expect(fluidApi.get(id, { expected: row })).rejects.toThrow(/scope could not be confirmed/);
+    globalThis.fetch.mockResolvedValueOnce(page([{ ...row, patient_id: ids[5] }])); await expect(fluidApi.history(id, undefined, { expected: row })).rejects.toThrow(/history scope/);
   });
 });

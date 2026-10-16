@@ -218,8 +218,10 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         open: true,
         onClose,
         patient,
-        admission: getChronicleAdmissionReference(patient),
-        allowEntry: Boolean(activeEncounter?.id || getChronicleAdmissionReference(patient)),
+        admission: isRustV2ApiMode() ? (!chronicleAllHistory && selectedAdmissionId ? { id: String(selectedAdmissionId) } : null) : getChronicleAdmissionReference(patient),
+        allowEntry: isRustV2ApiMode() ? !chronicleAllHistory && Boolean(selectedAdmissionId) : Boolean(activeEncounter?.id || getChronicleAdmissionReference(patient)),
+        patientHistory: isRustV2ApiMode() && chronicleAllHistory === true,
+        clinicalPermissions: context.clinicalPermissions,
         onFluidRecorded,
       };
     case 'handover':
@@ -246,7 +248,8 @@ export function buildChronicleWorkspaceProps(workspaceId, context) {
         open: true,
         onClose,
         patient,
-        admission: getChronicleAdmissionReference(patient),
+        admission: isRustV2ApiMode() ? (context.chronicleAllHistory || !selectedAdmissionId ? null : { id: selectedAdmissionId }) : getChronicleAdmissionReference(patient),
+        selectedEncounterId: context.selectedEncounterId || null,
         onComplete: onWardRoundCompleted,
       };
     case 'consultation':

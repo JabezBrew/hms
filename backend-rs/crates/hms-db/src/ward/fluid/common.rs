@@ -21,6 +21,9 @@ pub(super) async fn reserve<T: Serialize>(
     kind: &str,
     payload: &T,
 ) -> anyhow::Result<Option<SavedCommand>> {
+    if key.is_nil() {
+        return Err(FluidError::InvalidRequest.into());
+    }
     let digest = Sha256::digest(serde_json::to_vec(payload)?).to_vec();
     let inserted=sqlx::query("INSERT INTO fluid_write_commands(facility_id,client_request_id,actor_user_id,kind,digest) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
   .bind(actor.facility_id).bind(key).bind(actor.user_id).bind(kind).bind(&digest).execute(&mut **tx).await?;

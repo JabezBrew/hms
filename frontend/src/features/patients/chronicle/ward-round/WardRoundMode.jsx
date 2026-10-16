@@ -5,6 +5,8 @@ import { useId } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
+import RustWardRoundWorkspace from './RustWardRoundWorkspace'
 import {
   DischargeReadinessBlock,
   LabOrderActionBlock,
@@ -49,7 +51,7 @@ function FieldBlock({ label, value, onChange, placeholder, rows = 3 }) {
   )
 }
 
-export default function WardRoundMode({
+function LegacyWardRoundMode({
   patientId,
   patient,
   admission,
@@ -215,4 +217,8 @@ export default function WardRoundMode({
       </div>
     </div>
   )
+}
+
+export default function WardRoundMode(props) {
+  return isRustV2ApiMode() ? <RustWardRoundWorkspace {...props} /> : <LegacyWardRoundMode {...props} />;
 }

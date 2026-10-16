@@ -169,7 +169,7 @@ pub async fn get_detail(
         .map(detail)
         .transpose()
 }
-async fn detail_tx(
+pub(crate) async fn detail_tx(
     tx: &mut Transaction<'_, Postgres>,
     facility: Uuid,
     id: Uuid,
@@ -182,6 +182,23 @@ async fn detail_tx(
             .await?
             .ok_or(PrescriptionCourseError::NotFound)?,
     )
+}
+
+/// Bounded batch projection for an already locked set of reviewed prescription sources.
+pub(crate) async fn details_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    facility: Uuid,
+    ids: &[Uuid],
+) -> anyhow::Result<Vec<PrescriptionDetail>> {
+    let sql = DETAIL_SELECT.replace("p.id=$2", "p.id=ANY($2)");
+    sqlx::query_as::<_, DetailRow>(&sql)
+        .bind(facility)
+        .bind(ids)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .map(detail)
+        .collect()
 }
 pub(crate) async fn verify_actor(
     tx: &mut Transaction<'_, Postgres>,

@@ -1,11 +1,13 @@
+import { useLayoutEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useFluidHistory } from './hooks';
 import { fluidTime } from './model';
 import { FluidMetadataDetails } from './FluidMetadataDetails';
-export function FluidHistoryDialog({ source, onClose, open = true }) {
-  const query = useFluidHistory(source.id, open);
-  const rows = query.data?.pages.flatMap((p) => p.rows) || [];
+export function FluidHistoryDialog({ source, onClose, onDenied, open = true }) {
+  const query = useFluidHistory(source, open);
+  useLayoutEffect(() => { if (query.error?.status === 403) onDenied?.(); }, [query.error, onDenied]);
+  const rows = !query.isError && query.isFetchedAfterMount && !query.isFetching ? query.data?.pages.flatMap((p) => p.rows) || [] : [];
   return <Dialog open={open} onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Fluid observation history</DialogTitle><DialogDescription>Original recorded values and every correction or void remain visible. Only the current entry contributes to totals.</DialogDescription></DialogHeader>
     {query.isError && <p role="alert" className="text-sm text-destructive">History could not be completed. Displayed records may be incomplete. <Button variant="outline" onClick={() => query.refetch()}>Refresh history</Button></p>}
     {query.isPending && <p role="status">Loading history…</p>}

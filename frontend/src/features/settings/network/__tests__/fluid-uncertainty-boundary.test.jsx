@@ -22,7 +22,7 @@ const privateNote = 'SYNTHETIC-PRIVATE-FLUID-NOTE';
 const originalFetch = globalThis.fetch;
 const originalRuntime = window.__HMS_RUNTIME_CONFIG__;
 const prototypeDescriptors = ['hasPointerCapture', 'setPointerCapture', 'releasePointerCapture', 'scrollIntoView'].map((name) => [name, Object.getOwnPropertyDescriptor(Element.prototype, name)]);
-const user = { ...networkUser, accessContext: { ...networkUser.accessContext, session_version: 1, features: ['nursing'], patient_visibility: ['demographics'] }, adminAccess: { capabilities: ['nursing.task.manage'] } };
+const user = { ...networkUser, accessContext: { ...networkUser.accessContext, session_version: 1, features: ['nursing'], patient_visibility: ['demographics', 'full_clinical'] }, adminAccess: { capabilities: ['nursing.task.manage'] } };
 const rules = { version: 0, configured: false, values: { min_daily_intake_target: 1500, max_daily_output_threshold: 3000, negative_balance_alert_threshold: -500, positive_balance_alert_threshold: 2000, enable_intake_alerts: false, enable_output_alerts: false, enable_balance_alerts: false } };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 let client; let token; let expiresAt; let posts; let rows; let responseMode;
@@ -54,6 +54,7 @@ beforeEach(() => {
       if (responseMode === 'pending') return new Promise((resolve, reject) => { options.signal.addEventListener('abort', () => reject(new DOMException('Synthetic response lost on unmount', 'AbortError')), { once: true }); });
       throw new TypeError('Synthetic response lost after the server saved the observation');
     }
+    if (path.endsWith('/fluid-observations/context')) return json({ data: { patient_id: patientId, admission_case_id: admissionId, status: 'admitted', can_record_observation: true } });
     if (path.endsWith('/summary')) return json({ data: { entry_count: rows.length, total_intake_ml: rows.length ? 250 : 0, total_output_ml: 0, net_ml: rows.length ? 250 : 0, intake_breakdown: [], output_breakdown: [] } });
     if (path.endsWith('/assessment')) return json({ data: { patient_id: patientId, admission_case_id: admissionId, date: parsed.searchParams.get('date'), status: 'unconfigured', settings: rules, conditions: [], entry_count: rows.length, total_intake_ml: rows.length ? 250 : 0, total_output_ml: 0, net_ml: rows.length ? 250 : 0 } });
     if (path.endsWith('/fluid-observations')) return json({ data: rows, page: { has_next: false, next_cursor: null, limit: 25 } });

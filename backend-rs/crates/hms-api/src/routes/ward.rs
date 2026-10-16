@@ -11,6 +11,10 @@ pub fn routes() -> Router<AppState> {
             get(crate::handlers::fluid::list).post(crate::handlers::fluid::create),
         )
         .route(
+            "/api/v2/nursing/fluid-observations/context",
+            get(crate::handlers::fluid::context),
+        )
+        .route(
             "/api/v2/nursing/fluid-observations/summary",
             get(crate::handlers::fluid::summary),
         )

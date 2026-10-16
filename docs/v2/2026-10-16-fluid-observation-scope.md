@@ -1,5 +1,7 @@
 # Fluid observation corrections and facility monitoring
 
+The current route access and authority-lifetime contract is tightened by [Fluid access and authority lifetime](2026-10-16-fluid-access-lifetime-scope.md); use that document for Full/Summary, actual ward and session-proof rules. The evidence/projection behavior described here remains in force.
+
 This active Rust slice retains original paired intake/output evidence and adds
 recorded corrections, voids, metadata, and facility-scoped monitoring.
 
@@ -39,11 +41,21 @@ turn a confirmed write into a new recording.
 
 ## Monitoring policy
 
-`NursingTaskManage`, the Nursing feature, demographics permission, and patient
-visibility protect patient reads/writes. Publishing facility rules requires
-`AdminAuthorityManage`. Each publication has an expected version, reason,
-client UUID, immutable version row, and atomic audit. Replaying an older rule
-write returns its original version even after a later publication.
+`NursingTaskManage`, the Nursing feature, demographic patient access, FullClinical
+visibility, and actual current admission-ward authority protect rich patient
+reads and every patient write. ClinicalSummary deliberately permits only scalar
+legacy totals/trends. Current and compatibility paths carry mandatory live
+session/version/profile/feature/deadline proof after waits and before commit;
+ward predicates apply before pages and aggregates. New observations additionally
+require active admission/ward context; historical evidence corrections remain
+authorized separately from new entry eligibility.
+
+Publishing facility rules requires explicit `AdminAuthorityManage` and the Admin
+feature, with a separate locked administrative proof; it does not infer Nursing
+or patient visibility. Each publication has an expected version, reason, client
+UUID, immutable version row, and atomic audit. Replaying an older rule write
+returns its original version even after a later publication, under current
+access and live authority.
 
 Unconfigured presets have every assessment disabled. Configured rules assess
 whole UTC days using strict threshold crossings: low intake, high output,

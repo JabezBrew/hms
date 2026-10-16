@@ -32,6 +32,7 @@ interfaces for workflow projections; handlers should not run SQL directly.
 | `search.rs` | omni-search projections |
 | `ward/` | ward admin, admissions, bed management, discharges, handoff, MAR, nursing tasks, monitoring, ward stock |
 | `ward_rounds.rs` | ward-round persistence |
+| `ward_rounds/governed.rs` | proof-bearing complete-draft CAS, atomic commit and immutable Ward Round request receipts |
 
 ## Infrastructure Files
 
@@ -77,6 +78,15 @@ replacement courses provide the supported recovery. See
 Focused tests are `scheduled_stock_basis`, `medication_lifecycle`, `prn_doses`,
 `mar_outcomes`, and `prescription_courses`; inventory/standing suites cover shared
 stock writers.
+
+## Reviewed Ward Round commands
+
+Public Ward Round reads and writes use `ward_rounds/governed.rs`, its mandatory
+live authority proof and current admission/action checks. Migration019 retains
+immutable original command results and human-readable reviewed source snapshots.
+Legacy plain helpers remain trusted fixture/import compatibility. See the
+[command scope](../../../docs/v2/2026-10-16-ward-round-command-scope.md) and focused
+`ward_round_commands`, `ward_rounds` and `medication_lifecycle` tests.
 
 ## Clinical note evidence
 

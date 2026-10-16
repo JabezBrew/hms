@@ -8,6 +8,7 @@ mod fluid;
 mod handoff;
 mod mar;
 mod nursing_access;
+pub(crate) use staff_assignments::can_view_all_ward_board;
 mod nursing_task_board;
 mod observations_monitoring;
 pub mod patient_handover;

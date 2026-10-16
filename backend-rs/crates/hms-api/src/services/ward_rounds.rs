@@ -1,355 +1,193 @@
-use chrono::Utc;
+use crate::{
+    error::ApiError,
+    response::{object, ObjectResponse},
+    state::AppState,
+};
+use chrono::{DateTime, Utc};
+use hms_db::ward_rounds::governed::{self, WardRoundActor, WardRoundError};
 use hms_domain::auth::{ClinicalPatientAccessDecision, ClinicalPatientAccessEvidence};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
-use hms_domain::ward_rounds::{
-    CommitWardRoundRequest, CommitWardRoundResponse, CreateWardRoundActionRequest,
-    CreateWardRoundRequest, UpdateWardRoundActionRequest, UpdateWardRoundRequest,
-    WardRoundActionStatus, WardRoundActionType, WardRoundDetail, WardRoundPermissions,
-    WardRoundStatus,
-};
+use hms_domain::ward_rounds::*;
 use uuid::Uuid;
-
-use crate::error::ApiError;
-use crate::response::{object, ObjectResponse};
-use crate::state::AppState;
 
 #[derive(Clone)]
 pub struct WardRoundsService {
     state: AppState,
 }
-
 impl WardRoundsService {
     pub fn new(state: AppState) -> Self {
         Self { state }
     }
-
-    pub async fn current(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        let round = hms_db::ward_rounds::get_current_ward_round(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict("ward_round_load_failed", "Ward Round could not be loaded.")
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "ward_round_not_found",
-                "No current Ward Round exists for this admission.",
-            )
-        })?;
-        Ok(object(self.with_permissions(round, &decision, ctx)))
-    }
-
-    pub async fn create(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-        payload: CreateWardRoundRequest,
-    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        self.require_write(ctx, &decision)?;
-        let round = hms_db::ward_rounds::create_ward_round(
-            self.pool(),
-            hms_db::ward_rounds::NewWardRound {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                admission_case_id: payload.admission_case_id,
-                note_sections: payload.note_sections.unwrap_or_default(),
-                rendered_note: payload.rendered_note,
-                actor_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_round_create_failed",
-                "Ward Round could not be created.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "active_admission_required",
-                "Ward Round requires an active admission for this patient.",
-            )
-        })?;
-        self.state.invalidate_patient_chronicle_cache();
-        Ok(object(self.with_permissions(round, &decision, ctx)))
-    }
-
-    pub async fn get(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-        round_id: Uuid,
-    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        let round = hms_db::ward_rounds::get_ward_round(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-            round_id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict("ward_round_load_failed", "Ward Round could not be loaded.")
-        })?
-        .ok_or_else(|| ApiError::not_found("ward_round_not_found", "Ward Round was not found."))?;
-        Ok(object(self.with_permissions(round, &decision, ctx)))
-    }
-
-    pub async fn update(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-        round_id: Uuid,
-        payload: UpdateWardRoundRequest,
-    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        self.require_write(ctx, &decision)?;
-        let round = hms_db::ward_rounds::update_ward_round(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-            round_id,
-            payload.expected_version,
-            hms_db::ward_rounds::WardRoundUpdate {
-                note_sections: payload.note_sections,
-                rendered_note: payload.rendered_note,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_round_update_failed",
-                "Ward Round could not be updated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "ward_round_stale_or_closed",
-                "Ward Round draft version is stale or closed.",
-            )
-        })?;
-        self.state.invalidate_patient_chronicle_cache();
-        Ok(object(self.with_permissions(round, &decision, ctx)))
-    }
-
-    pub async fn create_action(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-        round_id: Uuid,
-        payload: CreateWardRoundActionRequest,
-    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        self.require_write(ctx, &decision)?;
-        self.require_action_permission(ctx, payload.action_type)?;
-        let round = hms_db::ward_rounds::create_ward_round_action(
-            self.pool(),
-            hms_db::ward_rounds::NewWardRoundAction {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                ward_round_id: round_id,
-                action_type: payload.action_type,
-                title: payload.title,
-                instruction: payload.instruction,
-                payload: payload.payload,
-                actor_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_round_action_create_failed",
-                "Ward Round action could not be created.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("ward_round_not_found", "Ward Round draft was not found.")
-        })?;
-        self.state.invalidate_patient_chronicle_cache();
-        Ok(object(self.with_permissions(round, &decision, ctx)))
-    }
-
-    pub async fn update_action(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-        round_id: Uuid,
-        action_id: Uuid,
-        payload: UpdateWardRoundActionRequest,
-    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        self.require_write(ctx, &decision)?;
-        let existing = hms_db::ward_rounds::get_ward_round(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-            round_id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict("ward_round_load_failed", "Ward Round could not be loaded.")
-        })?
-        .ok_or_else(|| ApiError::not_found("ward_round_not_found", "Ward Round was not found."))?;
-        let action = existing
-            .actions
-            .iter()
-            .find(|action| action.id == action_id)
-            .ok_or_else(|| {
-                ApiError::not_found(
-                    "ward_round_action_not_found",
-                    "Ward Round action was not found.",
-                )
-            })?;
-        self.require_action_permission(ctx, action.action_type)?;
-        if matches!(payload.status, Some(WardRoundActionStatus::Committed)) {
-            return Err(ApiError::bad_request(
-                "invalid_ward_round_action_status",
-                "Ward Round actions are committed by committing the parent round.",
-            ));
-        }
-        let round = hms_db::ward_rounds::update_ward_round_action(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-            round_id,
-            action_id,
-            hms_db::ward_rounds::WardRoundActionUpdate {
-                title: payload.title,
-                instruction: payload.instruction,
-                payload: payload.payload,
-                status: payload.status,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_round_action_update_failed",
-                "Ward Round action could not be updated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "ward_round_action_not_found",
-                "Ward Round action was not found.",
-            )
-        })?;
-        self.state.invalidate_patient_chronicle_cache();
-        Ok(object(self.with_permissions(round, &decision, ctx)))
-    }
-
-    pub async fn delete_action(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-        round_id: Uuid,
-        action_id: Uuid,
-    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        self.require_write(ctx, &decision)?;
-        let round = hms_db::ward_rounds::delete_ward_round_action(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-            round_id,
-            action_id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_round_action_delete_failed",
-                "Ward Round action could not be deleted.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "ward_round_action_not_found",
-                "Ward Round action was not found.",
-            )
-        })?;
-        self.state.invalidate_patient_chronicle_cache();
-        Ok(object(self.with_permissions(round, &decision, ctx)))
-    }
-
-    pub async fn commit(
-        &self,
-        ctx: &hms_access::RequestContext,
-        patient_id: Uuid,
-        round_id: Uuid,
-        payload: CommitWardRoundRequest,
-    ) -> Result<ObjectResponse<CommitWardRoundResponse>, ApiError> {
-        let (_patient, decision) = self.load_patient_for_chronicle(ctx, patient_id).await?;
-        self.require_write(ctx, &decision)?;
-        let existing = hms_db::ward_rounds::get_ward_round(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-            round_id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict("ward_round_load_failed", "Ward Round could not be loaded.")
-        })?
-        .ok_or_else(|| ApiError::not_found("ward_round_not_found", "Ward Round was not found."))?;
-        if existing.status != WardRoundStatus::Draft {
-            return Err(ApiError::conflict(
-                "ward_round_not_draft",
-                "Only draft Ward Rounds can be committed.",
-            ));
-        }
-        if existing.version != payload.expected_version {
-            return Err(ApiError::conflict(
-                "ward_round_stale_version",
-                "Ward Round draft version is stale.",
-            ));
-        }
-        for action in existing
-            .actions
-            .iter()
-            .filter(|action| action.status == WardRoundActionStatus::Draft)
-        {
-            self.require_action_permission(ctx, action.action_type)?;
-        }
-        let round = hms_db::ward_rounds::commit_ward_round(
-            self.pool(),
-            self.facility_id(),
-            patient_id,
-            round_id,
-            payload.expected_version,
-            ctx.user_id,
-        )
-        .await
-        .map_err(map_commit_error)?
-        .ok_or_else(|| ApiError::not_found("ward_round_not_found", "Ward Round was not found."))?;
-        let round = self.with_permissions(round, &decision, ctx);
-        self.state.invalidate_patient_chronicle_cache();
-        self.state.invalidate_ward_board_cache();
-        self.state.invalidate_pharmacy_dispense_cache();
-        Ok(object(CommitWardRoundResponse {
-            created_artifacts: round.artifacts.clone(),
-            ward_round: round,
-        }))
-    }
-
     fn facility_id(&self) -> Uuid {
         self.state.facility_id()
     }
-
     fn pool(&self) -> &hms_db::PgPool {
         self.state.db_pool()
     }
-
+    fn actor(&self, ctx: &hms_access::RequestContext, deadline: DateTime<Utc>) -> WardRoundActor {
+        WardRoundActor {
+            facility_id: self.facility_id(),
+            user_id: ctx.user_id,
+            request_id: Some(ctx.request_id.clone()),
+            authorization: hms_db::clinical::prescription_courses::PrescriptionAuthorization {
+                session_id: ctx.session_id,
+                session_version: ctx.session_version,
+                permission_version: ctx.permission_version,
+                active_profile: ctx.active_profile,
+                valid_until: if ctx.offsite == hms_access::OffsiteState::OffsiteFreshReauth {
+                    deadline.min(ctx.reauth.required_after)
+                } else {
+                    deadline
+                },
+            },
+            can_write: hms_access::require_clinical_write_access(ctx, self.facility_id()).is_ok(),
+            can_prescribe: self
+                .require_action_permission(ctx, WardRoundActionType::Prescription)
+                .is_ok(),
+            can_order_labs: self
+                .require_action_permission(ctx, WardRoundActionType::LabOrder)
+                .is_ok(),
+            can_create_nursing_task: self
+                .require_action_permission(ctx, WardRoundActionType::NursingTask)
+                .is_ok(),
+            can_request_discharge: self
+                .require_action_permission(ctx, WardRoundActionType::DischargeRequest)
+                .is_ok(),
+            can_view_all_wards: super::ward::can_view_all_ward_board(ctx, self.facility_id()),
+        }
+    }
+    pub async fn current(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        query: WardRoundCurrentQuery,
+        deadline: DateTime<Utc>,
+    ) -> Result<ObjectResponse<WardRoundWorkspace>, ApiError> {
+        self.load_patient_for_chronicle(ctx, patient).await?;
+        Ok(object(
+            governed::current(
+                self.pool(),
+                self.actor(ctx, deadline),
+                patient,
+                query.admission_case_id,
+            )
+            .await
+            .map_err(|e| map_error(e, false))?,
+        ))
+    }
+    pub async fn get(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        id: Uuid,
+        deadline: DateTime<Utc>,
+    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
+        self.load_patient_for_chronicle(ctx, patient).await?;
+        Ok(object(
+            governed::get(self.pool(), self.actor(ctx, deadline), patient, id)
+                .await
+                .map_err(|e| map_error(e, false))?,
+        ))
+    }
+    pub async fn save(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        input: SaveWardRoundDraftRequest,
+        deadline: DateTime<Utc>,
+    ) -> Result<ObjectResponse<WardRoundCommandReceipt>, ApiError> {
+        let (_, decision) = self.load_patient_for_chronicle(ctx, patient).await?;
+        self.require_write(ctx, &decision)?;
+        let result = governed::save(self.pool(), self.actor(ctx, deadline), patient, input).await;
+        self.state.invalidate_patient_chronicle_cache();
+        Ok(object(result.map_err(|e| map_error(e, true))?))
+    }
+    pub async fn commit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        id: Uuid,
+        input: CommitWardRoundRequest,
+        deadline: DateTime<Utc>,
+    ) -> Result<ObjectResponse<WardRoundCommandReceipt>, ApiError> {
+        let (_, decision) = self.load_patient_for_chronicle(ctx, patient).await?;
+        self.require_write(ctx, &decision)?;
+        let result =
+            governed::commit(self.pool(), self.actor(ctx, deadline), patient, id, input).await;
+        self.state.invalidate_patient_chronicle_cache();
+        self.state.invalidate_ward_board_cache();
+        self.state.invalidate_pharmacy_dispense_cache();
+        Ok(object(result.map_err(|e| map_error(e, true))?))
+    }
+    pub async fn receipt(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        key: Uuid,
+        deadline: DateTime<Utc>,
+    ) -> Result<ObjectResponse<WardRoundCommandReceipt>, ApiError> {
+        self.load_patient_for_chronicle(ctx, patient).await?;
+        Ok(object(
+            governed::receipt(self.pool(), self.actor(ctx, deadline), patient, key)
+                .await
+                .map_err(|e| map_error(e, false))?,
+        ))
+    }
+    async fn retired<T>(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+    ) -> Result<ObjectResponse<T>, ApiError> {
+        let (_, decision) = self.load_patient_for_chronicle(ctx, patient).await?;
+        self.require_write(ctx, &decision)?;
+        Err(ApiError::conflict("ward_round_atomic_draft_required","Reload the Ward Round and save its complete reviewed draft. Individual draft/action writes are no longer supported."))
+    }
+    pub async fn create(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        _input: CreateWardRoundRequest,
+    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
+        self.retired(ctx, patient).await
+    }
+    pub async fn update(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        _id: Uuid,
+        _input: UpdateWardRoundRequest,
+    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
+        self.retired(ctx, patient).await
+    }
+    pub async fn create_action(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        _id: Uuid,
+        _input: CreateWardRoundActionRequest,
+    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
+        self.retired(ctx, patient).await
+    }
+    pub async fn update_action(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        _id: Uuid,
+        _action: Uuid,
+        _input: UpdateWardRoundActionRequest,
+    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
+        self.retired(ctx, patient).await
+    }
+    pub async fn delete_action(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient: Uuid,
+        _id: Uuid,
+        _action: Uuid,
+    ) -> Result<ObjectResponse<WardRoundDetail>, ApiError> {
+        self.retired(ctx, patient).await
+    }
     async fn load_patient_for_chronicle(
         &self,
         ctx: &hms_access::RequestContext,
@@ -466,84 +304,71 @@ impl WardRoundsService {
             }),
         }
     }
-
-    fn with_permissions(
-        &self,
-        mut round: WardRoundDetail,
-        decision: &ClinicalPatientAccessDecision,
-        ctx: &hms_access::RequestContext,
-    ) -> WardRoundDetail {
-        let can_write = !decision.read_only
-            && hms_access::require_clinical_write_access(ctx, self.facility_id()).is_ok();
-        let is_draft = round.status == WardRoundStatus::Draft;
-        round.permissions = WardRoundPermissions {
-            can_view: true,
-            can_edit_draft: can_write && is_draft,
-            can_commit: can_write && is_draft,
-            can_add_prescription: can_write && is_draft,
-            can_order_labs: is_draft
-                && !decision.read_only
-                && hms_access::require_lab_access(
-                    ctx,
-                    self.facility_id(),
-                    PermissionCode::LaboratoryOrderManage,
-                )
-                .is_ok(),
-            can_create_nursing_task: is_draft
-                && !decision.read_only
-                && hms_access::require_patient_workflow_access(
-                    ctx,
-                    self.facility_id(),
-                    PermissionCode::NursingTaskManage,
-                )
-                .is_ok(),
-            can_request_discharge: is_draft
-                && !decision.read_only
-                && hms_access::require_patient_workflow_access(
-                    ctx,
-                    self.facility_id(),
-                    PermissionCode::AdmissionManage,
-                )
-                .is_ok(),
-            read_only: decision.read_only,
-        };
-        round
-    }
 }
-
 impl AppState {
     pub fn ward_rounds_service(&self) -> WardRoundsService {
         WardRoundsService::new(self.clone())
     }
 }
-
-fn map_commit_error(error: anyhow::Error) -> ApiError {
+fn map_error(error: anyhow::Error, write: bool) -> ApiError {
+    if let Some(e) = error.downcast_ref::<WardRoundError>() {
+        return match e {
+        WardRoundError::NotFound=>ApiError::not_found("ward_round_not_found","The Ward Round, admission or original request was not found."),
+        WardRoundError::InvalidInput=>ApiError::bad_request("invalid_ward_round","Review all supported fields, exact versions and the bounded list of actions."),
+        WardRoundError::PermissionDenied|WardRoundError::PatientDenied=>ApiError::forbidden("ward_round_access_denied","Current full clinical and action permissions are required."),
+        WardRoundError::FeatureDisabled=>ApiError::forbidden("feature_disabled","A required Ward Round feature is not enabled."),
+        WardRoundError::AuthorityExpired=>ApiError::forbidden("ward_round_authorization_expired","Current authorization is required. Refresh your access before continuing."),
+        WardRoundError::ContextChanged=>ApiError::conflict("ward_round_context_changed","Review the selected patient's active admission and ward before recording care."),
+        WardRoundError::SourceChanged=>ApiError::conflict("ward_round_source_changed","The reviewed draft or prescription changed. Reload its current details."),
+        WardRoundError::NotDraft=>ApiError::conflict("ward_round_not_draft","This Ward Round is already committed. Review its saved result."),
+        WardRoundError::DraftExists=>ApiError::conflict("ward_round_draft_exists","This admission already has a draft. Load and review it before editing."),
+        WardRoundError::RequestConflict=>ApiError::conflict("ward_round_request_conflict","This request reference belongs to another command. Review the original result."),
+        WardRoundError::CatalogChanged=>ApiError::conflict("ward_round_catalog_changed","Every selected test and panel must still be active in this facility. Review the catalog selection."),
+        WardRoundError::PrescribingPanelRequired=>ApiError::conflict("ward_round_prescribing_panel_required","Use the prescription panel for as-needed or stock-linked treatment and its explicit reviewed safety policy."),
+        WardRoundError::PrescriptionClosed=>ApiError::conflict("prescription_course_closed","A stopped or completed course cannot be resumed. Review a new course in the prescription panel."),
+        WardRoundError::DischargeReviewRequired=>ApiError::conflict("ward_round_discharge_review_required","Review the existing discharge case in the discharge panel before requesting another transition."),
+        WardRoundError::DraftReviewRequired=>ApiError::conflict("ward_round_draft_review_required","This earlier Ward Round needs review of its preserved action evidence before it can be used in this workflow."),
+    };
+    }
+    if let Some(e) = error.downcast_ref::<hms_db::ward::nursing_access::NursingError>() {
+        return match e {
+        hms_db::ward::nursing_access::NursingError::WardDenied=>ApiError::forbidden("nursing_ward_access_denied","An active assignment to the current ward or explicit all-ward authority is required."),
+        hms_db::ward::nursing_access::NursingError::InvalidAssignee=>ApiError::conflict("nursing_assignee_changed","Choose an active local practitioner assigned to the selected ward."),
+        hms_db::ward::nursing_access::NursingError::FeatureDisabled=>ApiError::forbidden("feature_disabled","The Nursing feature is not enabled."),
+        _=>ApiError::forbidden("ward_round_authorization_expired","Current nursing authority is required."),
+    };
+    }
+    if let Some(error) =
+        error.downcast_ref::<hms_db::clinical::prescription_courses::PrescriptionCourseError>()
+    {
+        use hms_db::clinical::prescription_courses::PrescriptionCourseError;
+        return match error {
+            PrescriptionCourseError::InvalidContext => ApiError::conflict("ward_round_context_changed", "The selected care context changed. Review the active admission before recording care."),
+            PrescriptionCourseError::InvalidActor | PrescriptionCourseError::AuthorizationExpired => ApiError::forbidden("ward_round_authorization_expired", "Current authorization is required. Refresh your access before continuing."),
+            _ => ApiError::conflict("ward_round_source_changed", "The reviewed prescription changed. Reload its current details."),
+        };
+    }
     match error.root_cause().to_string().as_str() {
-        "prescription_regimen_locked" => return ApiError::conflict("prescription_regimen_locked", "A medication schedule already exists. Stop this prescription and create a replacement to change the regimen."),
-        "prescription_course_closed" => return ApiError::conflict("prescription_course_closed", "A stopped or completed medication schedule cannot be resumed. Create a replacement prescription."),
+        "prescription_regimen_locked" => {
+            return ApiError::conflict(
+                "prescription_regimen_locked",
+                "Use the prescription panel to review a replacement course.",
+            )
+        }
+        "prescription_course_closed" => {
+            return ApiError::conflict(
+                "prescription_course_closed",
+                "A stopped or completed course cannot be resumed.",
+            )
+        }
         _ => {}
     }
-    let message = error.to_string();
-    if message.contains("ward_round_stale_version") {
-        return ApiError::conflict(
-            "ward_round_stale_version",
-            "Ward Round draft version is stale.",
-        );
+    if write {
+        ApiError::conflict("ward_round_write_unconfirmed","This change may already be saved. Retain the exact request reference and review or retry that same command.")
+    } else {
+        ApiError::conflict(
+            "ward_round_read_failed",
+            "The complete protected Ward Round could not be loaded.",
+        )
     }
-    if message.contains("ward_round_inactive_admission") {
-        return ApiError::conflict(
-            "active_admission_required",
-            "Ward Round requires an active admission for this patient.",
-        );
-    }
-    if message.contains("ward_round_not_draft") {
-        return ApiError::conflict(
-            "ward_round_not_draft",
-            "Only draft Ward Rounds can be committed.",
-        );
-    }
-    ApiError::conflict(
-        "ward_round_commit_failed",
-        "Ward Round could not be committed.",
-    )
 }

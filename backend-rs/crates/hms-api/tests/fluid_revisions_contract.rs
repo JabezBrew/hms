@@ -20,6 +20,12 @@ async fn call(
 #[tokio::test]
 async fn fluid_revision_routes_preserve_paired_evidence_and_enforce_context_access() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
@@ -151,7 +157,7 @@ async fn fluid_revision_routes_preserve_paired_evidence_and_enforce_context_acce
         )
         .await
         .status(),
-        StatusCode::UNPROCESSABLE_ENTITY
+        StatusCode::BAD_REQUEST
     );
     let voided = call(
         app.clone(),
@@ -173,6 +179,12 @@ async fn fluid_revision_routes_preserve_paired_evidence_and_enforce_context_acce
 #[tokio::test]
 async fn rules_are_facility_admin_only_and_persistence_failure_is_explicitly_unconfirmed() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let pool = app.db_pool().await;
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (limited, _, _) = login(app.clone(), "limited@hms.local").await;
@@ -241,6 +253,12 @@ async fn rules_are_facility_admin_only_and_persistence_failure_is_explicitly_unc
 #[tokio::test]
 async fn fluid_create_cannot_bypass_the_nursing_feature_with_only_a_permission() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let pool = app.db_pool().await;
     let facility = app.state().facility_id();
     let user = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);

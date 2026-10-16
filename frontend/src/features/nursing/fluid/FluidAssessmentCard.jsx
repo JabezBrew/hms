@@ -1,11 +1,13 @@
+import { useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
 import { userHasCapability } from '@/shared/lib/access';
 import { useFluidAssessment } from './hooks';
 const labels = { low_intake: 'Intake below target', high_output: 'Output above threshold', negative_balance: 'Negative balance threshold crossed', positive_balance: 'Positive balance threshold crossed' };
-export function FluidAssessmentCard({ admissionId, date, enabled }) {
+export function FluidAssessmentCard({ admissionId, date, enabled, onDenied }) {
   const query = useFluidAssessment({ admission_case_id: admissionId, date }, enabled); const { user } = useAuth();
+  useLayoutEffect(() => { if (query.error?.status === 403) onDenied?.(); }, [query.error, onDenied]);
   if (!admissionId) return <p className="text-sm text-muted-foreground">Choose an admission to review fluid monitoring.</p>;
   return <section aria-label="Fluid monitoring" className="grid gap-3 rounded-xl border bg-muted/20 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-medium">Fluid monitoring · {date} UTC</h3>{userHasCapability(user, 'admin.authority.manage') && <Button asChild variant="link" size="sm"><Link to="/settings/fluid-monitoring">Facility rules</Link></Button>}</div>
     {query.isError ? <p role="alert" className="text-sm text-destructive">Monitoring could not be confirmed. <Button variant="outline" size="sm" onClick={() => query.refetch()}>Refresh monitoring</Button></p> : !query.data ? <p role="status" className="text-sm">Loading monitoring…</p> : <>

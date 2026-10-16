@@ -1069,6 +1069,17 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getFluidObservationContext": {
+    "operationId": "getFluidObservationContext",
+    "method": "GET",
+    "path": "/api/v2/nursing/fluid-observations/context",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "patient_id",
+      "admission_case_id"
+    ],
+    "hasBody": false
+  },
   "getFluidObservationHistory": {
     "operationId": "getFluidObservationHistory",
     "method": "GET",
@@ -1076,10 +1087,7 @@ export const operations = {
     "pathParamNames": [
       "id"
     ],
-    "queryParamNames": [
-      "cursor",
-      "limit"
-    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getFluidObservations": {
@@ -1986,6 +1994,17 @@ export const operations = {
     "pathParamNames": [
       "patient_id",
       "round_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientChronicleWardRoundRequest": {
+    "operationId": "getPatientChronicleWardRoundRequest",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/requests/{request_id}",
+    "pathParamNames": [
+      "patient_id",
+      "request_id"
     ],
     "queryParamNames": [],
     "hasBody": false
@@ -4218,6 +4237,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPatientChronicleWardRoundDraft": {
+    "operationId": "postPatientChronicleWardRoundDraft",
+    "method": "POST",
+    "path": "/api/v2/patients/{patient_id}/chronicle/ward-rounds/draft",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postPatientChronicleWardRounds": {
     "operationId": "postPatientChronicleWardRounds",
     "method": "POST",
@@ -4910,6 +4939,7 @@ export function createGeneratedClient(request) {
     getFluidMonitoringAssessment: createOperation(request, operations.getFluidMonitoringAssessment),
     getFluidMonitoringRules: createOperation(request, operations.getFluidMonitoringRules),
     getFluidObservationById: createOperation(request, operations.getFluidObservationById),
+    getFluidObservationContext: createOperation(request, operations.getFluidObservationContext),
     getFluidObservationHistory: createOperation(request, operations.getFluidObservationHistory),
     getFluidObservations: createOperation(request, operations.getFluidObservations),
     getFluidObservationSummary: createOperation(request, operations.getFluidObservationSummary),
@@ -4980,6 +5010,7 @@ export function createGeneratedClient(request) {
     getPatientChroniclePrint: createOperation(request, operations.getPatientChroniclePrint),
     getPatientChronicleTimeline: createOperation(request, operations.getPatientChronicleTimeline),
     getPatientChronicleWardRound: createOperation(request, operations.getPatientChronicleWardRound),
+    getPatientChronicleWardRoundRequest: createOperation(request, operations.getPatientChronicleWardRoundRequest),
     getPatientClinicalNotes: createOperation(request, operations.getPatientClinicalNotes),
     getPatientContextList: createOperation(request, operations.getPatientContextList),
     getPatientCurrentContexts: createOperation(request, operations.getPatientCurrentContexts),
@@ -5202,6 +5233,7 @@ export function createGeneratedClient(request) {
     postPatientChartEntries: createOperation(request, operations.postPatientChartEntries),
     postPatientChronicleWardRoundActions: createOperation(request, operations.postPatientChronicleWardRoundActions),
     postPatientChronicleWardRoundCommit: createOperation(request, operations.postPatientChronicleWardRoundCommit),
+    postPatientChronicleWardRoundDraft: createOperation(request, operations.postPatientChronicleWardRoundDraft),
     postPatientChronicleWardRounds: createOperation(request, operations.postPatientChronicleWardRounds),
     postPatientClinicalNotes: createOperation(request, operations.postPatientClinicalNotes),
     postPatientContextSearch: createOperation(request, operations.postPatientContextSearch),

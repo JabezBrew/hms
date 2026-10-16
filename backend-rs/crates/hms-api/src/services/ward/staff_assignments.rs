@@ -332,7 +332,7 @@ impl WardStaffAssignmentService {
     }
 }
 
-pub(super) fn can_view_all_ward_board(ctx: &hms_access::RequestContext, facility_id: Uuid) -> bool {
+pub(crate) fn can_view_all_ward_board(ctx: &hms_access::RequestContext, facility_id: Uuid) -> bool {
     ctx.has_facility_permission(facility_id, PermissionCode::WardBoardViewAll)
         || ctx.has_facility_permission(facility_id, PermissionCode::AdminStaffManage)
         || ctx.has_facility_permission(facility_id, PermissionCode::AdminAuthorityManage)

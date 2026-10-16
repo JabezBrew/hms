@@ -109,8 +109,10 @@ const AddFluidBalanceSlideOver = ({
   admission,
   onFluidRecorded,
   allowEntry = true,
+  clinicalPermissions,
+  patientHistory = false,
 }) => {
-  if (isRustV2ApiMode()) return <FluidPanel open={open} onClose={onClose} patient={patient} admission={admission} onFluidRecorded={onFluidRecorded} allowEntry={allowEntry} />;
+  if (isRustV2ApiMode()) return <FluidPanel open={open} onClose={onClose} patient={patient} admission={admission} onFluidRecorded={onFluidRecorded} allowEntry={allowEntry} clinicalPermissions={clinicalPermissions} patientHistory={patientHistory} />;
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
   const admissionId = admission?.id || 'no-admission';

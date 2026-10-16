@@ -45,6 +45,12 @@ function settings(value) {
   return value;
 }
 export const fluidApi = {
+  async context(query, { signal } = {}) {
+    const value = (await v2Api.getFluidObservationContext({ query, signal }))?.data;
+    if (value?.patient_id !== query.patient_id || value?.admission_case_id !== query.admission_case_id || !['ready_for_activation', 'admitted', 'discharge_pending', 'discharged', 'cancelled'].includes(value.status)
+      || typeof value.can_record_observation !== 'boolean' || (value.can_record_observation && !['admitted', 'discharge_pending'].includes(value.status))) throw new Error('The selected admission and current entry permission could not be confirmed.');
+    return value;
+  },
   async list(query, { signal } = {}) {
     const response = await v2Api.getFluidObservations({ query, signal });
     return page(response, (value) => { const row = observation(value); if ((!row.current && !(query.include_closed && row.closed_by_action === 'voided')) || (query.patient_id && row.patient_id !== query.patient_id) || (query.admission_case_id && row.admission_case_id !== query.admission_case_id) || (query.recorded_from && Date.parse(row.values.recorded_at) < Date.parse(query.recorded_from)) || (query.recorded_before && Date.parse(row.values.recorded_at) >= Date.parse(query.recorded_before))) throw new Error('Fluid scope could not be confirmed.'); return row; });
@@ -58,8 +64,8 @@ export const fluidApi = {
     }
     throw new Error('The fluid list is too large to complete. Narrow the date range.');
   },
-  async get(id, { signal } = {}) { const row = observation((await v2Api.getFluidObservationById({ id }, { signal }))?.data); if (row.id !== id) throw new Error('The observation identity could not be confirmed.'); return row; },
-  async history(id, cursor, { signal } = {}) { return page(await v2Api.getFluidObservationHistory({ id }, { query: { limit: 25, ...(cursor ? { cursor } : {}) }, signal }), observation); },
+  async get(id, { signal, expected } = {}) { const row = observation((await v2Api.getFluidObservationById({ id }, { signal }))?.data); if (row.id !== id || (expected && ['patient_id', 'admission_case_id', 'root_entry_id'].some((key) => row[key] !== expected[key]))) throw new Error('The observation identity and selected clinical scope could not be confirmed.'); return row; },
+  async history(id, cursor, { signal, expected } = {}) { return page(await v2Api.getFluidObservationHistory({ id }, { query: { limit: 25, ...(cursor ? { cursor } : {}) }, signal }), (value) => { const row = observation(value); if (expected && ['patient_id', 'admission_case_id', 'root_entry_id'].some((key) => row[key] !== expected[key])) throw new Error('The observation history scope could not be confirmed.'); return row; }); },
   async summary(query, { signal } = {}) {
     const value = (await v2Api.getFluidObservationSummary({ query, signal }))?.data;
     if (!integer(value?.entry_count) || !integer(value.total_intake_ml) || !integer(value.total_output_ml) || value.net_ml !== value.total_intake_ml - value.total_output_ml || !Array.isArray(value.intake_breakdown) || !Array.isArray(value.output_breakdown)) throw new Error('Complete fluid totals could not be confirmed.'); return value;

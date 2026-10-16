@@ -118,3 +118,5 @@ history expands one immutable revision. Intended recipient is documentation only
 See `docs/v2/2026-10-16-patient-handover-scope.md`.
 
 General nursing task, vital, alert and monitoring APIs apply actual ward relationships before paging, explicit clinical data classes and mandatory live authority proofs. Terminal task decisions preserve first actor/time. See `docs/v2/2026-10-16-nursing-scope-and-decisions.md` for captured/current ward semantics and compatibility limits.
+
+Fluid services require `NetworkContext` deadlines on current and legacy routes. Full visibility protects rows, metadata, category totals, assessment and writes; ClinicalSummary deliberately permits only legacy scalar totals/trends. The minimal context GET verifies the selected patient/admission and returns current status/can-record facts without broader admission management access. Rule publication uses a separate explicit Admin authority proof. See [fluid access and lifetime](../../../../../../docs/v2/2026-10-16-fluid-access-lifetime-scope.md).

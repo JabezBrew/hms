@@ -299,6 +299,9 @@ export function PatientChroniclePageContent({
   } = timelineExpansion;
   const clinicalPermissions = useMemo(() => chronicleClinicalPermissions(chronicleContext, rustV2Mode), [chronicleContext, rustV2Mode]);
   const fullClinical = clinicalPermissions.can_view_full_clinical;
+  const wardRoundAdmissionId = workspaceContext.chronicleAllHistory ? null : workspaceContext.selectedAdmissionId;
+  const currentAdmissionId = chronicleActiveAdmission?.admission_id || chronicleActiveAdmission?.id || chronicleActiveAdmission?.admission_case_id;
+  const wardRoundAdmission = wardRoundAdmissionId ? { ...(String(currentAdmissionId) === String(wardRoundAdmissionId) ? chronicleActiveAdmission : {}), id: wardRoundAdmissionId, admission_id: wardRoundAdmissionId } : null;
   const notePatient = useMemo(() => ({ ...notePatientContext(patientForChronicle), id: patientLocalId || patientId, encounterId: rustV2Mode ? workspaceContext.selectedEncounterId || null : selectedEncounter?.id || activeEncounter?.id || null, encounterStatus: workspaceContext.selectedEncounter?.v2_status || workspaceContext.selectedEncounter?.status || null, admissionId: workspaceContext.selectedAdmissionId || null }), [patientForChronicle, patientLocalId, patientId, rustV2Mode, workspaceContext.selectedEncounterId, workspaceContext.selectedAdmissionId, workspaceContext.selectedEncounter?.v2_status, workspaceContext.selectedEncounter?.status, selectedEncounter?.id, activeEncounter?.id]);
   const nursing = !rustV2Mode || (userHasCapability(user, 'nursing.task.manage') && user?.accessContext?.features?.includes('nursing'));
   const contentMeasure = useMeasuredElementHeight();
@@ -379,8 +382,8 @@ export function PatientChroniclePageContent({
                 <div ref={contentMeasure.ref}>
                   {isWardRoundMode && fullClinical ? (
                     <WardRoundChronicleMode
-                      activeEncounter={activeEncounter}
-                      admission={chronicleActiveAdmission}
+                      activeEncounter={workspaceContext.selectedEncounter || null}
+                      admission={rustV2Mode ? wardRoundAdmission : chronicleActiveAdmission}
                       chronicleContext={chronicleContext}
                       labResults={labResults}
                       latestVitals={latestVitals}

@@ -45,6 +45,8 @@ pub struct FluidObservationValues {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateFluidObservationRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patient_id: Option<Uuid>,
     pub client_request_id: Uuid,
     pub admission_case_id: Uuid,
     pub values: FluidObservationValues,
@@ -100,6 +102,7 @@ pub struct FluidObservation {
 }
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in=Query)]
+#[serde(deny_unknown_fields)]
 pub struct FluidObservationQuery {
     pub patient_id: Option<Uuid>,
     pub admission_case_id: Option<Uuid>,
@@ -168,6 +171,7 @@ pub struct UpdateFluidRuleSettingsRequest {
 }
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in=Query)]
+#[serde(deny_unknown_fields)]
 pub struct FluidAssessmentQuery {
     pub admission_case_id: Uuid,
     pub date: Option<NaiveDate>,
@@ -215,4 +219,19 @@ pub struct FluidAssessment {
     pub total_output_ml: i64,
     pub net_ml: i64,
     pub conditions: Vec<FluidMonitoringCondition>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in=Query)]
+#[serde(deny_unknown_fields)]
+pub struct FluidObservationContextQuery {
+    pub patient_id: Uuid,
+    pub admission_case_id: Uuid,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct FluidObservationContext {
+    pub patient_id: Uuid,
+    pub admission_case_id: Uuid,
+    pub status: crate::ward::AdmissionStatus,
+    pub can_record_observation: bool,
 }

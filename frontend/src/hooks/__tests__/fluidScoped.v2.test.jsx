@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
-import { getV2FluidBalanceEntries, getV2FluidBalanceTrends, normalizeV2FluidBalancePayload } from '../nursingQueriesV2Bridge';
+import { getV2FluidBalanceEntries, getV2FluidBalanceSummary, getV2FluidBalanceTrends, normalizeV2FluidBalancePayload } from '../nursingQueriesV2Bridge';
 import { useFluidBalance, useFluidBalanceSummary, useFluidBalanceTrends, useFluidBalanceAlerts, useCreateFluidBalance, useTodayFluidBalance } from '../nursing/useFluidBalanceQueries';
 
 const originalFetch = globalThis.fetch;
@@ -55,6 +55,13 @@ describe('complete scoped Rust fluid balance', () => {
     await waitFor(() => expect(result.current.data?.entry_count).toBe(1000));
     expect(result.current.data).toMatchObject({ total_intake: 10000, total_output: 4000, balance: 6000 });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+  it('sends only supported complete-summary scope and range fields, preserving AbortSignal', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch.mockImplementation(async (url, options) => {
+      const parsed = new URL(url); expect(parsed.pathname).toBe('/api/v2/nursing/fluid-balance/summary'); expect(Object.fromEntries(parsed.searchParams)).toEqual({ patient_id: 'selected-patient', admission_case_id: 'selected-admission', recorded_from: '2026-05-12T00:00:00.000Z', recorded_before: '2026-05-13T00:00:00.000Z' }); expect(options.signal).toBe(signal); return response(totals(1000));
+    });
+    await expect(getV2FluidBalanceSummary('selected-patient', { admission_id: 'selected-admission', date: '2026-05-12', limit: 7, cursor: 'synthetic-page', descending: true }, { signal })).resolves.toMatchObject({ entry_count: 1000, balance: 6000 }); expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('uses an explicitly supplied panel day for the today summary', async () => {

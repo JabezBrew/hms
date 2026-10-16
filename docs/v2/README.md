@@ -18,6 +18,7 @@ Scope: Rust V2 backend architecture, seed behavior, cutover scope, and productio
 | `2026-10-15-phase-two-verification.md` | first parity increment and exact staged-source local acceptance. |
 | `2026-10-15-phase-two-b-verification.md` | scoped fluid/emergency access, NHIS UI, reset lifecycle and exact-source acceptance. |
 | `2026-10-16-phase-eight-verification.md` | explicit scheduled stock units, inpatient narrative handover, clinical visibility and scoped notifications; frozen acceptance evidence. |
+| `2026-10-16-phase-ten-verification.md` | atomic ward-round draft/commit and clinical artifact evidence, fluid live authority and selected-admission workspace; exact-source acceptance. |
 | `2026-10-16-phase-nine-verification.md` | immutable note/template evidence, protected nursing records, selected-admission vital entry and confirmed decisions. |
 | `2026-10-16-nursing-record-workspace.md` | scoped task/vital windows, ward-board decisions, uncertainty and clinical context lifetime. |
 | `2026-10-16-scheduled-stock-basis-scope.md` | reviewed stock units, physical supply evidence, care-context and authority lifetime contracts. |

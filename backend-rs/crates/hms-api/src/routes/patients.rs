@@ -57,6 +57,14 @@ pub fn routes() -> Router<AppState> {
             post(ward_rounds::create),
         )
         .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds/draft",
+            post(ward_rounds::save_draft),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds/requests/:request_id",
+            get(ward_rounds::receipt),
+        )
+        .route(
             "/api/v2/patients/:patient_id/chronicle/ward-rounds/:round_id",
             get(ward_rounds::get).patch(ward_rounds::update),
         )

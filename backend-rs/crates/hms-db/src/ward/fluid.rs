@@ -1,22 +1,27 @@
 //! Immutable fluid evidence and transactional effective projections.
+mod access;
 mod common;
+pub use access::*;
 mod rules;
 use super::{FluidBalanceFilters, WardCursor};
 use crate::{codec, PgPool};
 use chrono::{DateTime, Utc};
 use hms_domain::fluid::*;
-pub use rules::{fluid_assessment, get_fluid_rules, update_fluid_rules};
+pub use rules::{
+    fluid_assessment, fluid_assessment_for_actor, get_fluid_rules, get_fluid_rules_for_actor,
+    update_fluid_rules,
+};
 use sqlx::{types::Json, FromRow, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
-#[derive(Clone, Debug)]
-pub struct FluidActor {
-    pub facility_id: Uuid,
-    pub user_id: Uuid,
-    pub request_id: Option<String>,
-}
+/// Mandatory live session proof for protected fluid workflows. Rule operations
+/// use the same identity facts with a separate administrative feature proof.
+pub type FluidActor = super::nursing_access::NursingActor;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FluidError {
+    AuthorizationExpired,
+    FeatureDisabled,
+    InvalidRequest,
     InvalidValues,
     InvalidMetadata,
     InvalidReason,
@@ -30,6 +35,9 @@ pub enum FluidError {
 impl FluidError {
     pub fn message(self) -> &'static str {
         match self{
+ Self::AuthorizationExpired=>"Current fluid authority is required. Sign in and review current access.",
+ Self::FeatureDisabled=>"The required facility feature is not enabled.",
+ Self::InvalidRequest=>"Review the supported fluid request reference and context.",
  Self::InvalidValues=>"Record a positive whole volume of at most 10000 ml for each measured direction. Preserve both sides of an older combined record.",
  Self::InvalidMetadata=>"Choose the category for each measured direction and shorten the observation details to the displayed limits.",
  Self::InvalidReason=>"A reason of at most 1000 characters is required for this change.",
@@ -293,12 +301,16 @@ fn replay(
 
 pub async fn create_fluid_observation(
     pool: &PgPool,
-    actor: FluidActor,
+    mut actor: FluidActor,
     patient: Uuid,
     mut input: CreateFluidObservationRequest,
 ) -> anyhow::Result<FluidWriteResult> {
     input.values = normalize(input.values, None)?;
     let mut tx = pool.begin().await?;
+    let wards = access::clinical(&mut tx, &mut actor).await?;
+    if input.patient_id.is_some_and(|id| id != patient) {
+        return Err(FluidError::InvalidRequest.into());
+    }
     if let Some(saved) = common::reserve(
         &mut tx,
         &actor,
@@ -309,13 +321,30 @@ pub async fn create_fluid_observation(
     .await?
     {
         let result = replay(input.client_request_id, FluidWriteKind::Created, saved)?;
+        super::nursing_access::admission(
+            &mut tx,
+            &actor,
+            &wards,
+            input.admission_case_id,
+            patient,
+            None,
+            false,
+        )
+        .await?;
+        access::deadline(&mut tx, &actor).await?;
         tx.commit().await?;
         return Ok(result);
     }
-    let admission=sqlx::query_scalar::<_,Uuid>("SELECT patient_id FROM admission_cases WHERE facility_id=$1 AND id=$2 AND status IN ('admitted','discharge_pending') FOR SHARE").bind(actor.facility_id).bind(input.admission_case_id).fetch_optional(&mut *tx).await?;
-    if admission != Some(patient) {
-        return Err(FluidError::AdmissionUnavailable.into());
-    }
+    super::nursing_access::admission(
+        &mut tx,
+        &actor,
+        &wards,
+        input.admission_case_id,
+        patient,
+        None,
+        true,
+    )
+    .await?;
     if input.values.recorded_at > common::clock(&mut tx).await? {
         return Err(FluidError::FutureObservation.into());
     }
@@ -333,6 +362,7 @@ pub async fn create_fluid_observation(
     .await?;
     common::finish(&mut tx, &actor, input.client_request_id, id, Some(id), 1).await?;
     common::audit(&mut tx, &actor, id, "fluid.observation.created", 1).await?;
+    access::deadline(&mut tx, &actor).await?;
     tx.commit().await?;
     Ok(FluidWriteResult {
         client_request_id: input.client_request_id,
@@ -373,7 +403,7 @@ pub async fn void_fluid_observation(
 }
 async fn change_observation(
     pool: &PgPool,
-    actor: FluidActor,
+    mut actor: FluidActor,
     source: FluidObservation,
     key: Uuid,
     reason: &str,
@@ -386,6 +416,19 @@ async fn change_observation(
     };
     let encoded = codec::encode(kind)?;
     let mut tx = pool.begin().await?;
+    let root=sqlx::query_as::<_,LockedRoot>("SELECT id,patient_id,admission_case_id,current_entry_id,revision FROM fluid_observation_roots WHERE facility_id=$1 AND id=$2 FOR UPDATE")
+ .bind(actor.facility_id).bind(source.root_entry_id).fetch_optional(&mut *tx).await?.ok_or(FluidError::NotCurrent)?;
+    let wards = access::clinical(&mut tx, &mut actor).await?;
+    super::nursing_access::admission(
+        &mut tx,
+        &actor,
+        &wards,
+        root.admission_case_id,
+        root.patient_id,
+        None,
+        false,
+    )
+    .await?;
     if let Some(saved) = common::reserve(
         &mut tx,
         &actor,
@@ -396,11 +439,10 @@ async fn change_observation(
     .await?
     {
         let result = replay(key, kind, saved)?;
+        access::deadline(&mut tx, &actor).await?;
         tx.commit().await?;
         return Ok(result);
     }
-    let root=sqlx::query_as::<_,LockedRoot>("SELECT id,patient_id,admission_case_id,current_entry_id,revision FROM fluid_observation_roots WHERE facility_id=$1 AND id=$2 FOR UPDATE")
- .bind(actor.facility_id).bind(source.root_entry_id).fetch_optional(&mut *tx).await?.ok_or(FluidError::NotCurrent)?;
     if root.current_entry_id != Some(source.id)
         || root.revision != source.revision
         || root.patient_id != source.patient_id
@@ -447,6 +489,7 @@ async fn change_observation(
         revision,
     )
     .await?;
+    access::deadline(&mut tx, &actor).await?;
     tx.commit().await?;
     Ok(FluidWriteResult {
         client_request_id: key,
@@ -471,8 +514,28 @@ pub async fn fluid_effective_summary(
     facility: Uuid,
     filters: FluidBalanceFilters,
 ) -> anyhow::Result<FluidEffectiveSummary> {
-    let mut q=QueryBuilder::<Postgres>::new("WITH effective AS MATERIALIZED(SELECT e.intake_ml,e.output_ml,e.metadata FROM fluid_balance_entries e JOIN fluid_observation_roots r ON r.facility_id=e.facility_id AND r.current_entry_id=e.id JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id JOIN admission_cases a ON a.id=e.admission_case_id AND a.facility_id=e.facility_id AND a.patient_id=e.patient_id WHERE e.facility_id=");
+    let mut q = summary_query(facility, filters, None);
+    let row = q.build_query_as::<SummaryRow>().fetch_one(pool).await?;
+    Ok(FluidEffectiveSummary {
+        entry_count: row.entry_count,
+        total_intake_ml: row.total_intake_ml,
+        total_output_ml: row.total_output_ml,
+        net_ml: row.total_intake_ml - row.total_output_ml,
+        intake_breakdown: row.intake_breakdown.0,
+        output_breakdown: row.output_breakdown.0,
+    })
+}
+
+fn summary_query(
+    facility: Uuid,
+    filters: FluidBalanceFilters,
+    wards: Option<Vec<Uuid>>,
+) -> QueryBuilder<'static, Postgres> {
+    let mut q=QueryBuilder::<Postgres>::new("WITH effective AS MATERIALIZED(SELECT e.intake_ml,e.output_ml,e.metadata->>'intake_category' AS intake_category,e.metadata->>'output_category' AS output_category FROM fluid_balance_entries e JOIN fluid_observation_roots r ON r.facility_id=e.facility_id AND r.patient_id=e.patient_id AND r.admission_case_id=e.admission_case_id AND r.current_entry_id=e.id JOIN patients p ON p.id=e.patient_id AND p.facility_id=e.facility_id JOIN admission_cases a ON a.id=e.admission_case_id AND a.facility_id=e.facility_id AND a.patient_id=e.patient_id WHERE e.facility_id=");
     q.push_bind(facility);
+    if let Some(ids) = wards {
+        q.push(" AND a.ward_id=ANY(").push_bind(ids).push(")");
+    }
     if let Some(id) = filters.patient_id {
         q.push(" AND e.patient_id=").push_bind(id);
     }
@@ -486,15 +549,7 @@ pub async fn fluid_effective_summary(
         q.push(" AND e.recorded_at<").push_bind(at);
     }
     q.push(r#") SELECT count(*) AS entry_count,COALESCE(sum(intake_ml),0)::bigint AS total_intake_ml,COALESCE(sum(output_ml),0)::bigint AS total_output_ml,
- COALESCE((SELECT jsonb_agg(jsonb_build_object('category',category,'total_ml',total_ml) ORDER BY category) FROM (SELECT COALESCE(metadata->>'intake_category','unspecified') AS category,sum(intake_ml)::bigint AS total_ml FROM effective WHERE intake_ml>0 GROUP BY 1) x),'[]'::jsonb) AS intake_breakdown,
- COALESCE((SELECT jsonb_agg(jsonb_build_object('category',category,'total_ml',total_ml) ORDER BY category) FROM (SELECT COALESCE(metadata->>'output_category','unspecified') AS category,sum(output_ml)::bigint AS total_ml FROM effective WHERE output_ml>0 GROUP BY 1) x),'[]'::jsonb) AS output_breakdown FROM effective"#);
-    let row = q.build_query_as::<SummaryRow>().fetch_one(pool).await?;
-    Ok(FluidEffectiveSummary {
-        entry_count: row.entry_count,
-        total_intake_ml: row.total_intake_ml,
-        total_output_ml: row.total_output_ml,
-        net_ml: row.total_intake_ml - row.total_output_ml,
-        intake_breakdown: row.intake_breakdown.0,
-        output_breakdown: row.output_breakdown.0,
-    })
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('category',category,'total_ml',total_ml) ORDER BY category) FROM (SELECT COALESCE(intake_category,'unspecified') AS category,sum(intake_ml)::bigint AS total_ml FROM effective WHERE intake_ml>0 GROUP BY 1) x),'[]'::jsonb) AS intake_breakdown,
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('category',category,'total_ml',total_ml) ORDER BY category) FROM (SELECT COALESCE(output_category,'unspecified') AS category,sum(output_ml)::bigint AS total_ml FROM effective WHERE output_ml>0 GROUP BY 1) x),'[]'::jsonb) AS output_breakdown FROM effective"#);
+    q
 }

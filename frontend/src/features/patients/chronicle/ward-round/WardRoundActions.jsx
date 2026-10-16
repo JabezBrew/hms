@@ -205,7 +205,9 @@ export function LabOrderActionBlock({ labOrders, onChange }) {
             'rounded-md border border-border/60 bg-card/50 p-2',
             catalogItems.length === 0 && 'text-sm text-muted-foreground',
           )}>
-            {testQuery.isFetching || panelQuery.isFetching ? (
+            {testQuery.error || panelQuery.error ? (
+              <p role="alert" className="text-sm text-destructive">The laboratory catalog could not be fully loaded. Refresh the search before selecting a test or panel.</p>
+            ) : testQuery.isFetching || panelQuery.isFetching ? (
               <p className="font-mono text-xs text-muted-foreground">Searching catalog…</p>
             ) : catalogItems.length === 0 ? (
               <p className="font-mono text-xs">No matching tests or panels.</p>

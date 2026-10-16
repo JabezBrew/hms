@@ -979,6 +979,7 @@ pub struct FluidBalanceListItem {
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
 pub struct FluidBalanceListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
@@ -991,6 +992,7 @@ pub struct FluidBalanceListQuery {
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
 pub struct FluidBalanceSummaryQuery {
     pub patient_id: Option<Uuid>,
     pub admission_case_id: Option<Uuid>,
@@ -1016,7 +1018,9 @@ pub struct FluidBalanceTrendPoint {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateFluidBalanceEntryRequest {
+    pub patient_id: Option<Uuid>,
     pub admission_case_id: Uuid,
     pub recorded_at: DateTime<Utc>,
     pub intake_ml: i32,

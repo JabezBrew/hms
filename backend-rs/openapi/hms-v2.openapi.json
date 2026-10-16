@@ -3887,13 +3887,19 @@
         "type": "object"
       },
       "CommitWardRoundRequest": {
+        "additionalProperties": false,
         "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
           "expected_version": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
+          "client_request_id",
           "expected_version"
         ],
         "type": "object"
@@ -5143,6 +5149,7 @@
         "type": "object"
       },
       "CreateFluidBalanceEntryRequest": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -5155,6 +5162,13 @@
           "output_ml": {
             "format": "int32",
             "type": "integer"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "recorded_at": {
             "format": "date-time",
@@ -5179,6 +5193,13 @@
           "client_request_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "values": {
             "$ref": "#/components/schemas/FluidObservationValues"
@@ -7426,6 +7447,7 @@
         "type": "object"
       },
       "FluidAssessmentQuery": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -7504,6 +7526,7 @@
         "type": "object"
       },
       "FluidBalanceListQuery": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -7584,6 +7607,7 @@
         "type": "object"
       },
       "FluidBalanceSummaryQuery": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -7906,7 +7930,51 @@
         ],
         "type": "object"
       },
+      "FluidObservationContext": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "can_record_observation": {
+            "type": "boolean"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdmissionStatus"
+          }
+        },
+        "required": [
+          "patient_id",
+          "admission_case_id",
+          "status",
+          "can_record_observation"
+        ],
+        "type": "object"
+      },
+      "FluidObservationContextQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "admission_case_id"
+        ],
+        "type": "object"
+      },
       "FluidObservationQuery": {
+        "additionalProperties": false,
         "properties": {
           "admission_case_id": {
             "format": "uuid",
@@ -22172,34 +22240,6 @@
         ],
         "type": "object"
       },
-      "ObjectResponse_CommitWardRoundResponse": {
-        "properties": {
-          "data": {
-            "properties": {
-              "created_artifacts": {
-                "items": {
-                  "$ref": "#/components/schemas/WardRoundArtifactSummary"
-                },
-                "type": "array"
-              },
-              "ward_round": {
-                "$ref": "#/components/schemas/WardRoundDetail"
-              }
-            },
-            "required": [
-              "ward_round",
-              "created_artifacts"
-            ],
-            "type": "object"
-          },
-          "meta": {}
-        },
-        "required": [
-          "data",
-          "meta"
-        ],
-        "type": "object"
-      },
       "ObjectResponse_CommitteeListItem": {
         "properties": {
           "data": {
@@ -23263,6 +23303,41 @@
               "values",
               "created_at",
               "current"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_FluidObservationContext": {
+        "properties": {
+          "data": {
+            "properties": {
+              "admission_case_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "can_record_observation": {
+                "type": "boolean"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/AdmissionStatus"
+              }
+            },
+            "required": [
+              "patient_id",
+              "admission_case_id",
+              "status",
+              "can_record_observation"
             ],
             "type": "object"
           },
@@ -29243,6 +29318,48 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_WardRoundCommandReceipt": {
+        "properties": {
+          "data": {
+            "description": "Immutable original command result. Current state/permissions require a separate fresh GET.",
+            "properties": {
+              "client_request_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "created_artifacts": {
+                "items": {
+                  "$ref": "#/components/schemas/WardRoundArtifactSummary"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "$ref": "#/components/schemas/WardRoundCommandOperation"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "ward_round": {
+                "$ref": "#/components/schemas/WardRoundDetail"
+              }
+            },
+            "required": [
+              "client_request_id",
+              "operation",
+              "replayed",
+              "ward_round",
+              "created_artifacts"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_WardRoundDetail": {
         "properties": {
           "data": {
@@ -29300,6 +29417,13 @@
                   "null"
                 ]
               },
+              "signed_by_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "status": {
                 "$ref": "#/components/schemas/WardRoundStatus"
               },
@@ -29326,6 +29450,56 @@
               "artifacts",
               "created_at",
               "updated_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_WardRoundWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "admission_case_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "admission_status": {
+                "$ref": "#/components/schemas/AdmissionStatus"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "permissions": {
+                "$ref": "#/components/schemas/WardRoundPermissions"
+              },
+              "ward_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "ward_round": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WardRoundDetail"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "patient_id",
+              "admission_case_id",
+              "admission_status",
+              "ward_id",
+              "permissions"
             ],
             "type": "object"
           },
@@ -35960,6 +36134,55 @@
         ],
         "type": "object"
       },
+      "SaveWardRoundDraftRequest": {
+        "additionalProperties": false,
+        "description": "A complete reviewed draft, persisted atomically rather than as independent action writes.",
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/WardRoundDraftActionInput"
+            },
+            "type": "array"
+          },
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expected_version": {
+            "description": "Zero creates a new draft; an existing draft requires its exact positive version.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "note_sections": {
+            "$ref": "#/components/schemas/WardRoundNoteSections"
+          },
+          "rendered_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward_round_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "client_request_id",
+          "expected_version",
+          "admission_case_id",
+          "note_sections",
+          "actions"
+        ],
+        "type": "object"
+      },
       "ScheduleMedicationAdministrationRequest": {
         "properties": {
           "admission_case_id": {
@@ -39510,6 +39733,19 @@
           "payload": {
             "$ref": "#/components/schemas/Value"
           },
+          "position": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reviewed_targets": {
+            "items": {
+              "$ref": "#/components/schemas/WardRoundReviewedTarget"
+            },
+            "type": "array"
+          },
           "status": {
             "$ref": "#/components/schemas/WardRoundActionStatus"
           },
@@ -39576,6 +39812,58 @@
         ],
         "type": "object"
       },
+      "WardRoundCommandOperation": {
+        "enum": [
+          "saved_draft",
+          "committed"
+        ],
+        "type": "string"
+      },
+      "WardRoundCommandReceipt": {
+        "description": "Immutable original command result. Current state/permissions require a separate fresh GET.",
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "created_artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/WardRoundArtifactSummary"
+            },
+            "type": "array"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/WardRoundCommandOperation"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "ward_round": {
+            "$ref": "#/components/schemas/WardRoundDetail"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "operation",
+          "replayed",
+          "ward_round",
+          "created_artifacts"
+        ],
+        "type": "object"
+      },
+      "WardRoundCurrentQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "WardRoundDetail": {
         "properties": {
           "action_counts": {
@@ -39631,6 +39919,13 @@
               "null"
             ]
           },
+          "signed_by_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/WardRoundStatus"
           },
@@ -39660,6 +39955,10 @@
         ],
         "type": "object"
       },
+      "WardRoundDischargeInput": {
+        "additionalProperties": false,
+        "type": "object"
+      },
       "WardRoundDischargeRequestPayload": {
         "properties": {
           "requested": {
@@ -39668,6 +39967,110 @@
         },
         "required": [
           "requested"
+        ],
+        "type": "object"
+      },
+      "WardRoundDraftActionInput": {
+        "oneOf": [
+          {
+            "properties": {
+              "action_type": {
+                "enum": [
+                  "prescription"
+                ],
+                "type": "string"
+              },
+              "payload": {
+                "$ref": "#/components/schemas/WardRoundPrescriptionCommand"
+              }
+            },
+            "required": [
+              "payload",
+              "action_type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action_type": {
+                "enum": [
+                  "lab_order"
+                ],
+                "type": "string"
+              },
+              "payload": {
+                "$ref": "#/components/schemas/WardRoundLabOrderInput"
+              }
+            },
+            "required": [
+              "payload",
+              "action_type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action_type": {
+                "enum": [
+                  "nursing_task"
+                ],
+                "type": "string"
+              },
+              "payload": {
+                "$ref": "#/components/schemas/WardRoundNursingTaskInput"
+              }
+            },
+            "required": [
+              "payload",
+              "action_type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "action_type": {
+                "enum": [
+                  "discharge_request"
+                ],
+                "type": "string"
+              },
+              "payload": {
+                "$ref": "#/components/schemas/WardRoundDischargeInput"
+              }
+            },
+            "required": [
+              "payload",
+              "action_type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WardRoundLabOrderInput": {
+        "additionalProperties": false,
+        "properties": {
+          "panel_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/LabPriority"
+          },
+          "test_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "test_ids",
+          "panel_ids",
+          "priority"
         ],
         "type": "object"
       },
@@ -39733,6 +40136,38 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "WardRoundNursingTaskInput": {
+        "additionalProperties": false,
+        "properties": {
+          "assigned_to_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "task_type": {
+            "$ref": "#/components/schemas/NursingTaskType"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "instruction",
+          "due_at",
+          "task_type"
+        ],
         "type": "object"
       },
       "WardRoundNursingTaskPayload": {
@@ -39811,6 +40246,52 @@
         ],
         "type": "object"
       },
+      "WardRoundPrescriptionCommand": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WardRoundScheduledPrescriptionInput"
+              },
+              {
+                "properties": {
+                  "operation": {
+                    "enum": [
+                      "start"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operation"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WardRoundPrescriptionStatusInput"
+              },
+              {
+                "properties": {
+                  "operation": {
+                    "enum": [
+                      "status"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operation"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ]
+      },
       "WardRoundPrescriptionPayload": {
         "properties": {
           "dose": {
@@ -39851,6 +40332,54 @@
         },
         "type": "object"
       },
+      "WardRoundPrescriptionReview": {
+        "properties": {
+          "dose": {
+            "type": "string"
+          },
+          "frequency": {
+            "type": "string"
+          },
+          "medication_name": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PrescriptionStatus"
+          }
+        },
+        "required": [
+          "medication_name",
+          "dose",
+          "route",
+          "frequency",
+          "status"
+        ],
+        "type": "object"
+      },
+      "WardRoundPrescriptionStatusInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_snapshot_token": {
+            "type": "string"
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PrescriptionStatus"
+          }
+        },
+        "required": [
+          "prescription_id",
+          "expected_snapshot_token",
+          "status"
+        ],
+        "type": "object"
+      },
       "WardRoundReviewRail": {
         "properties": {
           "active_medication_count": {
@@ -39872,12 +40401,152 @@
         },
         "type": "object"
       },
+      "WardRoundReviewedTarget": {
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "prescription": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardRoundPrescriptionReview"
+              }
+            ]
+          },
+          "resource_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resource_type": {
+            "$ref": "#/components/schemas/WardRoundTargetType"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resource_type",
+          "resource_id",
+          "display_name",
+          "selected"
+        ],
+        "type": "object"
+      },
+      "WardRoundScheduledPrescriptionInput": {
+        "additionalProperties": false,
+        "description": "Stock-linked and PRN prescribing use the full prescription panel, with its reviewed policies.",
+        "properties": {
+          "dose": {
+            "type": "string"
+          },
+          "duration_days": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "first_dose_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "frequency": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "medication_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "medication_name",
+          "dose",
+          "route",
+          "frequency",
+          "instructions",
+          "reason",
+          "start_date"
+        ],
+        "type": "object"
+      },
       "WardRoundStatus": {
         "enum": [
           "draft",
           "committed"
         ],
         "type": "string"
+      },
+      "WardRoundTargetType": {
+        "enum": [
+          "prescription",
+          "lab_test",
+          "lab_panel"
+        ],
+        "type": "string"
+      },
+      "WardRoundWorkspace": {
+        "properties": {
+          "admission_case_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "admission_status": {
+            "$ref": "#/components/schemas/AdmissionStatus"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/WardRoundPermissions"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_round": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WardRoundDetail"
+              }
+            ]
+          }
+        },
+        "required": [
+          "patient_id",
+          "admission_case_id",
+          "admission_status",
+          "ward_id",
+          "permissions"
+        ],
+        "type": "object"
       },
       "WardSectionListItem": {
         "properties": {
@@ -61210,6 +61879,71 @@
         ]
       }
     },
+    "/api/v2/nursing/fluid-observations/context": {
+      "get": {
+        "operationId": "getFluidObservationContext",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_FluidObservationContext"
+                }
+              }
+            },
+            "description": "Current authorized admission context"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid scope"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nursing"
+        ]
+      }
+    },
     "/api/v2/nursing/fluid-observations/summary": {
       "get": {
         "operationId": "getFluidObservationSummary",
@@ -61497,9 +62231,9 @@
             }
           },
           {
-            "in": "query",
+            "in": "path",
             "name": "cursor",
-            "required": false,
+            "required": true,
             "schema": {
               "type": [
                 "string",
@@ -61508,9 +62242,9 @@
             }
           },
           {
-            "in": "query",
+            "in": "path",
             "name": "limit",
-            "required": false,
+            "required": true,
             "schema": {
               "format": "int32",
               "minimum": 0,
@@ -67559,16 +68293,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_WardRoundDetail"
-                }
-              }
-            },
-            "description": "Ward Round draft"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -67598,6 +68322,16 @@
               }
             },
             "description": "Patient access denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired individual mutation; use the complete draft command"
           }
         },
         "security": [
@@ -67623,6 +68357,18 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "in": "path",
+            "name": "admission_case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -67630,11 +68376,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_WardRoundDetail"
+                  "$ref": "#/components/schemas/ObjectResponse_WardRoundWorkspace"
                 }
               }
             },
-            "description": "Current Ward Round"
+            "description": "Protected selected-admission workspace and current draft"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid selected admission query"
           },
           "401": {
             "content": {
@@ -67665,6 +68421,190 @@
               }
             },
             "description": "Ward Round not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Preserved evidence requires review or the context changed"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/ward-rounds/draft": {
+      "post": {
+        "operationId": "postPatientChronicleWardRoundDraft",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveWardRoundDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardRoundCommandReceipt"
+                }
+              }
+            },
+            "description": "Immutable original complete-draft receipt"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid supported draft"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Current clinical/action authority required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source conflict or explicitly unconfirmed command"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/patients/{patient_id}/chronicle/ward-rounds/requests/{request_id}": {
+      "get": {
+        "operationId": "getPatientChronicleWardRoundRequest",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Original command reference",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WardRoundCommandReceipt"
+                }
+              }
+            },
+            "description": "Immutable original actor-scoped command receipt"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Current clinical authority required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Command not found in this scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Protected original receipt could not be loaded"
           }
         },
         "security": [
@@ -67742,6 +68682,16 @@
               }
             },
             "description": "Ward Round not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Preserved evidence requires review"
           }
         },
         "security": [
@@ -67788,16 +68738,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_WardRoundDetail"
-                }
-              }
-            },
-            "description": "Ward Round detail"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -67836,7 +68776,7 @@
                 }
               }
             },
-            "description": "Ward Round version conflict"
+            "description": "Retired individual mutation; use the complete draft command"
           }
         },
         "security": [
@@ -67885,16 +68825,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_WardRoundDetail"
-                }
-              }
-            },
-            "description": "Ward Round detail"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -67924,6 +68854,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired individual mutation; use the complete draft command"
           }
         },
         "security": [
@@ -67972,16 +68912,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_WardRoundDetail"
-                }
-              }
-            },
-            "description": "Ward Round detail"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -68011,6 +68941,16 @@
               }
             },
             "description": "Ward Round action not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired individual mutation; use the complete draft command"
           }
         },
         "security": [
@@ -68067,16 +69007,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_WardRoundDetail"
-                }
-              }
-            },
-            "description": "Ward Round detail"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -68106,6 +69036,16 @@
               }
             },
             "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Retired individual mutation; use the complete draft command"
           }
         },
         "security": [
@@ -68158,11 +69098,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_CommitWardRoundResponse"
+                  "$ref": "#/components/schemas/ObjectResponse_WardRoundCommandReceipt"
                 }
               }
             },
-            "description": "Committed Ward Round"
+            "description": "Immutable original Ward Round commit receipt"
           },
           "400": {
             "content": {

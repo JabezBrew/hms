@@ -7,6 +7,10 @@ import { PatientReviewStep } from "./ward-round-steps/PatientReviewStep";
 import { TreatmentPlanStep } from "./ward-round-steps/TreatmentPlanStep";
 import { DocumentationStep } from "./ward-round-steps/DocumentationStep";
 import { toast } from "sonner";
+import { Link } from 'react-router-dom';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   WardRoundContent,
   WardRoundError,
@@ -44,7 +48,7 @@ const STEP_COMPONENTS = {
  * - Step progress visualization with keyboard navigation
  * - URL-driven state (can be linked directly)
  */
-const WardRoundSlideOver = ({
+const LegacyWardRoundSlideOver = ({
   open,
   onClose,
   patient,
@@ -227,5 +231,13 @@ const WardRoundSlideOver = ({
   );
 };
 
+const WardRoundSlideOver = (props) => {
+  if (!isRustV2ApiMode()) return <LegacyWardRoundSlideOver {...props} />;
+  if (!props.open) return null;
+  const patientId = props.patient?.local_data?.id || props.patient?.id;
+  const selected = Boolean(props.admission?.id && props.selectedEncounterId);
+  const search = new URLSearchParams({ mode: 'ward-round', visit: props.selectedEncounterId || 'all' });
+  return <Dialog open onOpenChange={(value) => { if (!value) props.onClose?.(); }}><DialogContent><DialogHeader><DialogTitle>Review the selected ward round</DialogTitle><DialogDescription>{selected ? 'Ward rounds open in Patient Chronicle with one reviewed note, saved actions and their exact results.' : "Select the admission's visit in Patient Chronicle before opening a ward round."}</DialogDescription></DialogHeader><div className="flex flex-wrap gap-3">{selected && patientId && <Button asChild><Link to={{ pathname: `/patients/${patientId}/chronicle`, search: `?${search}` }} onClick={props.onClose}>Open selected ward round</Link></Button>}<Button variant="outline" onClick={props.onClose}>Close</Button></div></DialogContent></Dialog>;
+};
 export default WardRoundSlideOver;
 export { WardRoundSlideOver };

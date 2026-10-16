@@ -71,6 +71,16 @@ above dialog portals, and voided source history remains reachable through the
 explicit review toggle. Rule publication has an independent admin permission,
 reason, expected version and review step.
 
+The rich fluid panel requires current FullClinical and Nursing workflow access,
+including direct mounts. The selected Chronicle admission scopes rows, totals,
+assessment and creates; all-history never falls back to the current admission.
+A protected minimal admission-context read confirms new-entry eligibility.
+Closed admissions retain authorized review and deliberate evidence correction;
+they do not offer new entries. A fresh denial on any protected fluid read removes
+the entire rich workspace and copied drafts. Scalar Summary trends remain a
+separate contract. Scope-bound publication leases suppress late write feedback
+and caller callbacks after patient, admission, authority or transport changes.
+
 Treatment-header, alert and handoff bridge methods return explicit server pages.
 New list keys hash the complete normalized query and include sanitized client
 scope. Patient/admission/ward/date/status filters go to Rust before pagination;

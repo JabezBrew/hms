@@ -100,3 +100,27 @@ Scope: Patient Directory, patient forms, Patient Chronicle, print, ward round, b
 - Chronicle workflow handoff must use real context ids: `visit=<encounter_id>`
   for OPD/Emergency encounter context and `admission=<admission_case_id>` for
   inpatient context. Do not pass a raw visit id as the Chronicle visit scope.
+
+## Governed Rust ward rounds
+
+Rust ward-round mode uses the explicitly selected admission and a fresh protected
+workspace read before showing any copied clinical narrative. It saves the whole
+reviewed draft atomically, then separately commits that saved version. Legacy
+autosave/action-loop writers are not used in Rust mode. The compatibility drawer
+hands off to the same Chronicle workspace with the actual selected context.
+
+`chronicle/ward-round/commandModel.js` validates exact immutable receipts, human
+review targets and one corresponding resource for every committed action.
+`useRoundCommand.js` retains an uncertain UUID and reviewed body for explicit
+same-command recovery; it never automatically retries. A temporary read failure
+hides the clinical DOM while retaining unsaved controller state; a protected
+denial or scope change clears copied clinical state. A recovered receipt is
+evidence of that command, never authority for another action.
+
+Supported actions are explicit unlinked scheduled prescribing or current-source
+status decisions, selected laboratory tests/panels, nursing tasks with explicit
+instruction/due time, and normal discharge requests. PRN policy, stock-linked
+course creation and renewal remain in the prescribing workspace. Earlier
+structured notes are shown independently from the editable narrative; ward-round
+completion does not invent a separate clinical-note record or clear discharge
+blockers. Cancelled historical actions are retained and never recreated.

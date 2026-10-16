@@ -24,3 +24,9 @@ Scope: API-layer workflow services.
 - Services coordinate access, domain policy, repository calls, and DTO shape.
 - New complex workflows should deepen this layer before adding handler logic.
 - Keep external I/O out of open DB transactions.
+
+Ward Round production services expose selected-admission workspaces, reviewed
+aggregate draft saves, atomic commits and original UUID request recovery. Earlier
+individual mutation routes authorize then return a typed retirement response.
+See the [reviewed command scope](../../../../../docs/v2/2026-10-16-ward-round-command-scope.md)
+and `ward_round_commands_contract` for the actual HTTP authorization/lifetime tests.

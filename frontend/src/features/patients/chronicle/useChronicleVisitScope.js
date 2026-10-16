@@ -16,7 +16,6 @@ export function useChronicleVisitScope({
   formatEncounterScopeLabel,
   navigate,
   pathname,
-  rustV2ActiveAdmissionId,
   search,
   visitParam,
 }) {
@@ -44,12 +43,11 @@ export function useChronicleVisitScope({
     if (isAllVisitsScope) {
       return null;
     }
-    return selectedEncounter || activeEncounter || null;
-  }, [activeEncounter, isAllVisitsScope, selectedEncounter]);
-  const chartContextAdmissionId = chartContextEncounter?.admission_id
+    return selectedEncounter || (selectedEncounterId && String(activeEncounter?.id) === String(selectedEncounterId) ? activeEncounter : null);
+  }, [activeEncounter, isAllVisitsScope, selectedEncounter, selectedEncounterId]);
+  const chartContextAdmissionId = !isAllVisitsScope && !isVisitScopePending && (chartContextEncounter?.admission_id
     || chartContextEncounter?.admission?.id
-    || rustV2ActiveAdmissionId
-    || null;
+    || null) || null;
 
   const visitScopeOptions = useMemo(() => {
     const options = [{

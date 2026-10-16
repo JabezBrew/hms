@@ -1012,7 +1012,9 @@ function validFluidAggregate(item) {
 
 export async function getV2FluidBalanceSummary(patientId, filters = {}, { signal } = {}) {
   try {
-    const query = fluidBalanceQuery(patientId, filters);
+    const normalized = fluidBalanceQuery(patientId, filters);
+    const query = { patient_id: normalized.patient_id, admission_case_id: normalized.admission_case_id,
+      recorded_from: normalized.recorded_from, recorded_before: normalized.recorded_before };
     requireFluidScope(query);
     const response = await v2Api.getFluidBalanceSummary({ query, signal });
     const summary = response?.data;

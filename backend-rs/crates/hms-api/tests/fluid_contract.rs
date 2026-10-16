@@ -4,6 +4,12 @@ use support::*;
 #[tokio::test]
 async fn fluid_patient_scope_pages_and_complete_totals_require_authorized_matching_context() {
     let app = app().await;
+    grant_test_patient_visibility(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PatientDataVisibility::FullClinical,
+    )
+    .await;
     let pool = app.db_pool().await;
     let facility_id = app.state().facility_id();
     let (token, _, _) = login(app.clone(), "owner@hms.local").await;

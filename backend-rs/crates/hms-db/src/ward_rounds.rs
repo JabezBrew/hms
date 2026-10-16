@@ -1,3 +1,5 @@
+pub mod governed;
+
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use hms_domain::clinical::PrescriptionStatus;
@@ -87,6 +89,7 @@ struct WardRoundDetailRow {
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     signed_at: Option<DateTime<Utc>>,
+    signed_by_user_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -96,6 +99,8 @@ struct CommitActionRow {
     title: Option<String>,
     instruction: Option<String>,
     payload: JsonValue,
+    #[sqlx(default)]
+    reviewed_targets: Option<Json<Vec<hms_domain::ward_rounds::WardRoundReviewedTarget>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -1131,6 +1136,8 @@ const WARD_ROUND_DETAIL_SELECT: &str = r#"
                      jsonb_agg(
                        jsonb_build_object(
                          'id', ward_round_actions.id,
+                         'position', ward_round_actions.draft_position,
+                         'reviewed_targets', ward_round_actions.reviewed_targets,
                          'ward_round_id', ward_round_actions.ward_round_id,
                          'action_type', ward_round_actions.action_type,
                          'status', ward_round_actions.status,
@@ -1142,7 +1149,7 @@ const WARD_ROUND_DETAIL_SELECT: &str = r#"
                          'created_at', ward_round_actions.created_at,
                          'updated_at', ward_round_actions.updated_at
                        )
-                       ORDER BY ward_round_actions.created_at ASC, ward_round_actions.id ASC
+                       ORDER BY ward_round_actions.draft_position ASC NULLS LAST, ward_round_actions.created_at ASC, ward_round_actions.id ASC
                      ) FILTER (WHERE ward_round_actions.id IS NOT NULL),
                      '[]'::jsonb
                    ) AS actions,
@@ -1158,15 +1165,22 @@ const WARD_ROUND_DETAIL_SELECT: &str = r#"
                        )
                        FROM ward_round_artifact_links links
                        WHERE links.ward_round_id = ward_rounds.id
+                         AND links.facility_id = ward_rounds.facility_id
+                         AND links.patient_id = ward_rounds.patient_id
+                         AND links.admission_case_id = ward_rounds.admission_case_id
                      ),
                      '[]'::jsonb
                    ) AS artifacts,
                    ward_rounds.created_at,
                    ward_rounds.updated_at,
                    ward_rounds.signed_at
+                   ,ward_rounds.signed_by_user_id
             FROM ward_rounds
             LEFT JOIN ward_round_actions
               ON ward_round_actions.ward_round_id = ward_rounds.id
+             AND ward_round_actions.facility_id = ward_rounds.facility_id
+             AND ward_round_actions.patient_id = ward_rounds.patient_id
+             AND ward_round_actions.admission_case_id = ward_rounds.admission_case_id
             "#;
 
 const WARD_ROUND_DETAIL_GROUP_BY: &str = r#"
@@ -1181,6 +1195,7 @@ const WARD_ROUND_DETAIL_GROUP_BY: &str = r#"
                      ward_rounds.created_at,
                      ward_rounds.updated_at,
                      ward_rounds.signed_at
+                     ,ward_rounds.signed_by_user_id
             "#;
 
 fn detail_from_row(row: WardRoundDetailRow) -> anyhow::Result<WardRoundDetail> {
@@ -1209,5 +1224,6 @@ fn detail_from_row(row: WardRoundDetailRow) -> anyhow::Result<WardRoundDetail> {
         created_at: row.created_at,
         updated_at: row.updated_at,
         signed_at: row.signed_at,
+        signed_by_user_id: row.signed_by_user_id,
     })
 }

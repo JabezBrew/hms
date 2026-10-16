@@ -80,3 +80,5 @@ Selected-patient and recipient pages use one shaped data query plus a constant
 proof cost. See `docs/v2/2026-10-16-patient-handover-scope.md`.
 
 General nursing task, vital, alert and monitoring APIs apply actual ward relationships before paging, explicit clinical data classes and mandatory live authority proofs. Terminal task decisions preserve first actor/time. See `docs/v2/2026-10-16-nursing-scope-and-decisions.md` for captured/current ward semantics and compatibility limits.
+
+Fluid HTTP workflows use the mandatory `FluidActor` live nursing proof and the protected helpers in `fluid/access.rs`, including legacy scalar reads. Actual admission ward predicates apply before page bounds and totals; pool-only helpers are trusted fixture/import compatibility, not HTTP authorization. See [fluid access and lifetime](../../../../../docs/v2/2026-10-16-fluid-access-lifetime-scope.md).

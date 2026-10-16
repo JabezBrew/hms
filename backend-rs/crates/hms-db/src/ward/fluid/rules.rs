@@ -35,7 +35,7 @@ pub async fn get_fluid_rules(pool: &PgPool, facility: Uuid) -> anyhow::Result<Fl
 }
 pub async fn update_fluid_rules(
     pool: &PgPool,
-    actor: FluidActor,
+    mut actor: FluidActor,
     mut input: UpdateFluidRuleSettingsRequest,
 ) -> anyhow::Result<FluidRuleSettings> {
     input.reason = common::reason(&input.reason)?;
@@ -49,6 +49,7 @@ pub async fn update_fluid_rules(
         return Err(FluidError::InvalidRules.into());
     }
     let mut tx = pool.begin().await?;
+    super::access::administrative(&mut tx, &mut actor).await?;
     if let Some(saved) =
         common::reserve(&mut tx, &actor, input.client_request_id, "rules", &input).await?
     {
@@ -56,6 +57,7 @@ pub async fn update_fluid_rules(
             .result_version
             .ok_or_else(|| anyhow::anyhow!("fluid_rule_command_incomplete"))?;
         let row=sqlx::query_as::<_,SettingsRow>("SELECT version,values,published_at AS updated_at,actor_user_id AS updated_by_user_id FROM fluid_rule_versions WHERE facility_id=$1 AND version=$2").bind(actor.facility_id).bind(version).fetch_one(&mut *tx).await?;
+        super::access::admin_deadline(&mut tx, &actor).await?;
         tx.commit().await?;
         return Ok(settings(Some(row)));
     }
@@ -92,6 +94,7 @@ pub async fn update_fluid_rules(
         next,
     )
     .await?;
+    super::access::admin_deadline(&mut tx, &actor).await?;
     tx.commit().await?;
     Ok(settings(Some(row)))
 }
@@ -114,6 +117,14 @@ pub async fn fluid_assessment(
     date: NaiveDate,
 ) -> anyhow::Result<FluidAssessment> {
     let row=sqlx::query_as::<_,AssessmentRow>(r#"SELECT clock_timestamp() AS evaluated_at,COALESCE(d.entry_count,0) AS entry_count,COALESCE(d.intake_ml,0) AS intake_ml,COALESCE(d.output_ml,0) AS output_ml,s.version,s.values,s.updated_at,s.updated_by_user_id FROM (SELECT 1) base LEFT JOIN fluid_effective_daily_totals d ON d.facility_id=$1 AND d.patient_id=$2 AND d.admission_case_id=$3 AND d.date=$4 LEFT JOIN fluid_rule_settings s ON s.facility_id=$1 AND s.version>0"#).bind(facility).bind(patient).bind(admission).bind(date).fetch_one(pool).await?;
+    assessment(row, patient, admission, date)
+}
+fn assessment(
+    row: AssessmentRow,
+    patient: Uuid,
+    admission: Uuid,
+    date: NaiveDate,
+) -> anyhow::Result<FluidAssessment> {
     let configured = row.version.is_some();
     let policy = FluidRuleSettings {
         version: row.version.unwrap_or(0),
@@ -180,4 +191,44 @@ pub async fn fluid_assessment(
         net_ml: net,
         conditions,
     })
+}
+
+/// Configuration is nonpatient data; admin authority does not imply nursing or FullClinical.
+pub async fn get_fluid_rules_for_actor(
+    pool: &PgPool,
+    mut actor: FluidActor,
+    admin: bool,
+) -> anyhow::Result<FluidRuleSettings> {
+    let mut tx = pool.begin().await?;
+    if admin {
+        super::access::administrative(&mut tx, &mut actor).await?;
+    } else {
+        super::access::clinical(&mut tx, &mut actor).await?;
+    }
+    let row=sqlx::query_as::<_,SettingsRow>("SELECT version,values,updated_at,updated_by_user_id FROM fluid_rule_settings WHERE facility_id=$1 AND version>0").bind(actor.facility_id).fetch_optional(&mut *tx).await?;
+    if admin {
+        super::access::admin_deadline(&mut tx, &actor).await?;
+    } else {
+        super::access::deadline(&mut tx, &actor).await?;
+    }
+    tx.commit().await?;
+    Ok(settings(row))
+}
+pub async fn fluid_assessment_for_actor(
+    pool: &PgPool,
+    mut actor: FluidActor,
+    patient: Uuid,
+    admission: Uuid,
+    date: NaiveDate,
+) -> anyhow::Result<FluidAssessment> {
+    let mut tx = pool.begin().await?;
+    let wards = super::access::clinical(&mut tx, &mut actor).await?;
+    crate::ward::nursing_access::admission(
+        &mut tx, &actor, &wards, admission, patient, None, false,
+    )
+    .await?;
+    let row=sqlx::query_as::<_,AssessmentRow>(r#"SELECT clock_timestamp() AS evaluated_at,COALESCE(d.entry_count,0) AS entry_count,COALESCE(d.intake_ml,0) AS intake_ml,COALESCE(d.output_ml,0) AS output_ml,s.version,s.values,s.updated_at,s.updated_by_user_id FROM (SELECT 1) base LEFT JOIN fluid_effective_daily_totals d ON d.facility_id=$1 AND d.patient_id=$2 AND d.admission_case_id=$3 AND d.date=$4 LEFT JOIN fluid_rule_settings s ON s.facility_id=$1 AND s.version>0"#).bind(actor.facility_id).bind(patient).bind(admission).bind(date).fetch_one(&mut *tx).await?;
+    super::access::deadline(&mut tx, &actor).await?;
+    tx.commit().await?;
+    assessment(row, patient, admission, date)
 }

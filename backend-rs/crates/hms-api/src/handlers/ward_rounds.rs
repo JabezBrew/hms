@@ -1,13 +1,17 @@
-use axum::extract::{Path, State};
+use axum::extract::{
+    rejection::{JsonRejection, QueryRejection},
+    Path, Query, State,
+};
 use axum::Json;
 use hms_domain::ward_rounds::{
-    CommitWardRoundRequest, CommitWardRoundResponse, CreateWardRoundActionRequest,
-    CreateWardRoundRequest, UpdateWardRoundActionRequest, UpdateWardRoundRequest, WardRoundDetail,
+    CommitWardRoundRequest, CreateWardRoundActionRequest, CreateWardRoundRequest,
+    SaveWardRoundDraftRequest, UpdateWardRoundActionRequest, UpdateWardRoundRequest,
+    WardRoundCommandReceipt, WardRoundCurrentQuery, WardRoundDetail, WardRoundWorkspace,
 };
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::RequestContext;
+use crate::extractors::{NetworkContext, RequestContext};
 use crate::response::ObjectResponse;
 use crate::state::AppState;
 
@@ -17,23 +21,32 @@ use crate::state::AppState;
     operation_id = "getPatientChronicleCurrentWardRound",
     tag = "clinical",
     security(("bearerAuth" = [])),
-    params(("patient_id" = Uuid, Path, description = "Patient id")),
+    params(("patient_id" = Uuid, Path, description = "Patient id"),WardRoundCurrentQuery),
     responses(
-        (status = 200, description = "Current Ward Round", body = ObjectResponse<WardRoundDetail>),
+        (status = 200, description = "Protected selected-admission workspace and current draft", body = ObjectResponse<WardRoundWorkspace>),
+        (status = 400, description = "Invalid selected admission query", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
-        (status = 404, description = "Ward Round not found", body = ApiErrorResponse)
+        (status = 404, description = "Ward Round not found", body = ApiErrorResponse),
+        (status = 409, description = "Preserved evidence requires review or the context changed", body = ApiErrorResponse)
     )
 )]
 pub async fn current(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    proof: NetworkContext,
     Path(patient_id): Path<Uuid>,
-) -> Result<Json<ObjectResponse<WardRoundDetail>>, ApiError> {
+    query: Result<Query<WardRoundCurrentQuery>, QueryRejection>,
+) -> Result<Json<ObjectResponse<WardRoundWorkspace>>, ApiError> {
+    let Query(query) = query.map_err(|_| invalid_request())?;
     Ok(Json(
         state
             .ward_rounds_service()
-            .current(&user, patient_id)
+            .current(
+                &proof.context,
+                patient_id,
+                query,
+                proof.authorization_deadline,
+            )
             .await?,
     ))
 }
@@ -47,7 +60,7 @@ pub async fn current(
     params(("patient_id" = Uuid, Path, description = "Patient id")),
     request_body = CreateWardRoundRequest,
     responses(
-        (status = 200, description = "Ward Round draft", body = ObjectResponse<WardRoundDetail>),
+        (status = 409, description = "Retired individual mutation; use the complete draft command", body = ApiErrorResponse),
         (status = 400, description = "Invalid Ward Round request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse)
@@ -81,18 +94,24 @@ pub async fn create(
         (status = 200, description = "Ward Round detail", body = ObjectResponse<WardRoundDetail>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
-        (status = 404, description = "Ward Round not found", body = ApiErrorResponse)
+        (status = 404, description = "Ward Round not found", body = ApiErrorResponse),
+        (status = 409, description = "Preserved evidence requires review", body = ApiErrorResponse)
     )
 )]
 pub async fn get(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    proof: NetworkContext,
     Path((patient_id, round_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<ObjectResponse<WardRoundDetail>>, ApiError> {
     Ok(Json(
         state
             .ward_rounds_service()
-            .get(&user, patient_id, round_id)
+            .get(
+                &proof.context,
+                patient_id,
+                round_id,
+                proof.authorization_deadline,
+            )
             .await?,
     ))
 }
@@ -109,11 +128,10 @@ pub async fn get(
     ),
     request_body = UpdateWardRoundRequest,
     responses(
-        (status = 200, description = "Ward Round detail", body = ObjectResponse<WardRoundDetail>),
         (status = 400, description = "Invalid Ward Round request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
-        (status = 409, description = "Ward Round version conflict", body = ApiErrorResponse)
+        (status = 409, description = "Retired individual mutation; use the complete draft command", body = ApiErrorResponse)
     )
 )]
 pub async fn update(
@@ -142,7 +160,7 @@ pub async fn update(
     ),
     request_body = CreateWardRoundActionRequest,
     responses(
-        (status = 200, description = "Ward Round detail", body = ObjectResponse<WardRoundDetail>),
+        (status = 409, description = "Retired individual mutation; use the complete draft command", body = ApiErrorResponse),
         (status = 400, description = "Invalid Ward Round action", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -175,7 +193,7 @@ pub async fn create_action(
     ),
     request_body = UpdateWardRoundActionRequest,
     responses(
-        (status = 200, description = "Ward Round detail", body = ObjectResponse<WardRoundDetail>),
+        (status = 409, description = "Retired individual mutation; use the complete draft command", body = ApiErrorResponse),
         (status = 400, description = "Invalid Ward Round action", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
@@ -207,7 +225,7 @@ pub async fn update_action(
         ("action_id" = Uuid, Path, description = "Ward Round action id")
     ),
     responses(
-        (status = 200, description = "Ward Round detail", body = ObjectResponse<WardRoundDetail>),
+        (status = 409, description = "Retired individual mutation; use the complete draft command", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Ward Round action not found", body = ApiErrorResponse)
@@ -238,7 +256,7 @@ pub async fn delete_action(
     ),
     request_body = CommitWardRoundRequest,
     responses(
-        (status = 200, description = "Committed Ward Round", body = ObjectResponse<CommitWardRoundResponse>),
+        (status = 200, description = "Immutable original Ward Round commit receipt", body = ObjectResponse<WardRoundCommandReceipt>),
         (status = 400, description = "Invalid Ward Round commit", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
@@ -247,14 +265,76 @@ pub async fn delete_action(
 )]
 pub async fn commit(
     State(state): State<AppState>,
-    RequestContext(user): RequestContext,
+    proof: NetworkContext,
     Path((patient_id, round_id)): Path<(Uuid, Uuid)>,
-    Json(payload): Json<CommitWardRoundRequest>,
-) -> Result<Json<ObjectResponse<CommitWardRoundResponse>>, ApiError> {
+    payload: Result<Json<CommitWardRoundRequest>, JsonRejection>,
+) -> Result<Json<ObjectResponse<WardRoundCommandReceipt>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| invalid_request())?;
     Ok(Json(
         state
             .ward_rounds_service()
-            .commit(&user, patient_id, round_id, payload)
+            .commit(
+                &proof.context,
+                patient_id,
+                round_id,
+                payload,
+                proof.authorization_deadline,
+            )
             .await?,
     ))
+}
+
+#[utoipa::path(
+    post,path="/api/v2/patients/{patient_id}/chronicle/ward-rounds/draft",
+    operation_id="postPatientChronicleWardRoundDraft",tag="clinical",security(("bearerAuth"=[])),
+    params(("patient_id"=Uuid,Path,description="Patient id")),request_body=SaveWardRoundDraftRequest,
+    responses((status=200,description="Immutable original complete-draft receipt",body=ObjectResponse<WardRoundCommandReceipt>),
+        (status=400,description="Invalid supported draft",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Current clinical/action authority required",body=ApiErrorResponse),(status=409,description="Source conflict or explicitly unconfirmed command",body=ApiErrorResponse))
+)]
+pub async fn save_draft(
+    State(state): State<AppState>,
+    proof: NetworkContext,
+    Path(patient): Path<Uuid>,
+    payload: Result<Json<SaveWardRoundDraftRequest>, JsonRejection>,
+) -> Result<Json<ObjectResponse<WardRoundCommandReceipt>>, ApiError> {
+    let Json(payload) = payload.map_err(|_| invalid_request())?;
+    Ok(Json(
+        state
+            .ward_rounds_service()
+            .save(
+                &proof.context,
+                patient,
+                payload,
+                proof.authorization_deadline,
+            )
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,path="/api/v2/patients/{patient_id}/chronicle/ward-rounds/requests/{request_id}",
+    operation_id="getPatientChronicleWardRoundRequest",tag="clinical",security(("bearerAuth"=[])),
+    params(("patient_id"=Uuid,Path,description="Patient id"),("request_id"=Uuid,Path,description="Original command reference")),
+    responses((status=200,description="Immutable original actor-scoped command receipt",body=ObjectResponse<WardRoundCommandReceipt>),
+        (status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Current clinical authority required",body=ApiErrorResponse),(status=404,description="Command not found in this scope",body=ApiErrorResponse),(status=409,description="Protected original receipt could not be loaded",body=ApiErrorResponse))
+)]
+pub async fn receipt(
+    State(state): State<AppState>,
+    proof: NetworkContext,
+    Path((patient, key)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ObjectResponse<WardRoundCommandReceipt>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_rounds_service()
+            .receipt(&proof.context, patient, key, proof.authorization_deadline)
+            .await?,
+    ))
+}
+
+fn invalid_request() -> ApiError {
+    ApiError::bad_request(
+        "invalid_ward_round",
+        "Use only the supported fields and valid identifiers for the reviewed Ward Round command.",
+    )
 }

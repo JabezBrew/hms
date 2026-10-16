@@ -1,6 +1,5 @@
-import { useEffect, useId, useState } from 'react';
-import { useAuth } from '@/lib/auth';
-import { userHasCapability } from '@/shared/lib/access';
+import { useEffect, useId, useLayoutEffect, useState } from 'react';
+import { useFluidAccess } from './useFluidAccess';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -33,14 +32,15 @@ function ChangeForm({ source, action, onClose, open }) {
     <DialogFooter><Button type="button" variant="outline" disabled={write.busy} onClick={close}>{write.saved ? 'Done' : 'Close'}</Button>{!write.saved && <>{review && !locked && <Button type="button" variant="outline" onClick={() => setReview(false)}>Change details</Button>}<Button type="button" disabled={write.busy} onClick={submit}>{write.busy ? 'Saving…' : write.unknown ? 'Retry exact change' : review ? 'Confirm change' : 'Review change'}</Button></>}</DialogFooter>
   </DialogContent></Dialog>;
 }
-export function FluidChangeDialog({ selected, onClose, open = true }) {
-  const { user } = useAuth(); const allowed = userHasCapability(user, 'nursing.task.manage');
-  return allowed ? <VerifiedChange selected={selected} onClose={onClose} open={open} /> : null;
+export function FluidChangeDialog({ selected, onClose, onDenied, open = true }) {
+  const access = useFluidAccess();
+  return access.canWrite ? <VerifiedChange selected={selected} onClose={onClose} onDenied={onDenied} open={open} /> : null;
 }
-function VerifiedChange({ selected, onClose, open }) {
-  const query = useFluidSource(selected.source.id, open); const [verified, setVerified] = useState(null);
+function VerifiedChange({ selected, onClose, onDenied, open }) {
+  const query = useFluidSource(selected.source, open); const [verified, setVerified] = useState(null);
+  useLayoutEffect(() => { if (query.error?.status === 403) onDenied?.(); }, [query.error, onDenied]);
   useEffect(() => { if (!verified && query.isFetchedAfterMount && !query.isFetching && !query.isError && query.data?.current) setVerified(query.data); }, [verified, query.isFetchedAfterMount, query.isFetching, query.isError, query.data]);
-  if (verified) return <ChangeForm key={verified.id} source={verified} action={selected.action} onClose={onClose} open={open} />;
+  if (verified && query.error?.status !== 403) return <ChangeForm key={verified.id} source={verified} action={selected.action} onClose={onClose} open={open} />;
   return <Dialog open={open} onOpenChange={(next) => { if (!next) onClose({ preserve: false }); }}><DialogContent><DialogHeader><DialogTitle>Check current fluid observation</DialogTitle><DialogDescription>Load the saved source before recording a change.</DialogDescription></DialogHeader>
     {query.isError ? <p role="alert">The current entry could not be loaded. <Button variant="outline" onClick={() => query.refetch()}>Refresh current entry</Button></p> : query.isFetchedAfterMount && !query.data?.current ? <p role="alert">This entry is no longer current. Review its history before continuing.</p> : <p role="status">Checking current observation…</p>}
   </DialogContent></Dialog>;
